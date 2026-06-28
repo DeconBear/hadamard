@@ -1,4 +1,4 @@
-﻿# Actoviq Agent SDK
+# Actoviq Agent SDK
 
 [![CI](https://github.com/DeconBear/actoviq-agent-sdk/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DeconBear/actoviq-agent-sdk/actions/workflows/ci.yml)
 [![Publish npm Package](https://github.com/DeconBear/actoviq-agent-sdk/actions/workflows/publish-npm.yml/badge.svg?branch=main)](https://github.com/DeconBear/actoviq-agent-sdk/actions/workflows/publish-npm.yml)
@@ -9,21 +9,35 @@
 
 文档站地址：https://deconbear.github.io/actoviq-agent-sdk/
 
-Actoviq Agent SDK 是一个实验性的 TypeScript Agent SDK，面向多工具、多会话、多代理工作流。当前项目以 Hadamard SDK 作为唯一公开主路径。
+**Actoviq** 是一个 agent team 平台 —— 一个 TypeScript 框架，用于将多个 AI agent、运行时和提供商组合成协作的多 agent 系统。它起源于可编程 agent SDK，但现在的目标是解决 **多 agent、多运行时状态管理** 和 **model team 协作**：协调多个专用模型、跨提供商路由、以及使用共享上下文编排 agent 集群。
+
+受 Claude Code、Codex、Deepagents 等项目启发。Actoviq 保持独立，拥有自己的公开 API 与文档。
+
+## 愿景
+
+- **多 agent**：子代理委派（Task 工具）、panel-analysis 团队、reviewer-auditor 对、动态 workflow —— agent 之间协作，而非单一的 ReAct 循环。
+- **多运行时状态管理**：bridge config 支持预配置多个后端（anthropic / openai / 任意兼容）的 apiKey + baseURL + model，命名切换，对话上下文在切换中保留（同一个 session 对象、同一份 transcript）。
+- **model team 协作**：leader 将每轮分派给最佳 specialist（`/model router`），panel 成员并行调查并收敛，reviewer 只报告可验证的问题 —— team 是 agent 可调用的一等工具。
 
 ## 亮点
 
-- **Model Team** — 主 agent 可调用的只读顾问团队：`panel-analysis`（并行调查 + 可选 primary 收敛）与 `reviewer`（只报告可验证的问题）；每成员独立 provider 配置，$ENV_VAR apiKey 解析，全局 AgentPool
-- **Model Router** — 一个 `/model` 层（不是 team）：对每个回合分类并路由到不同模型/提供商，然后照常运行；配置位于 `~/.actoviq/routers/`
-- **Dynamic Workflows** — JS 脚本多 agent 编排，`agent()`/`parallel()`/`pipeline()` 原语，沙箱运行时，Schema 强制
-- **Worktree 工具** — `EnterWorktree`/`ExitWorktree`，栈式 cwd，`.worktreeinclude`，PR checkout，非 Git VCS hooks
-- **TavilySearch** — AI 优化网络搜索，纯 TypeScript，自动 key 检测
-- **标准 Benchmark** — 自包含跑分框架，DeepSeek judge，HTML 看板，4 agent 对比
-- **TUI/REPL**: `/team`、`/workflows`、`/worktree` 选择面板；`/permissions` 预设（只读 / 工作区 / 完全）；`@` 文件补全；以及实时显示上下文用量百分比与当前模式的状态行
+- **Model Team** — `panel-analysis`（并行调查 + 收敛）和 `reviewer`（只报告可验证问题的审计者）。集中化运行时（`src/team/teamRuntime.ts`），每个成员有稳定身份，流式 `TeamEvent`，每成员独立 provider 配置，全局 AgentPool。
+- **Model Router / Leader-Dispatch** — 每轮由 leader 分派到最佳 specialist（任意模型/提供商），执行者自身也可召集 team。Profile 位于 `~/.actoviq/routers/`。
+- **Dynamic Workflows** — JS 脚本多 agent 编排：`agent()`/`parallel()`/`pipeline()` 原语，沙箱运行时，Schema 强制。
+- **Bridge（命名连接配置）** — 进程内运行时切换：预配置 `anthropic`/`openai` 后端，命名 + apiKey + baseURL + model，命名切换，多轮上下文保留。`/bridge config` 单页编辑器；`/bridge` 列出已保存配置；`/cost` 中按配置展示用量。
+- **桌面 GUI (`actoviq-gui`)** — Electron 聊天 UI：流式 transcript、对话历史、命令面板、设置、每工具权限提示。安全增强。
+- **TUI (`actoviq-tui`)** — 终端 UI，25+ 斜杠命令，Claude Code 风格 UX：`/team`、`/bridge`、`/plan`、`/hooks`、`/mcp`、`/review`、`/context`、`/cost`、`/doctor` 等。实时状态旋转器、滚动 transcript、todo 面板、项目/用户级权限对话框、子命令自动补全。
+- **计划模式 + hooks** — `EnterPlanMode`/`ExitPlanMode` 工具 + 计划文件；`settings.json` 中的 `PreToolUse`/`PostToolUse`/`SessionStart` hooks。
+- **Worktree 工具** — `EnterWorktree`/`ExitWorktree`，栈式 cwd，`.worktreeinclude`，PR checkout。
+- **TavilySearch** — AI 优化网络搜索，纯 TypeScript。
+- **Standard Benchmark** — 自包含框架，DeepSeek judge，HTML dashboard，4-agent 对比。
 
-这个项目参考并借鉴了 Claude Code、Codex、Deepagents 等优秀项目和运行时设计，但 Actoviq 仍然是一个独立维护的公开 SDK 项目，拥有自己的 API 表面和文档体系。
+## 路线图 — 迈向 agent team
 
-项目仍在持续开发中，API 和运行行为后续还会继续打磨。欢迎提交 Issue 和 PR。
+- **Swarm 协作** — 基于邮箱的 agent 间通信、任务队列、共享知识图谱。
+- **持久 team 记忆** — team 级上下文，跨会话和成员变更保留。
+- **跨运行时会话延续** — 恢复 bridge 运行时会话时保留精确位置。
+- **Model team IDE** — 可视化团队构建器、成员角色编辑器、团队健康仪表板。
 
 ## 安装
 
@@ -31,25 +45,25 @@ Actoviq Agent SDK 是一个实验性的 TypeScript Agent SDK，面向多工具�
 npm install actoviq-agent-sdk zod
 ```
 
-本地示例默认读取：
+本地使用，请将配置放在：
 
 ```text
 ~/.actoviq/settings.json
 ```
 
-如果你希望使用自定义 JSON 配置文件，也可以先调用 `loadJsonConfigFile(...)`。
+也可以使用 `loadJsonConfigFile(...)` 预加载自定义 JSON 文件。
 
-## 快速启动
+## 快速开始
 
 ```ts
 import { createAgentSdk, loadDefaultActoviqSettings } from 'actoviq-agent-sdk';
 
 await loadDefaultActoviqSettings();
 
-// 默认：Anthropic 协议
+// 默认 Anthropic 协议
 const sdk = await createAgentSdk();
 
-// 或使用 OpenAI / OpenAI 兼容接口（DeepSeek、vLLM 等）
+// 或使用 OpenAI / OpenAI 兼容 API
 const sdk = await createAgentSdk({
   provider: 'openai',
   baseURL: 'https://api.deepseek.com',
@@ -57,89 +71,71 @@ const sdk = await createAgentSdk({
 });
 
 try {
-  const result = await sdk.run('请用一句话做自我介绍。');
+  const result = await sdk.run('简要介绍一下你自己。');
   console.log(result.text);
 } finally {
   await sdk.close();
 }
 ```
 
-运行仓库自带示例：
+运行仓库示例：
 
 ```bash
 npm run example:actoviq-quickstart
 npm run example:actoviq-agent-helpers
 ```
 
-## CLI 交互式 REPL
+## CLI REPL
 
-安装包后，可以直接在终端启动交互式 REPL：
+安装包后，可以直接从终端启动交互式 scrollback 模式 REPL：
 
 ```bash
 npx actoviq-react [工作目录]
 ```
 
-这是一个基于 readline 的交互式 Agent，特点：
-- 主终端缓冲区实时流式输出（支持原生滚动回看）
-- Tab 补全斜杠命令，包括会话模型、权限、压缩与恢复控制
-- ↑↓ 方向键浏览历史命令
-- Ctrl+C 中止当前请求，连按两次退出
+## 终端 UI (TUI)
 
-**注意：** `actoviq-react` 是一个轻量级滚动 REPL，**不是功能完整的 TUI**。它不使用 alternate screen buffer，不支持 ScrollBox 或富文本终端渲染。适合快速交互和调试。完整终端 UI 请使用下面的 `actoviq-tui`。
-
-## 终端 UI（TUI）
-
-`actoviq-tui` 是 Clean SDK 的完整终端 UI，借鉴 Claude Code REPL 的设计：对话记录直接打印进终端原生滚动缓冲区，底部动态区域承载状态行、Claude 风格 prompt bar、斜杠命令菜单和权限确认对话框。
+`actoviq-tui` 是全功能终端 UI，模拟 Claude Code 的 REPL 设计:
 
 ```bash
 npx actoviq-tui [工作目录] [选项]
 
 # 选项
-#   --config <path>            加载指定的 Actoviq settings JSON 配置
-#   --permission-mode <mode>   default | acceptEdits | plan | bypassPermissions（默认）
-#   --model <model>            覆盖配置中的模型
-#   --resume <session-id>      恢复已保存的 Clean SDK 会话
+#   --config <路径>            加载指定的 Actoviq 设置 JSON 文件
+#   --permission-mode <模式>   default | acceptEdits | plan | bypassPermissions (默认)
+#   --model <模型>             覆盖已配置的模型
+#   --resume <会话ID>          恢复已存储的 Hadamard SDK 会话
 #   --continue                 继续最近更新的会话
 ```
 
-功能特性：
+特性与英文 README 一致，包括上下文管理、bridge config、计划模式、hooks、MCP、诊断等。
 
-- **原生滚动条流式转录** —— 助手文本、`⏺ 工具(参数)` 调用行和 `⎿ ✓/✗` 结果行直接写入终端缓冲区，滚动回看和复制粘贴照常可用。
-- **实时状态行** —— 运行中显示 spinner、耗时、工具次数和当前工具名，并在常驻的模式行上展示「模型 · 权限预设 · 推理强度 · 当前团队」以及**以窗口百分比表示的上下文用量**（接近上限时依次变黄、变红）。
-- **Claude 风格 prompt bar** —— 行尾输入 `\` 再按 `Enter`（或 `Ctrl+J`）换行；`↑`/`↓` 浏览历史；光标内联渲染。
-- **斜杠命令菜单** —— 输入 `/` 弹出过滤菜单（`↑↓` 选择、`Tab` 补全、`Enter` 执行）。直接运行 `/resume` 会打开可搜索的项目会话选择器，`/resume <session-id>` 仍可按 ID 直接恢复。
-- **`@` 文件补全** —— 输入 `@` 弹出按已输入路径过滤的工作区文件选择器；`↑↓` 选择、`Tab`/`Enter` 插入。文件列表基于 git（已跟踪 + 未跟踪，遵循 `.gitignore`），每次运行后自动刷新。
-- **团队 / 工作流 / worktree 选择面板** —— `/team` 将某个已保存的 Model Team（或「无团队」）激活为 agent 可调用的工具；`/workflows` 运行已保存的动态工作流；`/worktree` 进入、退出或列出 git worktree。直接命令形式同样可用（`/team ask <name> <prompt>`、`/workflows run <name>`、`/worktree enter <name>`）。
-- **权限预设** —— `/permissions` 可在**只读**、**工作区访问**（自动批准工作区内的编辑）和**完全访问**（bypass）预设之间切换，无需重启。
-- **运行时能力目录** —— `/skills`、`/agents`、`/mcp` 和 `/plugins` 用于浏览当前工作区可见的 Clean SDK 能力；`/help` 提供可搜索的命令说明。
-- **模型与推理强度** —— `/model` 打开模型选择器，`/model config` 可配置提供商、隐藏显示的 API key、base URL 和 `min`/`medium`/`max` 模型分级；`/effort` 可选择 `low`、`medium`、`high`、`max` 或交给提供商自动决定。
-- **Dream 控制** —— `/dream` 打开运行/状态选择器，也可以直接使用 `/dream run` 和 `/dream status`。
-- **运行中追加指令（steering）** —— Agent 工作时可以继续输入并按 `Enter`：消息进入队列（显示 `⧗ queued`），并在下一次模型请求时注入。
-- **权限对话框** —— 使用 `--permission-mode default` 时，变更型工具会暂停并弹出 批准 / 始终允许 / 拒绝 对话框。“始终允许”规则会随会话保存并在恢复时继续生效。
-- **中断控制** —— `Esc` 中止当前运行；`Ctrl+C` 清空输入（连按两次退出）；空输入时 `Ctrl+D` 退出。
-- **内置上下文管理** —— Clean SDK 会在长会话中自动压缩上下文，并在服务端拒绝超长请求时反应式压缩恢复；压缩以 `∿ context compacted` 提示呈现。
+## 桌面 GUI (`actoviq-gui`)
 
-两个 CLI 共享同样的 Clean SDK 运行时默认值（`~/.actoviq/settings.json` 配置、核心工具、`bypassPermissions`、不限工具迭代次数），可对接任何 Anthropic 兼容或 OpenAI 兼容的模型服务。
+```bash
+npx actoviq-gui [工作目录] [选项]
+```
 
-默认情况下，Clean SDK 会话按当前工作区隔离保存在 `~/.actoviq/projects/<workspace-key>`。显式设置的 `sessionDirectory` 仍具有最高优先级。
+## 开发者笔记
 
-模型分级使用与提供商无关的别名。通过 `ACTOVIQ_DEFAULT_MIN_MODEL`、`ACTOVIQ_DEFAULT_MEDIUM_MODEL` 和 `ACTOVIQ_DEFAULT_MAX_MODEL` 配置后，可以在任何模型选择位置使用 `min`、`medium` 或 `max`。
+- **启动 CLI/GUI 前构建：** `npm run build`（clean + `tsc`）。仅类型检查用 `npm run typecheck`；运行测试套件用 `npm test -- --run`。
+- **Team 行为集中化：** 通过 `src/team/teamRuntime.ts` 扩展团队，而非在每个模式中重复逻辑。
+- **Router profile 是 leader/dispatch 配置：** 内置 `dispatch` profile；用户同名文件会覆盖内置。
+- 贡献者文档统一放在 README 与 `docs/` 目录。
 
-## 教程入口
+## 教程
 
-- English tutorial: [docs/en/README.md](./docs/en/README.md)
-- 中文教程: [docs/zh/README.md](./docs/zh/README.md)
-- GitHub Pages 文档站：
-  - https://deconbear.github.io/actoviq-agent-sdk/
+- 英文教程：[docs/en/README.md](./docs/en/README.md)
+- 中文教程：[docs/zh/README.md](./docs/zh/README.md)
+- GitHub Pages 文档站：https://deconbear.github.io/actoviq-agent-sdk/
 
-推荐从这里开始上手：
-
+入口示例：
 - [examples/actoviq-quickstart.ts](./examples/actoviq-quickstart.ts)
 - [examples/actoviq-workflow.ts](./examples/actoviq-workflow.ts)
 - [examples/actoviq-agent-helpers.ts](./examples/actoviq-agent-helpers.ts)
 
-## 欢迎贡献
+## 参与贡献
 
-欢迎贡献代码、文档和示例。如果你发现问题或教程缺口，都欢迎提 Issue 或直接发 PR。
+欢迎贡献。发现问题或文档缺失，请提交 Issue 或 Pull Request。
 
-项目采用 [MIT License](./LICENSE)。
+基于 [MIT License](./LICENSE) 许可。
