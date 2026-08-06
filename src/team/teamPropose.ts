@@ -10,7 +10,12 @@ import {
   validateTeamGraph,
 } from './teamGraph.js';
 
-export type TeamProposeSquadType = 'graph' | 'workflow' | 'subagent';
+export type TeamProposeSquadType = 'graph' | 'workflow' | 'agent' | 'subagent';
+
+/** True for single-agent squads (`agent` or legacy `subagent`). */
+export function isSingleAgentSquadType(squadType: string | undefined): boolean {
+  return squadType === 'agent' || squadType === 'subagent';
+}
 
 export interface TeamProposeResult {
   definition: TeamDefinition | null;
@@ -37,9 +42,9 @@ Return { "explanation": string, "definition": { name, squadType:"workflow", mode
 workflowTree nodes: { id, type:"agent"|..., label, prompt?, children? }.
 No markdown fences.`;
   }
-  if (squadType === 'subagent') {
-    return `You design a single-agent (subagent) squad as JSON only.
-Return { "explanation": string, "definition": { name, squadType:"subagent", mode:"graph", members:[one agent with role/prompt/model/tools] } }.
+  if (isSingleAgentSquadType(squadType)) {
+    return `You design a single-agent squad as JSON only.
+Return { "explanation": string, "definition": { name, squadType:"agent", mode:"graph", members:[one agent with role/prompt/model/tools] } }.
 No markdown fences.`;
   }
   return GRAPH_CONTRACT;
@@ -119,8 +124,8 @@ export function finalizeTeamProposeDraft(
   if (squadType === 'workflow' && !named.workflowTree) {
     problems.push('workflow squad requires workflowTree');
   }
-  if (squadType === 'subagent' && !(named.members?.length)) {
-    problems.push('subagent squad requires at least one member');
+  if (isSingleAgentSquadType(squadType) && !(named.members?.length)) {
+    problems.push('agent squad requires at least one member');
   }
   return { definition: named, problems, explanation, rawText };
 }

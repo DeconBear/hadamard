@@ -475,6 +475,7 @@ export type {
 export {
   ModelTeam,
   createModelTeam,
+  askTeamDefinition,
   createTeamTool,
   formatExpertPanelReports,
   resolveGraphDisplayAnswer,
