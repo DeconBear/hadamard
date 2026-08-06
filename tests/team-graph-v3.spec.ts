@@ -253,13 +253,18 @@ describe('void Return display answer', () => {
 });
 
 describe('runtime / disk / GUI consistency', () => {
-  it('built-in presets are graph v3 JSON with Task and Return ports', async () => {
+  it('graph built-in presets are graph v3 JSON with Task and Return ports', async () => {
     const { BUILT_IN_TEAM_DEFINITIONS } = await import('../src/team/teamDefinitions.js');
     const { graphNodeKind } = await import('../src/team/teamGraph.js');
     const { TEAM_READ_ONLY_EXPERT_TOOL_NAMES } = await import('../src/team/teamRuntime.js');
     for (const [name, def] of Object.entries(BUILT_IN_TEAM_DEFINITIONS)) {
       expect(def.mode, name).toBe('graph');
       expect(def.version, name).toBe(3);
+      const squadType = def.squadType || 'graph';
+      if (squadType !== 'graph') {
+        expect(['workflow', 'agent', 'subagent']).toContain(squadType);
+        continue;
+      }
       expect(def.nodes?.some((n) => n.kind === 'task'), name).toBe(true);
       expect(def.nodes?.some((n) => n.kind === 'return'), name).toBe(true);
       expect(validateTeamGraphV3(def), name).toEqual([]);

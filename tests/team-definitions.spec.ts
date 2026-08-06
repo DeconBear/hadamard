@@ -137,6 +137,29 @@ describe('Team definitions from disk', () => {
     expect(agents[1].apiKey).toBeUndefined();
   });
 
+  it('exposes built-in presets with graph, workflow, and agent squad types', () => {
+    expect(BUILT_IN_TEAM_DEFINITIONS['panel-analysis']!.squadType || 'graph').toBe('graph');
+    expect(BUILT_IN_TEAM_DEFINITIONS['security-audit']!.squadType || 'graph').toBe('graph');
+    expect(BUILT_IN_TEAM_DEFINITIONS['panel-analysis']!.nodes?.some((n) => n.kind === 'task')).toBe(true);
+    expect(BUILT_IN_TEAM_DEFINITIONS['security-audit']!.nodes?.some((n) => n.kind === 'return')).toBe(true);
+
+    const analysis = BUILT_IN_TEAM_DEFINITIONS['analysis']!;
+    expect(analysis.squadType).toBe('workflow');
+    expect(analysis.workflowTree?.type).toBe('parallel');
+    expect(analysis.workflowTree?.children.map((c) => c.id)).toEqual(['researcher', 'skeptic']);
+    expect(analysis.nodes?.length ?? 0).toBe(0);
+
+    const reviewer = BUILT_IN_TEAM_DEFINITIONS['reviewer']!;
+    expect(reviewer.squadType).toBe('agent');
+    expect(reviewer.members).toHaveLength(1);
+    expect(reviewer.members[0]?.name).toBe('reviewer');
+    expect(reviewer.nodes?.length ?? 0).toBe(0);
+
+    const quick = BUILT_IN_TEAM_DEFINITIONS['quick-review']!;
+    expect(quick.squadType).toBe('agent');
+    expect(quick.members[0]?.name).toBe('quick-reviewer');
+  });
+
   it('lists all team definitions', async () => {
     await saveTeamDefinition(panelDef, { projectDir: tmpDir });
     const reviewerDef: TeamDefinition = {

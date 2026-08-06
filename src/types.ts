@@ -2963,9 +2963,10 @@ export interface TeamDefinition {
    * Squad kind — drives which editor the GUI shows. Absent → 'graph' (back-compat).
    * - `graph`: collaboration graph (Task → agents → Return), the existing editor.
    * - `workflow`: linear/tree work-flow node editor (Phase 3 — visual work tree).
-   * - `subagent`: a single configured agent (prompt + tools + workspace + runtime).
+   * - `agent`: a single configured agent (prompt + tools + workspace + runtime).
+   * - `subagent`: legacy alias of `agent` (still accepted when loading).
    */
-  squadType?: 'graph' | 'workflow' | 'subagent';
+  squadType?: 'graph' | 'workflow' | 'agent' | 'subagent';
   /** Workflow squad only: the execution tree. */
   workflowTree?: WorkflowNode;
   /** Panel members (panel-analysis / its `panel`+`analysis` aliases). */

@@ -24,6 +24,8 @@ import { buildGraphNodeTools, canonicalizeTeamDefinition, createNotifyTeammateTo
 import { listTeamAgentLabels, loadTeamDefinition } from './teamDefinitions.js';
 import { resolveGraphNodeSystemPrompt } from './teamPrompts.js';
 import { AgentPool } from './agentPool.js';
+import { isSingleAgentSquadType } from './teamPropose.js';
+import { runSingleAgentSquad, runWorkflowSquad } from './workflowSquad.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Helpers
@@ -394,6 +396,34 @@ export function createModelTeam(
   return new ModelTeam(definition);
 }
 
+/** Dispatch a team ask by squadType (graph / workflow / agent). */
+export async function askTeamDefinition(
+  definition: TeamDefinition,
+  prompt: string,
+  signal?: AbortSignal,
+  opts?: TeamAskOptions,
+): Promise<ModelTeamResult> {
+  const squadType = definition.squadType || 'graph';
+  const workDir = opts?.workDir || process.cwd();
+  const abort = signal ?? new AbortController().signal;
+  if (squadType === 'workflow') {
+    return runWorkflowSquad(definition, prompt, abort, workDir, opts?.onEvent);
+  }
+  if (isSingleAgentSquadType(squadType)) {
+    return runSingleAgentSquad(definition, prompt, abort, workDir, opts?.onEvent, {
+      context: opts?.context,
+    });
+  }
+  return createModelTeam(definition).ask(prompt, signal, opts);
+}
+
+function isReviewerLikeAgent(definition: TeamDefinition): boolean {
+  if (!isSingleAgentSquadType(definition.squadType)) return false;
+  const member = definition.members?.[0];
+  const haystack = `${definition.name} ${member?.role || ''} ${member?.name || ''}`.toLowerCase();
+  return haystack.includes('review');
+}
+
 function validateTeamDefinition(def: TeamDefinition): void {
   if (!def.name) throw new Error('Team definition must have a name.');
   if (!def.mode && def.orchestration !== 'graph') {
@@ -443,8 +473,13 @@ function inferTeamToolProfile(definition: TeamDefinition): 'reviewer' | 'panel' 
 export function createTeamTool(
   definition: TeamDefinition,
 ): AgentToolDefinition {
-  const team = createModelTeam(definition);
-  const profile = inferTeamToolProfile(team.definition);
+  const squadType = definition.squadType || 'graph';
+  const isWorkflow = squadType === 'workflow';
+  const isAgent = isSingleAgentSquadType(squadType);
+  const team = isWorkflow || isAgent ? null : createModelTeam(definition);
+  const profile = team
+    ? inferTeamToolProfile(team.definition)
+    : (isAgent && isReviewerLikeAgent(definition) ? 'reviewer' : isWorkflow ? 'panel' : 'graph');
   const isReviewer = profile === 'reviewer';
   const isPanel = profile === 'panel';
   const isGraph = profile === 'graph';
@@ -456,11 +491,15 @@ export function createTeamTool(
       definition.description ??
       (isReviewer
         ? 'Reviewer: a single read-only agent inspects the project and reports only genuine, verifiable issues. Pass { task } (what to check) and optional { context } (what you did + the results). It advises; you decide.'
-        : isPanel
-          ? 'Expert panel: independent read-only multi-model analysis (advisory; optional primary-driven convergence). You decide what to do with the findings.'
-          : isGraph
-            ? 'Agent collaboration graph: entry nodes investigate in parallel and hand off downstream along on_complete edges (wait-all joins). Pass { prompt }; the terminal node reports come back as the answer.'
-            : `Multi-model team (${definition.mode} mode)`),
+        : isWorkflow
+          ? 'Workflow agent: run a tree of agent/branch/parallel steps. Pass { prompt }.'
+          : isAgent
+            ? 'Single agent: run one configured agent with its system prompt. Pass { prompt }.'
+            : isPanel
+              ? 'Expert panel: independent read-only multi-model analysis (advisory; optional primary-driven convergence). You decide what to do with the findings.'
+              : isGraph
+                ? 'Agent collaboration graph: entry nodes investigate in parallel and hand off downstream along on_complete edges (wait-all joins). Pass { prompt }; the terminal node reports come back as the answer.'
+                : `Multi-model team (${definition.mode} mode)`),
     inputSchema: {
       parse: (input: unknown) => input as { prompt: string },
       _type: undefined,
@@ -481,13 +520,9 @@ export function createTeamTool(
             prompt: { type: 'string', description: 'The question or task for the team' },
           },
           required: ['prompt'],
-          // Tolerate extra fields the model may add — a strict schema here caused
-          // intermittent "schema error" rejections that silently skipped the panel.
           additionalProperties: true,
         },
     async execute(input: unknown, context) {
-      // Accept the call however the model phrases it (bare string or any of a few
-      // common keys) so a formatting quirk never drops the invocation.
       const obj = (input ?? {}) as Record<string, unknown>;
       if (isReviewer) {
         const taskCandidate = typeof input === 'string' ? input : obj.task ?? obj.prompt ?? obj.question ?? obj.input;
@@ -496,7 +531,7 @@ export function createTeamTool(
           throw new Error(`Reviewer "${definition.name}" requires a non-empty "task" string.`);
         }
         const reviewerContext = typeof obj.context === 'string' ? obj.context : undefined;
-        const result = await team.ask(task, context.signal, {
+        const result = await askTeamDefinition(definition, task, context.signal, {
           context: reviewerContext,
           workDir: context.cwd,
           permissionMode: context.permissionMode,
@@ -521,7 +556,7 @@ export function createTeamTool(
       if (!prompt) {
         throw new Error(`Team "${definition.name}" requires a non-empty "prompt" string.`);
       }
-      const result = await team.ask(prompt, context.signal, {
+      const result = await askTeamDefinition(definition, prompt, context.signal, {
         workDir: context.cwd,
         permissionMode: context.permissionMode,
         permissions: context.permissions,
@@ -545,16 +580,20 @@ export function createTeamTool(
     interruptBehavior: 'block',
     isConcurrencySafe: () => false,
     prompt: async () => [
-      `## ${definition.name} (Model Team: graph)`,
+      `## ${definition.name} (Model Team: ${isWorkflow ? 'workflow' : isAgent ? 'agent' : 'graph'})`,
       definition.description ?? '',
       '',
       isReviewer
         ? 'Call this tool with { task } (what to scrutinize) and optional { context } (what you did and the results you got). A single read-only agent inspects the code/web and reports only issues it can verify — no speculation. You keep final authority; re-invoke after changes to re-check.'
-        : isPanel
-          ? 'Call this tool with a { prompt } to have an expert panel of independent read-only agents investigate (read local code + search the web) and each return a findings report. They only analyze and advise — you keep full control and decide what to do with their input. With a configured primary the panel also converges over multiple rounds into a synthesized answer. Use it to assist analysis on large or complex tasks.'
-          : 'Call this tool with a { prompt } to get a multi-model synthesized answer.',
+        : isWorkflow
+          ? 'Call this tool with a { prompt } to run the workflow tree.'
+          : isAgent
+            ? 'Call this tool with a { prompt } to run this single agent.'
+            : isPanel
+              ? 'Call this tool with a { prompt } to have an expert panel of independent read-only agents investigate (read local code + search the web) and each return a findings report. They only analyze and advise — you keep full control and decide what to do with their input. With a configured primary the panel also converges over multiple rounds into a synthesized answer. Use it to assist analysis on large or complex tasks.'
+              : 'Call this tool with a { prompt } to get a multi-model synthesized answer.',
       isReviewer
-        ? `Reviewer: ${definition.reviewer?.model ?? 'configured via definition'}`
+        ? `Reviewer: ${definition.members?.[0]?.model || definition.reviewer?.model || 'session model'}`
         : isGraph
           ? `Nodes: ${listTeamAgentLabels(definition).join(' → ') || 'configured via definition'}`
           : `Agents: ${listTeamAgentLabels(definition).join(', ') || 'configured via definition'}`,
