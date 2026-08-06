@@ -186,24 +186,26 @@ Assembles all 22+ tools into a single array. Accepts options for:
 export function createHadamardCoreTools(
   options: HadamardCoreToolsOptions = {},
 ): AgentToolDefinition[] {
-  return [
-    // File tools
+  const tools = [
     ...createHadamardFileTools({ cwd: options.cwd }),
-    // Shell tools
-    createBashTool({ cwd: options.cwd }),
-    createPowerShellTool({ cwd: options.cwd }),
-    // Task tools
-    ...createHadamardTaskTools(),
-    // Interaction
+    createBashTool(),
     createTodoWriteTool(),
     createAskUserQuestionTool(),
-    // Meta
-    ...createHadamardMiscTools(options),
-    // Web
     ...createHadamardWebTools(),
-    // Agent delegation
-    ...(hasAgents ? createHadamardTaskTools({ agents: options.agents }) : []),
+    createNotebookEditTool(),
+    createPowerShellTool(),
+    // EnterWorktree / ExitWorktree (default on)
+    createEnterWorktreeTool(getWorktreeService),
+    createExitWorktreeTool(getWorktreeService),
   ];
+  // Opt-in only — the SDK injects real Task/Skill tools at runtime.
+  // Do not enable these stubs alongside agentClient defaults.
+  if (options.taskTools === true) tools.push(...createHadamardTaskTools());
+  if (options.miscTools === true) tools.push(...createHadamardMiscTools());
+  // TavilySearch auto-loads when TAVILY_API_KEY is set.
+  // ExaSearch is not in core tools; enable via managed plugin "exa"
+  // (EXA_API_KEY or ~/.exa/config.json).
+  return tools;
 }
 ```
 

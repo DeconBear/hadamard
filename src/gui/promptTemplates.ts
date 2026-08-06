@@ -191,6 +191,3 @@ export async function deletePromptTemplate(homeDir: string, id: string): Promise
   return true;
 }
 
-export function getBuiltinTemplate(id: string): PromptTemplate | undefined {
-  return BUILTIN_PROMPT_TEMPLATES.find((t) => t.id === id);
-}

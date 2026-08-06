@@ -14,6 +14,7 @@ import { captureDesktopRegionScreenshot, captureDesktopScreenshot, ScreenshotCan
 import { tool } from '../runtime/tools.js';
 import { TerminalManager, ptyAvailable, isWindowsTerminalShellPreference, type WindowsTerminalShellPreference } from './terminalManager.js';
 import {
+  getProjectWorkbenchClientHelpers,
   parseGitCommitLog,
   readGitDiffAsync,
   readWorkspaceFile,
@@ -174,6 +175,9 @@ import {
   writeHadamardExternalSkillPreferences,
   summarizeHadamardHome,
   saveTeamDefinition,
+  deleteTeamDefinition,
+  deleteWorkflow,
+  saveWorkflow,
   setScheduledAutomationEnabled,
   TaskScheduler,
   upsertScheduledAutomationTask,
@@ -351,7 +355,7 @@ import {
   writeProjectSettings,
   type ProjectMemorySettingsPatch,
   type ProjectSettings,
-} from './projectSettings.js';
+} from '../config/projectSettings.js';
 import {
   createPromptTemplate,
   deletePromptTemplate,
@@ -5163,8 +5167,36 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           const split = rest.indexOf(' ');
           return runWorkflow(split === -1 ? rest : rest.slice(0, split), split === -1 ? undefined : rest.slice(split + 1).trim());
         }
+        if (args.startsWith('delete ')) {
+          const name = args.slice(7).trim();
+          if (!name) return [{ type: 'error', message: 'usage: /workflows delete <name>' }];
+          const removed = await deleteWorkflow(name, workDir);
+          return [{ type: 'notice', message: removed ? `deleted workflow: ${name}` : `workflow not found: ${name}` }];
+        }
+        if (args.startsWith('save ')) {
+          const rest = args.slice(5).trim();
+          const split = rest.indexOf(' ');
+          if (split === -1) {
+            return [{ type: 'error', message: 'usage: /workflows save <name> <script-path> [--overwrite]' }];
+          }
+          const name = rest.slice(0, split).trim();
+          const pathParts = rest.slice(split + 1).trim().split(/\s+/);
+          const overwrite = pathParts.includes('--overwrite');
+          const scriptPath = pathParts.filter(part => part !== '--overwrite').join(' ');
+          if (!name || !scriptPath) {
+            return [{ type: 'error', message: 'usage: /workflows save <name> <script-path> [--overwrite]' }];
+          }
+          try {
+            const resolved = path.isAbsolute(scriptPath) ? scriptPath : path.resolve(workDir, scriptPath);
+            const script = await readFile(resolved, 'utf8');
+            const filePath = await saveWorkflow(name, script, { projectDir: workDir, overwrite });
+            return [{ type: 'notice', message: `saved workflow: ${name} → ${filePath}` }];
+          } catch (error) {
+            return [{ type: 'error', message: error instanceof Error ? error.message : String(error) }];
+          }
+        }
         if (args && args !== 'list') {
-          return [{ type: 'error', message: 'usage: /workflows [list|run <name> [task]]' }];
+          return [{ type: 'error', message: 'usage: /workflows [list|run <name> [task]|save <name> <script-path>|delete <name>]' }];
         }
         return [{
           type: 'command.result',
@@ -5257,6 +5289,22 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             return [{ type: 'error', message: `clone failed: ${error.message}` }];
           }
         }
+        if (args.startsWith('delete ')) {
+          const teamName = args.slice(7).trim();
+          if (!teamName) return [{ type: 'error', message: 'usage: /team delete <name>' }];
+          if (getBuiltInTeamDefinition(teamName)) {
+            return [{ type: 'error', message: `cannot delete built-in team: ${teamName}` }];
+          }
+          return runtimeMutationCommand(async () => {
+            const removed = await deleteTeamDefinition(teamName, workDir);
+            if (!removed) return [{ type: 'error', message: `team not found: ${teamName}` }];
+            if (activeTeamName === teamName) {
+              activeTeamTool = null;
+              activeTeamName = null;
+            }
+            return [{ type: 'notice', message: `deleted team: ${teamName}` }, { type: 'state' }];
+          });
+        }
         if (args.startsWith('ask ')) {
           const rest = args.slice(4).trim();
           const split = rest.indexOf(' ');
@@ -5270,7 +5318,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           lastTeamRunSummary = `${teamName} · ${result.mode} · ${Math.round(result.durationMs / 1000)}s`;
           return [{ type: 'command.result', title: `Team response · ${result.mode}`, text: result.answer }];
         }
-        return [{ type: 'error', message: 'usage: /team [list|attach <name>|off|ask <name> <prompt>|clone <source> <new>|status]' }];
+        return [{ type: 'error', message: 'usage: /team [list|attach <name>|off|ask <name> <prompt>|clone <source> <new>|delete <name>|status]' }];
       }
       case 'issues': {
         const homeDir = resolveGuiHomeDir();
@@ -10795,7 +10843,6 @@ export function createHadamardGuiHtml(): string {
         <h2>Agent</h2>
         <button type="button" class="settings-tab" data-settings-tab="capabilities"><span class="settings-icon">${guiIcon('tools')}</span>Capabilities</button>
         <button type="button" class="settings-tab" data-settings-tab="sessions"><span class="settings-icon">${guiIcon('chat')}</span>Chats</button>
-        <button type="button" class="settings-tab" data-settings-tab="memory"><span class="settings-icon">${guiIcon('memory')}</span>Memory</button>
       </section>
       <section>
         <h2>Integrations</h2>
@@ -11006,17 +11053,6 @@ export function createHadamardGuiHtml(): string {
           <h2>Archived</h2>
           <p class="muted">Archived chats are hidden from the session list but preserved on disk. Restore to make them visible again, or permanently delete them.</p>
           <div id="settingsArchivedList" class="settings-card-list"></div>
-        </div>
-      </section>
-      <section class="settings-panel" data-settings-panel="memory">
-        <h1>Memory</h1>
-        <div class="settings-group">
-          <p>Hadamard keeps two independent layers: <strong>compact</strong> for current-chat continuity and <strong>Durable Memory</strong> for project knowledge consolidated by Dream.</p>
-        </div>
-        <div class="settings-group">
-          <h2>Global defaults</h2>
-          <p>Durable Memory reads default to on, and automatic Dream always defaults to off.</p>
-          <p class="muted">Project documents (Design, Memory, Plans) and Dream settings live in Project details → Document and Project settings → Memory.</p>
         </div>
       </section>
       <section class="settings-panel" data-settings-panel="mcp">
@@ -12749,6 +12785,11 @@ body[data-sidebar-mode="nav"] .sidebar .sidebar-footer .nav-btn span:not(.nav-ic
 .aux-file-row, .aux-browser-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border-radius: 7px; border: 0; background: transparent; color: var(--text-1); font-size: 13px; text-align: left; cursor: pointer; }
 .aux-file-row:hover, .aux-browser-row:hover { background: rgba(0,0,0,.05); }
 .aux-file-row .ui-icon, .aux-browser-row .ui-icon { width: 15px; height: 15px; color: var(--text-2); flex: 0 0 auto; }
+.aux-browser-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; height: 100%; }
+.aux-browser-bar { flex: 0 0 auto; }
+.aux-browser-frame-host { flex: 1 1 auto; min-height: 240px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; }
+.aux-browser-frame { display: block; width: 100%; height: 100%; min-height: 240px; border: 0; }
+.aux-file-preview { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-muted); font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: calc(100% - 40px); overflow: auto; }
 .aux-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aux-path-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .aux-path-bar input { flex: 1; min-width: 0; height: 30px; border: 1px solid var(--border); border-radius: 7px; padding: 0 10px; font-size: 12.5px; background: var(--bg-surface); color: var(--text-1); }
@@ -14740,78 +14781,9 @@ export function createHadamardGuiClientScript(): string {
     computeTeamGraphAutoLayoutLanes.toString(),
     getTeamGraphBezierClientScript(),
   ].join('\n');
-  // Hand-written browser copies — avoid Function#toString leaking TS annotations under tsx.
-  const workbenchHelpers = `
-function splitGitStatus(status) {
-  const staged = [];
-  const unstaged = [];
-  for (const entry of status) {
-    const x = entry.x || '';
-    const y = entry.y || '';
-    if (x && x !== '?') staged.push(entry);
-    if ((y && y !== '?') || x === '?') unstaged.push(entry);
-  }
-  return { staged, unstaged };
-}
-function buildPathTree(leaves) {
-  const root = { name: '', relPath: '', kind: 'dir', children: [], childMap: new Map() };
-  for (const leaf of leaves) {
-    const parts = leaf.file.replace(/\\\\/g, '/').split('/').filter(Boolean);
-    if (parts.length === 0) continue;
-    let node = root;
-    let rel = '';
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      rel = rel ? rel + '/' + part : part;
-      const isFile = i === parts.length - 1;
-      if (!node.childMap) node.childMap = new Map();
-      let next = node.childMap.get(part);
-      if (!next) {
-        next = {
-          name: part,
-          relPath: rel,
-          kind: isFile ? 'file' : 'dir',
-          children: isFile ? undefined : [],
-          childMap: isFile ? undefined : new Map(),
-        };
-        node.childMap.set(part, next);
-        if (!node.children) node.children = [];
-        node.children.push(next);
-      } else if (isFile) {
-        next.kind = 'file';
-      }
-      if (isFile) {
-        next.badge = leaf.badge;
-        next.entry = leaf.entry;
-      }
-      node = next;
-    }
-  }
-  function sortNode(node) {
-    if (node.children && node.childMap) {
-      node.children.sort((a, b) => {
-        if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1;
-        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-      });
-      node.children = node.children.map((child) => sortNode(child));
-    }
-    const clean = { name: node.name, relPath: node.relPath, kind: node.kind };
-    if (node.children) clean.children = node.children;
-    if (node.badge) clean.badge = node.badge;
-    if (node.entry) clean.entry = node.entry;
-    return clean;
-  }
-  return (root.children || []).map((child) => sortNode(child));
-}
-function gitStatusBadge(entry, side) {
-  if (side === 'staged') return entry.x || 'M';
-  if (entry.x === '?' || entry.y === '?') return 'U';
-  return entry.y || entry.x || 'M';
-}
-`;
   return `
 ${getTranscriptClientScript()}
-${workbenchHelpers}
+${getProjectWorkbenchClientHelpers()}
 const HADAMARD_TOKEN = window.__HADAMARD_TOKEN__ || '';
 // Client-side icon helper. eye/eyeOff are runtime-toggled; the workbench tab
 // bar is rendered client-side, so the pane icons it needs live here too.
@@ -14967,6 +14939,7 @@ const state = {
   auxFocused: false,
   auxPanelWidth: 340,
   filesBrowsePath: null,
+  browserUrl: 'https://',
   filesTreeExpanded: {},
   filesTreeCache: {},
   filesSelectedPath: null,
@@ -15721,32 +15694,125 @@ function renderAuxBrowser() {
   head.className = 'aux-view-header';
   head.innerHTML = '<span class="aux-view-title">Browser</span>';
   const body = document.createElement('div');
-  body.className = 'aux-view-body';
+  body.className = 'aux-view-body aux-browser-body';
   const bar = document.createElement('div');
-  bar.className = 'aux-path-bar';
+  bar.className = 'aux-path-bar aux-browser-bar';
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'pill-btn';
+  back.title = 'Back';
+  back.textContent = '←';
+  const forward = document.createElement('button');
+  forward.type = 'button';
+  forward.className = 'pill-btn';
+  forward.title = 'Forward';
+  forward.textContent = '→';
+  const reload = document.createElement('button');
+  reload.type = 'button';
+  reload.className = 'pill-btn';
+  reload.title = 'Reload';
+  reload.textContent = '↻';
   const input = document.createElement('input');
   input.type = 'url';
   input.placeholder = 'https://…';
-  input.value = 'https://';
+  input.value = state.browserUrl || 'https://';
   const go = document.createElement('button');
   go.type = 'button';
   go.className = 'pill-btn';
-  go.textContent = 'Open';
-  const openUrl = () => {
-    const raw = (input.value || '').trim();
-    if (!raw || raw === 'https://') return;
-    const url = /^https?:\/\//i.test(raw) ? raw : ('https://' + raw);
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-  go.addEventListener('click', openUrl);
-  input.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); openUrl(); } });
-  bar.append(input, go);
+  go.textContent = 'Go';
+  const external = document.createElement('button');
+  external.type = 'button';
+  external.className = 'pill-btn';
+  external.title = 'Open in system browser';
+  external.textContent = '↗';
+  const frameHost = document.createElement('div');
+  frameHost.className = 'aux-browser-frame-host';
+  const canWebview = typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent || '');
+  let frame = null;
+  if (canWebview) {
+    frame = document.createElement('webview');
+    frame.className = 'aux-browser-frame';
+    frame.setAttribute('allowpopups', 'false');
+  } else {
+    frame = document.createElement('iframe');
+    frame.className = 'aux-browser-frame';
+    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups');
+    frame.setAttribute('referrerpolicy', 'no-referrer');
+  }
+  frameHost.appendChild(frame);
   const hint = document.createElement('p');
   hint.className = 'muted';
   hint.style.fontSize = '12.5px';
-  hint.textContent = 'Quick-open uses the system browser. Enable Settings → Browser for agent Playwright tools (snapshot / click / type).';
-  body.append(bar, hint);
+  hint.textContent = canWebview
+    ? 'In-app preview. Use ↗ to open in the system browser. Agent Playwright tools remain under Customize → Plugins.'
+    : 'Preview uses an embedded frame (some sites block embedding). Use ↗ for the system browser. Agent Playwright tools remain under Customize → Plugins.';
+  const normalizeUrl = (raw) => {
+    const value = (raw || '').trim();
+    if (!value || value === 'https://') return '';
+    return /^https?:\/\//i.test(value) ? value : ('https://' + value);
+  };
+  const syncAddress = (url) => {
+    if (!url) return;
+    state.browserUrl = url;
+    if (document.activeElement !== input) input.value = url;
+  };
+  const navigate = (raw) => {
+    const url = normalizeUrl(raw);
+    if (!url) return;
+    syncAddress(url);
+    try {
+      if (canWebview && typeof frame.loadURL === 'function') frame.loadURL(url);
+      else frame.src = url;
+    } catch (_) {
+      frame.src = url;
+    }
+  };
+  const openExternal = () => {
+    const url = normalizeUrl(input.value || state.browserUrl || '');
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+  go.addEventListener('click', () => navigate(input.value));
+  external.addEventListener('click', openExternal);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); navigate(input.value); }
+  });
+  back.addEventListener('click', () => {
+    try {
+      if (canWebview && typeof frame.goBack === 'function' && frame.canGoBack && frame.canGoBack()) frame.goBack();
+      else if (frame.contentWindow) frame.contentWindow.history.back();
+    } catch (_) {}
+  });
+  forward.addEventListener('click', () => {
+    try {
+      if (canWebview && typeof frame.goForward === 'function' && frame.canGoForward && frame.canGoForward()) frame.goForward();
+      else if (frame.contentWindow) frame.contentWindow.history.forward();
+    } catch (_) {}
+  });
+  reload.addEventListener('click', () => {
+    try {
+      if (canWebview && typeof frame.reload === 'function') frame.reload();
+      else if (frame.contentWindow) frame.contentWindow.location.reload();
+      else navigate(input.value || state.browserUrl);
+    } catch (_) {
+      navigate(input.value || state.browserUrl);
+    }
+  });
+  if (canWebview) {
+    frame.addEventListener('did-navigate', (event) => syncAddress(event.url || frame.getURL?.() || ''));
+    frame.addEventListener('did-navigate-in-page', (event) => syncAddress(event.url || frame.getURL?.() || ''));
+    frame.addEventListener('page-title-updated', (event) => {
+      if (event.title) head.querySelector('.aux-view-title').textContent = event.title;
+    });
+  } else {
+    frame.addEventListener('load', () => {
+      try { syncAddress(frame.contentWindow?.location?.href || frame.src); } catch (_) {}
+    });
+  }
+  bar.append(back, forward, reload, input, go, external);
+  body.append(bar, frameHost, hint);
   view.append(head, body);
+  if (state.browserUrl && state.browserUrl !== 'https://') navigate(state.browserUrl);
 }
 async function renderAuxFiles(targetPath) {
   const view = el('auxView');
@@ -15811,7 +15877,7 @@ async function renderAuxFiles(targetPath) {
         row.addEventListener('click', () => { renderAuxFiles(entry.path).catch(console.error); });
       } else {
         row.title = entry.path;
-        row.addEventListener('click', () => { flashStatus(entry.name); });
+        row.addEventListener('click', () => { renderAuxFilePreview(entry.path).catch(console.error); });
       }
       body.appendChild(row);
     }
@@ -15820,6 +15886,61 @@ async function renderAuxFiles(targetPath) {
     const note = document.createElement('p');
     note.className = 'aux-empty muted';
     note.textContent = error && error.message ? error.message : 'Could not list files.';
+    body.appendChild(note);
+  }
+}
+async function renderAuxFilePreview(filePath) {
+  const view = el('auxView');
+  if (!view) return;
+  view.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'aux-view-header';
+  const title = document.createElement('span');
+  title.className = 'aux-view-title';
+  title.textContent = filePath.split(/[\\/]/).pop() || 'File';
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.className = 'pill-btn';
+  backBtn.textContent = '← Files';
+  backBtn.addEventListener('click', () => { renderAuxFiles(state.filesBrowsePath).catch(console.error); });
+  head.append(title, backBtn);
+  const body = document.createElement('div');
+  body.className = 'aux-view-body';
+  body.innerHTML = '<p class="aux-empty muted">Loading…</p>';
+  view.append(head, body);
+  try {
+    const res = await api('/api/workspace-file?path=' + encodeURIComponent(filePath));
+    const data = await res.json().catch(() => ({}));
+    body.textContent = '';
+    if (!res.ok) throw new Error(data.error || 'Could not read file');
+    const pathLabel = document.createElement('p');
+    pathLabel.className = 'muted';
+    pathLabel.style.fontSize = '11.5px';
+    pathLabel.style.wordBreak = 'break-all';
+    pathLabel.textContent = data.path || filePath;
+    body.appendChild(pathLabel);
+    if (data.binary) {
+      const note = document.createElement('p');
+      note.className = 'aux-empty muted';
+      note.textContent = 'Binary file preview is not available here. Open Project → Files for the full editor.';
+      body.appendChild(note);
+      return;
+    }
+    const pre = document.createElement('pre');
+    pre.className = 'aux-file-preview';
+    pre.textContent = typeof data.text === 'string' ? data.text : '';
+    body.appendChild(pre);
+    if (data.truncated) {
+      const tip = document.createElement('p');
+      tip.className = 'muted';
+      tip.textContent = 'Preview truncated.';
+      body.appendChild(tip);
+    }
+  } catch (error) {
+    body.textContent = '';
+    const note = document.createElement('p');
+    note.className = 'aux-empty muted';
+    note.textContent = error && error.message ? error.message : 'Could not read file.';
     body.appendChild(note);
   }
 }
@@ -23116,22 +23237,24 @@ function renderConversationRail(rail) {
   if (teamRun?.team?.members?.length) {
     rail.appendChild(renderTeamRunTree(teamRun));
   }
-  // Tasks
-  const taskSection = railSection('Tasks');
+  // Tasks — omit the section when there is no plan data (avoid an empty shell).
   const planRows = projectPlanRows({ active: true, sessionCount: (state.snapshot?.sessions || []).length });
-  planRows.forEach((row, index) => {
-    const item = document.createElement('div');
-    item.className = 'rail-task' + (index === 0 ? ' active' : '');
-    const number = document.createElement('span');
-    number.textContent = String(index + 1);
-    const title = document.createElement('strong');
-    title.textContent = row.title;
-    const status = document.createElement('small');
-    status.textContent = row.status;
-    item.append(number, title, status);
-    taskSection.appendChild(item);
-  });
-  rail.appendChild(taskSection);
+  if (planRows.length > 0) {
+    const taskSection = railSection('Tasks');
+    planRows.forEach((row, index) => {
+      const item = document.createElement('div');
+      item.className = 'rail-task' + (index === 0 ? ' active' : '');
+      const number = document.createElement('span');
+      number.textContent = String(index + 1);
+      const title = document.createElement('strong');
+      title.textContent = row.title;
+      const status = document.createElement('small');
+      status.textContent = row.status;
+      item.append(number, title, status);
+      taskSection.appendChild(item);
+    });
+    rail.appendChild(taskSection);
+  }
   // Artifacts (derived from completed tool calls with file-related names)
   const fileTools = [];
   for (const [id, node] of state.toolNodes) {
@@ -23951,8 +24074,8 @@ async function submitText(text) {
     flashStatus('Wait for the conversation switch to finish.');
     return;
   }
-  // /automation — open the create-task dialog from any conversation. The task
-  // is scoped 'global' so it shows in the Automation panel regardless of project.
+  // Client-side slash navigation — open the matching GUI surface instead of
+  // only echoing a chat result (parity with /automation).
   const trimmed = text.trim();
   if (trimmed === '/automation' || trimmed === '/automation list') {
     await switchRegion('automation');
@@ -23963,6 +24086,54 @@ async function submitText(text) {
     await switchRegion('automation');
     openAutomationDialog(null);
     addMessage('command.result', '/automation new · create a scheduled or webhook task.');
+    return;
+  }
+  if (trimmed === '/sessions' || trimmed === '/session' || trimmed.startsWith('/sessions ')) {
+    await openSurface('sessions');
+    addMessage('command.result', '/sessions · opened Chats drawer.');
+    return;
+  }
+  if (trimmed === '/workflows' || trimmed === '/workflows list') {
+    await openSurface('workflows');
+    addMessage('command.result', '/workflows · opened Workflows drawer.');
+    return;
+  }
+  if (trimmed === '/issues' || trimmed === '/issues list') {
+    await switchRegion('project');
+    state.projectDetailTab = 'issues';
+    switchProjectView('detail');
+    void loadProjectIssues(false);
+    addMessage('command.result', '/issues · opened Project Issues.');
+    return;
+  }
+  if (trimmed === '/tools') {
+    await openSurface('tools');
+    addMessage('command.result', '/tools · opened Tools drawer.');
+    return;
+  }
+  if (trimmed === '/skills') {
+    await openSurface('skills');
+    addMessage('command.result', '/skills · opened Skills drawer.');
+    return;
+  }
+  if (trimmed === '/agents') {
+    await openSurface('agents');
+    addMessage('command.result', '/agents · opened Subagents drawer.');
+    return;
+  }
+  if (trimmed === '/mcp') {
+    await openSurface('mcp');
+    addMessage('command.result', '/mcp · opened MCP drawer.');
+    return;
+  }
+  if (trimmed === '/plugins' || trimmed === '/plugin' || trimmed === '/plugin list') {
+    await openSurface('plugins');
+    addMessage('command.result', '/plugins · opened Plugins drawer.');
+    return;
+  }
+  if (trimmed === '/team' || trimmed === '/team list') {
+    await openSurface('teams');
+    addMessage('command.result', '/team · opened Agents drawer.');
     return;
   }
   if (state.running) {
@@ -24069,6 +24240,15 @@ function renderSurface(kind) {
         submitText('/workflows run ' + item.name + (task && task.trim() ? ' ' + task.trim() : ''));
       });
       footer.appendChild(run);
+      const delWf = document.createElement('button');
+      delWf.type = 'button';
+      delWf.textContent = 'Delete';
+      delWf.addEventListener('click', () => {
+        if (window.confirm('Delete workflow "' + item.name + '"?')) {
+          submitText('/workflows delete ' + item.name).then(() => openSurface('workflows')).catch(console.error);
+        }
+      });
+      footer.appendChild(delWf);
     } else if (kind === 'teams') {
       const attach = document.createElement('button');
       attach.type = 'button';
@@ -24083,6 +24263,17 @@ function renderSurface(kind) {
         if (newName && newName.trim()) submitText('/team clone ' + item.name + ' ' + newName.trim());
       });
       footer.appendChild(clone);
+      if (item.source !== 'built-in') {
+        const delTeam = document.createElement('button');
+        delTeam.type = 'button';
+        delTeam.textContent = 'Delete';
+        delTeam.addEventListener('click', () => {
+          if (window.confirm('Delete team "' + item.name + '"?')) {
+            submitText('/team delete ' + item.name).then(() => openSurface('teams')).catch(console.error);
+          }
+        });
+        footer.appendChild(delTeam);
+      }
     } else if (kind === 'routers') {
       const select = document.createElement('button');
       select.type = 'button';
@@ -33593,13 +33784,6 @@ el('settingsEnterWorktree').addEventListener('click', () => {
 });
 el('settingsExitWorktree').addEventListener('click', () => { runSettingsCommand('/worktree exit', 'Exiting worktree...').catch(console.error); });
 el('settingsAutomationWorktreeList').addEventListener('click', () => { runSettingsCommand('/worktree list', 'Listing worktrees...').catch(console.error); });
-el('settingsMemoryStatusBtn')?.addEventListener('click', () => { runSettingsCommand('/memory', 'Inspecting memory...').catch(console.error); });
-el('settingsCompactNowBtn')?.addEventListener('click', () => {
-  const instructions = el('settingsCompactInstructions').value.trim();
-  runSettingsCommand('/compact' + (instructions ? ' ' + instructions : ''), 'Compacting session...').catch(console.error);
-});
-el('settingsDreamStatusBtn')?.addEventListener('click', () => { runSettingsCommand('/dream status', 'Inspecting dream state...').catch(console.error); });
-el('settingsDreamRunBtn')?.addEventListener('click', () => { runSettingsCommand('/dream run', 'Running dream...').catch(console.error); });
 el('settingsMcpBtn').addEventListener('click', () => { closeSettings(); openSurface('mcp').catch(console.error); });
 el('mcpCfgAdd').addEventListener('click', () => { addMcpServerConfig().catch(console.error); });
 el('settingsWorktreeBtn').addEventListener('click', () => { closeSettings(); submitText('/worktree list'); });

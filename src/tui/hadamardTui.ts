@@ -20,9 +20,13 @@ import {
   loadJsonConfigFile,
   listWorkflows,
   loadWorkflow,
+  saveWorkflow,
+  deleteWorkflow,
   listTeamDefinitions,
   loadTeamDefinition,
   cloneTeamDefinition,
+  deleteTeamDefinition,
+  getBuiltInTeamDefinition,
   instantiateTeamDefinition,
   listTeamAgentLabels,
   countTeamAgents,
@@ -4507,8 +4511,39 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             );
             return;
           }
+          if (args.startsWith('delete ')) {
+            const name = args.slice(7).trim();
+            if (!name) {
+              appendStatic([...formatErrorLine('usage: /workflows delete <name>'), '']);
+              return;
+            }
+            const removed = await deleteWorkflow(name, sdk.config.workDir);
+            appendStatic([...formatInfoLine(removed ? `deleted workflow: ${name}` : `workflow not found: ${name}`), '']);
+            return;
+          }
+          if (args.startsWith('save ')) {
+            const rest = args.slice(5).trim();
+            const split = rest.indexOf(' ');
+            if (split === -1) {
+              appendStatic([...formatErrorLine('usage: /workflows save <name> <script-path> [--overwrite]'), '']);
+              return;
+            }
+            const name = rest.slice(0, split).trim();
+            const pathParts = rest.slice(split + 1).trim().split(/\s+/);
+            const overwrite = pathParts.includes('--overwrite');
+            const scriptPath = pathParts.filter((part) => part !== '--overwrite').join(' ');
+            try {
+              const resolved = path.isAbsolute(scriptPath) ? scriptPath : path.resolve(sdk.config.workDir, scriptPath);
+              const script = fs.readFileSync(resolved, 'utf8');
+              const filePath = await saveWorkflow(name, script, { projectDir: sdk.config.workDir, overwrite });
+              appendStatic([...formatInfoLine(`saved workflow: ${name} -> ${filePath}`), '']);
+            } catch (error: any) {
+              appendStatic([...formatErrorLine(error.message || String(error)), '']);
+            }
+            return;
+          }
           if (args && args !== 'list') {
-            appendStatic([...formatErrorLine('usage: /workflows [list|run <name> [task]]'), '']);
+            appendStatic([...formatErrorLine('usage: /workflows [list|run <name> [task]|save <name> <script-path>|delete <name>]'), '']);
             return;
           }
 
@@ -4721,6 +4756,28 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             } catch (error: any) {
               appendStatic([...formatErrorLine(`clone failed: ${error.message}`), '']);
             }
+            return;
+          }
+          if (args.startsWith('delete ')) {
+            const teamName = args.slice(7).trim();
+            if (!teamName) {
+              appendStatic([...formatErrorLine('usage: /team delete <name>'), '']);
+              return;
+            }
+            if (getBuiltInTeamDefinition(teamName)) {
+              appendStatic([...formatErrorLine(`cannot delete built-in team: ${teamName}`), '']);
+              return;
+            }
+            const removed = await deleteTeamDefinition(teamName, sdk.config.workDir);
+            if (!removed) {
+              appendStatic([...formatErrorLine(`team not found: ${teamName}`), '']);
+              return;
+            }
+            if (activeTeamName === teamName) {
+              activeTeamTool = null;
+              activeTeamName = null;
+            }
+            appendStatic([...formatInfoLine(`deleted team: ${teamName}`), '']);
             return;
           }
           if (args.startsWith('ask ')) {

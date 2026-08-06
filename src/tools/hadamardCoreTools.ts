@@ -2,17 +2,22 @@
  * Hadamard Core Tools — unified factory for all tools.
  *
  * Provides Read, Write, Edit, Glob, Grep, Bash, TodoWrite, AskUserQuestion,
- * WebFetch, WebSearch, NotebookEdit, and PowerShell by default.
+ * WebFetch, WebSearch, NotebookEdit, PowerShell, EnterWorktree, and ExitWorktree
+ * by default.
  *
  * The placeholder Task tools (TaskCreate/TaskUpdate/...) and misc tools
- * (Config/ToolSearch/Skill/SendMessage/RemoteTrigger) are opt-in: the SDK
- * client injects real Task, TaskList/TaskGet/TaskStop/TaskOutput, and Skill
- * implementations at runtime, and exposing the no-op stubs alongside them
- * confuses the model and wastes turns.
+ * (Config/ToolSearch/Skill/SendMessage/RemoteTrigger) are opt-in via
+ * `taskTools: true` / `miscTools: true`: the SDK client injects real Task,
+ * TaskList/TaskGet/TaskStop/TaskOutput, and Skill implementations at runtime,
+ * and exposing the no-op stubs alongside them confuses the model and wastes
+ * turns. ExaSearch is not registered here — enable the managed plugin "exa"
+ * (EXA_API_KEY or ~/.exa/config.json).
  *
  * All schemas, descriptions, and prompts match Claude Code exactly.
  */
+import path from 'node:path';
 import type { AgentToolDefinition } from '../types.js';
+import { WorktreeService } from '../worktree/worktreeService.js';
 import { createHadamardFileTools, type HadamardFileToolsOptions } from './hadamardFileTools.js';
 import { createHadamardWebTools } from './hadamardWebTools.js';
 import { createTavilySearchTool } from './tavilySearch.js';
@@ -24,6 +29,8 @@ import { createHadamardTaskTools } from './hadamardTaskTools.js';
 import { createNotebookEditTool } from './hadamardNotebookEdit.js';
 import { createPowerShellTool } from './hadamardShellTools.js';
 import { createHadamardMiscTools } from './hadamardMiscTools.js';
+import { createEnterWorktreeTool } from './enterWorktree.js';
+import { createExitWorktreeTool } from './exitWorktree.js';
 
 export interface HadamardCoreToolsOptions extends HadamardFileToolsOptions, PlanModeToolContext {
   bash?: boolean;
@@ -35,6 +42,10 @@ export interface HadamardCoreToolsOptions extends HadamardFileToolsOptions, Plan
   notebookEdit?: boolean;
   powershell?: boolean;
   miscTools?: boolean;
+  /** Register EnterWorktree / ExitWorktree (default true). */
+  worktree?: boolean;
+  /** Shared worktree stack for mid-session cwd switches. */
+  getWorktreeService?: () => WorktreeService | undefined;
 }
 
 export function createHadamardCoreTools(
@@ -65,6 +76,16 @@ export function createHadamardCoreTools(
   if (options.notebookEdit !== false) tools.push(createNotebookEditTool());
   if (options.powershell !== false) tools.push(createPowerShellTool());
   if (options.miscTools === true) tools.push(...createHadamardMiscTools());
+  if (options.worktree !== false) {
+    let lazyService: WorktreeService | undefined;
+    const getService = options.getWorktreeService ?? (() => {
+      if (!lazyService) {
+        lazyService = new WorktreeService(path.resolve(options.cwd ?? process.cwd()));
+      }
+      return lazyService;
+    });
+    tools.push(createEnterWorktreeTool(getService), createExitWorktreeTool(getService));
+  }
 
   return tools;
 }
