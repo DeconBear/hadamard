@@ -27,6 +27,19 @@ export function listTeamAgentLabels(definition: TeamDefinition): string[] {
     .map((m) => m.name ?? m.role ?? m.id ?? m.model)
     .filter((label): label is string => Boolean(label));
   if (fromNodes.length) return fromNodes;
+
+  const fromWorkflow: string[] = [];
+  const visitWorkflow = (node: NonNullable<TeamDefinition['workflowTree']> | undefined): void => {
+    if (!node) return;
+    if (node.type === 'agent') {
+      const label = node.label || node.id;
+      if (label) fromWorkflow.push(label);
+    }
+    for (const child of node.children || []) visitWorkflow(child);
+  };
+  visitWorkflow(definition.workflowTree);
+  if (fromWorkflow.length) return fromWorkflow;
+
   return [
     ...(definition.members ?? []),
     ...(definition.reviewer ? [definition.reviewer] : []),
@@ -40,6 +53,8 @@ export function listTeamAgentLabels(definition: TeamDefinition): string[] {
 export function countTeamAgents(definition: TeamDefinition): number {
   const agents = (definition.nodes ?? []).filter((n) => graphNodeKind(n) === 'agent');
   if (agents.length) return agents.length;
+  const labels = listTeamAgentLabels(definition);
+  if (labels.length) return labels.length;
   return (definition.members?.length ?? 0)
     + (definition.reviewer ? 1 : 0)
     + (definition.primary ? 1 : 0);
@@ -62,9 +77,9 @@ export interface LoadedTeamDefinition {
  * `instantiateTeamDefinition(def, model)` before running.
  */
 /**
- * Legacy preset shapes used only to seed graph v3 built-ins. Runtime, GUI, and
- * disk all consume {@link BUILT_IN_TEAM_DEFINITIONS} — canonical graph v3 JSON
- * with Task + Return ports.
+ * Seed shapes for built-in presets. Graph presets still migrate through
+ * {@link migrateTeamDefinitionToGraph}; workflow/agent presets are assembled
+ * directly so they keep their squadType.
  */
 const LEGACY_BUILT_IN_TEAM_TEMPLATES: Record<string, TeamDefinition> = {
   'panel-analysis': {
@@ -122,14 +137,74 @@ const LEGACY_BUILT_IN_TEAM_TEMPLATES: Record<string, TeamDefinition> = {
   },
 };
 
+function buildBuiltInTeamDefinition(name: string, legacy: TeamDefinition): TeamDefinition {
+  if (name === 'analysis') {
+    const researcher = legacy.members[0];
+    const skeptic = legacy.members[1];
+    return {
+      name: 'analysis',
+      description: legacy.description,
+      mode: 'graph',
+      version: 3,
+      orchestration: 'graph',
+      squadType: 'workflow',
+      members: [],
+      timeoutMs: legacy.timeoutMs,
+      maxIterations: legacy.maxIterations,
+      workflowTree: {
+        id: 'root',
+        type: 'parallel',
+        label: 'Analysis',
+        children: [
+          {
+            id: 'researcher',
+            type: 'agent',
+            label: researcher?.name || researcher?.role || 'researcher',
+            model: researcher?.model || '',
+            prompt: `${researcher?.systemPrompt || 'Expert researcher.'}\n\n{{input}}`,
+            children: [],
+          },
+          {
+            id: 'skeptic',
+            type: 'agent',
+            label: skeptic?.name || skeptic?.role || 'skeptic',
+            model: skeptic?.model || '',
+            prompt: `${skeptic?.systemPrompt || 'Rigorous skeptic.'}\n\n{{input}}`,
+            children: [],
+          },
+        ],
+      },
+    };
+  }
+  if (name === 'reviewer' || name === 'quick-review') {
+    const member = legacy.reviewer;
+    if (!member) {
+      throw new Error(`Built-in "${name}" is missing reviewer member`);
+    }
+    return {
+      name,
+      description: legacy.description,
+      mode: 'graph',
+      version: 3,
+      orchestration: 'graph',
+      squadType: 'agent',
+      members: [{ ...member }],
+      timeoutMs: legacy.timeoutMs,
+      maxIterations: legacy.maxIterations,
+    };
+  }
+  return ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph({ ...legacy, name }));
+}
+
 /**
- * Built-in team presets as graph v3 metadata (Task + Return + agent nodes).
+ * Built-in team presets. Graph presets include Task + Return ports; workflow
+ * and single-agent presets keep their squadType without graph migration.
  * A user file of the same name shadows the built-in.
  */
 export const BUILT_IN_TEAM_DEFINITIONS: Record<string, TeamDefinition> = Object.fromEntries(
   Object.entries(LEGACY_BUILT_IN_TEAM_TEMPLATES).map(([name, legacy]) => [
     name,
-    ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph({ ...legacy, name })),
+    buildBuiltInTeamDefinition(name, legacy),
   ]),
 );
 
@@ -217,9 +292,10 @@ export function loadTeamDefinition(
         const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as TeamDefinition;
         // Subagent / workflow squads skip graph canonicalization (no Task→Return).
         const squadType = raw.squadType || 'graph';
+        const resolved = resolveEnvVars(raw);
         const definition = squadType === 'graph'
-          ? ensureConfiguredTeamGraph(resolveEnvVars(canonicalizeTeamDefinition(raw)))
-          : { ...raw, squadType } as TeamDefinition;
+          ? ensureConfiguredTeamGraph(canonicalizeTeamDefinition(resolved))
+          : { ...resolved, squadType } as TeamDefinition;
         return {
           name,
           definition,
@@ -234,9 +310,11 @@ export function loadTeamDefinition(
 
   const builtIn = BUILT_IN_TEAM_DEFINITIONS[name];
   if (builtIn) {
+    const cloned = resolveEnvVars(structuredClone(builtIn));
+    const squadType = cloned.squadType || 'graph';
     return {
       name,
-      definition: ensureConfiguredTeamGraph(resolveEnvVars(structuredClone(builtIn))),
+      definition: squadType === 'graph' ? ensureConfiguredTeamGraph(cloned) : cloned,
       source: 'built-in',
       filePath: '(built-in)',
     };
@@ -316,9 +394,10 @@ export function listTeamDefinitions(
           const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as TeamDefinition;
           // Subagent / workflow squads skip graph canonicalization (no Task→Return).
           const squadType = raw.squadType || 'graph';
+          const resolved = resolveEnvVars(raw);
           const definition = squadType === 'graph'
-            ? ensureConfiguredTeamGraph(resolveEnvVars(canonicalizeTeamDefinition(raw)))
-            : { ...raw, squadType } as TeamDefinition;
+            ? ensureConfiguredTeamGraph(canonicalizeTeamDefinition(resolved))
+            : { ...resolved, squadType } as TeamDefinition;
           teams.push({
             name,
             definition,
@@ -338,9 +417,11 @@ export function listTeamDefinitions(
   for (const [name, definition] of Object.entries(BUILT_IN_TEAM_DEFINITIONS)) {
     if (seen.has(name)) continue;
     seen.add(name);
+    const cloned = resolveEnvVars(structuredClone(definition));
+    const squadType = cloned.squadType || 'graph';
     teams.push({
       name,
-      definition: ensureConfiguredTeamGraph(resolveEnvVars(structuredClone(definition))),
+      definition: squadType === 'graph' ? ensureConfiguredTeamGraph(cloned) : cloned,
       source: 'built-in',
       filePath: '(built-in)',
     });
@@ -373,9 +454,14 @@ export async function cloneTeamDefinition(
   // Clone the raw on-disk shape when there is one, so `$ENV_VAR` apiKey
   // references survive verbatim (the loaded view resolves them, and resolved
   // literals would be stripped on save).
-  const rawSource: TeamDefinition = source.source === 'built-in'
-    ? structuredClone(BUILT_IN_TEAM_DEFINITIONS[sourceName]!)
-    : canonicalizeTeamDefinition(JSON.parse(fs.readFileSync(source.filePath, 'utf-8')) as TeamDefinition);
+  let rawSource: TeamDefinition;
+  if (source.source === 'built-in') {
+    rawSource = structuredClone(BUILT_IN_TEAM_DEFINITIONS[sourceName]!);
+  } else {
+    const disk = JSON.parse(fs.readFileSync(source.filePath, 'utf-8')) as TeamDefinition;
+    const squadType = disk.squadType || 'graph';
+    rawSource = squadType === 'graph' ? canonicalizeTeamDefinition(disk) : disk;
+  }
   const definition: TeamDefinition = structuredClone(rawSource);
   definition.name = trimmed;
   const filePath = await saveTeamDefinition(definition, options);
