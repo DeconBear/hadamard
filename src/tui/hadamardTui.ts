@@ -30,7 +30,7 @@ import {
   instantiateTeamDefinition,
   listTeamAgentLabels,
   countTeamAgents,
-  createModelTeam,
+  askTeamDefinition,
   createTeamTool,
   readTeamPreferences,
   createManagerTools,
@@ -4813,14 +4813,13 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
               '',
             ]);
             try {
-              const team = createModelTeam(definition);
               const teamRunView = createTeamRunViewState(definition.name);
               const printTeamRunTree = () => {
                 const lines = formatTeamRunTreeLines(teamRunView);
                 if (!lines.length) return;
                 appendStatic([...lines.map((line) => `${A.dim}${line}${A.reset}`), '']);
               };
-              const result = await team.ask(prompt, undefined, {
+              const result = await askTeamDefinition(definition, prompt, undefined, {
                 workDir: sdk.config.workDir,
                 onEvent: (e) => {
                   applyTeamRunEvent(teamRunView, e);

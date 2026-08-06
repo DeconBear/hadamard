@@ -32,6 +32,7 @@ import {
   buildTeamProposeSystemPrompt,
   buildTeamProposeUserPrompt,
   finalizeTeamProposeDraft,
+  isSingleAgentSquadType,
   type TeamProposeSquadType,
 } from '../team/teamPropose.js';
 
@@ -99,7 +100,7 @@ import {
   createAgentSdk,
   readHadamardBrowserSettings,
   writeHadamardBrowserSettings,
-  createModelTeam,
+  askTeamDefinition,
   createTeamTool,
   detectBridgeProviders,
   discoverAgentRuntimes,
@@ -264,10 +265,7 @@ import {
   type Usage,
 } from '../core/index.js';
 import { estimateCost } from '../team/pricing.js';
-import { AgentPool } from '../team/agentPool.js';
-import { runMemberAgent } from '../team/teamRuntime.js';
 import {
-  runWorkflowSquad,
   validateWorkflowSquad,
 } from '../team/workflowSquad.js';
 import { listPlanFiles, planDirFor, planFilePath, readPlanFile } from '../tools/planMode/PlanModeTools.js';
@@ -1948,42 +1946,6 @@ function resolveTeamDefinition(name: string, workDir: string, model: string): Te
   return instantiateTeamDefinition(loaded.definition, model);
 }
 
-/** Run a subagent squad — a single member, no graph topology. */
-async function runSubagentSquad(
-  def: TeamDefinition, prompt: string, signal: AbortSignal, workDir: string,
-  onEvent?: (e: TeamEvent) => void,
-): Promise<ModelTeamResult> {
-  const pool = new AgentPool();
-  const member = def.members?.[0];
-  if (!member) throw new Error('subagent squad has no member');
-  const identity = { id: member.role || def.name, model: member.model || '', role: member.role || def.name };
-  const startedAt = Date.now();
-  const run = await runMemberAgent({
-    identity,
-    member: { ...member, model: member.model || '' },
-    task: prompt,
-    systemPrompt: member.systemPrompt || '',
-    cwd: workDir,
-    tools: [],
-    maxIterations: (member as { maxIterations?: number }).maxIterations ?? Infinity,
-    timeoutMs: def.timeoutMs ?? 300000,
-    signal,
-    pool,
-    round: 1,
-    onEvent,
-  });
-  return {
-    answer: run.report,
-    mode: 'graph',
-    cost: { totalInputTokens: run.inputTokens, totalOutputTokens: run.outputTokens, estimatedCost: null, breakdown: [] },
-    durationMs: Date.now() - startedAt,
-    memberStatuses: [run.status],
-    reports: [],
-    skippedNodes: [],
-    incompleteReason: run.status.error,
-  };
-}
-
 async function listenWithFallback(
   server: ReturnType<typeof createServer>,
   host: string,
@@ -3626,7 +3588,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   async function getAssistantGlobalSdk(): Promise<HadamardAgentClient> {
     if (assistantGlobalSdk) return assistantGlobalSdk;
     if (needsCredentials || !sdk) {
-      throw new Error('No API key configured — open Settings → Models & routing to add one.');
+      throw new Error('No API key configured — open Settings → Models to add one.');
     }
     const homeDir = managerHomeDir();
     const sessionDirectory = assistantSessionDirectory(homeDir);
@@ -3808,7 +3770,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     clientRequestId?: string;
     replayEvents?: Array<GuiRunEvent & { sequence: number }>;
   }): Promise<string> {
-    if (needsCredentials || !sdk) throw new Error('No API key configured — open Settings → Models & routing to add one.');
+    if (needsCredentials || !sdk) throw new Error('No API key configured — open Settings → Models to add one.');
     for (const run of runs.values()) {
       if (run.desc.kind === 'manager' && run.desc.status === 'running') {
         throw new Error('An Assistant run is already in progress.');
@@ -4084,11 +4046,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
 
     const definition = instantiateTeamDefinition(target.definition, session.model);
     const abort = new AbortController();
-    const result = await runWorkflowSquad(
+    const result = await askTeamDefinition(
       definition,
       task.input ?? '',
       abort.signal,
-      workDir,
+      { workDir },
     );
     return [
       { type: 'notice', message: `running Agent workflow: ${definition.name}` },
@@ -4101,7 +4063,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
 
   async function runAutomationPrompt(task: ScheduledAutomationTask): Promise<GuiRunEvent[]> {
     if (needsCredentials || !sdk) {
-      throw new Error('No API key configured - open Settings > Models & routing to add one.');
+      throw new Error('No API key configured - open Settings > Models to add one.');
     }
     const input = task.prompt?.trim() ?? '';
     if (!input) throw new Error('Scheduled prompt is empty');
@@ -5314,7 +5276,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           const definition = resolveTeamDefinition(teamName, workDir, session.model);
           if (!definition) return [{ type: 'error', message: `team not found: ${teamName}` }];
           session.metadata.__hadamardLastTeamName = definition.name;
-          const result = await createModelTeam(definition).ask(prompt, undefined, { workDir });
+          const result = await askTeamDefinition(definition, prompt, undefined, { workDir });
           lastTeamRunSummary = `${teamName} · ${result.mode} · ${Math.round(result.durationMs / 1000)}s`;
           return [{ type: 'command.result', title: `Team response · ${result.mode}`, text: result.answer }];
         }
@@ -5898,8 +5860,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         }
         if (args === 'help') {
           return [{ type: 'command.result', title: 'Bridge help', text: [
-            '/bridge — open runtime configuration (Settings → Models & routing)',
-            '/bridge setup — open runtime setup (Settings → Models & routing)',
+            '/bridge — open runtime configuration (Settings → Models)',
+            '/bridge setup — open runtime setup (Settings → Models)',
             '/bridge switch <name> — activate a named API or External CLI config',
             '/bridge status — show the active execution/runtime/auth/session',
             '/bridge history — browse native External CLI conversations',
@@ -6247,7 +6209,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     let reported = false;
     let workerRunId: string | null = null;
     try {
-      if (needsCredentials || !sdk) throw new Error('No API key configured - open Settings > Models & routing to add one.');
+      if (needsCredentials || !sdk) throw new Error('No API key configured - open Settings > Models to add one.');
       const idOrNumber = body.id ?? body.number ?? body.idOrNumber;
       if (typeof idOrNumber !== 'string' && typeof idOrNumber !== 'number') throw new Error('Missing issue id');
       homeDir = resolveGuiHomeDir();
@@ -6488,7 +6450,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
 
     const externalCliSelected = activeBridgeConfig?.execution === 'cli';
     if (needsCredentials && !externalCliSelected) {
-      send({ type: 'error', message: 'No API key configured — open Settings → Models & routing to add one.' });
+      send({ type: 'error', message: 'No API key configured — open Settings → Models to add one.' });
       send({ type: 'state', state: await state() });
       send({ type: 'done' });
       res.end();
@@ -6530,14 +6492,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       runs.set(teamRunId, teamRun);
       try {
         send({ type: 'run.started', runId: teamRunId, model: session.model || null });
-        const rawDef = loadTeamDefinition(teamName, workDir);
-        const squadType = rawDef?.definition?.squadType || 'graph';
         const onEvent = (e: TeamEvent) => { forwardTeamEvent(e, teamRunId, send, teamDesc); };
-        const result: ModelTeamResult = squadType === 'subagent' && rawDef
-          ? await runSubagentSquad(rawDef.definition, prompt, teamAbort.signal, workDir, onEvent)
-          : squadType === 'workflow' && rawDef
-            ? await runWorkflowSquad(rawDef.definition, prompt, teamAbort.signal, workDir, onEvent)
-            : await createModelTeam(definition).ask(prompt, teamAbort.signal, { workDir, onEvent });
+        const result: ModelTeamResult = await askTeamDefinition(
+          definition,
+          prompt,
+          teamAbort.signal,
+          { workDir, onEvent },
+        );
         teamDesc.status = 'done';
         lastTeamRunSummary = `${definition.name} · ${result.mode} · ${Math.round(result.durationMs / 1000)}s`;
         send({ type: 'command.result', title: `Team response · ${result.mode}`, text: result.answer, runId: teamRunId });
@@ -7513,10 +7474,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }
     try {
       const raw = JSON.parse(readFileSync(loaded.filePath, 'utf-8')) as TeamDefinition;
-      const definition = instantiateTeamDefinition(
-        ensureConfiguredTeamGraph(canonicalizeTeamDefinition(raw)),
-        session?.model ?? '',
-      );
+      const squadType = raw.squadType || 'graph';
+      const shaped = squadType === 'graph'
+        ? ensureConfiguredTeamGraph(canonicalizeTeamDefinition(raw))
+        : raw;
+      const definition = instantiateTeamDefinition(shaped, session?.model ?? '');
       return json(res, 200, { definition, source: loaded.source });
     } catch (error) {
       return json(res, 400, { error: (error as Error).message });
@@ -7531,7 +7493,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       }
       // All squads persist as graph v3 JSON — validate before touching disk.
       // Subagent / workflow squads skip graph validation (no Task→Return topology).
-      const squadType = (def.squadType || 'graph') as 'graph' | 'workflow' | 'subagent';
+      const squadType = (def.squadType || 'graph') as 'graph' | 'workflow' | 'agent' | 'subagent';
       if (squadType === 'graph') {
         const migrated = ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph(def));
         const problems = validateTeamGraph(migrated);
@@ -7541,8 +7503,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         const problems = validateWorkflowSquad(def);
         if (problems.length) return json(res, 400, { error: problems.join('; '), problems });
         def = { ...def, squadType, mode: 'graph', version: 3, orchestration: 'graph' };
+      } else if (isSingleAgentSquadType(squadType)) {
+        def = { ...def, squadType: 'agent', mode: 'graph', version: 3, orchestration: 'graph' };
       } else {
-        def = { ...def, squadType, mode: 'graph', version: 3, orchestration: 'graph' };
+        return json(res, 400, { error: `unsupported squadType: ${squadType}` });
       }
       // target: 'project' (default, .hadamard/teams/) or 'personal' (~/.hadamard/teams/).
       const target = body.target === 'personal' ? 'personal' : 'project';
@@ -7662,7 +7626,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       const instruction = typeof body.instruction === 'string' ? body.instruction.trim() : '';
       if (!instruction) return json(res, 400, { error: 'instruction is required' });
       const squadType: TeamProposeSquadType =
-        body.squadType === 'workflow' || body.squadType === 'subagent' ? body.squadType : 'graph';
+        body.squadType === 'workflow' || body.squadType === 'agent' || body.squadType === 'subagent'
+          ? (body.squadType === 'subagent' ? 'agent' : body.squadType)
+          : 'graph';
       const mode = body.mode === 'patch' ? 'patch' : 'replace';
       const currentDefinition = (body.currentDefinition && typeof body.currentDefinition === 'object')
         ? body.currentDefinition as TeamDefinition
@@ -9877,7 +9843,7 @@ async function onboardCredentials(opts: { configPath?: string; homeDir?: string 
   const model = (await ask('  Model [deepseek-chat]: ')).trim() || 'deepseek-chat';
   rl.close();
   if (!apiKey) {
-    process.stdout.write('  No API key entered. Set HADAMARD_API_KEY and rerun, or open Settings → Models & routing in the GUI.\n');
+    process.stdout.write('  No API key entered. Set HADAMARD_API_KEY and rerun, or open Settings → Models in the GUI.\n');
     return;
   }
   const store = await resolveHadamardSettingsStore({ configPath: opts.configPath, homeDir: opts.homeDir });
@@ -10654,11 +10620,20 @@ export function createHadamardGuiHtml(): string {
         <p id="bridgeModelsHelp" class="muted">Add one or more models for this config. The first is the default.</p>
         <div class="bridge-model-row">
           <input id="bridgeNewModelName" autocomplete="off" placeholder="Model id (e.g. deepseek-chat)">
-          <input id="bridgeNewModelContextWindow" type="number" min="1000" step="1000" placeholder="Context tokens (e.g. 200000)">
+          <select id="bridgeNewModelContextWindow" aria-label="Context length">
+            <option value="">Context length</option>
+            <option value="16000">16K</option>
+            <option value="32000">32K</option>
+            <option value="64000">64K</option>
+            <option value="128000">128K</option>
+            <option value="256000">256K</option>
+            <option value="400000">400K</option>
+            <option value="1000000">1M</option>
+            <option value="2000000">2M</option>
+          </select>
           <input id="bridgeNewModelCompactLimit" type="number" min="1000" step="1000" placeholder="Auto-compact limit (optional)">
           <input id="bridgeNewModelEffectivePercent" type="number" min="1" max="100" step="1" value="95" placeholder="Effective window %">
           <div class="bridge-model-controls">
-            <label class="check-row"><input id="bridgeNewModel1M" type="checkbox">1M ctx</label>
             <select id="bridgeNewModelModality"><option value="text">Text</option><option value="multimodal">Multimodal</option></select>
             <button type="button" id="bridgeModelAdd" class="secondary-btn">+ Add</button>
           </div>
@@ -10835,7 +10810,7 @@ export function createHadamardGuiHtml(): string {
       <section>
         <h2>Personal</h2>
         <button type="button" class="settings-tab active" data-settings-tab="general"><span class="settings-icon">${guiIcon('gear')}</span>General</button>
-        <button type="button" class="settings-tab" data-settings-tab="models"><span class="settings-icon">${guiIcon('model')}</span>Models & routing</button>
+        <button type="button" class="settings-tab" data-settings-tab="models"><span class="settings-icon">${guiIcon('model')}</span>Models</button>
         <button type="button" class="settings-tab" data-settings-tab="appearance"><span class="settings-icon">${guiIcon('palette')}</span>Appearance</button>
         <button type="button" class="settings-tab" data-settings-tab="shortcuts"><span class="settings-icon">${guiIcon('keyboard')}</span>Keyboard shortcuts</button>
       </section>
@@ -10911,7 +10886,7 @@ export function createHadamardGuiHtml(): string {
         </div>
       </section>
       <section class="settings-panel" data-settings-panel="models">
-        <h1>Models & routing</h1>
+        <h1>Models</h1>
         <div class="settings-group">
           <h2>Available in chat</h2>
           <p class="muted">Choose which saved configuration types are listed when the model picker opens. Existing data is not deleted.</p>
@@ -10928,27 +10903,6 @@ export function createHadamardGuiHtml(): string {
 <p class="muted">The default model from <code>settings.json</code> is listed first and is used when nothing else is selected. Other configs live in <code>~/.hadamard/bridge-configs.json</code>. Choose <strong>External CLI</strong> to reuse a CLI login, or <strong>Direct API</strong> to call a provider through Hadamard.</p>
           <p id="bridgeActive" class="muted">No active provider config — using the default provider.</p>
           <div id="bridgeConfigsList" class="settings-card-list"></div>
-        </div>
-        <div class="settings-group">
-          <div class="settings-group-head">
-            <h2>Agent profiles</h2>
-            <button type="button" id="agentProfileNew" class="primary">+ New profile</button>
-          </div>
-          <p class="muted">Reusable agent roles bound to a provider config and one model. Saved profiles appear by name in the composer and in Issue dispatch.</p>
-          <p id="agentProfilesStatus" class="muted"></p>
-          <div id="agentProfilesList" class="settings-card-list"></div>
-        </div>
-        <div class="settings-group">
-          <div class="settings-group-head">
-            <h2>Router profiles</h2>
-            <button type="button" id="routerNewProfile" class="primary">+ New profile</button>
-          </div>
-          <p class="muted">Optional leader/dispatch profiles for future turns. Model and effort for the current chat are chosen from the composer model menu — not here. Profiles save to <code>.hadamard/routers/</code> (project) or <code>~/.hadamard/routers/</code> (personal).</p>
-          <p id="settingsRouterStatus" class="muted"></p>
-          <div class="settings-action-row">
-            <button type="button" id="settingsDisableRouter" class="secondary-btn">Disable router</button>
-          </div>
-          <div id="settingsRoutersList" class="settings-card-list"></div>
         </div>
         <div class="settings-group">
           <div class="runtime-discovery-head">
@@ -11032,7 +10986,7 @@ export function createHadamardGuiHtml(): string {
         </div>
         <div class="settings-group">
           <h2>Agents</h2>
-          <p>Attach a configured agent (graph team / workflow / subagent) or disable orchestration.</p>
+          <p>Attach a configured agent (graph team / workflow / agent) or disable orchestration.</p>
           <div class="settings-help-row"><span><strong>Auto-invoke</strong><small>When an agent is attached, let the main agent call it as a tool. Off = manual /team ask only.</small></span><label class="switch-field"><input type="checkbox" id="settingsTeamAutoInvoke"></label></div>
           <div class="settings-help-row"><span><strong>Confirm before run</strong><small>Ask before /team ask starts (members + models).</small></span><label class="switch-field"><input type="checkbox" id="settingsTeamConfirm"></label></div>
           <label class="inline-field wide">Default agent for new conversations<select id="settingsTeamDefaultAttached"></select></label>
@@ -13767,6 +13721,55 @@ body { margin: 0; color: var(--text-1); background: var(--bg-app); }
 .team-graph { grid-column: 2; grid-row: 1 / span 2; min-height: 0; height: 100%; padding: 0; display: flex; flex-direction: column; overflow: hidden; align-items: stretch; background: var(--bg-surface-2); }
 .team-graph.subagent-mode { background: var(--bg-surface); align-items: center; }
 .subagent-editor-body { flex: 1; overflow: auto; width: min(640px, calc(100% - 48px)); padding: 20px 0 28px; display: grid; gap: 12px; align-content: start; }
+.te-readonly { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-app); white-space: pre-wrap; color: var(--text-1); font-size: 13px; }
+/* Agent page: Router / Profile structured detail panes */
+.agent-detail-body { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 32px; display: flex; flex-direction: column; align-items: center; gap: 16px; background: var(--bg-surface-2); }
+.agent-detail-inner { width: min(720px, 100%); display: grid; gap: 16px; align-content: start; }
+.agent-detail-hero { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.agent-detail-hero h3 { margin: 0; font-size: 18px; font-weight: 650; color: var(--text-1); letter-spacing: -0.01em; }
+.agent-detail-hero p { margin: 6px 0 0; font-size: 13px; color: var(--text-2); line-height: 1.45; max-width: 52ch; }
+.agent-detail-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.agent-detail-badge { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-2); font-size: 11.5px; font-weight: 600; }
+.agent-detail-badge.active { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--border)); background: color-mix(in srgb, var(--ok) 10%, var(--bg-surface)); }
+.agent-detail-badge .ad-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+.agent-detail-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.agent-detail-chip { display: grid; gap: 2px; min-width: 120px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); box-shadow: var(--shadow-card); }
+.agent-detail-chip span { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.agent-detail-chip strong { font-size: 13px; font-weight: 600; color: var(--text-1); word-break: break-word; }
+.agent-detail-prompt { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); box-shadow: var(--shadow-card); overflow: hidden; }
+.agent-detail-prompt header { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.agent-detail-prompt pre { margin: 0; padding: 12px 14px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; color: var(--text-1); max-height: 240px; overflow: auto; }
+.agent-detail-hint { margin: 0; font-size: 12px; color: var(--text-2); line-height: 1.45; }
+.router-flow { display: flex; flex-direction: column; align-items: center; gap: 0; width: 100%; }
+.router-flow-node { width: min(320px, 100%); border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); box-shadow: var(--shadow-card); padding: 12px 14px; position: relative; z-index: 1; }
+.router-flow-node .rf-kind { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+.router-flow-node .rf-kind .rf-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; background: #94A3B8; }
+.router-flow-node.leader .rf-kind .rf-dot { background: var(--brand); }
+.router-flow-node.fallback .rf-kind .rf-dot { background: var(--text-muted); }
+.router-flow-node .rf-title { font-size: 14px; font-weight: 650; color: var(--text-1); word-break: break-word; }
+.router-flow-node .rf-sub { margin-top: 3px; font-size: 12px; color: var(--text-2); }
+.router-flow-stem { width: 2px; height: 22px; background: #94A3B8; flex: 0 0 auto; }
+.router-flow-routes { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; width: 100%; position: relative; padding-top: 22px; }
+.router-flow-routes::before { content: ''; position: absolute; top: 11px; left: 20%; right: 20%; height: 2px; background: #94A3B8; }
+.router-flow-routes::after { content: ''; position: absolute; top: 0; left: 50%; width: 2px; height: 11px; transform: translateX(-50%); background: #94A3B8; }
+.router-route-card { width: min(240px, 100%); border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); box-shadow: var(--shadow-card); padding: 12px 14px; position: relative; }
+.router-route-card::before { content: ''; position: absolute; top: -11px; left: 50%; width: 2px; height: 11px; transform: translateX(-50%); background: #94A3B8; }
+.router-route-card .rr-role { font-size: 13.5px; font-weight: 650; color: var(--text-1); }
+.router-route-card .rr-when { margin-top: 4px; font-size: 12px; color: var(--text-2); line-height: 1.4; }
+.router-route-card .rr-when em { font-style: normal; color: #8b5cf6; font-weight: 600; }
+.router-route-card .rr-model { margin-top: 8px; font-size: 11.5px; color: var(--text-2); }
+.router-route-card .rr-model strong { color: var(--text-1); font-weight: 600; }
+.router-flow-empty { width: min(320px, 100%); padding: 14px; border: 1px dashed #94A3B8; border-radius: 12px; color: var(--text-2); font-size: 12.5px; text-align: center; }
+.router-form-body { width: min(720px, calc(100% - 48px)); }
+.router-form-section { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); }
+.router-form-section h4 { margin: 0; font-size: 13px; font-weight: 650; color: var(--text-1); }
+.router-form-section > .te-hint { margin: 0; }
+.router-form-routes { display: grid; gap: 10px; }
+.router-form-route { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-app); }
+.router-form-route-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.router-form-route-head strong { font-size: 12.5px; color: var(--text-1); }
+.router-form-route-head button { min-height: 28px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-surface); color: var(--text-2); padding: 0 10px; font-size: 12px; }
+.router-form-route-head button:hover { color: var(--danger, #dc2626); border-color: color-mix(in srgb, #dc2626 35%, var(--border)); }
 .graph-toolbar { height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-surface); flex: 0 0 auto; }
 .team-graph.subagent-mode .graph-toolbar { width: 100%; align-self: stretch; }
 .graph-tabs, .graph-tools { display: flex; align-items: center; gap: 6px; }
@@ -14404,10 +14407,13 @@ kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 
 .auto-dow { display: flex; gap: 4px; }
 .auto-dow button { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-2); font-size: 11.5px; }
 .auto-dow button.active { background: var(--accent-soft); color: var(--brand); border-color: var(--brand); font-weight: 600; }
-/* Workflow tree editor — fixed vertical tree, branch children side by side. */
+/* Workflow tree editor — fixed vertical tree, branch children side by side.
+   Edge color matches graph-board (#94A3B8). Do NOT use --border: .team-graph
+   background is --bg-surface-2 which equals --border in light theme, so
+   border-colored connectors are invisible. */
 .wf-canvas { flex: 1; overflow: auto; padding: 24px; display: flex; flex-direction: column; align-items: center; }
 .wf-tree { display: flex; flex-direction: column; align-items: center; gap: 0; min-width: min-content; }
-.wf-node { width: 260px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); box-shadow: var(--shadow-card); padding: 12px 14px; position: relative; transition: border-color .12s; }
+.wf-node { width: 260px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); box-shadow: var(--shadow-card); padding: 12px 14px; position: relative; transition: border-color .12s; z-index: 1; }
 .wf-node:hover { border-color: var(--ring); }
 .wf-node-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .wf-node-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
@@ -14421,15 +14427,19 @@ kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 
 .wf-node-label { font-size: 13.5px; font-weight: 600; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wf-node-prompt { font-size: 12px; color: var(--text-2); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wf-node-meta { font-size: 11px; color: var(--text-2); margin-top: 5px; display: flex; gap: 8px; }
-.wf-node-meta span { background: var(--bg-surface-2); padding: 1px 7px; border-radius: 999px; }
+.wf-node-meta span { background: var(--bg-app); padding: 1px 7px; border-radius: 999px; }
 .wf-node-cond { font-size: 11.5px; color: #8b5cf6; margin-top: 5px; font-style: italic; }
-.wf-connector { width: 2px; height: 20px; background: var(--border); }
-.wf-children { display: flex; gap: 32px; align-items: flex-start; position: relative; }
-.wf-children::before { content: ''; position: absolute; top: -20px; left: 0; right: 0; height: 2px; background: var(--border); }
+.wf-connector { width: 2px; height: 28px; background: #94A3B8; flex: 0 0 auto; }
+.wf-children { display: flex; gap: 32px; align-items: flex-start; position: relative; padding-top: 28px; }
+/* Horizontal fork between first/last child centers (half of 260px node). */
+.wf-children::before { content: ''; position: absolute; top: 14px; left: 130px; right: 130px; height: 2px; background: #94A3B8; }
+/* Vertical from parent card down to the fork. */
+.wf-children::after { content: ''; position: absolute; top: 0; left: 50%; width: 2px; height: 14px; transform: translateX(-50%); background: #94A3B8; }
 .wf-child-col { display: flex; flex-direction: column; align-items: center; position: relative; }
-.wf-child-col::before { content: ''; position: absolute; top: -20px; left: 50%; width: 2px; height: 20px; background: var(--border); }
-.wf-branch-label { font-size: 10.5px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .05em; position: absolute; top: -34px; background: var(--bg-surface); padding: 0 5px; }
-.wf-add { width: 260px; min-height: 36px; border: 1px dashed var(--border); border-radius: 9px; background: transparent; color: var(--text-2); font-size: 12.5px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+/* Only non-root columns get a stub from the fork down to the card. */
+.wf-children > .wf-child-col::before { content: ''; position: absolute; top: -14px; left: 50%; width: 2px; height: 14px; transform: translateX(-50%); background: #94A3B8; }
+.wf-branch-label { font-size: 10.5px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .05em; position: absolute; top: -30px; z-index: 2; background: var(--bg-surface-2); padding: 0 5px; }
+.wf-add { width: 260px; min-height: 36px; margin-top: 4px; border: 1px dashed #94A3B8; border-radius: 9px; background: transparent; color: var(--text-2); font-size: 12.5px; display: flex; align-items: center; justify-content: center; gap: 5px; }
 .wf-add:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
 .wf-type-pick { display: flex; gap: 6px; margin-bottom: 8px; }
 .wf-type-pick button { flex: 1; min-height: 44px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-surface); text-align: center; font-size: 12px; color: var(--text-2); display: flex; flex-direction: column; align-items: center; gap: 2px; }
@@ -15015,6 +15025,7 @@ const state = {
   pickerRecentNames: [],
   // Team region: selected squad + its expanded definition + selected graph node.
   teamSelected: null,
+  teamSelectedKind: 'team',
   teamDefinition: null,
   teamDefinitionSource: null,
   teamSelectedNode: null,
@@ -16911,31 +16922,6 @@ async function runSettingsCommand(command, status = 'Running command...') {
 function renderSettingsCommandPanels() {
   const snapshot = state.snapshot || {};
   const session = snapshot.session || {};
-  const routerStatus = el('settingsRouterStatus');
-  if (routerStatus) {
-    routerStatus.textContent = snapshot.activeRouterName
-      ? 'Active router: ' + snapshot.activeRouterName
-      : 'Router: off (fixed model from composer / provider config)';
-  }
-  const disableRouterBtn = el('settingsDisableRouter');
-  if (disableRouterBtn) disableRouterBtn.disabled = !snapshot.activeRouterName;
-  const routers = snapshot.routers || [];
-  renderSettingsCardList('settingsRoutersList', routers, (root, router) => {
-    const isActive = router.name === snapshot.activeRouterName;
-    const actions = [
-      { label: isActive ? 'Active' : 'Use', disabled: isActive, handler: () => runSettingsCommand('/model router ' + router.name, 'Applying router...') },
-      { label: 'Edit', handler: () => openRouterEditor(router) },
-      {
-        label: 'Delete',
-        handler: () => {
-          if (window.confirm('Delete router profile "' + router.name + '"?')) {
-            deleteRouterProfileViaApi(router.name).catch(console.error);
-          }
-        },
-      },
-    ];
-    addSettingsCard(root, router.name, router.profile?.routes ? router.profile.routes.length + ' routes' : '', router.source, actions);
-  });
   renderSettingsCardList('settingsToolsList', (snapshot.tools || []).slice(0, 40), (root, tool) => {
     addSettingsCard(root, tool.name, describeParts([tool.category, tool.provider, tool.readOnly ? 'read-only' : '']), tool.description);
   });
@@ -25839,18 +25825,41 @@ function splitCsv(value) {
 function memberRef(member) {
   return String(member?.id || member?.name || member?.role || member?.model || '').trim();
 }
+function isSingleAgentSquad(squadType) {
+  return squadType === 'agent' || squadType === 'subagent';
+}
 function squadTypeLabel(squadType) {
   if (squadType === 'workflow') return 'Workflow';
-  if (squadType === 'subagent') return 'Subagent';
+  if (isSingleAgentSquad(squadType)) return 'Agent';
+  if (squadType === 'profile') return 'Agent';
+  if (squadType === 'router') return 'Router';
   return 'Graph (team)';
 }
+function agentEntryKey(kind, name) {
+  return String(kind || 'team') + ':' + String(name || '');
+}
 function teamListForRegion() {
-  // snapshot.teams already includes built-in presets (see hydrateSettingsForm).
-  return (state.snapshot?.teams || []).map((t) => ({
+  const teams = (state.snapshot?.teams || []).map((t) => ({
+    kind: 'team',
     name: t.name,
     source: t.source || 'project',
     squadType: t.definition?.squadType || t.squadType || 'graph',
   }));
+  const profiles = (state.snapshot?.agentProfiles || []).map((p) => ({
+    kind: 'profile',
+    name: p.name,
+    source: 'profile',
+    squadType: 'profile',
+    profile: p,
+  }));
+  const routers = (state.snapshot?.routers || []).map((r) => ({
+    kind: 'router',
+    name: r.name,
+    source: r.source || 'project',
+    squadType: 'router',
+    router: r,
+  }));
+  return [...teams, ...profiles, ...routers];
 }
 async function refreshTeamsSnapshot() {
   try {
@@ -25859,7 +25868,10 @@ async function refreshTeamsSnapshot() {
     const st = await res.json();
     if (state.snapshot) {
       state.snapshot.teams = st.teams;
+      state.snapshot.agentProfiles = st.agentProfiles;
+      state.snapshot.routers = st.routers;
       state.snapshot.activeTeamName = st.activeTeamName;
+      state.snapshot.activeRouterName = st.activeRouterName;
       state.snapshot.session = st.session;
     } else {
       state.snapshot = st;
@@ -25871,11 +25883,14 @@ function renderTeamSquadBar() {
   const bar = el('teamSquadBar');
   if (!bar) return teams;
   bar.textContent = '';
+  const activeKey = agentEntryKey(state.teamSelectedKind || 'team', state.teamSelected);
   for (const t of teams) {
     const chip = document.createElement('button');
     chip.type = 'button';
-    chip.className = 'squad-chip' + (t.name === state.teamSelected ? ' active' : '');
+    const key = agentEntryKey(t.kind, t.name);
+    chip.className = 'squad-chip' + (key === activeKey ? ' active' : '');
     chip.dataset.name = t.name;
+    chip.dataset.kind = t.kind;
     const dot = document.createElement('span');
     dot.className = 'sq-dot';
     const labels = document.createElement('span');
@@ -25883,13 +25898,21 @@ function renderTeamSquadBar() {
     const label = document.createElement('strong');
     label.textContent = t.name;
     const small = document.createElement('small');
-    small.textContent = squadTypeLabel(t.squadType) + ' · ' + (t.source === 'built-in' ? 'Built-in' : 'Project');
+    const sourceLabel = t.source === 'built-in' ? 'Built-in'
+      : t.kind === 'profile' ? 'Profile'
+      : t.source === 'personal' ? 'Personal'
+      : 'Project';
+    const typeExtra = t.kind === 'profile' ? 'Agent · Profile'
+      : t.kind === 'router' ? 'Router'
+      : (squadTypeLabel(t.squadType) + (isSingleAgentSquad(t.squadType) ? ' · Squad' : ''));
+    small.textContent = (t.kind === 'profile' || t.kind === 'router' ? typeExtra : squadTypeLabel(t.squadType)) + ' · ' + sourceLabel;
     labels.append(label, small);
     chip.append(dot, labels);
     chip.addEventListener('click', () => {
       state.teamSelected = t.name;
+      state.teamSelectedKind = t.kind;
       state.teamSelectedEdgeIdx = null;
-      void selectTeam(t.name);
+      void selectAgentEntry(t.name, t.kind);
     });
     bar.appendChild(chip);
   }
@@ -25921,7 +25944,8 @@ function openNewSquadDialog() {
   const types = [
     { v: 'graph', label: 'Graph (team)', hint: 'Collaboration graph — Task → agents → Return. This is a team.' },
     { v: 'workflow', label: 'Workflow', hint: 'Linear/tree work-flow — nodes + if/else routing. Batch pipelines.' },
-    { v: 'subagent', label: 'Subagent', hint: 'Single agent — prompt + tools + workspace + runtime.' },
+    { v: 'agent', label: 'Agent', hint: 'Single agent profile — provider config + model + permission/effort for composer selection.' },
+    { v: 'router', label: 'Router', hint: 'Leader/dispatch profile — route each turn to a specialist model.' },
   ];
   const hint = document.createElement('p');
   hint.className = 'te-hint';
@@ -25991,8 +26015,33 @@ function openNewSquadDialog() {
     if (!squadName) { window.alert('Please enter an agent name.'); return; }
     const descEl = host.querySelector('textarea');
     const desc = descEl ? descEl.value.trim() : '';
-    let def;
     try {
+      if (chosen === 'agent') {
+        overlay.remove();
+        openAgentProfileEditor({ name: squadName, description: desc || '', bridgeConfig: '', model: '' });
+        el('agentProfileName').disabled = false;
+        setField('agentProfileName', squadName);
+        setField('agentProfileDescription', desc || '');
+        return;
+      }
+      if (chosen === 'router') {
+        overlay.remove();
+        state.teamSelected = squadName;
+        state.teamSelectedKind = 'router';
+        renderRouterPane({
+          name: squadName,
+          source: 'project',
+          profile: {
+            name: squadName,
+            description: desc || '',
+            routerModel: { model: '' },
+            routes: [],
+          },
+        }, { creating: true });
+        if (typeof renderTeamSquadBar === 'function') renderTeamSquadBar();
+        return;
+      }
+      let def;
       if (chosen === 'graph') {
         const sc = await api('/api/team/scaffold', {
           method: 'POST',
@@ -26007,15 +26056,16 @@ function openNewSquadDialog() {
         const payload = await sc.json();
         def = payload.definition;
       } else {
-        def = { name: squadName, description: desc || undefined, mode: 'graph', version: 3, orchestration: 'graph', squadType: chosen, members: [], nodes: [], edges: [] };
+        def = { name: squadName, description: desc || undefined, mode: 'graph', version: 3, orchestration: 'graph', squadType: chosen === 'subagent' ? 'agent' : chosen, members: [], nodes: [], edges: [] };
       }
       const res = await api('/api/team/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ definition: def, target: 'project' }) });
       if (!res.ok) { const j = await res.json().catch(() => ({})); window.alert('Create failed: ' + (j.error || res.status)); return; }
       overlay.remove();
       state.teamSelected = squadName;
+      state.teamSelectedKind = 'team';
       await refreshTeamsSnapshot();
       renderTeamSquadBar();
-      await selectTeam(squadName, { force: true });
+      await selectAgentEntry(squadName, 'team', { force: true });
     } catch (e) { window.alert('Create failed: ' + (e && e.message || e)); }
   });
   actions.append(cancel, create);
@@ -26027,20 +26077,464 @@ function openNewSquadDialog() {
 async function renderTeamRegion() {
   if (!state.snapshot?.teams) await refreshTeamsSnapshot();
   const teams = renderTeamSquadBar();
-  const target = state.teamSelected || teams[0]?.name;
-  if (target) {
-    state.teamSelected = target;
-    await selectTeam(target);
+  const preferred = teams.find((t) => t.name === state.teamSelected && t.kind === (state.teamSelectedKind || 'team'))
+    || teams.find((t) => t.name === state.teamSelected)
+    || teams[0];
+  if (preferred) {
+    state.teamSelected = preferred.name;
+    state.teamSelectedKind = preferred.kind;
+    await selectAgentEntry(preferred.name, preferred.kind);
   } else {
     const g = el('teamGraph');
     if (g) { g.textContent = ''; const e = document.createElement('p'); e.className = 'region-empty'; e.textContent = 'No agents — click + New agent.'; g.appendChild(e); }
   }
 }
+async function selectAgentEntry(name, kind, opts) {
+  opts = opts || {};
+  kind = kind || 'team';
+  state.teamSelected = name;
+  state.teamSelectedKind = kind;
+  state.teamProposalPreviewId = null;
+  const activeKey = agentEntryKey(kind, name);
+  document.querySelectorAll('.squad-chip').forEach((c) => {
+    c.classList.toggle('active', agentEntryKey(c.dataset.kind || 'team', c.dataset.name) === activeKey);
+  });
+  if (kind === 'profile') {
+    const profile = (state.snapshot?.agentProfiles || []).find((p) => p.name === name);
+    state.teamDefinition = null;
+    state.teamDefinitionSource = 'profile';
+    setTeamSavedStatus(true);
+    renderAgentProfilePane(profile || { name });
+    const host = el('teamEditor');
+    if (host) host.classList.add('hidden');
+    return;
+  }
+  if (kind === 'router') {
+    const router = (state.snapshot?.routers || []).find((r) => r.name === name);
+    state.teamDefinition = null;
+    state.teamDefinitionSource = router?.source || 'project';
+    setTeamSavedStatus(true);
+    renderRouterPane(router || { name });
+    const host = el('teamEditor');
+    if (host) host.classList.add('hidden');
+    return;
+  }
+  await selectTeam(name, opts);
+}
+function agentDetailSourceLabel(source) {
+  if (source === 'built-in') return 'Built-in';
+  if (source === 'personal') return 'Personal';
+  if (source === 'project') return 'Project';
+  return source ? String(source) : 'Profile';
+}
+function agentDetailBadge(text, opts) {
+  opts = opts || {};
+  const badge = document.createElement('span');
+  badge.className = 'agent-detail-badge' + (opts.active ? ' active' : '');
+  if (opts.dot) {
+    const dot = document.createElement('span');
+    dot.className = 'ad-dot';
+    badge.appendChild(dot);
+  }
+  badge.appendChild(document.createTextNode(text));
+  return badge;
+}
+function agentDetailChip(label, value) {
+  const chip = document.createElement('div');
+  chip.className = 'agent-detail-chip';
+  const span = document.createElement('span');
+  span.textContent = label;
+  const strong = document.createElement('strong');
+  strong.textContent = value;
+  chip.append(span, strong);
+  return chip;
+}
+function routerModelTargetOptions() {
+  const opts = [{ value: '', label: 'Select model…' }];
+  for (const opt of teamModelSelectOptions()) {
+    if (!opt.value) continue;
+    opts.push({ value: 'model:' + opt.value, label: opt.label });
+  }
+  return opts;
+}
+function routerRouteTargetOptions() {
+  const opts = [{ value: '', label: 'Select model or agent…' }];
+  for (const opt of teamModelSelectOptions()) {
+    if (!opt.value) continue;
+    opts.push({ value: 'model:' + opt.value, label: 'Model · ' + opt.label });
+  }
+  for (const profile of state.snapshot?.agentProfiles || []) {
+    if (!profile?.name) continue;
+    opts.push({
+      value: 'agent:' + profile.name,
+      label: 'Agent · ' + profile.name + (profile.model ? ' (' + profile.model + ')' : ''),
+    });
+  }
+  return opts;
+}
+function routerFallbackTargetOptions() {
+  const opts = [{ value: '', label: 'First route (default)' }];
+  for (const opt of teamModelSelectOptions()) {
+    if (!opt.value) continue;
+    opts.push({ value: 'model:' + opt.value, label: opt.label });
+  }
+  return opts;
+}
+function resolveRouterTargetKey(key) {
+  const raw = String(key || '');
+  if (raw.startsWith('agent:')) {
+    const name = raw.slice(6);
+    const profile = (state.snapshot?.agentProfiles || []).find((p) => p.name === name);
+    if (!profile) return { model: '', role: name, agentProfile: name };
+    const ref = { model: profile.model || '', role: profile.name, agentProfile: profile.name };
+    const cfg = (state.snapshot?.bridgeState?.configs || []).find((c) => c.name === profile.bridgeConfig);
+    if (cfg?.provider === 'openai' || cfg?.provider === 'anthropic') ref.provider = cfg.provider;
+    if (cfg?.baseURL) ref.baseURL = cfg.baseURL;
+    return ref;
+  }
+  const model = raw.startsWith('model:') ? raw.slice(6) : raw;
+  const ref = { model };
+  if (!model) return ref;
+  for (const cfg of teamBridgeConfigOptions()) {
+    const models = Array.isArray(cfg.models) ? cfg.models.map((m) => (typeof m === 'string' ? m : m.name)) : [];
+    if (cfg.model === model || models.includes(model)) {
+      if (cfg.provider === 'openai' || cfg.provider === 'anthropic') ref.provider = cfg.provider;
+      if (cfg.baseURL) ref.baseURL = cfg.baseURL;
+      break;
+    }
+  }
+  return ref;
+}
+function routeToTargetKey(route) {
+  if (!route) return '';
+  if (route.agentProfile) return 'agent:' + route.agentProfile;
+  const profiles = state.snapshot?.agentProfiles || [];
+  const match = profiles.find((p) => p.name === route.role && p.model === route.model);
+  if (match) return 'agent:' + match.name;
+  return route.model ? ('model:' + route.model) : '';
+}
+function modelToTargetKey(model) {
+  return model ? ('model:' + model) : '';
+}
+function renderAgentProfilePane(profile) {
+  const g = el('teamGraph');
+  if (!g) return;
+  g.textContent = '';
+  g.classList.remove('subagent-mode');
+  const toolbar = document.createElement('div');
+  toolbar.className = 'graph-toolbar';
+  const left = document.createElement('div'); left.className = 'graph-tabs';
+  left.innerHTML = '<button class="active">Agent</button>';
+  const right = document.createElement('div'); right.className = 'graph-tools';
+  const pill = document.createElement('span'); pill.className = 'graph-mode-pill';
+  pill.textContent = 'agent · profile · ' + (profile?.name || '');
+  right.appendChild(pill);
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.textContent = 'Edit';
+  editBtn.addEventListener('click', () => openAgentProfileEditor(profile));
+  right.appendChild(editBtn);
+  if (profile?.name) {
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', () => {
+      if (window.confirm('Delete agent profile "' + profile.name + '"?')) {
+        deleteAgentProfileViaApi(profile.name).then(() => renderTeamRegion()).catch(console.error);
+      }
+    });
+    right.appendChild(delBtn);
+  }
+  toolbar.append(left, right);
+  g.appendChild(toolbar);
+
+  const body = document.createElement('div');
+  body.className = 'agent-detail-body';
+  const inner = document.createElement('div');
+  inner.className = 'agent-detail-inner';
+
+  const hero = document.createElement('div');
+  hero.className = 'agent-detail-hero';
+  const heroText = document.createElement('div');
+  const title = document.createElement('h3');
+  title.textContent = profile?.name || 'Agent profile';
+  heroText.appendChild(title);
+  if (profile?.description) {
+    const desc = document.createElement('p');
+    desc.textContent = profile.description;
+    heroText.appendChild(desc);
+  }
+  const badges = document.createElement('div');
+  badges.className = 'agent-detail-badges';
+  badges.appendChild(agentDetailBadge('Profile'));
+  hero.append(heroText, badges);
+  inner.appendChild(hero);
+
+  const configs = state.snapshot?.bridgeState?.configs || [];
+  const cfg = configs.find((item) => item.name === profile?.bridgeConfig);
+  const chips = document.createElement('div');
+  chips.className = 'agent-detail-chips';
+  const chipRows = [
+    profile?.bridgeConfig
+      ? ['Provider config', (cfg ? cfg.runtime + ' · ' : '') + profile.bridgeConfig]
+      : null,
+    profile?.model ? ['Model', profile.model] : null,
+    ['Permission', profile?.permissionMode || 'Session default'],
+    ['Effort', profile?.effort || 'Inherit'],
+    profile?.maxTokens != null ? ['Max tokens', String(profile.maxTokens)] : null,
+    profile?.temperature != null ? ['Temperature', String(profile.temperature)] : null,
+  ].filter(Boolean);
+  for (const [label, value] of chipRows) chips.appendChild(agentDetailChip(label, value));
+  if (chips.children.length) inner.appendChild(chips);
+
+  if (profile?.systemPromptAppend) {
+    const prompt = document.createElement('div');
+    prompt.className = 'agent-detail-prompt';
+    prompt.innerHTML = '<header>System prompt append</header>';
+    const pre = document.createElement('pre');
+    pre.textContent = profile.systemPromptAppend;
+    prompt.appendChild(pre);
+    inner.appendChild(prompt);
+  }
+
+  const hint = document.createElement('p');
+  hint.className = 'agent-detail-hint';
+  hint.textContent = 'Agent profiles bind a provider config and model for composer selection and Issue dispatch. Use Edit to change settings.';
+  inner.appendChild(hint);
+  body.appendChild(inner);
+  g.appendChild(body);
+}
+function renderRouterPane(router, opts) {
+  opts = opts || {};
+  const g = el('teamGraph');
+  if (!g) return;
+  g.textContent = '';
+  g.classList.add('subagent-mode');
+  const profile = router?.profile || null;
+  const creating = !!opts.creating || !profile;
+  const isBuiltIn = router?.source === 'built-in';
+  const isActive = !creating && router?.name && router.name === state.snapshot?.activeRouterName;
+  const draft = {
+    name: router?.name || profile?.name || '',
+    description: profile?.description || '',
+    target: router?.source === 'personal' ? 'personal' : 'project',
+    leaderKey: modelToTargetKey(profile?.routerModel?.model || ''),
+    fallbackKey: modelToTargetKey(profile?.fallback?.model || ''),
+    routes: (Array.isArray(profile?.routes) ? profile.routes : []).map((route) => ({
+      targetKey: routeToTargetKey(route),
+      role: route.role || route.name || '',
+      when: route.when || '',
+      description: route.description || '',
+    })),
+  };
+  if (!draft.routes.length) {
+    draft.routes.push({ targetKey: '', role: '', when: '', description: '' });
+  }
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'graph-toolbar';
+  const left = document.createElement('div'); left.className = 'graph-tabs';
+  left.innerHTML = '<button class="active">Router</button>';
+  const right = document.createElement('div'); right.className = 'graph-tools';
+  const pill = document.createElement('span'); pill.className = 'graph-mode-pill';
+  pill.textContent = (creating ? 'new router · ' : 'router · ') + (draft.name || '')
+    + (isBuiltIn ? ' · Built-in' : '');
+  right.appendChild(pill);
+  if (!creating) {
+    const useBtn = document.createElement('button');
+    useBtn.type = 'button';
+    useBtn.textContent = isActive ? 'Active' : 'Use';
+    useBtn.disabled = !!isActive;
+    useBtn.addEventListener('click', () => {
+      submitText('/model router ' + draft.name).then(() => loadState().then(() => renderTeamRegion())).catch(console.error);
+    });
+    right.appendChild(useBtn);
+  }
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'graph-save-btn';
+  saveBtn.textContent = isBuiltIn ? 'Save copy' : 'Save';
+  saveBtn.addEventListener('click', () => { void saveRouterFormDraft(draft, { activate: creating }); });
+  right.appendChild(saveBtn);
+  if (!creating && draft.name && !isBuiltIn) {
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', () => {
+      if (window.confirm('Delete router profile "' + draft.name + '"?')) {
+        deleteRouterProfileViaApi(draft.name).then(() => renderTeamRegion()).catch(console.error);
+      }
+    });
+    right.appendChild(delBtn);
+  }
+  toolbar.append(left, right);
+  g.appendChild(toolbar);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'subagent-editor-body router-form-body';
+  const status = document.createElement('p');
+  status.className = 'te-hint';
+  status.id = 'routerFormStatus';
+  status.textContent = isBuiltIn
+    ? 'Built-in routers are read-only originals — Save copy writes a project/personal override.'
+    : 'Pick a leader model, one or more route targets, and an optional fallback. Save to use.';
+
+  if (creating) {
+    wrap.appendChild(teFieldLive('Name', draft.name, (v) => { draft.name = v.trim(); }, false, false));
+  } else {
+    const nameField = document.createElement('div');
+    nameField.className = 'te-field';
+    nameField.innerHTML = '<label>Name</label><div class="te-readonly">' + escHtml(draft.name) + '</div>';
+    wrap.appendChild(nameField);
+  }
+  wrap.appendChild(teFieldLive('Description', draft.description, (v) => { draft.description = v; }, false, false));
+  wrap.appendChild(teLabeledSelect('Save to', draft.target, [
+    { value: 'project', label: 'Project (.hadamard/routers)' },
+    { value: 'personal', label: 'Personal (~/.hadamard/routers)' },
+  ], (v) => { draft.target = v === 'personal' ? 'personal' : 'project'; }));
+
+  const leaderSection = document.createElement('div');
+  leaderSection.className = 'router-form-section';
+  leaderSection.innerHTML = '<h4>Leader</h4><p class="te-hint">Classifies each chat turn and picks one specialist route.</p>';
+  leaderSection.appendChild(teLabeledSelect('Leader model', draft.leaderKey, routerModelTargetOptions(), (v) => {
+    draft.leaderKey = v;
+  }));
+  wrap.appendChild(leaderSection);
+
+  const routesSection = document.createElement('div');
+  routesSection.className = 'router-form-section';
+  routesSection.innerHTML = '<h4>Routes</h4><p class="te-hint">Each route is a model or saved Agent the leader may dispatch to. “When” tells the leader when to choose it.</p>';
+  const routesHost = document.createElement('div');
+  routesHost.className = 'router-form-routes';
+  routesSection.appendChild(routesHost);
+
+  function renderRouteRows() {
+    routesHost.textContent = '';
+    draft.routes.forEach((route, index) => {
+      const row = document.createElement('div');
+      row.className = 'router-form-route';
+      const head = document.createElement('div');
+      head.className = 'router-form-route-head';
+      head.innerHTML = '<strong>Route ' + (index + 1) + '</strong>';
+      if (draft.routes.length > 1) {
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = 'Remove';
+        remove.addEventListener('click', () => {
+          draft.routes.splice(index, 1);
+          renderRouteRows();
+        });
+        head.appendChild(remove);
+      }
+      row.appendChild(head);
+      row.appendChild(teLabeledSelect('Target', route.targetKey, routerRouteTargetOptions(), (v) => {
+        route.targetKey = v;
+        const resolved = resolveRouterTargetKey(v);
+        if (resolved.role && !route.role) route.role = resolved.role;
+        renderRouteRows();
+      }));
+      row.appendChild(teFieldLive('Role / label', route.role || '', (v) => { route.role = v; }, false, false));
+      row.appendChild(teFieldLive('When', route.when || '', (v) => { route.when = v; }, false, false));
+      row.appendChild(teFieldLive('Notes for leader (optional)', route.description || '', (v) => { route.description = v; }, true, false));
+      routesHost.appendChild(row);
+    });
+  }
+  renderRouteRows();
+
+  const addRoute = document.createElement('button');
+  addRoute.type = 'button';
+  addRoute.className = 'te-btn';
+  addRoute.textContent = '+ Add route';
+  addRoute.addEventListener('click', () => {
+    draft.routes.push({ targetKey: '', role: '', when: '', description: '' });
+    renderRouteRows();
+  });
+  routesSection.appendChild(addRoute);
+  wrap.appendChild(routesSection);
+
+  const fallbackSection = document.createElement('div');
+  fallbackSection.className = 'router-form-section';
+  fallbackSection.innerHTML = '<h4>Fallback</h4><p class="te-hint">Used when no route matches. Leave as First route to use route 1.</p>';
+  fallbackSection.appendChild(teLabeledSelect('Fallback model', draft.fallbackKey, routerFallbackTargetOptions(), (v) => {
+    draft.fallbackKey = v;
+  }));
+  wrap.appendChild(fallbackSection);
+  wrap.appendChild(status);
+  g.appendChild(wrap);
+}
+async function saveRouterFormDraft(draft, opts) {
+  opts = opts || {};
+  const status = el('routerFormStatus');
+  const name = String(draft.name || '').trim();
+  if (!name) {
+    if (status) status.textContent = 'Name is required.';
+    return;
+  }
+  const leader = resolveRouterTargetKey(draft.leaderKey);
+  if (!leader.model) {
+    if (status) status.textContent = 'Select a leader model.';
+    return;
+  }
+  const routes = [];
+  for (const item of draft.routes || []) {
+    const resolved = resolveRouterTargetKey(item.targetKey);
+    const when = String(item.when || '').trim();
+    if (!resolved.model || !when) continue;
+    const route = { model: resolved.model, when };
+    const role = String(item.role || resolved.role || '').trim();
+    if (role) route.role = role;
+    if (resolved.provider) route.provider = resolved.provider;
+    if (resolved.baseURL) route.baseURL = resolved.baseURL;
+    const description = String(item.description || '').trim();
+    if (description) route.description = description;
+    routes.push(route);
+  }
+  if (!routes.length) {
+    if (status) status.textContent = 'Add at least one route with a target and when condition.';
+    return;
+  }
+  const body = {
+    name,
+    target: draft.target === 'personal' ? 'personal' : 'project',
+    description: String(draft.description || '').trim(),
+    routerModel: { model: leader.model },
+    routes,
+  };
+  if (leader.provider) body.routerModel.provider = leader.provider;
+  if (leader.baseURL) body.routerModel.baseURL = leader.baseURL;
+  const fallback = resolveRouterTargetKey(draft.fallbackKey);
+  if (fallback.model) {
+    body.fallback = { model: fallback.model };
+    if (fallback.provider) body.fallback.provider = fallback.provider;
+    if (fallback.baseURL) body.fallback.baseURL = fallback.baseURL;
+  }
+  if (status) status.textContent = 'Saving...';
+  const res = await api('/api/router/profile', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let message = await res.text();
+    try { message = JSON.parse(message).error || message; } catch { /* keep text */ }
+    if (status) status.textContent = 'Save failed: ' + message;
+    return;
+  }
+  state.snapshot = await res.json();
+  state.teamSelected = name;
+  state.teamSelectedKind = 'router';
+  if (opts.activate) {
+    try { await submitText('/model router ' + name); } catch { /* non-fatal */ }
+    await loadState();
+  }
+  if (typeof renderTeamRegion === 'function') await renderTeamRegion();
+}
 async function selectTeam(name, opts) {
   opts = opts || {};
   state.teamProposalPreviewId = null;
   state.teamSelected = name;
-  document.querySelectorAll('.squad-chip').forEach((c) => c.classList.toggle('active', c.dataset.name === name));
+  state.teamSelectedKind = 'team';
+  document.querySelectorAll('.squad-chip').forEach((c) => c.classList.toggle('active', (c.dataset.kind || 'team') === 'team' && c.dataset.name === name));
   let def = !opts.force && state.teamDefinitionCache[name] ? state.teamDefinitionCache[name] : null;
   if (!def) {
     try {
@@ -26083,6 +26577,10 @@ async function selectTeam(name, opts) {
 // Run the selected squad (plan/UI_PLAN §6.3/§5): prompt → /team ask → stream
 // live member activity into the conversation + right rail.
 async function runSelectedSquad() {
+  if ((state.teamSelectedKind || 'team') !== 'team') {
+    window.alert('Only graph / workflow / agent squads can be run with /team ask. Profiles use the composer; routers use /model router.');
+    return;
+  }
   const firstTeam = Array.isArray(state.snapshot?.teams) ? state.snapshot.teams[0]?.name : '';
   const name = state.teamSelected || state.snapshot?.activeTeamName || firstTeam;
   if (!name) {
@@ -26090,6 +26588,7 @@ async function runSelectedSquad() {
     return;
   }
   state.teamSelected = name;
+  state.teamSelectedKind = 'team';
   const input = window.prompt('Run agent "' + name + '" with prompt:', '');
   if (!input || !input.trim()) return;
   await switchRegion('project');
@@ -27782,7 +28281,7 @@ function renderTeamGraph(def, name) {
   }
   const squadType = def.squadType || 'graph';
   if (squadType === 'workflow') { renderWorkflowSquadPlaceholder(g, def, name); return; }
-  if (squadType === 'subagent') { g.classList.add('subagent-mode'); renderSubagentSquadEditor(g, def, name); return; }
+  if (isSingleAgentSquad(squadType)) { g.classList.add('subagent-mode'); renderSubagentSquadEditor(g, def, name); return; }
   renderGraphModeCanvas(g, def, name);
 }
 function renderWorkflowSquadPlaceholder(g, def, name) {
@@ -27879,10 +28378,10 @@ function renderWfNode(node, def, editable) {
   if (meta.children.length) card.appendChild(meta);
   col.appendChild(card);
   // Children and continuation controls.
+  // Tree edges are drawn by .wf-children padding + ::before/::after (not a
+  // separate connector div) so the fork geometry stays centered on cards.
   const children = node.children || [];
   if (children.length) {
-    const conn = document.createElement('div'); conn.className = 'wf-connector';
-    col.appendChild(conn);
     const childRow = document.createElement('div');
     childRow.className = 'wf-children';
     children.forEach((child, i) => {
@@ -27903,8 +28402,12 @@ function renderWfNode(node, def, editable) {
     || node.type === 'parallel'
   );
   if (canAdd) {
-    const conn = document.createElement('div'); conn.className = 'wf-connector';
-    col.appendChild(conn);
+    // Leaf / empty parent: draw a stem into the add affordance.
+    // Parent that already has children: just show the button below the tree.
+    if (!children.length) {
+      const conn = document.createElement('div'); conn.className = 'wf-connector';
+      col.appendChild(conn);
+    }
     col.appendChild(wfAddButton(def, node));
   }
   return col;
@@ -28045,10 +28548,10 @@ function renderSubagentSquadEditor(g, def, name) {
   const toolbar = document.createElement('div');
   toolbar.className = 'graph-toolbar';
   const left = document.createElement('div'); left.className = 'graph-tabs';
-  left.innerHTML = '<button class="active">Subagent</button>';
+  left.innerHTML = '<button class="active">Agent</button>';
   const right = document.createElement('div'); right.className = 'graph-tools';
   const pill = document.createElement('span'); pill.className = 'graph-mode-pill';
-  pill.textContent = 'subagent · ' + (def.name || name);
+  pill.textContent = 'agent · ' + (def.name || name);
   right.appendChild(pill);
   if (editable) {
     const designBtn = document.createElement('button');
@@ -31141,8 +31644,12 @@ async function saveAgentProfileViaApi() {
   state.snapshot = data.state || state.snapshot;
   closeAgentProfileEditor();
   renderBridgeConfigs();
+  state.teamSelected = name;
+  state.teamSelectedKind = 'profile';
+  if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
   const warnings = Array.isArray(data.warnings) && data.warnings.length ? ' - ' + data.warnings.join(' ') : '';
-  el('settingsStatus').textContent = 'Agent profile saved' + warnings;
+  const status = el('settingsStatus');
+  if (status) status.textContent = 'Agent profile saved' + warnings;
 }
 
 async function deleteAgentProfileViaApi(name) {
@@ -31159,7 +31666,12 @@ async function deleteAgentProfileViaApi(name) {
   }
   state.snapshot = await res.json();
   renderBridgeConfigs();
-  el('settingsStatus').textContent = 'Agent profile deleted';
+  if (state.teamSelectedKind === 'profile') {
+    state.teamSelected = null;
+  }
+  if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
+  const status = el('settingsStatus');
+  if (status) status.textContent = 'Agent profile deleted';
 }
 
 let editingBridgeConfigName = null;
@@ -31365,8 +31877,11 @@ function openBridgeEditor(cfg) {
   el('bridgeModelAdd').classList.toggle('hidden', editingDefaultBridgeConfig);
   el('bridgeModelsList').classList.toggle('hidden', editingDefaultBridgeConfig);
   el('bridgeNewModelName').value = editingDefaultBridgeConfig ? (cfg?.model || '') : '';
-  el('bridgeNewModel1M').checked = editingDefaultBridgeConfig && cfg?.models?.[0]?.context1M === true;
-  el('bridgeNewModelContextWindow').value = editingDefaultBridgeConfig ? (cfg?.models?.[0]?.contextWindowTokens || '') : '';
+  if (editingDefaultBridgeConfig && cfg?.models?.[0]) {
+    el('bridgeNewModelContextWindow').value = String(nearestContextWindowOption(cfg.models[0].contextWindowTokens, cfg.models[0].context1M) || '');
+  } else {
+    el('bridgeNewModelContextWindow').value = '';
+  }
   el('bridgeNewModelCompactLimit').value = editingDefaultBridgeConfig ? (cfg?.models?.[0]?.autoCompactTokenLimit || '') : '';
   el('bridgeNewModelEffectivePercent').value = editingDefaultBridgeConfig ? (cfg?.models?.[0]?.effectiveContextWindowPercent || 95) : 95;
   el('bridgeNewModelModality').value = editingDefaultBridgeConfig && cfg?.models?.[0]?.modality === 'multimodal'
@@ -31387,6 +31902,32 @@ function closeBridgeEditor() {
   updateBridgeLocalConfigButton();
 }
 let draftBridgeModels = [];
+const BRIDGE_CONTEXT_WINDOW_OPTIONS = [16000, 32000, 64000, 128000, 256000, 400000, 1000000, 2000000];
+function formatContextWindowLabel(tokens) {
+  const n = Number(tokens);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n >= 1000000) {
+    const m = n / 1000000;
+    return (Number.isInteger(m) ? String(m) : String(m)) + 'M';
+  }
+  if (n >= 1000) {
+    const k = n / 1000;
+    return (Number.isInteger(k) ? String(k) : String(k)) + 'K';
+  }
+  return String(n);
+}
+function nearestContextWindowOption(tokens, context1M) {
+  if (context1M === true && !(Number(tokens) > 0)) return 1000000;
+  const n = Number(tokens);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  let best = BRIDGE_CONTEXT_WINDOW_OPTIONS[0];
+  let bestDist = Math.abs(best - n);
+  for (const opt of BRIDGE_CONTEXT_WINDOW_OPTIONS) {
+    const dist = Math.abs(opt - n);
+    if (dist < bestDist) { best = opt; bestDist = dist; }
+  }
+  return best;
+}
 function renderBridgeModels() {
   const root = el('bridgeModelsList');
   root.textContent = '';
@@ -31402,7 +31943,8 @@ function renderBridgeModels() {
     card.className = 'settings-card';
     card.style.cssText = 'display:flex;align-items:center;gap:10px;justify-content:space-between;padding:8px 12px';
     const info = document.createElement('span');
-    const tags = [m.name, m.context1M ? '1 M ctx' : '', m.modality === 'multimodal' ? 'Multimodal' : 'Text'].filter(Boolean);
+    const ctx = formatContextWindowLabel(m.contextWindowTokens || (m.context1M ? 1000000 : 0));
+    const tags = [m.name, ctx, m.modality === 'multimodal' ? 'Multimodal' : 'Text'].filter(Boolean);
     info.textContent = tags.join(' · ');
     card.appendChild(info);
     const del = document.createElement('button');
@@ -31416,10 +31958,11 @@ function renderBridgeModels() {
 function addBridgeModel() {
   const name = el('bridgeNewModelName').value.trim();
   if (!name) return;
+  const contextWindowTokens = Number(el('bridgeNewModelContextWindow').value) || undefined;
   const model = {
     name,
-    context1M: el('bridgeNewModel1M').checked,
-    contextWindowTokens: Number(el('bridgeNewModelContextWindow').value) || undefined,
+    context1M: contextWindowTokens === 1000000,
+    contextWindowTokens,
     effectiveContextWindowPercent: Number(el('bridgeNewModelEffectivePercent').value) || 95,
     autoCompactTokenLimit: Number(el('bridgeNewModelCompactLimit').value) || undefined,
     modality: el('bridgeNewModelModality').value || 'text',
@@ -31427,7 +31970,6 @@ function addBridgeModel() {
   if (editingDefaultBridgeConfig) draftBridgeModels = [model];
   else draftBridgeModels.push(model);
   el('bridgeNewModelName').value = '';
-  el('bridgeNewModel1M').checked = false;
   el('bridgeNewModelContextWindow').value = '';
   el('bridgeNewModelCompactLimit').value = '';
   el('bridgeNewModelEffectivePercent').value = 95;
@@ -31496,7 +32038,7 @@ async function saveBridgeConfig() {
         clearApiKey: clearKey,
         baseURL: el('bridgeCfgBaseUrl').value.trim(),
         effort: el('bridgeDefaultEffort').value,
-        defaultModelContext1M: el('bridgeNewModel1M').checked,
+        defaultModelContext1M: Number(el('bridgeNewModelContextWindow').value) === 1000000,
         defaultModelMultimodal: el('bridgeNewModelModality').value === 'multimodal',
       }),
     });
@@ -31633,31 +32175,18 @@ function addRouterRouteFromDraft() {
 }
 
 function openRouterEditor(loaded) {
-  const profile = loaded?.profile || null;
-  editingRouterProfileName = profile ? profile.name : null;
-  el('routerEditorTitle').textContent = profile ? 'Edit router profile' : 'New router profile';
-  setField('routerCfgName', profile ? profile.name : '');
-  el('routerCfgName').disabled = Boolean(editingRouterProfileName);
-  setField('routerCfgTarget', loaded?.source === 'personal' ? 'personal' : 'project');
-  setField('routerCfgDescription', profile?.description || '');
-  const leader = profile?.routerModel || {};
-  setField('routerLeaderModel', leader.model || '');
-  setField('routerLeaderProvider', leader.provider || '');
-  setField('routerLeaderBaseUrl', leader.baseURL || '');
-  setField('routerLeaderApiKey', leader.apiKey || '');
-  const fallback = profile?.fallback || {};
-  setField('routerFallbackModel', fallback.model || '');
-  setField('routerFallbackProvider', fallback.provider || '');
-  draftRouterRoutes = Array.isArray(profile?.routes)
-    ? profile.routes.map((route) => ({ ...route }))
-    : [];
-  clearRouterRouteDraft();
-  renderRouterRoutes();
-  el('routerCfgStatus').textContent = isBuiltIn
-    ? 'Built-in profiles are read-only — saving creates a project/personal copy that shadows the built-in.'
-    : (profile ? 'Editing "' + profile.name + '".' : '');
-  el('routerEditorModal').classList.remove('hidden');
-  el('routerCfgName').focus();
+  // Inline Agent-page form replaces the old modal editor.
+  const name = loaded?.name || loaded?.profile?.name || '';
+  const creating = !loaded?.profile;
+  state.teamSelected = name || state.teamSelected;
+  state.teamSelectedKind = 'router';
+  renderRouterPane(loaded || {
+    name: name || '',
+    source: 'project',
+    profile: { name: name || '', routerModel: { model: '' }, routes: [] },
+  }, { creating });
+  const host = el('teamEditor');
+  if (host) host.classList.add('hidden');
 }
 
 function closeRouterEditor() {
@@ -31708,7 +32237,11 @@ async function saveRouterProfileViaApi() {
   state.snapshot = await res.json();
   closeRouterEditor();
   renderSettingsCommandPanels();
-  el('settingsStatus').textContent = 'Router profile saved';
+  state.teamSelected = name;
+  state.teamSelectedKind = 'router';
+  if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
+  const status = el('settingsStatus');
+  if (status) status.textContent = 'Router profile saved';
 }
 
 async function deleteRouterProfileViaApi(name) {
@@ -31725,7 +32258,12 @@ async function deleteRouterProfileViaApi(name) {
   }
   state.snapshot = await res.json();
   renderSettingsCommandPanels();
-  el('settingsStatus').textContent = 'Router profile deleted';
+  if (state.teamSelectedKind === 'router') {
+    state.teamSelected = null;
+  }
+  if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
+  const status = el('settingsStatus');
+  if (status) status.textContent = 'Router profile deleted';
 }
 
 function renderMcpServers() {
@@ -33727,7 +34265,7 @@ el('cancelWorkspace').addEventListener('click', closeWorkspaceDialog);
 el('workspaceBrowseBtn').addEventListener('click', () => { browseWorkspaceFolder().catch(console.error); });
 el('workspaceModal').addEventListener('click', (event) => { if (event.target === el('workspaceModal')) closeWorkspaceDialog(); });
 el('settingsOpenLocation').addEventListener('click', openLocation);
-el('settingsDisableRouter').addEventListener('click', () => { runSettingsCommand('/model router off', 'Disabling router...').catch(console.error); });
+el('settingsDisableRouter')?.addEventListener('click', () => { runSettingsCommand('/model router off', 'Disabling router...').catch(console.error); });
 el('settingsOpenTools').addEventListener('click', () => { closeSettings(); openSurface('tools').catch(console.error); });
 el('settingsOpenSkills').addEventListener('click', () => { closeSettings(); openSurface('skills').catch(console.error); });
 el('settingsOpenAgents').addEventListener('click', () => { closeSettings(); openSurface('agents').catch(console.error); });
@@ -33790,7 +34328,7 @@ el('settingsWorktreeBtn').addEventListener('click', () => { closeSettings(); sub
 el('bridgeNewConfig').addEventListener('click', () => { openBridgeEditor(null); });
 el('bridgeCfgSave').addEventListener('click', () => { saveBridgeConfig().catch(console.error); });
 el('bridgeCfgReset').addEventListener('click', () => { closeBridgeEditor(); });
-el('agentProfileNew').addEventListener('click', () => { openAgentProfileEditor(null); });
+el('agentProfileNew')?.addEventListener('click', () => { openAgentProfileEditor(null); });
 el('agentProfileCfgSave').addEventListener('click', () => { saveAgentProfileViaApi().catch(console.error); });
 el('agentProfileCfgReset').addEventListener('click', () => { closeAgentProfileEditor(); });
 el('agentProfileBridge').addEventListener('change', () => { populateAgentProfileModelOptions(''); });
@@ -33801,7 +34339,7 @@ el('agentProfileEditorForm').addEventListener('submit', (event) => {
 el('agentProfileEditorModal').addEventListener('click', (event) => {
   if (event.target === el('agentProfileEditorModal')) closeAgentProfileEditor();
 });
-el('routerNewProfile').addEventListener('click', () => { openRouterEditor(null); });
+el('routerNewProfile')?.addEventListener('click', () => { openRouterEditor(null); });
 el('routerCfgSave').addEventListener('click', () => { saveRouterProfileViaApi().catch(console.error); });
 el('routerCfgReset').addEventListener('click', () => { closeRouterEditor(); });
 el('routerRouteAdd').addEventListener('click', () => { addRouterRouteFromDraft(); });

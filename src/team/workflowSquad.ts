@@ -135,3 +135,57 @@ export async function runWorkflowSquad(
     incompleteReason: undefined,
   };
 }
+
+/** Run a single-agent squad (`squadType: agent` / legacy `subagent`). */
+export async function runSingleAgentSquad(
+  definition: TeamDefinition,
+  prompt: string,
+  signal: AbortSignal,
+  workDir: string,
+  onEvent?: (event: TeamEvent) => void,
+  opts?: { context?: string },
+): Promise<ModelTeamResult> {
+  const member = definition.members?.[0];
+  if (!member) throw new Error(`Agent squad "${definition.name}" has no member`);
+  const pool = new AgentPool();
+  const identity = {
+    id: member.id || member.role || member.name || definition.name,
+    model: member.model || '',
+    role: member.role || member.name || definition.name,
+  };
+  const startedAt = Date.now();
+  const systemPrompt = [member.systemPrompt || '', opts?.context?.trim() || '']
+    .filter(Boolean)
+    .join('\n\n');
+  const run = await runMemberAgent({
+    identity,
+    member: { ...member, model: member.model || '' },
+    task: prompt,
+    systemPrompt,
+    cwd: workDir,
+    tools: [],
+    maxIterations: (member as { maxIterations?: number }).maxIterations
+      ?? definition.maxIterations
+      ?? Infinity,
+    timeoutMs: definition.timeoutMs ?? 300_000,
+    signal,
+    pool,
+    round: 1,
+    onEvent,
+  });
+  return {
+    answer: run.report,
+    mode: 'graph',
+    cost: {
+      totalInputTokens: run.inputTokens,
+      totalOutputTokens: run.outputTokens,
+      estimatedCost: null,
+      breakdown: [],
+    },
+    durationMs: Date.now() - startedAt,
+    memberStatuses: [run.status],
+    reports: [],
+    skippedNodes: [],
+    incompleteReason: run.status.error,
+  };
+}
