@@ -2615,6 +2615,7 @@ export class HadamardAgentClient {
     onInitialInputCheckpointed?: () => void,
   ): Promise<AgentRunResult> {
     const workDir = this.resolveRunWorkDir(options);
+    let activeWorkDir = workDir;
     const model = this.resolveModel(options.model ?? session?.model);
     const goalService = await this.resolveGoalService(session, liveSession);
     let goalExecutionDecision: GoalExecutionDecision = { kind: 'run', mode: 'work' };
@@ -2890,7 +2891,7 @@ export class HadamardAgentClient {
                   updatedAt: nowIso(),
                   metadata: {
                     ...current.metadata,
-                    __hadamardWorkDir: workDir,
+                    __hadamardWorkDir: activeWorkDir,
                     ...(options.metadata ?? {}),
                     ...serializeAgentExecutionIdentity(executionIdentity),
                   },
@@ -2920,6 +2921,15 @@ export class HadamardAgentClient {
           modelApi: options.modelApi ?? this.modelApi,
           config: runtimeConfig,
           mcpManager: this.mcpManager,
+          sessionWorkDir: activeWorkDir,
+          onSessionWorkDirChange: (nextWorkDir) => {
+            activeWorkDir = nextWorkDir;
+            options.__hadamardWorkDir = nextWorkDir;
+            options.metadata = {
+              ...(options.metadata ?? {}),
+              __hadamardWorkDir: nextWorkDir,
+            };
+          },
           fileChangeJournal: fileCheckpointStarted ? this.fileChangeJournal : undefined,
           sandboxExecutor,
           typedHookRunner: this.typedHookRunner,

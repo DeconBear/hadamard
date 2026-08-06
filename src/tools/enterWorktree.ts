@@ -55,10 +55,12 @@ export function createEnterWorktreeTool(getWorktreeService: () => WorktreeServic
       if (!service) {
         return 'Worktree service is not available. Ensure the project is a git repository.';
       }
+      await service.init();
 
       // Enter existing worktree
       if (input.path) {
         const entry = await service.enterWorktree(input.path, input.branch);
+        context.metadata.__hadamardWorkDir = service.currentWorkDir;
         return `Entered existing worktree at ${entry.workDir} (branch: ${entry.worktreeBranch ?? 'detached'}).\n\n` +
           `Working directory is now: ${entry.workDir}\n` +
           `Use ExitWorktree to return to the original directory.`;
@@ -76,6 +78,7 @@ export function createEnterWorktreeTool(getWorktreeService: () => WorktreeServic
         detach: input.detach,
         pr: input.pr,
       });
+      context.metadata.__hadamardWorkDir = service.currentWorkDir;
 
       const parts: string[] = [
         `Created worktree at ${entry.workDir}`,

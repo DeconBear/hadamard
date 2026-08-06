@@ -9,7 +9,7 @@ import {
   projectSettingsPath,
   readProjectSettings,
   writeProjectSettings,
-} from '../src/gui/projectSettings.js';
+} from '../src/config/projectSettings.js';
 
 describe('projectSettings', () => {
   let homeDir = '';
@@ -139,7 +139,7 @@ describe('projectSettings', () => {
   });
 
   it('encodes and decodes Dream profile select values', async () => {
-    const { encodeDreamProfileValue, decodeDreamProfileValue } = await import('../src/gui/projectSettings.js');
+    const { encodeDreamProfileValue, decodeDreamProfileValue } = await import('../src/config/projectSettings.js');
     expect(encodeDreamProfileValue({ kind: 'agent', name: 'memory-agent' })).toBe('agent:memory-agent');
     expect(encodeDreamProfileValue({
       kind: 'config',

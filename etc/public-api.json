@@ -730,7 +730,7 @@
       {
         "name": "createExaSearchTool",
         "kind": "function",
-        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"news\" | \"github\" | \"company\" | \"research paper\" | \"pdf\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
+        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"news\" | \"github\" | \"company\" | \"research paper\" | \"pdf\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
       },
       {
         "name": "createExitWorktreeTool",
@@ -1641,11 +1641,6 @@
         "name": "getDefaultHadamardSettingsPath",
         "kind": "function",
         "signature": "export declare function getDefaultHadamardSettingsPath(homeDir?: string): string;"
-      },
-      {
-        "name": "getGlobalAgentPool",
-        "kind": "function",
-        "signature": "export declare function getGlobalAgentPool(): AgentPool;"
       },
       {
         "name": "getHadamardApiContextManagement",
@@ -2640,7 +2635,7 @@
       {
         "name": "HadamardCoreToolsOptions",
         "kind": "interface",
-        "signature": "export interface HadamardCoreToolsOptions extends HadamardFileToolsOptions, PlanModeToolContext {\nbash?: boolean;\ntodoWrite?: boolean;\naskUserQuestion?: boolean;\nplanModeTools?: boolean;\nwebTools?: boolean;\ntaskTools?: boolean;\nnotebookEdit?: boolean;\npowershell?: boolean;\nmiscTools?: boolean;\n}"
+        "signature": "export interface HadamardCoreToolsOptions extends HadamardFileToolsOptions, PlanModeToolContext {\nbash?: boolean;\ntodoWrite?: boolean;\naskUserQuestion?: boolean;\nplanModeTools?: boolean;\nwebTools?: boolean;\ntaskTools?: boolean;\nnotebookEdit?: boolean;\npowershell?: boolean;\nmiscTools?: boolean;\nworktree?: boolean;\ngetWorktreeService?: () => WorktreeService | undefined;\n}"
       },
       {
         "name": "HadamardDelegatedAgentRecord",
@@ -3913,11 +3908,6 @@
         "signature": "export declare function orchestrateGraphV3(opts: OrchestrateGraphOptions): Promise<OrchestrateGraphResult>;"
       },
       {
-        "name": "orchestratePanel",
-        "kind": "function",
-        "signature": "export declare function orchestratePanel(opts: {\nprompt: string;\nmaxRounds: number;\ninvestigate: (round: number, question: string, priorContext?: string) => Promise<ExpertPanelReport[]>;\ndecide?: (deliberationLog: string, round: number) => Promise<string>;\nonEvent?: (event: TeamEvent) => void;\n}): Promise<{\nanswer: string;\nrounds: number;\nreports: ExpertPanelReport[];\n}>;"
-      },
-      {
         "name": "parallel",
         "kind": "function",
         "signature": "export declare function parallel<T>(tasks: Array<() => Promise<T>>, options?: ParallelOptions): Promise<T[]>;"
@@ -4376,11 +4366,6 @@
         "name": "RequestGoalWorkItemUpdateInput",
         "kind": "interface",
         "signature": "export interface RequestGoalWorkItemUpdateInput {\nworkItemId: string;\nstatus: 'open' | 'done' | 'deferred' | 'cancelled';\nnote: string;\nevidenceRefs?: string[];\nnoFollowupReason?: string;\nresumeWhen?: string;\nexpectedRevision?: number;\n}"
-      },
-      {
-        "name": "resetGlobalAgentPool",
-        "kind": "function",
-        "signature": "export declare function resetGlobalAgentPool(maxConcurrent?: number): void;"
       },
       {
         "name": "resolveAgentExecutionIdentity",
@@ -5501,11 +5486,6 @@
         "name": "validateTeamGraph",
         "kind": "function",
         "signature": "export declare function validateTeamGraph(definition: TeamDefinition): string[];"
-      },
-      {
-        "name": "validateTeamGraphV2",
-        "kind": "function",
-        "signature": "export declare function validateTeamGraphV2(definition: TeamDefinition): string[];"
       },
       {
         "name": "validateTeamGraphV3",
@@ -8621,7 +8601,7 @@
       {
         "name": "createExaSearchTool",
         "kind": "function",
-        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"news\" | \"github\" | \"company\" | \"research paper\" | \"pdf\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
+        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"news\" | \"github\" | \"company\" | \"research paper\" | \"pdf\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
       },
       {
         "name": "createExitWorktreeTool",
@@ -9542,11 +9522,6 @@
         "name": "getDefaultHadamardSettingsPath",
         "kind": "function",
         "signature": "export declare function getDefaultHadamardSettingsPath(homeDir?: string): string;"
-      },
-      {
-        "name": "getGlobalAgentPool",
-        "kind": "function",
-        "signature": "export declare function getGlobalAgentPool(): AgentPool;"
       },
       {
         "name": "getHadamardApiContextManagement",
@@ -10541,7 +10516,7 @@
       {
         "name": "HadamardCoreToolsOptions",
         "kind": "interface",
-        "signature": "export interface HadamardCoreToolsOptions extends HadamardFileToolsOptions, PlanModeToolContext {\nbash?: boolean;\ntodoWrite?: boolean;\naskUserQuestion?: boolean;\nplanModeTools?: boolean;\nwebTools?: boolean;\ntaskTools?: boolean;\nnotebookEdit?: boolean;\npowershell?: boolean;\nmiscTools?: boolean;\n}"
+        "signature": "export interface HadamardCoreToolsOptions extends HadamardFileToolsOptions, PlanModeToolContext {\nbash?: boolean;\ntodoWrite?: boolean;\naskUserQuestion?: boolean;\nplanModeTools?: boolean;\nwebTools?: boolean;\ntaskTools?: boolean;\nnotebookEdit?: boolean;\npowershell?: boolean;\nmiscTools?: boolean;\nworktree?: boolean;\ngetWorktreeService?: () => WorktreeService | undefined;\n}"
       },
       {
         "name": "HadamardDelegatedAgentRecord",
@@ -11859,11 +11834,6 @@
         "signature": "export declare function orchestrateGraphV3(opts: OrchestrateGraphOptions): Promise<OrchestrateGraphResult>;"
       },
       {
-        "name": "orchestratePanel",
-        "kind": "function",
-        "signature": "export declare function orchestratePanel(opts: {\nprompt: string;\nmaxRounds: number;\ninvestigate: (round: number, question: string, priorContext?: string) => Promise<ExpertPanelReport[]>;\ndecide?: (deliberationLog: string, round: number) => Promise<string>;\nonEvent?: (event: TeamEvent) => void;\n}): Promise<{\nanswer: string;\nrounds: number;\nreports: ExpertPanelReport[];\n}>;"
-      },
-      {
         "name": "parallel",
         "kind": "function",
         "signature": "export declare function parallel<T>(tasks: Array<() => Promise<T>>, options?: ParallelOptions): Promise<T[]>;"
@@ -12332,11 +12302,6 @@
         "name": "RequestGoalWorkItemUpdateInput",
         "kind": "interface",
         "signature": "export interface RequestGoalWorkItemUpdateInput {\nworkItemId: string;\nstatus: 'open' | 'done' | 'deferred' | 'cancelled';\nnote: string;\nevidenceRefs?: string[];\nnoFollowupReason?: string;\nresumeWhen?: string;\nexpectedRevision?: number;\n}"
-      },
-      {
-        "name": "resetGlobalAgentPool",
-        "kind": "function",
-        "signature": "export declare function resetGlobalAgentPool(maxConcurrent?: number): void;"
       },
       {
         "name": "resolveAgentExecutionIdentity",
@@ -13537,11 +13502,6 @@
         "name": "validateTeamGraph",
         "kind": "function",
         "signature": "export declare function validateTeamGraph(definition: TeamDefinition): string[];"
-      },
-      {
-        "name": "validateTeamGraphV2",
-        "kind": "function",
-        "signature": "export declare function validateTeamGraphV2(definition: TeamDefinition): string[];"
       },
       {
         "name": "validateTeamGraphV3",

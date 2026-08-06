@@ -117,6 +117,8 @@ export interface ExecuteConversationOptions {
   mcpManager: McpConnectionManager;
   /** Override the working directory for this execution (used by worktrees). */
   sessionWorkDir?: string;
+  /** Called when EnterWorktree / ExitWorktree updates the active session cwd mid-turn. */
+  onSessionWorkDirChange?: (workDir: string) => void;
   fileChangeJournal?: ToolExecutionContext['fileChangeJournal'];
   sandboxExecutor?: ToolExecutionContext['sandboxExecutor'];
   typedHookRunner?: HookRunner;
@@ -126,7 +128,7 @@ export async function executeConversation(
   options: ExecuteConversationOptions,
 ): Promise<AgentRunResult> {
   const startedAt = nowIso();
-  const workDir = options.sessionWorkDir ?? options.config.workDir;
+  let workDir = options.sessionWorkDir ?? options.config.workDir;
   let model = options.model ?? options.config.model;
   const effort =
     options.effort === 'auto'
@@ -898,6 +900,14 @@ export async function executeConversation(
             onProgress,
           ),
         );
+        const nextWorkDir = executionContext.metadata.__hadamardWorkDir;
+        if (typeof nextWorkDir === 'string' && nextWorkDir.trim()) {
+          const resolved = path.resolve(nextWorkDir.trim());
+          if (resolved !== workDir) {
+            workDir = resolved;
+            options.onSessionWorkDirChange?.(workDir);
+          }
+        }
         // Per-tool declared cap first (default 50k via tool factory), clamped
         // by the global artifact ceiling. MCP tools without a declared cap use
         // the global ceiling only.

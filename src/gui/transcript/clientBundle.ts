@@ -1,6 +1,11 @@
 /**
  * Browser transcript UI bundle injected into /app.js.
- * Mirrors src/gui/transcript/parts.ts reducer semantics for the live DOM.
+ *
+ * Dual-path note: the live Electron/browser DOM uses this string bundle.
+ * `parts.ts` / `scroll.ts` / `registry.ts` are the Node-side reducer + styles
+ * used by unit tests and as the semantic source of truth. Keep event handling
+ * here aligned with `parts.ts` when changing transcript behavior; do not delete
+ * either path until a shared build step generates the client bundle from parts.
  */
 export function getTranscriptClientScript(): string {
   return `

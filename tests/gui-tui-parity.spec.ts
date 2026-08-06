@@ -124,7 +124,8 @@ describe('TUI and GUI parity', () => {
     expect(html).toContain('data-settings-tab="capabilities"');
     expect(html).not.toContain('data-settings-tab="automation"');
     expect(html).toContain('data-settings-tab="sessions"');
-    expect(html).toContain('data-settings-tab="memory"');
+    expect(html).not.toContain('data-settings-tab="memory"');
+    expect(html).not.toContain('data-settings-panel="memory"');
     expect(html).toContain('id="settingsRouterStatus"');
     expect(html).toContain('id="settingsDisableRouter"');
     expect(html).toContain('id="settingsRoutersList"');
@@ -360,7 +361,7 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('/model router ');
     expect(js).toContain('/workflows run ');
     expect(js).toContain('/team attach ');
-    expect(js).toContain('/dream run');
+    expect(js).toContain('/api/project-dream/run');
     expect(js).toContain('overviewNewWorkspaceBtn');
     expect(js).toContain('completeSlash');
     expect(js).toContain('processQueue');
@@ -680,6 +681,20 @@ describe('TUI and GUI parity', () => {
     for (const source of [tui, gui]) {
       expect(source).toContain('cloneTeamDefinition');
       expect(source).toContain("startsWith('clone ')");
+    }
+  });
+
+  it('exposes /team delete and /workflows save|delete on TUI and GUI', () => {
+    const root = join(import.meta.dirname, '..');
+    expect(SUBCOMMANDS.team).toContain('delete');
+    expect(SUBCOMMANDS.workflows).toEqual(expect.arrayContaining(['list', 'run', 'save', 'delete']));
+    const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
+    const gui = readFileSync(join(root, 'src', 'gui', 'hadamardGui.ts'), 'utf8');
+    for (const source of [tui, gui]) {
+      expect(source).toContain('deleteTeamDefinition');
+      expect(source).toContain('deleteWorkflow');
+      expect(source).toContain('saveWorkflow');
+      expect(source).toContain("startsWith('delete ')");
     }
   });
 

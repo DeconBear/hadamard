@@ -68,7 +68,7 @@ const Read = (opts: { cwd: string; maxReadLines: number; readState: ReadState })
       prompt: fileReadPrompt,
     },
     async (input, context) => {
-      const resolvedPath = resolvePath(input.file_path, opts.cwd);
+      const resolvedPath = resolvePath(input.file_path, context.cwd || opts.cwd);
       await context.sandboxExecutor?.assertPathAllowed(resolvedPath, 'read');
       let fileStats;
       try { fileStats = await fsStat(resolvedPath); } catch {
@@ -133,7 +133,7 @@ const Write = (opts: { cwd: string; readState: ReadState }) =>
       prompt: fileWritePrompt,
     },
     async (input, context) => {
-      const resolvedPath = resolvePath(input.file_path, opts.cwd);
+      const resolvedPath = resolvePath(input.file_path, context.cwd || opts.cwd);
       await context.sandboxExecutor?.assertPathAllowed(resolvedPath, 'write');
       let existing;
       try { existing = await fsStat(resolvedPath); } catch { /* new file */ }
@@ -183,7 +183,7 @@ const Edit = (opts: { cwd: string; readState: ReadState }) =>
       prompt: fileEditPrompt,
     },
     async (input, context) => {
-      const resolvedPath = resolvePath(input.file_path, opts.cwd);
+      const resolvedPath = resolvePath(input.file_path, context.cwd || opts.cwd);
       await context.sandboxExecutor?.assertPathAllowed(resolvedPath, 'write');
       let fileStats;
       try { fileStats = await fsStat(resolvedPath); } catch {
@@ -249,7 +249,7 @@ const Glob = (opts: { cwd: string; defaultGlobLimit: number }) =>
       prompt: fileSearchPrompt,
     },
     async (input, context) => {
-      const searchRoot = resolvePath(input.path ?? opts.cwd, opts.cwd);
+      const searchRoot = resolvePath(input.path ?? (context.cwd || opts.cwd), context.cwd || opts.cwd);
       await context.sandboxExecutor?.assertPathAllowed(searchRoot, 'read');
       const matches: string[] = [];
       const stream = glob.stream(input.pattern, {
@@ -307,7 +307,7 @@ const Grep = (opts: { cwd: string; defaultGrepLimit: number }) =>
       prompt: fileSearchPrompt,
     },
     async (input, context) => {
-      const searchRoot = resolvePath(input.path ?? opts.cwd, opts.cwd);
+      const searchRoot = resolvePath(input.path ?? (context.cwd || opts.cwd), context.cwd || opts.cwd);
       await context.sandboxExecutor?.assertPathAllowed(searchRoot, 'read');
       const outputMode = input.output_mode ?? 'files_with_matches';
       const limit = input.head_limit ?? opts.defaultGrepLimit;
