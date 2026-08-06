@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   ContentBlock,
   Message,
   MessageParam,
@@ -2762,6 +2762,25 @@ export interface WorktreeInfo {
  */
 export type ModelTeamMode = 'panel-analysis' | 'panel' | 'analysis' | 'reviewer' | 'executor-reviewer' | 'graph';
 
+/**
+ * Unified typed reference to an execution target (reference model redesign).
+ * Schemas persist the reference, not a copied provider/baseURL/apiKey snapshot;
+ * runtime resolution expands a ref via `resolveTargetRef`
+ * (`src/manager/resolveTargetRef.ts`).
+ *
+ * There is deliberately no `router` kind: routers cannot be route/execution
+ * targets (nested classification chains and cycles are disallowed).
+ *
+ * For `{ kind: 'model' }`, an empty `config` string marks a "raw model ref":
+ * a legacy target whose originating bridge config is unknown — resolution then
+ * falls back to whatever legacy provider/baseURL/apiKey fields sit next to the
+ * ref (or to session defaults).
+ */
+export type AgentTargetRef =
+  | { kind: 'model'; config: string; model: string }
+  | { kind: 'agent'; name: string }
+  | { kind: 'team'; name: string };
+
 /** A node in a workflow squad's execution tree. */
 export interface WorkflowNode {
   id: string;
@@ -2774,6 +2793,13 @@ export interface WorkflowNode {
   condition?: string;
   runtime?: string;
   model?: string;
+  /**
+   * Typed reference to this agent node's executor (saved agent profile, team,
+   * or config-scoped model). When present, runtime resolution prefers it over
+   * the legacy inline `model` field. Absent on legacy nodes — lazy migration
+   * only fills it when the target is clearly resolvable.
+   */
+  targetRef?: AgentTargetRef;
   /** Children: branch=[if,else], parallel=all, agent=[] or one sequential continuation. */
   children: WorkflowNode[];
 }
@@ -2857,6 +2883,14 @@ export interface TeamGraphNode extends Omit<TeamMember, 'model'> {
   type?: 'react' | 'single' | 'team';
   /** When `type === 'team'`, name of the persisted team definition to invoke. */
   teamRef?: string;
+  /**
+   * Typed reference to this node's execution target. Lazy migration on load
+   * turns `type: 'team'` + `teamRef` into `{ kind: 'team', name: teamRef }`;
+   * nodes with only a raw `model` keep `targetRef` absent (the legacy by-value
+   * fields remain the fallback) since the originating config is not knowable.
+   * Runtime resolution prefers `targetRef` when present.
+   */
+  targetRef?: AgentTargetRef;
   /** Return ports only — `void` (return 0) or structured `payload`. */
   returnMode?: TeamGraphReturnMode;
   /** Return ports in `payload` mode — template for the structured return value. */
@@ -3132,6 +3166,14 @@ export interface RouterRoute extends RouterModelRef {
   role?: string;
   /** Optional richer description of the specialist's strengths, for the leader to weigh. */
   description?: string;
+  /**
+   * Typed execution target for this route. Lazily migrated on load from the
+   * legacy by-value fields: a route whose role/name matches a saved agent
+   * profile becomes `{ kind: 'agent', name }`; a model-only route becomes
+   * `{ kind: 'model', config: '', model }` (empty config = raw legacy model
+   * ref). Saves always write `target` while keeping the legacy fields.
+   */
+  target?: AgentTargetRef;
 }
 
 /**
@@ -3150,6 +3192,12 @@ export interface RouterProfile {
   routes: RouterRoute[];
   /** Used when the leader matches no route. Defaults to the first route. */
   fallback?: RouterModelRef;
+  /**
+   * Typed fallback target (allows fallback to a saved agent). Lazily migrated
+   * on load from the legacy `fallback` model ref; `fallback` is kept as the
+   * legacy by-value copy for back-compat.
+   */
+  fallbackTarget?: AgentTargetRef;
   /** Optional custom leader/dispatch-prompt prefix. */
   classificationPrompt?: string;
 }
