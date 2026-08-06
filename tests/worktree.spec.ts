@@ -103,6 +103,13 @@ describe('.worktreeinclude', () => {
 });
 
 describe('EnterWorktree tool', () => {
+  it('is registered by createHadamardCoreTools by default', async () => {
+    const { createHadamardCoreTools } = await import('../src/tools/hadamardCoreTools.js');
+    const tools = createHadamardCoreTools({ cwd: process.cwd() });
+    expect(tools.some((tool) => tool.name === ENTER_WORKTREE_TOOL_NAME)).toBe(true);
+    expect(tools.some((tool) => tool.name === EXIT_WORKTREE_TOOL_NAME)).toBe(true);
+  });
+
   it('creates a tool with the correct name', () => {
     const tool = createEnterWorktreeTool(() => undefined);
     expect(tool.name).toBe(ENTER_WORKTREE_TOOL_NAME);

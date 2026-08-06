@@ -476,14 +476,11 @@ export {
   ModelTeam,
   createModelTeam,
   createTeamTool,
-  orchestratePanel,
   formatExpertPanelReports,
   resolveGraphDisplayAnswer,
 } from './team/modelTeam.js';
 export {
   AgentPool,
-  getGlobalAgentPool,
-  resetGlobalAgentPool,
 } from './team/agentPool.js';
 export {
   getModelPricing,
@@ -510,7 +507,6 @@ export {
   migrateTeamDefinitionToGraph,
   migrateTeamDefinitionToV3,
   isTeamGraphV3,
-  validateTeamGraphV2,
   validateTeamGraphV3,
   canonicalizeTeamDefinition,
   toPersistedTeamDefinition,

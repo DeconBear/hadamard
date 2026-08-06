@@ -96,7 +96,9 @@ function computeCost(
  * Orchestrate the panel over an injectable `investigate` (one round of member
  * reports) and optional `decide` (the primary's synthesize-or-continue call).
  *
- * Exported so convergence logic is unit-testable without real model calls.
+ * @deprecated Production teams run graph v3 via `orchestrateGraph`. Kept only
+ * for unit tests that inject fake investigate/decide callbacks — import from
+ * `src/team/modelTeam.ts` directly, not the public package export.
  */
 export async function orchestratePanel(opts: {
   prompt: string;
