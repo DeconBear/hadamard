@@ -253,6 +253,13 @@ import {
 } from '../team/teamGraphLayout.js';
 import { buildRouteModelApi } from '../router/modelRouter.js';
 import {
+  buildReferenceIndex,
+  findBrokenRefs,
+  findUsages,
+  type ReferenceEdge,
+  type ReferenceTargetKind,
+} from '../manager/referenceIndex.js';
+import {
   DurableIssueCoordinator,
   type DurableIssueExecutionRequest,
 } from '../issues/durableIssueCoordinator.js';
@@ -383,6 +390,7 @@ import type {
   AgentEvent,
   AgentRunResult,
   AgentToolDefinition,
+  AgentTargetRef,
   RouterModelRef,
   RouterProfile,
   RouterRoute,
@@ -8877,6 +8885,66 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
         }
       }
+      // Unified reference model (P0): build the reference index over the same
+      // data the state snapshot loads, then serve usage / broken-ref queries.
+      async function buildGuiReferenceIndex(): Promise<{
+        index: ReferenceEdge[];
+        bridgeConfigs: PersistedBridgeConfig[];
+        teams: { name: string }[];
+        routers: { name: string }[];
+      }> {
+        const homeDir = resolveGuiHomeDir();
+        const [teams, routers, automationTasks, managerConfig] = await Promise.all([
+          Promise.resolve(listTeamDefinitions(workDir, homeDir)),
+          Promise.resolve(listRouterProfiles(workDir, homeDir)),
+          listScheduledAutomationTasks(workDir),
+          readManagerConfig(projectPrimaryPath, homeDir).catch(() => undefined),
+        ]);
+        const bridgeConfigs = readBridgeConfigs(homeDir).configs;
+        const agentProfiles = listAgentProfiles(homeDir);
+        const index = buildReferenceIndex({
+          bridgeConfigs,
+          agentProfiles,
+          routers: routers.map((entry) => entry.profile),
+          teams: teams.map((entry) => entry.definition),
+          automationTasks,
+          teamPreferences: teamPrefs,
+          managerConfigs: managerConfig
+            ? [{ name: projectPrimaryPath, bridgeConfig: managerConfig.bridgeConfig }]
+            : [],
+          session: {
+            activeAgent: activeAgentSelectionName,
+            activeConfig: activeBridgeConfig?.name ?? null,
+            activeRouterName: activeRouter?.name ?? null,
+            activeTeamName,
+          },
+        });
+        return { index, bridgeConfigs, teams, routers };
+      }
+      if (req.method === 'GET' && url.pathname === '/api/references') {
+        const kind = url.searchParams.get('kind')?.trim() ?? '';
+        const name = url.searchParams.get('name')?.trim() ?? '';
+        const { index } = await buildGuiReferenceIndex();
+        if (!kind && !name) return json(res, 200, { edges: index });
+        const kinds: ReferenceTargetKind[] = ['config', 'agent', 'team', 'router'];
+        if (!kinds.includes(kind as ReferenceTargetKind) || !name) {
+          return json(res, 400, { error: 'Missing or invalid kind/name (kind: config|agent|team|router)' });
+        }
+        return json(res, 200, { edges: findUsages(index, kind as ReferenceTargetKind, name) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/references/broken') {
+        const homeDir = resolveGuiHomeDir();
+        const { index, bridgeConfigs, teams, routers } = await buildGuiReferenceIndex();
+        const broken = findBrokenRefs(index, {
+          configs: bridgeConfigs.map((config) => config.name),
+          // Selectable agents include ephemeral per-config presets so an active
+          // session edge to one of them is not falsely reported as broken.
+          agents: listSelectableAgents(homeDir).map((agent) => agent.name),
+          teams: teams.map((team) => team.name),
+          routers: routers.map((router) => router.name),
+        });
+        return json(res, 200, { edges: broken });
+      }
       if (req.method === 'GET' && url.pathname === '/api/agent-profiles') {
         return json(res, 200, { profiles: listAgentProfiles(resolveGuiHomeDir()) });
       }
@@ -9060,6 +9128,26 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           }
           return ref;
         };
+        // Unified reference model: accept typed route/fallback targets so
+        // clients can persist agent refs instead of lossy model flattening.
+        const parseTargetRef = (raw: unknown): AgentTargetRef | null => {
+          if (!raw || typeof raw !== 'object') return null;
+          const obj = raw as Record<string, unknown>;
+          if (obj.kind === 'agent' && typeof obj.name === 'string' && obj.name.trim()) {
+            return { kind: 'agent', name: obj.name.trim() };
+          }
+          if (obj.kind === 'team' && typeof obj.name === 'string' && obj.name.trim()) {
+            return { kind: 'team', name: obj.name.trim() };
+          }
+          if (obj.kind === 'model' && typeof obj.model === 'string' && obj.model.trim()) {
+            return {
+              kind: 'model',
+              config: typeof obj.config === 'string' ? obj.config.trim() : '',
+              model: obj.model.trim(),
+            };
+          }
+          return null;
+        };
         const routerModel = parseRef(body.routerModel);
         if (!routerModel) return json(res, 400, { error: 'Leader model (routerModel.model) is required' });
         const routesRaw = Array.isArray(body.routes) ? body.routes : [];
@@ -9074,6 +9162,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           if (typeof obj.role === 'string' && obj.role.trim()) route.role = obj.role.trim();
           if (typeof obj.name === 'string' && obj.name.trim()) route.name = obj.name.trim();
           if (typeof obj.description === 'string' && obj.description.trim()) route.description = obj.description.trim();
+          const routeTarget = parseTargetRef(obj.target);
+          if (routeTarget) route.target = routeTarget;
           routes.push(route);
         }
         if (routes.length === 0) return json(res, 400, { error: 'At least one route with model + when is required' });
@@ -9090,6 +9180,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         }
         const fallback = parseRef(body.fallback);
         if (fallback) profile.fallback = fallback;
+        const fallbackTarget = parseTargetRef(body.fallbackTarget);
+        if (fallbackTarget) profile.fallbackTarget = fallbackTarget;
         const target = body.target === 'personal' ? 'personal' : 'project';
         let releaseRuntimeMutation: () => void;
         try {
@@ -12389,6 +12481,7 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
 .squad-chip:hover { border-color: var(--border-hover); }
 .squad-chip.active { border-color: var(--brand); background: var(--surface-selected); color: var(--text-1); font-weight: 600; }
 .squad-chip .sq-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.squad-chip .sq-badge-broken { color: var(--warn); font-size: 12px; line-height: 1; flex: 0 0 auto; }
 .team-graph { flex: 1; overflow: auto; padding: 28px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 16px; background: var(--bg-surface-2); }
 .graph-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 .graph-arrow { color: var(--text-2); font-size: 22px; line-height: 1; }
@@ -25861,6 +25954,31 @@ function teamListForRegion() {
   }));
   return [...teams, ...profiles, ...routers];
 }
+// Broken-reference badges (unified reference model, P0): chips whose
+// definition references a missing config/agent/team get a ⚠ marker.
+// brokenRefBadges maps agentEntryKey(chipKind, name) → missing target labels;
+// null = not loaded yet (the next renderTeamSquadBar triggers the fetch).
+let brokenRefBadges = null;
+function loadBrokenRefBadges() {
+  api('/api/references/broken').then(function (res) {
+    if (!res.ok) throw new Error('references/broken failed: ' + res.status);
+    return res.json();
+  }).then(function (payload) {
+    const edges = payload && Array.isArray(payload.edges) ? payload.edges : [];
+    const map = new Map();
+    for (const e of edges) {
+      if (!e || !e.from || !e.to) continue;
+      const chipKind = e.from.kind === 'agent' ? 'profile' : e.from.kind;
+      if (chipKind !== 'profile' && chipKind !== 'router' && chipKind !== 'team') continue;
+      const key = agentEntryKey(chipKind, e.from.name);
+      const label = e.to.kind + ' "' + e.to.name + '"';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(label);
+    }
+    brokenRefBadges = map;
+    renderTeamSquadBar();
+  }).catch(function () { /* transient — keep previous badges */ });
+}
 async function refreshTeamsSnapshot() {
   try {
     const res = await api('/api/state');
@@ -25876,12 +25994,17 @@ async function refreshTeamsSnapshot() {
     } else {
       state.snapshot = st;
     }
+    loadBrokenRefBadges();
   } catch { /* transient */ }
 }
 function renderTeamSquadBar() {
   const teams = teamListForRegion();
   const bar = el('teamSquadBar');
   if (!bar) return teams;
+  if (brokenRefBadges === null) {
+    brokenRefBadges = new Map();
+    loadBrokenRefBadges();
+  }
   bar.textContent = '';
   const activeKey = agentEntryKey(state.teamSelectedKind || 'team', state.teamSelected);
   for (const t of teams) {
@@ -25908,6 +26031,14 @@ function renderTeamSquadBar() {
     small.textContent = (t.kind === 'profile' || t.kind === 'router' ? typeExtra : squadTypeLabel(t.squadType)) + ' · ' + sourceLabel;
     labels.append(label, small);
     chip.append(dot, labels);
+    const brokenTargets = brokenRefBadges && brokenRefBadges.get(key);
+    if (brokenTargets && brokenTargets.length) {
+      const badge = document.createElement('span');
+      badge.className = 'sq-badge-broken';
+      badge.textContent = '⚠';
+      badge.title = 'Broken reference: missing ' + brokenTargets.join(', ');
+      chip.appendChild(badge);
+    }
     chip.addEventListener('click', () => {
       state.teamSelected = t.name;
       state.teamSelectedKind = t.kind;
