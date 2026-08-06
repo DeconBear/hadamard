@@ -260,6 +260,14 @@ import {
   type ReferenceTargetKind,
 } from '../manager/referenceIndex.js';
 import {
+  applyDeleteFallback,
+  renameDefinitionAndReferences,
+  repointConfigModel,
+  type DeleteFallbackStrategy,
+  type ReferenceDefinitionKind,
+} from '../manager/referenceOperations.js';
+import { BrokenReferenceError } from '../manager/resolveTargetRef.js';
+import {
   DurableIssueCoordinator,
   type DurableIssueExecutionRequest,
 } from '../issues/durableIssueCoordinator.js';
@@ -685,6 +693,8 @@ interface GuiPreferences {
   showProviderConfigsInComposer: boolean;
   showAgentProfilesInComposer: boolean;
   showRouterProfilesInComposer: boolean;
+  /** §3.5: when off (or no default model configured), broken references fail loudly instead of silently falling back. */
+  useDefaultModelAsFallback: boolean;
   /** Windows only. Ignored on Linux/macOS. */
   windowsTerminalShell: WindowsTerminalShellPreference;
   shortcuts: GuiShortcuts;
@@ -723,6 +733,7 @@ const DEFAULT_GUI_PREFERENCES: GuiPreferences = {
   showProviderConfigsInComposer: true,
   showAgentProfilesInComposer: true,
   showRouterProfilesInComposer: true,
+  useDefaultModelAsFallback: true,
   windowsTerminalShell: 'powershell',
   shortcuts: DEFAULT_GUI_SHORTCUTS,
 };
@@ -969,7 +980,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readGuiPreferences(raw: Record<string, unknown>): GuiPreferences {
+export function readGuiPreferences(raw: Record<string, unknown>): GuiPreferences {
   const source = isPlainRecord(raw.gui) ? raw.gui : {};
   const theme = source.theme === 'light' || source.theme === 'dark' ? source.theme : 'system';
   const density = source.density === 'compact' ? 'compact' : 'comfortable';
@@ -1004,6 +1015,9 @@ function readGuiPreferences(raw: Record<string, unknown>): GuiPreferences {
     showRouterProfilesInComposer: typeof source.showRouterProfilesInComposer === 'boolean'
       ? source.showRouterProfilesInComposer
       : DEFAULT_GUI_PREFERENCES.showRouterProfilesInComposer,
+    useDefaultModelAsFallback: typeof source.useDefaultModelAsFallback === 'boolean'
+      ? source.useDefaultModelAsFallback
+      : DEFAULT_GUI_PREFERENCES.useDefaultModelAsFallback,
     windowsTerminalShell: isWindowsTerminalShellPreference(source.windowsTerminalShell)
       ? source.windowsTerminalShell
       : DEFAULT_GUI_PREFERENCES.windowsTerminalShell,
@@ -2987,6 +3001,22 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     await session.setPermissionContext({ mode: 'plan', permissions: [], approver });
   };
 
+  /**
+   * §3.5 fallback switch: ON (default) allows silent fallbacks to the session
+   * default model; OFF — or ON without a configured default model — disables
+   * them so broken references surface as explicit errors instead.
+   */
+  async function defaultModelFallbackEnabled(): Promise<boolean> {
+    const store = await resolveHadamardSettingsStore({
+      configPath: options.configPath,
+      homeDir: currentHomeInput(),
+    }).catch(() => undefined);
+    const prefs = store ? readGuiPreferences(store.raw) : DEFAULT_GUI_PREFERENCES;
+    if (prefs.useDefaultModelAsFallback === false) return false;
+    const env = store ? readEnvFromSettings(store.raw) : {};
+    return Boolean((env.HADAMARD_MODEL ?? '').trim());
+  }
+
   async function state(opts?: { light?: boolean }) {
     const light = opts?.light === true;
     const store = await resolveHadamardSettingsStore({
@@ -4099,7 +4129,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi'] } | undefined;
       const configActive = !!activeBridgeConfig;
       if (activeRouter && !bridgeMode && !configActive) {
-        const decision = await resolveRoutedRun(activeRouter, input, runAbort.signal);
+        const decision = await resolveRoutedRun(activeRouter, input, runAbort.signal, {
+          projectDir: workDir,
+          homeDir: resolveGuiHomeDir(),
+        });
         routed = { model: decision.model, modelApi: decision.modelApi };
       }
       const systemPromptForRun = systemPrompt;
@@ -6611,12 +6644,29 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       const configActive = !!activeBridgeConfig;
       let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi'] } | undefined;
       if (activeRouter && !bridgeMode && !configActive) {
+        const routerName = activeRouter.name;
         try {
-          const decision = await resolveRoutedRun(activeRouter, input, runAbort.signal);
+          const decision = await resolveRoutedRun(activeRouter, input, runAbort.signal, {
+            projectDir: workDir,
+            homeDir: resolveGuiHomeDir(),
+          });
           routed = { model: decision.model, modelApi: decision.modelApi };
           routedModelLabel = `${decision.label} (${decision.model})`;
           send({ type: 'notice', message: `router -> ${routedModelLabel}` });
         } catch (error) {
+          // §3.5: with the default-model fallback off, a broken router reference
+          // is an explicit error (client shows the repair modal), not a silent
+          // degrade to the session model.
+          if (error instanceof BrokenReferenceError && !(await defaultModelFallbackEnabled())) {
+            send({
+              type: 'broken.reference',
+              kind: error.kind,
+              targetName: error.targetName,
+              from: { kind: 'router', name: routerName },
+              message: `Router "${routerName}" reference is broken: ${error.message}`,
+            });
+            throw error;
+          }
           send({ type: 'notice', message: `router classification failed: ${(error as Error).message}` });
         }
       }
@@ -7685,6 +7735,36 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       return json(res, 200, { definition: migrateTeamDefinitionToGraph(definition) });
     } catch (error) {
       return json(res, 400, { error: (error as Error).message });
+    }
+  }
+  if (req.method === 'POST' && url.pathname === '/api/team/delete') {
+    // P1: cascade-aware team delete (impact dialog → strategy). Built-ins stay
+    // immutable; the legacy `/team delete` slash command is unchanged.
+    try {
+      const body = await readJson(req);
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!name) return json(res, 400, { error: 'Missing team name' });
+      if (getBuiltInTeamDefinition(name)) {
+        return json(res, 400, { error: `cannot delete built-in team: ${name}` });
+      }
+      const strategy = parseDeleteStrategy(body.strategy);
+      const next = await withRuntimeMutation(async () => {
+        if (strategy.type !== 'leave') {
+          await applyDeleteFallback('team', name, strategy, await referenceOperationContext());
+        }
+        const removed = await deleteTeamDefinition(name, workDir, resolveGuiHomeDir());
+        if (!removed) throw new Error(`team not found: ${name}`);
+        if (activeTeamName === name) {
+          activeTeamTool = null;
+          activeTeamName = null;
+          await persistSessionRuntimeMetadata();
+        }
+        return state();
+      });
+      invalidateHeavyState();
+      return json(res, 200, next);
+    } catch (error) {
+      return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
     }
   }
   if (req.method === 'POST' && url.pathname === '/api/team/preferences') {
@@ -8873,6 +8953,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             const body = await readJson(req);
             const name = typeof body.name === 'string' ? body.name.trim() : '';
             if (!name) return json(res, 400, { error: 'Missing config name' });
+            const strategy = parseDeleteStrategy(body.strategy);
+            if (strategy.type !== 'leave') {
+              await applyDeleteFallback('config', name, strategy, await referenceOperationContext());
+            }
             removeBridgeConfig(name, resolveGuiHomeDir());
             if (activeBridgeConfig?.name === name) {
               disableBridge();
@@ -8945,6 +9029,100 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         });
         return json(res, 200, { edges: broken });
       }
+      // P1 cascade operations: transactional rename, delete-with-fallback, and
+      // config-model re-point over the reference index (referenceOperations.ts).
+      // Function declarations (hoisted): earlier endpoints in this handler use them.
+      function parseDeleteStrategy(raw: unknown): DeleteFallbackStrategy {
+        if (!isPlainRecord(raw)) return { type: 'leave' };
+        if (raw.type === 'repoint' && typeof raw.target === 'string' && raw.target.trim()) {
+          return { type: 'repoint', target: raw.target.trim() };
+        }
+        if (raw.type === 'degrade-model') return { type: 'degrade-model' };
+        if (raw.type === 'remove-nodes') return { type: 'remove-nodes' };
+        return { type: 'leave' };
+      }
+      async function referenceOperationContext() {
+        const homeDir = resolveGuiHomeDir();
+        const store = await resolveHadamardSettingsStore({
+          configPath: options.configPath,
+          homeDir: currentHomeInput(),
+        }).catch(() => undefined);
+        return {
+          projectDir: workDir,
+          homeDir,
+          managerProjectPath: projectPrimaryPath,
+          teamPreferences: {
+            read: () => teamPrefs,
+            write: async (prefs: typeof teamPrefs) => {
+              const raw = isPlainRecord(store?.raw) ? structuredClone(store.raw) : {};
+              writeTeamPreferences(raw, prefs);
+              if (store) {
+                await persistHadamardSettingsStore(store.configPath, raw);
+                await loadJsonConfigFile(store.configPath);
+              }
+              teamPrefs = prefs;
+            },
+          },
+        };
+      }
+      if (req.method === 'POST' && url.pathname === '/api/references/rename') {
+        try {
+          const body = await readJson(req);
+          const kind = typeof body.kind === 'string' ? body.kind.trim() : '';
+          if (!['config', 'agent', 'router', 'team'].includes(kind)) {
+            return json(res, 400, { error: 'Invalid kind (config|agent|router|team)' });
+          }
+          const oldName = typeof body.oldName === 'string' ? body.oldName.trim() : '';
+          const newName = typeof body.newName === 'string' ? body.newName.trim() : '';
+          const report = await withRuntimeMutation(async () => {
+            const opCtx = await referenceOperationContext();
+            const result = await renameDefinitionAndReferences(
+              kind as ReferenceDefinitionKind,
+              oldName,
+              newName,
+              opCtx,
+            );
+            // Keep the active session state pointed at the renamed definition.
+            if (kind === 'config' && activeBridgeConfig?.name === oldName) {
+              const renamed = findBridgeConfig(newName, resolveGuiHomeDir());
+              if (renamed) await activateBridgeConfig(renamed);
+            }
+            if (kind === 'agent' && activeAgentSelectionName === oldName) {
+              activeAgentSelectionName = newName;
+            }
+            if (kind === 'router' && activeRouter?.name === oldName) {
+              activeRouter = loadRouterProfile(newName, workDir, resolveGuiHomeDir())?.profile ?? null;
+              routedModelLabel = null;
+            }
+            if (kind === 'team' && activeTeamName === oldName) {
+              try { attachTeamByName(newName); } catch { /* keep stale attach state */ }
+            }
+            await persistSessionRuntimeMetadata();
+            return result;
+          });
+          invalidateHeavyState();
+          return json(res, 200, { ok: true, rewritten: report.rewritten, state: await state() });
+        } catch (error) {
+          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
+        }
+      }
+      if (req.method === 'POST' && url.pathname === '/api/references/repoint-model') {
+        try {
+          const body = await readJson(req);
+          const config = typeof body.config === 'string' ? body.config.trim() : '';
+          const fromModel = typeof body.fromModel === 'string' ? body.fromModel.trim() : '';
+          const toModel = typeof body.toModel === 'string' ? body.toModel.trim() : '';
+          if (!config || !fromModel || !toModel) {
+            return json(res, 400, { error: 'Missing config/fromModel/toModel' });
+          }
+          const report = await withRuntimeMutation(async () =>
+            repointConfigModel(config, fromModel, toModel, await referenceOperationContext()));
+          invalidateHeavyState();
+          return json(res, 200, { ok: true, rewritten: report.rewritten, state: await state() });
+        } catch (error) {
+          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
+        }
+      }
       if (req.method === 'GET' && url.pathname === '/api/agent-profiles') {
         return json(res, 200, { profiles: listAgentProfiles(resolveGuiHomeDir()) });
       }
@@ -8998,8 +9176,18 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           const body = await readJson(req);
           const name = typeof body.name === 'string' ? body.name.trim() : '';
           if (!name) return json(res, 400, { error: 'Missing profile name' });
+          const strategy = parseDeleteStrategy(body.strategy);
           const next = await withRuntimeMutation(async () => {
+            if (strategy.type !== 'leave') {
+              await applyDeleteFallback('agent', name, strategy, await referenceOperationContext());
+            }
             deleteAgentProfile(name, resolveGuiHomeDir());
+            // Active agent deleted: fall back to the session default model.
+            if (activeAgentSelectionName === name) {
+              activeAgentSelectionName = null;
+              disableBridge();
+              await persistSessionRuntimeMetadata();
+            }
             return state();
           });
           return json(res, 200, next);
@@ -10987,6 +11175,11 @@ export function createHadamardGuiHtml(): string {
           <div class="settings-help-row"><span><strong>Router profiles</strong><small>Show saved leader/dispatch profiles.</small></span><label class="switch-field"><input type="checkbox" id="settingsShowRouterProfilesInComposer"></label></div>
         </div>
         <div class="settings-group">
+          <h2>Fallback</h2>
+          <div class="settings-help-row"><span><strong>Use default model as fallback</strong><small>When a referenced config, agent, or team goes missing, fall back to the default model. Off: broken references fail with an explicit error.</small></span><label class="switch-field"><input type="checkbox" id="settingsUseDefaultModelAsFallback"></label></div>
+          <p class="muted" id="settingsFallbackNoDefault" hidden>No default model is configured, so the fallback is inactive. <button type="button" id="settingsFallbackConfigureDefault" class="secondary-btn">Configure default model</button></p>
+        </div>
+        <div class="settings-group">
           <div class="settings-group-head">
             <h2>Configs</h2>
             <button type="button" id="bridgeNewConfig" class="primary">+ New config</button>
@@ -12482,6 +12675,9 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
 .squad-chip.active { border-color: var(--brand); background: var(--surface-selected); color: var(--text-1); font-weight: 600; }
 .squad-chip .sq-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 .squad-chip .sq-badge-broken { color: var(--warn); font-size: 12px; line-height: 1; flex: 0 0 auto; }
+.ref-flash { outline: 2px solid var(--err); outline-offset: 1px; border-radius: 6px; }
+.impact-usage-list { display: grid; gap: 6px; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.impact-usage-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; }
 .team-graph { flex: 1; overflow: auto; padding: 28px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 16px; background: var(--bg-surface-2); }
 .graph-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 .graph-arrow { color: var(--text-2); font-size: 22px; line-height: 1; }
@@ -15146,7 +15342,7 @@ const state = {
   skillCatalogData: null,
   skillCatalogQuery: '',
   skillCatalogExpanded: {},
-  preferences: { theme: 'system', density: 'comfortable', enterToSend: true, autoScroll: true, developerTools: false, showBranchInComposer: true, showProviderConfigsInComposer: true, showAgentProfilesInComposer: true, showRouterProfilesInComposer: true, windowsTerminalShell: 'powershell', shortcuts: {} }
+  preferences: { theme: 'system', density: 'comfortable', enterToSend: true, autoScroll: true, developerTools: false, showBranchInComposer: true, showProviderConfigsInComposer: true, showAgentProfilesInComposer: true, showRouterProfilesInComposer: true, useDefaultModelAsFallback: true, windowsTerminalShell: 'powershell', shortcuts: {} }
 };
 const DEFAULT_SHORTCUTS = {
   newChat: 'Mod+N',
@@ -24347,11 +24543,16 @@ function renderSurface(kind) {
         delTeam.type = 'button';
         delTeam.textContent = 'Delete';
         delTeam.addEventListener('click', () => {
-          if (window.confirm('Delete team "' + item.name + '"?')) {
-            submitText('/team delete ' + item.name).then(() => openSurface('teams')).catch(console.error);
-          }
+          deleteTeamViaApi(item.name).then(() => openSurface('teams')).catch(console.error);
         });
         footer.appendChild(delTeam);
+        const renameTeam = document.createElement('button');
+        renameTeam.type = 'button';
+        renameTeam.textContent = 'Rename';
+        renameTeam.addEventListener('click', () => {
+          renameDefinitionViaApi('team', item.name).then(() => openSurface('teams')).catch(console.error);
+        });
+        footer.appendChild(renameTeam);
       }
     } else if (kind === 'routers') {
       const select = document.createElement('button');
@@ -25979,8 +26180,441 @@ function loadBrokenRefBadges() {
     renderTeamSquadBar();
   }).catch(function () { /* transient — keep previous badges */ });
 }
-async function refreshTeamsSnapshot() {
+// ── P1: reference cascade UI — impact dialog, broken-ref modal, rename ──────
+async function fetchReferenceUsages(kind, name) {
   try {
+    const res = await api('/api/references?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(name));
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.edges) ? data.edges : [];
+  } catch { return []; }
+}
+function describeReferenceEdge(edge) {
+  const from = edge.from || {};
+  const field = String(edge.field || '');
+  if (from.kind === 'agent') return 'Agent profile "' + from.name + '" (provider config)';
+  if (from.kind === 'manager') return 'Project Manager config (provider config)';
+  if (from.kind === 'router') {
+    const m = field.match(/^routes\[(\d+)\]/);
+    if (m) return 'Router "' + from.name + '" · route #' + (Number(m[1]) + 1);
+    if (field === 'fallbackTarget') return 'Router "' + from.name + '" · fallback';
+    return 'Router "' + from.name + '"';
+  }
+  if (from.kind === 'team') {
+    const nodeMatch = field.match(/^nodes\[(.+?)\]/);
+    if (nodeMatch) return 'Team "' + from.name + '" · node "' + nodeMatch[1] + '"';
+    if (field.startsWith('workflowTree.')) {
+      return 'Workflow "' + from.name + '" · node "' + field.slice('workflowTree.'.length).replace(/\.targetRef$/, '') + '"';
+    }
+    return 'Team "' + from.name + '"';
+  }
+  if (from.kind === 'automation') return 'Automation task "' + from.name + '"';
+  if (from.kind === 'preference') return 'Team preferences (default attached team)';
+  if (from.kind === 'session') return 'Current session (' + field + ')';
+  return String(from.kind || '?') + ' "' + String(from.name || '') + '" (' + field + ')';
+}
+function flashElement(node) {
+  if (!node) return;
+  node.classList.add('ref-flash');
+  setTimeout(() => node.classList.remove('ref-flash'), 2400);
+}
+function goToReference(edge) {
+  const from = edge.from || {};
+  if (from.kind === 'agent') {
+    const profile = (state.snapshot?.agentProfiles || []).find((p) => p.name === from.name);
+    void switchRegion('team');
+    void selectAgentEntry(from.name, 'profile');
+    openAgentProfileEditor(profile || { name: from.name });
+    flashElement(el('agentProfileBridge'));
+    return true;
+  }
+  if (from.kind === 'router') {
+    void switchRegion('team');
+    void selectAgentEntry(from.name, 'router');
+    return true;
+  }
+  if (from.kind === 'team') {
+    void switchRegion('team');
+    void selectAgentEntry(from.name, 'team');
+    return true;
+  }
+  if (from.kind === 'automation') {
+    void switchRegion('automation');
+    return true;
+  }
+  if (from.kind === 'preference') {
+    void openSettings().catch(console.error);
+    return true;
+  }
+  return false;
+}
+/**
+ * Delete/rename impact dialog (design §3.1): lists every reference with a
+ * per-reference "Go to" deep link, plus force-action fallback strategy radios.
+ * opts: { title, body?, usages, strategies: [{value,label,hint?,options?:string[],disabledReason?}],
+ *         confirmLabel, onConfirm(strategy:{type,target?}) => Promise<boolean> }
+ * onConfirm resolves true → dialog closes; false/throw → stays open with the error shown.
+ */
+function openImpactDialog(opts) {
+  const old = document.getElementById('impactDialog');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'impactDialog';
+  overlay.className = 'modal';
+  const panel = document.createElement('div');
+  panel.className = 'auto-dialog';
+  panel.style.cssText = 'max-width:580px;width:min(580px,94vw);';
+  const head = document.createElement('div');
+  head.className = 'ins-head';
+  const h3 = document.createElement('h3');
+  h3.textContent = opts.title;
+  head.appendChild(h3);
+  panel.appendChild(head);
+  const host = document.createElement('div');
+  host.style.cssText = 'padding:0 18px 18px;display:grid;gap:12px;max-height:70vh;overflow:auto;';
+  panel.appendChild(host);
+  if (opts.body) {
+    const p = document.createElement('p');
+    p.className = 'te-hint';
+    p.textContent = opts.body;
+    host.appendChild(p);
+  }
+  const list = document.createElement('div');
+  list.className = 'impact-usage-list';
+  for (const edge of opts.usages || []) {
+    const row = document.createElement('div');
+    row.className = 'impact-usage-row';
+    const label = document.createElement('span');
+    label.textContent = describeReferenceEdge(edge);
+    row.appendChild(label);
+    if (['agent', 'router', 'team', 'automation', 'preference'].includes(edge.from?.kind)) {
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'te-btn';
+      go.textContent = 'Go to';
+      go.addEventListener('click', () => {
+        overlay.remove();
+        goToReference(edge);
+      });
+      row.appendChild(go);
+    }
+    list.appendChild(row);
+  }
+  host.appendChild(list);
+  const strategyHost = document.createElement('div');
+  strategyHost.style.cssText = 'display:grid;gap:8px;';
+  const selects = {};
+  const radios = [];
+  (opts.strategies || []).forEach((strategy) => {
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;';
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'impactStrategy';
+    radio.value = strategy.value;
+    radio.disabled = Boolean(strategy.disabledReason);
+    radios.push(radio);
+    row.appendChild(radio);
+    const text = document.createElement('span');
+    text.textContent = strategy.label;
+    row.appendChild(text);
+    if (Array.isArray(strategy.options) && strategy.options.length) {
+      const select = document.createElement('select');
+      for (const option of strategy.options) {
+        const opt = document.createElement('option');
+        opt.value = option;
+        opt.textContent = option;
+        select.appendChild(opt);
+      }
+      select.disabled = Boolean(strategy.disabledReason);
+      select.addEventListener('change', () => { radio.checked = true; });
+      selects[strategy.value] = select;
+      row.appendChild(select);
+    }
+    if (strategy.disabledReason) {
+      const why = document.createElement('small');
+      why.className = 'te-hint';
+      why.textContent = strategy.disabledReason;
+      row.appendChild(why);
+    } else if (strategy.hint) {
+      const hint = document.createElement('small');
+      hint.className = 'te-hint';
+      hint.textContent = strategy.hint;
+      row.appendChild(hint);
+    }
+    strategyHost.appendChild(row);
+  });
+  const firstEnabled = (opts.strategies || []).find((s) => !s.disabledReason);
+  const firstRadio = radios.find((r) => !r.disabled);
+  if (firstRadio) firstRadio.checked = true;
+  void firstEnabled;
+  host.appendChild(strategyHost);
+  const status = document.createElement('p');
+  status.className = 'te-hint';
+  host.appendChild(status);
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'te-btn';
+  cancel.textContent = 'Cancel';
+  cancel.addEventListener('click', () => overlay.remove());
+  const confirm = document.createElement('button');
+  confirm.type = 'button';
+  confirm.className = 'te-btn primary';
+  confirm.textContent = opts.confirmLabel || 'Delete';
+  confirm.addEventListener('click', async () => {
+    const chosen = radios.find((r) => r.checked);
+    if (!chosen) { status.textContent = 'Pick a fallback strategy first.'; return; }
+    confirm.disabled = true;
+    status.textContent = 'Working...';
+    try {
+      const ok = await opts.onConfirm({ type: chosen.value, target: selects[chosen.value]?.value });
+      if (ok === false) {
+        confirm.disabled = false;
+        status.textContent = 'Failed — nothing was deleted.';
+        return;
+      }
+      overlay.remove();
+    } catch (error) {
+      confirm.disabled = false;
+      status.textContent = 'Failed: ' + (error && error.message || error);
+    }
+  });
+  actions.append(cancel, confirm);
+  host.appendChild(actions);
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+/** §3.5: runtime broken-reference modal — Go fix (deep link) / Choose again. */
+function showBrokenReferenceModal(payload) {
+  const old = document.getElementById('brokenRefDialog');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'brokenRefDialog';
+  overlay.className = 'modal';
+  const panel = document.createElement('div');
+  panel.className = 'auto-dialog';
+  panel.style.cssText = 'max-width:520px;width:min(520px,92vw);';
+  const head = document.createElement('div');
+  head.className = 'ins-head';
+  head.innerHTML = '<h3>Broken reference</h3>';
+  panel.appendChild(head);
+  const host = document.createElement('div');
+  host.style.cssText = 'padding:0 18px 18px;display:grid;gap:12px;';
+  const msg = document.createElement('p');
+  msg.className = 'te-hint';
+  msg.textContent = payload.message || 'A referenced definition no longer exists.';
+  host.appendChild(msg);
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+  const from = payload.from || null;
+  if (from && ['agent', 'router', 'team'].includes(from.kind)) {
+    const fix = document.createElement('button');
+    fix.type = 'button';
+    fix.className = 'te-btn';
+    fix.textContent = 'Go fix';
+    fix.addEventListener('click', () => {
+      overlay.remove();
+      goToReference({ from: { kind: from.kind === 'agent' ? 'agent' : from.kind, name: from.name }, field: '' });
+    });
+    actions.appendChild(fix);
+  }
+  const choose = document.createElement('button');
+  choose.type = 'button';
+  choose.className = 'te-btn primary';
+  choose.textContent = 'Choose another model';
+  choose.addEventListener('click', () => {
+    overlay.remove();
+    toggleModelPicker();
+  });
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'te-btn';
+  close.textContent = 'Dismiss';
+  close.addEventListener('click', () => overlay.remove());
+  actions.append(choose, close);
+  host.appendChild(actions);
+  panel.appendChild(host);
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+/** Active definition was deleted: ON → toast-style notice; OFF → explicit modal. */
+function notifyActiveDefinitionDeleted(kindLabel, name) {
+  if (defaultFallbackActive()) {
+    addMessage('notice', kindLabel + ' "' + name + '" was active — fell back to the default model.');
+  } else {
+    showBrokenReferenceModal({
+      message: kindLabel + ' "' + name + '" was active and has been deleted. The session now uses the default model.',
+    });
+  }
+}
+/** Transactional rename (P1): server rewrites every referencing field, then renames. */
+async function renameDefinitionViaApi(kind, oldName) {
+  const newName = window.prompt('Rename ' + kind + ' "' + oldName + '" to', oldName);
+  if (!newName || !newName.trim() || newName.trim() === oldName) return false;
+  const res = await api('/api/references/rename', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind, oldName, newName: newName.trim() }),
+  });
+  if (!res.ok) {
+    let message = await res.text();
+    try { message = JSON.parse(message).error || message; } catch { /* keep text */ }
+    addMessage('error', 'Rename failed: ' + message);
+    return false;
+  }
+  const data = await res.json();
+  state.snapshot = data.state || state.snapshot;
+  addMessage('notice', 'Renamed "' + oldName + '" to "' + newName.trim() + '"'
+    + (Array.isArray(data.rewritten) && data.rewritten.length
+      ? ' — updated ' + data.rewritten.length + ' reference(s)'
+      : ''));
+  loadBrokenRefBadges();
+  if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
+  return true;
+}
+async function deleteTeamViaApi(name) {
+  const wasActive = state.snapshot?.activeTeamName === name;
+  const doDelete = async (strategy) => {
+    const res = await api('/api/team/delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, strategy }),
+    });
+    if (!res.ok) {
+      let message = await res.text();
+      try { message = JSON.parse(message).error || message; } catch { /* keep text */ }
+      addMessage('error', 'Delete failed: ' + message);
+      return false;
+    }
+    state.snapshot = await res.json();
+    loadBrokenRefBadges();
+    if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
+    if (wasActive) notifyActiveDefinitionDeleted('Team', name);
+    return true;
+  };
+  const usages = await fetchReferenceUsages('team', name);
+  if (!usages.length) {
+    if (!window.confirm('Delete team "' + name + '"?')) return;
+    await doDelete({ type: 'leave' });
+    return;
+  }
+  openImpactDialog({
+    title: 'Delete team "' + name + '"',
+    body: usages.length + ' reference' + (usages.length === 1 ? '' : 's') + ' point at this team.',
+    usages,
+    strategies: [
+      { value: 'leave', label: 'Delete and leave references broken', hint: 'They show a ⚠ badge until fixed.' },
+      { value: 'remove-nodes', label: 'Delete and remove referencing graph nodes', hint: 'Drops teamRef nodes (and their edges) from other graphs.' },
+    ],
+    onConfirm: (strategy) => doDelete({ type: strategy.type === 'remove-nodes' ? 'remove-nodes' : 'leave' }),
+  });
+}
+/** Usages of one model of one config across profiles / router targets / team nodes. */
+function findConfigModelUsages(configName, model) {
+  const usages = [];
+  for (const p of state.snapshot?.agentProfiles || []) {
+    if (p.bridgeConfig === configName && p.model === model) usages.push('Agent profile "' + p.name + '"');
+  }
+  for (const r of state.snapshot?.routers || []) {
+    const profile = r.profile || {};
+    (Array.isArray(profile.routes) ? profile.routes : []).forEach((route, i) => {
+      if (route.target?.kind === 'model' && route.target.config === configName && route.target.model === model) {
+        usages.push('Router "' + r.name + '" · route #' + (i + 1));
+      }
+    });
+    const fb = profile.fallbackTarget;
+    if (fb?.kind === 'model' && fb.config === configName && fb.model === model) {
+      usages.push('Router "' + r.name + '" · fallback');
+    }
+  }
+  for (const t of state.snapshot?.teams || []) {
+    for (const node of t.definition?.nodes || []) {
+      const ref = node.targetRef;
+      if (ref?.kind === 'model' && ref.config === configName && ref.model === model) {
+        usages.push('Team "' + t.name + '" · node "' + (node.id || node.name || node.role || '?') + '"');
+      }
+    }
+  }
+  return usages;
+}
+/**
+ * §3.2: warn when a config edit removes models that are still referenced.
+ * Returns null when the user cancels the save; otherwise the chosen re-points
+ * (possibly empty = leave the references broken).
+ */
+function promptModelRepoints(configName, removedModels, remainingModels) {
+  return new Promise((resolve) => {
+    const rows = removedModels
+      .map((model) => ({ model, usages: findConfigModelUsages(configName, model) }))
+      .filter((row) => row.usages.length > 0);
+    if (!rows.length) { resolve([]); return; }
+    const old = document.getElementById('modelRepointDialog');
+    if (old) old.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'modelRepointDialog';
+    overlay.className = 'modal';
+    const panel = document.createElement('div');
+    panel.className = 'auto-dialog';
+    panel.style.cssText = 'max-width:560px;width:min(560px,94vw);';
+    const head = document.createElement('div');
+    head.className = 'ins-head';
+    head.innerHTML = '<h3>Models still in use</h3>';
+    panel.appendChild(head);
+    const host = document.createElement('div');
+    host.style.cssText = 'padding:0 18px 18px;display:grid;gap:12px;max-height:70vh;overflow:auto;';
+    const selects = {};
+    for (const row of rows) {
+      const box = document.createElement('div');
+      box.className = 'te-field';
+      const title = document.createElement('label');
+      title.textContent = '"' + row.model + '" is used by: ' + row.usages.join('; ');
+      box.appendChild(title);
+      const select = document.createElement('select');
+      const leave = document.createElement('option');
+      leave.value = '';
+      leave.textContent = 'Leave broken (⚠ until fixed)';
+      select.appendChild(leave);
+      for (const model of remainingModels) {
+        const opt = document.createElement('option');
+        opt.value = model;
+        opt.textContent = 'Re-point to "' + model + '"';
+        select.appendChild(opt);
+      }
+      selects[row.model] = select;
+      box.appendChild(select);
+      host.appendChild(box);
+    }
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'te-btn';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => { overlay.remove(); resolve(null); });
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'te-btn primary';
+    save.textContent = 'Save config';
+    save.addEventListener('click', () => {
+      const repoints = rows
+        .map((row) => ({ fromModel: row.model, toModel: selects[row.model].value }))
+        .filter((item) => item.toModel);
+      overlay.remove();
+      resolve(repoints);
+    });
+    actions.append(cancel, save);
+    host.appendChild(actions);
+    panel.appendChild(host);
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); resolve(null); } });
+    document.body.appendChild(overlay);
+  });
+}
+async function refreshTeamsSnapshot() {  try {
     const res = await api('/api/state');
     if (!res.ok) return;
     const st = await res.json();
@@ -26447,6 +27081,8 @@ function renderRouterPane(router, opts) {
   const isActive = !creating && router?.name && router.name === state.snapshot?.activeRouterName;
   const draft = {
     name: router?.name || profile?.name || '',
+    // P1: editing the name of a saved router runs the rename transaction on save.
+    renameFrom: !creating && !isBuiltIn ? (router?.name || profile?.name || '') : null,
     description: profile?.description || '',
     target: router?.source === 'personal' ? 'personal' : 'project',
     leaderKey: modelToTargetKey(profile?.routerModel?.model || ''),
@@ -26492,7 +27128,11 @@ function renderRouterPane(router, opts) {
     delBtn.type = 'button';
     delBtn.textContent = 'Delete';
     delBtn.addEventListener('click', () => {
-      if (window.confirm('Delete router profile "' + draft.name + '"?')) {
+      const active = state.snapshot?.activeRouterName === draft.name;
+      const question = active
+        ? 'Delete router profile "' + draft.name + '"? It is currently active — the session falls back to the default model.'
+        : 'Delete router profile "' + draft.name + '"?';
+      if (window.confirm(question)) {
         deleteRouterProfileViaApi(draft.name).then(() => renderTeamRegion()).catch(console.error);
       }
     });
@@ -26510,7 +27150,7 @@ function renderRouterPane(router, opts) {
     ? 'Built-in routers are read-only originals — Save copy writes a project/personal override.'
     : 'Pick a leader model, one or more route targets, and an optional fallback. Save to use.';
 
-  if (creating) {
+  if (creating || !isBuiltIn) {
     wrap.appendChild(teFieldLive('Name', draft.name, (v) => { draft.name = v.trim(); }, false, false));
   } else {
     const nameField = document.createElement('div');
@@ -26600,6 +27240,22 @@ async function saveRouterFormDraft(draft, opts) {
   if (!name) {
     if (status) status.textContent = 'Name is required.';
     return;
+  }
+  if (draft.renameFrom && name !== draft.renameFrom) {
+    // Rename first: the server transactionally rewrites every referencing field.
+    if (status) status.textContent = 'Renaming...';
+    const renameRes = await api('/api/references/rename', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'router', oldName: draft.renameFrom, newName: name }),
+    });
+    if (!renameRes.ok) {
+      let message = await renameRes.text();
+      try { message = JSON.parse(message).error || message; } catch { /* keep text */ }
+      if (status) status.textContent = 'Rename failed: ' + message;
+      return;
+    }
+    draft.renameFrom = name;
   }
   const leader = resolveRouterTargetKey(draft.leaderKey);
   if (!leader.model) {
@@ -30955,6 +31611,18 @@ function handleEvent(event) {
       } catch { /* cache refresh best-effort */ }
     })();
   }
+  else if (event.type === 'broken.reference') {
+    // §3.5 (fallback off): a runtime reference failure is an explicit modal —
+    // Go fix (deep link) / Choose another model — never a silent degrade.
+    finalizeAssistant();
+    state.currentAssistant = null;
+    stopRailPolling();
+    void refreshRail();
+    setRunStatus(event.message || 'Broken reference', 'error');
+    if (T) T.applyEvent({ type: 'error', message: event.message || 'Broken reference' });
+    else addMessage('error', event.message || 'Broken reference');
+    showBrokenReferenceModal(event);
+  }
   else if (event.type === 'error') {
     finalizeAssistant();
     state.currentAssistant = null;
@@ -31548,8 +32216,20 @@ function defaultBridgeConfigView() {
     }] : [],
   };
 }
-function renderBridgeConfigs() {
-  const bs = (state.snapshot && state.snapshot.bridgeState) || {};
+// §3.5: the fallback switch is treated as OFF when no default model is
+// configured; show the hint with a jump to the default-model editor.
+function updateFallbackHint() {
+  const hint = el('settingsFallbackNoDefault');
+  if (!hint) return;
+  const enabled = el('settingsUseDefaultModelAsFallback')?.checked !== false;
+  const hasDefault = Boolean((state.snapshot?.settings?.defaultModel || '').trim());
+  hint.hidden = !(enabled && !hasDefault);
+}
+function defaultFallbackActive() {
+  return state.preferences.useDefaultModelAsFallback !== false
+    && Boolean((state.snapshot?.settings?.defaultModel || '').trim());
+}
+function renderBridgeConfigs() {  const bs = (state.snapshot && state.snapshot.bridgeState) || {};
   const active = bs.activeConfig;
   const configs = [defaultBridgeConfigView(), ...(bs.configs || [])];
   renderRuntimeDiscovery();
@@ -31723,7 +32403,8 @@ function openAgentProfileEditor(profile) {
   editingAgentProfileName = profile ? profile.name : null;
   el('agentProfileEditorTitle').textContent = profile ? 'Edit agent profile' : 'New agent profile';
   setField('agentProfileName', profile ? profile.name : '');
-  el('agentProfileName').disabled = Boolean(profile);
+  // P1: names are editable — saving under a new name runs the rename transaction.
+  el('agentProfileName').disabled = false;
   setField('agentProfileDescription', profile?.description || '');
   setField('agentProfilePermission', profile?.permissionMode || '');
   setField('agentProfileEffort', profile?.effort || '');
@@ -31744,11 +32425,26 @@ function closeAgentProfileEditor() {
 }
 
 async function saveAgentProfileViaApi() {
-  const name = editingAgentProfileName || el('agentProfileName').value.trim();
+  const name = el('agentProfileName').value.trim();
   const model = selectedAgentProfileModel();
   if (!name) { el('agentProfileCfgStatus').textContent = 'Profile name is required.'; return; }
   if (!el('agentProfileBridge').value) { el('agentProfileCfgStatus').textContent = 'Provider config is required.'; return; }
   if (!model) { el('agentProfileCfgStatus').textContent = 'Model is required.'; return; }
+  if (editingAgentProfileName && name !== editingAgentProfileName) {
+    // Rename first: the server transactionally rewrites every referencing field.
+    el('agentProfileCfgStatus').textContent = 'Renaming...';
+    const renameRes = await api('/api/references/rename', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'agent', oldName: editingAgentProfileName, newName: name }),
+    });
+    if (!renameRes.ok) {
+      let message = await renameRes.text();
+      try { message = JSON.parse(message).error || message; } catch { /* keep text */ }
+      el('agentProfileCfgStatus').textContent = 'Rename failed: ' + message;
+      return;
+    }
+  }
   el('agentProfileCfgStatus').textContent = 'Saving...';
   const body = {
     name,
@@ -31784,25 +32480,70 @@ async function saveAgentProfileViaApi() {
 }
 
 async function deleteAgentProfileViaApi(name) {
-  const res = await api('/api/agent-profiles/delete', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
-  if (!res.ok) {
-    let message = await res.text();
-    try { message = JSON.parse(message).error || message; } catch { /* keep text */ }
-    addMessage('error', 'Delete failed: ' + message);
+  const wasActive = state.snapshot?.activeAgent?.name === name;
+  const finish = () => {
+    renderBridgeConfigs();
+    loadBrokenRefBadges();
+    if (state.teamSelectedKind === 'profile') {
+      state.teamSelected = null;
+    }
+    if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
+    const status = el('settingsStatus');
+    if (status) status.textContent = 'Agent profile deleted';
+    if (wasActive) notifyActiveDefinitionDeleted('Agent', name);
+  };
+  const doDelete = async (strategy) => {
+    const res = await api('/api/agent-profiles/delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, strategy }),
+    });
+    if (!res.ok) {
+      let message = await res.text();
+      try { message = JSON.parse(message).error || message; } catch { /* keep text */ }
+      addMessage('error', 'Delete failed: ' + message);
+      return false;
+    }
+    state.snapshot = await res.json();
+    finish();
+    return true;
+  };
+  const usages = await fetchReferenceUsages('agent', name);
+  if (!usages.length) {
+    if (!window.confirm('Delete agent profile "' + name + '"?')) return;
+    await doDelete({ type: 'leave' });
     return;
   }
-  state.snapshot = await res.json();
-  renderBridgeConfigs();
-  if (state.teamSelectedKind === 'profile') {
-    state.teamSelected = null;
-  }
-  if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
-  const status = el('settingsStatus');
-  if (status) status.textContent = 'Agent profile deleted';
+  const otherAgents = (state.snapshot?.agentProfiles || [])
+    .map((p) => p.name)
+    .filter((item) => item && item !== name);
+  openImpactDialog({
+    title: 'Delete agent "' + name + '"',
+    body: usages.length + ' reference' + (usages.length === 1 ? '' : 's') + ' point at this agent.',
+    usages,
+    strategies: [
+      {
+        value: 'degrade-model',
+        label: 'Degrade references to model-only',
+        hint: 'Keeps the agent model id as a raw model target.',
+        disabledReason: !defaultFallbackActive() ? 'Default fallback is off (Settings → Models)' : undefined,
+      },
+      {
+        value: 'repoint',
+        label: 'Re-point references to agent:',
+        options: otherAgents,
+        disabledReason: otherAgents.length ? undefined : 'No other agent profile available',
+      },
+      { value: 'leave', label: 'Delete anyway', hint: 'References stay behind and show a ⚠ badge until fixed.' },
+    ],
+    onConfirm: (strategy) => doDelete(
+      strategy.type === 'repoint'
+        ? { type: 'repoint', target: strategy.target }
+        : strategy.type === 'degrade-model'
+          ? { type: 'degrade-model' }
+          : { type: 'leave' },
+    ),
+  });
 }
 
 let editingBridgeConfigName = null;
@@ -32181,6 +32922,21 @@ async function saveBridgeConfig() {
   }
   const name = el('bridgeCfgName').value.trim();
   if (!name) { el('bridgeCfgStatus').textContent = 'Name is required.'; return; }
+  if (editingBridgeConfigName && name !== editingBridgeConfigName) {
+    // Rename first: the server transactionally rewrites every referencing field.
+    el('bridgeCfgStatus').textContent = 'Renaming...';
+    const renameRes = await api('/api/references/rename', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'config', oldName: editingBridgeConfigName, newName: name }),
+    });
+    if (!renameRes.ok) {
+      let message = await renameRes.text();
+      try { message = JSON.parse(message).error || message; } catch { /* keep text */ }
+      el('bridgeCfgStatus').textContent = 'Rename failed: ' + message;
+      return;
+    }
+  }
   const body = {
     name,
     runtime: el('bridgeCfgRuntime').value,
@@ -32195,18 +32951,90 @@ async function saveBridgeConfig() {
     model: defaultModel,
     models: draftBridgeModels.length > 0 ? draftBridgeModels : undefined,
   };
+  // §3.2: warn when the edit removes models that are still referenced.
+  let repoints = [];
+  if (editingBridgeConfigName) {
+    const before = new Set(agentProfileBridgeModels(
+      (state.snapshot?.bridgeState?.configs || []).find((c) => c.name === editingBridgeConfigName),
+    ));
+    const remaining = new Set(draftBridgeModels.map((m) => m.name));
+    if (defaultModel) remaining.add(defaultModel);
+    const removedModels = [...before].filter((m) => m && !remaining.has(m));
+    if (removedModels.length) {
+      const chosen = await promptModelRepoints(editingBridgeConfigName, removedModels, [...remaining]);
+      if (chosen === null) { el('bridgeCfgStatus').textContent = 'Save cancelled.'; return; }
+      repoints = chosen;
+    }
+  }
   el('bridgeCfgStatus').textContent = 'Saving...';
   const res = await api('/api/bridge/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   if (!res.ok) { el('bridgeCfgStatus').textContent = 'Save failed: ' + (await res.text()); return; }
+  for (const repoint of repoints) {
+    await api('/api/references/repoint-model', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ config: name, ...repoint }),
+    }).catch(() => undefined);
+  }
   state.snapshot = await res.json();
+  if (repoints.length) {
+    await loadState().catch(() => undefined);
+    loadBrokenRefBadges();
+  }
   closeBridgeEditor();
   renderBridgeConfigs();
 }
 async function deleteBridgeConfig(name) {
-  const res = await api('/api/bridge/config/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
-  if (!res.ok) { addMessage('error', 'Remove failed'); return; }
-  state.snapshot = await res.json();
-  renderBridgeConfigs();
+  const wasActive = state.snapshot?.bridgeState?.activeConfig?.name === name;
+  const doDelete = async (strategy) => {
+    const res = await api('/api/bridge/config/delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, strategy }),
+    });
+    if (!res.ok) {
+      let message = await res.text();
+      try { message = JSON.parse(message).error || message; } catch { /* keep text */ }
+      addMessage('error', 'Remove failed: ' + message);
+      return false;
+    }
+    state.snapshot = await res.json();
+    renderBridgeConfigs();
+    loadBrokenRefBadges();
+    if (wasActive) notifyActiveDefinitionDeleted('Config', name);
+    return true;
+  };
+  const usages = await fetchReferenceUsages('config', name);
+  if (!usages.length) {
+    if (!window.confirm('Remove config "' + name + '"?')) return;
+    await doDelete({ type: 'leave' });
+    return;
+  }
+  const otherConfigs = (state.snapshot?.bridgeState?.configs || [])
+    .map((c) => c.name)
+    .filter((item) => item && item !== name);
+  const fallbackOff = !defaultFallbackActive();
+  openImpactDialog({
+    title: 'Delete config "' + name + '"',
+    body: usages.length + ' reference' + (usages.length === 1 ? '' : 's') + ' point at this config.',
+    usages,
+    strategies: [
+      {
+        value: 'repoint',
+        label: 'Re-point all references to config:',
+        options: otherConfigs,
+        disabledReason: !otherConfigs.length
+          ? 'No other config available'
+          : fallbackOff
+            ? 'Default fallback is off (Settings → Models)'
+            : undefined,
+      },
+      { value: 'leave', label: 'Delete anyway', hint: 'References stay behind and show a ⚠ badge until fixed.' },
+    ],
+    onConfirm: (strategy) => doDelete(strategy.type === 'repoint'
+      ? { type: 'repoint', target: strategy.target }
+      : { type: 'leave' }),
+  });
 }
 async function activateBridgeConfig(name) {
   const res = await api('/api/bridge/activate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
@@ -32376,6 +33204,8 @@ async function saveRouterProfileViaApi() {
 }
 
 async function deleteRouterProfileViaApi(name) {
+  // Only the active session can reference a router (routers are never route targets).
+  const wasActive = state.snapshot?.activeRouterName === name;
   const res = await api('/api/router/profile/delete', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -32389,12 +33219,14 @@ async function deleteRouterProfileViaApi(name) {
   }
   state.snapshot = await res.json();
   renderSettingsCommandPanels();
+  loadBrokenRefBadges();
   if (state.teamSelectedKind === 'router') {
     state.teamSelected = null;
   }
   if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
   const status = el('settingsStatus');
   if (status) status.textContent = 'Router profile deleted';
+  if (wasActive) notifyActiveDefinitionDeleted('Router', name);
 }
 
 function renderMcpServers() {
@@ -33985,6 +34817,8 @@ async function openSettings(tab = 'general') {
   setChecked('settingsShowProviderConfigsInComposer', preferences.showProviderConfigsInComposer !== false);
   setChecked('settingsShowAgentProfilesInComposer', preferences.showAgentProfilesInComposer !== false);
   setChecked('settingsShowRouterProfilesInComposer', preferences.showRouterProfilesInComposer !== false);
+  setChecked('settingsUseDefaultModelAsFallback', preferences.useDefaultModelAsFallback !== false);
+  updateFallbackHint();
   const terminalGroup = el('settingsTerminalGroup');
   if (terminalGroup) {
     const showTerminalShell = state.snapshot?.platform === 'win32';
@@ -34024,6 +34858,7 @@ function collectSettingsBody() {
       showProviderConfigsInComposer: el('settingsShowProviderConfigsInComposer')?.checked !== false,
       showAgentProfilesInComposer: el('settingsShowAgentProfilesInComposer')?.checked !== false,
       showRouterProfilesInComposer: el('settingsShowRouterProfilesInComposer')?.checked !== false,
+      useDefaultModelAsFallback: el('settingsUseDefaultModelAsFallback')?.checked !== false,
       windowsTerminalShell: state.snapshot?.platform === 'win32'
         ? (el('settingsWindowsTerminalShell')?.value === 'cmd' ? 'cmd' : 'powershell')
         : (state.preferences.windowsTerminalShell === 'cmd' ? 'cmd' : 'powershell'),
@@ -34521,12 +35356,17 @@ for (const [id, preference] of [
   ['settingsShowProviderConfigsInComposer', 'showProviderConfigsInComposer'],
   ['settingsShowAgentProfilesInComposer', 'showAgentProfilesInComposer'],
   ['settingsShowRouterProfilesInComposer', 'showRouterProfilesInComposer'],
+  ['settingsUseDefaultModelAsFallback', 'useDefaultModelAsFallback'],
 ]) {
   el(id)?.addEventListener('change', () => {
     state.preferences[preference] = !!el(id)?.checked;
     if (!el('modelPickerFlyout')?.classList.contains('hidden')) renderModelPicker();
+    if (preference === 'useDefaultModelAsFallback') updateFallbackHint();
   });
 }
+el('settingsFallbackConfigureDefault')?.addEventListener('click', () => {
+  openBridgeEditor(defaultBridgeConfigView());
+});
 document.addEventListener('click', (event) => {
   hideContextMenu();
   const flyout = el('modelPickerFlyout');
