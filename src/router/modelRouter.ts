@@ -19,6 +19,7 @@ import { mkdir } from 'node:fs/promises';
 import { resolveHadamardHome } from '../config/hadamardHome.js';
 
 import type {
+  AgentTargetRef,
   ModelApi,
   RouterDecision,
   RouterModelRef,
@@ -28,6 +29,8 @@ import type {
 import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
 import { createHadamardModelApi } from '../runtime/hadamardModelApi.js';
 import { createOpenaiModelApi } from '../provider/openai-model-api.js';
+import { listAgentProfiles } from '../config/agentProfiles.js';
+import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 
 function resolveApiKey(apiKey?: string): string | undefined {
   if (!apiKey) return undefined;
@@ -154,8 +157,29 @@ export async function resolveRoutedRun(
   profile: RouterProfile,
   userInput: string,
   signal?: AbortSignal,
+  options: { homeDir?: string; projectDir?: string } = {},
 ): Promise<{ model: string; modelApi: ModelApi; label: string; decision: RouterDecision }> {
   const decision = await classifyRoute(profile, userInput, signal);
+  // Unified reference model: prefer the typed target when the chosen route
+  // (or the fallback) carries one; legacy by-value fields fill any gaps.
+  const targetRef: AgentTargetRef | undefined = decision.matched || !profile.fallback
+    ? (decision.target as RouterRoute).target
+    : profile.fallbackTarget;
+  if (targetRef) {
+    if (targetRef.kind === 'team') {
+      throw new Error(`Router target "${targetRef.name}" is a team; team targets are not supported as router execution targets.`);
+    }
+    const resolved = resolveTargetRef(targetRef, { homeDir: options.homeDir, projectDir: options.projectDir });
+    const legacy = decision.target;
+    const routed = await buildRouteModelApi({
+      model: resolved.model ?? legacy.model,
+      provider: resolved.provider ?? legacy.provider,
+      baseURL: resolved.baseURL ?? legacy.baseURL,
+      apiKey: resolved.apiKey ?? legacy.apiKey,
+      maxTokens: legacy.maxTokens,
+    });
+    return { model: routed.model, modelApi: routed.modelApi, label: decision.label, decision };
+  }
   const routed = await buildRouteModelApi(decision.target);
   return { model: routed.model, modelApi: routed.modelApi, label: decision.label, decision };
 }
@@ -190,6 +214,49 @@ function resolveProfileEnv(profile: RouterProfile): RouterProfile {
   };
 }
 
+/**
+ * Lazily migrate a persisted route to the unified `AgentTargetRef` form
+ * (in-memory only; the next save writes the new format). Rules:
+ *  - an explicit `target` always wins (already new format);
+ *  - role/name matching a saved agent profile name -> `{ kind: 'agent', name }`;
+ *  - otherwise a model target: `config: ''` marks a raw legacy model ref
+ *    whose originating bridge config is unknown; runtime resolution then
+ *    falls back to the legacy provider/baseURL/apiKey fields on the route.
+ */
+export function migrateRouterRouteTarget(route: RouterRoute, agentNames: ReadonlySet<string>): RouterRoute {
+  if (route.target) return route;
+  const agentName = route.role && agentNames.has(route.role) ? route.role
+    : route.name && agentNames.has(route.name) ? route.name
+    : null;
+  const target: AgentTargetRef = agentName
+    ? { kind: 'agent', name: agentName }
+    : { kind: 'model', config: '', model: route.model };
+  return { ...route, target };
+}
+
+/**
+ * Migrate `routes[].target` / `fallbackTarget` on a loaded profile. When
+ * `agentNames` is omitted the saved agent profiles are read from the
+ * default home; loaders pass explicit names so tests stay hermetic.
+ */
+export function migrateRouterProfileTargets(
+  profile: RouterProfile,
+  agentNames?: readonly string[],
+): RouterProfile {
+  const names = new Set(agentNames ?? listAgentProfiles().map((p) => p.name));
+  return {
+    ...profile,
+    routes: profile.routes.map((route) => migrateRouterRouteTarget(route, names)),
+    fallbackTarget: profile.fallbackTarget
+      ?? (profile.fallback ? { kind: 'model', config: '', model: profile.fallback.model } : undefined),
+  };
+}
+
+/** Agent profile names visible to router migration for a given home dir. */
+function routerMigrationAgentNames(homeDir?: string): string[] {
+  return listAgentProfiles(homeDir).map((p) => p.name);
+}
+
 export function loadRouterProfile(name: string, projectDir?: string, homeDir?: string): LoadedRouterProfile | null {
   const dirs = resolveRouterDirs(projectDir, homeDir);
   for (let i = 0; i < dirs.length; i++) {
@@ -197,7 +264,8 @@ export function loadRouterProfile(name: string, projectDir?: string, homeDir?: s
     if (fs.existsSync(filePath)) {
       try {
         const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as RouterProfile;
-        return { name, profile: resolveProfileEnv(raw), source: i === 0 && projectDir ? 'project' : 'personal', filePath };
+        const profile = migrateRouterProfileTargets(resolveProfileEnv(raw), routerMigrationAgentNames(homeDir));
+        return { name, profile, source: i === 0 && projectDir ? 'project' : 'personal', filePath };
       } catch (err: any) {
         throw new Error(`Failed to load router profile "${name}" from ${filePath}: ${err.message}`);
       }
@@ -222,7 +290,8 @@ export function listRouterProfiles(projectDir?: string, homeDir?: string): Loade
         const filePath = path.join(dir, entry.name);
         try {
           const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as RouterProfile;
-          out.push({ name, profile: resolveProfileEnv(raw), source: i === 0 && projectDir ? 'project' : 'personal', filePath });
+          const profile = migrateRouterProfileTargets(resolveProfileEnv(raw), routerMigrationAgentNames(homeDir));
+          out.push({ name, profile, source: i === 0 && projectDir ? 'project' : 'personal', filePath });
         } catch { /* skip invalid */ }
       }
     } catch { /* skip inaccessible */ }
@@ -245,11 +314,14 @@ export async function saveRouterProfile(
     ...ref,
     apiKey: ref.apiKey?.startsWith?.('$') ? ref.apiKey : undefined,
   });
+  // Always write the typed `target`/`fallbackTarget` refs; legacy by-value
+  // fields are kept alongside them for back-compat.
+  const migrated = migrateRouterProfileTargets(profile, routerMigrationAgentNames(options.homeDir));
   const sanitized: RouterProfile = {
-    ...profile,
-    routerModel: stripKey(profile.routerModel),
-    routes: profile.routes.map(stripKey),
-    fallback: profile.fallback ? stripKey(profile.fallback) : undefined,
+    ...migrated,
+    routerModel: stripKey(migrated.routerModel),
+    routes: migrated.routes.map(stripKey),
+    fallback: migrated.fallback ? stripKey(migrated.fallback) : undefined,
   };
   fs.writeFileSync(filePath, JSON.stringify(sanitized, null, 2), 'utf-8');
   return filePath;

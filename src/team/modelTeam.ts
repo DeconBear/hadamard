@@ -217,7 +217,8 @@ async function runGraphMode(
 
       // team-as-agent: invoke a persisted sub-team by teamRef.
       if (nodeType === 'team') {
-        const ref = node.teamRef?.trim();
+        // Unified reference model: prefer the typed targetRef over legacy teamRef.
+        const ref = (node.targetRef?.kind === 'team' ? node.targetRef.name : node.teamRef)?.trim();
         if (!ref) {
           memberStatuses.push({ ...base, ok: false, error: 'team node missing teamRef', toolCalls: 0, durationMs: 0 });
           return { report: `[team node "${identity.id}" has no teamRef]`, ok: false, error: 'missing teamRef' };
