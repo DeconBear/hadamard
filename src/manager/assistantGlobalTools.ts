@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Global Assistant tools — cross-project overview + Hadamard app configuration.
  *
  * Hard constraints (enforced here, not only by prompt):
@@ -596,6 +596,7 @@ export async function createAssistantGlobalTools(
         showProviderConfigsInComposer: z.boolean().optional(),
         showAgentProfilesInComposer: z.boolean().optional(),
         showRouterProfilesInComposer: z.boolean().optional(),
+        useDefaultModelAsFallback: z.boolean().optional(),
       }),
     },
     async (input) => {
