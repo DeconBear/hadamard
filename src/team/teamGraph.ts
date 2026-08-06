@@ -144,7 +144,7 @@ export function validateTeamGraph(definition: TeamDefinition): string[] {
   return validateTeamGraphV3(migrateTeamDefinitionToGraph(definition));
 }
 
-/** v2-only rules — retained for migrator unit tests, not the public save/runtime path. */
+/** @deprecated v2-only rules — migrator unit tests only; public validateTeamGraph uses v3. Import from this module, not the package export. */
 export function validateTeamGraphV2(definition: TeamDefinition): string[] {
   const errors: string[] = [];
   const nodes = definition.nodes ?? [];

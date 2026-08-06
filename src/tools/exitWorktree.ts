@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { tool } from '../runtime/tools.js';
+import type { ToolExecutionContext } from '../types.js';
 import type { WorktreeService } from '../worktree/worktreeService.js';
 
 export const EXIT_WORKTREE_TOOL_NAME = 'ExitWorktree';
@@ -28,11 +29,12 @@ export function createExitWorktreeTool(getWorktreeService: () => WorktreeService
         ].join('\n');
       },
     },
-    async (_input: Record<string, never>) => {
+    async (_input: Record<string, never>, context: ToolExecutionContext) => {
       const service = getWorktreeService();
       if (!service) {
         return 'Worktree service is not available.';
       }
+      await service.init();
 
       if (!service.isInWorktree) {
         return 'Not currently in a worktree. Nothing to exit.';
@@ -44,6 +46,7 @@ export function createExitWorktreeTool(getWorktreeService: () => WorktreeService
       if (!popped) {
         return 'Not currently in a worktree. Nothing to exit.';
       }
+      context.metadata.__hadamardWorkDir = service.currentWorkDir;
 
       const dirty = await service.isWorktreeDirty(prevWorkDir);
 
