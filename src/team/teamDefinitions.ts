@@ -237,6 +237,27 @@ export function instantiateTeamDefinition(definition: TeamDefinition, model: str
   return def;
 }
 
+/**
+ * Lazy targetRef migration (unified reference model): graph nodes that invoke
+ * a sub-team via the legacy `teamRef` string gain a typed `targetRef`. This is
+ * in-memory only — the next save writes the new format, existing files are
+ * never broken. Raw-model nodes keep `targetRef` absent because the
+ * originating bridge config is not knowable from the by-value fields.
+ */
+export function migrateTeamDefinitionTargetRefs(definition: TeamDefinition): TeamDefinition {
+  if (!definition.nodes?.some((n) => n.type === 'team' && n.teamRef && !n.targetRef)) {
+    return definition;
+  }
+  return {
+    ...definition,
+    nodes: definition.nodes.map((n) =>
+      n.type === 'team' && n.teamRef && !n.targetRef
+        ? { ...n, targetRef: { kind: 'team' as const, name: n.teamRef } }
+        : n,
+    ),
+  };
+}
+
 function resolveTeamDirs(projectDir?: string, homeDir?: string): string[] {
   const dirs: string[] = [];
   const home = resolveHadamardHome(homeDir);
@@ -298,7 +319,7 @@ export function loadTeamDefinition(
           : { ...resolved, squadType } as TeamDefinition;
         return {
           name,
-          definition,
+          definition: migrateTeamDefinitionTargetRefs(definition),
           source: i === 0 && projectDir ? 'project' : 'personal',
           filePath,
         };
@@ -314,7 +335,9 @@ export function loadTeamDefinition(
     const squadType = cloned.squadType || 'graph';
     return {
       name,
-      definition: squadType === 'graph' ? ensureConfiguredTeamGraph(cloned) : cloned,
+      definition: migrateTeamDefinitionTargetRefs(
+        squadType === 'graph' ? ensureConfiguredTeamGraph(cloned) : cloned,
+      ),
       source: 'built-in',
       filePath: '(built-in)',
     };
@@ -400,7 +423,7 @@ export function listTeamDefinitions(
             : { ...resolved, squadType } as TeamDefinition;
           teams.push({
             name,
-            definition,
+            definition: migrateTeamDefinitionTargetRefs(definition),
             source: i === 0 && projectDir ? 'project' : 'personal',
             filePath,
           });
@@ -421,7 +444,9 @@ export function listTeamDefinitions(
     const squadType = cloned.squadType || 'graph';
     teams.push({
       name,
-      definition: squadType === 'graph' ? ensureConfiguredTeamGraph(cloned) : cloned,
+      definition: migrateTeamDefinitionTargetRefs(
+        squadType === 'graph' ? ensureConfiguredTeamGraph(cloned) : cloned,
+      ),
       source: 'built-in',
       filePath: '(built-in)',
     });
