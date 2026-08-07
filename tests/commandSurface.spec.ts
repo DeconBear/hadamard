@@ -48,7 +48,7 @@ describe('filterInteractiveCommands', () => {
       'plan revise',
       'plan off',
     ]);
-    expect(filterInteractiveCommands('/team ')).toEqual(['team ask', 'team list', 'team attach', 'team off', 'team status', 'team clone']);
+    expect(filterInteractiveCommands('/team ')).toEqual(['team ask', 'team list', 'team attach', 'team off', 'team status', 'team clone', 'team delete']);
     expect(filterInteractiveCommands('/manager ')).toEqual([
       'manager chat',
       'manager update',
