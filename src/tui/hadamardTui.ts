@@ -1684,11 +1684,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     // /model router: classify this turn and route it to a model (possibly on a
     // different provider). Only applies to the in-process SDK — bridge mode
     // runs on the fixed provider+model, so routing is skipped there.
-    let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi'] } | undefined;
+    let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi']; effort?: HadamardRunEffort } | undefined;
     if (activeRouter && !bridgeMode) {
       try {
         const decision = await resolveRoutedRun(activeRouter, text, abortCtrl.signal);
-        routed = { model: decision.model, modelApi: decision.modelApi };
+        routed = { model: decision.model, modelApi: decision.modelApi, effort: decision.effort };
         routedModelLabel = `${decision.label} (${decision.model})`;
         appendStatic(formatInfoLine(`router → ${routedModelLabel}`));
       } catch (error: any) {
@@ -1746,7 +1746,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           systemPrompt: systemPrompt + buildAgentContext(),
           signal: abortCtrl.signal,
           permissionMode: currentPermissionMode(),
-          effort: currentEffort(),
+          // A matched route's effort overrides the session effort for this turn.
+          effort: routed?.effort ?? currentEffort(),
           approver,
           classifier: preToolUseHookClassifier,
           ...(routed ? { model: routed.model, modelApi: routed.modelApi } : {}),

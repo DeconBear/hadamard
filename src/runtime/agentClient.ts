@@ -1,4 +1,4 @@
-﻿import path from 'node:path';
+import path from 'node:path';
 
 import { execFile as execFileCallback } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -2748,15 +2748,17 @@ export class HadamardAgentClient {
     );
 
     const sandboxExecutor = this.sandboxExecutorForWorkDir(workDir);
+    const runMaxToolIterations =
+      options.__hadamardMaxToolIterations ?? options.maxToolIterations;
     const runtimeConfig =
-      options.__hadamardMaxToolIterations || workDir !== this.config.workDir
+      runMaxToolIterations || workDir !== this.config.workDir
         ? {
             ...this.config,
             workDir,
             sandbox: sandboxExecutor.policy,
             sandboxCapabilities: sandboxExecutor.capability,
-            ...(options.__hadamardMaxToolIterations
-              ? { maxToolIterations: options.__hadamardMaxToolIterations }
+            ...(runMaxToolIterations
+              ? { maxToolIterations: runMaxToolIterations }
               : {}),
           }
         : this.config;

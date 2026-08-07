@@ -2929,6 +2929,24 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const filtered = tools.filter((tool) => allowed.includes(tool.name));
     return teamTool ? [...filtered, teamTool] : filtered;
   };
+  // P2 follow-up: an active agent profile may also cap tool iterations and set
+  // a per-turn timeout — applied to the same runs as the sampling overrides.
+  const currentAgentIterationCap = (): { maxToolIterations?: number } => {
+    const agent = activeAgentSelectionName
+      ? findSelectableAgent(activeAgentSelectionName, resolveGuiHomeDir())
+      : undefined;
+    return typeof agent?.maxIterations === 'number'
+      ? { maxToolIterations: agent.maxIterations }
+      : {};
+  };
+  const withAgentRunTimeout = (signal: AbortSignal): AbortSignal => {
+    const agent = activeAgentSelectionName
+      ? findSelectableAgent(activeAgentSelectionName, resolveGuiHomeDir())
+      : undefined;
+    return typeof agent?.timeoutMs === 'number' && agent.timeoutMs > 0
+      ? AbortSignal.any([signal, AbortSignal.timeout(agent.timeoutMs)])
+      : signal;
+  };
 
   const approver: HadamardToolApprover = async (context) => {
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -4203,14 +4221,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     runs.set(runId, { desc, abort: runAbort, sink: send });
     let streamedText = '';
     try {
-      let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi'] } | undefined;
+      let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi']; effort?: HadamardRunEffort } | undefined;
       const configActive = !!activeBridgeConfig;
       if (activeRouter && !bridgeMode && !configActive) {
         const decision = await resolveRoutedRun(activeRouter, input, runAbort.signal, {
           projectDir: workDir,
           homeDir: resolveGuiHomeDir(),
         });
-        routed = { model: decision.model, modelApi: decision.modelApi };
+        routed = { model: decision.model, modelApi: decision.modelApi, effort: decision.effort };
       }
       const systemPromptForRun = systemPrompt;
       const hadamardModel = (!bridgeMode && activeBridgeConfig?.runtime === 'hadamard')
@@ -4219,9 +4237,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       const stream = bridgeMode && activeBridgeModelApi
         ? session.stream(expandImageRefs(input, workDir), {
             systemPrompt: systemPromptForRun,
-            signal: runAbort.signal,
+            signal: withAgentRunTimeout(runAbort.signal),
             permissionMode: currentPermissionMode(),
             ...currentAgentSamplingOverrides(),
+            ...currentAgentIterationCap(),
             approver: backgroundApprover,
             classifier: preToolUseHookClassifier,
             canUseTool,
@@ -4231,12 +4250,15 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           })
         : session.stream(expandImageRefs(input, workDir), {
             systemPrompt: systemPromptForRun,
-            signal: runAbort.signal,
+            signal: withAgentRunTimeout(runAbort.signal),
             permissionMode: currentPermissionMode(),
             ...currentAgentSamplingOverrides(),
+            ...currentAgentIterationCap(),
             approver: backgroundApprover,
             classifier: preToolUseHookClassifier,
             canUseTool,
+            // Per-route effort (router) wins over session/agent effort for the routed turn.
+            ...(routed?.effort ? { effort: routed.effort } : {}),
             ...(routed ? { model: routed.model, modelApi: routed.modelApi } : {}),
             ...(hadamardModel ? { model: hadamardModel } : {}),
             ...(() => { const runTools = currentRunTools(); return runTools ? { tools: runTools } : {}; })(),
@@ -6719,7 +6741,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       // Router dispatch is skipped when a named config is active — the config's
       // model and/or provider replaces per-turn routing.
       const configActive = !!activeBridgeConfig;
-      let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi'] } | undefined;
+      let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi']; effort?: HadamardRunEffort } | undefined;
       if (activeRouter && !bridgeMode && !configActive) {
         const routerName = activeRouter.name;
         try {
@@ -6727,7 +6749,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             projectDir: workDir,
             homeDir: resolveGuiHomeDir(),
           });
-          routed = { model: decision.model, modelApi: decision.modelApi };
+          routed = { model: decision.model, modelApi: decision.modelApi, effort: decision.effort };
           routedModelLabel = `${decision.label} (${decision.model})`;
           send({ type: 'notice', message: `router -> ${routedModelLabel}` });
         } catch (error) {
@@ -6775,9 +6797,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         send({ type: 'notice', message: `bridge -> ${bridgeName} (${activeBridgeModelApi.model})` });
         stream = session.stream(expandImageRefs(input, workDir), {
           systemPrompt: systemPromptForRun,
-          signal: runAbort.signal,
+          signal: withAgentRunTimeout(runAbort.signal),
           permissionMode: currentPermissionMode(),
           ...currentAgentSamplingOverrides(),
+          ...currentAgentIterationCap(),
           approver,
           classifier: preToolUseHookClassifier,
           canUseTool,
@@ -6788,12 +6811,15 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       } else {
         stream = session.stream(expandImageRefs(input, workDir), {
           systemPrompt: systemPromptForRun,
-          signal: runAbort.signal,
+          signal: withAgentRunTimeout(runAbort.signal),
           permissionMode: currentPermissionMode(),
           ...currentAgentSamplingOverrides(),
+          ...currentAgentIterationCap(),
           approver,
           classifier: preToolUseHookClassifier,
           canUseTool,
+          // Per-route effort (router) wins over session/agent effort for the routed turn.
+          ...(routed?.effort ? { effort: routed.effort } : {}),
           ...(routed ? { model: routed.model, modelApi: routed.modelApi } : {}),
           ...(hadamardModel ? { model: hadamardModel } : {}),
           ...(() => { const runTools = currentRunTools(); return runTools ? { tools: runTools } : {}; })(),

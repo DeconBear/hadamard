@@ -20,6 +20,7 @@ import { resolveHadamardHome } from '../config/hadamardHome.js';
 
 import type {
   AgentTargetRef,
+  HadamardRunEffort,
   ModelApi,
   RouterDecision,
   RouterModelRef,
@@ -146,7 +147,7 @@ export async function classifyRoute(
     : profile.fallback
       ? `fallback:${profile.fallback.model}`
       : (profile.routes[0]?.role ?? profile.routes[0]?.name ?? profile.routes[0]?.model ?? 'default');
-  return { target, label, classification: raw, matched: matched !== null };
+  return { target, label, classification: raw, matched: matched !== null, effort: matched?.effort };
 }
 
 /**
@@ -158,7 +159,7 @@ export async function resolveRoutedRun(
   userInput: string,
   signal?: AbortSignal,
   options: { homeDir?: string; projectDir?: string } = {},
-): Promise<{ model: string; modelApi: ModelApi; label: string; decision: RouterDecision }> {
+): Promise<{ model: string; modelApi: ModelApi; label: string; decision: RouterDecision; effort?: HadamardRunEffort }> {
   const decision = await classifyRoute(profile, userInput, signal);
   // Unified reference model: prefer the typed target when the chosen route
   // (or the fallback) carries one; legacy by-value fields fill any gaps.
@@ -178,10 +179,10 @@ export async function resolveRoutedRun(
       apiKey: resolved.apiKey ?? legacy.apiKey,
       maxTokens: legacy.maxTokens,
     });
-    return { model: routed.model, modelApi: routed.modelApi, label: decision.label, decision };
+    return { model: routed.model, modelApi: routed.modelApi, label: decision.label, decision, effort: decision.effort };
   }
   const routed = await buildRouteModelApi(decision.target);
-  return { model: routed.model, modelApi: routed.modelApi, label: decision.label, decision };
+  return { model: routed.model, modelApi: routed.modelApi, label: decision.label, decision, effort: decision.effort };
 }
 
 // ── Persistence (.hadamard/routers + ~/.hadamard/routers) ──────────────

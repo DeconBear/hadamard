@@ -193,3 +193,32 @@ describe('saveRouterProfile / deleteRouterProfile', () => {
     expect(loadRouterProfile('fast-strong', project, home)).toBeNull();
   });
 });
+
+describe('route effort surfacing', () => {
+  const effortProfile: RouterProfile = {
+    name: 'effort-router',
+    routerModel: { model: 'classifier' },
+    routes: [
+      { name: 'fast', model: 'haiku', when: 'simple tasks', effort: 'low' },
+      { name: 'strong', model: 'opus', when: 'hard reasoning', effort: 'high' },
+    ],
+    fallback: { model: 'sonnet' },
+  };
+
+  it('surfaces the matched route effort on the decision', async () => {
+    const decision = await classifyRoute(effortProfile, 'plan a refactor', undefined, {
+      classify: async () => '2',
+    });
+    expect(decision.matched).toBe(true);
+    expect(decision.target.model).toBe('opus');
+    expect(decision.effort).toBe('high');
+  });
+
+  it('carries no effort when the fallback handles the turn', async () => {
+    const decision = await classifyRoute(effortProfile, 'whatever', undefined, {
+      classify: async () => '0',
+    });
+    expect(decision.matched).toBe(false);
+    expect(decision.effort).toBeUndefined();
+  });
+});

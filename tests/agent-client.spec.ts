@@ -2198,6 +2198,42 @@ describe('HadamardAgentClient', () => {
     }
   });
 
+  it('honors a per-run maxToolIterations option over the SDK config cap', async () => {
+    const sessionDirectory = await createSessionDirectory();
+    const modelApi = new MockModelApi({
+      create: () => makeMessage(
+        [
+          {
+            type: 'tool_use',
+            id: 'toolu_run_budget',
+            name: 'TaskList',
+            input: {},
+          },
+        ],
+        'tool_use',
+      ),
+    });
+
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      modelApi,
+    });
+
+    try {
+      const result = await sdk.run('Cap this run at one tool iteration.', {
+        maxToolIterations: 1,
+      });
+
+      expect(result.stopReason).toBe('tool_use');
+      expect(result.maxToolIterationsExceeded).toBe(true);
+      expect(result.incompleteReason).toContain('max_tool_iterations_exceeded');
+      expect(result.toolCalls).toHaveLength(0);
+    } finally {
+      await sdk.close();
+    }
+  });
+
   it('stores large tool outputs as artifacts before returning them to the model context', async () => {
     const tempDir = await createSessionDirectory();
     const workDir = path.join(tempDir, 'workspace');
