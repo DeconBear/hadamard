@@ -934,6 +934,8 @@ export interface AgentRunOptions {
   /** Override the model client for this run — used by the /model router for cross-provider routing. */
   modelApi?: CreateAgentSdkOptions['modelApi'];
   maxTokens?: number;
+  /** Per-run tool-iteration cap; overrides the SDK config cap for this run. */
+  maxToolIterations?: number;
   temperature?: number;
   topP?: number;
   toolChoice?: ToolChoice;
@@ -3232,6 +3234,8 @@ export interface RouterDecision {
   classification: string;
   /** Whether the classifier matched a configured route (vs fell back). */
   matched: boolean;
+  /** The matched route's preferred effort (routes only; fallback carries none). */
+  effort?: HadamardRunEffort;
 }
 
 export interface ModelPricing {

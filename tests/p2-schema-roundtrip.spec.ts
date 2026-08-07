@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   findAgentProfile,
+  listSelectableAgents,
   upsertAgentProfile,
 } from '../src/config/agentProfiles.js';
 import {
@@ -81,6 +82,22 @@ describe('AgentProfile execution fields (P2)', () => {
     expect(loaded?.workspaceAccess).toBeUndefined();
     expect(loaded?.maxIterations).toBeUndefined();
     expect(loaded?.timeoutMs).toBeUndefined();
+  });
+
+  it('exposes maxIterations / timeoutMs on the selectable entry the run path consumes', () => {
+    const home = tempHome();
+    seedBridgeConfig(home);
+    upsertAgentProfile({
+      name: 'bounded',
+      bridgeConfig: 'cfg',
+      model: 'm1',
+      maxIterations: 12,
+      timeoutMs: 60000,
+    }, home);
+    const selectable = listSelectableAgents(home).find(agent => agent.name === 'bounded');
+    expect(selectable?.source).toBe('profile');
+    expect(selectable?.maxIterations).toBe(12);
+    expect(selectable?.timeoutMs).toBe(60000);
   });
 });
 
