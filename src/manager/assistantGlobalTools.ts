@@ -30,6 +30,7 @@ import {
   addBridgeConfig,
   findBridgeConfig,
   readBridgeConfigs,
+  removeBridgeConfig,
   type PersistedBridgeConfig,
 } from '../parity/bridgeConfigs.js';
 import {
@@ -54,15 +55,44 @@ import type {
   AgentToolDefinition,
   RouterModelRef,
   RouterProfile,
+  ScheduledAutomationTask,
   ScheduledAutomationTaskInput,
 } from '../types.js';
 import { isProjectStatus, readProjectMeta, writeProjectMeta } from '../gui/projectMeta.js';
 import { readWorkspaceNote, writeWorkspaceNote } from '../gui/workspaceNote.js';
 import { readWorkspaceRegistry } from '../gui/workspaceRegistry.js';
 import {
+  readManagerConfig,
   readProgressFile,
   readProjectPlanFile,
 } from './projectManager.js';
+import {
+  buildReferenceIndex,
+  findBrokenRefs,
+  findUsages,
+  type ReferenceEdge,
+  type ReferenceIndexSessionState,
+  type ReferenceKnownSets,
+} from './referenceIndex.js';
+import {
+  renameDefinitionAndReferences,
+  type ReferenceDefinitionKind,
+  type ReferenceOperationContext,
+} from './referenceOperations.js';
+import {
+  AssistantProposalStore,
+  type AssistantProposal,
+} from './assistantProposals.js';
+import { TeamProposalStore, type TeamGraphProposal } from '../team/teamProposalService.js';
+import {
+  deleteTeamDefinition,
+  getBuiltInTeamDefinition,
+  listTeamDefinitions,
+  loadTeamDefinition,
+} from '../team/teamDefinitions.js';
+import type { TeamPreferences } from '../team/teamPreferences.js';
+import type { TeamDefinition } from '../types.js';
+import { deleteWorkflow, listWorkflows } from '../workflow/workflowPersistence.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 export type AssistantScope = 'global' | 'project';
@@ -138,9 +168,29 @@ export interface AssistantGlobalHost {
   applySettings?: (patch: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
   /** Activate a selectable agent / profile by name. */
   activateAgent?: (name: string) => Promise<{ ok: boolean; detail?: string }>;
+  /** Activate a router profile or attach a team (ActivateAgent kind=router|team). */
+  activateTarget?: (kind: 'router' | 'team', name: string) => Promise<{ ok: boolean; detail?: string }>;
   /** Optional raw settings store for managed plugin patches. */
   readSettingsRaw?: () => Promise<Record<string, unknown>>;
   writeSettingsRaw?: (raw: Record<string, unknown>) => Promise<void>;
+  /** Assistant session id; required to stage confirmation proposals. */
+  assistantSessionId?: string;
+  /** Shared staged-action store for destructive confirmations (P3). */
+  proposals?: AssistantProposalStore;
+  /** Notify the client about a staged confirmation card. */
+  onProposal?: (proposal: AssistantProposal) => void;
+  /** Shared Team graph proposal store used by UpsertTeam. */
+  teamProposals?: TeamProposalStore;
+  /** Notify the client about a staged Team proposal card. */
+  onTeamProposal?: (proposal: TeamGraphProposal) => void;
+  /** Reference index snapshot (same source as /api/references). Defaults to a local scan. */
+  getReferenceSnapshot?: () => Promise<{ index: ReferenceEdge[]; known: ReferenceKnownSets }>;
+  /** Active-session reference edges (activeAgent/activeConfig/activeRouter/activeTeam). */
+  getSessionRefState?: () => ReferenceIndexSessionState | null;
+  /** teamPreferences for the defaultAttached reference edge. */
+  readTeamPreferences?: () => TeamPreferences | null;
+  /** Context for rename/delete transactions; defaults to currentWorkDir/homeDir. */
+  referenceOperationContext?: () => Promise<ReferenceOperationContext> | ReferenceOperationContext;
 }
 
 async function pathExists(target: string): Promise<boolean> {
@@ -268,6 +318,99 @@ async function assertKnownProject(
   return resolved;
 }
 
+/** Reference snapshot used by the P3 reference/delete tools (same edges as /api/references). */
+async function getReferenceSnapshot(
+  host: AssistantGlobalHost,
+): Promise<{ index: ReferenceEdge[]; known: ReferenceKnownSets }> {
+  if (host.getReferenceSnapshot) return host.getReferenceSnapshot();
+  const bridgeConfigs = readBridgeConfigs(host.homeDir).configs;
+  const agentProfiles = listAgentProfiles(host.homeDir);
+  const routers = listRouterProfiles(host.currentWorkDir, host.homeDir).map(entry => entry.profile);
+  const teams = listTeamDefinitions(host.currentWorkDir, host.homeDir).map(entry => entry.definition);
+  const automationTasks = await listScheduledAutomationTasks(host.currentWorkDir)
+    .catch(() => [] as ScheduledAutomationTask[]);
+  const manager = await readManagerConfig(host.currentWorkDir, resolveHadamardHome(host.homeDir))
+    .catch(() => undefined);
+  const index = buildReferenceIndex({
+    bridgeConfigs,
+    agentProfiles,
+    routers,
+    teams,
+    automationTasks,
+    teamPreferences: host.readTeamPreferences?.() ?? null,
+    managerConfigs: manager
+      ? [{ name: host.currentWorkDir, bridgeConfig: manager.bridgeConfig }]
+      : [],
+    session: host.getSessionRefState?.() ?? null,
+  });
+  return {
+    index,
+    known: {
+      configs: bridgeConfigs.map(config => config.name),
+      // Selectable agents include ephemeral per-config presets so an active
+      // session edge to one of them is not falsely reported as broken.
+      agents: listSelectableAgents(host.homeDir).map(agent => agent.name),
+      teams: teams.map(team => team.name),
+      routers: routers.map(router => router.name),
+    },
+  };
+}
+
+async function resolveReferenceOperationContext(
+  host: AssistantGlobalHost,
+): Promise<ReferenceOperationContext> {
+  if (host.referenceOperationContext) return host.referenceOperationContext();
+  return {
+    projectDir: host.currentWorkDir,
+    homeDir: host.homeDir,
+    managerProjectPath: host.currentWorkDir,
+  };
+}
+
+/**
+ * P3 delete discipline: zero-reference deletes proceed immediately; when
+ * findUsages reports references the definition is NOT deleted — a proposal
+ * card with the reference list and fallback strategies is staged instead, and
+ * only Apply (GUI endpoint over AssistantProposalStore) executes the delete.
+ */
+async function deleteWithConfirmation(
+  host: AssistantGlobalHost,
+  kind: ReferenceDefinitionKind,
+  name: string,
+  deleteNow: () => Promise<unknown> | unknown,
+): Promise<Record<string, unknown>> {
+  const { index } = await getReferenceSnapshot(host);
+  const usages = findUsages(index, kind, name);
+  if (usages.length === 0) {
+    await deleteNow();
+    return { ok: true, deleted: true, references: [] };
+  }
+  if (!host.proposals || !host.assistantSessionId) {
+    throw new Error(
+      `Refusing to delete ${kind} "${name}": ${usages.length} reference(s) exist and no `
+      + 'confirmation channel is available in this host. References: '
+      + usages.map(edge => `${edge.from.kind} "${edge.from.name}" (${edge.field})`).join('; '),
+    );
+  }
+  const proposal = host.proposals.stageDelete({
+    assistantSessionId: host.assistantSessionId,
+    kind,
+    name,
+    references: usages,
+  });
+  host.onProposal?.(proposal);
+  return {
+    ok: true,
+    deleted: false,
+    staged: true,
+    proposalId: proposal.id,
+    message: `Found ${usages.length} reference(s) — staged a confirmation card. `
+      + `The ${kind} is deleted only after the user applies it.`,
+    references: usages,
+    strategies: proposal.delete?.strategies ?? [],
+  };
+}
+
 export function buildAssistantGlobalSystemPrompt(currentWorkDir: string): string {
   return [
     'You are the Hadamard desktop Assistant in Global scope.',
@@ -280,6 +423,11 @@ export function buildAssistantGlobalSystemPrompt(currentWorkDir: string): string
     '- Start with ListProjects when the user asks about workspaces or status across projects.',
     '- Use GetProjectOverview / GetProjectDocument / ListProjectIssues for deeper project inspection; always pass an explicit projectPath from ListProjects.',
     '- Before changing settings, plugins, bridge configs, agents, schedules, or MCP, briefly say what you will change, then call the matching tool.',
+    '- Use ListReferences(kind, name) before any rename/delete to show impact, and ListBrokenReferences for proactive health checks.',
+    '- Rename tools (RenameBridgeConfig / RenameAgentProfile / RenameRouterProfile / RenameTeam) run one transaction that atomically rewrites every referencing definition.',
+    '- Delete-class tools (DeleteBridgeConfig / DeleteAgentProfile / DeleteRouterProfile / DeleteTeam) delete immediately only when nothing references the definition. When references exist they stage a confirmation card with the reference list and fallback strategies; the delete happens only when the user applies that card. Never claim a delete completed while a proposal is pending.',
+    '- UpsertTeam and UpsertWorkflow stage proposal cards (Preview/Apply) — they never write to disk directly. DeleteWorkflow removes an unreferenced script workflow directly and refuses while automation tasks still reference it.',
+    '- ActivateAgent activates a saved profile by default; pass kind: "router" to activate a router profile or kind: "team" to attach a team.',
     '- Never echo API keys or other secrets. Tool results already redact them.',
     '- Coding and file edits belong in the main chat, not here. Prefer OpenProject + telling the user to continue in the main conversation when implementation work is needed.',
     '- Be concise and concrete.',
@@ -749,43 +897,99 @@ export async function createAssistantGlobalTools(
   const DeleteRouterProfileTool = tool(
     {
       name: 'DeleteRouterProfile',
-      description: 'Delete a router profile by name. Optionally constrain deletion to project or personal scope.',
+      description: 'Delete a router profile by name. Deletes directly when unreferenced; stages a confirmation card when references exist.',
       inputSchema: z.strictObject({
         name: z.string(),
         scope: z.enum(['project', 'personal']).optional(),
       }),
     },
     async (input) => {
-      const deleted = await deleteRouterProfile(
-        input.name.trim(),
-        input.scope === 'personal' ? undefined : host.currentWorkDir,
-        host.homeDir,
-      );
-      return { ok: true, deleted };
+      const name = input.name.trim();
+      return deleteWithConfirmation(host, 'router', name, async () => {
+        const deleted = await deleteRouterProfile(
+          name,
+          input.scope === 'personal' ? undefined : host.currentWorkDir,
+          host.homeDir,
+        );
+        return { deleted };
+      });
     },
   );
 
   const DeleteAgentProfileTool = tool(
     {
       name: 'DeleteAgentProfile',
-      description: 'Delete a saved agent profile by name.',
+      description: 'Delete a saved agent profile by name. Deletes directly when unreferenced; stages a confirmation card when references exist.',
       inputSchema: z.strictObject({ name: z.string() }),
     },
     async (input) => {
-      deleteAgentProfile(input.name.trim(), host.homeDir);
-      return { ok: true };
+      const name = input.name.trim();
+      return deleteWithConfirmation(host, 'agent', name, () => {
+        deleteAgentProfile(name, host.homeDir);
+        return { deleted: true };
+      });
+    },
+  );
+
+  const DeleteBridgeConfigTool = tool(
+    {
+      name: 'DeleteBridgeConfig',
+      description: 'Delete a provider/bridge config by name. Deletes directly when unreferenced; stages a confirmation card when references exist.',
+      inputSchema: z.strictObject({ name: z.string() }),
+    },
+    async (input) => {
+      const name = input.name.trim();
+      if (!findBridgeConfig(name, host.homeDir)) {
+        throw new Error(`Bridge config not found: ${name}`);
+      }
+      return deleteWithConfirmation(host, 'config', name, () => {
+        removeBridgeConfig(name, host.homeDir);
+        return { deleted: true };
+      });
+    },
+  );
+
+  const DeleteTeamTool = tool(
+    {
+      name: 'DeleteTeam',
+      description: 'Delete a Team definition by name. Built-in Teams cannot be deleted. Deletes directly when unreferenced; stages a confirmation card when references exist.',
+      inputSchema: z.strictObject({ name: z.string() }),
+    },
+    async (input) => {
+      const name = input.name.trim();
+      if (getBuiltInTeamDefinition(name)) {
+        throw new Error(`"${name}" is a built-in Team and cannot be deleted. Clone it instead.`);
+      }
+      const loaded = loadTeamDefinition(name, host.currentWorkDir, host.homeDir);
+      if (!loaded) throw new Error(`Team not found: ${name}`);
+      return deleteWithConfirmation(host, 'team', name, async () => {
+        const deleted = await deleteTeamDefinition(name, host.currentWorkDir, host.homeDir);
+        if (!deleted) throw new Error(`Team not found: ${name}`);
+        return { deleted: true };
+      });
     },
   );
 
   const ActivateAgentTool = tool(
     {
       name: 'ActivateAgent',
-      description: 'Activate a selectable agent / profile in the current chat.',
-      inputSchema: z.strictObject({ name: z.string() }),
+      description: 'Activate a selectable agent / profile in the current chat. kind "router" activates a router profile; kind "team" attaches a team.',
+      inputSchema: z.strictObject({
+        name: z.string(),
+        kind: z.enum(['profile', 'router', 'team']).optional()
+          .describe('Defaults to "profile" (saved agent / selectable preset)'),
+      }),
     },
     async (input) => {
-      if (!host.activateAgent) throw new Error('ActivateAgent is unavailable in this host.');
-      return host.activateAgent(input.name.trim());
+      const kind = input.kind ?? 'profile';
+      if (kind === 'profile') {
+        if (!host.activateAgent) throw new Error('ActivateAgent is unavailable in this host.');
+        return host.activateAgent(input.name.trim());
+      }
+      if (!host.activateTarget) {
+        throw new Error('ActivateAgent router/team activation is unavailable in this host.');
+      }
+      return host.activateTarget(kind, input.name.trim());
     },
   );
 
@@ -928,6 +1132,174 @@ export async function createAssistantGlobalTools(
     },
   );
 
+  const ListReferencesTool = tool(
+    {
+      name: 'ListReferences',
+      description: 'List every reference to a definition (kind: config|agent|team|router) — impact analysis before rename/delete.',
+      inputSchema: z.strictObject({
+        kind: z.enum(['config', 'agent', 'team', 'router']),
+        name: z.string(),
+      }),
+      isReadOnly: () => true,
+    },
+    async (input) => {
+      const { index } = await getReferenceSnapshot(host);
+      const references = findUsages(index, input.kind, input.name.trim());
+      return { kind: input.kind, name: input.name.trim(), count: references.length, references };
+    },
+  );
+
+  const ListBrokenReferencesTool = tool(
+    {
+      name: 'ListBrokenReferences',
+      description: 'List references whose target no longer exists (proactive health check).',
+      inputSchema: z.strictObject({}),
+      isReadOnly: () => true,
+    },
+    async () => {
+      const { index, known } = await getReferenceSnapshot(host);
+      const broken = findBrokenRefs(index, known);
+      return { count: broken.length, broken };
+    },
+  );
+
+  const makeRenameTool = (
+    kind: ReferenceDefinitionKind,
+    toolName: string,
+    label: string,
+  ): AgentToolDefinition => tool(
+    {
+      name: toolName,
+      description: `Rename a ${label} and atomically rewrite every referencing definition (single transaction with rollback).`,
+      inputSchema: z.strictObject({
+        oldName: z.string(),
+        newName: z.string(),
+      }),
+    },
+    async (input) => {
+      const report = await renameDefinitionAndReferences(
+        kind,
+        input.oldName,
+        input.newName,
+        await resolveReferenceOperationContext(host),
+      );
+      return {
+        ok: true,
+        kind,
+        oldName: input.oldName.trim(),
+        newName: input.newName.trim(),
+        rewritten: report.rewritten,
+      };
+    },
+  );
+
+  const RenameBridgeConfigTool = makeRenameTool('config', 'RenameBridgeConfig', 'provider/bridge config');
+  const RenameAgentProfileTool = makeRenameTool('agent', 'RenameAgentProfile', 'agent profile');
+  const RenameRouterProfileTool = makeRenameTool('router', 'RenameRouterProfile', 'router profile');
+  const RenameTeamTool = makeRenameTool('team', 'RenameTeam', 'Team definition');
+
+  const UpsertTeamTool = tool(
+    {
+      name: 'UpsertTeam',
+      description: 'Stage a Team definition create/update as a proposal card (Preview/Apply). Never writes to disk directly; built-in Teams cannot be overwritten.',
+      inputSchema: z.strictObject({
+        projectPath: z.string().optional().describe('Defaults to the current workspace'),
+        definition: z.record(z.string(), z.unknown())
+          .describe('Complete TeamDefinition JSON, preferably graph v3 with stable node ids'),
+        explanation: z.string().optional(),
+      }),
+    },
+    async (input) => {
+      if (!host.teamProposals || !host.assistantSessionId) {
+        throw new Error('UpsertTeam is unavailable in this host (no Team proposal store).');
+      }
+      const projectPath = input.projectPath?.trim()
+        ? await assertKnownProject(host, input.projectPath)
+        : path.resolve(host.currentWorkDir);
+      const proposal = host.teamProposals.stage({
+        assistantSessionId: host.assistantSessionId,
+        projectPath,
+        definition: input.definition as unknown as TeamDefinition,
+        explanation: input.explanation ?? '',
+        homeDir: host.homeDir,
+      });
+      host.onTeamProposal?.(proposal);
+      return {
+        kind: 'team.proposal',
+        proposalId: proposal.id,
+        projectPath: proposal.projectPath,
+        teamName: proposal.teamName,
+        explanation: proposal.explanation,
+        problems: proposal.problems,
+        diff: proposal.diff,
+        status: proposal.status,
+      };
+    },
+  );
+
+  const UpsertWorkflowTool = tool(
+    {
+      name: 'UpsertWorkflow',
+      description: 'Stage a script workflow create/update as a confirmation card. Apply writes <name>.js into the project or personal workflows directory.',
+      inputSchema: z.strictObject({
+        name: z.string(),
+        script: z.string().describe('Complete workflow script (export const meta = {...} required)'),
+        scope: z.enum(['project', 'personal']).optional().describe('Defaults to project'),
+        description: z.string().optional(),
+        explanation: z.string().optional(),
+      }),
+    },
+    async (input) => {
+      if (!host.proposals || !host.assistantSessionId) {
+        throw new Error('UpsertWorkflow is unavailable in this host (no proposal store).');
+      }
+      const proposal = host.proposals.stageWorkflowUpsert({
+        assistantSessionId: host.assistantSessionId,
+        name: input.name,
+        script: input.script,
+        scope: input.scope ?? 'project',
+        projectPath: path.resolve(host.currentWorkDir),
+        description: input.description,
+        explanation: input.explanation,
+      });
+      host.onProposal?.(proposal);
+      return {
+        ok: true,
+        staged: true,
+        proposalId: proposal.id,
+        name: proposal.workflow?.name,
+        problems: proposal.workflow?.problems ?? [],
+        message: 'Staged a confirmation card. The workflow file is written only after the user applies it.',
+      };
+    },
+  );
+
+  const DeleteWorkflowTool = tool(
+    {
+      name: 'DeleteWorkflow',
+      description: 'Delete a script workflow by name. Refuses while automation tasks still reference it.',
+      inputSchema: z.strictObject({ name: z.string() }),
+    },
+    async (input) => {
+      const name = input.name.trim();
+      if (!listWorkflows(host.currentWorkDir, host.homeDir).some(workflow => workflow.name === name)) {
+        throw new Error(`Workflow not found: ${name}`);
+      }
+      const tasks = await listScheduledAutomationTasks(host.currentWorkDir)
+        .catch(() => [] as ScheduledAutomationTask[]);
+      const referencing = tasks.filter(task =>
+        task.kind === 'workflow' && task.workflowSource !== 'agent' && task.workflowName === name);
+      if (referencing.length) {
+        throw new Error(
+          `Refusing to delete workflow "${name}": referenced by automation task(s): `
+          + `${referencing.map(task => task.name || task.id).join(', ')}. Delete or re-point those tasks first.`,
+        );
+      }
+      const deleted = await deleteWorkflow(name, host.currentWorkDir, host.homeDir);
+      return { ok: true, deleted };
+    },
+  );
+
   return [
     ListProjects,
     GetProjectOverview,
@@ -956,5 +1328,16 @@ export async function createAssistantGlobalTools(
     ToggleScheduledTask,
     AddMcpServerTool,
     RemoveMcpServerTool,
+    ListReferencesTool,
+    ListBrokenReferencesTool,
+    RenameBridgeConfigTool,
+    RenameAgentProfileTool,
+    RenameRouterProfileTool,
+    RenameTeamTool,
+    DeleteBridgeConfigTool,
+    DeleteTeamTool,
+    UpsertTeamTool,
+    UpsertWorkflowTool,
+    DeleteWorkflowTool,
   ];
 }
