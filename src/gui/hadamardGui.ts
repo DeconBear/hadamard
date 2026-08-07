@@ -138,6 +138,7 @@ import {
   createAssistantTeamTools,
   buildAssistantTeamSystemPrompt,
   TeamProposalStore,
+  AssistantProposalStore,
   SessionCatalog,
   readAssistantConfig,
   writeAssistantConfig,
@@ -3522,6 +3523,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   let assistantGlobalSdk: HadamardAgentClient | null = null;
   let assistantGlobalSession: AgentSession | null = null;
   const teamProposals = new TeamProposalStore();
+  const assistantProposals = new AssistantProposalStore();
 
   function managerHomeDir(): string {
     return resolveGuiHomeDir();
@@ -3723,6 +3725,60 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         invalidateHeavyState();
         return { ok: true, detail: `Activated ${name}` };
       },
+      // P3: ActivateAgent kind=router|team — same effects as /api/router/activate
+      // and /team attach.
+      activateTarget: async (kind: 'router' | 'team', name: string) => {
+        await withRuntimeMutation(async () => {
+          if (kind === 'router') {
+            const loaded = loadRouterProfile(name, workDir, homeDir);
+            if (!loaded) throw new Error(`Configured router not found: ${name}`);
+            disableBridge();
+            activeRouter = loaded.profile;
+            routedModelLabel = null;
+          } else {
+            const definition = attachTeamByName(name);
+            if (!definition) throw new Error(`Team not found: ${name}`);
+          }
+          await persistSessionRuntimeMetadata();
+        });
+        invalidateHeavyState();
+        return {
+          ok: true,
+          detail: kind === 'router' ? `Activated router ${name}` : `Attached team ${name}`,
+        };
+      },
+      // P3: reference snapshot extras (session/preference edges) and the
+      // rename/delete transaction context — same semantics as the endpoints.
+      getSessionRefState: () => ({
+        activeAgent: activeAgentSelectionName,
+        activeConfig: activeBridgeConfig?.name ?? null,
+        activeRouterName: activeRouter?.name ?? null,
+        activeTeamName,
+      }),
+      readTeamPreferences: () => teamPrefs,
+      referenceOperationContext: async () => {
+        const store = await resolveHadamardSettingsStore({
+          configPath: options.configPath,
+          homeDir: currentHomeInput(),
+        }).catch(() => undefined);
+        return {
+          projectDir: workDir,
+          homeDir,
+          managerProjectPath: projectPrimaryPath,
+          teamPreferences: {
+            read: () => teamPrefs,
+            write: async (prefs: typeof teamPrefs) => {
+              const raw = isPlainRecord(store?.raw) ? structuredClone(store.raw) : {};
+              writeTeamPreferences(raw, prefs);
+              if (store) {
+                await persistHadamardSettingsStore(store.configPath, raw);
+                await loadJsonConfigFile(store.configPath);
+              }
+              teamPrefs = prefs;
+            },
+          },
+        };
+      },
       readSettingsRaw: async () => {
         const store = await resolveHadamardSettingsStore({
           configPath: options.configPath,
@@ -3846,7 +3902,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       const cfg = await readAssistantConfig(homeDir);
       managerSession = await getAssistantGlobalSession();
       managerTools = [
-        ...await createAssistantGlobalTools(buildAssistantGlobalHost(homeDir)),
+        ...await createAssistantGlobalTools({
+          ...buildAssistantGlobalHost(homeDir),
+          assistantSessionId: managerSession.id,
+          proposals: assistantProposals,
+          teamProposals,
+          onProposal: proposal => opts.send({ type: 'assistant.proposal', proposal }),
+          onTeamProposal: proposal => opts.send({ type: 'team.proposal', proposal }),
+        }),
         ...createAssistantTeamTools({
           scope: 'global',
           assistantSessionId: managerSession.id,
@@ -7691,6 +7754,67 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
     }
   }
+  // P3: generic Assistant confirmation cards (delete-with-references,
+  // workflow upsert) staged by the global Assistant tools. Apply executes the
+  // P1 transaction semantics (applyDeleteFallback + definition delete).
+  const assistantProposalMatch = url.pathname.match(/^\/api\/assistant\/proposals\/([^/]+)(?:\/(apply|reject))?$/);
+  if (assistantProposalMatch) {
+    const proposalId = decodeURIComponent(assistantProposalMatch[1]!);
+    const action = assistantProposalMatch[2];
+    try {
+      const proposal = assistantProposals.get(proposalId);
+      if (!proposal) return json(res, 404, { error: `Unknown Assistant proposal: ${proposalId}` });
+      if (req.method === 'GET' && !action) {
+        return json(res, 200, { proposal });
+      }
+      if (req.method === 'POST' && action === 'reject') {
+        return json(res, 200, { ok: true, proposal: assistantProposals.reject(proposalId) });
+      }
+      if (req.method === 'POST' && action === 'apply') {
+        const body = await readJson(req);
+        const strategy = parseDeleteStrategy(body.strategy);
+        const applied = await withRuntimeMutation(async () => {
+          const result = await assistantProposals.apply(proposalId, {
+            homeDir: resolveGuiHomeDir(),
+            projectDir: workDir,
+            referenceContext: await referenceOperationContext(),
+          }, { strategy });
+          const del = result.proposal.delete;
+          if (del) {
+            // Active-state reconciliation mirrors the direct delete endpoints.
+            if (del.kind === 'config' && activeBridgeConfig?.name === del.name) {
+              disableBridge();
+            }
+            if (del.kind === 'agent' && activeAgentSelectionName === del.name) {
+              activeAgentSelectionName = null;
+              disableBridge();
+            }
+            if (del.kind === 'router' && activeRouter?.name === del.name) {
+              activeRouter = null;
+              routedModelLabel = null;
+            }
+            if (del.kind === 'team' && activeTeamName === del.name) {
+              activeTeamTool = null;
+              activeTeamName = null;
+            }
+            await persistSessionRuntimeMetadata();
+          }
+          return result;
+        });
+        invalidateHeavyState();
+        return json(res, 200, {
+          ok: true,
+          proposal: applied.proposal,
+          rewritten: applied.rewritten,
+          filePath: applied.filePath,
+          state: await state(),
+        });
+      }
+      return json(res, 405, { error: 'Method not allowed' });
+    } catch (error) {
+      return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
+    }
+  }
   if (req.method === 'POST' && url.pathname === '/api/team/propose') {
     try {
       if (!sdk) return json(res, 503, { error: 'SDK not ready — configure a model first' });
@@ -7832,6 +7956,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const proposals = activeAssistantSessionId
       ? teamProposals.listForSession(activeAssistantSessionId)
       : [];
+    const assistantProposalCards = activeAssistantSessionId
+      ? assistantProposals.listForSession(activeAssistantSessionId)
+      : [];
     if (scope === 'global') {
       const cfg = await readAssistantConfig(homeDir);
       return json(res, 200, {
@@ -7850,6 +7977,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         assistantSessions: assistantSessions.items,
         activeSessionId: activeAssistantSessionId ?? cfg.activeSessionId ?? null,
         proposals,
+        assistantProposals: assistantProposalCards,
         schedules: [],
       });
     }
@@ -7876,6 +8004,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       assistantSessions: assistantSessions.items,
       activeSessionId: activeAssistantSessionId ?? cfg.activeSessionId ?? null,
       proposals,
+      assistantProposals: assistantProposalCards,
       schedules: (await listScheduledAutomationTasks(workDir))
         .filter(task => task.kind === 'manager')
         .map(task => ({ name: task.name, cron: task.cron, enabled: task.enabled })),
@@ -34712,6 +34841,143 @@ function managerAddTeamProposal(proposal) {
   t.appendChild(card);
   managerScrollTranscript();
 }
+// P3: generic Assistant confirmation cards (delete-with-references, workflow
+// upsert) staged by the global Assistant tools. Apply posts the chosen
+// fallback strategy to /api/assistant/proposals/:id/apply.
+function managerAddAssistantProposal(proposal) {
+  const t = el('managerTranscript');
+  if (!t || !proposal?.id) return;
+  const existing = t.querySelector('[data-assistant-proposal-id="' + CSS.escape(proposal.id) + '"]');
+  if (existing) existing.remove();
+  const card = document.createElement('article');
+  card.className = 'manager-proposal-card';
+  card.dataset.assistantProposalId = proposal.id;
+  const header = document.createElement('header');
+  const title = document.createElement('strong');
+  title.textContent = proposal.title || 'Assistant proposal';
+  const status = document.createElement('span');
+  status.className = 'muted';
+  status.textContent = proposal.status || 'pending';
+  header.append(title, status);
+  card.appendChild(header);
+  if (proposal.explanation) {
+    const explanation = document.createElement('p');
+    explanation.textContent = proposal.explanation;
+    card.appendChild(explanation);
+  }
+  let strategySelect = null;
+  let strategyTarget = null;
+  if (proposal.kind === 'delete-definition' && proposal.delete) {
+    const refs = proposal.delete.references || [];
+    if (refs.length) {
+      const list = document.createElement('ul');
+      for (const edge of refs) {
+        const row = document.createElement('li');
+        row.textContent = edge.from.kind + ' "' + edge.from.name + '" · ' + edge.field;
+        list.appendChild(row);
+      }
+      card.appendChild(list);
+    }
+    const strategies = proposal.delete.strategies || [];
+    if (proposal.status === 'pending' && strategies.length) {
+      const row = document.createElement('div');
+      row.className = 'manager-proposal-actions';
+      const label = document.createElement('label');
+      label.textContent = 'Fallback: ';
+      strategySelect = document.createElement('select');
+      for (const option of strategies) {
+        const opt = document.createElement('option');
+        opt.value = option.type;
+        opt.textContent = option.label || option.type;
+        strategySelect.appendChild(opt);
+      }
+      strategyTarget = document.createElement('input');
+      strategyTarget.type = 'text';
+      strategyTarget.placeholder = 'target name';
+      strategyTarget.style.display = 'none';
+      strategySelect.addEventListener('change', () => {
+        const selected = strategies.find((item) => item.type === strategySelect.value);
+        strategyTarget.style.display = selected && selected.needsTarget ? '' : 'none';
+      });
+      label.appendChild(strategySelect);
+      row.append(label, strategyTarget);
+      card.appendChild(row);
+    }
+  }
+  if (proposal.kind === 'workflow-upsert' && proposal.workflow) {
+    const meta = document.createElement('p');
+    meta.className = 'muted';
+    const lineCount = String(proposal.workflow.script || '').split('\\n').length;
+    meta.textContent = (proposal.workflow.scope || 'project') + ' workflow · ' + lineCount + ' lines'
+      + (proposal.workflow.description ? ' · ' + proposal.workflow.description : '');
+    card.appendChild(meta);
+    if (Array.isArray(proposal.workflow.problems) && proposal.workflow.problems.length) {
+      const problems = document.createElement('div');
+      problems.className = 'proposal-problems';
+      problems.textContent = proposal.workflow.problems.join(' · ');
+      card.appendChild(problems);
+    }
+  }
+  const actions = document.createElement('div');
+  actions.className = 'manager-proposal-actions';
+  const apply = document.createElement('button');
+  apply.type = 'button';
+  apply.className = 'pill-btn primary';
+  apply.textContent = 'Apply';
+  apply.disabled = proposal.status !== 'pending'
+    || Boolean(proposal.kind === 'workflow-upsert' && proposal.workflow?.problems?.length);
+  apply.addEventListener('click', async () => {
+    let strategy;
+    if (strategySelect) {
+      strategy = { type: strategySelect.value };
+      if (strategyTarget && strategyTarget.value.trim()) strategy.target = strategyTarget.value.trim();
+    }
+    if (!window.confirm('Apply "' + (proposal.title || 'proposal') + '"?')) return;
+    apply.disabled = true;
+    try {
+      const res = await api('/api/assistant/proposals/' + encodeURIComponent(proposal.id) + '/apply', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(strategy ? { strategy } : {}),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || ('HTTP ' + res.status));
+      status.textContent = 'applied';
+      apply.disabled = true;
+      reject.disabled = true;
+      if (strategySelect) strategySelect.disabled = true;
+      if (strategyTarget) strategyTarget.disabled = true;
+      await refreshManagerState(true);
+    } catch (error) {
+      apply.disabled = false;
+      managerAddMsg('error', 'Apply failed: ' + (error.message || error));
+    }
+  });
+  const reject = document.createElement('button');
+  reject.type = 'button';
+  reject.className = 'pill-btn';
+  reject.textContent = 'Reject';
+  reject.disabled = proposal.status !== 'pending';
+  reject.addEventListener('click', async () => {
+    try {
+      const res = await api('/api/assistant/proposals/' + encodeURIComponent(proposal.id) + '/reject', {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(await res.text());
+      status.textContent = 'rejected';
+      apply.disabled = true;
+      reject.disabled = true;
+      if (strategySelect) strategySelect.disabled = true;
+      if (strategyTarget) strategyTarget.disabled = true;
+    } catch (error) {
+      managerAddMsg('error', 'Reject failed: ' + (error.message || error));
+    }
+  });
+  actions.append(apply, reject);
+  card.appendChild(actions);
+  t.appendChild(card);
+  managerScrollTranscript();
+}
 function renderManagerSessionOptions(items, activeId) {
   const select = el('managerSessionSelect');
   if (!select) return;
@@ -34756,6 +35022,7 @@ async function refreshManagerState(forceHydrate = false) {
     renderManagerSessionOptions(data.assistantSessions || [], data.activeSessionId);
     if (forceHydrate || !managerTranscriptHydrated) {
       for (const proposal of data.proposals || []) managerAddTeamProposal(proposal);
+      for (const proposal of data.assistantProposals || []) managerAddAssistantProposal(proposal);
     }
     const meta = el('managerPanelMeta');
     if (meta) {
@@ -34836,6 +35103,9 @@ async function managerStream(path, payload) {
         }
         else if (event.type === 'team.proposal' && event.proposal) {
           managerAddTeamProposal(event.proposal);
+        }
+        else if (event.type === 'assistant.proposal' && event.proposal) {
+          managerAddAssistantProposal(event.proposal);
         }
         else if (event.type === 'status' && event.message) {
           setManagerThinking(true, String(event.message).replace(/^manager\\s*·\\s*/i, '') || 'Working…');

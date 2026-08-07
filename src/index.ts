@@ -1,4 +1,4 @@
-﻿export {
+export {
   clearLoadedJsonConfig,
   getLoadedJsonConfig,
   loadJsonConfigFile,
@@ -659,6 +659,23 @@ export type {
   AssistantGlobalHost,
   AssistantProjectBrief,
 } from './manager/assistantGlobalTools.js';
+export {
+  AssistantProposalStore,
+  deleteFallbackOptionsForKind,
+  workflowScriptProblems,
+} from './manager/assistantProposals.js';
+export type {
+  ApplyAssistantProposalContext,
+  ApplyAssistantProposalResult,
+  AssistantDeletePayload,
+  AssistantProposal,
+  AssistantProposalKind,
+  AssistantProposalStatus,
+  AssistantWorkflowUpsertPayload,
+  DeleteFallbackOption,
+  StageDeleteProposalInput,
+  StageWorkflowUpsertInput,
+} from './manager/assistantProposals.js';
 
 // ── Model Router (a /model routing layer) ─────────────────────────────
 export {
