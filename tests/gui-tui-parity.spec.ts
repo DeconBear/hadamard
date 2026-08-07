@@ -148,7 +148,7 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('renderRouterPane');
     expect(js).toContain('saveRouterFormDraft');
     expect(js).toContain('router-form-body');
-    expect(js).toContain('routerRouteTargetOptions');
+    expect(js).toContain('createAgentTargetSelect');
     expect(js).toContain('agent:');
     expect(js).toContain('nearestContextWindowOption');
     expect(html).not.toContain('id="settingsRuntimeModel"');
@@ -163,9 +163,9 @@ describe('TUI and GUI parity', () => {
     expect(html).toContain('Scheduled and webhook-driven tasks');
     expect(html).not.toContain('Workflow scripts and scheduled runs');
     expect(html).toContain('id="settingsTeamsList"');
-    expect(html).toContain('<span>Agent</span>');
-    expect(html).toContain('aria-label="Agent"');
-    expect(html).toContain('<h1>Agent</h1>');
+    expect(html).toContain('<span>Agents</span>');
+    expect(html).toContain('aria-label="Agents"');
+    expect(html).toContain('<h1>Agents</h1>');
     expect(html).toContain('<h2>Agents</h2>');
     expect(html).toContain('id="navTeam"');
     expect(html).not.toContain('data-settings-tab="profile"');

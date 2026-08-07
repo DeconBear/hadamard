@@ -2,10 +2,13 @@ import type {
   ModelTeamResult,
   TeamDefinition,
   TeamEvent,
+  TeamMember,
   WorkflowNode,
 } from '../types.js';
 import { AgentPool } from './agentPool.js';
 import { runMemberAgent } from './teamRuntime.js';
+import { buildGraphNodeTools } from './teamGraph.js';
+import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 
 const MAX_WORKFLOW_NODES = 128;
 const MAX_WORKFLOW_DEPTH = 32;
@@ -99,15 +102,39 @@ export async function runWorkflowSquad(
   let totalOutput = 0;
 
   const answer = await executeWorkflowTree(definition.workflowTree!, prompt, async (node, input) => {
+    // P2: per-node executor/targetRef + system prompt + tools + limits.
+    const member: TeamMember = {
+      model: node.model || '',
+      role: node.label || 'agent',
+      systemPrompt: node.systemPrompt || '',
+    };
+    if (node.targetRef && node.targetRef.kind !== 'team') {
+      try {
+        const resolved = resolveTargetRef(node.targetRef, { projectDir: workDir });
+        if (resolved.model) member.model = resolved.model;
+        if (resolved.provider) member.provider = resolved.provider;
+        if (resolved.baseURL) member.baseURL = resolved.baseURL;
+        if (resolved.apiKey) member.apiKey = resolved.apiKey;
+      } catch (err) {
+        return `[unavailable: ${err instanceof Error ? err.message : String(err)}]`;
+      }
+    }
+    const tools = node.allowedTools?.length
+      ? await buildGraphNodeTools({ id: node.id, allowedTools: node.allowedTools }, workDir)
+      : [];
+    const systemPrompt = [
+      node.systemPrompt || '',
+      node.workspaceAccess === 'full' ? 'Workspace access: full filesystem' : '',
+    ].filter(Boolean).join('\n\n');
     const run = await runMemberAgent({
-      identity: { id: node.id, model: node.model || '', role: node.label || node.type },
-      member: { model: node.model || '', role: node.label || 'agent', systemPrompt: '' },
+      identity: { id: node.id, model: member.model, role: node.label || node.type },
+      member,
       task: node.prompt ? node.prompt.replace(/\{\{input\}\}/gu, input) : input,
-      systemPrompt: '',
+      systemPrompt,
       cwd: workDir,
-      tools: [],
-      maxIterations: Infinity,
-      timeoutMs: definition.timeoutMs ?? 300_000,
+      tools,
+      maxIterations: node.maxIterations ?? definition.maxIterations ?? Infinity,
+      timeoutMs: node.timeoutMs ?? definition.timeoutMs ?? 300_000,
       signal,
       pool,
       round: 1,
@@ -147,23 +174,35 @@ export async function runSingleAgentSquad(
 ): Promise<ModelTeamResult> {
   const member = definition.members?.[0];
   if (!member) throw new Error(`Agent squad "${definition.name}" has no member`);
+  // Unified reference model: a typed targetRef overrides the by-value fields.
+  const effectiveMember: TeamMember = { ...member, model: member.model || '' };
+  if (member.targetRef && member.targetRef.kind !== 'team') {
+    const resolved = resolveTargetRef(member.targetRef, { projectDir: workDir });
+    if (resolved.model) effectiveMember.model = resolved.model;
+    if (resolved.provider) effectiveMember.provider = resolved.provider;
+    if (resolved.baseURL) effectiveMember.baseURL = resolved.baseURL;
+    if (resolved.apiKey) effectiveMember.apiKey = resolved.apiKey;
+  }
   const pool = new AgentPool();
   const identity = {
     id: member.id || member.role || member.name || definition.name,
-    model: member.model || '',
+    model: effectiveMember.model,
     role: member.role || member.name || definition.name,
   };
   const startedAt = Date.now();
   const systemPrompt = [member.systemPrompt || '', opts?.context?.trim() || '']
     .filter(Boolean)
     .join('\n\n');
+  const tools = member.allowedTools?.length
+    ? await buildGraphNodeTools({ id: identity.id, allowedTools: member.allowedTools }, workDir)
+    : [];
   const run = await runMemberAgent({
     identity,
-    member: { ...member, model: member.model || '' },
+    member: effectiveMember,
     task: prompt,
     systemPrompt,
     cwd: workDir,
-    tools: [],
+    tools,
     maxIterations: (member as { maxIterations?: number }).maxIterations
       ?? definition.maxIterations
       ?? Infinity,

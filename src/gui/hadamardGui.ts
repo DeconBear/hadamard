@@ -2914,6 +2914,20 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       ...(typeof fromAgent.topP === 'number' ? { topP: fromAgent.topP } : {}),
     };
   };
+  // P2: an active agent profile may restrict the toolset (allowedTools). The
+  // attached team tool (autoInvoke) always survives the filter.
+  const currentRunTools = (): AgentToolDefinition[] | null => {
+    const agent = activeAgentSelectionName
+      ? findSelectableAgent(activeAgentSelectionName, resolveGuiHomeDir())
+      : undefined;
+    const allowed = Array.isArray(agent?.allowedTools) && agent.allowedTools.length
+      ? agent.allowedTools
+      : null;
+    const teamTool = activeTeamTool && teamPrefs.autoInvoke ? activeTeamTool : null;
+    if (!allowed) return teamTool ? [...tools, teamTool] : null;
+    const filtered = tools.filter((tool) => allowed.includes(tool.name));
+    return teamTool ? [...filtered, teamTool] : filtered;
+  };
 
   const approver: HadamardToolApprover = async (context) => {
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -4150,7 +4164,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             canUseTool,
             model: activeBridgeModelApi.model,
             modelApi: activeBridgeModelApi.modelApi,
-            ...(activeTeamTool && teamPrefs.autoInvoke ? { tools: [...tools, activeTeamTool] } : {}),
+            ...(() => { const runTools = currentRunTools(); return runTools ? { tools: runTools } : {}; })(),
           })
         : session.stream(expandImageRefs(input, workDir), {
             systemPrompt: systemPromptForRun,
@@ -4162,7 +4176,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             canUseTool,
             ...(routed ? { model: routed.model, modelApi: routed.modelApi } : {}),
             ...(hadamardModel ? { model: hadamardModel } : {}),
-            ...(activeTeamTool && teamPrefs.autoInvoke ? { tools: [...tools, activeTeamTool] } : {}),
+            ...(() => { const runTools = currentRunTools(); return runTools ? { tools: runTools } : {}; })(),
           });
 
       for await (const event of stream) {
@@ -6706,7 +6720,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           canUseTool,
           model: activeBridgeModelApi.model,
           modelApi: activeBridgeModelApi.modelApi,
-          ...(activeTeamTool && teamPrefs.autoInvoke ? { tools: [...tools, activeTeamTool] } : {}),
+          ...(() => { const runTools = currentRunTools(); return runTools ? { tools: runTools } : {}; })(),
         });
       } else {
         stream = session.stream(expandImageRefs(input, workDir), {
@@ -6719,7 +6733,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           canUseTool,
           ...(routed ? { model: routed.model, modelApi: routed.modelApi } : {}),
           ...(hadamardModel ? { model: hadamardModel } : {}),
-          ...(activeTeamTool && teamPrefs.autoInvoke ? { tools: [...tools, activeTeamTool] } : {}),
+          ...(() => { const runTools = currentRunTools(); return runTools ? { tools: runTools } : {}; })(),
         });
       }
 
@@ -9162,6 +9176,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
               profile.topP = topP;
             }
           }
+          if (Array.isArray(body.allowedTools)) {
+            const tools = body.allowedTools.filter(
+              (tool: unknown): tool is string => typeof tool === 'string' && tool.trim().length > 0,
+            );
+            if (tools.length) profile.allowedTools = tools;
+          }
+          if (body.workspaceAccess === 'workspace' || body.workspaceAccess === 'full') {
+            profile.workspaceAccess = body.workspaceAccess;
+          }
+          if (body.maxIterations !== undefined && body.maxIterations !== null && body.maxIterations !== '') {
+            const maxIterations = typeof body.maxIterations === 'number' ? body.maxIterations : Number(body.maxIterations);
+            if (Number.isFinite(maxIterations) && maxIterations > 0) profile.maxIterations = Math.floor(maxIterations);
+          }
+          if (body.timeoutMs !== undefined && body.timeoutMs !== null && body.timeoutMs !== '') {
+            const timeoutMs = typeof body.timeoutMs === 'number' ? body.timeoutMs : Number(body.timeoutMs);
+            if (Number.isFinite(timeoutMs) && timeoutMs > 0) profile.timeoutMs = Math.floor(timeoutMs);
+          }
           const result = await withRuntimeMutation(async () => {
             const saved = upsertAgentProfile(profile, resolveGuiHomeDir());
             return { ok: true, profile: saved.profile, warnings: saved.warnings, state: await state() };
@@ -9350,6 +9381,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           if (typeof obj.role === 'string' && obj.role.trim()) route.role = obj.role.trim();
           if (typeof obj.name === 'string' && obj.name.trim()) route.name = obj.name.trim();
           if (typeof obj.description === 'string' && obj.description.trim()) route.description = obj.description.trim();
+          if (typeof obj.effort === 'string' && obj.effort.trim()) {
+            route.effort = obj.effort.trim() as RouterRoute['effort'];
+          }
           const routeTarget = parseTargetRef(obj.target);
           if (routeTarget) route.target = routeTarget;
           routes.push(route);
@@ -10404,7 +10438,7 @@ export function createHadamardGuiHtml(): string {
       </div>
       <nav class="primary-nav" aria-label="Primary">
         <button id="navProject" class="nav-btn region-nav active" data-region="project" aria-label="Project" title="Project"><span class="nav-icon">${guiIcon('folder')}</span><span>Project</span></button>
-        <button id="navTeam" class="nav-btn region-nav" data-region="team" aria-label="Agent" title="Agent"><span class="nav-icon">${guiIcon('team')}</span><span>Agent</span></button>
+        <button id="navTeam" class="nav-btn region-nav" data-region="team" aria-label="Agents" title="Agents"><span class="nav-icon">${guiIcon('team')}</span><span>Agents</span></button>
         <button id="navAutomation" class="nav-btn region-nav" data-region="automation" aria-label="Automation" title="Automation"><span class="nav-icon">${guiIcon('automation')}</span><span>Automation</span></button>
         <button id="navPlugins" class="nav-btn region-nav" data-region="plugins" aria-label="Customize" title="Customize"><span class="nav-icon">${guiIcon('plug')}</span><span>Customize</span></button>
       </nav>
@@ -10669,10 +10703,10 @@ export function createHadamardGuiHtml(): string {
       </div>
       </section>
     </main>
-    <section class="region hidden" data-region="team" id="regionTeam" aria-label="Agent">
+    <section class="region hidden" data-region="team" id="regionTeam" aria-label="Agents">
       <header class="region-header">
         <div class="region-titles">
-          <h1>Agent</h1>
+          <h1>Agents</h1>
           <p>Compose agents, workflows, and collaboration graphs (teams)</p>
         </div>
         <div class="region-actions">
@@ -10965,6 +10999,16 @@ export function createHadamardGuiHtml(): string {
         <summary>Advanced</summary>
         <label class="dialog-field">Top P<input id="agentProfileTopP" type="number" min="0" max="1" step="0.05" placeholder="Blank = provider default"></label>
         <p class="muted">Optional nucleus sampling override. Prefer changing either Temperature or Top P, not both.</p>
+        <div class="two-col">
+          <label class="dialog-field">Max tool iterations<input id="agentProfileMaxIterations" type="number" min="1" step="1" placeholder="Blank = unlimited"></label>
+          <label class="dialog-field">Timeout (ms)<input id="agentProfileTimeoutMs" type="number" min="1" step="1" placeholder="Blank = no profile timeout"></label>
+        </div>
+        <label class="dialog-field">Workspace access<select id="agentProfileWorkspace">
+          <option value="">Workspace (project only)</option>
+          <option value="full">Full filesystem</option>
+        </select></label>
+        <div class="dialog-field"><span>Allowed tools</span><div id="agentProfileTools" class="te-tool-grid"></div>
+        <p class="muted">All checked = full toolset. Unchecked tools are hidden from this agent's runs; granting Write/Edit/Bash asks for confirmation.</p></div>
       </details>
       <label class="dialog-field">System prompt append<textarea id="agentProfileSystemPrompt" rows="4" placeholder="Optional instructions appended when this agent runs"></textarea></label>
       <p id="agentProfileCfgStatus" class="muted"></p>
@@ -12675,6 +12719,8 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
 .squad-chip.active { border-color: var(--brand); background: var(--surface-selected); color: var(--text-1); font-weight: 600; }
 .squad-chip .sq-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 .squad-chip .sq-badge-broken { color: var(--warn); font-size: 12px; line-height: 1; flex: 0 0 auto; }
+.squad-chip.sq-subagent { opacity: .75; border-style: dashed; }
+.sq-group-label { align-self: center; font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; padding: 0 4px; }
 .ref-flash { outline: 2px solid var(--err); outline-offset: 1px; border-radius: 6px; }
 .impact-usage-list { display: grid; gap: 6px; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 .impact-usage-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; }
@@ -26614,6 +26660,105 @@ function promptModelRepoints(configName, removedModels, remainingModels) {
     document.body.appendChild(overlay);
   });
 }
+/** "Used by (N)" popover (P2 §3.4): every referencer with a Go-to deep link. */
+function showUsedByDialog(kind, name, edges) {
+  const old = document.getElementById('usedByDialog');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'usedByDialog';
+  overlay.className = 'modal';
+  const panel = document.createElement('div');
+  panel.className = 'auto-dialog';
+  panel.style.cssText = 'max-width:520px;width:min(520px,92vw);';
+  const head = document.createElement('div');
+  head.className = 'ins-head';
+  const h3 = document.createElement('h3');
+  h3.textContent = 'Used by (' + edges.length + ')';
+  head.appendChild(h3);
+  panel.appendChild(head);
+  const host = document.createElement('div');
+  host.style.cssText = 'padding:0 18px 18px;display:grid;gap:10px;';
+  if (!edges.length) {
+    const empty = document.createElement('p');
+    empty.className = 'te-hint';
+    empty.textContent = 'Nothing references "' + name + '".';
+    host.appendChild(empty);
+  } else {
+    const note = document.createElement('p');
+    note.className = 'te-hint';
+    note.textContent = 'Edits to "' + name + '" take effect in all of these places.';
+    host.appendChild(note);
+    const list = document.createElement('div');
+    list.className = 'impact-usage-list';
+    for (const edge of edges) {
+      const row = document.createElement('div');
+      row.className = 'impact-usage-row';
+      const label = document.createElement('span');
+      label.textContent = describeReferenceEdge(edge);
+      row.appendChild(label);
+      if (['agent', 'router', 'team', 'automation', 'preference'].includes(edge.from?.kind)) {
+        const go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'te-btn';
+        go.textContent = 'Go to';
+        go.addEventListener('click', () => {
+          overlay.remove();
+          goToReference(edge);
+        });
+        row.appendChild(go);
+      }
+      list.appendChild(row);
+    }
+    host.appendChild(list);
+  }
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'te-btn primary';
+  close.textContent = 'Close';
+  close.addEventListener('click', () => overlay.remove());
+  actions.appendChild(close);
+  host.appendChild(actions);
+  panel.appendChild(host);
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+/** Editor toolbar "Used by" button (P2 §3.4 — reference visibility is常态). */
+function appendUsedByButton(right, kind, name) {
+  if (!name) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = 'Used by';
+  btn.title = 'Show everything that references this entry';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const edges = await fetchReferenceUsages(kind, name);
+    btn.disabled = false;
+    showUsedByDialog(kind, name, edges);
+  });
+  right.appendChild(btn);
+}
+/** Team editor toolbar: Used by + Rename + Delete (P2 unified action bar). */
+function appendTeamEditorActions(right, name, source) {
+  appendUsedByButton(right, 'team', name);
+  if (!name || source === 'built-in') return;
+  const renameBtn = document.createElement('button');
+  renameBtn.type = 'button';
+  renameBtn.textContent = 'Rename';
+  renameBtn.addEventListener('click', () => {
+    renameDefinitionViaApi('team', name).then(() => renderTeamRegion()).catch(console.error);
+  });
+  right.appendChild(renameBtn);
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.textContent = 'Delete';
+  delBtn.addEventListener('click', () => {
+    deleteTeamViaApi(name).then(() => renderTeamRegion()).catch(console.error);
+  });
+  right.appendChild(delBtn);
+}
 async function refreshTeamsSnapshot() {  try {
     const res = await api('/api/state');
     if (!res.ok) return;
@@ -26680,6 +26825,34 @@ function renderTeamSquadBar() {
       void selectAgentEntry(t.name, t.kind);
     });
     bar.appendChild(chip);
+  }
+  // Read-only group: subagent .md definitions (~/.hadamard/agents, .hadamard/agents).
+  // They are not editable squads — the chip jumps to the Subagents drawer (P2 §4.2).
+  const subagentDefs = state.snapshot?.agents || [];
+  if (subagentDefs.length) {
+    const divider = document.createElement('span');
+    divider.className = 'sq-group-label';
+    divider.textContent = 'Subagents (.md)';
+    bar.appendChild(divider);
+    for (const def of subagentDefs) {
+      if (!def?.name) continue;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'squad-chip sq-subagent';
+      chip.dataset.name = def.name;
+      chip.dataset.kind = 'subagent-def';
+      chip.title = (def.description || 'Subagent definition') + ' — read-only here; browse in the Subagents drawer.';
+      const labels = document.createElement('span');
+      labels.className = 'sq-labels';
+      const label = document.createElement('strong');
+      label.textContent = def.name;
+      const small = document.createElement('small');
+      small.textContent = 'Subagent · Read-only';
+      labels.append(label, small);
+      chip.appendChild(labels);
+      chip.addEventListener('click', () => { openSurface('agents').catch(console.error); });
+      bar.appendChild(chip);
+    }
   }
   return teams;
 }
@@ -26914,72 +27087,47 @@ function agentDetailChip(label, value) {
   chip.append(span, strong);
   return chip;
 }
-function routerModelTargetOptions() {
-  const opts = [{ value: '', label: 'Select model…' }];
-  for (const opt of teamModelSelectOptions()) {
-    if (!opt.value) continue;
-    opts.push({ value: 'model:' + opt.value, label: opt.label });
-  }
-  return opts;
-}
-function routerRouteTargetOptions() {
-  const opts = [{ value: '', label: 'Select model or agent…' }];
-  for (const opt of teamModelSelectOptions()) {
-    if (!opt.value) continue;
-    opts.push({ value: 'model:' + opt.value, label: 'Model · ' + opt.label });
-  }
-  for (const profile of state.snapshot?.agentProfiles || []) {
-    if (!profile?.name) continue;
-    opts.push({
-      value: 'agent:' + profile.name,
-      label: 'Agent · ' + profile.name + (profile.model ? ' (' + profile.model + ')' : ''),
-    });
-  }
-  return opts;
-}
-function routerFallbackTargetOptions() {
-  const opts = [{ value: '', label: 'First route (default)' }];
-  for (const opt of teamModelSelectOptions()) {
-    if (!opt.value) continue;
-    opts.push({ value: 'model:' + opt.value, label: opt.label });
-  }
-  return opts;
-}
 function resolveRouterTargetKey(key) {
-  const raw = String(key || '');
-  if (raw.startsWith('agent:')) {
-    const name = raw.slice(6);
-    const profile = (state.snapshot?.agentProfiles || []).find((p) => p.name === name);
-    if (!profile) return { model: '', role: name, agentProfile: name };
-    const ref = { model: profile.model || '', role: profile.name, agentProfile: profile.name };
+  const ref = pickerValueToTargetRef(key);
+  if (!ref) return { model: '' };
+  if (ref.kind === 'agent') {
+    const profile = (state.snapshot?.agentProfiles || []).find((p) => p.name === ref.name);
+    if (!profile) return { model: '', role: ref.name, agentProfile: ref.name, target: ref };
+    const out = { model: profile.model || '', role: profile.name, agentProfile: profile.name, target: ref };
     const cfg = (state.snapshot?.bridgeState?.configs || []).find((c) => c.name === profile.bridgeConfig);
-    if (cfg?.provider === 'openai' || cfg?.provider === 'anthropic') ref.provider = cfg.provider;
-    if (cfg?.baseURL) ref.baseURL = cfg.baseURL;
-    return ref;
+    if (cfg?.provider === 'openai' || cfg?.provider === 'anthropic') out.provider = cfg.provider;
+    if (cfg?.baseURL) out.baseURL = cfg.baseURL;
+    return out;
   }
-  const model = raw.startsWith('model:') ? raw.slice(6) : raw;
-  const ref = { model };
-  if (!model) return ref;
-  for (const cfg of teamBridgeConfigOptions()) {
-    const models = Array.isArray(cfg.models) ? cfg.models.map((m) => (typeof m === 'string' ? m : m.name)) : [];
-    if (cfg.model === model || models.includes(model)) {
-      if (cfg.provider === 'openai' || cfg.provider === 'anthropic') ref.provider = cfg.provider;
-      if (cfg.baseURL) ref.baseURL = cfg.baseURL;
-      break;
+  if (ref.kind === 'model') {
+    const out = { model: ref.model };
+    if (!ref.model) return out;
+    const cfgName = ref.config || configForModel(ref.model);
+    const cfg = cfgName
+      ? (state.snapshot?.bridgeState?.configs || []).find((c) => c.name === cfgName)
+      : null;
+    if (cfg) {
+      if (cfg.provider === 'openai' || cfg.provider === 'anthropic') out.provider = cfg.provider;
+      if (cfg.baseURL) out.baseURL = cfg.baseURL;
     }
+    // Typed target written alongside the legacy fields (P2 §4.3): empty config
+    // marks a raw model ref whose originating config is unknown.
+    out.target = { kind: 'model', config: cfg ? cfg.name : (ref.config || ''), model: ref.model };
+    return out;
   }
-  return ref;
+  return { model: '', target: ref };
 }
 function routeToTargetKey(route) {
   if (!route) return '';
+  if (route.target) return targetRefToPickerValue(route.target);
   if (route.agentProfile) return 'agent:' + route.agentProfile;
   const profiles = state.snapshot?.agentProfiles || [];
   const match = profiles.find((p) => p.name === route.role && p.model === route.model);
   if (match) return 'agent:' + match.name;
-  return route.model ? ('model:' + route.model) : '';
+  return route.model ? targetRefToPickerValue({ kind: 'model', config: configForModel(route.model), model: route.model }) : '';
 }
 function modelToTargetKey(model) {
-  return model ? ('model:' + model) : '';
+  return model ? targetRefToPickerValue({ kind: 'model', config: configForModel(model), model }) : '';
 }
 function renderAgentProfilePane(profile) {
   const g = el('teamGraph');
@@ -26994,6 +27142,7 @@ function renderAgentProfilePane(profile) {
   const pill = document.createElement('span'); pill.className = 'graph-mode-pill';
   pill.textContent = 'agent · profile · ' + (profile?.name || '');
   right.appendChild(pill);
+  appendUsedByButton(right, 'agent', profile?.name || '');
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
   editBtn.textContent = 'Edit';
@@ -27004,9 +27153,7 @@ function renderAgentProfilePane(profile) {
     delBtn.type = 'button';
     delBtn.textContent = 'Delete';
     delBtn.addEventListener('click', () => {
-      if (window.confirm('Delete agent profile "' + profile.name + '"?')) {
-        deleteAgentProfileViaApi(profile.name).then(() => renderTeamRegion()).catch(console.error);
-      }
+      deleteAgentProfileViaApi(profile.name).then(() => renderTeamRegion()).catch(console.error);
     });
     right.appendChild(delBtn);
   }
@@ -27085,13 +27232,18 @@ function renderRouterPane(router, opts) {
     renameFrom: !creating && !isBuiltIn ? (router?.name || profile?.name || '') : null,
     description: profile?.description || '',
     target: router?.source === 'personal' ? 'personal' : 'project',
-    leaderKey: modelToTargetKey(profile?.routerModel?.model || ''),
-    fallbackKey: modelToTargetKey(profile?.fallback?.model || ''),
+    leaderKey: profile?.routerModel?.model || '',
+    fallbackKey: profile?.fallbackTarget
+      ? targetRefToPickerValue(profile.fallbackTarget)
+      : modelToTargetKey(profile?.fallback?.model || ''),
+    classificationPrompt: profile?.classificationPrompt || '',
     routes: (Array.isArray(profile?.routes) ? profile.routes : []).map((route) => ({
       targetKey: routeToTargetKey(route),
       role: route.role || route.name || '',
       when: route.when || '',
       description: route.description || '',
+      effort: route.effort || '',
+      maxTokens: route.maxTokens,
     })),
   };
   if (!draft.routes.length) {
@@ -27107,6 +27259,7 @@ function renderRouterPane(router, opts) {
   pill.textContent = (creating ? 'new router · ' : 'router · ') + (draft.name || '')
     + (isBuiltIn ? ' · Built-in' : '');
   right.appendChild(pill);
+  if (!creating) appendUsedByButton(right, 'router', draft.name);
   if (!creating) {
     const useBtn = document.createElement('button');
     useBtn.type = 'button';
@@ -27167,9 +27320,12 @@ function renderRouterPane(router, opts) {
   const leaderSection = document.createElement('div');
   leaderSection.className = 'router-form-section';
   leaderSection.innerHTML = '<h4>Leader</h4><p class="te-hint">Classifies each chat turn and picks one specialist route.</p>';
-  leaderSection.appendChild(teLabeledSelect('Leader model', draft.leaderKey, routerModelTargetOptions(), (v) => {
-    draft.leaderKey = v;
-  }));
+  leaderSection.appendChild(tePickerField('Leader model', createConfigModelSelect({
+    selected: draft.leaderKey,
+    placeholder: 'Select model…',
+    includeSession: true,
+    onChange: (model) => { draft.leaderKey = model; },
+  })));
   wrap.appendChild(leaderSection);
 
   const routesSection = document.createElement('div');
@@ -27198,15 +27354,31 @@ function renderRouterPane(router, opts) {
         head.appendChild(remove);
       }
       row.appendChild(head);
-      row.appendChild(teLabeledSelect('Target', route.targetKey, routerRouteTargetOptions(), (v) => {
-        route.targetKey = v;
-        const resolved = resolveRouterTargetKey(v);
-        if (resolved.role && !route.role) route.role = resolved.role;
-        renderRouteRows();
-      }));
+      row.appendChild(tePickerField('Target', createAgentTargetSelect({
+        value: route.targetKey,
+        placeholder: 'Select model or agent…',
+        includeTeams: false,
+        onChange: (ref, v) => {
+          route.targetKey = v;
+          const resolved = resolveRouterTargetKey(v);
+          if (resolved.role && !route.role) route.role = resolved.role;
+          renderRouteRows();
+        },
+      })));
       row.appendChild(teFieldLive('Role / label', route.role || '', (v) => { route.role = v; }, false, false));
       row.appendChild(teFieldLive('When', route.when || '', (v) => { route.when = v; }, false, false));
       row.appendChild(teFieldLive('Notes for leader (optional)', route.description || '', (v) => { route.description = v; }, true, false));
+      row.appendChild(teLabeledSelect('Effort', route.effort || '', [
+        { value: '', label: 'Session default' },
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
+        { value: 'max', label: 'Max' },
+      ], (v) => { route.effort = v; }));
+      row.appendChild(teHintField('Max tokens', 'Per-route sampling cap. Blank = runtime default.', route.maxTokens ? String(route.maxTokens) : '', (v) => {
+        const n = Number(v);
+        route.maxTokens = v.trim() && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+      }, false));
       routesHost.appendChild(row);
     });
   }
@@ -27226,10 +27398,18 @@ function renderRouterPane(router, opts) {
   const fallbackSection = document.createElement('div');
   fallbackSection.className = 'router-form-section';
   fallbackSection.innerHTML = '<h4>Fallback</h4><p class="te-hint">Used when no route matches. Leave as First route to use route 1.</p>';
-  fallbackSection.appendChild(teLabeledSelect('Fallback model', draft.fallbackKey, routerFallbackTargetOptions(), (v) => {
-    draft.fallbackKey = v;
-  }));
+  fallbackSection.appendChild(tePickerField('Fallback target', createAgentTargetSelect({
+    value: draft.fallbackKey,
+    placeholder: 'First route (default)',
+    includeTeams: false,
+    onChange: (ref, v) => { draft.fallbackKey = v; },
+  })));
   wrap.appendChild(fallbackSection);
+  const promptSection = document.createElement('div');
+  promptSection.className = 'router-form-section';
+  promptSection.innerHTML = '<h4>Classification prompt</h4><p class="te-hint">Optional custom leader prompt prefix. The specialist list and user request are appended.</p>';
+  promptSection.appendChild(teFieldLive('Custom prompt (optional)', draft.classificationPrompt || '', (v) => { draft.classificationPrompt = v; }, true, false));
+  wrap.appendChild(promptSection);
   wrap.appendChild(status);
   g.appendChild(wrap);
 }
@@ -27266,12 +27446,18 @@ async function saveRouterFormDraft(draft, opts) {
   for (const item of draft.routes || []) {
     const resolved = resolveRouterTargetKey(item.targetKey);
     const when = String(item.when || '').trim();
-    if (!resolved.model || !when) continue;
+    if ((!resolved.model && !resolved.target) || !when) continue;
     const route = { model: resolved.model, when };
     const role = String(item.role || resolved.role || '').trim();
     if (role) route.role = role;
     if (resolved.provider) route.provider = resolved.provider;
     if (resolved.baseURL) route.baseURL = resolved.baseURL;
+    // P2: persist the typed target alongside the legacy by-value fields.
+    if (resolved.target) route.target = resolved.target;
+    if (item.effort) route.effort = item.effort;
+    if (Number.isFinite(Number(item.maxTokens)) && Number(item.maxTokens) > 0) {
+      route.maxTokens = Math.floor(Number(item.maxTokens));
+    }
     const description = String(item.description || '').trim();
     if (description) route.description = description;
     routes.push(route);
@@ -27289,12 +27475,15 @@ async function saveRouterFormDraft(draft, opts) {
   };
   if (leader.provider) body.routerModel.provider = leader.provider;
   if (leader.baseURL) body.routerModel.baseURL = leader.baseURL;
+  const classificationPrompt = String(draft.classificationPrompt || '').trim();
+  if (classificationPrompt) body.classificationPrompt = classificationPrompt;
   const fallback = resolveRouterTargetKey(draft.fallbackKey);
   if (fallback.model) {
     body.fallback = { model: fallback.model };
     if (fallback.provider) body.fallback.provider = fallback.provider;
     if (fallback.baseURL) body.fallback.baseURL = fallback.baseURL;
   }
+  if (fallback.target) body.fallbackTarget = fallback.target;
   if (status) status.textContent = 'Saving...';
   const res = await api('/api/router/profile', {
     method: 'POST',
@@ -27437,6 +27626,166 @@ function teamModelSelectOptions() {
   if (!opts.length) opts.push({ value: '', label: '(configure providers in Settings)' });
   return opts;
 }
+// ── Shared pickers (P2 §4.1) ────────────────────────────────────────────────
+/** ConfigModelPicker data source: one group per config, models underneath. */
+function configModelGroups() {
+  const groups = [];
+  for (const cfg of state.snapshot?.bridgeState?.configs || []) {
+    const models = [];
+    const seen = new Set();
+    const push = (name) => {
+      const n = String(name || '').trim();
+      if (n && !seen.has(n)) { seen.add(n); models.push(n); }
+    };
+    push(cfg.model);
+    for (const m of cfg.models || []) push(typeof m === 'string' ? m : m?.name);
+    if (models.length) groups.push({ config: cfg.name, runtime: cfg.runtime || '', models });
+  }
+  return groups;
+}
+/** The config owning a model id (first match), '' when unknown. */
+function configForModel(model) {
+  for (const g of configModelGroups()) if (g.models.includes(model)) return g.config;
+  return '';
+}
+/**
+ * ConfigModelPicker: a config-grouped model <select> (optgroup per config).
+ * opts: { selected?, includeSession?, placeholder?, onChange?(model, config) }
+ * The select value is the model id (back-compat with legacy call sites).
+ */
+function createConfigModelSelect(opts) {
+  opts = opts || {};
+  const select = document.createElement('select');
+  if (opts.placeholder !== undefined) {
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = opts.placeholder;
+    select.appendChild(ph);
+  }
+  const sessionModel = state.snapshot?.session?.model;
+  if (opts.includeSession && sessionModel) {
+    const opt = document.createElement('option');
+    opt.value = sessionModel;
+    opt.textContent = sessionModel + ' (session)';
+    opt.dataset.config = '';
+    select.appendChild(opt);
+  }
+  for (const g of configModelGroups()) {
+    const group = document.createElement('optgroup');
+    group.label = g.config + (g.runtime ? ' · ' + g.runtime : '');
+    for (const model of g.models) {
+      const opt = document.createElement('option');
+      opt.value = model;
+      opt.textContent = model;
+      opt.dataset.config = g.config;
+      group.appendChild(opt);
+    }
+    select.appendChild(group);
+  }
+  if (opts.selected) select.value = opts.selected;
+  if (opts.onChange) {
+    select.addEventListener('change', () => {
+      const opt = select.selectedOptions && select.selectedOptions[0];
+      opts.onChange(select.value, (opt && opt.dataset.config) || configForModel(select.value));
+    });
+  }
+  return select;
+}
+// AgentTargetPicker value encoding: 'model:<config>:<model>' | 'agent:<name>' | 'team:<name>'.
+// No router group — routers are never route/execution targets (§7-1).
+function agentTargetSelectOptions(opts) {
+  opts = opts || {};
+  const options = [];
+  for (const g of configModelGroups()) {
+    for (const model of g.models) {
+      options.push({
+        value: 'model:' + g.config + ':' + model,
+        label: model,
+        group: 'Models · ' + g.config,
+      });
+    }
+  }
+  for (const p of state.snapshot?.agentProfiles || []) {
+    if (!p?.name) continue;
+    options.push({
+      value: 'agent:' + p.name,
+      label: p.name + (p.model ? ' (' + p.model + ')' : ''),
+      group: 'Agents',
+    });
+  }
+  if (opts.includeTeams !== false) {
+    for (const t of teamListForRegion()) {
+      if (t.kind !== 'team') continue;
+      options.push({
+        value: 'team:' + t.name,
+        label: t.name,
+        group: t.squadType === 'workflow' ? 'Workflows' : 'Graphs',
+      });
+    }
+  }
+  return options;
+}
+function targetRefToPickerValue(ref) {
+  if (!ref) return '';
+  if (ref.kind === 'agent') return 'agent:' + ref.name;
+  if (ref.kind === 'team') return 'team:' + ref.name;
+  return 'model:' + (ref.config || '') + ':' + ref.model;
+}
+function pickerValueToTargetRef(value) {
+  const v = String(value || '');
+  if (v.startsWith('agent:')) return v.length > 6 ? { kind: 'agent', name: v.slice(6) } : null;
+  if (v.startsWith('team:')) return v.length > 5 ? { kind: 'team', name: v.slice(5) } : null;
+  if (v.startsWith('model:')) {
+    const rest = v.slice(6);
+    const sep = rest.indexOf(':');
+    if (sep < 0) return rest ? { kind: 'model', config: '', model: rest } : null;
+    const model = rest.slice(sep + 1);
+    return model ? { kind: 'model', config: rest.slice(0, sep), model } : null;
+  }
+  // Bare legacy value = model id.
+  return v ? { kind: 'model', config: '', model: v } : null;
+}
+/**
+ * AgentTargetPicker: grouped executor select outputting an AgentTargetRef.
+ * Groups: Models (per config) / Agents / Graphs / Workflows.
+ * opts: { value?, placeholder?, includeTeams?, onChange?(ref|null, rawValue) }
+ */
+function createAgentTargetSelect(opts) {
+  opts = opts || {};
+  const select = document.createElement('select');
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = opts.placeholder || 'Select target…';
+  select.appendChild(ph);
+  let lastGroup = null;
+  let groupEl = null;
+  for (const option of agentTargetSelectOptions(opts)) {
+    if (option.group !== lastGroup) {
+      lastGroup = option.group;
+      groupEl = document.createElement('optgroup');
+      groupEl.label = option.group;
+      select.appendChild(groupEl);
+    }
+    const opt = document.createElement('option');
+    opt.value = option.value;
+    opt.textContent = option.label;
+    groupEl.appendChild(opt);
+  }
+  if (opts.value) select.value = opts.value;
+  if (opts.onChange) {
+    select.addEventListener('change', () => opts.onChange(pickerValueToTargetRef(select.value), select.value));
+  }
+  return select;
+}
+/** Labeled field wrapper for picker selects (matches teLabeledSelect markup). */
+function tePickerField(label, selectEl) {
+  const f = document.createElement('div');
+  f.className = 'te-field';
+  const l = document.createElement('label');
+  l.textContent = label;
+  f.append(l, selectEl);
+  return f;
+}
 function applyTeamModelSelection(node, modelValue) {
   node.model = modelValue || '';
   if (!modelValue) return;
@@ -27449,6 +27798,39 @@ function applyTeamModelSelection(node, modelValue) {
       break;
     }
   }
+}
+/** Graph/workflow node executor selection → typed targetRef + legacy field sync (P2 §4.3). */
+function applyNodeTargetRef(node, ref) {
+  if (!ref) {
+    node.targetRef = undefined;
+    return;
+  }
+  node.targetRef = ref;
+  if (ref.kind === 'team') {
+    // Workflow nodes (children array) keep their own type; graph nodes switch to type=team.
+    if (!Array.isArray(node.children)) {
+      node.type = 'team';
+      node.teamRef = ref.name;
+    }
+    return;
+  }
+  if (node.type === 'team') {
+    node.type = undefined;
+    node.teamRef = undefined;
+  }
+  if (ref.kind === 'model') {
+    applyTeamModelSelection(node, ref.model);
+  } else if (ref.kind === 'agent') {
+    const profile = (state.snapshot?.agentProfiles || []).find((p) => p.name === ref.name);
+    if (profile?.model) applyTeamModelSelection(node, profile.model);
+  }
+}
+/** Current executor picker value for a graph/workflow node. */
+function nodeTargetPickerValue(node) {
+  if (node.targetRef) return targetRefToPickerValue(node.targetRef);
+  if (node.type === 'team' && node.teamRef) return 'team:' + node.teamRef;
+  if (node.model) return targetRefToPickerValue({ kind: 'model', config: configForModel(node.model), model: node.model });
+  return '';
 }
 function formatTeamInfinityField(n) {
   if (n == null || n === 0 || n === Infinity || n < 0) return '';
@@ -27941,11 +28323,16 @@ function renderTeamNodeEditorPanel(node, def) {
     setTeamSavedStatus(false);
     queuePromptPreview();
   }));
-  host.appendChild(teLabeledSelect('Model', node.model || '', teamModelSelectOptions(), (v) => {
-    applyTeamModelSelection(node, v);
-    setTeamSavedStatus(false);
-    queuePromptPreview();
-  }));
+  host.appendChild(tePickerField('Executor (model / agent / team)', createAgentTargetSelect({
+    value: nodeTargetPickerValue(node),
+    placeholder: 'Raw model / session default',
+    onChange: (ref) => {
+      applyNodeTargetRef(node, ref);
+      setTeamSavedStatus(false);
+      queuePromptPreview();
+      renderTeamNodeEditorPanel(node, def);
+    },
+  })));
   host.appendChild(teSelect('Agent type', node.type || 'react', ['react', 'single', 'team'], (v) => {
     node.type = v === 'react' ? undefined : v;
     if (v !== 'team') node.teamRef = undefined;
@@ -29098,6 +29485,7 @@ function renderWorkflowSquadPlaceholder(g, def, name) {
     saveBtn.addEventListener('click', () => { void saveTeamDefinition(); });
     right.appendChild(saveBtn);
   }
+  appendTeamEditorActions(right, def.name || name, editable ? '' : 'built-in');
   toolbar.append(left, right);
   g.appendChild(toolbar);
   const problems = document.createElement('div');
@@ -29275,6 +29663,42 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
         true,
         false,
       ));
+      // P2: workflow agent nodes align with graph nodes — typed executor,
+      // system prompt, tools, timeout, iterations, workspace access.
+      typeFields.appendChild(tePickerField('Executor (model / agent / team)', createAgentTargetSelect({
+        value: nodeTargetPickerValue(draft),
+        placeholder: 'Session default model',
+        onChange: (ref) => {
+          applyNodeTargetRef(draft, ref);
+          renderTypeFields();
+        },
+      })));
+      typeFields.appendChild(teFieldLive(
+        'System prompt (optional)',
+        draft.systemPrompt || '',
+        function (v) { draft.systemPrompt = v; },
+        true,
+        false,
+      ));
+      typeFields.appendChild(teSelect('Workspace access', draft.workspaceAccess || 'workspace', ['workspace', 'full'], (v) => {
+        draft.workspaceAccess = v === 'full' ? 'full' : undefined;
+      }));
+      typeFields.appendChild(teHintField('Timeout (ms)', 'Per-node run timeout. Empty = squad default (300000 ms).', String(draft.timeoutMs ?? ''), (v) => {
+        const n = Number(v);
+        draft.timeoutMs = v.trim() && Number.isFinite(n) && n > 0 ? n : undefined;
+      }, false));
+      typeFields.appendChild(teHintField('Max tool iterations', 'ReAct loop cap. Empty or ∞ = unlimited.', formatTeamInfinityField(draft.maxIterations), (v) => {
+        draft.maxIterations = parseTeamInfinityField(v);
+      }, false));
+      typeFields.appendChild(teToolChecklist('Allowed tools', Array.isArray(draft.allowedTools) && draft.allowedTools.length ? draft.allowedTools : [], (next) => {
+        const prev = Array.isArray(draft.allowedTools) ? draft.allowedTools : [];
+        const added = next.filter((t) => RISKY_NODE_TOOLS.includes(t) && !prev.includes(t));
+        if (added.length && !window.confirm('Grant ' + added.join(' + ') + ' to "' + (draft.label || draft.id || 'node') + '"?')) {
+          renderTypeFields();
+          return;
+        }
+        draft.allowedTools = next.length ? next : undefined;
+      }));
     } else if (nodeType === 'branch') {
       typeFields.appendChild(teHintField(
         'Condition (substring)',
@@ -29290,12 +29714,14 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
       teamRuntimeSelectOptions(),
       function (v) { draft.runtime = v || undefined; },
     ));
-    typeFields.appendChild(teLabeledSelect(
-      'Model',
-      draft.model || '',
-      teamModelSelectOptions(),
-      function (v) { draft.model = v; },
-    ));
+    if (nodeType !== 'agent') {
+      typeFields.appendChild(teLabeledSelect(
+        'Model',
+        draft.model || '',
+        teamModelSelectOptions(),
+        function (v) { draft.model = v; },
+      ));
+    }
   }
   renderTypeFields();
   const actions = document.createElement('div');
@@ -29314,7 +29740,16 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
     if (isNew) {
       draft.children = nodeType === 'branch' ? [wfDefaultChild(), wfDefaultChild()] : [];
     }
-    if (nodeType !== 'agent') delete draft.prompt;
+    if (nodeType !== 'agent') {
+      delete draft.prompt;
+      delete draft.systemPrompt;
+      delete draft.allowedTools;
+      delete draft.timeoutMs;
+      delete draft.maxIterations;
+      delete draft.workspaceAccess;
+      delete draft.targetRef;
+    }
+    delete draft.teamRef; // workflow nodes carry team targets via targetRef only
     if (nodeType !== 'branch') delete draft.condition;
     Object.assign(node, draft);
     if (isNew && onCreate) onCreate();
@@ -29353,6 +29788,7 @@ function renderSubagentSquadEditor(g, def, name) {
     saveBtn.addEventListener('click', () => { void saveTeamDefinition(); });
     right.appendChild(saveBtn);
   }
+  appendTeamEditorActions(right, def.name || name, editable ? '' : 'built-in');
   toolbar.append(left, right);
   g.appendChild(toolbar);
   const wrap = document.createElement('div');
@@ -29362,8 +29798,46 @@ function renderSubagentSquadEditor(g, def, name) {
   wrap.appendChild(teFieldLive('Role / name', member.role || def.name || '', (v) => { member.role = v; setTeamSavedStatus(false); }));
   wrap.appendChild(teFieldLive('Prompt (system prompt)', member.systemPrompt || '', (v) => { member.systemPrompt = v; setTeamSavedStatus(false); }, true));
   wrap.appendChild(teLabeledSelect('Runtime', member.runtime || '', teamRuntimeSelectOptions(), (v) => { member.runtime = v || undefined; setTeamSavedStatus(false); }));
-  wrap.appendChild(teLabeledSelect('Model', member.model || '', teamModelSelectOptions(), (v) => { member.model = v; setTeamSavedStatus(false); }));
+  wrap.appendChild(tePickerField('Executor (model / agent)', createAgentTargetSelect({
+    value: member.targetRef
+      ? targetRefToPickerValue(member.targetRef)
+      : (member.model ? targetRefToPickerValue({ kind: 'model', config: configForModel(member.model), model: member.model }) : ''),
+    placeholder: 'Raw model / session default',
+    includeTeams: false,
+    onChange: (ref) => {
+      member.targetRef = ref || undefined;
+      if (ref?.kind === 'model') member.model = ref.model;
+      else if (ref?.kind === 'agent') {
+        const profile = (state.snapshot?.agentProfiles || []).find((p) => p.name === ref.name);
+        if (profile?.model) member.model = profile.model;
+      }
+      setTeamSavedStatus(false);
+    },
+  })));
   wrap.appendChild(teSelect('Workspace access', member.workspaceAccess || 'workspace', ['workspace', 'full'], (v) => { member.workspaceAccess = v; setTeamSavedStatus(false); }));
+  wrap.appendChild(teHintField('Timeout (ms)', 'Run timeout. Empty = 300000 ms.', String(def.timeoutMs ?? ''), (v) => {
+    const n = Number(v);
+    def.timeoutMs = v.trim() && Number.isFinite(n) && n > 0 ? n : undefined;
+    setTeamSavedStatus(false);
+  }));
+  wrap.appendChild(teHintField('Max tool iterations', 'ReAct loop cap. Empty or ∞ = unlimited.', formatTeamInfinityField(def.maxIterations), (v) => {
+    def.maxIterations = parseTeamInfinityField(v);
+    setTeamSavedStatus(false);
+  }));
+  wrap.appendChild(teToolChecklist('Allowed tools', Array.isArray(member.allowedTools) ? member.allowedTools : [], (next) => {
+    const prev = Array.isArray(member.allowedTools) ? member.allowedTools : [];
+    const added = next.filter((t) => RISKY_NODE_TOOLS.includes(t) && !prev.includes(t));
+    if (added.length && !window.confirm('Grant ' + added.join(' + ') + ' to "' + (member.role || def.name) + '"?')) {
+      renderTeamGraph(def, def.name || name);
+      return;
+    }
+    member.allowedTools = next.length ? next : undefined;
+    setTeamSavedStatus(false);
+  }));
+  const toolsHint = document.createElement('p');
+  toolsHint.className = 'te-hint';
+  toolsHint.textContent = 'No tools checked = the agent answers without tools. Checking tools enables a ReAct loop.';
+  wrap.appendChild(toolsHint);
   g.appendChild(wrap);
 }
 // --- Graph-mode canvas (plan Phase 4): drag nodes + port-to-port edges on SVG. ---
@@ -30933,6 +31407,7 @@ function renderGraphModeCanvas(g, def, name) {
     saveBtn.addEventListener('click', () => { void saveTeamDefinition(); });
     right.appendChild(saveBtn);
   }
+  appendTeamEditorActions(right, def.name || name, editable ? '' : 'built-in');
   toolbar.append(left, right);
   const canvas = document.createElement('div');
   canvas.className = 'graph-canvas';
@@ -32229,7 +32704,8 @@ function defaultFallbackActive() {
   return state.preferences.useDefaultModelAsFallback !== false
     && Boolean((state.snapshot?.settings?.defaultModel || '').trim());
 }
-function renderBridgeConfigs() {  const bs = (state.snapshot && state.snapshot.bridgeState) || {};
+function renderBridgeConfigs() {
+  const bs = (state.snapshot && state.snapshot.bridgeState) || {};
   const active = bs.activeConfig;
   const configs = [defaultBridgeConfigView(), ...(bs.configs || [])];
   renderRuntimeDiscovery();
@@ -32399,6 +32875,37 @@ function selectedAgentProfileModel() {
   return el('agentProfileModelCustom').value.trim();
 }
 
+function renderAgentProfileTools(selected) {
+  const host = el('agentProfileTools');
+  if (!host) return;
+  host.textContent = '';
+  // Absent allowedTools = full toolset → all boxes checked.
+  const set = new Set(Array.isArray(selected) && selected.length ? selected : TEAM_CORE_TOOLS);
+  for (const tool of TEAM_CORE_TOOLS) {
+    const row = document.createElement('label');
+    row.className = 'te-check';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = set.has(tool);
+    box.dataset.tool = tool;
+    box.addEventListener('change', () => {
+      if (box.checked && RISKY_NODE_TOOLS.includes(tool)
+        && !window.confirm('Grant ' + tool + ' to this agent?')) {
+        box.checked = false;
+      }
+    });
+    row.append(box, document.createTextNode(' ' + tool));
+    host.appendChild(row);
+  }
+}
+/** null = all tools (no restriction); otherwise the checked subset. */
+function selectedAgentProfileTools() {
+  const host = el('agentProfileTools');
+  if (!host) return null;
+  const checked = TEAM_CORE_TOOLS.filter((t) => host.querySelector('input[data-tool="' + t + '"]')?.checked);
+  return checked.length >= TEAM_CORE_TOOLS.length ? null : checked;
+}
+
 function openAgentProfileEditor(profile) {
   editingAgentProfileName = profile ? profile.name : null;
   el('agentProfileEditorTitle').textContent = profile ? 'Edit agent profile' : 'New agent profile';
@@ -32412,6 +32919,10 @@ function openAgentProfileEditor(profile) {
   setField('agentProfileTemperature', profile?.temperature != null ? String(profile.temperature) : '');
   setField('agentProfileTopP', profile?.topP != null ? String(profile.topP) : '');
   setField('agentProfileSystemPrompt', profile?.systemPromptAppend || '');
+  setField('agentProfileMaxIterations', profile?.maxIterations != null ? String(profile.maxIterations) : '');
+  setField('agentProfileTimeoutMs', profile?.timeoutMs != null ? String(profile.timeoutMs) : '');
+  setField('agentProfileWorkspace', profile?.workspaceAccess === 'full' ? 'full' : '');
+  renderAgentProfileTools(profile?.allowedTools);
   populateAgentProfileBridgeOptions(profile?.bridgeConfig || '');
   populateAgentProfileModelOptions(profile?.model || '');
   el('agentProfileCfgStatus').textContent = profile ? 'Editing "' + profile.name + '".' : '';
@@ -32457,7 +32968,12 @@ async function saveAgentProfileViaApi() {
     temperature: el('agentProfileTemperature').value.trim(),
     topP: el('agentProfileTopP').value.trim(),
     systemPromptAppend: el('agentProfileSystemPrompt').value.trim(),
+    maxIterations: el('agentProfileMaxIterations').value.trim(),
+    timeoutMs: el('agentProfileTimeoutMs').value.trim(),
+    workspaceAccess: el('agentProfileWorkspace').value || '',
   };
+  const profileTools = selectedAgentProfileTools();
+  if (profileTools) body.allowedTools = profileTools;
   const res = await api('/api/agent-profiles', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
