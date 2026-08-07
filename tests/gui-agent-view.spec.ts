@@ -71,7 +71,7 @@ describe('GUI Project Agent execution view', () => {
     expect(css).toContain('@media (max-width: 860px)');
     for (const [id, label] of [
       ['navProject', 'Project'],
-      ['navTeam', 'Agent'],
+      ['navTeam', 'Agents'],
       ['navAutomation', 'Automation'],
       ['navPlugins', 'Customize'],
       ['settingsBtn', 'Settings'],

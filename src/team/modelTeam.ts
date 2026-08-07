@@ -14,6 +14,7 @@ import type {
   TeamGraphReturnMode,
   TeamAskOptions,
   TeamEvent,
+  TeamMember,
 } from '../types.js';
 import { estimateCost, hasFullPricing } from './pricing.js';
 import {
@@ -23,6 +24,7 @@ import {
 import { buildGraphNodeTools, canonicalizeTeamDefinition, createNotifyTeammateTool, migrateTeamDefinitionToV3, orchestrateGraph } from './teamGraph.js';
 import { listTeamAgentLabels, loadTeamDefinition } from './teamDefinitions.js';
 import { resolveGraphNodeSystemPrompt } from './teamPrompts.js';
+import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 import { AgentPool } from './agentPool.js';
 import { isSingleAgentSquadType } from './teamPropose.js';
 import { runSingleAgentSquad, runWorkflowSquad } from './workflowSquad.js';
@@ -268,7 +270,25 @@ async function runGraphMode(
       if (nodeType !== 'single' && ctx.commTargets.length > 0) {
         tools.push(await createNotifyTeammateTool(ctx));
       }
-      const member = { ...node, model: node.model ?? identity.model };
+      // Unified reference model: a typed targetRef (saved agent profile or
+      // config-scoped model) overrides the legacy by-value model fields.
+      let targetOverrides: Partial<TeamMember> = {};
+      if (node.targetRef && node.targetRef.kind !== 'team') {
+        try {
+          const resolved = resolveTargetRef(node.targetRef, { projectDir: cwd });
+          targetOverrides = {
+            model: resolved.model,
+            provider: resolved.provider,
+            baseURL: resolved.baseURL,
+            apiKey: resolved.apiKey,
+          };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          memberStatuses.push({ ...base, ok: false, error: msg, toolCalls: 0, durationMs: 0 });
+          return { report: `[${msg}]`, ok: false, error: msg };
+        }
+      }
+      const member = { ...node, ...targetOverrides, model: targetOverrides.model ?? node.model ?? identity.model };
       const singleReviewer = execDef.nodes?.filter((n) => (n.kind ?? 'agent') === 'agent').length === 1;
       const systemPrompt = resolveGraphNodeSystemPrompt(member, {
         reviewerContext: singleReviewer ? reviewerContext : undefined,
