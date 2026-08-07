@@ -2793,6 +2793,16 @@ export interface WorkflowNode {
   condition?: string;
   runtime?: string;
   model?: string;
+  /** Agent nodes: specialist system prompt (separate from the task `prompt`). */
+  systemPrompt?: string;
+  /** Agent nodes: core-tool whitelist. Absent → no tools (legacy workflow behavior). */
+  allowedTools?: string[];
+  /** Per-node run timeout (ms). Omit → squad default. */
+  timeoutMs?: number;
+  /** Per-node ReAct tool-iteration cap. Omit or ≤0 = unlimited. */
+  maxIterations?: number;
+  /** `workspace` (default): project workspace only; `full`: unrestricted filesystem. */
+  workspaceAccess?: 'workspace' | 'full';
   /**
    * Typed reference to this agent node's executor (saved agent profile, team,
    * or config-scoped model). When present, runtime resolution prefers it over
@@ -2834,6 +2844,14 @@ export interface TeamMember {
    * `full`: unrestricted filesystem access (same as the main agent).
    */
   workspaceAccess?: 'workspace' | 'full';
+  /**
+   * Typed reference to this member's execution target (saved agent profile or
+   * config-scoped model). Runtime resolution prefers it over the legacy
+   * by-value model fields when present.
+   */
+  targetRef?: AgentTargetRef;
+  /** Core-tool whitelist for this member. Absent → the squad's default toolset. */
+  allowedTools?: string[];
 }
 
 export interface TeamReviewEdge {
@@ -3166,6 +3184,8 @@ export interface RouterRoute extends RouterModelRef {
   role?: string;
   /** Optional richer description of the specialist's strengths, for the leader to weigh. */
   description?: string;
+  /** Preferred effort for this route's run; omit to keep session/default effort. */
+  effort?: HadamardRunEffort;
   /**
    * Typed execution target for this route. Lazily migrated on load from the
    * legacy by-value fields: a route whose role/name matches a saved agent

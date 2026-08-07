@@ -39,6 +39,14 @@ export interface AgentProfile {
   temperature?: number;
   /** Optional nucleus sampling override for this agent (0-1). */
   topP?: number;
+  /** Core-tool whitelist for runs under this agent. Absent → full toolset. */
+  allowedTools?: string[];
+  /** `workspace` (default): project workspace only; `full`: unrestricted filesystem. */
+  workspaceAccess?: 'workspace' | 'full';
+  /** ReAct tool-iteration cap. Omit or ≤0 = unlimited. */
+  maxIterations?: number;
+  /** Run timeout (ms). Omit → no profile-level timeout. */
+  timeoutMs?: number;
 }
 
 export interface PersistedAgentProfiles {
@@ -143,6 +151,19 @@ function normalizeAgentProfile(raw: unknown): AgentProfile | null {
   if (temperature !== undefined) profile.temperature = temperature;
   const topP = parseTopP(raw.topP);
   if (topP !== undefined) profile.topP = topP;
+  if (Array.isArray(raw.allowedTools)) {
+    const tools = raw.allowedTools.filter(
+      (tool): tool is string => typeof tool === 'string' && tool.trim().length > 0,
+    );
+    if (tools.length) profile.allowedTools = tools;
+  }
+  if (raw.workspaceAccess === 'workspace' || raw.workspaceAccess === 'full') {
+    profile.workspaceAccess = raw.workspaceAccess;
+  }
+  const maxIterations = parsePositiveInt(raw.maxIterations);
+  if (maxIterations !== undefined) profile.maxIterations = maxIterations;
+  const timeoutMs = parsePositiveInt(raw.timeoutMs);
+  if (timeoutMs !== undefined) profile.timeoutMs = timeoutMs;
   return profile;
 }
 
@@ -320,6 +341,11 @@ export interface SelectableAgent {
   maxTokens?: number;
   temperature?: number;
   topP?: number;
+  /** Core-tool whitelist for runs under this agent (P2). */
+  allowedTools?: string[];
+  workspaceAccess?: 'workspace' | 'full';
+  maxIterations?: number;
+  timeoutMs?: number;
   /** True when this entry was synthesized and is not stored in agent-configs.json. */
   ephemeral?: boolean;
 }
@@ -421,6 +447,10 @@ export function listSelectableAgents(homeDir?: string): SelectableAgent[] {
       ...(typeof profile.maxTokens === 'number' ? { maxTokens: profile.maxTokens } : {}),
       ...(typeof profile.temperature === 'number' ? { temperature: profile.temperature } : {}),
       ...(typeof profile.topP === 'number' ? { topP: profile.topP } : {}),
+      ...(profile.allowedTools?.length ? { allowedTools: profile.allowedTools } : {}),
+      ...(profile.workspaceAccess ? { workspaceAccess: profile.workspaceAccess } : {}),
+      ...(typeof profile.maxIterations === 'number' ? { maxIterations: profile.maxIterations } : {}),
+      ...(typeof profile.timeoutMs === 'number' ? { timeoutMs: profile.timeoutMs } : {}),
     });
   }
 
