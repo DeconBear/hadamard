@@ -473,3 +473,59 @@ describe('definition bridgeConfig model resolution (§6-6)', () => {
     }
   });
 });
+
+// ── S3: reference-index helpers over both scopes ─────────────────────
+
+describe('reference-index helpers over the unified store (S3)', () => {
+  it('readAllAgentReferenceProfiles covers bridgeConfig-only definitions and both scopes', async () => {
+    const { readAllAgentReferenceProfiles, listAgentDefinitionNames } = await import(
+      '../src/config/agentDefinitionMigration.js'
+    );
+    fs.mkdirSync(agentsDir(), { recursive: true });
+    fs.mkdirSync(path.join(workDir, '.hadamard', 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(agentsDir(), 'personal-ref.md'), [
+      '---',
+      'name: personal-ref',
+      'description: personal bridgeConfig-only agent',
+      'bridgeConfig: cfg',
+      '---',
+      '',
+      'Body.',
+      '',
+    ].join('\n'), 'utf-8');
+    fs.writeFileSync(path.join(workDir, '.hadamard', 'agents', 'proj-ref.md'), [
+      '---',
+      'name: proj-ref',
+      'description: project agent',
+      'bridgeConfig: cfg',
+      'model: m1',
+      '---',
+      '',
+      'Body.',
+      '',
+    ].join('\n'), 'utf-8');
+    fs.writeFileSync(path.join(agentsDir(), 'no-config.md'), [
+      '---',
+      'name: no-config',
+      'description: inherit agent',
+      '---',
+      '',
+      'Body.',
+      '',
+    ].join('\n'), 'utf-8');
+
+    const profiles = readAllAgentReferenceProfiles(home, workDir);
+    const byName = new Map(profiles.map(profile => [profile.name, profile]));
+    // bridgeConfig-only definition emits a config edge candidate (model tolerated empty).
+    expect(byName.get('personal-ref')?.bridgeConfig).toBe('cfg');
+    expect(byName.get('personal-ref')?.model).toBe('');
+    expect(byName.get('proj-ref')?.bridgeConfig).toBe('cfg');
+    expect(byName.get('proj-ref')?.model).toBe('m1');
+    // No bridgeConfig → no config edge.
+    expect(byName.has('no-config')).toBe(false);
+
+    // Known-name set covers all .md definitions in both scopes.
+    const names = listAgentDefinitionNames(home, workDir);
+    expect(names).toEqual(expect.arrayContaining(['personal-ref', 'proj-ref', 'no-config']));
+  });
+});

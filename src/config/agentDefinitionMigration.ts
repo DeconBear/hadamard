@@ -70,6 +70,10 @@ export function agentDefinitionsDir(homeDir?: string): string {
   return path.join(resolveHadamardHome(homeDir), 'agents');
 }
 
+export function projectAgentDefinitionsDir(projectDir: string): string {
+  return path.join(projectDir, '.hadamard', 'agents');
+}
+
 function agentProfilesJsonPath(homeDir?: string): string {
   return path.join(resolveHadamardHome(homeDir), 'agent-configs.json');
 }
@@ -373,6 +377,64 @@ export function readProfilesFromAgentDefinitions(homeDir?: string): AgentProfile
     if (profile) profiles.push(profile);
   }
   return profiles;
+}
+
+/**
+ * Reference-index input (S3): profile-shaped entries for EVERY .md definition
+ * carrying a bridgeConfig, in both scopes (project wins on name conflict).
+ * Unlike the composer compat view this tolerates a missing model — a
+ * config edge exists even when the definition follows the config's default
+ * model. Not for composer/activation use.
+ */
+export function readAllAgentReferenceProfiles(homeDir?: string, projectDir?: string): AgentProfile[] {
+  const merged = new Map<string, AgentProfile>();
+  const dirs = [agentDefinitionsDir(homeDir)];
+  if (projectDir) dirs.push(projectAgentDefinitionsDir(projectDir));
+  for (const dir of dirs) {
+    for (const filePath of listMarkdownFiles(dir)) {
+      const definition = tryParseDefinition(filePath);
+      const bridgeConfig = definition?.bridgeConfig?.trim();
+      if (!definition || !bridgeConfig) continue;
+      merged.set(definition.name, agentDefinitionToProfile(definition) ?? {
+        name: definition.name,
+        bridgeConfig,
+        model: definition.model?.trim() || '',
+      });
+    }
+  }
+  return [...merged.values()];
+}
+
+/** All .md definition names in both scopes (reference known-set for agent targets). */
+export function listAgentDefinitionNames(homeDir?: string, projectDir?: string): string[] {
+  const names = new Set<string>();
+  const dirs = [agentDefinitionsDir(homeDir)];
+  if (projectDir) dirs.push(projectAgentDefinitionsDir(projectDir));
+  for (const dir of dirs) {
+    for (const filePath of listMarkdownFiles(dir)) {
+      const name = definitionNameForFile(filePath);
+      if (name) names.add(name);
+    }
+  }
+  return [...names];
+}
+
+/**
+ * Locate one agent definition .md file by frontmatter name. Project scope
+ * shadows personal (the same precedence loadHadamardAgentDefinitions uses).
+ */
+export function findAgentDefinitionFile(
+  name: string,
+  homeDir?: string,
+  projectDir?: string,
+): { filePath: string; directory: string } | null {
+  const dirs = [agentDefinitionsDir(homeDir)];
+  if (projectDir) dirs.unshift(projectAgentDefinitionsDir(projectDir));
+  for (const dir of dirs) {
+    const filePath = findDefinitionFileByName(dir, name);
+    if (filePath) return { filePath, directory: dir };
+  }
+  return null;
 }
 
 /** Minimal raw-profile extraction for migration (json entries are pre-normalized). */

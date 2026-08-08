@@ -563,6 +563,10 @@ export interface HadamardAgentDefinitionSummary {
   name: string;
   description: string;
   model?: string;
+  /** Present when the definition pins a provider config (unified store). */
+  bridgeConfig?: string;
+  /** False = main-chat-only agent (not delegatable via the Agent/Task tool). */
+  subagent?: boolean;
   effort?: HadamardRunEffort;
   permissionMode?: HadamardPermissionMode;
   maxToolIterations?: number;
