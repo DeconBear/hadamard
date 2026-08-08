@@ -1812,6 +1812,7 @@ export class HadamardAgentClient {
       ...options,
       listAgentDefinitions: () => this.listAgentDefinitions(),
       getAgentDefinition: (agent) => this.getAgentDefinition(agent),
+      listAvailableTools: () => this.defaultTools,
       runAgent: (agent, prompt, runOptions, delegation) =>
         this.runDelegatedAgentTask(agent, prompt, runOptions, delegation),
       maxDepth: this.maxSubagentDepth,

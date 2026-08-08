@@ -45,6 +45,7 @@ interface PermissionInput {
   adapter?: {
     isReadOnly?: (input?: unknown) => boolean;
     isDestructive?: (input?: unknown) => boolean;
+    isPlanReadOnly?: (input?: unknown) => boolean;
     requiresUserInteraction?: () => boolean;
     checkPermissions?: (
       context: { mode: HadamardPermissionMode; runId: string; sessionId?: string },
@@ -351,6 +352,19 @@ export async function decideHadamardToolPermission(
       input,
       'allow',
       `${input.mode} mode allows tools that do not declare a mutation classification.`,
+      'mode',
+      timestamp,
+    );
+  }
+
+  // S1b §9.5: an otherwise-unclassified tool may still declare a plan-mode
+  // read-only verdict (the Agent tool uses it to allow delegations to
+  // read-only subagents while staying unclassified in other modes).
+  if (input.mode === 'plan' && input.adapter?.isPlanReadOnly?.(input.toolInput)) {
+    return decision(
+      input,
+      'allow',
+      'Plan mode allows this plan-read-only-classified call.',
       'mode',
       timestamp,
     );

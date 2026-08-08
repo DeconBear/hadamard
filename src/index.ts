@@ -300,6 +300,12 @@ export {
 export { loadHadamardAgentDefinitions } from './runtime/hadamardAgentDefinitions.js';
 export { getDefaultHadamardAgents } from './runtime/defaultHadamardAgents.js';
 export {
+  getHadamardAgentTemplate,
+  getHadamardAgentTemplates,
+  hadamardAgentTemplateToDefinition,
+} from './runtime/agentTemplates.js';
+export type { HadamardAgentTemplate } from './runtime/agentTemplates.js';
+export {
   HadamardContextApi,
   HadamardSlashCommandHandle,
   HadamardSlashCommandsApi,

@@ -813,6 +813,7 @@ export async function executeConversation(
           adapter: {
             isReadOnly: adapter.isReadOnly as ((input?: unknown) => boolean) | undefined,
             isDestructive: adapter.isDestructive as ((input?: unknown) => boolean) | undefined,
+            isPlanReadOnly: adapter.isPlanReadOnly as ((input?: unknown) => boolean) | undefined,
             requiresUserInteraction: adapter.requiresUserInteraction,
             checkPermissions: adapter.checkPermissions,
           },

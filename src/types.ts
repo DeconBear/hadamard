@@ -210,6 +210,13 @@ export interface CreateToolOptions<Input = any, Output = any> {
   examples?: Array<Record<string, unknown>>;
   isReadOnly?: (input?: Input) => boolean;
   isDestructive?: (input?: Input) => boolean;
+  /**
+   * Plan-mode-only read-only classification (S1b §9.5): evaluated only in
+   * plan mode when the tool is otherwise unclassified — lets the Agent tool
+   * allow delegations to read-only subagents without changing default-mode
+   * behavior.
+   */
+  isPlanReadOnly?: (input?: Input) => boolean;
   requiresUserInteraction?: () => boolean;
   isConcurrencySafe?: () => boolean;
   checkPermissions?: (
@@ -254,6 +261,13 @@ export interface AgentToolDefinition<Input = any, Output = any> {
   examples?: Array<Record<string, unknown>>;
   isReadOnly?: (input?: Input) => boolean;
   isDestructive?: (input?: Input) => boolean;
+  /**
+   * Plan-mode-only read-only classification (S1b §9.5): evaluated only in
+   * plan mode when the tool is otherwise unclassified — lets the Agent tool
+   * allow delegations to read-only subagents without changing default-mode
+   * behavior.
+   */
+  isPlanReadOnly?: (input?: Input) => boolean;
   requiresUserInteraction?: () => boolean;
   isConcurrencySafe?: () => boolean;
   checkPermissions?: (
@@ -345,6 +359,8 @@ export interface ResolvedToolAdapter {
   execute: (input: unknown, context: ToolExecutionContext, onProgress?: ToolCallProgress) => Promise<ResolvedToolExecutionResult>;
   isReadOnly?: (input?: unknown) => boolean;
   isDestructive?: (input?: unknown) => boolean;
+  /** Plan-mode-only read-only classification (S1b §9.5). */
+  isPlanReadOnly?: (input?: unknown) => boolean;
   requiresUserInteraction?: () => boolean;
   isConcurrencySafe?: () => boolean;
   interruptBehavior?: 'cancel' | 'block';
