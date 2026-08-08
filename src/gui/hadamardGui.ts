@@ -194,6 +194,17 @@ import {
   transitionProjectIssue,
   updateProjectIssue,
   upsertAgentProfile,
+  validateAgentProfile,
+  writeAgentProfileMarkdown,
+  writeAgentDefinitionMarkdown,
+  readAgentDefinitionMarkdown,
+  deleteAgentProfileMarkdown,
+  serializeAgentDefinitionMarkdown,
+  getHadamardAgentTemplate,
+  getHadamardAgentTemplates,
+  loadHadamardAgentDefinitions,
+  getDefaultHadamardAgents,
+  summarizeHadamardAgentDefinition,
   WorktreeService,
   decideGoalExecution,
   type Goal,
@@ -201,6 +212,7 @@ import {
   serializeHadamardSessionPermissionState,
   type HadamardAgentClient,
   type AgentProfile,
+  type AgentDefinitionExtraFields,
   type ManagerConfig,
   type IssueCommentKind,
   type IssueStorageMode,
@@ -406,6 +418,7 @@ import type {
   ScheduledAutomationTask,
   ScheduledAutomationTaskInput,
   TeamDefinition,
+  HadamardAgentDefinition,
   TeamEvent,
   SessionSummary,
   SessionCreateOptions,
@@ -696,6 +709,8 @@ interface GuiPreferences {
   showRouterProfilesInComposer: boolean;
   /** §3.5: when off (or no default model configured), broken references fail loudly instead of silently falling back. */
   useDefaultModelAsFallback: boolean;
+  /** §6-2: show built-in subagents (general-purpose, Explore) in the Agents panel Subagents group. Default off. */
+  showBuiltInSubagents: boolean;
   /** Windows only. Ignored on Linux/macOS. */
   windowsTerminalShell: WindowsTerminalShellPreference;
   shortcuts: GuiShortcuts;
@@ -735,6 +750,7 @@ const DEFAULT_GUI_PREFERENCES: GuiPreferences = {
   showAgentProfilesInComposer: true,
   showRouterProfilesInComposer: true,
   useDefaultModelAsFallback: true,
+  showBuiltInSubagents: false,
   windowsTerminalShell: 'powershell',
   shortcuts: DEFAULT_GUI_SHORTCUTS,
 };
@@ -1019,6 +1035,9 @@ export function readGuiPreferences(raw: Record<string, unknown>): GuiPreferences
     useDefaultModelAsFallback: typeof source.useDefaultModelAsFallback === 'boolean'
       ? source.useDefaultModelAsFallback
       : DEFAULT_GUI_PREFERENCES.useDefaultModelAsFallback,
+    showBuiltInSubagents: typeof source.showBuiltInSubagents === 'boolean'
+      ? source.showBuiltInSubagents
+      : DEFAULT_GUI_PREFERENCES.showBuiltInSubagents,
     windowsTerminalShell: isWindowsTerminalShellPreference(source.windowsTerminalShell)
       ? source.windowsTerminalShell
       : DEFAULT_GUI_PREFERENCES.windowsTerminalShell,
@@ -3050,6 +3069,26 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     return Boolean((env.HADAMARD_MODEL ?? '').trim());
   }
 
+  /**
+   * Fresh unified agent-definition summaries for the panel/drawer: built-ins
+   * merged with .md definitions read from disk (built-in → user → project,
+   * later wins), so newly saved agents appear without an SDK reload. Keeps
+   * the Agent-tool surface rule: subagent === false stays hidden (S1a).
+   */
+  async function agentDefinitionSummariesForGui() {
+    const loaded = await loadHadamardAgentDefinitions({
+      homeDir: resolveGuiHomeDir(),
+      workDir,
+    });
+    const merged = new Map<string, HadamardAgentDefinition>();
+    for (const definition of [...getDefaultHadamardAgents(), ...loaded]) {
+      merged.set(definition.name, definition);
+    }
+    return [...merged.values()]
+      .filter(definition => definition.subagent !== false)
+      .map(definition => summarizeHadamardAgentDefinition(definition));
+  }
+
   async function state(opts?: { light?: boolean }) {
     const light = opts?.light === true;
     const store = await resolveHadamardSettingsStore({
@@ -3114,7 +3153,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       Promise.resolve(listTeamDefinitions(workDir)),
       Promise.resolve(listRouterProfiles(workDir)),
       light || needsCredentials ? Promise.resolve([]) : (sdk! as NonNullable<typeof sdk>).skills.listMetadata(),
-      light || needsCredentials ? Promise.resolve([]) : (sdk! as NonNullable<typeof sdk>).agents.list(),
+      light || needsCredentials ? Promise.resolve([]) : agentDefinitionSummariesForGui(),
       light ? Promise.resolve([]) : Promise.resolve(discoverAgentRuntimes({ homeDir })),
       listScheduledAutomationTasks(workDir),
     ]);
@@ -5132,7 +5171,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           return [{
             type: 'command.result',
             title: 'Subagents',
-            items: sdk.agents.list().map(agent => ({
+            items: (await agentDefinitionSummariesForGui()).map(agent => ({
               label: agent.name,
               description: agent.model ?? 'inherits model',
               detail: agent.description,
@@ -9348,9 +9387,59 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             const timeoutMs = typeof body.timeoutMs === 'number' ? body.timeoutMs : Number(body.timeoutMs);
             if (Number.isFinite(timeoutMs) && timeoutMs > 0) profile.timeoutMs = Math.floor(timeoutMs);
           }
+          // S2 unified store: scope + promptMode + subagent/delegation fields.
+          const scope = body.scope === 'project' ? 'project' : 'personal';
+          const stringList = (value: unknown): string[] | undefined =>
+            Array.isArray(value)
+              ? value.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
+              : undefined;
+          const extras: AgentDefinitionExtraFields = {};
+          if (body.promptMode === 'extend' || body.promptMode === 'replace') extras.promptMode = body.promptMode;
+          if (typeof body.subagent === 'boolean') extras.subagent = body.subagent;
+          const allowedAgents = stringList(body.allowedAgents);
+          if (allowedAgents) extras.allowedAgents = allowedAgents;
+          const skills = stringList(body.skills);
+          if (skills) extras.skills = skills;
+          if (body.memory === 'user' || body.memory === 'project' || body.memory === 'local') extras.memory = body.memory;
+          if (typeof body.background === 'boolean') extras.background = body.background;
+          if (body.isolation === 'worktree') extras.isolation = 'worktree';
+          if (typeof body.initialPrompt === 'string' && body.initialPrompt.trim()) extras.initialPrompt = body.initialPrompt.trim();
+          const inheritModel = !profile.bridgeConfig || !profile.model;
+          const unifiedWrite = inheritModel || scope === 'project' || Object.keys(extras).length > 0;
           const result = await withRuntimeMutation(async () => {
-            const saved = upsertAgentProfile(profile, resolveGuiHomeDir());
-            return { ok: true, profile: saved.profile, warnings: saved.warnings, state: await state() };
+            if (!unifiedWrite) {
+              const saved = upsertAgentProfile(profile, resolveGuiHomeDir());
+              return { ok: true, profile: saved.profile, warnings: saved.warnings, state: await state() };
+            }
+            if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(profile.name)) {
+              throw new Error('Invalid profile name (use letters, digits, . _ -)');
+            }
+            const directory = scope === 'project'
+              ? path.join(workDir, '.hadamard', 'agents')
+              : undefined;
+            let warnings: string[] = [];
+            if (inheritModel) {
+              // "Inherit session model": a pure .md agent — no profile entry,
+              // so it stays out of the composer picker (S1a compat rule).
+              writeAgentDefinitionMarkdown({
+                name: profile.name,
+                description: profile.description,
+                body: profile.systemPromptAppend,
+                extras,
+                directory,
+                homeDir: resolveGuiHomeDir(),
+              });
+            } else {
+              const validation = validateAgentProfile(profile, resolveGuiHomeDir());
+              warnings = validation.warnings;
+              writeAgentProfileMarkdown(validation.profile, resolveGuiHomeDir(), { directory, extras });
+            }
+            return {
+              ok: true,
+              profile: inheritModel ? null : profile,
+              warnings,
+              state: await state(),
+            };
           });
           return json(res, 200, result);
         } catch (error) {
@@ -9368,6 +9457,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
               await applyDeleteFallback('agent', name, strategy, await referenceOperationContext());
             }
             deleteAgentProfile(name, resolveGuiHomeDir());
+            // S2: project-scoped agents live in <workDir>/.hadamard/agents.
+            if (body.scope === 'project') {
+              deleteAgentProfileMarkdown(name, resolveGuiHomeDir(), path.join(workDir, '.hadamard', 'agents'));
+            }
             // Active agent deleted: fall back to the session default model.
             if (activeAgentSelectionName === name) {
               activeAgentSelectionName = null;
@@ -9377,6 +9470,56 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             return state();
           });
           return json(res, 200, next);
+        } catch (error) {
+          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
+        }
+      }
+      // S2: one unified .md agent definition (raw frontmatter + body) for
+      // editor prefill — the profile compat view does not carry the
+      // subagent/delegation extras.
+      if (req.method === 'GET' && url.pathname === '/api/agent-definition') {
+        const name = url.searchParams.get('name')?.trim() ?? '';
+        if (!name) return json(res, 400, { error: 'Missing name' });
+        const definition = readAgentDefinitionMarkdown(name, resolveGuiHomeDir(), workDir);
+        if (!definition) return json(res, 404, { error: `Agent definition not found: ${name}` });
+        return json(res, 200, { definition });
+      }
+      // S2 template library (§9.2): list inert templates; instantiate writes a
+      // .md into the chosen scope and the agent becomes a normal user agent.
+      if (req.method === 'GET' && url.pathname === '/api/agent-templates') {
+        return json(res, 200, { templates: getHadamardAgentTemplates() });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/agent-templates/instantiate') {
+        try {
+          const body = await readJson(req);
+          const name = typeof body.name === 'string' ? body.name.trim() : '';
+          const template = name ? getHadamardAgentTemplate(name) : undefined;
+          if (!template) return json(res, 404, { error: `Unknown agent template: ${name}` });
+          const scope = body.scope === 'project' ? 'project' : 'personal';
+          const directory = scope === 'project'
+            ? path.join(workDir, '.hadamard', 'agents')
+            : undefined; // writeAgentDefinitionMarkdown defaults to the personal dir
+          const result = await withRuntimeMutation(async () => {
+            if (readAgentDefinitionMarkdown(template.name, resolveGuiHomeDir(), workDir)) {
+              throw new Error(`An agent named "${template.name}" already exists.`);
+            }
+            const filePath = writeAgentDefinitionMarkdown({
+              name: template.name,
+              description: template.description,
+              body: template.body,
+              extras: {
+                permissionMode: template.frontmatter.permissionMode as AgentDefinitionExtraFields['permissionMode'],
+                tools: Array.isArray(template.frontmatter.tools)
+                  ? template.frontmatter.tools.map(String)
+                  : undefined,
+              },
+              directory,
+              homeDir: resolveGuiHomeDir(),
+            });
+            return { filePath };
+          });
+          invalidateHeavyState();
+          return json(res, 200, { ok: true, ...result, state: await state() });
         } catch (error) {
           return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
         }
@@ -11117,8 +11260,39 @@ export function createHadamardGuiHtml(): string {
         <label class="dialog-field">Profile name<input id="agentProfileName" autocomplete="off" placeholder="e.g. reviewer"></label>
         <label class="dialog-field">Provider config · Model<span id="agentProfileModelPicker"></span></label>
       </div>
-      <label class="dialog-field">Description<input id="agentProfileDescription" autocomplete="off" placeholder="Optional role summary"></label>
+      <label class="dialog-field">Description *<input id="agentProfileDescription" autocomplete="off" placeholder="Role summary — subagent discovery depends on it"></label>
       <label class="dialog-field">Custom model<input id="agentProfileModelCustom" autocomplete="off" placeholder="Typed model id overrides the picker selection"></label>
+      <p class="muted" id="agentProfileInheritHint">Pick <strong>Inherit session model</strong> in the picker to follow the session's main model — such agents are not listed in the composer model picker.</p>
+      <div class="two-col">
+        <label class="dialog-field">Prompt mode<select id="agentProfilePromptMode">
+          <option value="extend">Extend — built-in prompt + body appended</option>
+          <option value="replace">Replace — body is the full system prompt</option>
+        </select></label>
+        <label class="dialog-field">Save to<select id="agentProfileScope">
+          <option value="personal">Personal (~/.hadamard/agents)</option>
+          <option value="project">Project (.hadamard/agents)</option>
+        </select></label>
+      </div>
+      <label class="manager-cfg-check" id="agentProfileSubagentRow"><input type="checkbox" id="agentProfileSubagent" checked> Available as a subagent — the Agent/Task tool may delegate to this agent</label>
+      <details id="agentProfileSubagentOptions" class="agent-profile-advanced">
+        <summary>Subagent options</summary>
+        <label class="dialog-field">Allowed agents<input id="agentProfileAllowedAgents" autocomplete="off" placeholder="Comma-separated names this agent may delegate to"></label>
+        <label class="dialog-field">Skills<input id="agentProfileSkills" autocomplete="off" placeholder="Comma-separated skill names preloaded for this agent"></label>
+        <div class="two-col">
+          <label class="dialog-field">Memory<select id="agentProfileMemory">
+            <option value="">None</option>
+            <option value="user">user</option>
+            <option value="project">project</option>
+            <option value="local">local</option>
+          </select></label>
+          <label class="dialog-field">Isolation<select id="agentProfileIsolation">
+            <option value="">None</option>
+            <option value="worktree">worktree</option>
+          </select></label>
+        </div>
+        <label class="manager-cfg-check"><input type="checkbox" id="agentProfileBackground"> Run in background by default</label>
+        <label class="dialog-field">Initial prompt<input id="agentProfileInitialPrompt" autocomplete="off" placeholder="Optional first task when this agent is spawned"></label>
+      </details>
       <label class="dialog-field">Permission mode<select id="agentProfilePermission">
         <option value="">Session default</option>
         <option value="default">Default</option>
@@ -11367,6 +11541,10 @@ export function createHadamardGuiHtml(): string {
           <h2>Fallback</h2>
           <div class="settings-help-row"><span><strong>Use default model as fallback</strong><small>When a referenced config, agent, or team goes missing, fall back to the default model. Off: broken references fail with an explicit error.</small></span><label class="switch-field"><input type="checkbox" id="settingsUseDefaultModelAsFallback"></label></div>
           <p class="muted" id="settingsFallbackNoDefault" hidden>No default model is configured, so the fallback is inactive. <button type="button" id="settingsFallbackConfigureDefault" class="secondary-btn">Configure default model</button></p>
+        </div>
+        <div class="settings-group">
+          <h2>Agents panel</h2>
+          <div class="settings-help-row"><span><strong>Show built-in subagents</strong><small>List the bundled subagents (general-purpose, Explore) in the Agents panel Subagents group. Off: only your own agents are shown; the built-ins still work at runtime.</small></span><label class="switch-field"><input type="checkbox" id="settingsShowBuiltInSubagents"></label></div>
         </div>
         <div class="settings-group">
           <div class="settings-group-head">
@@ -12951,6 +13129,11 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
 .te-problems.hidden { display: none; }
 .te-tool-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; margin-top: 4px; }
 .te-tool-grid .te-check { font-size: 12px; font-weight: 400; }
+.te-tool-grid-head { grid-column: 1 / -1; display: flex; gap: 8px; }
+.te-tool-toggle { font-size: 11px; padding: 1px 10px; border-radius: 999px; border: 1px solid var(--border, #444); background: transparent; color: inherit; cursor: pointer; }
+.squad-chip.sq-builtin { opacity: .55; }
+.squad-chip.sq-template-btn { border-style: dotted; opacity: .85; }
+.agent-profile-advanced.agent-subagent-off { opacity: .55; }
 .team-inspector .ins-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
 .graph-mode-pill { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 3px 10px; background: var(--accent); color: var(--text-2); }
 .graph-unreachable { opacity: .65; }
@@ -15533,7 +15716,7 @@ const state = {
   skillCatalogData: null,
   skillCatalogQuery: '',
   skillCatalogExpanded: {},
-  preferences: { theme: 'system', density: 'comfortable', enterToSend: true, autoScroll: true, developerTools: false, showBranchInComposer: true, showProviderConfigsInComposer: true, showAgentProfilesInComposer: true, showRouterProfilesInComposer: true, useDefaultModelAsFallback: true, windowsTerminalShell: 'powershell', shortcuts: {} }
+  preferences: { theme: 'system', density: 'comfortable', enterToSend: true, autoScroll: true, developerTools: false, showBranchInComposer: true, showProviderConfigsInComposer: true, showAgentProfilesInComposer: true, showRouterProfilesInComposer: true, useDefaultModelAsFallback: true, showBuiltInSubagents: false, windowsTerminalShell: 'powershell', shortcuts: {} }
 };
 const DEFAULT_SHORTCUTS = {
   newChat: 'Mod+N',
@@ -24634,7 +24817,15 @@ function surfaceData(kind) {
   if (kind === 'plugins') return { title: 'Plugins', subtitle: 'Discovered Clean plugins', items: snapshot.plugins || [] };
   if (kind === 'tools') return { title: 'Tools', subtitle: 'Registered tools for this workspace', items: snapshot.tools || [] };
   if (kind === 'skills') return { title: 'Skills', subtitle: 'Available skills', items: snapshot.skills || [] };
-  if (kind === 'agents') return { title: 'Subagents', subtitle: 'Available agent definitions', items: snapshot.agents || [] };
+  if (kind === 'agents') {
+    // S2 (§6-2): built-ins hidden unless the Settings toggle is on.
+    const showBuiltIn = state.preferences.showBuiltInSubagents === true;
+    return {
+      title: 'Subagents',
+      subtitle: 'Available agent definitions',
+      items: (snapshot.agents || []).filter(def => showBuiltIn || def?.source !== 'built-in'),
+    };
+  }
   if (kind === 'mcp') return { title: 'MCP servers', subtitle: 'MCP-provided tools', items: (snapshot.tools || []).filter(tool => tool.provider === 'mcp') };
   if (kind === 'teams') return { title: 'Agents', subtitle: 'Attach a configured agent to the main session', items: snapshot.teams || [] };
   if (kind === 'routers') return { title: 'Model routers', subtitle: 'Route turns by profile', items: snapshot.routers || [] };
@@ -26415,8 +26606,9 @@ function goToReference(edge) {
     const profile = (state.snapshot?.agentProfiles || []).find((p) => p.name === from.name);
     void switchRegion('team');
     void selectAgentEntry(from.name, 'profile');
-    openAgentProfileEditor(profile || { name: from.name });
-    flashElement(el('agentProfilePicker'));
+    openAgentProfileEditor(profile || { name: from.name })
+      .then(() => flashElement(el('agentProfilePicker')))
+      .catch(console.error);
     return true;
   }
   if (from.kind === 'router') {
@@ -26973,7 +27165,11 @@ function renderTeamSquadBar() {
   }
   // Read-only group: subagent .md definitions (~/.hadamard/agents, .hadamard/agents).
   // They are not editable squads — the chip jumps to the Subagents drawer (P2 §4.2).
-  const subagentDefs = state.snapshot?.agents || [];
+  // S2 (§6-2): built-ins (general-purpose, Explore) are hidden unless the
+  // Settings toggle is on; they get a Built-in tag when shown.
+  const showBuiltIn = state.preferences.showBuiltInSubagents === true;
+  const subagentDefs = (state.snapshot?.agents || [])
+    .filter(def => showBuiltIn || def?.source !== 'built-in');
   if (subagentDefs.length) {
     const divider = document.createElement('span');
     divider.className = 'sq-group-label';
@@ -26981,9 +27177,10 @@ function renderTeamSquadBar() {
     bar.appendChild(divider);
     for (const def of subagentDefs) {
       if (!def?.name) continue;
+      const isBuiltIn = def.source === 'built-in';
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'squad-chip sq-subagent';
+      chip.className = 'squad-chip sq-subagent' + (isBuiltIn ? ' sq-builtin' : '');
       chip.dataset.name = def.name;
       chip.dataset.kind = 'subagent-def';
       chip.title = (def.description || 'Subagent definition') + ' — read-only here; browse in the Subagents drawer.';
@@ -26992,15 +27189,122 @@ function renderTeamSquadBar() {
       const label = document.createElement('strong');
       label.textContent = def.name;
       const small = document.createElement('small');
-      small.textContent = 'Subagent · Read-only';
+      small.textContent = isBuiltIn ? 'Subagent · Built-in' : 'Subagent · Read-only';
       labels.append(label, small);
       chip.appendChild(labels);
       chip.addEventListener('click', () => { openSurface('agents').catch(console.error); });
       bar.appendChild(chip);
     }
   }
+  // S2 template library (§9.2): instantiate a template into a user .md agent.
+  const templateBtn = document.createElement('button');
+  templateBtn.type = 'button';
+  templateBtn.className = 'squad-chip sq-subagent sq-template-btn';
+  templateBtn.id = 'agentTemplateAddBtn';
+  templateBtn.title = 'Add a subagent from the built-in template library.';
+  templateBtn.textContent = '＋ Template';
+  templateBtn.addEventListener('click', () => { openAgentTemplatePicker().catch(console.error); });
+  bar.appendChild(templateBtn);
   return teams;
 }
+/** S2 template library picker (§9.2): list inert templates, instantiate into the chosen scope. */
+async function openAgentTemplatePicker() {
+  const old = document.getElementById('agentTemplateDialog');
+  if (old) old.remove();
+  let templates = [];
+  try {
+    const res = await api('/api/agent-templates');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    templates = Array.isArray(data.templates) ? data.templates : [];
+  } catch (error) {
+    addMessage('error', 'Failed to load agent templates: ' + (error.message || error));
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.id = 'agentTemplateDialog';
+  overlay.className = 'modal';
+  const panel = document.createElement('div');
+  panel.className = 'auto-dialog';
+  panel.style.cssText = 'max-width:560px;width:min(560px,92vw);';
+  const head = document.createElement('div');
+  head.className = 'ins-head';
+  head.innerHTML = '<h3>Add from template</h3>';
+  panel.appendChild(head);
+  const host = document.createElement('div');
+  host.style.cssText = 'padding:0 18px 18px;display:grid;gap:12px;';
+  panel.appendChild(host);
+  const hint = document.createElement('p');
+  hint.className = 'te-hint';
+  hint.textContent = 'Instantiate a bundled template as an editable .md agent in the chosen scope.';
+  host.appendChild(hint);
+  const scopeRow = document.createElement('label');
+  scopeRow.className = 'dialog-field';
+  scopeRow.textContent = 'Save to';
+  const scopeSel = document.createElement('select');
+  scopeSel.id = 'agentTemplateScope';
+  for (const [value, label] of [['personal', 'Personal (~/.hadamard/agents)'], ['project', 'Project (.hadamard/agents)']]) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    scopeSel.appendChild(opt);
+  }
+  scopeRow.appendChild(scopeSel);
+  host.appendChild(scopeRow);
+  const list = document.createElement('div');
+  list.className = 'settings-card-list compact';
+  for (const template of templates) {
+    const card = document.createElement('article');
+    card.className = 'settings-card';
+    const title = document.createElement('strong');
+    title.textContent = template.name;
+    const desc = document.createElement('p');
+    desc.textContent = template.description || '';
+    const footer = document.createElement('footer');
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'primary';
+    add.textContent = 'Add';
+    add.addEventListener('click', async () => {
+      add.disabled = true;
+      try {
+        const res = await api('/api/agent-templates/instantiate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: template.name, scope: scopeSel.value === 'project' ? 'project' : 'personal' }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+        state.snapshot = data.state || state.snapshot;
+        overlay.remove();
+        if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
+        await openAgentDefinitionInEditor(template.name);
+      } catch (error) {
+        add.disabled = false;
+        addMessage('error', 'Add from template failed: ' + (error.message || error));
+      }
+    });
+    footer.appendChild(add);
+    card.append(title, desc, footer);
+    list.appendChild(card);
+  }
+  host.appendChild(list);
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+/** Open the agent editor prefilled from a unified .md definition (S2). */
+async function openAgentDefinitionInEditor(name) {
+  let definition = null;
+  try {
+    const res = await api('/api/agent-definition?name=' + encodeURIComponent(name));
+    if (res.ok) definition = (await res.json().catch(() => null))?.definition || null;
+  } catch { /* editor opens with profile/defaults */ }
+  const profile = (state.snapshot?.agentProfiles || []).find(p => p.name === name) || null;
+  await openAgentProfileEditor(profile, definition);
+}
+
 function openNewSquadDialog() {
   const old = document.getElementById('newSquadDialog');
   if (old) old.remove();
@@ -28401,6 +28705,29 @@ function teToolChecklist(label, selected, onChange) {
   f.appendChild(l);
   const grid = document.createElement('div');
   grid.className = 'te-tool-grid';
+  // §6-5: Select all / Clear all — routed through onChange so the caller's
+  // risky-tool confirmation still applies.
+  const head = document.createElement('div');
+  head.className = 'te-tool-grid-head';
+  const setAll = (checked) => {
+    for (const t of TEAM_CORE_TOOLS) {
+      const cb = grid.querySelector('input[data-tool="' + t + '"]');
+      if (cb) cb.checked = checked;
+    }
+    onChange(checked ? TEAM_CORE_TOOLS.slice() : []);
+  };
+  const selectAllBtn = document.createElement('button');
+  selectAllBtn.type = 'button';
+  selectAllBtn.className = 'te-tool-toggle';
+  selectAllBtn.textContent = 'Select all';
+  selectAllBtn.addEventListener('click', () => setAll(true));
+  const clearAllBtn = document.createElement('button');
+  clearAllBtn.type = 'button';
+  clearAllBtn.className = 'te-tool-toggle';
+  clearAllBtn.textContent = 'Clear all';
+  clearAllBtn.addEventListener('click', () => setAll(false));
+  head.append(selectAllBtn, clearAllBtn);
+  grid.appendChild(head);
   const set = new Set(selected || []);
   for (const tool of TEAM_CORE_TOOLS) {
     const row = document.createElement('label');
@@ -32970,14 +33297,22 @@ function renderAgentProfiles() {
 // P2 picker migration: the Provider-config + Model select pair is now the
 // shared config→model picker (optgroup per config; each option carries
 // dataset.config). The bridgeConfig name derives from the selected option.
-function mountAgentProfileModelPicker(selectedConfig, selectedModel) {
+// S2 (§6-6): an "Inherit session model" option persists no bridgeConfig/model.
+function mountAgentProfileModelPicker(selectedConfig, selectedModel, preferInherit) {
   const mount = el('agentProfileModelPicker');
   if (!mount) return;
   mount.textContent = '';
   const select = createConfigModelSelect({ placeholder: '(no provider configs)' });
   select.id = 'agentProfilePicker';
+  const inheritOpt = document.createElement('option');
+  inheritOpt.value = '__inherit__';
+  inheritOpt.textContent = 'Inherit session model';
+  inheritOpt.dataset.config = '';
+  select.insertBefore(inheritOpt, select.children[1] || null);
   let chosen = null;
-  if (selectedModel) {
+  if (preferInherit) {
+    chosen = inheritOpt;
+  } else if (selectedModel) {
     // A model id may live in several configs — prefer the profile's config.
     for (const opt of select.options) {
       if (opt.value === selectedModel && (opt.dataset.config || '') === selectedConfig) { chosen = opt; break; }
@@ -32995,10 +33330,10 @@ function mountAgentProfileModelPicker(selectedConfig, selectedModel) {
       if ((opt.dataset.config || '') === selectedConfig && opt.value) { chosen = opt; break; }
     }
   }
-  if (!chosen && !selectedConfig && !selectedModel) {
+  if (!chosen && !selectedConfig && !selectedModel && !preferInherit) {
     // New profile: default to the first config/model (legacy behavior).
     for (const opt of select.options) {
-      if (opt.value) { chosen = opt; break; }
+      if (opt.value && opt.value !== '__inherit__') { chosen = opt; break; }
     }
   }
   if (chosen) chosen.selected = true;
@@ -33007,13 +33342,19 @@ function mountAgentProfileModelPicker(selectedConfig, selectedModel) {
   mount.appendChild(select);
 }
 
+function agentProfilePickerIsInherit() {
+  return el('agentProfilePicker')?.value === '__inherit__';
+}
+
 function selectedAgentProfileConfig() {
+  if (agentProfilePickerIsInherit()) return '';
   const select = el('agentProfilePicker');
   const opt = select && select.selectedOptions && select.selectedOptions[0];
   return (opt && opt.dataset.config) || '';
 }
 
 function selectedAgentProfileModel() {
+  if (agentProfilePickerIsInherit()) return '';
   const custom = el('agentProfileModelCustom').value.trim();
   if (custom) return custom;
   return el('agentProfilePicker')?.value || '';
@@ -33023,6 +33364,34 @@ function renderAgentProfileTools(selected) {
   const host = el('agentProfileTools');
   if (!host) return;
   host.textContent = '';
+  // §6-5: one-click Select all / Clear all; risky tools still confirm one by one.
+  const head = document.createElement('div');
+  head.className = 'te-tool-grid-head';
+  const selectAll = document.createElement('button');
+  selectAll.type = 'button';
+  selectAll.className = 'te-tool-toggle';
+  selectAll.textContent = 'Select all';
+  selectAll.addEventListener('click', () => {
+    for (const tool of TEAM_CORE_TOOLS) {
+      const box = host.querySelector('input[data-tool="' + tool + '"]');
+      if (!box || box.checked) continue;
+      if (RISKY_NODE_TOOLS.includes(tool)
+        && !window.confirm('Grant ' + tool + ' to this agent?')) continue;
+      box.checked = true;
+    }
+  });
+  const clearAll = document.createElement('button');
+  clearAll.type = 'button';
+  clearAll.className = 'te-tool-toggle';
+  clearAll.textContent = 'Clear all';
+  clearAll.addEventListener('click', () => {
+    for (const tool of TEAM_CORE_TOOLS) {
+      const box = host.querySelector('input[data-tool="' + tool + '"]');
+      if (box) box.checked = false;
+    }
+  });
+  head.append(selectAll, clearAll);
+  host.appendChild(head);
   // Absent allowedTools = full toolset → all boxes checked.
   const set = new Set(Array.isArray(selected) && selected.length ? selected : TEAM_CORE_TOOLS);
   for (const tool of TEAM_CORE_TOOLS) {
@@ -33050,29 +33419,71 @@ function selectedAgentProfileTools() {
   return checked.length >= TEAM_CORE_TOOLS.length ? null : checked;
 }
 
-function openAgentProfileEditor(profile) {
-  editingAgentProfileName = profile ? profile.name : null;
-  el('agentProfileEditorTitle').textContent = profile ? 'Edit agent profile' : 'New agent profile';
-  setField('agentProfileName', profile ? profile.name : '');
+function syncAgentProfileSubagentOptions() {
+  const on = el('agentProfileSubagent')?.checked !== false;
+  const details = el('agentProfileSubagentOptions');
+  if (details) details.classList.toggle('agent-subagent-off', !on);
+  for (const input of details?.querySelectorAll('input, select') || []) {
+    input.disabled = !on;
+  }
+}
+
+let editingAgentProfileSource = null;
+
+// S2: the editor covers profiles AND unified .md agents. 'definition' (raw
+// frontmatter + body + source from /api/agent-definition) supplies the
+// subagent/delegation extras the profile compat view does not carry.
+async function openAgentProfileEditor(profile, definition) {
+  if (definition === undefined) {
+    definition = null;
+    const name = profile?.name;
+    if (name) {
+      try {
+        const res = await api('/api/agent-definition?name=' + encodeURIComponent(name));
+        if (res.ok) definition = (await res.json().catch(() => null))?.definition || null;
+      } catch { /* defaults below */ }
+    }
+  }
+  const fm = definition?.frontmatter || {};
+  const fmStr = (key) => (typeof fm[key] === 'string' ? fm[key] : '');
+  const name = profile?.name || fmStr('name');
+  editingAgentProfileName = name || null;
+  editingAgentProfileSource = definition?.source || null;
+  el('agentProfileEditorTitle').textContent = editingAgentProfileName ? 'Edit agent' : 'New agent';
+  setField('agentProfileName', name);
   // P1: names are editable — saving under a new name runs the rename transaction.
   el('agentProfileName').disabled = false;
-  setField('agentProfileDescription', profile?.description || '');
-  setField('agentProfilePermission', profile?.permissionMode || '');
-  setField('agentProfileEffort', profile?.effort || '');
-  setField('agentProfileMaxTokens', profile?.maxTokens != null ? String(profile.maxTokens) : '');
-  setField('agentProfileTemperature', profile?.temperature != null ? String(profile.temperature) : '');
-  setField('agentProfileTopP', profile?.topP != null ? String(profile.topP) : '');
-  setField('agentProfileSystemPrompt', profile?.systemPromptAppend || '');
-  setField('agentProfileMaxIterations', profile?.maxIterations != null ? String(profile.maxIterations) : '');
-  setField('agentProfileTimeoutMs', profile?.timeoutMs != null ? String(profile.timeoutMs) : '');
-  setField('agentProfileWorkspace', profile?.workspaceAccess === 'full' ? 'full' : '');
-  renderAgentProfileTools(profile?.allowedTools);
-  mountAgentProfileModelPicker(profile?.bridgeConfig || '', profile?.model || '');
+  setField('agentProfileDescription', profile?.description || fmStr('description'));
+  setField('agentProfilePermission', profile?.permissionMode || fmStr('permissionMode'));
+  setField('agentProfileEffort', profile?.effort || fmStr('effort'));
+  const fmNum = (key) => (fmStr(key) && Number.isFinite(Number(fmStr(key))) ? fmStr(key) : '');
+  setField('agentProfileMaxTokens', profile?.maxTokens != null ? String(profile.maxTokens) : fmNum('maxTokens'));
+  setField('agentProfileTemperature', profile?.temperature != null ? String(profile.temperature) : fmNum('temperature'));
+  setField('agentProfileTopP', profile?.topP != null ? String(profile.topP) : fmNum('topP'));
+  setField('agentProfileSystemPrompt', profile?.systemPromptAppend || definition?.body || '');
+  setField('agentProfileMaxIterations', profile?.maxIterations != null ? String(profile.maxIterations) : fmNum('maxIterations'));
+  setField('agentProfileTimeoutMs', profile?.timeoutMs != null ? String(profile.timeoutMs) : fmNum('timeoutMs'));
+  const workspace = profile?.workspaceAccess || fmStr('workspaceAccess');
+  setField('agentProfileWorkspace', workspace === 'full' ? 'full' : '');
+  const bridgeConfig = profile?.bridgeConfig || fmStr('bridgeConfig');
+  const model = profile?.model || fmStr('model');
+  // S2 (§6-6): no bridgeConfig on an existing agent = "Inherit session model".
+  const preferInherit = Boolean(editingAgentProfileName && !bridgeConfig);
+  mountAgentProfileModelPicker(bridgeConfig, model, preferInherit);
   // A model the picker does not know (custom id) goes to the override input.
-  el('agentProfileModelCustom').value = profile?.model && !configForModel(profile.model)
-    ? profile.model
-    : '';
-  el('agentProfileCfgStatus').textContent = profile ? 'Editing "' + profile.name + '".' : '';
+  el('agentProfileModelCustom').value = model && !configForModel(model) ? model : '';
+  setField('agentProfilePromptMode', fmStr('promptMode') === 'replace' ? 'replace' : 'extend');
+  el('agentProfileSubagent').checked = fmStr('subagent') !== 'false';
+  setField('agentProfileAllowedAgents', fmStr('allowedAgents'));
+  setField('agentProfileSkills', fmStr('skills'));
+  setField('agentProfileMemory', ['user', 'project', 'local'].includes(fmStr('memory')) ? fmStr('memory') : '');
+  el('agentProfileBackground').checked = fmStr('background') === 'true';
+  setField('agentProfileIsolation', fmStr('isolation') === 'worktree' ? 'worktree' : '');
+  setField('agentProfileInitialPrompt', fmStr('initialPrompt'));
+  el('agentProfileScope').value = definition?.source === 'project' ? 'project' : 'personal';
+  renderAgentProfileTools(profile?.allowedTools || (fmStr('tools') ? fmStr('tools').split(',').map(s => s.trim()).filter(Boolean) : undefined));
+  syncAgentProfileSubagentOptions();
+  el('agentProfileCfgStatus').textContent = editingAgentProfileName ? 'Editing "' + editingAgentProfileName + '".' : '';
   el('agentProfileEditorModal').classList.remove('hidden');
   el('agentProfileName').focus();
 }
@@ -33080,15 +33491,25 @@ function openAgentProfileEditor(profile) {
 function closeAgentProfileEditor() {
   el('agentProfileEditorModal').classList.add('hidden');
   editingAgentProfileName = null;
+  editingAgentProfileSource = null;
 }
 
 async function saveAgentProfileViaApi() {
   const name = el('agentProfileName').value.trim();
+  const inherit = agentProfilePickerIsInherit();
   const model = selectedAgentProfileModel();
   if (!name) { el('agentProfileCfgStatus').textContent = 'Profile name is required.'; return; }
-  if (!selectedAgentProfileConfig()) { el('agentProfileCfgStatus').textContent = 'Provider config is required.'; return; }
-  if (!model) { el('agentProfileCfgStatus').textContent = 'Model is required.'; return; }
-  if (editingAgentProfileName && name !== editingAgentProfileName) {
+  // S2: description is required — delegation discovery depends on it.
+  if (!el('agentProfileDescription').value.trim()) {
+    el('agentProfileCfgStatus').textContent = 'Description is required.';
+    return;
+  }
+  if (!inherit && !selectedAgentProfileConfig()) { el('agentProfileCfgStatus').textContent = 'Provider config is required.'; return; }
+  if (!inherit && !model) { el('agentProfileCfgStatus').textContent = 'Model is required.'; return; }
+  const originalIsProfile = Boolean(editingAgentProfileName)
+    && (state.snapshot?.agentProfiles || []).some(p => p.name === editingAgentProfileName);
+  const renamed = Boolean(editingAgentProfileName) && name !== editingAgentProfileName;
+  if (renamed && originalIsProfile) {
     // Rename first: the server transactionally rewrites every referencing field.
     el('agentProfileCfgStatus').textContent = 'Renaming...';
     const renameRes = await api('/api/references/rename', {
@@ -33104,11 +33525,12 @@ async function saveAgentProfileViaApi() {
     }
   }
   el('agentProfileCfgStatus').textContent = 'Saving...';
+  const csv = (v) => String(v || '').split(',').map(s => s.trim()).filter(Boolean);
   const body = {
     name,
     description: el('agentProfileDescription').value.trim(),
-    bridgeConfig: selectedAgentProfileConfig(),
-    model,
+    bridgeConfig: inherit ? '' : selectedAgentProfileConfig(),
+    model: inherit ? '' : model,
     permissionMode: el('agentProfilePermission').value,
     effort: el('agentProfileEffort').value,
     maxTokens: el('agentProfileMaxTokens').value.trim(),
@@ -33118,7 +33540,16 @@ async function saveAgentProfileViaApi() {
     maxIterations: el('agentProfileMaxIterations').value.trim(),
     timeoutMs: el('agentProfileTimeoutMs').value.trim(),
     workspaceAccess: el('agentProfileWorkspace').value || '',
+    promptMode: el('agentProfilePromptMode').value === 'replace' ? 'replace' : 'extend',
+    scope: el('agentProfileScope').value === 'project' ? 'project' : 'personal',
+    subagent: el('agentProfileSubagent').checked !== false,
+    allowedAgents: csv(el('agentProfileAllowedAgents').value),
+    skills: csv(el('agentProfileSkills').value),
+    background: el('agentProfileBackground').checked === true,
   };
+  if (el('agentProfileMemory').value) body.memory = el('agentProfileMemory').value;
+  if (el('agentProfileIsolation').value === 'worktree') body.isolation = 'worktree';
+  if (el('agentProfileInitialPrompt').value.trim()) body.initialPrompt = el('agentProfileInitialPrompt').value.trim();
   const profileTools = selectedAgentProfileTools();
   if (profileTools) body.allowedTools = profileTools;
   const res = await api('/api/agent-profiles', {
@@ -33130,6 +33561,18 @@ async function saveAgentProfileViaApi() {
   if (!res.ok) {
     el('agentProfileCfgStatus').textContent = data.error || 'Save failed.';
     return;
+  }
+  // Renamed a pure .md agent (not a profile): remove the old definition file.
+  if (renamed && !originalIsProfile) {
+    await api('/api/agent-profiles/delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: editingAgentProfileName,
+        strategy: { type: 'leave' },
+        scope: editingAgentProfileSource === 'project' ? 'project' : 'personal',
+      }),
+    }).catch(() => undefined);
   }
   state.snapshot = data.state || state.snapshot;
   closeAgentProfileEditor();
@@ -35597,6 +36040,7 @@ async function openSettings(tab = 'general') {
   setChecked('settingsShowAgentProfilesInComposer', preferences.showAgentProfilesInComposer !== false);
   setChecked('settingsShowRouterProfilesInComposer', preferences.showRouterProfilesInComposer !== false);
   setChecked('settingsUseDefaultModelAsFallback', preferences.useDefaultModelAsFallback !== false);
+  setChecked('settingsShowBuiltInSubagents', preferences.showBuiltInSubagents === true);
   updateFallbackHint();
   const terminalGroup = el('settingsTerminalGroup');
   if (terminalGroup) {
@@ -35638,6 +36082,7 @@ function collectSettingsBody() {
       showAgentProfilesInComposer: el('settingsShowAgentProfilesInComposer')?.checked !== false,
       showRouterProfilesInComposer: el('settingsShowRouterProfilesInComposer')?.checked !== false,
       useDefaultModelAsFallback: el('settingsUseDefaultModelAsFallback')?.checked !== false,
+      showBuiltInSubagents: el('settingsShowBuiltInSubagents')?.checked === true,
       windowsTerminalShell: state.snapshot?.platform === 'win32'
         ? (el('settingsWindowsTerminalShell')?.value === 'cmd' ? 'cmd' : 'powershell')
         : (state.preferences.windowsTerminalShell === 'cmd' ? 'cmd' : 'powershell'),
@@ -36076,6 +36521,7 @@ el('bridgeCfgReset').addEventListener('click', () => { closeBridgeEditor(); });
 el('agentProfileNew')?.addEventListener('click', () => { openAgentProfileEditor(null); });
 el('agentProfileCfgSave').addEventListener('click', () => { saveAgentProfileViaApi().catch(console.error); });
 el('agentProfileCfgReset').addEventListener('click', () => { closeAgentProfileEditor(); });
+el('agentProfileSubagent')?.addEventListener('change', syncAgentProfileSubagentOptions);
 el('agentProfileEditorForm').addEventListener('submit', (event) => {
   event.preventDefault();
   saveAgentProfileViaApi().catch(console.error);
@@ -36135,11 +36581,16 @@ for (const [id, preference] of [
   ['settingsShowAgentProfilesInComposer', 'showAgentProfilesInComposer'],
   ['settingsShowRouterProfilesInComposer', 'showRouterProfilesInComposer'],
   ['settingsUseDefaultModelAsFallback', 'useDefaultModelAsFallback'],
+  ['settingsShowBuiltInSubagents', 'showBuiltInSubagents'],
 ]) {
   el(id)?.addEventListener('change', () => {
     state.preferences[preference] = !!el(id)?.checked;
     if (!el('modelPickerFlyout')?.classList.contains('hidden')) renderModelPicker();
     if (preference === 'useDefaultModelAsFallback') updateFallbackHint();
+    // Built-in visibility lives in the Agents panel Subagents group.
+    if (preference === 'showBuiltInSubagents' && typeof renderTeamRegion === 'function') {
+      renderTeamRegion().catch(console.error);
+    }
   });
 }
 el('settingsFallbackConfigureDefault')?.addEventListener('click', () => {
