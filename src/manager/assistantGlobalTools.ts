@@ -745,6 +745,7 @@ export async function createAssistantGlobalTools(
         showAgentProfilesInComposer: z.boolean().optional(),
         showRouterProfilesInComposer: z.boolean().optional(),
         useDefaultModelAsFallback: z.boolean().optional(),
+        showBuiltInSubagents: z.boolean().optional(),
       }),
     },
     async (input) => {

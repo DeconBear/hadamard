@@ -133,6 +133,19 @@ describe('TUI and GUI parity', () => {
     expect(html).not.toContain('id="agentProfileNew"');
     expect(html).toContain('id="agentProfileEditorModal"');
     expect(html).toContain('id="agentProfileModelPicker"');
+    expect(html).toContain('id="agentProfilePromptMode"');
+    expect(html).toContain('id="agentProfileScope"');
+    expect(html).toContain('id="agentProfileSubagent"');
+    expect(html).toContain('id="agentProfileSubagentOptions"');
+    expect(html).toContain('id="agentProfileAllowedAgents"');
+    expect(html).toContain('id="agentProfileSkills"');
+    expect(html).toContain('id="agentProfileMemory"');
+    expect(html).toContain('id="agentProfileIsolation"');
+    expect(html).toContain('id="agentProfileBackground"');
+    expect(html).toContain('id="agentProfileInitialPrompt"');
+    expect(js).toContain('openAgentTemplatePicker');
+    expect(js).toContain('agentProfilePickerIsInherit');
+    expect(js).toContain('te-tool-grid-head');
     expect(html).not.toContain('id="routerNewProfile"');
     expect(html).toContain('id="routerEditorModal"');
     expect(html).toContain('id="routerCfgSave"');
@@ -502,6 +515,9 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('projectStatusSelect');
     expect(js).toContain('PROJECT_STATUS_LABELS');
     expect(html).toContain('id="managerCfgModelPicker"');
+    expect(html).toContain('id="settingsShowBuiltInSubagents"');
+    expect(js).toContain('showBuiltInSubagents');
+    expect(js).toContain('agentTemplateAddBtn');
     expect(html).not.toContain('id="managerConfigBtn"');
     // No client-side fake built-in team placeholders (real list comes from the server).
     expect(js).not.toContain("mode: 'built-in'");
