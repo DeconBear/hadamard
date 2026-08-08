@@ -799,7 +799,10 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('graphDefinitionViewportStates');
     expect(js).not.toContain('applySmartSidesToEdges');
     expect(js).toContain('graph-board');
-    expect(js).toContain('saveTargetField');
+    // Save-to selector removed (user decision, 09 Aug 2026): squads always
+    // save personal; the server preserves an existing squad's location.
+    expect(js).not.toContain('saveTargetField');
+    expect(js).not.toContain('teamSaveTarget');
   });
 
   it('keeps Team Run tree formatting in the TUI and GUI (plan Phase 5)', () => {
