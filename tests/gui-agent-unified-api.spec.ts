@@ -223,3 +223,91 @@ describe('GUI unified agent API (S2)', () => {
     }
   });
 });
+
+describe('reference index over the unified store (S3)', () => {
+  it('pure .md agents emit config edges and count as known agent targets', async () => {
+    const root = await tempRoot('hadamard-gui-s3-refs-');
+    const { server, homeDir, workDir } = await startServer(root);
+    try {
+      // A definition with bridgeConfig but no model (config-default model) in
+      // the project scope — invisible to the composer view, visible to refs.
+      await mkdir(path.join(workDir, '.hadamard', 'agents'), { recursive: true });
+      await import('node:fs/promises').then(fs => fs.writeFile(
+        path.join(workDir, '.hadamard', 'agents', 'mdref.md'),
+        ['---', 'name: mdref', 'description: ref agent', 'bridgeConfig: sdk-default', '---', '', 'Body.', ''].join('\n'),
+        'utf-8',
+      ));
+      await mkdir(path.join(workDir, '.hadamard', 'routers'), { recursive: true });
+      await import('node:fs/promises').then(fs => fs.writeFile(
+        path.join(workDir, '.hadamard', 'routers', 'r.json'),
+        JSON.stringify({
+          name: 'r',
+          routerModel: { model: 'lead' },
+          routes: [{ model: 'm1', when: 'a', target: { kind: 'agent', name: 'mdref' } }],
+        }),
+        'utf-8',
+      ));
+
+      const usages = await api<{
+        edges: Array<{ from: { kind: string; name: string }; to: { kind: string; name: string } }>;
+      }>(server, 'api/references?kind=config&name=sdk-default');
+      expect(usages.status).toBe(200);
+      expect(usages.body.edges.some(edge => edge.from.kind === 'agent' && edge.from.name === 'mdref')).toBe(true);
+
+      const broken = await api<{
+        edges: Array<{ to: { kind: string; name: string } }>;
+      }>(server, 'api/references/broken');
+      expect(broken.status).toBe(200);
+      // The router's agent target resolves against the .md known-set.
+      expect(broken.body.edges.some(edge => edge.to.kind === 'agent' && edge.to.name === 'mdref')).toBe(false);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('state.agentDefinitions surfaces inherit + main-chat agents; agentProfiles stays profile-only', async () => {
+    const root = await tempRoot('hadamard-gui-s3-list-');
+    // The definition lists are credential-gated (needsCredentials); a dummy key
+    // unlocks them without any network access.
+    const previousKey = process.env.HADAMARD_API_KEY;
+    const previousModel = process.env.HADAMARD_MODEL;
+    process.env.HADAMARD_API_KEY = 'test-key';
+    process.env.HADAMARD_MODEL = 'test-model';
+    const { server } = await startServer(root);
+    try {
+      const saved = await api<{
+        state: {
+          agentProfiles: Array<{ name: string }>;
+          agents: Array<{ name: string; subagent?: boolean }>;
+          agentDefinitions: Array<{ name: string; subagent?: boolean; bridgeConfig?: string }>;
+        };
+      }>(server, 'api/agent-profiles', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'chat-only',
+          description: 'Main-chat inherit agent',
+          bridgeConfig: '',
+          model: '',
+          subagent: false,
+          systemPromptAppend: 'x',
+        }),
+      });
+      expect(saved.status).toBe(200);
+      const { agentProfiles, agents, agentDefinitions } = saved.body.state;
+      expect(agentProfiles.some(profile => profile.name === 'chat-only')).toBe(false);
+      // Delegatable list (drawer) excludes main-chat-only agents…
+      expect(agents.some(def => def.name === 'chat-only')).toBe(false);
+      // …while the unified panel list surfaces them with their badges.
+      const chatOnly = agentDefinitions.find(def => def.name === 'chat-only');
+      expect(chatOnly).toMatchObject({ subagent: false });
+      expect(chatOnly?.bridgeConfig).toBeUndefined();
+    } finally {
+      await server.close();
+      if (previousKey === undefined) delete process.env.HADAMARD_API_KEY;
+      else process.env.HADAMARD_API_KEY = previousKey;
+      if (previousModel === undefined) delete process.env.HADAMARD_MODEL;
+      else process.env.HADAMARD_MODEL = previousModel;
+    }
+  });
+});

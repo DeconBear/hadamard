@@ -41,6 +41,12 @@ import {
   upsertScheduledAutomationTask,
 } from '../scheduling/taskPersistence.js';
 import type { TeamPreferences } from '../team/teamPreferences.js';
+import {
+  findAgentDefinitionFile,
+  listAgentDefinitionNames,
+  readAgentDefinitionMarkdown,
+} from '../config/agentDefinitionMigration.js';
+import { getDefaultHadamardAgents } from '../runtime/defaultHadamardAgents.js';
 
 export type ReferenceDefinitionKind = 'config' | 'agent' | 'router' | 'team';
 
@@ -358,9 +364,17 @@ export async function renameDefinitionAndReferences(
   if (kind === 'config' && bridgeStore.configs.some((config) => config.name === to)) {
     throw new Error(`A config named "${to}" already exists.`);
   }
+  // S3 unified store: an agent may live in the legacy profile store or as a
+  // .md definition in either agents dir (project scope shadows personal).
+  const agentMdNames = kind === 'agent' ? new Set(listAgentDefinitionNames(homeDir, projectDir)) : new Set<string>();
+  const builtInAgentNames = kind === 'agent' ? new Set(getDefaultHadamardAgents().map(agent => agent.name)) : new Set<string>();
   if (kind === 'agent') {
-    if (!agentNames.has(from)) throw new Error(`Agent profile not found: ${from}`);
-    if (agentNames.has(to)) throw new Error(`An agent profile named "${to}" already exists.`);
+    if (!agentNames.has(from) && !agentMdNames.has(from)) {
+      throw new Error(`Agent not found: ${from}`);
+    }
+    if (agentNames.has(to) || agentMdNames.has(to) || builtInAgentNames.has(to)) {
+      throw new Error(`An agent named "${to}" already exists.`);
+    }
   }
   if (kind === 'team' && BUILT_IN_TEAM_DEFINITIONS[from]) {
     throw new Error(`"${from}" is a built-in preset and cannot be renamed. Clone it instead.`);
@@ -371,6 +385,11 @@ export async function renameDefinitionAndReferences(
 
   const routerFiles = listJsonFiles(routerDirs(projectDir, homeDir));
   const teamFiles = listJsonFiles(teamDirs(projectDir, homeDir));
+  const agentMd = kind === 'agent' ? findAgentDefinitionFile(from, homeDir, projectDir) : null;
+  const renamedAgentMdFile = agentMd ? path.join(agentMd.directory, `${to}.md`) : undefined;
+  if (renamedAgentMdFile && existsSync(renamedAgentMdFile)) {
+    throw new Error(`An agent named "${to}" already exists.`);
+  }
   const definitionFile = (kind === 'router' ? routerFiles : kind === 'team' ? teamFiles : [])
     .find((filePath) => path.basename(filePath, '.json') === from);
   if ((kind === 'router' || kind === 'team') && !definitionFile) {
@@ -424,6 +443,9 @@ export async function renameDefinitionAndReferences(
   for (const filePath of changedTeamFiles) plannedFiles.add(filePath);
   if (definitionFile) plannedFiles.add(definitionFile);
   if (renamedDefinitionFile) plannedFiles.add(renamedDefinitionFile);
+  // S3: snapshot the .md definition files too (S1a gap — rollback covers them now).
+  if (agentMd) plannedFiles.add(agentMd.filePath);
+  if (renamedAgentMdFile) plannedFiles.add(renamedAgentMdFile);
 
   // ── Write phase: referencers first, definition last ──
   await withFileRollback(plannedFiles, async () => {
@@ -474,11 +496,27 @@ export async function renameDefinitionAndReferences(
           config.name === from ? { ...config, name: to } : config),
       }, homeDir);
     } else if (kind === 'agent') {
-      writeAgentProfiles({
-        version: 1,
-        profiles: profileStore.profiles.map((profile) =>
-          profile.name === from ? { ...profile, name: to } : profile),
-      }, homeDir);
+      // Legacy json store write only while the json still exists; migrated
+      // stores are covered by the .md rename below.
+      if (existsSync(getAgentProfilesPath(homeDir))) {
+        writeAgentProfiles({
+          version: 1,
+          profiles: profileStore.profiles.map((profile) =>
+            profile.name === from ? { ...profile, name: to } : profile),
+        }, homeDir);
+        rewritten.push('agent-configs.json (name)');
+      }
+      if (agentMd && renamedAgentMdFile) {
+        // Unified store: rewrite the frontmatter name (string-level, so the
+        // rest of the file stays byte-identical) and rename the file.
+        const content = readFileSync(agentMd.filePath, 'utf-8');
+        const updated = /^name:.*$/m.test(content)
+          ? content.replace(/^name:.*$/m, `name: ${to}`)
+          : content;
+        await writeFile(renamedAgentMdFile, updated, 'utf-8');
+        await rm(agentMd.filePath, { force: true });
+        rewritten.push(`agent "${to}.md"`);
+      }
     } else if (definitionFile && renamedDefinitionFile) {
       const raw = JSON.parse(readFileSync(definitionFile, 'utf-8')) as Record<string, unknown>;
       raw.name = to;
@@ -519,8 +557,12 @@ export async function applyDeleteFallback(
   }
 
   // The agent's model is needed to degrade agent references to raw model refs.
+  // S3: pure .md agents (and project-scoped ones) are not in the profile
+  // store — read the model from the .md definition as a fallback.
   const degradedModel = kind === 'agent'
-    ? profileStore.profiles.find((profile) => profile.name === name)?.model ?? ''
+    ? (profileStore.profiles.find((profile) => profile.name === name)?.model
+      ?? readAgentDefinitionMarkdown(name, homeDir, projectDir)?.frontmatter.model?.trim()
+      ?? '')
     : '';
 
   const mutateRouter = (raw: RouterProfile): boolean => {
