@@ -311,3 +311,68 @@ describe('reference index over the unified store (S3)', () => {
     }
   });
 });
+
+describe('team save location inference (save-to UI removal, 09 Aug 2026)', () => {
+  const graphDef = (name: string) => ({
+    name,
+    mode: 'graph',
+    version: 3,
+    orchestration: 'graph',
+    squadType: 'graph',
+    members: [],
+    nodes: [
+      { kind: 'task', id: 'task' },
+      { kind: 'agent', id: 'worker', model: 'model-a' },
+      { kind: 'return', id: 'return', returnMode: 'payload' },
+    ],
+    edges: [
+      { from: 'task', to: 'worker' },
+      { from: 'worker', to: 'return' },
+    ],
+  });
+
+  it('saves new squads to personal, preserves an existing project squad location, honors explicit target', async () => {
+    const root = await tempRoot('hadamard-gui-team-save-');
+    const { server, homeDir, workDir } = await startServer(root);
+    const post = (definition: unknown, target?: string) => api<{ ok: boolean; filePath: string; target: string }>(
+      server,
+      'api/team/save',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(target ? { definition, target } : { definition }),
+      },
+    );
+    try {
+      // New squad without target → personal.
+      const fresh = await post(graphDef('fresh-squad'));
+      expect(fresh.status).toBe(200);
+      expect(fresh.body.target).toBe('personal');
+      expect(fresh.body.filePath).toContain(path.join('.hadamard', 'teams'));
+      expect(fresh.body.filePath.startsWith(path.join(homeDir, '.hadamard'))).toBe(true);
+
+      // A squad already living in the project dir keeps its location.
+      await mkdir(path.join(workDir, '.hadamard', 'teams'), { recursive: true });
+      const projectFile = path.join(workDir, '.hadamard', 'teams', 'proj-squad.json');
+      await import('node:fs/promises').then(fs => fs.writeFile(
+        projectFile,
+        JSON.stringify(graphDef('proj-squad')),
+        'utf-8',
+      ));
+      const preserved = await post(graphDef('proj-squad'));
+      expect(preserved.status).toBe(200);
+      expect(preserved.body.target).toBe('project');
+      expect(preserved.body.filePath).toBe(projectFile);
+      // …and no personal shadow file was created for it.
+      await expect(stat(path.join(homeDir, '.hadamard', 'teams', 'proj-squad.json'))).rejects.toThrow();
+
+      // Explicit target still works (server param retained).
+      const explicit = await post(graphDef('explicit-squad'), 'project');
+      expect(explicit.status).toBe(200);
+      expect(explicit.body.target).toBe('project');
+      expect(explicit.body.filePath).toContain(path.join(workDir, '.hadamard', 'teams'));
+    } finally {
+      await server.close();
+    }
+  });
+});

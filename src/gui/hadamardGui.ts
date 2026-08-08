@@ -7713,8 +7713,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       } else {
         return json(res, 400, { error: `unsupported squadType: ${squadType}` });
       }
-      // target: 'project' (default, .hadamard/teams/) or 'personal' (~/.hadamard/teams/).
-      const target = body.target === 'personal' ? 'personal' : 'project';
+      // Save-to selector removed (user decision, 09 Aug 2026): new squads save
+      // personal (~/.hadamard/teams); an existing squad silently keeps its
+      // current location. The explicit target param stays supported; built-in
+      // sources resolve to personal, preserving the shadow semantics.
+      const existing = loadTeamDefinition(def.name, workDir, resolveGuiHomeDir());
+      const target = body.target === 'project' || body.target === 'personal'
+        ? body.target
+        : existing?.source === 'project' ? 'project' : 'personal';
       const filePath = await saveTeamDefinition(def, {
         projectDir: target === 'project' ? workDir : undefined,
         homeDir: resolveGuiHomeDir(),
@@ -15720,7 +15726,6 @@ const state = {
   graphHistory: { past: [], future: [], applying: false },
   teamEditing: false,
   teamDefinitionCache: {},
-  teamSaveTarget: 'project',
   teamGraphFitView: false,
   teamGraphBoardDragging: false,
   teamProposalPreviewId: null,
@@ -27456,7 +27461,7 @@ function openNewSquadDialog() {
       } else {
         def = { name: squadName, description: desc || undefined, mode: 'graph', version: 3, orchestration: 'graph', squadType: chosen === 'subagent' ? 'agent' : chosen, members: [], nodes: [], edges: [] };
       }
-      const res = await api('/api/team/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ definition: def, target: 'project' }) });
+      const res = await api('/api/team/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ definition: def }) });
       if (!res.ok) { const j = await res.json().catch(() => ({})); window.alert('Create failed: ' + (j.error || res.status)); return; }
       overlay.remove();
       state.teamSelected = squadName;
@@ -29187,7 +29192,6 @@ function renderTeamSquadPanel(def, host) {
       setTeamSavedStatus(false);
     },
   ));
-  host.appendChild(saveTargetField());
   const actions = document.createElement('div');
   actions.className = 'te-actions';
   const restore = document.createElement('button');
@@ -29325,7 +29329,7 @@ async function applyTeamGraphBlock(def, block, options) {
     const saveNested = await api('/api/team/save', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ definition: payload.nested, target: state.teamSaveTarget || 'project' }),
+      body: JSON.stringify({ definition: payload.nested }),
     });
     if (!saveNested.ok) {
       const err = await saveNested.json().catch(() => ({}));
@@ -29583,22 +29587,6 @@ function isPortNodeKind(node) {
 function graphNodeRefs(def) {
   return (def.nodes || []).map(graphRefOf).filter(Boolean);
 }
-function saveTargetField() {
-  const f = document.createElement('div');
-  f.className = 'te-field te-target';
-  const l = document.createElement('label');
-  l.textContent = 'Save to';
-  const sel = document.createElement('select');
-  for (const [value, label] of [['project', 'Project (.hadamard/teams)'], ['personal', 'Personal (~/.hadamard/teams)']]) {
-    const o = document.createElement('option');
-    o.value = value; o.textContent = label;
-    if ((state.teamSaveTarget || 'project') === value) o.selected = true;
-    sel.appendChild(o);
-  }
-  sel.addEventListener('change', () => { state.teamSaveTarget = sel.value; });
-  f.append(l, sel);
-  return f;
-}
 function teSelect(label, value, options, onChange) {
   const f = document.createElement('div');
   f.className = 'te-field';
@@ -29676,7 +29664,7 @@ async function saveTeamDefinition() {
     const res = await api('/api/team/save', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ definition: def, target: state.teamSaveTarget || 'project' }),
+      body: JSON.stringify({ definition: def }),
     });
     if (res.ok) {
       addMessage('notice', 'Saved squad: ' + def.name);
