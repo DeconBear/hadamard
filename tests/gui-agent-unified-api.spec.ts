@@ -376,3 +376,98 @@ describe('team save location inference (save-to UI removal, 09 Aug 2026)', () =>
     }
   });
 });
+
+describe('legacy squad convert-on-save (09 Aug 2026)', () => {
+  it('writes the .md agent, removes the squad json, and rewires teamRef to kind agent', async () => {
+    const root = await tempRoot('hadamard-gui-convert-');
+    const { server, homeDir, workDir } = await startServer(root);
+    try {
+      // Legacy single-agent squad in the personal teams dir…
+      await mkdir(path.join(homeDir, '.hadamard', 'teams'), { recursive: true });
+      await import('node:fs/promises').then(fs => fs.writeFile(
+        path.join(homeDir, '.hadamard', 'teams', 'legacy-squad.json'),
+        JSON.stringify({
+          name: 'legacy-squad',
+          mode: 'graph',
+          squadType: 'agent',
+          members: [{ role: 'legacy-squad', model: '', systemPrompt: 'Legacy prompt.' }],
+        }),
+        'utf-8',
+      ));
+      // …referenced by a graph squad via a teamRef node.
+      await mkdir(path.join(workDir, '.hadamard', 'teams'), { recursive: true });
+      const refFile = path.join(workDir, '.hadamard', 'teams', 'parent.json');
+      await import('node:fs/promises').then(fs => fs.writeFile(
+        refFile,
+        JSON.stringify({
+          name: 'parent',
+          mode: 'graph',
+          squadType: 'graph',
+          members: [],
+          nodes: [{ id: 'sub', type: 'team', teamRef: 'legacy-squad' }],
+          edges: [],
+        }),
+        'utf-8',
+      ));
+
+      const saved = await api<{ ok: boolean; conversion: string[] }>(server, 'api/agent-profiles', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'legacy-squad',
+          description: 'Converted agent',
+          bridgeConfig: '',
+          model: '',
+          subagent: true,
+          promptMode: 'extend',
+          systemPromptAppend: 'Converted prompt.',
+          convertFromSquad: 'legacy-squad',
+        }),
+      });
+      expect(saved.status).toBe(200);
+      expect(saved.body.conversion.length).toBeGreaterThan(0);
+
+      // .md written; squad json removed.
+      const md = await readFile(path.join(homeDir, '.hadamard', 'agents', 'legacy-squad.md'), 'utf8');
+      expect(md).toContain('name: legacy-squad');
+      expect(md).toContain('Converted prompt.');
+      await expect(stat(path.join(homeDir, '.hadamard', 'teams', 'legacy-squad.json'))).rejects.toThrow();
+
+      // Referencing graph node now points at the agent.
+      const parent = JSON.parse(await readFile(refFile, 'utf8'));
+      expect(parent.nodes[0].targetRef).toEqual({ kind: 'agent', name: 'legacy-squad' });
+      expect(parent.nodes[0].teamRef).toBeUndefined();
+      expect(parent.nodes[0].type).toBeUndefined();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('converting a built-in squad writes the .md shadow without touching the built-in', async () => {
+    const root = await tempRoot('hadamard-gui-convert-builtin-');
+    const { server, homeDir } = await startServer(root);
+    try {
+      const saved = await api<{ ok: boolean; conversion: string[] }>(server, 'api/agent-profiles', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'reviewer',
+          description: 'Custom reviewer',
+          bridgeConfig: '',
+          model: '',
+          subagent: true,
+          systemPromptAppend: 'My reviewer prompt.',
+          convertFromSquad: 'reviewer',
+        }),
+      });
+      expect(saved.status).toBe(200);
+      const md = await readFile(path.join(homeDir, '.hadamard', 'agents', 'reviewer.md'), 'utf8');
+      expect(md).toContain('name: reviewer');
+      expect(md).toContain('My reviewer prompt.');
+      // No squad file deletion attempted for built-ins (nothing on disk to remove).
+      expect(saved.body.conversion.every(entry => !entry.includes('deleted'))).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+});

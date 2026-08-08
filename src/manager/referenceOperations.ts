@@ -33,7 +33,7 @@ import {
   writeAgentProfiles,
 } from '../config/agentProfiles.js';
 import { resolveHadamardHome } from '../config/hadamardHome.js';
-import { BUILT_IN_TEAM_DEFINITIONS } from '../team/teamDefinitions.js';
+import { BUILT_IN_TEAM_DEFINITIONS, deleteTeamDefinition } from '../team/teamDefinitions.js';
 import { readManagerConfig, writeManagerConfig, managerConfigPath } from './projectManager.js';
 import {
   listScheduledAutomationTasks,
@@ -616,6 +616,75 @@ export async function applyDeleteFallback(
       }
     }
   });
+
+  return { rewritten };
+}
+
+// ── Squad → unified agent conversion (09 Aug 2026) ──────────────────
+
+/**
+ * Convert-on-save for legacy single-agent squads (squadType 'agent'). The
+ * caller has already written the unified .md agent; this removes the squad
+ * json (built-in presets are immutable — skipped, the .md shadows them) and
+ * rewires references P1-style:
+ *  - team graph/workflow nodes invoking the squad (legacy teamRef or typed
+ *    targetRef kind 'team') become { kind: 'agent' } targetRefs;
+ *  - teamPreferences.defaultAttached pointing at the squad is cleared (an
+ *    agent cannot be attached as a team);
+ *  - automation tasks keep their workflowName — the reference goes broken
+ *    on purpose (visible via the index ⚠ badges), matching 'leave'.
+ */
+export async function convertAgentSquadToAgentDefinition(
+  squadName: string,
+  agentName: string,
+  ctx: ReferenceOperationContext = {},
+): Promise<ReferenceOperationReport> {
+  const rewritten: string[] = [];
+  const teamFiles = listJsonFiles(teamDirs(ctx.projectDir, ctx.homeDir));
+
+  const convertNode = (node: { type?: string; teamRef?: string; targetRef?: AgentTargetRef }): boolean => {
+    const legacy = node.type === 'team' && node.teamRef === squadName;
+    const typed = node.targetRef?.kind === 'team' && node.targetRef.name === squadName;
+    if (!legacy && !typed) return false;
+    delete node.type;
+    delete node.teamRef;
+    node.targetRef = { kind: 'agent', name: agentName };
+    return true;
+  };
+  const mutateTeam = (raw: TeamDefinition): boolean => {
+    let changed = false;
+    raw.nodes = (raw.nodes ?? []).map((node) => {
+      const next = { ...node };
+      if (convertNode(next)) changed = true;
+      return next;
+    });
+    const visit = (node: WorkflowNode | undefined): void => {
+      if (!node) return;
+      if (convertNode(node)) changed = true;
+      for (const child of node.children ?? []) visit(child);
+    };
+    visit(raw.workflowTree);
+    return changed;
+  };
+
+  await withFileRollback(new Set(teamFiles), async () => {
+    for (const filePath of teamFiles) {
+      if (rewriteJsonFile(filePath, (raw) => isRecord(raw) && mutateTeam(raw as unknown as TeamDefinition))) {
+        rewritten.push(`team "${path.basename(filePath, '.json')}"`);
+      }
+    }
+  });
+
+  if (!BUILT_IN_TEAM_DEFINITIONS[squadName]) {
+    const removed = await deleteTeamDefinition(squadName, ctx.projectDir, ctx.homeDir);
+    if (removed) rewritten.push(`squad "${squadName}.json" deleted`);
+  }
+
+  const prefs = ctx.teamPreferences?.read();
+  if (prefs?.defaultAttached === squadName && ctx.teamPreferences) {
+    await ctx.teamPreferences.write({ ...prefs, defaultAttached: null });
+    rewritten.push('teamPreferences.defaultAttached (cleared)');
+  }
 
   return { rewritten };
 }
