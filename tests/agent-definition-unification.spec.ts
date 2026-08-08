@@ -26,6 +26,8 @@ import {
   upsertAgentProfile,
 } from '../src/config/agentProfiles.js';
 import { BrokenReferenceError } from '../src/manager/resolveTargetRef.js';
+import { runExternalAgentOnce } from '../src/runtime/externalAgentRunner.js';
+import type { ExternalAgentRunRequest, ExternalAgentRunResult } from '../src/types.js';
 import {
   createAgentSdk,
   type ModelApi,
@@ -330,22 +332,53 @@ class MockStream implements ModelStreamHandle {
 
 class MockModelApi implements ModelApi {
   readonly createCalls: ModelRequest[] = [];
+  private readonly createHandler?: (request: ModelRequest, index: number) => Message;
+  constructor(handlers?: { create?: (request: ModelRequest, index: number) => Message }) {
+    this.createHandler = handlers?.create;
+  }
   async createMessage(request: ModelRequest): Promise<Message> {
     this.createCalls.push(structuredClone(request));
-    return {
-      id: 'msg_1',
-      type: 'message',
-      role: 'assistant',
-      model: 'test-model',
-      content: [{ type: 'text', text: 'mock reply' }],
-      stop_reason: 'end_turn',
-      stop_sequence: null,
-      usage: { input_tokens: 1, output_tokens: 1 },
-    } as Message;
+    if (this.createHandler) {
+      return this.createHandler(request, this.createCalls.length - 1);
+    }
+    return makeTextMessage('mock reply');
   }
   streamMessage(): ModelStreamHandle {
     throw new Error('streaming not used in these tests');
   }
+}
+
+function makeTextMessage(text: string): Message {
+  return {
+    id: 'msg_1',
+    type: 'message',
+    role: 'assistant',
+    model: 'test-model',
+    content: [{ type: 'text', text }],
+    stop_reason: 'end_turn',
+    stop_sequence: null,
+    usage: { input_tokens: 1, output_tokens: 1 },
+  } as Message;
+}
+
+function makeDelegationMessage(): Message {
+  return {
+    id: 'msg_delegate',
+    type: 'message',
+    role: 'assistant',
+    model: 'test-model',
+    content: [
+      {
+        type: 'tool_use',
+        id: 'toolu_ext_delegate',
+        name: 'Task',
+        input: { prompt: 'Run the delegated task.', subagent_type: 'ext-cli' },
+      },
+    ],
+    stop_reason: 'tool_use',
+    stop_sequence: null,
+    usage: { input_tokens: 1, output_tokens: 1 },
+  } as Message;
 }
 
 async function createTestSdk(modelApi: MockModelApi, agents: Array<Record<string, unknown>>) {
@@ -527,5 +560,166 @@ describe('reference-index helpers over the unified store (S3)', () => {
     // Known-name set covers all .md definitions in both scopes.
     const names = listAgentDefinitionNames(home, workDir);
     expect(names).toEqual(expect.arrayContaining(['personal-ref', 'proj-ref', 'no-config']));
+  });
+});
+
+// ── External-CLI delegation runtime (09 Aug 2026) ────────────────────
+
+describe('agent definition runtime field', () => {
+  it('round-trips runtime and treats blank/hadamard as the SDK path', async () => {
+    fs.mkdirSync(agentsDir(), { recursive: true });
+    fs.writeFileSync(path.join(agentsDir(), 'ext.md'), [
+      '---',
+      'name: ext',
+      'description: External CLI agent',
+      'runtime: claude',
+      '---',
+      '',
+      'Body.',
+      '',
+    ].join('\n'), 'utf-8');
+    fs.writeFileSync(path.join(agentsDir(), 'sdk.md'), [
+      '---',
+      'name: sdk',
+      'description: SDK agent',
+      'runtime: hadamard',
+      '---',
+      '',
+      'Body.',
+      '',
+    ].join('\n'), 'utf-8');
+    const definitions = await loadHadamardAgentDefinitions({ homeDir: dataRoot(), workDir });
+    expect(definitions.find(definition => definition.name === 'ext')?.runtime).toBe('claude');
+    expect(definitions.find(definition => definition.name === 'sdk')?.runtime).toBeUndefined();
+  });
+});
+
+describe('external runtime delegation routing', () => {
+  async function externalSdk(
+    modelApi: MockModelApi,
+    runner: (request: ExternalAgentRunRequest) => Promise<ExternalAgentRunResult>,
+    agents: Array<Record<string, unknown>>,
+  ) {
+    const sessionDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 's-ext-sessions-'));
+    return createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      homeDir: home,
+      workDir,
+      modelApi,
+      disableDefaultAgents: true,
+      agents: agents as never,
+      externalAgentRunner: runner,
+    });
+  }
+  it('runWithAgent routes runtime≠hadamard to the external runner (session client untouched)', async () => {
+    const modelApi = new MockModelApi();
+    const captured: ExternalAgentRunRequest[] = [];
+    const sdk = await externalSdk(modelApi, async (request) => {
+      captured.push(request);
+      return { text: 'external reply' };
+    }, [
+      {
+        name: 'ext-cli',
+        description: 'External agent',
+        systemPrompt: 'You run on the CLI.',
+        runtime: 'claude',
+        model: 'cli-model',
+      },
+    ]);
+    try {
+      const result = await sdk.runWithAgent('ext-cli', 'do the task');
+      expect(result.text).toBe('external reply');
+      expect(modelApi.createCalls.length).toBe(0);
+      expect(captured).toHaveLength(1);
+      expect(captured[0]).toMatchObject({
+        runtime: 'claude',
+        agentName: 'ext-cli',
+        prompt: 'do the task',
+        systemPrompt: 'You run on the CLI.',
+        cwd: workDir,
+        model: 'cli-model',
+      });
+      // External runs expose no Hadamard session (not resumable via SendMessage).
+      expect(result.sessionId).toBeUndefined();
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('runtime absent or hadamard keeps the SDK path', async () => {
+    const modelApi = new MockModelApi();
+    let runnerCalls = 0;
+    const sdk = await externalSdk(modelApi, async () => {
+      runnerCalls += 1;
+      return { text: 'should not happen' };
+    }, [
+      { name: 'plain', description: 'SDK agent', systemPrompt: 'x' },
+      { name: 'explicit-sdk', description: 'SDK agent', systemPrompt: 'x', runtime: 'hadamard' },
+    ]);
+    try {
+      for (const name of ['plain', 'explicit-sdk']) {
+        const result = await sdk.runWithAgent(name, 'hello');
+        expect(result.text).toContain('mock reply');
+      }
+      expect(runnerCalls).toBe(0);
+      expect(modelApi.createCalls.length).toBe(2);
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('Task-tool delegation routes to the external runner', async () => {
+    const modelApi = new MockModelApi({
+      create: (_request, index) => {
+        if (index === 0) {
+          return makeDelegationMessage();
+        }
+        return makeTextMessage('Main agent received the external summary.');
+      },
+    });
+    const captured: ExternalAgentRunRequest[] = [];
+    const sdk = await externalSdk(modelApi, async (request) => {
+      captured.push(request);
+      return { text: 'external delegation reply' };
+    }, [
+      {
+        name: 'ext-cli',
+        description: 'External agent',
+        systemPrompt: 'You run on the CLI.',
+        runtime: 'codex',
+      },
+    ]);
+    try {
+      const result = await sdk.run('Delegate this to the CLI agent.');
+      expect(captured).toHaveLength(1);
+      expect(captured[0]).toMatchObject({ runtime: 'codex', agentName: 'ext-cli' });
+      expect(result.toolCalls[0]?.outputText).toContain('external delegation reply');
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('an unavailable runtime fails loudly, naming runtime and agent (no SDK fallback)', async () => {
+    await expect(runExternalAgentOnce({
+      runtime: 'no-such-runtime-xyz',
+      agentName: 'ghost-agent',
+      prompt: 'x',
+      cwd: workDir,
+      homeDir: home,
+    })).rejects.toThrow(/no-such-runtime-xyz.*ghost-agent|ghost-agent.*no-such-runtime-xyz/);
+  });
+
+  it('background delegation to an external runtime is rejected explicitly', async () => {
+    const modelApi = new MockModelApi();
+    const sdk = await externalSdk(modelApi, async () => ({ text: 'x' }), [
+      { name: 'ext-cli', description: 'External agent', systemPrompt: 'x', runtime: 'claude' },
+    ]);
+    try {
+      await expect(sdk.agents.launchBackground('ext-cli', 'task', { parentRunId: 'r1' }))
+        .rejects.toThrow(/background delegation is not supported/i);
+    } finally {
+      await sdk.close();
+    }
   });
 });

@@ -314,6 +314,10 @@ export {
 export { loadHadamardAgentDefinitions } from './runtime/hadamardAgentDefinitions.js';
 export { getDefaultHadamardAgents } from './runtime/defaultHadamardAgents.js';
 export {
+  isExternalAgentRuntime,
+  runExternalAgentOnce,
+} from './runtime/externalAgentRunner.js';
+export {
   getHadamardAgentTemplate,
   getHadamardAgentTemplates,
   hadamardAgentTemplateToDefinition,
