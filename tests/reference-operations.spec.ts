@@ -2,7 +2,7 @@
  * P1 cascade operations tests: transactional rename, force-delete fallback
  * strategies, config-model re-point, and the fallback preference default.
  */
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -356,6 +356,79 @@ describe('repointConfigModel', () => {
     expect(findAgentProfile('coder', home)?.model).toBe('m2');
     const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
     expect(router.routes[0].target).toEqual({ kind: 'model', config: 'cfg', model: 'm2' });
+  });
+});
+
+// ── unified .md agent store (S3) ────────────────────────────────────
+
+function writeAgentMd(dir: string, name: string, frontmatter: string[], body = 'Agent body.'): string {
+  mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, name + '.md');
+  writeFileSync(filePath, ['---', 'name: ' + name, 'description: test agent', ...frontmatter, '---', '', body, ''].join('\n'), 'utf-8');
+  return filePath;
+}
+
+describe('unified .md agent store (S3)', () => {
+  it('renames a pure .md agent: frontmatter, file, and referencers', async () => {
+    const { home, project } = seedHome();
+    writeAgentMd(path.join(home, '.hadamard', 'agents'), 'mdagent', ['model: m-x']);
+    writeJson(path.join(project, '.hadamard', 'routers', 'r.json'), {
+      name: 'r',
+      routerModel: { model: 'lead' },
+      routes: [{ model: 'm1', when: 'a', target: { kind: 'agent', name: 'mdagent' } }],
+    });
+    writeJson(path.join(project, '.hadamard', 'teams', 'g.json'), {
+      name: 'g', mode: 'graph', squadType: 'graph', members: [],
+      nodes: [{ id: 'a', model: 'm1', targetRef: { kind: 'agent', name: 'mdagent' } }],
+      edges: [],
+    });
+
+    const report = await renameDefinitionAndReferences('agent', 'mdagent', 'mdagent2', { projectDir: project, homeDir: home });
+    expect(report.rewritten.some((entry: string) => entry.includes('mdagent2.md'))).toBe(true);
+
+    const dir = path.join(home, '.hadamard', 'agents');
+    expect(existsSync(path.join(dir, 'mdagent.md'))).toBe(false);
+    const renamed = readFileSync(path.join(dir, 'mdagent2.md'), 'utf-8');
+    expect(renamed).toContain('name: mdagent2');
+    expect(renamed).toContain('model: m-x');
+    const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
+    expect(router.routes[0].target).toEqual({ kind: 'agent', name: 'mdagent2' });
+    const team = readJson(path.join(project, '.hadamard', 'teams', 'g.json'));
+    expect(team.nodes[0].targetRef).toEqual({ kind: 'agent', name: 'mdagent2' });
+  });
+
+  it('renames a project-scoped .md agent', async () => {
+    const { home, project } = seedHome();
+    writeAgentMd(path.join(project, '.hadamard', 'agents'), 'projagent', ['bridgeConfig: cfg', 'model: m1']);
+    await renameDefinitionAndReferences('agent', 'projagent', 'projagent2', { projectDir: project, homeDir: home });
+    const dir = path.join(project, '.hadamard', 'agents');
+    expect(existsSync(path.join(dir, 'projagent.md'))).toBe(false);
+    expect(readFileSync(path.join(dir, 'projagent2.md'), 'utf-8')).toContain('name: projagent2');
+  });
+
+  it('rejects renaming onto a built-in agent name and onto an existing .md name', async () => {
+    const { home, project } = seedHome();
+    await expect(renameDefinitionAndReferences('agent', 'coder', 'general-purpose', { projectDir: project, homeDir: home }))
+      .rejects.toThrow(/already exists/);
+    writeAgentMd(path.join(home, '.hadamard', 'agents'), 'taken', []);
+    await expect(renameDefinitionAndReferences('agent', 'coder', 'taken', { projectDir: project, homeDir: home }))
+      .rejects.toThrow(/already exists/);
+    // The store is untouched by the failed renames.
+    expect(readAgentProfiles(home).profiles.map((p) => p.name).sort()).toEqual(['coder', 'writer']);
+    expect(existsSync(path.join(home, '.hadamard', 'agents', 'taken.md'))).toBe(true);
+  });
+
+  it('degrade-model reads the model from the .md definition', async () => {
+    const { home, project } = seedHome();
+    writeAgentMd(path.join(home, '.hadamard', 'agents'), 'mdonly', ['model: m-x'], 'Body.');
+    writeJson(path.join(project, '.hadamard', 'routers', 'r.json'), {
+      name: 'r',
+      routerModel: { model: 'lead' },
+      routes: [{ model: 'm1', when: 'a', target: { kind: 'agent', name: 'mdonly' } }],
+    });
+    await applyDeleteFallback('agent', 'mdonly', { type: 'degrade-model' }, { projectDir: project, homeDir: home });
+    const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
+    expect(router.routes[0].target).toEqual({ kind: 'model', config: '', model: 'm-x' });
   });
 });
 

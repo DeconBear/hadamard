@@ -205,6 +205,8 @@ import {
   loadHadamardAgentDefinitions,
   getDefaultHadamardAgents,
   summarizeHadamardAgentDefinition,
+  readAllAgentReferenceProfiles,
+  listAgentDefinitionNames,
   WorktreeService,
   decideGoalExecution,
   type Goal,
@@ -3072,10 +3074,12 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   /**
    * Fresh unified agent-definition summaries for the panel/drawer: built-ins
    * merged with .md definitions read from disk (built-in → user → project,
-   * later wins), so newly saved agents appear without an SDK reload. Keeps
-   * the Agent-tool surface rule: subagent === false stays hidden (S1a).
+   * later wins), so newly saved agents appear without an SDK reload. The
+   * default keeps the Agent-tool surface rule (subagent === false hidden,
+   * S1a); the unified panel list passes includeNonDelegatable to also show
+   * main-chat-only agents (S3).
    */
-  async function agentDefinitionSummariesForGui() {
+  async function agentDefinitionSummariesForGui(options?: { includeNonDelegatable?: boolean }) {
     const loaded = await loadHadamardAgentDefinitions({
       homeDir: resolveGuiHomeDir(),
       workDir,
@@ -3085,7 +3089,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       merged.set(definition.name, definition);
     }
     return [...merged.values()]
-      .filter(definition => definition.subagent !== false)
+      .filter(definition => options?.includeNonDelegatable || definition.subagent !== false)
       .map(definition => summarizeHadamardAgentDefinition(definition));
   }
 
@@ -3147,13 +3151,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         heavyStateCache = heavy;
       }
     }
-    const [allSessions, workflows, teams, routers, skills, agents, runtimeDiscovery, scheduledTasks] = await Promise.all([
+    const [allSessions, workflows, teams, routers, skills, agents, agentDefinitions, runtimeDiscovery, scheduledTasks] = await Promise.all([
       listGuiSessions(),
       Promise.resolve(listWorkflows(workDir)),
       Promise.resolve(listTeamDefinitions(workDir)),
       Promise.resolve(listRouterProfiles(workDir)),
       light || needsCredentials ? Promise.resolve([]) : (sdk! as NonNullable<typeof sdk>).skills.listMetadata(),
       light || needsCredentials ? Promise.resolve([]) : agentDefinitionSummariesForGui(),
+      light || needsCredentials ? Promise.resolve([]) : agentDefinitionSummariesForGui({ includeNonDelegatable: true }),
       light ? Promise.resolve([]) : Promise.resolve(discoverAgentRuntimes({ homeDir })),
       listScheduledAutomationTasks(workDir),
     ]);
@@ -3202,6 +3207,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       activeAgent,
       skills,
       agents,
+      agentDefinitions,
       plugins: heavy.plugins,
       settings: {
         configPath: store?.configPath ?? null,
@@ -9193,7 +9199,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           readManagerConfig(projectPrimaryPath, homeDir).catch(() => undefined),
         ]);
         const bridgeConfigs = readBridgeConfigs(homeDir).configs;
-        const agentProfiles = listAgentProfiles(homeDir);
+        // S3 unified store: profile edges come from the legacy store AND .md
+        // definitions in both scopes (incl. bridgeConfig-only definitions).
+        const profileByName = new Map(listAgentProfiles(homeDir).map(profile => [profile.name, profile]));
+        for (const profile of readAllAgentReferenceProfiles(homeDir, workDir)) {
+          profileByName.set(profile.name, profile);
+        }
+        const agentProfiles = [...profileByName.values()];
         const index = buildReferenceIndex({
           bridgeConfigs,
           agentProfiles,
@@ -9230,8 +9242,12 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         const broken = findBrokenRefs(index, {
           configs: bridgeConfigs.map((config) => config.name),
           // Selectable agents include ephemeral per-config presets so an active
-          // session edge to one of them is not falsely reported as broken.
-          agents: listSelectableAgents(homeDir).map((agent) => agent.name),
+          // session edge to one of them is not falsely reported as broken; the
+          // .md definition names cover unified-store agents in both scopes (S3).
+          agents: [
+            ...listSelectableAgents(homeDir).map((agent) => agent.name),
+            ...listAgentDefinitionNames(homeDir, workDir),
+          ],
           teams: teams.map((team) => team.name),
           routers: routers.map((router) => router.name),
         });
@@ -11332,6 +11348,7 @@ export function createHadamardGuiHtml(): string {
       <label class="dialog-field">System prompt append<textarea id="agentProfileSystemPrompt" rows="4" placeholder="Optional instructions appended when this agent runs"></textarea></label>
       <p id="agentProfileCfgStatus" class="muted"></p>
       <div class="dialog-actions">
+        <button type="button" id="agentProfileDeleteBtn" class="secondary-btn hidden">Delete agent</button>
         <button type="button" id="agentProfileCfgReset" class="secondary-btn">Cancel</button>
         <button type="button" id="agentProfileCfgSave" class="primary">Save profile</button>
       </div>
@@ -27163,36 +27180,41 @@ function renderTeamSquadBar() {
     });
     bar.appendChild(chip);
   }
-  // Read-only group: subagent .md definitions (~/.hadamard/agents, .hadamard/agents).
-  // They are not editable squads — the chip jumps to the Subagents drawer (P2 §4.2).
-  // S2 (§6-2): built-ins (general-purpose, Explore) are hidden unless the
-  // Settings toggle is on; they get a Built-in tag when shown.
+  // S3 unified list: .md agents (inherit-session-model, main-chat-only, and
+  // delegatable subagents) are full citizens next to profile/router/team
+  // entries — click opens the agent editor. Built-ins stay hidden unless the
+  // Settings toggle is on (§6-2); profile-backed names are not duplicated.
   const showBuiltIn = state.preferences.showBuiltInSubagents === true;
-  const subagentDefs = (state.snapshot?.agents || [])
+  const profileNames = new Set((state.snapshot?.agentProfiles || []).map(p => p.name));
+  const mdAgents = (state.snapshot?.agentDefinitions || [])
+    .filter(def => def?.name && !profileNames.has(def.name))
     .filter(def => showBuiltIn || def?.source !== 'built-in');
-  if (subagentDefs.length) {
+  if (mdAgents.length) {
     const divider = document.createElement('span');
     divider.className = 'sq-group-label';
-    divider.textContent = 'Subagents (.md)';
+    divider.textContent = 'Agents (.md)';
     bar.appendChild(divider);
-    for (const def of subagentDefs) {
-      if (!def?.name) continue;
+    for (const def of mdAgents) {
       const isBuiltIn = def.source === 'built-in';
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'squad-chip sq-subagent' + (isBuiltIn ? ' sq-builtin' : '');
       chip.dataset.name = def.name;
-      chip.dataset.kind = 'subagent-def';
-      chip.title = (def.description || 'Subagent definition') + ' — read-only here; browse in the Subagents drawer.';
+      chip.dataset.kind = 'agent-md';
+      chip.title = (def.description || 'Agent definition') + ' — click to edit.';
       const labels = document.createElement('span');
       labels.className = 'sq-labels';
       const label = document.createElement('strong');
       label.textContent = def.name;
       const small = document.createElement('small');
-      small.textContent = isBuiltIn ? 'Subagent · Built-in' : 'Subagent · Read-only';
+      const parts = ['Agent'];
+      parts.push(isBuiltIn ? 'Built-in' : def.source === 'project' ? 'Project' : 'Personal');
+      if (!def.bridgeConfig) parts.push('Inherit');
+      if (def.subagent === false) parts.push('No delegation');
+      small.textContent = parts.join(' · ');
       labels.append(label, small);
       chip.appendChild(labels);
-      chip.addEventListener('click', () => { openSurface('agents').catch(console.error); });
+      chip.addEventListener('click', () => { openAgentDefinitionInEditor(def.name).catch(console.error); });
       bar.appendChild(chip);
     }
   }
@@ -33450,6 +33472,7 @@ async function openAgentProfileEditor(profile, definition) {
   editingAgentProfileName = name || null;
   editingAgentProfileSource = definition?.source || null;
   el('agentProfileEditorTitle').textContent = editingAgentProfileName ? 'Edit agent' : 'New agent';
+  el('agentProfileDeleteBtn')?.classList.toggle('hidden', !editingAgentProfileName);
   setField('agentProfileName', name);
   // P1: names are editable — saving under a new name runs the rename transaction.
   el('agentProfileName').disabled = false;
@@ -33506,11 +33529,10 @@ async function saveAgentProfileViaApi() {
   }
   if (!inherit && !selectedAgentProfileConfig()) { el('agentProfileCfgStatus').textContent = 'Provider config is required.'; return; }
   if (!inherit && !model) { el('agentProfileCfgStatus').textContent = 'Model is required.'; return; }
-  const originalIsProfile = Boolean(editingAgentProfileName)
-    && (state.snapshot?.agentProfiles || []).some(p => p.name === editingAgentProfileName);
   const renamed = Boolean(editingAgentProfileName) && name !== editingAgentProfileName;
-  if (renamed && originalIsProfile) {
-    // Rename first: the server transactionally rewrites every referencing field.
+  if (renamed) {
+    // S3: the rename transaction covers profiles AND unified .md agents in
+    // both scopes (frontmatter + file + referencers, with rollback).
     el('agentProfileCfgStatus').textContent = 'Renaming...';
     const renameRes = await api('/api/references/rename', {
       method: 'POST',
@@ -33562,18 +33584,6 @@ async function saveAgentProfileViaApi() {
     el('agentProfileCfgStatus').textContent = data.error || 'Save failed.';
     return;
   }
-  // Renamed a pure .md agent (not a profile): remove the old definition file.
-  if (renamed && !originalIsProfile) {
-    await api('/api/agent-profiles/delete', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        name: editingAgentProfileName,
-        strategy: { type: 'leave' },
-        scope: editingAgentProfileSource === 'project' ? 'project' : 'personal',
-      }),
-    }).catch(() => undefined);
-  }
   state.snapshot = data.state || state.snapshot;
   closeAgentProfileEditor();
   renderBridgeConfigs();
@@ -33585,7 +33595,7 @@ async function saveAgentProfileViaApi() {
   if (status) status.textContent = 'Agent profile saved' + warnings;
 }
 
-async function deleteAgentProfileViaApi(name) {
+async function deleteAgentProfileViaApi(name, scope) {
   const wasActive = state.snapshot?.activeAgent?.name === name;
   const finish = () => {
     renderBridgeConfigs();
@@ -33593,6 +33603,7 @@ async function deleteAgentProfileViaApi(name) {
     if (state.teamSelectedKind === 'profile') {
       state.teamSelected = null;
     }
+    if (editingAgentProfileName === name) closeAgentProfileEditor();
     if (typeof renderTeamRegion === 'function') renderTeamRegion().catch(console.error);
     const status = el('settingsStatus');
     if (status) status.textContent = 'Agent profile deleted';
@@ -33602,7 +33613,7 @@ async function deleteAgentProfileViaApi(name) {
     const res = await api('/api/agent-profiles/delete', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name, strategy }),
+      body: JSON.stringify({ name, strategy, ...(scope === 'project' ? { scope: 'project' } : {}) }),
     });
     if (!res.ok) {
       let message = await res.text();
@@ -36522,6 +36533,13 @@ el('agentProfileNew')?.addEventListener('click', () => { openAgentProfileEditor(
 el('agentProfileCfgSave').addEventListener('click', () => { saveAgentProfileViaApi().catch(console.error); });
 el('agentProfileCfgReset').addEventListener('click', () => { closeAgentProfileEditor(); });
 el('agentProfileSubagent')?.addEventListener('change', syncAgentProfileSubagentOptions);
+el('agentProfileDeleteBtn')?.addEventListener('click', () => {
+  if (!editingAgentProfileName) return;
+  deleteAgentProfileViaApi(
+    editingAgentProfileName,
+    editingAgentProfileSource === 'project' ? 'project' : 'personal',
+  ).catch(console.error);
+});
 el('agentProfileEditorForm').addEventListener('submit', (event) => {
   event.preventDefault();
   saveAgentProfileViaApi().catch(console.error);
