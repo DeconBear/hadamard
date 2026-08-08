@@ -17,6 +17,10 @@ import {
   type ModelStreamHandle,
 } from '../src/index.js';
 import type { Message, MessageStreamEvent } from '../src/provider/types.js';
+import {
+  getHadamardAgentTemplate,
+  hadamardAgentTemplateToDefinition,
+} from '../src/runtime/agentTemplates.js';
 
 const execFile = promisify(execFileCallback);
 const tempDirs: string[] = [];
@@ -138,6 +142,8 @@ describe('Hadamard SDK subagent parity', () => {
       homeDir,
       modelApi,
       effort: 'high',
+      // S1b: code-reviewer is a template now — register it explicitly.
+      agents: [hadamardAgentTemplateToDefinition(getHadamardAgentTemplate('code-reviewer')!)],
     });
 
     try {
@@ -215,6 +221,8 @@ describe('Hadamard SDK subagent parity', () => {
       sessionDirectory,
       homeDir,
       modelApi,
+      // S1b: debugger is a template now — register it explicitly.
+      agents: [hadamardAgentTemplateToDefinition(getHadamardAgentTemplate('debugger')!)],
     });
 
     try {
@@ -323,6 +331,8 @@ describe('Hadamard SDK subagent parity', () => {
       homeDir,
       modelApi: modelApiA,
       tools: [waitGate],
+      // S1b: debugger is a template now — register it explicitly.
+      agents: [hadamardAgentTemplateToDefinition(getHadamardAgentTemplate('debugger')!)],
       permissionMode: 'bypassPermissions',
     });
     let sdkB: Awaited<ReturnType<typeof createAgentSdk>> | undefined;
@@ -336,6 +346,8 @@ describe('Hadamard SDK subagent parity', () => {
         sessionDirectory,
         homeDir,
         modelApi: modelApiB,
+        // S1b: debugger is a template now — register it explicitly.
+        agents: [hadamardAgentTemplateToDefinition(getHadamardAgentTemplate('debugger')!)],
         permissionMode: 'bypassPermissions',
       });
       const sendMessage = sdkB.getTool('SendMessage')!;

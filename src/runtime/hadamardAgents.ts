@@ -15,6 +15,8 @@ import type {
 import { ConfigurationError } from '../errors.js';
 import { tool } from './tools.js';
 import { createId } from './helpers.js';
+import { BASH_TOOL_NAME } from '../tools/bash/BashTool.js';
+import { POWERSHELL_TOOL_NAME } from '../tools/hadamardShellTools.js';
 
 export const HADAMARD_RUN_STATE_KEY = '__hadamardRunState';
 
@@ -226,6 +228,12 @@ export function createHadamardTaskTool(options: {
     toolErrorCount?: number;
     textSummary?: string;
   }) => void;
+  /**
+   * The client's default toolset, used by the plan-mode delegation rule
+   * (§9.5) to classify the target's whitelisted tools. When absent, any
+   * non-shell tool name is treated as not read-only (conservative).
+   */
+  listAvailableTools?: () => AgentToolDefinition[];
   name?: string;
   description?: string;
   maxDepth?: number;
@@ -242,6 +250,12 @@ export function createHadamardTaskTool(options: {
       description,
       aliases: name === 'Agent' ? ['Task'] : name === 'Task' ? ['Agent'] : undefined,
       interruptBehavior: 'cancel',
+      // §9.5 plan-mode delegation: allowed in plan mode only when the
+      // resolved target's effective tool set contains no mutating tools
+      // (see below). Deliberately NOT isReadOnly/isDestructive — declaring
+      // those would make write-capable delegations require approval in
+      // default mode, changing long-standing non-plan behavior.
+      isPlanReadOnly: (input?: HadamardTaskToolInput) => resolveDelegationReadOnly(input, options),
       inputSchema: z.object({
         description: z.string().min(1).optional()
           .describe('A short (3-5 word) label summarizing what the agent will do.'),
@@ -335,7 +349,7 @@ export function createHadamardTaskTool(options: {
           description: 'Release workflow review',
           prompt:
             'Review the release workflow defined in scripts/release.mjs and .github/workflows/release.yml. Context: we just added a changelog generation step. Check for missing steps, ordering hazards, and untested failure paths. Report concrete findings with file references; do not change any files.',
-          subagent_type: 'code-reviewer',
+          subagent_type: 'general-purpose',
         },
       ],
       prompt: () => buildTaskToolPrompt(options.listAgentDefinitions?.() ?? []),
@@ -543,6 +557,56 @@ function resolveSubagentType(
     return explicit;
   }
   return options.getAgentDefinition('general-purpose') ? 'general-purpose' : undefined;
+}
+
+/**
+ * Plan-mode delegation rule (§9.5): a delegation counts as read-only only
+ * when the resolved target definition's effective tool set contains no
+ * mutating tools.
+ *
+ * - No allowedTools whitelist = the full toolset (writers included) → not read-only.
+ * - Unknown or unclassified tool names → not read-only (conservative).
+ * - Bash / PowerShell are command-classified shell tools: their presence in a
+ *   whitelist does NOT decide delegation read-onlyness, because every actual
+ *   command is re-evaluated at execution time under the inherited permission
+ *   mode (the subagent run inherits plan mode, which denies mutating Bash
+ *   commands per isReadOnlyBashCommand and — PowerShell declares itself
+ *   unconditionally destructive — every PowerShell call). This is what lets
+ *   the read-only Explore whitelist (which includes both shells) stay
+ *   delegatable in plan mode without opening a write path.
+ */
+const COMMAND_CLASSIFIED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  BASH_TOOL_NAME,
+  POWERSHELL_TOOL_NAME,
+]);
+
+function whitelistedToolIsReadOnly(
+  name: string,
+  availableTools: readonly AgentToolDefinition[] | undefined,
+): boolean {
+  if (COMMAND_CLASSIFIED_TOOL_NAMES.has(name)) return true;
+  const tool = availableTools?.find(candidate =>
+    candidate.name === name || candidate.aliases?.includes(name) === true);
+  // Static classification only: tools whose answer depends on the call input
+  // (other than the shell carve-out above) answer false for undefined input.
+  return tool?.isReadOnly?.(undefined) === true;
+}
+
+function resolveDelegationReadOnly(
+  input: HadamardTaskToolInput | undefined,
+  options: {
+    getAgentDefinition: (agent: string) => HadamardAgentDefinition | undefined;
+    listAvailableTools?: () => AgentToolDefinition[];
+  },
+): boolean {
+  const target = resolveSubagentType(input ?? {}, options);
+  if (!target) return false;
+  const definition = options.getAgentDefinition(target);
+  if (!definition) return false; // unresolvable target: conservative
+  const whitelist = definition.allowedTools;
+  if (!whitelist || whitelist.length === 0) return false; // full toolset includes writers
+  const availableTools = options.listAvailableTools?.();
+  return whitelist.every(name => whitelistedToolIsReadOnly(name, availableTools));
 }
 
 function buildTaskToolPrompt(agents: HadamardAgentDefinitionSummary[]): string {

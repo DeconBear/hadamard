@@ -15,6 +15,10 @@ import {
   type ModelStreamHandle,
 } from '../src/index.js';
 import type { Message, MessageStreamEvent } from '../src/provider/types.js';
+import {
+  getHadamardAgentTemplate,
+  hadamardAgentTemplateToDefinition,
+} from '../src/runtime/agentTemplates.js';
 import { extractTextFromContent } from '../src/runtime/messageUtils.js';
 
 const tempDirs: string[] = [];
@@ -1588,14 +1592,11 @@ describe('HadamardAgentClient', () => {
     });
 
     try {
-      expect(firstSdk.agents.list()).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ name: 'general-purpose' }),
-          expect.objectContaining({ name: 'code-reviewer' }),
-          // Default agents declare no turn cap; they inherit the run config.
-          expect.objectContaining({ name: 'debugger', maxToolIterations: undefined }),
-        ]),
-      );
+      // S1b: only general-purpose + Explore stay active built-ins; the rest
+      // moved to the template library (agentTemplates.ts).
+      expect(firstSdk.agents.list().map(agent => agent.name)).toEqual(['general-purpose', 'Explore']);
+      // Default agents declare no turn cap; they inherit the run config.
+      expect(firstSdk.agents.list().every(agent => agent.maxToolIterations === undefined)).toBe(true);
     } finally {
       await firstSdk.close();
     }
@@ -1686,6 +1687,8 @@ describe('HadamardAgentClient', () => {
       model: 'test-model',
       sessionDirectory,
       modelApi,
+      // S1b: debugger is a template now — register it explicitly.
+      agents: [hadamardAgentTemplateToDefinition(getHadamardAgentTemplate('debugger')!)],
     });
 
     try {
@@ -1846,6 +1849,8 @@ describe('HadamardAgentClient', () => {
       model: 'test-model',
       sessionDirectory,
       modelApi,
+      // S1b: debugger is a template now — register it explicitly.
+      agents: [hadamardAgentTemplateToDefinition(getHadamardAgentTemplate('debugger')!)],
     });
 
     try {
