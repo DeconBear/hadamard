@@ -134,6 +134,7 @@ describe('TUI and GUI parity', () => {
     expect(html).toContain('id="agentProfileEditorModal"');
     expect(html).toContain('id="agentProfileModelPicker"');
     expect(html).toContain('id="agentProfilePromptMode"');
+    expect(html).toContain('id="agentProfileRuntime"');
     expect(html).not.toContain('id="agentProfileScope"');
     expect(html).toContain('id="agentProfileSubagent"');
     expect(html).toContain('id="agentProfileSubagentOptions"');

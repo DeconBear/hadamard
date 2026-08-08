@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 
 import { z } from 'zod';
 
-import type { MessageParam } from '../provider/types.js';
+import type { Message, MessageParam } from '../provider/types.js';
 
 import { createHadamardBuddyApi, type HadamardBuddyApi } from '../buddy/hadamardBuddy.js';
 import {
@@ -161,6 +161,7 @@ import { getDefaultHadamardAgents } from './defaultHadamardAgents.js';
 import { loadHadamardAgentDefinitions } from './hadamardAgentDefinitions.js';
 import { migrateAgentProfilesToMarkdown } from '../config/agentDefinitionMigration.js';
 import { resolveTargetRef } from '../manager/resolveTargetRef.js';
+import { isExternalAgentRuntime, runExternalAgentOnce } from './externalAgentRunner.js';
 import {
   HadamardSkillsApi,
   getDefaultHadamardBundledSkills,
@@ -745,6 +746,8 @@ export class HadamardAgentClient {
   private readonly agentDefinitions: Map<string, HadamardAgentDefinition>;
   /** §6-6: per-agent-session model clients resolved from definition.bridgeConfig. */
   private readonly agentSessionModelClients = new Map<string, { model: string; modelApi: import('../types.js').ModelApi }>();
+  /** External-CLI delegation runner (injectable for tests via CreateAgentSdkOptions). */
+  private readonly externalAgentRunner: NonNullable<CreateAgentSdkOptions['externalAgentRunner']>;
   private readonly skillDefinitions: Map<string, HadamardSkillDefinition>;
   /** Names of `paths:`-conditional skills activated by touching matching files. */
   private readonly activatedConditionalSkills = new Set<string>();
@@ -793,7 +796,9 @@ export class HadamardAgentClient {
     private readonly maxSubagentDepth = 1,
     private readonly maxSubagentFanout = 8,
     taskWorktreeCoordinator?: TaskWorktreeCoordinator,
+    externalAgentRunner?: CreateAgentSdkOptions['externalAgentRunner'],
   ) {
+    this.externalAgentRunner = externalAgentRunner ?? runExternalAgentOnce;
     this.sessionManager = new SessionManager(this.store, sessionManagerConfig);
     this.sessionGraph = new SessionGraph(this.store);
     this.sessionForks = new SessionForkService(this.store);
@@ -1240,6 +1245,7 @@ export class HadamardAgentClient {
       options.maxSubagentDepth,
       options.maxSubagentFanout,
       taskWorktreeCoordinator,
+      options.externalAgentRunner,
     );
     const interruptedTasks = await client.backgroundTaskManager.reconcileInterruptedTasks();
     await client.reconcileInterruptedAgentExecutions(interruptedTasks);
@@ -1674,6 +1680,15 @@ export class HadamardAgentClient {
     options: AgentRunOptions = {},
   ): Promise<AgentRunResult> {
     const definition = this.requireAgentDefinition(agent);
+    if (isExternalAgentRuntime(definition.runtime)) {
+      // External-CLI delegation (09 Aug 2026): one-shot bridge run on the
+      // definition's runtime — no SDK session, no model-client resolution.
+      const prompt = typeof input === 'string' ? input : extractTextFromContent(input);
+      return this.runExternalDefinition(definition, prompt, {
+        cwd: definition.cwd ?? this.config.workDir,
+        signal: options.signal,
+      });
+    }
     // §6-6 model priority: caller-passed model/modelApi > definition's own
     // bridgeConfig client > inherited session client.
     const modelClient = options.model || options.modelApi
@@ -1685,6 +1700,56 @@ export class HadamardAgentClient {
       mergedOptions.modelApi = modelClient.modelApi;
     }
     return this.run(input, mergedOptions);
+  }
+
+  /**
+   * Run a definition on its external CLI runtime and fabricate the
+   * AgentRunResult. The bridge result's native session id is intentionally
+   * NOT exposed as a Hadamard sessionId — external runs are not resumable
+   * through SendMessage.
+   */
+  private async runExternalDefinition(
+    definition: HadamardAgentDefinition,
+    prompt: string,
+    options: { cwd: string; signal?: AbortSignal },
+  ): Promise<AgentRunResult> {
+    const startedAt = nowIso();
+    const run = await this.externalAgentRunner({
+      runtime: definition.runtime!.trim(),
+      agentName: definition.name,
+      prompt,
+      systemPrompt: definition.systemPrompt,
+      cwd: options.cwd,
+      signal: options.signal,
+      model: definition.model,
+      permissionMode: definition.permissionMode,
+      homeDir: this.config.homeDir,
+    });
+    const model = definition.model ?? definition.runtime ?? 'external';
+    return {
+      runId: createId(),
+      model,
+      text: run.text,
+      message: {
+        id: createId(),
+        type: 'message',
+        role: 'assistant',
+        model,
+        content: [{ type: 'text', text: run.text }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 0, output_tokens: 0 },
+      } as Message,
+      messages: [
+        { role: 'user', content: prompt },
+        { role: 'assistant', content: run.text },
+      ],
+      stopReason: 'end_turn',
+      requests: [],
+      toolCalls: [],
+      startedAt,
+      completedAt: nowIso(),
+    };
   }
 
   async createAgentSession(
@@ -3851,6 +3916,23 @@ export class HadamardAgentClient {
     );
     let edgeStarted = false;
     try {
+      if (isExternalAgentRuntime(definition.runtime)) {
+        // External-CLI delegation: one-shot bridge run in the prepared (maybe
+        // worktree-isolated) workspace; no Hadamard session is created.
+        edgeStarted = await this.tryStartExecutionEdge(execution.edge);
+        const result = await this.runExternalDefinition(definition, prompt, {
+          cwd: prepared.workDir,
+          signal: runOptions.signal,
+        });
+        const retained = await this.finalizeDelegatedWorkspace(prepared.workspace);
+        await this.tryCompleteExecutionEdge(execution.edge, result.text);
+        return {
+          result,
+          sessionId: '',
+          worktreePath: retained ? prepared.workspace?.path : undefined,
+          worktreeBranch: retained ? prepared.workspace?.metadata.branch : undefined,
+        };
+      }
       const session = await this.createAgentSession(agent, {
         id: childSessionId,
         kind: 'agent',
@@ -4189,6 +4271,15 @@ export class HadamardAgentClient {
     delegation: HadamardAgentDelegationContext = { description: prompt },
   ): Promise<HadamardBackgroundTaskRecord> {
     const definition = this.requireAgentDefinition(agent);
+    if (isExternalAgentRuntime(definition.runtime)) {
+      // External runtimes are one-shot CLI runs — there is no Hadamard session
+      // to drive in the background, so fail loudly instead of silently
+      // falling back to the SDK.
+      throw new Error(
+        `Agent "${definition.name}" uses external runtime "${definition.runtime}"; `
+        + 'background delegation is not supported for external runtimes yet — run it in the foreground.',
+      );
+    }
     const prepared = await this.prepareDelegatedWorkspace(definition, delegation);
     const childSessionId = createId();
     const execution = this.delegatedExecutionContext(

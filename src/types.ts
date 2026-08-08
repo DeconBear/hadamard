@@ -520,6 +520,13 @@ export interface HadamardAgentDefinition {
   /** Referenced provider/bridge config name (unified store, S1a) — the definition runs on this config's own model client instead of inheriting the session's. */
   bridgeConfig?: string;
   /**
+   * Delegation runtime (09 Aug 2026): absent or 'hadamard' = in-process SDK;
+   * an external CLI runtime id ('claude' | 'pi' | 'codex' | …) routes Agent/Task
+   * delegations to that CLI via the bridge runner. Main-chat activation ignores
+   * this field (the main chat runtime comes from the active config).
+   */
+  runtime?: string;
+  /**
    * Prompt composition (S1a): `extend` = built-in base prompt + body appended
    * (profile semantics); `replace` = body is the complete system prompt
    * (.md semantics). Definitions loaded from .md default to `replace`.
@@ -808,6 +815,29 @@ export interface HadamardInvokedSkillRecord {
   skillRoot?: string;
 }
 
+/** One-shot external-CLI delegation request (agent runtime routing, 09 Aug 2026). */
+export interface ExternalAgentRunRequest {
+  /** External runtime id (e.g. 'claude', 'codex'); never 'hadamard' here. */
+  runtime: string;
+  /** Definition name — used in error messages. */
+  agentName: string;
+  prompt: string;
+  systemPrompt?: string;
+  cwd: string;
+  signal?: AbortSignal;
+  model?: string;
+  /** Definition-pinned permission mode; the runner maps it to bridge semantics. */
+  permissionMode?: string;
+  homeDir?: string;
+}
+
+export interface ExternalAgentRunResult {
+  text: string;
+  sessionId?: string;
+  durationMs?: number;
+  numTurns?: number;
+}
+
 export interface CreateAgentSdkOptions {
   homeDir?: string;
   apiKey?: string;
@@ -840,6 +870,14 @@ export interface CreateAgentSdkOptions {
   agentDirectories?: string[];
   loadDefaultAgentDirectories?: boolean;
   disableDefaultAgents?: boolean;
+  /**
+   * Override the external-CLI delegation runner (definitions with
+   * `runtime` ≠ 'hadamard'). Defaults to the bridge runner in
+   * runtime/externalAgentRunner.ts; inject a stub in tests.
+   */
+  externalAgentRunner?: (
+    request: ExternalAgentRunRequest,
+  ) => Promise<ExternalAgentRunResult>;
   maxSubagentDepth?: number;
   maxSubagentFanout?: number;
   skills?: HadamardSkillDefinition[];

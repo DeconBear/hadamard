@@ -119,6 +119,10 @@ function createAgentDefinition(input: {
     systemPrompt: input.body.trim(),
     model: cleanString(input.frontmatter.model),
     bridgeConfig: cleanString(input.frontmatter.bridgeConfig),
+    // External-CLI delegation runtime (09 Aug 2026); blank/'hadamard' = SDK path.
+    runtime: (value => (value && value !== 'hadamard' ? value : undefined))(
+      cleanString(input.frontmatter.runtime),
+    ),
     // §6-4: .md definitions default to replace (existing behavior); migrated
     // profiles / GUI-created agents carry an explicit `promptMode: extend`.
     promptMode: promptMode ?? 'replace',

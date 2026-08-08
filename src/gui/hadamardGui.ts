@@ -9431,6 +9431,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           if (typeof body.background === 'boolean') extras.background = body.background;
           if (body.isolation === 'worktree') extras.isolation = 'worktree';
           if (typeof body.initialPrompt === 'string' && body.initialPrompt.trim()) extras.initialPrompt = body.initialPrompt.trim();
+          if (typeof body.runtime === 'string' && body.runtime.trim()) extras.runtime = body.runtime.trim();
           const inheritModel = !profile.bridgeConfig || !profile.model;
           const unifiedWrite = inheritModel || scope === 'project' || Object.keys(extras).length > 0;
           const result = await withRuntimeMutation(async () => {
@@ -11285,7 +11286,7 @@ export function createHadamardGuiHtml(): string {
       <h2 id="agentProfileEditorTitle">New agent profile</h2>
       <div class="two-col">
         <label class="dialog-field">Profile name<input id="agentProfileName" autocomplete="off" placeholder="e.g. reviewer"></label>
-        <label class="dialog-field">Provider config · Model<span id="agentProfileModelPicker"></span></label>
+        <label class="dialog-field">Executor (model)<span id="agentProfileModelPicker"></span></label>
       </div>
       <label class="dialog-field">Description *<input id="agentProfileDescription" autocomplete="off" placeholder="Role summary — subagent discovery depends on it"></label>
       <label class="dialog-field">Custom model<input id="agentProfileModelCustom" autocomplete="off" placeholder="Typed model id overrides the picker selection"></label>
@@ -11295,7 +11296,7 @@ export function createHadamardGuiHtml(): string {
           <option value="extend">Extend — built-in prompt + body appended</option>
           <option value="replace">Replace — body is the full system prompt</option>
         </select></label>
-        <span></span>
+        <label class="dialog-field">Runtime<select id="agentProfileRuntime"></select></label>
       </div>
       <label class="manager-cfg-check" id="agentProfileSubagentRow"><input type="checkbox" id="agentProfileSubagent" checked> Available as a subagent — the Agent/Task tool may delegate to this agent</label>
       <details id="agentProfileSubagentOptions" class="agent-profile-advanced">
@@ -33473,6 +33474,16 @@ async function openAgentProfileEditor(profile, definition) {
   // A model the picker does not know (custom id) goes to the override input.
   el('agentProfileModelCustom').value = model && !configForModel(model) ? model : '';
   setField('agentProfilePromptMode', fmStr('promptMode') === 'replace' ? 'replace' : 'extend');
+  // External-CLI delegation runtime (09 Aug 2026): blank = hadamard SDK.
+  const runtimeSel = el('agentProfileRuntime');
+  runtimeSel.textContent = '';
+  for (const opt of teamRuntimeSelectOptions()) {
+    const o = document.createElement('option');
+    o.value = opt.value;
+    o.textContent = opt.label;
+    runtimeSel.appendChild(o);
+  }
+  runtimeSel.value = fmStr('runtime');
   el('agentProfileSubagent').checked = fmStr('subagent') !== 'false';
   setField('agentProfileAllowedAgents', fmStr('allowedAgents'));
   setField('agentProfileSkills', fmStr('skills'));
@@ -33539,6 +33550,7 @@ async function saveAgentProfileViaApi() {
     timeoutMs: el('agentProfileTimeoutMs').value.trim(),
     workspaceAccess: el('agentProfileWorkspace').value || '',
     promptMode: el('agentProfilePromptMode').value === 'replace' ? 'replace' : 'extend',
+    runtime: el('agentProfileRuntime').value || '',
     subagent: el('agentProfileSubagent').checked !== false,
     allowedAgents: csv(el('agentProfileAllowedAgents').value),
     skills: csv(el('agentProfileSkills').value),
