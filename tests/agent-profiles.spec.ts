@@ -66,7 +66,12 @@ describe('agentProfiles', () => {
       topP: 0.85,
     });
     expect(listAgentProfiles(home)).toHaveLength(1);
-    await expect(readFile(getAgentProfilesPath(home), 'utf8')).resolves.toContain('reviewer');
+    // Unified store (S1a): the first read migrated the json to agents/*.md.
+    const md = await readFile(
+      path.join(path.dirname(getAgentProfilesPath(home)), 'agents', 'reviewer.md'),
+      'utf8',
+    );
+    expect(md).toContain('name: reviewer');
   });
 
   it('rejects profiles whose bridge config is missing', async () => {

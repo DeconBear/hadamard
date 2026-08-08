@@ -501,8 +501,25 @@ export interface HadamardAgentDefinition {
   description: string;
   systemPrompt?: string;
   model?: string;
+  /** Referenced provider/bridge config name (unified store, S1a) — the definition runs on this config's own model client instead of inheriting the session's. */
+  bridgeConfig?: string;
+  /**
+   * Prompt composition (S1a): `extend` = built-in base prompt + body appended
+   * (profile semantics); `replace` = body is the complete system prompt
+   * (.md semantics). Definitions loaded from .md default to `replace`.
+   */
+  promptMode?: 'extend' | 'replace';
   effort?: HadamardRunEffort;
   permissionMode?: HadamardPermissionMode;
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  /** Run timeout (ms) for runs under this definition. */
+  timeoutMs?: number;
+  /** `workspace` (default): project workspace only; `full`: unrestricted filesystem. */
+  workspaceAccess?: 'workspace' | 'full';
+  /** Whether the Agent/Task tool may delegate to this definition (default true). `false` = main-chat-only agent. */
+  subagent?: boolean;
   maxToolIterations?: number;
   maxTurns?: number;
   metadata?: Record<string, unknown>;
