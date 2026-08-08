@@ -132,8 +132,7 @@ describe('TUI and GUI parity', () => {
     expect(html).not.toContain('id="agentProfilesList"');
     expect(html).not.toContain('id="agentProfileNew"');
     expect(html).toContain('id="agentProfileEditorModal"');
-    expect(html).toContain('id="agentProfileBridge"');
-    expect(html).toContain('id="agentProfileModelSelect"');
+    expect(html).toContain('id="agentProfileModelPicker"');
     expect(html).not.toContain('id="routerNewProfile"');
     expect(html).toContain('id="routerEditorModal"');
     expect(html).toContain('id="routerCfgSave"');
@@ -502,7 +501,7 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('/api/project-status');
     expect(js).toContain('projectStatusSelect');
     expect(js).toContain('PROJECT_STATUS_LABELS');
-    expect(html).toContain('id="managerCfgBridge"');
+    expect(html).toContain('id="managerCfgModelPicker"');
     expect(html).not.toContain('id="managerConfigBtn"');
     // No client-side fake built-in team placeholders (real list comes from the server).
     expect(js).not.toContain("mode: 'built-in'");
@@ -724,9 +723,7 @@ describe('TUI and GUI parity', () => {
     expect(html).toContain('id="managerConfigForm"');
     expect(html).toContain('id="managerCfgScope"');
     expect(html).toContain('id="managerCfgMirror"');
-    expect(html).toContain('id="managerCfgBridge"');
-    expect(html).toContain('id="managerCfgModel"');
-    expect(html).toContain('<select id="managerCfgModel">');
+    expect(html).toContain('id="managerCfgModelPicker"');
     expect(html).toContain('value="full-access"');
     expect(html).toContain('writes only plan/progress files');
     expect(js).toContain('/api/manager/config');
@@ -738,7 +735,7 @@ describe('TUI and GUI parity', () => {
     expect(css).toContain('.manager-thinking');
     expect(css).toContain('align-items: stretch');
     expect(js).toContain('setManagerThinking');
-    expect(js).toContain('fillManagerModelOptions');
+    expect(js).toContain('mountManagerConfigModelPicker');
   });
 
   it('renders the Team Run tree + graph editor surfaces in the GUI (plan Phase 4/5)', () => {

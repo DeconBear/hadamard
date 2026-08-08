@@ -10944,15 +10944,8 @@ export function createHadamardGuiHtml(): string {
         </div>
         <div id="managerStatusLine" class="manager-status-line muted"></div>
         <form id="managerConfigForm" class="manager-config-form hidden">
-          <label>Provider config
-            <select id="managerCfgBridge">
-              <option value="">Session default</option>
-            </select>
-          </label>
-          <label>Model
-            <select id="managerCfgModel">
-              <option value="">Config / session default</option>
-            </select>
+          <label>Provider config · Model
+            <span id="managerCfgModelPicker"></span>
           </label>
           <p class="manager-cfg-hint" id="managerCfgHint">Pick a saved provider config, then choose a model from that config (or leave Model on default). Project mode observes the current workspace and writes only plan/progress files.</p>
           <label id="managerCfgReadScopeRow">Read scope
@@ -11122,13 +11115,10 @@ export function createHadamardGuiHtml(): string {
       <h2 id="agentProfileEditorTitle">New agent profile</h2>
       <div class="two-col">
         <label class="dialog-field">Profile name<input id="agentProfileName" autocomplete="off" placeholder="e.g. reviewer"></label>
-        <label class="dialog-field">Provider config<select id="agentProfileBridge"></select></label>
+        <label class="dialog-field">Provider config · Model<span id="agentProfileModelPicker"></span></label>
       </div>
       <label class="dialog-field">Description<input id="agentProfileDescription" autocomplete="off" placeholder="Optional role summary"></label>
-      <div class="two-col">
-        <label class="dialog-field">Model<select id="agentProfileModelSelect"></select></label>
-        <label class="dialog-field">Custom model<input id="agentProfileModelCustom" autocomplete="off" placeholder="Only used when selected"></label>
-      </div>
+      <label class="dialog-field">Custom model<input id="agentProfileModelCustom" autocomplete="off" placeholder="Typed model id overrides the picker selection"></label>
       <label class="dialog-field">Permission mode<select id="agentProfilePermission">
         <option value="">Session default</option>
         <option value="default">Default</option>
@@ -26426,7 +26416,7 @@ function goToReference(edge) {
     void switchRegion('team');
     void selectAgentEntry(from.name, 'profile');
     openAgentProfileEditor(profile || { name: from.name });
-    flashElement(el('agentProfileBridge'));
+    flashElement(el('agentProfilePicker'));
     return true;
   }
   if (from.kind === 'router') {
@@ -32977,57 +32967,56 @@ function renderAgentProfiles() {
   }
 }
 
-function populateAgentProfileBridgeOptions(selected) {
-  const select = el('agentProfileBridge');
-  const configs = state.snapshot?.bridgeState?.configs || [];
-  select.textContent = '';
-  if (configs.length === 0) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = 'No provider configs';
-    select.appendChild(opt);
-    return;
+// P2 picker migration: the Provider-config + Model select pair is now the
+// shared config→model picker (optgroup per config; each option carries
+// dataset.config). The bridgeConfig name derives from the selected option.
+function mountAgentProfileModelPicker(selectedConfig, selectedModel) {
+  const mount = el('agentProfileModelPicker');
+  if (!mount) return;
+  mount.textContent = '';
+  const select = createConfigModelSelect({ placeholder: '(no provider configs)' });
+  select.id = 'agentProfilePicker';
+  let chosen = null;
+  if (selectedModel) {
+    // A model id may live in several configs — prefer the profile's config.
+    for (const opt of select.options) {
+      if (opt.value === selectedModel && (opt.dataset.config || '') === selectedConfig) { chosen = opt; break; }
+    }
+    if (!chosen) {
+      for (const opt of select.options) {
+        if (opt.value === selectedModel) { chosen = opt; break; }
+      }
+    }
   }
-  for (const cfg of configs) {
-    const opt = document.createElement('option');
-    opt.value = cfg.name;
-    opt.textContent = cfg.name + ' - ' + cfg.runtime;
-    select.appendChild(opt);
+  if (!chosen && selectedConfig) {
+    // Custom model id: keep the profile's config selected (its first model);
+    // the custom-model input carries the actual model.
+    for (const opt of select.options) {
+      if ((opt.dataset.config || '') === selectedConfig && opt.value) { chosen = opt; break; }
+    }
   }
-  select.value = selected && configs.some(cfg => cfg.name === selected)
-    ? selected
-    : configs[0].name;
+  if (!chosen && !selectedConfig && !selectedModel) {
+    // New profile: default to the first config/model (legacy behavior).
+    for (const opt of select.options) {
+      if (opt.value) { chosen = opt; break; }
+    }
+  }
+  if (chosen) chosen.selected = true;
+  else select.value = '';
+  select.addEventListener('change', () => { el('agentProfileModelCustom').value = ''; });
+  mount.appendChild(select);
 }
 
-function populateAgentProfileModelOptions(selectedModel) {
-  const select = el('agentProfileModelSelect');
-  const custom = el('agentProfileModelCustom');
-  const cfg = (state.snapshot?.bridgeState?.configs || []).find(item => item.name === el('agentProfileBridge').value);
-  const models = agentProfileBridgeModels(cfg);
-  select.textContent = '';
-  for (const model of models) {
-    const opt = document.createElement('option');
-    opt.value = model;
-    opt.textContent = model;
-    select.appendChild(opt);
-  }
-  const customOpt = document.createElement('option');
-  customOpt.value = '__custom__';
-  customOpt.textContent = models.length > 0 ? 'Custom model...' : 'Custom model';
-  select.appendChild(customOpt);
-  if (selectedModel && models.includes(selectedModel)) {
-    select.value = selectedModel;
-    custom.value = '';
-  } else {
-    select.value = '__custom__';
-    custom.value = selectedModel || '';
-  }
+function selectedAgentProfileConfig() {
+  const select = el('agentProfilePicker');
+  const opt = select && select.selectedOptions && select.selectedOptions[0];
+  return (opt && opt.dataset.config) || '';
 }
 
 function selectedAgentProfileModel() {
-  const selected = el('agentProfileModelSelect').value;
-  if (selected && selected !== '__custom__') return selected;
-  return el('agentProfileModelCustom').value.trim();
+  const custom = el('agentProfileModelCustom').value.trim();
+  if (custom) return custom;
+  return el('agentProfilePicker')?.value || '';
 }
 
 function renderAgentProfileTools(selected) {
@@ -33078,8 +33067,11 @@ function openAgentProfileEditor(profile) {
   setField('agentProfileTimeoutMs', profile?.timeoutMs != null ? String(profile.timeoutMs) : '');
   setField('agentProfileWorkspace', profile?.workspaceAccess === 'full' ? 'full' : '');
   renderAgentProfileTools(profile?.allowedTools);
-  populateAgentProfileBridgeOptions(profile?.bridgeConfig || '');
-  populateAgentProfileModelOptions(profile?.model || '');
+  mountAgentProfileModelPicker(profile?.bridgeConfig || '', profile?.model || '');
+  // A model the picker does not know (custom id) goes to the override input.
+  el('agentProfileModelCustom').value = profile?.model && !configForModel(profile.model)
+    ? profile.model
+    : '';
   el('agentProfileCfgStatus').textContent = profile ? 'Editing "' + profile.name + '".' : '';
   el('agentProfileEditorModal').classList.remove('hidden');
   el('agentProfileName').focus();
@@ -33094,7 +33086,7 @@ async function saveAgentProfileViaApi() {
   const name = el('agentProfileName').value.trim();
   const model = selectedAgentProfileModel();
   if (!name) { el('agentProfileCfgStatus').textContent = 'Profile name is required.'; return; }
-  if (!el('agentProfileBridge').value) { el('agentProfileCfgStatus').textContent = 'Provider config is required.'; return; }
+  if (!selectedAgentProfileConfig()) { el('agentProfileCfgStatus').textContent = 'Provider config is required.'; return; }
   if (!model) { el('agentProfileCfgStatus').textContent = 'Model is required.'; return; }
   if (editingAgentProfileName && name !== editingAgentProfileName) {
     // Rename first: the server transactionally rewrites every referencing field.
@@ -33115,7 +33107,7 @@ async function saveAgentProfileViaApi() {
   const body = {
     name,
     description: el('agentProfileDescription').value.trim(),
-    bridgeConfig: el('agentProfileBridge').value,
+    bridgeConfig: selectedAgentProfileConfig(),
     model,
     permissionMode: el('agentProfilePermission').value,
     effort: el('agentProfileEffort').value,
@@ -35164,77 +35156,63 @@ async function managerStream(path, payload) {
     loadState().catch(() => {});
   }
 }
-function managerBridgeConfigs(configs) {
-  return Array.isArray(configs) && configs.length
-    ? configs
-    : (state.snapshot?.bridgeState?.configs || []);
-}
-function fillManagerBridgeOptions(selected, configs) {
-  const sel = el('managerCfgBridge');
-  if (!sel) return;
-  const list = managerBridgeConfigs(configs);
-  sel.textContent = '';
-  const blank = document.createElement('option');
-  blank.value = '';
-  blank.textContent = 'Session default';
-  sel.appendChild(blank);
-  for (const cfg of list) {
-    const opt = document.createElement('option');
-    opt.value = cfg.name;
-    opt.textContent = cfg.name;
-    if (selected && selected === cfg.name) opt.selected = true;
-    sel.appendChild(opt);
+// P2 picker migration: bridge + model selects are now the shared config→model
+// picker. Placeholder = Session default (both empty); a per-group
+// '(config default)' entry preserves the bridgeConfig-without-model state.
+function mountManagerConfigModelPicker(selectedConfig, selectedModel) {
+  const mount = el('managerCfgModelPicker');
+  if (!mount) return;
+  mount.textContent = '';
+  const select = createConfigModelSelect({ placeholder: 'Session default' });
+  select.id = 'managerCfgPicker';
+  for (const group of select.querySelectorAll('optgroup')) {
+    const first = group.querySelector('option');
+    const def = document.createElement('option');
+    def.value = '__config_default__';
+    def.textContent = '(config default)';
+    def.dataset.config = (first && first.dataset.config) || '';
+    group.insertBefore(def, first);
   }
-  if (selected && !list.some((c) => c.name === selected)) {
+  if (selectedConfig && !configModelGroups().some((g) => g.config === selectedConfig)) {
     const orphan = document.createElement('option');
-    orphan.value = selected;
-    orphan.textContent = selected + ' (missing)';
-    orphan.selected = true;
-    sel.appendChild(orphan);
-  }
-}
-function fillManagerModelOptions(selectedModel, bridgeName, configs) {
-  const sel = el('managerCfgModel');
-  if (!sel) return;
-  const list = managerBridgeConfigs(configs);
-  const bridge = bridgeName ? list.find((c) => c.name === bridgeName) : null;
-  const sessionModel = state.snapshot?.session?.model || state.snapshot?.bridgeState?.activeModelLabel || '';
-  const names = [];
-  const addName = (name) => {
-    const n = typeof name === 'string' ? name.trim() : '';
-    if (!n || names.includes(n)) return;
-    names.push(n);
-  };
-  if (bridge) {
-    addName(bridge.model);
-    for (const m of bridge.models || []) addName(typeof m === 'string' ? m : m?.name);
-  } else {
-    addName(sessionModel);
-    for (const cfg of list) {
-      addName(cfg.model);
-      for (const m of cfg.models || []) addName(typeof m === 'string' ? m : m?.name);
-    }
-  }
-  sel.textContent = '';
-  const blank = document.createElement('option');
-  blank.value = '';
-  blank.textContent = bridge ? 'Config default' : 'Session default';
-  sel.appendChild(blank);
-  for (const name of names) {
-    const opt = document.createElement('option');
-    opt.value = name;
-    opt.textContent = name;
-    if (selectedModel && selectedModel === name) opt.selected = true;
-    sel.appendChild(opt);
-  }
-  if (selectedModel && !names.includes(selectedModel)) {
+    orphan.value = selectedModel || '__config_default__';
+    orphan.textContent = selectedConfig + ' (missing)';
+    orphan.dataset.config = selectedConfig;
+    select.appendChild(orphan);
+  } else if (selectedModel && !configForModel(selectedModel)) {
     const orphan = document.createElement('option');
     orphan.value = selectedModel;
     orphan.textContent = selectedModel + ' (saved)';
-    orphan.selected = true;
-    sel.appendChild(orphan);
+    orphan.dataset.config = selectedConfig || '';
+    select.appendChild(orphan);
   }
-  if (!selectedModel) blank.selected = true;
+  let chosen = null;
+  if (selectedModel) {
+    for (const opt of select.options) {
+      if (opt.value === selectedModel && (opt.dataset.config || '') === selectedConfig) { chosen = opt; break; }
+    }
+    if (!chosen) {
+      for (const opt of select.options) {
+        if (opt.value === selectedModel) { chosen = opt; break; }
+      }
+    }
+  } else if (selectedConfig) {
+    for (const opt of select.options) {
+      if (opt.value === '__config_default__' && (opt.dataset.config || '') === selectedConfig) { chosen = opt; break; }
+    }
+  }
+  if (chosen) chosen.selected = true;
+  mount.appendChild(select);
+}
+/** Current picker state as the manager.json persistence shape. */
+function selectedManagerCfg() {
+  const select = el('managerCfgPicker');
+  const opt = select && select.selectedOptions && select.selectedOptions[0];
+  if (!select || !select.value) return { bridgeConfig: '', model: '' };
+  return {
+    bridgeConfig: (opt && opt.dataset.config) || '',
+    model: select.value === '__config_default__' ? '' : select.value,
+  };
 }
 function openManagerConfigForm() {
   const form = el('managerConfigForm');
@@ -35242,20 +35220,19 @@ function openManagerConfigForm() {
   if (!form.classList.contains('hidden')) { form.classList.add('hidden'); return; }
   void (async () => {
     let cfg = {};
-    let configs = state.snapshot?.bridgeState?.configs || [];
     try {
       const [mgrRes] = await Promise.all([
         api('/api/manager/state?scope=' + encodeURIComponent(assistantScope)),
-        configs.length ? Promise.resolve(null) : loadState().catch(() => null),
+        (state.snapshot?.bridgeState?.configs || []).length
+          ? Promise.resolve(null)
+          : loadState().catch(() => null),
       ]);
       if (mgrRes?.ok) {
         const data = await mgrRes.json();
         cfg = data.config || {};
       }
-      configs = state.snapshot?.bridgeState?.configs || configs;
     } catch (e) { /* open with blanks */ }
-    fillManagerBridgeOptions(cfg.bridgeConfig || '', configs);
-    fillManagerModelOptions(cfg.model || '', cfg.bridgeConfig || '', configs);
+    mountManagerConfigModelPicker(cfg.bridgeConfig || '', cfg.model || '');
     if (el('managerCfgScope')) el('managerCfgScope').value = cfg.readScope || 'workspace-only';
     if (el('managerCfgPaths')) el('managerCfgPaths').value = (cfg.allowedReadPaths || []).join('\\n');
     if (el('managerCfgMirror')) el('managerCfgMirror').checked = !!cfg.mirrorProgressToWorkspace;
@@ -35343,14 +35320,6 @@ function wireManagerPanel() {
     setManagerUiMode('closed');
     void switchRegion('automation');
   });
-  el('managerCfgBridge')?.addEventListener('change', () => {
-    // Switching provider resets to that config's default model unless the
-    // current selection still exists in the new list.
-    const prev = el('managerCfgModel')?.value || '';
-    fillManagerModelOptions(prev, el('managerCfgBridge')?.value || '', state.snapshot?.bridgeState?.configs || []);
-    const sel = el('managerCfgModel');
-    if (sel && prev && ![...sel.options].some((o) => o.value === prev)) sel.value = '';
-  });
   el('managerCfgScope')?.addEventListener('change', syncManagerCfgPathsVisibility);
   el('managerCfgCancel')?.addEventListener('click', () => { el('managerConfigForm')?.classList.add('hidden'); });
   el('managerConfigForm')?.addEventListener('submit', async (e) => {
@@ -35362,13 +35331,11 @@ function wireManagerPanel() {
         body: JSON.stringify(assistantScope === 'global'
           ? {
             scope: 'global',
-            bridgeConfig: el('managerCfgBridge')?.value || '',
-            model: el('managerCfgModel')?.value || '',
+            ...selectedManagerCfg(),
           }
           : {
             scope: 'project',
-            bridgeConfig: el('managerCfgBridge')?.value || '',
-            model: el('managerCfgModel')?.value || '',
+            ...selectedManagerCfg(),
             readScope: el('managerCfgScope')?.value || 'workspace-only',
             allowedReadPaths: (el('managerCfgPaths')?.value || '').split('\\n').map((p) => p.trim()).filter(Boolean),
             mirrorProgressToWorkspace: !!el('managerCfgMirror')?.checked,
@@ -36109,7 +36076,6 @@ el('bridgeCfgReset').addEventListener('click', () => { closeBridgeEditor(); });
 el('agentProfileNew')?.addEventListener('click', () => { openAgentProfileEditor(null); });
 el('agentProfileCfgSave').addEventListener('click', () => { saveAgentProfileViaApi().catch(console.error); });
 el('agentProfileCfgReset').addEventListener('click', () => { closeAgentProfileEditor(); });
-el('agentProfileBridge').addEventListener('change', () => { populateAgentProfileModelOptions(''); });
 el('agentProfileEditorForm').addEventListener('submit', (event) => {
   event.preventDefault();
   saveAgentProfileViaApi().catch(console.error);
