@@ -199,7 +199,6 @@ import {
   writeAgentDefinitionMarkdown,
   readAgentDefinitionMarkdown,
   deleteAgentProfileMarkdown,
-  serializeAgentDefinitionMarkdown,
   getHadamardAgentTemplate,
   getHadamardAgentTemplates,
   loadHadamardAgentDefinitions,
