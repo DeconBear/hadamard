@@ -51,6 +51,8 @@ export {
   migrateAgentProfilesToMarkdown,
   profileStoredAsMarkdown,
   readAgentDefinitionMarkdown,
+  readAllAgentReferenceProfiles,
+  listAgentDefinitionNames,
   readProfilesFromAgentDefinitions,
   serializeAgentDefinitionMarkdown,
   writeAgentDefinitionMarkdown,
