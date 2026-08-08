@@ -275,6 +275,7 @@ import {
 } from '../manager/referenceIndex.js';
 import {
   applyDeleteFallback,
+  convertAgentSquadToAgentDefinition,
   renameDefinitionAndReferences,
   repointConfigModel,
   type DeleteFallbackStrategy,
@@ -9462,10 +9463,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
               warnings = validation.warnings;
               writeAgentProfileMarkdown(validation.profile, resolveGuiHomeDir(), { directory, extras });
             }
+            // Convert-on-save (09 Aug 2026): saving from a legacy single-agent
+            // squad writes the .md agent above, then removes the squad json
+            // and rewires teamRef/targetRef references to the agent.
+            let conversion: string[] = [];
+            if (typeof body.convertFromSquad === 'string' && body.convertFromSquad.trim()) {
+              const report = await convertAgentSquadToAgentDefinition(
+                body.convertFromSquad.trim(),
+                profile.name,
+                await referenceOperationContext(),
+              );
+              conversion = report.rewritten;
+            }
             return {
               ok: true,
               profile: inheritModel ? null : profile,
               warnings,
+              conversion,
               state: await state(),
             };
           });
@@ -11047,6 +11061,94 @@ export function createHadamardGuiHtml(): string {
           <div class="team-squad-bar" id="teamSquadBar"></div>
           <div class="team-editor hidden" id="teamEditor"></div>
           <div class="team-graph" id="teamGraph"></div>
+          <div id="agentProfileEditorPanel" class="team-graph agent-editor-embedded hidden">
+            <div class="graph-toolbar">
+              <div class="graph-tabs"><button type="button" class="active">Agent</button></div>
+              <div class="graph-tools" id="agentEditorActions"></div>
+            </div>
+            <form id="agentProfileEditorForm" class="dialog bridge-editor agent-editor-form">
+
+      <h2 id="agentProfileEditorTitle">New agent profile</h2>
+      <div class="two-col">
+        <label class="dialog-field">Profile name<input id="agentProfileName" autocomplete="off" placeholder="e.g. reviewer"></label>
+        <label class="dialog-field">Executor (model)<span id="agentProfileModelPicker"></span></label>
+      </div>
+      <label class="dialog-field">Description *<input id="agentProfileDescription" autocomplete="off" placeholder="Role summary — subagent discovery depends on it"></label>
+      <label class="dialog-field">Custom model<input id="agentProfileModelCustom" autocomplete="off" placeholder="Typed model id overrides the picker selection"></label>
+      <p class="muted" id="agentProfileInheritHint">Pick <strong>Inherit session model</strong> in the picker to follow the session's main model — such agents are not listed in the composer model picker.</p>
+      <div class="two-col">
+        <label class="dialog-field">Prompt mode<select id="agentProfilePromptMode">
+          <option value="extend">Extend — built-in prompt + body appended</option>
+          <option value="replace">Replace — body is the full system prompt</option>
+        </select></label>
+        <label class="dialog-field">Runtime<select id="agentProfileRuntime"></select></label>
+      </div>
+      <label class="manager-cfg-check" id="agentProfileSubagentRow"><input type="checkbox" id="agentProfileSubagent" checked> Available as a subagent — the Agent/Task tool may delegate to this agent</label>
+      <details id="agentProfileSubagentOptions" class="agent-profile-advanced">
+        <summary>Subagent options</summary>
+        <label class="dialog-field">Allowed agents<input id="agentProfileAllowedAgents" autocomplete="off" placeholder="Comma-separated names this agent may delegate to"></label>
+        <label class="dialog-field">Skills<input id="agentProfileSkills" autocomplete="off" placeholder="Comma-separated skill names preloaded for this agent"></label>
+        <div class="two-col">
+          <label class="dialog-field">Memory<select id="agentProfileMemory">
+            <option value="">None</option>
+            <option value="user">user</option>
+            <option value="project">project</option>
+            <option value="local">local</option>
+          </select></label>
+          <label class="dialog-field">Isolation<select id="agentProfileIsolation">
+            <option value="">None</option>
+            <option value="worktree">worktree</option>
+          </select></label>
+        </div>
+        <label class="manager-cfg-check"><input type="checkbox" id="agentProfileBackground"> Run in background by default</label>
+        <label class="dialog-field">Initial prompt<input id="agentProfileInitialPrompt" autocomplete="off" placeholder="Optional first task when this agent is spawned"></label>
+      </details>
+      <label class="dialog-field">Permission mode<select id="agentProfilePermission">
+        <option value="">Session default</option>
+        <option value="default">Default</option>
+        <option value="acceptEdits">Accept edits</option>
+        <option value="bypassPermissions">Full access</option>
+        <option value="plan">Plan mode</option>
+        <option value="auto">Auto</option>
+      </select></label>
+      <div class="two-col">
+        <label class="dialog-field">Effort<select id="agentProfileEffort">
+          <option value="">Inherit session/default model</option>
+          <option value="auto">Auto</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="max">Max</option>
+        </select></label>
+        <label class="dialog-field">Max tokens<input id="agentProfileMaxTokens" type="number" min="1" step="1" placeholder="Blank = runtime default"></label>
+      </div>
+      <label class="dialog-field">Temperature<input id="agentProfileTemperature" type="number" min="0" max="2" step="0.1" placeholder="e.g. 0.7 (0–2, blank = provider default)"></label>
+      <p class="muted">Effort controls reasoning depth; temperature controls sampling randomness. They are independent, but some provider/model combinations reject temperature while reasoning is enabled. Leaving a field blank avoids an override and inherits the session, runtime, or provider default.</p>
+      <details id="agentProfileAdvanced" class="agent-profile-advanced">
+        <summary>Advanced</summary>
+        <label class="dialog-field">Top P<input id="agentProfileTopP" type="number" min="0" max="1" step="0.05" placeholder="Blank = provider default"></label>
+        <p class="muted">Optional nucleus sampling override. Prefer changing either Temperature or Top P, not both.</p>
+        <div class="two-col">
+          <label class="dialog-field">Max tool iterations<input id="agentProfileMaxIterations" type="number" min="1" step="1" placeholder="Blank = unlimited"></label>
+          <label class="dialog-field">Timeout (ms)<input id="agentProfileTimeoutMs" type="number" min="1" step="1" placeholder="Blank = no profile timeout"></label>
+        </div>
+        <label class="dialog-field">Workspace access<select id="agentProfileWorkspace">
+          <option value="">Workspace (project only)</option>
+          <option value="full">Full filesystem</option>
+        </select></label>
+        <div class="dialog-field"><span>Allowed tools</span><div id="agentProfileTools" class="te-tool-grid"></div>
+        <p class="muted">All checked = full toolset. Unchecked tools are hidden from this agent's runs; granting Write/Edit/Bash asks for confirmation.</p></div>
+      </details>
+      <label class="dialog-field">System prompt append<textarea id="agentProfileSystemPrompt" rows="4" placeholder="Optional instructions appended when this agent runs"></textarea></label>
+      <p id="agentProfileCfgStatus" class="muted"></p>
+      <div class="dialog-actions">
+        <button type="button" id="agentProfileDeleteBtn" class="secondary-btn hidden">Delete agent</button>
+        <button type="button" id="agentProfileCfgReset" class="secondary-btn">Cancel</button>
+        <button type="button" id="agentProfileCfgSave" class="primary">Save profile</button>
+      </div>
+    
+            </form>
+          </div>
         </div>
       </div>
     </section>
@@ -11278,88 +11380,6 @@ export function createHadamardGuiHtml(): string {
         <button type="button" id="bridgeCfgReset" class="secondary-btn">Cancel</button>
         <button type="button" id="bridgeCfgUpdateLocal" class="secondary-btn hidden">Update local API config</button>
         <button type="button" id="bridgeCfgSave" class="primary">Save config</button>
-      </div>
-    </form>
-  </div>
-  <div id="agentProfileEditorModal" class="modal hidden">
-    <form id="agentProfileEditorForm" class="dialog bridge-editor">
-      <h2 id="agentProfileEditorTitle">New agent profile</h2>
-      <div class="two-col">
-        <label class="dialog-field">Profile name<input id="agentProfileName" autocomplete="off" placeholder="e.g. reviewer"></label>
-        <label class="dialog-field">Executor (model)<span id="agentProfileModelPicker"></span></label>
-      </div>
-      <label class="dialog-field">Description *<input id="agentProfileDescription" autocomplete="off" placeholder="Role summary — subagent discovery depends on it"></label>
-      <label class="dialog-field">Custom model<input id="agentProfileModelCustom" autocomplete="off" placeholder="Typed model id overrides the picker selection"></label>
-      <p class="muted" id="agentProfileInheritHint">Pick <strong>Inherit session model</strong> in the picker to follow the session's main model — such agents are not listed in the composer model picker.</p>
-      <div class="two-col">
-        <label class="dialog-field">Prompt mode<select id="agentProfilePromptMode">
-          <option value="extend">Extend — built-in prompt + body appended</option>
-          <option value="replace">Replace — body is the full system prompt</option>
-        </select></label>
-        <label class="dialog-field">Runtime<select id="agentProfileRuntime"></select></label>
-      </div>
-      <label class="manager-cfg-check" id="agentProfileSubagentRow"><input type="checkbox" id="agentProfileSubagent" checked> Available as a subagent — the Agent/Task tool may delegate to this agent</label>
-      <details id="agentProfileSubagentOptions" class="agent-profile-advanced">
-        <summary>Subagent options</summary>
-        <label class="dialog-field">Allowed agents<input id="agentProfileAllowedAgents" autocomplete="off" placeholder="Comma-separated names this agent may delegate to"></label>
-        <label class="dialog-field">Skills<input id="agentProfileSkills" autocomplete="off" placeholder="Comma-separated skill names preloaded for this agent"></label>
-        <div class="two-col">
-          <label class="dialog-field">Memory<select id="agentProfileMemory">
-            <option value="">None</option>
-            <option value="user">user</option>
-            <option value="project">project</option>
-            <option value="local">local</option>
-          </select></label>
-          <label class="dialog-field">Isolation<select id="agentProfileIsolation">
-            <option value="">None</option>
-            <option value="worktree">worktree</option>
-          </select></label>
-        </div>
-        <label class="manager-cfg-check"><input type="checkbox" id="agentProfileBackground"> Run in background by default</label>
-        <label class="dialog-field">Initial prompt<input id="agentProfileInitialPrompt" autocomplete="off" placeholder="Optional first task when this agent is spawned"></label>
-      </details>
-      <label class="dialog-field">Permission mode<select id="agentProfilePermission">
-        <option value="">Session default</option>
-        <option value="default">Default</option>
-        <option value="acceptEdits">Accept edits</option>
-        <option value="bypassPermissions">Full access</option>
-        <option value="plan">Plan mode</option>
-        <option value="auto">Auto</option>
-      </select></label>
-      <div class="two-col">
-        <label class="dialog-field">Effort<select id="agentProfileEffort">
-          <option value="">Inherit session/default model</option>
-          <option value="auto">Auto</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-          <option value="max">Max</option>
-        </select></label>
-        <label class="dialog-field">Max tokens<input id="agentProfileMaxTokens" type="number" min="1" step="1" placeholder="Blank = runtime default"></label>
-      </div>
-      <label class="dialog-field">Temperature<input id="agentProfileTemperature" type="number" min="0" max="2" step="0.1" placeholder="e.g. 0.7 (0–2, blank = provider default)"></label>
-      <p class="muted">Effort controls reasoning depth; temperature controls sampling randomness. They are independent, but some provider/model combinations reject temperature while reasoning is enabled. Leaving a field blank avoids an override and inherits the session, runtime, or provider default.</p>
-      <details id="agentProfileAdvanced" class="agent-profile-advanced">
-        <summary>Advanced</summary>
-        <label class="dialog-field">Top P<input id="agentProfileTopP" type="number" min="0" max="1" step="0.05" placeholder="Blank = provider default"></label>
-        <p class="muted">Optional nucleus sampling override. Prefer changing either Temperature or Top P, not both.</p>
-        <div class="two-col">
-          <label class="dialog-field">Max tool iterations<input id="agentProfileMaxIterations" type="number" min="1" step="1" placeholder="Blank = unlimited"></label>
-          <label class="dialog-field">Timeout (ms)<input id="agentProfileTimeoutMs" type="number" min="1" step="1" placeholder="Blank = no profile timeout"></label>
-        </div>
-        <label class="dialog-field">Workspace access<select id="agentProfileWorkspace">
-          <option value="">Workspace (project only)</option>
-          <option value="full">Full filesystem</option>
-        </select></label>
-        <div class="dialog-field"><span>Allowed tools</span><div id="agentProfileTools" class="te-tool-grid"></div>
-        <p class="muted">All checked = full toolset. Unchecked tools are hidden from this agent's runs; granting Write/Edit/Bash asks for confirmation.</p></div>
-      </details>
-      <label class="dialog-field">System prompt append<textarea id="agentProfileSystemPrompt" rows="4" placeholder="Optional instructions appended when this agent runs"></textarea></label>
-      <p id="agentProfileCfgStatus" class="muted"></p>
-      <div class="dialog-actions">
-        <button type="button" id="agentProfileDeleteBtn" class="secondary-btn hidden">Delete agent</button>
-        <button type="button" id="agentProfileCfgReset" class="secondary-btn">Cancel</button>
-        <button type="button" id="agentProfileCfgSave" class="primary">Save profile</button>
       </div>
     </form>
   </div>
@@ -14409,6 +14429,10 @@ body { margin: 0; color: var(--text-1); background: var(--bg-app); }
 .team-editor { grid-column: 1 / -1; grid-row: 1 / -1; z-index: 2; margin: 14px; overflow: auto; }
 .team-graph { grid-column: 2; grid-row: 1 / span 2; min-height: 0; height: 100%; padding: 0; display: flex; flex-direction: column; overflow: hidden; align-items: stretch; background: var(--bg-surface-2); }
 .team-graph.subagent-mode { background: var(--bg-surface); align-items: center; }
+/* Embedded unified agent editor (replaces the modal, 09 Aug 2026). */
+.team-graph.agent-editor-embedded { background: var(--bg-surface); overflow: auto; display: block; padding: 0 24px 28px; }
+.agent-editor-embedded .graph-toolbar { position: sticky; top: 0; background: var(--bg-surface); z-index: 2; }
+.agent-editor-embedded .agent-editor-form { width: min(680px, 100%); margin: 0 auto; display: grid; gap: 10px; align-content: start; box-shadow: none; border: none; background: transparent; padding: 0; }
 .subagent-editor-body { flex: 1; overflow: auto; width: min(640px, calc(100% - 48px)); padding: 20px 0 28px; display: grid; gap: 12px; align-content: start; }
 .te-readonly { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-app); white-space: pre-wrap; color: var(--text-1); font-size: 13px; }
 /* Agent page: Router / Profile structured detail panes */
@@ -27139,7 +27163,13 @@ async function refreshTeamsSnapshot() {  try {
   } catch { /* transient */ }
 }
 function renderTeamSquadBar() {
-  const teams = teamListForRegion();
+  const allEntries = teamListForRegion();
+  // Convert-on-save shadows (09 Aug 2026): a same-named .md agent wins over a
+  // squad entry (e.g. a converted built-in like 'reviewer').
+  const mdNames = new Set(
+    (state.snapshot?.agentDefinitions || []).map(def => def?.name).filter(Boolean),
+  );
+  const teams = allEntries.filter(t => !(t.kind === 'team' && mdNames.has(t.name)));
   const bar = el('teamSquadBar');
   if (!bar) return teams;
   if (brokenRefBadges === null) {
@@ -27222,7 +27252,7 @@ function renderTeamSquadBar() {
       small.textContent = parts.join(' · ');
       labels.append(label, small);
       chip.appendChild(labels);
-      chip.addEventListener('click', () => { openAgentDefinitionInEditor(def.name).catch(console.error); });
+      chip.addEventListener('click', () => { void selectAgentEntry(def.name, 'agent-md'); });
       bar.appendChild(chip);
     }
   }
@@ -27508,9 +27538,19 @@ async function selectAgentEntry(name, kind, opts) {
     state.teamDefinition = null;
     state.teamDefinitionSource = 'profile';
     setTeamSavedStatus(true);
-    renderAgentProfilePane(profile || { name });
     const host = el('teamEditor');
     if (host) host.classList.add('hidden');
+    // Embedded unified editor (09 Aug 2026) — replaces the read-only pane.
+    await openAgentProfileEditor(profile || { name });
+    return;
+  }
+  if (kind === 'agent-md') {
+    state.teamDefinition = null;
+    state.teamDefinitionSource = 'agent-md';
+    setTeamSavedStatus(true);
+    const host = el('teamEditor');
+    if (host) host.classList.add('hidden');
+    await openAgentDefinitionInEditor(name);
     return;
   }
   if (kind === 'router') {
@@ -27594,93 +27634,6 @@ function routeToTargetKey(route) {
 }
 function modelToTargetKey(model) {
   return model ? targetRefToPickerValue({ kind: 'model', config: configForModel(model), model }) : '';
-}
-function renderAgentProfilePane(profile) {
-  const g = el('teamGraph');
-  if (!g) return;
-  g.textContent = '';
-  g.classList.remove('subagent-mode');
-  const toolbar = document.createElement('div');
-  toolbar.className = 'graph-toolbar';
-  const left = document.createElement('div'); left.className = 'graph-tabs';
-  left.innerHTML = '<button class="active">Agent</button>';
-  const right = document.createElement('div'); right.className = 'graph-tools';
-  const pill = document.createElement('span'); pill.className = 'graph-mode-pill';
-  pill.textContent = 'agent · profile · ' + (profile?.name || '');
-  right.appendChild(pill);
-  appendUsedByButton(right, 'agent', profile?.name || '');
-  const editBtn = document.createElement('button');
-  editBtn.type = 'button';
-  editBtn.textContent = 'Edit';
-  editBtn.addEventListener('click', () => openAgentProfileEditor(profile));
-  right.appendChild(editBtn);
-  if (profile?.name) {
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-    delBtn.textContent = 'Delete';
-    delBtn.addEventListener('click', () => {
-      deleteAgentProfileViaApi(profile.name).then(() => renderTeamRegion()).catch(console.error);
-    });
-    right.appendChild(delBtn);
-  }
-  toolbar.append(left, right);
-  g.appendChild(toolbar);
-
-  const body = document.createElement('div');
-  body.className = 'agent-detail-body';
-  const inner = document.createElement('div');
-  inner.className = 'agent-detail-inner';
-
-  const hero = document.createElement('div');
-  hero.className = 'agent-detail-hero';
-  const heroText = document.createElement('div');
-  const title = document.createElement('h3');
-  title.textContent = profile?.name || 'Agent profile';
-  heroText.appendChild(title);
-  if (profile?.description) {
-    const desc = document.createElement('p');
-    desc.textContent = profile.description;
-    heroText.appendChild(desc);
-  }
-  const badges = document.createElement('div');
-  badges.className = 'agent-detail-badges';
-  badges.appendChild(agentDetailBadge('Profile'));
-  hero.append(heroText, badges);
-  inner.appendChild(hero);
-
-  const configs = state.snapshot?.bridgeState?.configs || [];
-  const cfg = configs.find((item) => item.name === profile?.bridgeConfig);
-  const chips = document.createElement('div');
-  chips.className = 'agent-detail-chips';
-  const chipRows = [
-    profile?.bridgeConfig
-      ? ['Provider config', (cfg ? cfg.runtime + ' · ' : '') + profile.bridgeConfig]
-      : null,
-    profile?.model ? ['Model', profile.model] : null,
-    ['Permission', profile?.permissionMode || 'Session default'],
-    ['Effort', profile?.effort || 'Inherit'],
-    profile?.maxTokens != null ? ['Max tokens', String(profile.maxTokens)] : null,
-    profile?.temperature != null ? ['Temperature', String(profile.temperature)] : null,
-  ].filter(Boolean);
-  for (const [label, value] of chipRows) chips.appendChild(agentDetailChip(label, value));
-  if (chips.children.length) inner.appendChild(chips);
-
-  if (profile?.systemPromptAppend) {
-    const prompt = document.createElement('div');
-    prompt.className = 'agent-detail-prompt';
-    prompt.innerHTML = '<header>System prompt append</header>';
-    const pre = document.createElement('pre');
-    pre.textContent = profile.systemPromptAppend;
-    prompt.appendChild(pre);
-    inner.appendChild(prompt);
-  }
-
-  const hint = document.createElement('p');
-  hint.className = 'agent-detail-hint';
-  hint.textContent = 'Agent profiles bind a provider config and model for composer selection and Issue dispatch. Use Edit to change settings.';
-  inner.appendChild(hint);
-  body.appendChild(inner);
-  g.appendChild(body);
 }
 function renderRouterPane(router, opts) {
   opts = opts || {};
@@ -29916,6 +29869,9 @@ function graphPortNodeEl(node, def, opts) {
 function renderTeamGraph(def, name) {
   const g = el('teamGraph');
   if (!g) return;
+  // Switching back to a graph/pane view hides the embedded agent editor.
+  el('agentProfileEditorPanel')?.classList.add('hidden');
+  g.classList.remove('hidden');
   g.textContent = '';
   g.classList.remove('subagent-mode');
   if (!def) {
@@ -29927,8 +29883,39 @@ function renderTeamGraph(def, name) {
   }
   const squadType = def.squadType || 'graph';
   if (squadType === 'workflow') { renderWorkflowSquadPlaceholder(g, def, name); return; }
-  if (isSingleAgentSquad(squadType)) { g.classList.add('subagent-mode'); renderSubagentSquadEditor(g, def, name); return; }
+  // Legacy single-agent squads open the unified agent editor (convert-on-save).
+  if (isSingleAgentSquad(squadType)) { void openSquadAsAgentEditor(def, name); return; }
   renderGraphModeCanvas(g, def, name);
+}
+
+/** Map a legacy single-agent squad into editor 'definition' shape (frontmatter strings + body). */
+function squadToEditorDefinition(def) {
+  const member = (def.members && def.members[0]) || {};
+  const frontmatter = {
+    name: def.name || '',
+    description: def.description || '',
+    model: member.model || '',
+    runtime: member.runtime || '',
+    tools: Array.isArray(member.allowedTools) ? member.allowedTools.join(', ') : '',
+    workspaceAccess: member.workspaceAccess === 'full' ? 'full' : '',
+    maxIterations: typeof def.maxIterations === 'number' ? String(def.maxIterations) : '',
+    timeoutMs: typeof def.timeoutMs === 'number' ? String(def.timeoutMs) : '',
+    promptMode: 'extend',
+    subagent: 'true',
+  };
+  // Executor targetRef: only kind 'model' maps onto the config·model picker.
+  if (member.targetRef && member.targetRef.kind === 'model') {
+    if (member.targetRef.config) frontmatter.bridgeConfig = member.targetRef.config;
+    if (member.targetRef.model) frontmatter.model = member.targetRef.model;
+  }
+  return {
+    frontmatter,
+    body: member.systemPrompt || '',
+    source: state.teamDefinitionSource === 'project' ? 'project' : 'personal',
+  };
+}
+async function openSquadAsAgentEditor(def, name) {
+  await openAgentProfileEditor(null, squadToEditorDefinition(def), name);
 }
 function renderWorkflowSquadPlaceholder(g, def, name) {
   // Workflow tree editor — fixed vertical tree, branch children side by side.
@@ -30236,82 +30223,6 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
   document.body.appendChild(overlay);
 }
 function wfDefaultChild() { return { id: wfNewId(), type: 'agent', label: '', prompt: '', children: [] }; }
-function renderSubagentSquadEditor(g, def, name) {
-  const editable = teamGraphEditable(def);
-  // Toolbar with Save button
-  const toolbar = document.createElement('div');
-  toolbar.className = 'graph-toolbar';
-  const left = document.createElement('div'); left.className = 'graph-tabs';
-  left.innerHTML = '<button class="active">Agent</button>';
-  const right = document.createElement('div'); right.className = 'graph-tools';
-  const pill = document.createElement('span'); pill.className = 'graph-mode-pill';
-  pill.textContent = 'agent · ' + (def.name || name);
-  right.appendChild(pill);
-  if (editable) {
-    const designBtn = document.createElement('button');
-    designBtn.type = 'button';
-    designBtn.textContent = 'Design with agent';
-    designBtn.addEventListener('click', () => openTeamDesignerDrawer(def));
-    right.appendChild(designBtn);
-    const saveBtn = document.createElement('button');
-    saveBtn.type = 'button';
-    saveBtn.className = 'graph-save-btn' + (state.teamDirty ? ' save-dirty' : '');
-    saveBtn.textContent = 'Save';
-    saveBtn.addEventListener('click', () => { void saveTeamDefinition(); });
-    right.appendChild(saveBtn);
-  }
-  appendTeamEditorActions(right, def.name || name, editable ? '' : 'built-in');
-  toolbar.append(left, right);
-  g.appendChild(toolbar);
-  const wrap = document.createElement('div');
-  wrap.className = 'subagent-editor-body';
-  const member = (def.members && def.members[0]) || { role: def.name, model: '', systemPrompt: '' };
-  if (!def.members || !def.members.length) def.members = [member];
-  wrap.appendChild(teFieldLive('Role / name', member.role || def.name || '', (v) => { member.role = v; setTeamSavedStatus(false); }));
-  wrap.appendChild(teFieldLive('Prompt (system prompt)', member.systemPrompt || '', (v) => { member.systemPrompt = v; setTeamSavedStatus(false); }, true));
-  wrap.appendChild(teLabeledSelect('Runtime', member.runtime || '', teamRuntimeSelectOptions(), (v) => { member.runtime = v || undefined; setTeamSavedStatus(false); }));
-  wrap.appendChild(tePickerField('Executor (model / agent)', createAgentTargetSelect({
-    value: member.targetRef
-      ? targetRefToPickerValue(member.targetRef)
-      : (member.model ? targetRefToPickerValue({ kind: 'model', config: configForModel(member.model), model: member.model }) : ''),
-    placeholder: 'Raw model / session default',
-    includeTeams: false,
-    onChange: (ref) => {
-      member.targetRef = ref || undefined;
-      if (ref?.kind === 'model') member.model = ref.model;
-      else if (ref?.kind === 'agent') {
-        const profile = (state.snapshot?.agentProfiles || []).find((p) => p.name === ref.name);
-        if (profile?.model) member.model = profile.model;
-      }
-      setTeamSavedStatus(false);
-    },
-  })));
-  wrap.appendChild(teSelect('Workspace access', member.workspaceAccess || 'workspace', ['workspace', 'full'], (v) => { member.workspaceAccess = v; setTeamSavedStatus(false); }));
-  wrap.appendChild(teHintField('Timeout (ms)', 'Run timeout. Empty = 300000 ms.', String(def.timeoutMs ?? ''), (v) => {
-    const n = Number(v);
-    def.timeoutMs = v.trim() && Number.isFinite(n) && n > 0 ? n : undefined;
-    setTeamSavedStatus(false);
-  }));
-  wrap.appendChild(teHintField('Max tool iterations', 'ReAct loop cap. Empty or ∞ = unlimited.', formatTeamInfinityField(def.maxIterations), (v) => {
-    def.maxIterations = parseTeamInfinityField(v);
-    setTeamSavedStatus(false);
-  }));
-  wrap.appendChild(teToolChecklist('Allowed tools', Array.isArray(member.allowedTools) ? member.allowedTools : [], (next) => {
-    const prev = Array.isArray(member.allowedTools) ? member.allowedTools : [];
-    const added = next.filter((t) => RISKY_NODE_TOOLS.includes(t) && !prev.includes(t));
-    if (added.length && !window.confirm('Grant ' + added.join(' + ') + ' to "' + (member.role || def.name) + '"?')) {
-      renderTeamGraph(def, def.name || name);
-      return;
-    }
-    member.allowedTools = next.length ? next : undefined;
-    setTeamSavedStatus(false);
-  }));
-  const toolsHint = document.createElement('p');
-  toolsHint.className = 'te-hint';
-  toolsHint.textContent = 'No tools checked = the agent answers without tools. Checking tools enables a ReAct loop.';
-  wrap.appendChild(toolsHint);
-  g.appendChild(wrap);
-}
 // --- Graph-mode canvas (plan Phase 4): drag nodes + port-to-port edges on SVG. ---
 function computeGraphLayerIndices(def) {
   const nodes = def.nodes || [];
@@ -33429,11 +33340,15 @@ function syncAgentProfileSubagentOptions() {
 }
 
 let editingAgentProfileSource = null;
+/** Set when the editor was opened from a legacy single-agent squad (convert-on-save). */
+let editingAgentSquadName = null;
 
 // S2: the editor covers profiles AND unified .md agents. 'definition' (raw
 // frontmatter + body + source from /api/agent-definition) supplies the
 // subagent/delegation extras the profile compat view does not carry.
-async function openAgentProfileEditor(profile, definition) {
+// sourceSquad marks a legacy single-agent squad opened for convert-on-save.
+async function openAgentProfileEditor(profile, definition, sourceSquad) {
+  editingAgentSquadName = sourceSquad || null;
   if (definition === undefined) {
     definition = null;
     const name = profile?.name;
@@ -33494,14 +33409,34 @@ async function openAgentProfileEditor(profile, definition) {
   renderAgentProfileTools(profile?.allowedTools || (fmStr('tools') ? fmStr('tools').split(',').map(s => s.trim()).filter(Boolean) : undefined));
   syncAgentProfileSubagentOptions();
   el('agentProfileCfgStatus').textContent = editingAgentProfileName ? 'Editing "' + editingAgentProfileName + '".' : '';
-  el('agentProfileEditorModal').classList.remove('hidden');
+  // Embedded in the Agents panel right pane (09 Aug 2026): switch there,
+  // hide the graph/editor panes, and show the panel with a Used-by action.
+  void switchRegion('team');
+  el('teamEditor')?.classList.add('hidden');
+  el('teamGraph')?.classList.add('hidden');
+  const actions = el('agentEditorActions');
+  if (actions) {
+    actions.textContent = '';
+    if (editingAgentProfileName) appendUsedByButton(actions, 'agent', editingAgentProfileName);
+  }
+  el('agentProfileEditorPanel').classList.remove('hidden');
   el('agentProfileName').focus();
 }
 
 function closeAgentProfileEditor() {
-  el('agentProfileEditorModal').classList.add('hidden');
+  el('agentProfileEditorPanel')?.classList.add('hidden');
+  const g = el('teamGraph');
+  if (g) {
+    g.classList.remove('hidden');
+    g.textContent = '';
+    const e = document.createElement('p');
+    e.className = 'region-empty';
+    e.textContent = 'Select an agent on the left, or click + New agent.';
+    g.appendChild(e);
+  }
   editingAgentProfileName = null;
   editingAgentProfileSource = null;
+  editingAgentSquadName = null;
 }
 
 async function saveAgentProfileViaApi() {
@@ -33517,7 +33452,7 @@ async function saveAgentProfileViaApi() {
   if (!inherit && !selectedAgentProfileConfig()) { el('agentProfileCfgStatus').textContent = 'Provider config is required.'; return; }
   if (!inherit && !model) { el('agentProfileCfgStatus').textContent = 'Model is required.'; return; }
   const renamed = Boolean(editingAgentProfileName) && name !== editingAgentProfileName;
-  if (renamed) {
+  if (renamed && !editingAgentSquadName) {
     // S3: the rename transaction covers profiles AND unified .md agents in
     // both scopes (frontmatter + file + referencers, with rollback).
     el('agentProfileCfgStatus').textContent = 'Renaming...';
@@ -33552,6 +33487,7 @@ async function saveAgentProfileViaApi() {
     promptMode: el('agentProfilePromptMode').value === 'replace' ? 'replace' : 'extend',
     runtime: el('agentProfileRuntime').value || '',
     subagent: el('agentProfileSubagent').checked !== false,
+    convertFromSquad: editingAgentSquadName || undefined,
     allowedAgents: csv(el('agentProfileAllowedAgents').value),
     skills: csv(el('agentProfileSkills').value),
     background: el('agentProfileBackground').checked === true,
@@ -36522,6 +36458,14 @@ el('agentProfileCfgReset').addEventListener('click', () => { closeAgentProfileEd
 el('agentProfileSubagent')?.addEventListener('change', syncAgentProfileSubagentOptions);
 el('agentProfileDeleteBtn')?.addEventListener('click', () => {
   if (!editingAgentProfileName) return;
+  // Opened from a legacy squad (not yet converted): delete the squad itself.
+  if (editingAgentSquadName) {
+    deleteTeamViaApi(editingAgentSquadName)
+      .then(() => closeAgentProfileEditor())
+      .then(() => renderTeamRegion())
+      .catch(console.error);
+    return;
+  }
   deleteAgentProfileViaApi(
     editingAgentProfileName,
     editingAgentProfileSource === 'project' ? 'project' : 'personal',
@@ -36530,9 +36474,6 @@ el('agentProfileDeleteBtn')?.addEventListener('click', () => {
 el('agentProfileEditorForm').addEventListener('submit', (event) => {
   event.preventDefault();
   saveAgentProfileViaApi().catch(console.error);
-});
-el('agentProfileEditorModal').addEventListener('click', (event) => {
-  if (event.target === el('agentProfileEditorModal')) closeAgentProfileEditor();
 });
 el('routerNewProfile')?.addEventListener('click', () => { openRouterEditor(null); });
 el('routerCfgSave').addEventListener('click', () => { saveRouterProfileViaApi().catch(console.error); });
