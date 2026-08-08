@@ -158,11 +158,11 @@ export function createPlanModeTools(
     {
       name: ENTER_PLAN_MODE_TOOL_NAME,
       description:
-        'Enter plan mode. Use at the start of a task that needs research before changes — researching, designing, and presenting a plan for approval before any code is written. In plan mode, mutating tools are blocked.',
+        'Enter plan mode. Use at the start of a task that needs research before changes — researching, designing, and presenting a plan for approval before any code is written. In plan mode, mutating tools are blocked, but you may delegate read-only research to read-only subagents (e.g. Explore) via the Agent tool.',
       inputSchema: z.strictObject({}),
       isReadOnly: () => true,
       prompt: () =>
-        `## EnterPlanMode\n\nCall this to enter plan mode for a task that warrants research-then-propose. While in plan mode, you may only read/explore — do not attempt edits. When your plan is ready, call ExitPlanMode.`,
+        `## EnterPlanMode\n\nCall this to enter plan mode for a task that warrants research-then-propose. While in plan mode, you may only read/explore — do not attempt edits. You may delegate read-only investigation to read-only subagents (e.g. Explore) with the Agent tool; delegations to write-capable agents are blocked like direct edits. When your plan is ready, call ExitPlanMode.`,
     },
     async () => {
       await ctx.onPlanModeChange?.('plan');
