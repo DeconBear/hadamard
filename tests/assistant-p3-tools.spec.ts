@@ -490,3 +490,135 @@ describe('workflow tools', () => {
     expect(fs.existsSync(path.join(workDir, '.hadamard', 'workflows', 'wf-ref.js'))).toBe(true);
   });
 });
+
+// ── S3: assistant tools on the unified .md store ─────────────────────
+
+describe('assistant tools on the unified .md store (S3)', () => {
+  it('UpsertAgentProfile writes scope + delegation extras to the project agents dir', async () => {
+    seedConfig('cfg-x');
+    const tools = await createAssistantGlobalTools({ homeDir, currentWorkDir: workDir });
+    await callTool(byName(tools, 'UpsertAgentProfile'), {
+      name: 'proj-agent',
+      bridgeConfig: 'cfg-x',
+      model: 'm1',
+      description: 'Project-scoped agent',
+      scope: 'project',
+      promptMode: 'replace',
+      subagent: true,
+      allowedAgents: ['Explore'],
+      skills: ['pdf'],
+      memory: 'project',
+      background: true,
+      isolation: 'worktree',
+      initialPrompt: 'Start here.',
+    });
+    const md = fs.readFileSync(path.join(workDir, '.hadamard', 'agents', 'proj-agent.md'), 'utf8');
+    for (const line of [
+      'name: proj-agent',
+      'bridgeConfig: cfg-x',
+      'model: m1',
+      'promptMode: replace',
+      'subagent: true',
+      'allowedAgents: Explore',
+      'skills: pdf',
+      'memory: project',
+      'background: true',
+      'isolation: worktree',
+      'initialPrompt: Start here.',
+    ]) {
+      expect(md).toContain(line);
+    }
+  });
+
+  it('UpsertAgentProfile without bridgeConfig/model writes an inherit-session-model .md (not a profile)', async () => {
+    const tools = await createAssistantGlobalTools({ homeDir, currentWorkDir: workDir });
+    const result = await callTool(byName(tools, 'UpsertAgentProfile'), {
+      name: 'inherit-agent',
+      description: 'Follows the session model',
+      subagent: false,
+      systemPromptAppend: 'Extra body.',
+    }) as { ok: boolean; inheritSessionModel: boolean };
+    expect(result.ok).toBe(true);
+    expect(result.inheritSessionModel).toBe(true);
+    const md = fs.readFileSync(path.join(homeDir, '.hadamard', 'agents', 'inherit-agent.md'), 'utf8');
+    expect(md).not.toContain('bridgeConfig');
+    expect(md).toContain('subagent: false');
+    // Not part of the profile compat view.
+    expect(listAgentProfiles(homeDir).some(profile => profile.name === 'inherit-agent')).toBe(false);
+  });
+
+  it('DeleteAgentProfile removes zero-reference pure .md agents in both scopes directly', async () => {
+    const tools = await createAssistantGlobalTools({ homeDir, currentWorkDir: workDir });
+    await callTool(byName(tools, 'UpsertAgentProfile'), {
+      name: 'md-solo',
+      description: 'Pure personal .md agent',
+      systemPromptAppend: 'x',
+    });
+    await callTool(byName(tools, 'UpsertAgentProfile'), {
+      name: 'md-proj',
+      bridgeConfig: '',
+      model: '',
+      description: 'Pure project .md agent',
+      scope: 'project',
+      systemPromptAppend: 'x',
+    });
+    const personalPath = path.join(homeDir, '.hadamard', 'agents', 'md-solo.md');
+    const projectPath = path.join(workDir, '.hadamard', 'agents', 'md-proj.md');
+    expect(fs.existsSync(personalPath)).toBe(true);
+    expect(fs.existsSync(projectPath)).toBe(true);
+
+    for (const name of ['md-solo', 'md-proj']) {
+      const result = await callTool(byName(tools, 'DeleteAgentProfile'), { name }) as { deleted: boolean };
+      expect(result.deleted).toBe(true);
+    }
+    expect(fs.existsSync(personalPath)).toBe(false);
+    expect(fs.existsSync(projectPath)).toBe(false);
+  });
+
+  it('stages a delete when a router references a pure .md agent; Apply degrades references', async () => {
+    // Pure .md agent (not in the profile store) referenced by a router route.
+    const proposals = new AssistantProposalStore();
+    const tools = await createAssistantGlobalTools({
+      homeDir,
+      currentWorkDir: workDir,
+      proposals,
+      assistantSessionId: 'asst-s3',
+    });
+    await callTool(byName(tools, 'UpsertAgentProfile'), {
+      name: 'md-target',
+      description: 'Referenced .md agent',
+      systemPromptAppend: 'x',
+    });
+    // Give it a model in frontmatter so degrade-model has something to keep.
+    const mdPath = path.join(homeDir, '.hadamard', 'agents', 'md-target.md');
+    fs.writeFileSync(
+      mdPath,
+      fs.readFileSync(mdPath, 'utf8').replace('description: Referenced .md agent', 'description: Referenced .md agent\nmodel: m-md'),
+      'utf8',
+    );
+    await saveRouterProfile({
+      name: 'r-md',
+      routerModel: { model: 'leader' },
+      routes: [{ model: 'm1', when: 'always', target: { kind: 'agent', name: 'md-target' } }],
+    }, { projectDir: workDir, homeDir, overwrite: true });
+
+    const staged = await callTool(byName(tools, 'DeleteAgentProfile'), { name: 'md-target' }) as {
+      staged: boolean;
+      proposalId: string;
+      references: unknown[];
+    };
+    expect(staged.staged).toBe(true);
+    expect(staged.references.length).toBeGreaterThan(0);
+    expect(fs.existsSync(mdPath)).toBe(true); // not deleted while staged
+
+    const applied = await proposals.apply(
+      staged.proposalId,
+      { homeDir, projectDir: workDir },
+      { strategy: { type: 'degrade-model' } },
+    );
+    expect(applied.proposal.status).toBe('applied');
+    expect(fs.existsSync(mdPath)).toBe(false);
+    const router = loadRouterProfile('r-md', workDir, homeDir);
+    expect(router?.profile.routes[0]?.target).toEqual({ kind: 'model', config: '', model: 'm-md' });
+  });
+});

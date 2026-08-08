@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { resolveHadamardHome } from '../config/hadamardHome.js';
 import {
   deleteAgentProfile,
+  validateAgentProfile,
   listAgentProfiles,
   listSelectableAgents,
   upsertAgentProfile,
@@ -90,6 +91,15 @@ import {
   listTeamDefinitions,
   loadTeamDefinition,
 } from '../team/teamDefinitions.js';
+import {
+  readAllAgentReferenceProfiles,
+  listAgentDefinitionNames,
+  writeAgentDefinitionMarkdown,
+  writeAgentProfileMarkdown,
+  deleteAgentProfileMarkdown,
+  projectAgentDefinitionsDir,
+  type AgentDefinitionExtraFields,
+} from '../config/agentDefinitionMigration.js';
 import type { TeamPreferences } from '../team/teamPreferences.js';
 import type { TeamDefinition } from '../types.js';
 import { deleteWorkflow, listWorkflows } from '../workflow/workflowPersistence.js';
@@ -324,7 +334,13 @@ async function getReferenceSnapshot(
 ): Promise<{ index: ReferenceEdge[]; known: ReferenceKnownSets }> {
   if (host.getReferenceSnapshot) return host.getReferenceSnapshot();
   const bridgeConfigs = readBridgeConfigs(host.homeDir).configs;
-  const agentProfiles = listAgentProfiles(host.homeDir);
+  // S3 unified store: profile edges come from the legacy store AND .md
+  // definitions in both scopes (incl. bridgeConfig-only definitions).
+  const profileByName = new Map(listAgentProfiles(host.homeDir).map(profile => [profile.name, profile]));
+  for (const profile of readAllAgentReferenceProfiles(host.homeDir, host.currentWorkDir)) {
+    profileByName.set(profile.name, profile);
+  }
+  const agentProfiles = [...profileByName.values()];
   const routers = listRouterProfiles(host.currentWorkDir, host.homeDir).map(entry => entry.profile);
   const teams = listTeamDefinitions(host.currentWorkDir, host.homeDir).map(entry => entry.definition);
   const automationTasks = await listScheduledAutomationTasks(host.currentWorkDir)
@@ -348,8 +364,12 @@ async function getReferenceSnapshot(
     known: {
       configs: bridgeConfigs.map(config => config.name),
       // Selectable agents include ephemeral per-config presets so an active
-      // session edge to one of them is not falsely reported as broken.
-      agents: listSelectableAgents(host.homeDir).map(agent => agent.name),
+      // session edge to one of them is not falsely reported as broken; the
+      // .md definition names cover unified-store agents in both scopes (S3).
+      agents: [
+        ...listSelectableAgents(host.homeDir).map(agent => agent.name),
+        ...listAgentDefinitionNames(host.homeDir, host.currentWorkDir),
+      ],
       teams: teams.map(team => team.name),
       routers: routers.map(router => router.name),
     },
@@ -819,11 +839,11 @@ export async function createAssistantGlobalTools(
   const UpsertAgentProfileTool = tool(
     {
       name: 'UpsertAgentProfile',
-      description: 'Create or update a saved agent profile.',
+      description: 'Create or update an agent (unified .md store, S3). Omit bridgeConfig+model for an inherit-session-model agent; pass scope "project" to save into <workDir>/.hadamard/agents.',
       inputSchema: z.strictObject({
         name: z.string(),
-        bridgeConfig: z.string(),
-        model: z.string(),
+        bridgeConfig: z.string().optional().describe('Omit (with model) for an inherit-session-model agent'),
+        model: z.string().optional(),
         description: z.string().optional(),
         permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'auto']).optional(),
         effort: z.enum(['auto', 'low', 'medium', 'high', 'max']).optional(),
@@ -831,13 +851,35 @@ export async function createAssistantGlobalTools(
         temperature: z.number().min(0).max(2).optional(),
         topP: z.number().min(0).max(1).optional(),
         systemPromptAppend: z.string().optional(),
+        scope: z.enum(['project', 'personal']).optional().describe('Defaults to personal (~/.hadamard/agents)'),
+        promptMode: z.enum(['extend', 'replace']).optional(),
+        subagent: z.boolean().optional().describe('Default true: the Agent/Task tool may delegate to this agent'),
+        allowedAgents: z.array(z.string()).optional(),
+        skills: z.array(z.string()).optional(),
+        memory: z.enum(['user', 'project', 'local']).optional(),
+        background: z.boolean().optional(),
+        isolation: z.enum(['worktree']).optional(),
+        initialPrompt: z.string().optional(),
       }),
     },
     async (input) => {
+      const inheritModel = !input.bridgeConfig?.trim() || !input.model?.trim();
+      const extras: AgentDefinitionExtraFields = {
+        ...(input.promptMode ? { promptMode: input.promptMode } : {}),
+        ...(typeof input.subagent === 'boolean' ? { subagent: input.subagent } : {}),
+        ...(input.allowedAgents ? { allowedAgents: input.allowedAgents } : {}),
+        ...(input.skills ? { skills: input.skills } : {}),
+        ...(input.memory ? { memory: input.memory } : {}),
+        ...(typeof input.background === 'boolean' ? { background: input.background } : {}),
+        ...(input.isolation ? { isolation: input.isolation } : {}),
+        ...(input.initialPrompt?.trim() ? { initialPrompt: input.initialPrompt.trim() } : {}),
+      };
+      const scope = input.scope === 'project' ? 'project' : 'personal';
+      const unified = inheritModel || scope === 'project' || Object.keys(extras).length > 0;
       const profile: AgentProfile = {
         name: input.name.trim(),
-        bridgeConfig: input.bridgeConfig.trim(),
-        model: input.model.trim(),
+        bridgeConfig: input.bridgeConfig?.trim() ?? '',
+        model: input.model?.trim() ?? '',
         ...(input.description ? { description: input.description } : {}),
         ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
         ...(input.effort ? { effort: input.effort } : {}),
@@ -846,8 +888,28 @@ export async function createAssistantGlobalTools(
         ...(typeof input.topP === 'number' ? { topP: input.topP } : {}),
         ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
       };
-      const saved = upsertAgentProfile(profile, host.homeDir);
-      return { ok: true, profile: saved.profile, warnings: saved.warnings };
+      if (!unified) {
+        const saved = upsertAgentProfile(profile, host.homeDir);
+        return { ok: true, profile: saved.profile, warnings: saved.warnings };
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(profile.name)) {
+        throw new Error('Invalid agent name (use letters, digits, . _ -)');
+      }
+      const directory = scope === 'project' ? projectAgentDefinitionsDir(host.currentWorkDir) : undefined;
+      if (inheritModel) {
+        const filePath = writeAgentDefinitionMarkdown({
+          name: profile.name,
+          description: profile.description,
+          body: profile.systemPromptAppend,
+          extras,
+          directory,
+          homeDir: host.homeDir,
+        });
+        return { ok: true, filePath, inheritSessionModel: true };
+      }
+      const validation = validateAgentProfile(profile, host.homeDir);
+      const filePath = writeAgentProfileMarkdown(validation.profile, host.homeDir, { directory, extras });
+      return { ok: true, filePath, profile: validation.profile, warnings: validation.warnings };
     },
   );
 
@@ -920,13 +982,15 @@ export async function createAssistantGlobalTools(
   const DeleteAgentProfileTool = tool(
     {
       name: 'DeleteAgentProfile',
-      description: 'Delete a saved agent profile by name. Deletes directly when unreferenced; stages a confirmation card when references exist.',
+      description: 'Delete an agent by name (profile or pure .md definition, either scope — S3 unified store). Deletes directly when unreferenced; stages a confirmation card when references exist.',
       inputSchema: z.strictObject({ name: z.string() }),
     },
     async (input) => {
       const name = input.name.trim();
       return deleteWithConfirmation(host, 'agent', name, () => {
         deleteAgentProfile(name, host.homeDir);
+        // Pure .md agents / project scope are not in the legacy store.
+        deleteAgentProfileMarkdown(name, host.homeDir, projectAgentDefinitionsDir(host.currentWorkDir));
         return { deleted: true };
       });
     },

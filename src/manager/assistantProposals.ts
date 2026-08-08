@@ -22,6 +22,10 @@ import {
   type ReferenceOperationContext,
 } from './referenceOperations.js';
 import { deleteAgentProfile } from '../config/agentProfiles.js';
+import {
+  deleteAgentProfileMarkdown,
+  projectAgentDefinitionsDir,
+} from '../config/agentDefinitionMigration.js';
 import { removeBridgeConfig } from '../parity/bridgeConfigs.js';
 import { deleteRouterProfile } from '../router/modelRouter.js';
 import { deleteTeamDefinition, getBuiltInTeamDefinition } from '../team/teamDefinitions.js';
@@ -255,6 +259,10 @@ export class AssistantProposalStore {
         removeBridgeConfig(del.name, ctx.homeDir);
       } else if (del.kind === 'agent') {
         deleteAgentProfile(del.name, ctx.homeDir);
+        // S3 unified store: also remove pure .md / project-scoped definitions.
+        if (ctx.projectDir) {
+          deleteAgentProfileMarkdown(del.name, ctx.homeDir, projectAgentDefinitionsDir(ctx.projectDir));
+        }
       } else if (del.kind === 'router') {
         const deleted = await deleteRouterProfile(del.name, ctx.projectDir, ctx.homeDir);
         if (!deleted) throw new Error(`Router profile not found: ${del.name}`);
