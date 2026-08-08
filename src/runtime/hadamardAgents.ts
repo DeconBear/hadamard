@@ -77,6 +77,8 @@ export function summarizeHadamardAgentDefinition(
     name: definition.name,
     description: definition.description,
     model: definition.model,
+    bridgeConfig: definition.bridgeConfig,
+    subagent: definition.subagent,
     effort: definition.effort,
     permissionMode: definition.permissionMode,
     maxToolIterations: definition.maxToolIterations,

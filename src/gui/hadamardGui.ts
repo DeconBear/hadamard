@@ -9403,7 +9403,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             if (Number.isFinite(timeoutMs) && timeoutMs > 0) profile.timeoutMs = Math.floor(timeoutMs);
           }
           // S2 unified store: scope + promptMode + subagent/delegation fields.
-          const scope = body.scope === 'project' ? 'project' : 'personal';
+          // Scope UI removed (user decision, 08 Aug 2026): new agents always
+          // save personal; an existing definition silently keeps its current
+          // location (the explicit scope param stays supported server-side).
+          const existingDefinition = readAgentDefinitionMarkdown(profile.name, resolveGuiHomeDir(), workDir);
+          const scope = body.scope === 'project'
+            ? 'project'
+            : existingDefinition?.source === 'project' ? 'project' : 'personal';
           const stringList = (value: unknown): string[] | undefined =>
             Array.isArray(value)
               ? value.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
@@ -11283,10 +11289,7 @@ export function createHadamardGuiHtml(): string {
           <option value="extend">Extend — built-in prompt + body appended</option>
           <option value="replace">Replace — body is the full system prompt</option>
         </select></label>
-        <label class="dialog-field">Save to<select id="agentProfileScope">
-          <option value="personal">Personal (~/.hadamard/agents)</option>
-          <option value="project">Project (.hadamard/agents)</option>
-        </select></label>
+        <span></span>
       </div>
       <label class="manager-cfg-check" id="agentProfileSubagentRow"><input type="checkbox" id="agentProfileSubagent" checked> Available as a subagent — the Agent/Task tool may delegate to this agent</label>
       <details id="agentProfileSubagentOptions" class="agent-profile-advanced">
@@ -27257,21 +27260,8 @@ async function openAgentTemplatePicker() {
   panel.appendChild(host);
   const hint = document.createElement('p');
   hint.className = 'te-hint';
-  hint.textContent = 'Instantiate a bundled template as an editable .md agent in the chosen scope.';
+  hint.textContent = 'Instantiate a bundled template as an editable .md agent in your personal agents directory.';
   host.appendChild(hint);
-  const scopeRow = document.createElement('label');
-  scopeRow.className = 'dialog-field';
-  scopeRow.textContent = 'Save to';
-  const scopeSel = document.createElement('select');
-  scopeSel.id = 'agentTemplateScope';
-  for (const [value, label] of [['personal', 'Personal (~/.hadamard/agents)'], ['project', 'Project (.hadamard/agents)']]) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = label;
-    scopeSel.appendChild(opt);
-  }
-  scopeRow.appendChild(scopeSel);
-  host.appendChild(scopeRow);
   const list = document.createElement('div');
   list.className = 'settings-card-list compact';
   for (const template of templates) {
@@ -27292,7 +27282,7 @@ async function openAgentTemplatePicker() {
         const res = await api('/api/agent-templates/instantiate', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name: template.name, scope: scopeSel.value === 'project' ? 'project' : 'personal' }),
+          body: JSON.stringify({ name: template.name }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
@@ -33502,7 +33492,6 @@ async function openAgentProfileEditor(profile, definition) {
   el('agentProfileBackground').checked = fmStr('background') === 'true';
   setField('agentProfileIsolation', fmStr('isolation') === 'worktree' ? 'worktree' : '');
   setField('agentProfileInitialPrompt', fmStr('initialPrompt'));
-  el('agentProfileScope').value = definition?.source === 'project' ? 'project' : 'personal';
   renderAgentProfileTools(profile?.allowedTools || (fmStr('tools') ? fmStr('tools').split(',').map(s => s.trim()).filter(Boolean) : undefined));
   syncAgentProfileSubagentOptions();
   el('agentProfileCfgStatus').textContent = editingAgentProfileName ? 'Editing "' + editingAgentProfileName + '".' : '';
@@ -33562,7 +33551,6 @@ async function saveAgentProfileViaApi() {
     timeoutMs: el('agentProfileTimeoutMs').value.trim(),
     workspaceAccess: el('agentProfileWorkspace').value || '',
     promptMode: el('agentProfilePromptMode').value === 'replace' ? 'replace' : 'extend',
-    scope: el('agentProfileScope').value === 'project' ? 'project' : 'personal',
     subagent: el('agentProfileSubagent').checked !== false,
     allowedAgents: csv(el('agentProfileAllowedAgents').value),
     skills: csv(el('agentProfileSkills').value),
