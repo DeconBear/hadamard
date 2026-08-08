@@ -104,19 +104,35 @@ function createAgentDefinition(input: {
   ]);
   const memory = parseEnum(input.frontmatter.memory, ['user', 'project', 'local']);
   const isolation = parseEnum(input.frontmatter.isolation, ['worktree']);
+  // Unified store (S1a): maxIterations is the agent-editor name, maxTurns the
+  // legacy .md name — both map to maxToolIterations, maxIterations wins.
   const maxTurns = parsePositiveInteger(
     input.frontmatter.maxTurns ?? input.frontmatter['max-turns'],
   );
+  const maxIterations = parsePositiveInteger(input.frontmatter.maxIterations);
+  const promptMode = parseEnum(input.frontmatter.promptMode, ['extend', 'replace']);
+  const workspaceAccess = parseEnum(input.frontmatter.workspaceAccess, ['workspace', 'full']);
 
   return {
     name,
     description,
     systemPrompt: input.body.trim(),
     model: cleanString(input.frontmatter.model),
+    bridgeConfig: cleanString(input.frontmatter.bridgeConfig),
+    // §6-4: .md definitions default to replace (existing behavior); migrated
+    // profiles / GUI-created agents carry an explicit `promptMode: extend`.
+    promptMode: promptMode ?? 'replace',
     effort: effort as HadamardRunEffort | undefined,
     permissionMode: permissionMode as HadamardPermissionMode | undefined,
+    temperature: parseNumberInRange(input.frontmatter.temperature, 0, 2),
+    topP: parseNumberInRange(input.frontmatter.topP, 0, 1),
+    maxTokens: parsePositiveInteger(input.frontmatter.maxTokens),
+    timeoutMs: parsePositiveInteger(input.frontmatter.timeoutMs),
+    workspaceAccess: workspaceAccess as HadamardAgentDefinition['workspaceAccess'],
+    // §6-1: default true — absent means delegatable; only an explicit false hides it.
+    subagent: parseBoolean(input.frontmatter.subagent),
     maxTurns,
-    maxToolIterations: maxTurns,
+    maxToolIterations: maxIterations ?? maxTurns,
     allowedTools: parseList(input.frontmatter.tools ?? input.frontmatter.allowedTools),
     disallowedTools: parseList(
       input.frontmatter.disallowedTools ?? input.frontmatter['disallowed-tools'],
@@ -147,7 +163,7 @@ function createAgentDefinition(input: {
   };
 }
 
-function parseMarkdownFrontmatter(content: string): {
+export function parseMarkdownFrontmatter(content: string): {
   frontmatter: Record<string, string>;
   body: string;
 } {
@@ -202,6 +218,35 @@ function parsePositiveInteger(value: string | undefined): number | undefined {
   }
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseNumberInRange(value: string | undefined, min: number, max: number): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : undefined;
+}
+
+/**
+ * Synchronously parse one agent-definition .md file's content into a
+ * definition. Used by the profile compatibility view (S1a), which reads the
+ * unified store through sync fs APIs.
+ */
+export function parseAgentDefinitionMarkdown(input: {
+  filePath: string;
+  fallbackName: string;
+  source: NonNullable<HadamardAgentDefinition['source']>;
+  content: string;
+}): HadamardAgentDefinition | undefined {
+  const parsed = parseMarkdownFrontmatter(input.content);
+  return createAgentDefinition({
+    filePath: input.filePath,
+    fallbackName: input.fallbackName,
+    source: input.source,
+    frontmatter: parsed.frontmatter,
+    body: parsed.body,
+  });
 }
 
 function parseEnum<T extends string>(

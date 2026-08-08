@@ -18,6 +18,7 @@ import {
   rewriteTeamFileRefs,
 } from '../src/manager/referenceOperations.js';
 import { resolveHadamardHome } from '../src/config/hadamardHome.js';
+import { findAgentProfile, readAgentProfiles } from '../src/config/agentProfiles.js';
 import {
   DEFAULT_MANAGER_CONFIG,
   writeManagerConfig,
@@ -189,8 +190,10 @@ describe('renameDefinitionAndReferences', () => {
     const report = await renameDefinitionAndReferences('agent', 'coder', 'coder2', { projectDir: project, homeDir: home });
     expect(report.rewritten.length).toBeGreaterThan(0);
 
-    const profiles = readJson(path.join(home, '.hadamard', 'agent-configs.json'));
-    expect(profiles.profiles.map((p: any) => p.name).sort()).toEqual(['coder2', 'writer']);
+    // Unified store (S1a): profiles live in agents/*.md post-migration;
+    // assert through the compatibility view.
+    const profiles = readAgentProfiles(home);
+    expect(profiles.profiles.map((p) => p.name).sort()).toEqual(['coder2', 'writer']);
 
     const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
     expect(router.routes[0].target).toEqual({ kind: 'agent', name: 'coder2' });
@@ -217,8 +220,8 @@ describe('renameDefinitionAndReferences', () => {
 
     const configs = readJson(path.join(home, '.hadamard', 'bridge-configs.json'));
     expect(configs.configs.map((c: any) => c.name).sort()).toEqual(['cfg2', 'other']);
-    const profiles = readJson(path.join(home, '.hadamard', 'agent-configs.json'));
-    expect(profiles.profiles.every((p: any) => p.bridgeConfig === 'cfg2')).toBe(true);
+    const profiles = readAgentProfiles(home);
+    expect(profiles.profiles.every((p) => p.bridgeConfig === 'cfg2')).toBe(true);
     const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
     expect(router.routes[0].target.config).toBe('cfg2');
   });
@@ -270,9 +273,9 @@ describe('renameDefinitionAndReferences', () => {
       .rejects.toThrow(/built-in/);
     await expect(renameDefinitionAndReferences('agent', 'coder', 'writer', { projectDir: project, homeDir: home }))
       .rejects.toThrow(/already exists/);
-    // failed rename leaves agent-configs.json untouched
-    const profiles = readJson(path.join(home, '.hadamard', 'agent-configs.json'));
-    expect(profiles.profiles.map((p: any) => p.name).sort()).toEqual(['coder', 'writer']);
+    // failed rename leaves the profile store untouched
+    const profiles = readAgentProfiles(home);
+    expect(profiles.profiles.map((p) => p.name).sort()).toEqual(['coder', 'writer']);
   });
 });
 
@@ -287,8 +290,8 @@ describe('applyDeleteFallback', () => {
       routes: [{ model: 'm1', when: 'a', target: { kind: 'model', config: 'cfg', model: 'm1' } }],
     });
     await applyDeleteFallback('config', 'cfg', { type: 'repoint', target: 'other' }, { projectDir: project, homeDir: home });
-    const profiles = readJson(path.join(home, '.hadamard', 'agent-configs.json'));
-    expect(profiles.profiles.every((p: any) => p.bridgeConfig === 'other')).toBe(true);
+    const profiles = readAgentProfiles(home);
+    expect(profiles.profiles.every((p) => p.bridgeConfig === 'other')).toBe(true);
     const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
     expect(router.routes[0].target.config).toBe('other');
   });
@@ -350,8 +353,7 @@ describe('repointConfigModel', () => {
       routes: [{ model: 'm1', when: 'a', target: { kind: 'model', config: 'cfg', model: 'm1' } }],
     });
     await repointConfigModel('cfg', 'm1', 'm2', { projectDir: project, homeDir: home });
-    const profiles = readJson(path.join(home, '.hadamard', 'agent-configs.json'));
-    expect(profiles.profiles.find((p: any) => p.name === 'coder').model).toBe('m2');
+    expect(findAgentProfile('coder', home)?.model).toBe('m2');
     const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
     expect(router.routes[0].target).toEqual({ kind: 'model', config: 'cfg', model: 'm2' });
   });
