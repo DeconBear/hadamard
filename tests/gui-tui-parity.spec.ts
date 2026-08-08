@@ -131,7 +131,9 @@ describe('TUI and GUI parity', () => {
     expect(html).not.toContain('id="settingsRoutersList"');
     expect(html).not.toContain('id="agentProfilesList"');
     expect(html).not.toContain('id="agentProfileNew"');
-    expect(html).toContain('id="agentProfileEditorModal"');
+    expect(html).toContain('id="agentProfileEditorPanel"');
+    expect(html).toContain('id="agentEditorActions"');
+    expect(html).not.toContain('id="agentProfileEditorModal"');
     expect(html).toContain('id="agentProfileModelPicker"');
     expect(html).toContain('id="agentProfilePromptMode"');
     expect(html).toContain('id="agentProfileRuntime"');
@@ -157,7 +159,8 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('selectAgentEntry');
     expect(js).toContain("label: 'Agent'");
     expect(js).toContain("label: 'Router'");
-    expect(js).toContain('renderAgentProfilePane');
+    expect(js).toContain('openSquadAsAgentEditor');
+    expect(js).toContain('openAgentDefinitionInEditor');
     expect(js).toContain('renderRouterPane');
     expect(js).toContain('saveRouterFormDraft');
     expect(js).toContain('router-form-body');
