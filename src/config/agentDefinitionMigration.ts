@@ -239,6 +239,8 @@ export interface AgentDefinitionExtraFields {
   isolation?: 'worktree';
   initialPrompt?: string;
   model?: string;
+  /** External-CLI delegation runtime; omit/blank/'hadamard' = in-process SDK. */
+  runtime?: string;
   permissionMode?: HadamardPermissionMode;
   effort?: HadamardRunEffort;
   temperature?: number;
@@ -264,6 +266,9 @@ function formatExtras(
     isolation: extras.isolation,
     initialPrompt: extras.initialPrompt?.trim() || undefined,
     model: extras.model?.trim() || undefined,
+    runtime: extras.runtime?.trim() && extras.runtime.trim() !== 'hadamard'
+      ? extras.runtime.trim()
+      : undefined,
     permissionMode: extras.permissionMode,
     effort: extras.effort,
     temperature: extras.temperature,
@@ -294,6 +299,7 @@ function formatDelegationExtras(
     background: full.background,
     isolation: full.isolation,
     initialPrompt: full.initialPrompt,
+    runtime: full.runtime,
   };
 }
 
