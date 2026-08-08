@@ -353,6 +353,10 @@ export function listAgentProfileBridgeModels(bridgeConfigName: string, homeDir?:
 }
 
 /** Composer / issue-dispatch selectable entry: explicit profile or auto preset. */
+// Note: the unified .md `runtime` frontmatter (external-CLI delegation,
+// 09 Aug 2026) deliberately does NOT flow into SelectableAgent — main-chat
+// activation always runs on the active config's runtime; `runtime` only
+// affects Agent/Task delegation.
 export interface SelectableAgent {
   name: string;
   bridgeConfig: string;
