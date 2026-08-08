@@ -159,6 +159,8 @@ import {
 } from './hadamardAgents.js';
 import { getDefaultHadamardAgents } from './defaultHadamardAgents.js';
 import { loadHadamardAgentDefinitions } from './hadamardAgentDefinitions.js';
+import { migrateAgentProfilesToMarkdown } from '../config/agentDefinitionMigration.js';
+import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 import {
   HadamardSkillsApi,
   getDefaultHadamardBundledSkills,
@@ -741,6 +743,8 @@ export class HadamardAgentClient {
   private readonly sessionManager: SessionManager;
   private readonly sessionTurnCoordinator = new SessionTurnCoordinator();
   private readonly agentDefinitions: Map<string, HadamardAgentDefinition>;
+  /** §6-6: per-agent-session model clients resolved from definition.bridgeConfig. */
+  private readonly agentSessionModelClients = new Map<string, { model: string; modelApi: import('../types.js').ModelApi }>();
   private readonly skillDefinitions: Map<string, HadamardSkillDefinition>;
   /** Names of `paths:`-conditional skills activated by touching matching files. */
   private readonly activatedConditionalSkills = new Set<string>();
@@ -1155,6 +1159,9 @@ export class HadamardAgentClient {
           ...(options.skills ?? []),
         ]
       : [...loadedSkills, ...(options.skills ?? [])];
+    // Unified agent store (S1a): auto-migrate legacy agent-configs.json into
+    // agents/*.md before loading definitions (idempotent, no-op once migrated).
+    migrateAgentProfilesToMarkdown(config.homeDir, path.join(config.homeDir, 'agents'));
     const loadedAgents = await loadHadamardAgentDefinitions({
       homeDir: config.homeDir,
       workDir: config.workDir,
@@ -1646,12 +1653,19 @@ export class HadamardAgentClient {
   }
 
   listAgentDefinitions(): HadamardAgentDefinitionSummary[] {
-    return [...this.agentDefinitions.values()].map(summarizeHadamardAgentDefinition);
+    // subagent === false (§6-1): main-chat-only agents stay out of the
+    // Agent/Task tool's available-subagents listing.
+    return [...this.agentDefinitions.values()]
+      .filter(definition => definition.subagent !== false)
+      .map(summarizeHadamardAgentDefinition);
   }
 
   getAgentDefinition(agent: string): HadamardAgentDefinition | undefined {
     const definition = this.agentDefinitions.get(agent);
-    return definition ? cloneAgentDefinition(definition) : undefined;
+    // subagent === false: not resolvable as a delegation target, but still
+    // activatable as a main-chat agent (requireAgentDefinition is unfiltered).
+    if (!definition || definition.subagent === false) return undefined;
+    return cloneAgentDefinition(definition);
   }
 
   async runWithAgent(
@@ -1660,7 +1674,16 @@ export class HadamardAgentClient {
     options: AgentRunOptions = {},
   ): Promise<AgentRunResult> {
     const definition = this.requireAgentDefinition(agent);
+    // §6-6 model priority: caller-passed model/modelApi > definition's own
+    // bridgeConfig client > inherited session client.
+    const modelClient = options.model || options.modelApi
+      ? undefined
+      : await this.resolveDefinitionModelClient(definition);
     const mergedOptions = this.mergeAgentRunOptions(definition, options);
+    if (modelClient) {
+      mergedOptions.model = modelClient.model;
+      mergedOptions.modelApi = modelClient.modelApi;
+    }
     return this.run(input, mergedOptions);
   }
 
@@ -1669,7 +1692,7 @@ export class HadamardAgentClient {
     options: SessionCreateOptions = {},
   ): Promise<AgentSession> {
     const definition = this.requireAgentDefinition(agent);
-    return this.createSession({
+    const session = await this.createSession({
       ...options,
       kind: options.kind ?? 'agent',
       model: options.model ?? definition.model,
@@ -1686,6 +1709,14 @@ export class HadamardAgentClient {
         } satisfies HadamardAgentContinuityState,
       },
     });
+    // §6-6: a definition with bridgeConfig runs on its own provider config.
+    // Resolve the client once per agent session; resolveSessionAgentOptions
+    // (sync) applies it to every send on this session.
+    if (definition.bridgeConfig && !options.model) {
+      const modelClient = await this.resolveDefinitionModelClient(definition);
+      if (modelClient) this.agentSessionModelClients.set(session.id, modelClient);
+    }
+    return session;
   }
 
   listSkillDefinitions(): HadamardSkillDefinitionSummary[] {
@@ -5092,7 +5123,38 @@ export class HadamardAgentClient {
     if (!agentName) {
       return sessionOptions;
     }
-    return this.mergeAgentRunOptions(this.requireAgentDefinition(agentName), sessionOptions);
+    const merged = this.mergeAgentRunOptions(this.requireAgentDefinition(agentName), sessionOptions);
+    // §6-6: apply the session's definition-resolved model client (see
+    // createAgentSession); a caller-passed model/modelApi still wins.
+    const modelClient = this.agentSessionModelClients.get(session.id);
+    if (modelClient && !sessionOptions.modelApi) {
+      merged.model = sessionOptions.model ?? modelClient.model;
+      merged.modelApi = modelClient.modelApi;
+    }
+    return merged;
+  }
+
+  /**
+   * §6-6: resolve a definition's own model client from its bridgeConfig via
+   * the central target resolver. A missing config throws BrokenReferenceError
+   * — in plain SDK context that surfaces as a hard delegation error (the GUI
+   * fallback-toggle semantics live in the GUI layer, not here).
+   */
+  private async resolveDefinitionModelClient(
+    definition: HadamardAgentDefinition,
+  ): Promise<{ model: string; modelApi: import('../types.js').ModelApi } | undefined> {
+    if (!definition.bridgeConfig?.trim()) return undefined;
+    const resolved = resolveTargetRef(
+      { kind: 'model', config: definition.bridgeConfig.trim(), model: definition.model ?? '' },
+      { homeDir: this.config.homeDir },
+    );
+    const routed = await buildRouteModelApi({
+      model: resolved.model || 'default',
+      provider: resolved.provider,
+      baseURL: resolved.baseURL,
+      apiKey: resolved.apiKey,
+    });
+    return { model: routed.model, modelApi: routed.modelApi };
   }
 
   private mergeAgentRunOptions(
@@ -5120,6 +5182,9 @@ export class HadamardAgentClient {
       model: options.model ?? definition.model,
       effort: options.effort ?? definition.effort,
       permissionMode: options.permissionMode ?? definition.permissionMode,
+      maxTokens: options.maxTokens ?? definition.maxTokens,
+      temperature: options.temperature ?? definition.temperature,
+      topP: options.topP ?? definition.topP,
       metadata: {
         ...(definition.metadata ?? {}),
         ...(options.metadata ?? {}),
