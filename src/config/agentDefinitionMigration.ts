@@ -37,7 +37,11 @@ import {
   parseAgentDefinitionMarkdown,
   parseMarkdownFrontmatter,
 } from '../runtime/hadamardAgentDefinitions.js';
-import type { HadamardAgentDefinition } from '../types.js';
+import type {
+  HadamardAgentDefinition,
+  HadamardPermissionMode,
+  HadamardRunEffort,
+} from '../types.js';
 import { resolveHadamardHome } from './hadamardHome.js';
 import type { AgentProfile } from './agentProfiles.js';
 
@@ -212,6 +216,153 @@ export function profileStoredAsMarkdown(name: string, homeDir?: string): boolean
   return findDefinitionFileByName(agentDefinitionsDir(homeDir), name) !== undefined;
 }
 
+const VALID_DEFINITION_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * Subagent/delegation fields the AgentProfile model does not carry (S2
+ * editor), plus the pure-definition fields used when writing an
+ * inherit-session-model agent (no bridgeConfig → no profile entry).
+ * Written verbatim into frontmatter; absent keys clear the
+ * profile-owned default (subagent/promptMode) or leave the file untouched.
+ */
+export interface AgentDefinitionExtraFields {
+  promptMode?: 'extend' | 'replace';
+  subagent?: boolean;
+  allowedAgents?: string[];
+  skills?: string[];
+  memory?: 'user' | 'project' | 'local';
+  background?: boolean;
+  isolation?: 'worktree';
+  initialPrompt?: string;
+  model?: string;
+  permissionMode?: HadamardPermissionMode;
+  effort?: HadamardRunEffort;
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  maxIterations?: number;
+  timeoutMs?: number;
+  workspaceAccess?: 'workspace' | 'full';
+  tools?: string[];
+}
+
+function formatExtras(
+  extras: AgentDefinitionExtraFields | undefined,
+): Record<string, string | number | boolean | string[] | undefined> {
+  if (!extras) return {};
+  return {
+    promptMode: extras.promptMode,
+    subagent: extras.subagent,
+    allowedAgents: extras.allowedAgents?.length ? extras.allowedAgents : undefined,
+    skills: extras.skills?.length ? extras.skills : undefined,
+    memory: extras.memory,
+    background: extras.background === true ? true : undefined,
+    isolation: extras.isolation,
+    initialPrompt: extras.initialPrompt?.trim() || undefined,
+    model: extras.model?.trim() || undefined,
+    permissionMode: extras.permissionMode,
+    effort: extras.effort,
+    temperature: extras.temperature,
+    topP: extras.topP,
+    maxTokens: extras.maxTokens,
+    maxIterations: extras.maxIterations,
+    timeoutMs: extras.timeoutMs,
+    workspaceAccess: extras.workspaceAccess,
+    tools: extras.tools?.length ? extras.tools : undefined,
+  };
+}
+
+/**
+ * Extras applied on top of a profile write: only the delegation keys.
+ * Profile-owned keys (model, effort, permissionMode, sampling, workspace,
+ * tools) come from the profile itself and must never be cleared by extras.
+ */
+function formatDelegationExtras(
+  extras: AgentDefinitionExtraFields | undefined,
+): Record<string, string | number | boolean | string[] | undefined> {
+  const full = formatExtras(extras);
+  return {
+    promptMode: full.promptMode,
+    subagent: full.subagent,
+    allowedAgents: full.allowedAgents,
+    skills: full.skills,
+    memory: full.memory,
+    background: full.background,
+    isolation: full.isolation,
+    initialPrompt: full.initialPrompt,
+  };
+}
+
+/** Read one definition's raw frontmatter + body by name (project dir wins). */
+export function readAgentDefinitionMarkdown(
+  name: string,
+  homeDir?: string,
+  projectDir?: string,
+): { frontmatter: Record<string, string>; body: string; filePath: string; source: 'project' | 'user' } | null {
+  const dirs: Array<{ dir: string; source: 'project' | 'user' }> = [];
+  if (projectDir) dirs.push({ dir: path.join(projectDir, '.hadamard', 'agents'), source: 'project' });
+  dirs.push({ dir: agentDefinitionsDir(homeDir), source: 'user' });
+  for (const { dir, source } of dirs) {
+    const filePath = findDefinitionFileByName(dir, name);
+    if (!filePath) continue;
+    try {
+      const parsed = parseMarkdownFrontmatter(readFileSync(filePath, 'utf8'));
+      return { frontmatter: parsed.frontmatter, body: parsed.body, filePath, source };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Write a pure .md agent (no bridgeConfig/model — "inherit session model").
+ * Such definitions never appear in the profile compatibility view.
+ */
+export function writeAgentDefinitionMarkdown(options: {
+  name: string;
+  description?: string;
+  body?: string;
+  extras?: AgentDefinitionExtraFields;
+  /** Defaults to the personal agents dir. */
+  directory?: string;
+  homeDir?: string;
+}): string {
+  const name = options.name.trim();
+  if (!VALID_DEFINITION_NAME.test(name)) {
+    throw new Error('Invalid agent name (use letters, digits, . _ -)');
+  }
+  const dir = options.directory ?? agentDefinitionsDir(options.homeDir);
+  mkdirSync(dir, { recursive: true });
+  const existing = findDefinitionFileByName(dir, name);
+  let fields: Record<string, unknown> = {};
+  if (existing) {
+    const parsed = parseMarkdownFrontmatter(readFileSync(existing, 'utf8'));
+    fields = { ...parsed.frontmatter };
+  }
+  const owned: Record<string, string | number | boolean | string[] | undefined> = {
+    name,
+    description: options.description?.trim() || undefined,
+    ...formatExtras(options.extras),
+  };
+  for (const [key, value] of Object.entries(owned)) {
+    if (formatFrontmatterValue(value) === undefined) delete fields[key];
+    else fields[key] = value;
+  }
+  const body = options.body?.trim() || (existing ? parseMarkdownFrontmatter(readFileSync(existing, 'utf8')).body.trim() : '') || 'No additional instructions.';
+  if (!fields.description) fields.description = firstBodyLine(body) ?? name;
+  const filePath = existing ?? path.join(dir, `${name}.md`);
+  writeFileSync(
+    filePath,
+    serializeAgentDefinitionMarkdown(
+      fields as Record<string, string | number | boolean | string[] | undefined>,
+      body,
+    ),
+    'utf8',
+  );
+  return filePath;
+}
+
 /** Profiles derived from the unified .md store (user scope). */
 export function readProfilesFromAgentDefinitions(homeDir?: string): AgentProfile[] {
   const profiles: AgentProfile[] = [];
@@ -324,10 +475,16 @@ export function migrateAgentProfilesToMarkdown(
  * semantics); unknown keys (allowedAgents, skills, …) are preserved. The body
  * mirrors systemPromptAppend — the compat derivation maps body →
  * systemPromptAppend, so read-modify-write through the profile API always
- * carries the current body.
+ * carries the current body. `options.directory` redirects the write to a
+ * project agents dir; `options.extras` (when provided) set-or-clear the
+ * subagent/delegation keys the profile model does not carry.
  */
-export function writeAgentProfileMarkdown(profile: AgentProfile, homeDir?: string): string {
-  const dir = agentDefinitionsDir(homeDir);
+export function writeAgentProfileMarkdown(
+  profile: AgentProfile,
+  homeDir?: string,
+  options: { directory?: string; extras?: AgentDefinitionExtraFields } = {},
+): string {
+  const dir = options.directory ?? agentDefinitionsDir(homeDir);
   mkdirSync(dir, { recursive: true });
   const existing = findDefinitionFileByName(dir, profile.name);
   let fields: Record<string, unknown> = {};
@@ -339,6 +496,12 @@ export function writeAgentProfileMarkdown(profile: AgentProfile, homeDir?: strin
   for (const [key, value] of Object.entries(profileToMarkdownFields(profile))) {
     if (formatFrontmatterValue(value) === undefined) delete fields[key];
     else fields[key] = value;
+  }
+  if (options.extras) {
+    for (const [key, value] of Object.entries(formatDelegationExtras(options.extras))) {
+      if (formatFrontmatterValue(value) === undefined) delete fields[key];
+      else fields[key] = value;
+    }
   }
   const finalBody = body || 'No additional instructions.';
   if (!fields.description) {
@@ -357,8 +520,8 @@ export function writeAgentProfileMarkdown(profile: AgentProfile, homeDir?: strin
 }
 
 /** Write-through delete (migrated store): remove the definition's .md file. */
-export function deleteAgentProfileMarkdown(name: string, homeDir?: string): boolean {
-  const dir = agentDefinitionsDir(homeDir);
+export function deleteAgentProfileMarkdown(name: string, homeDir?: string, directory?: string): boolean {
+  const dir = directory ?? agentDefinitionsDir(homeDir);
   const existing = findDefinitionFileByName(dir, name);
   if (!existing) return false;
   unlinkSync(existing);

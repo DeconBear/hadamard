@@ -45,6 +45,18 @@ export type {
   ResolvedAgentProfileRun,
   SelectableAgent,
 } from './config/agentProfiles.js';
+export {
+  agentProfileStoreMigrated,
+  deleteAgentProfileMarkdown,
+  migrateAgentProfilesToMarkdown,
+  profileStoredAsMarkdown,
+  readAgentDefinitionMarkdown,
+  readProfilesFromAgentDefinitions,
+  serializeAgentDefinitionMarkdown,
+  writeAgentDefinitionMarkdown,
+  writeAgentProfileMarkdown,
+} from './config/agentDefinitionMigration.js';
+export type { AgentDefinitionExtraFields } from './config/agentDefinitionMigration.js';
 export * from './issues/issueStore.js';
 export * from './issues/issueExecution.js';
 export {
