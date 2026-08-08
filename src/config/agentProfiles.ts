@@ -18,6 +18,15 @@ import {
   type PersistedBridgeConfig,
 } from '../parity/bridgeConfigs.js';
 import { resolveHadamardHome } from './hadamardHome.js';
+import {
+  agentProfileStoreMigrated,
+  deleteAgentProfileMarkdown,
+  migrateAgentProfilesToMarkdown,
+  profileStoredAsMarkdown,
+  readProfilesFromAgentDefinitions,
+  writeAgentProfileMarkdown,
+  writeAgentProfilesMarkdown,
+} from './agentDefinitionMigration.js';
 import { getLoadedJsonConfig } from './loadJsonConfigFile.js';
 import {
   isHadamardModelTier,
@@ -180,26 +189,42 @@ function assertValidAgentProfile(profile: AgentProfile): void {
 }
 
 export function readAgentProfiles(homeDir?: string): PersistedAgentProfiles {
+  // S1a unified store: auto-migrate the legacy json on first read, then merge
+  // json profiles with .md-derived ones — the .md definition wins on name.
+  migrateAgentProfilesToMarkdown(homeDir);
   const file = getAgentProfilesPath(homeDir);
-  if (!existsSync(file)) return { version: 1, profiles: [] };
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf-8'));
-    const profiles = Array.isArray(parsed.profiles)
-      ? parsed.profiles.map(normalizeAgentProfile).filter((profile: AgentProfile | null): profile is AgentProfile => Boolean(profile))
-      : [];
-    return { version: 1, profiles };
-  } catch {
-    return { version: 1, profiles: [] };
+  let jsonProfiles: AgentProfile[] = [];
+  if (existsSync(file)) {
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf-8'));
+      jsonProfiles = Array.isArray(parsed.profiles)
+        ? parsed.profiles.map(normalizeAgentProfile).filter((profile: AgentProfile | null): profile is AgentProfile => Boolean(profile))
+        : [];
+    } catch {
+      jsonProfiles = [];
+    }
   }
+  const merged = new Map<string, AgentProfile>(jsonProfiles.map(profile => [profile.name, profile]));
+  for (const profile of readProfilesFromAgentDefinitions(homeDir)) {
+    merged.set(profile.name, profile);
+  }
+  return { version: 1, profiles: [...merged.values()] };
 }
 
 export function writeAgentProfiles(store: PersistedAgentProfiles, homeDir?: string): void {
   const file = getAgentProfilesPath(homeDir);
-  mkdirSync(path.dirname(file), { recursive: true });
   const profiles = store.profiles.map((profile) => {
     assertValidAgentProfile(profile);
     return normalizeAgentProfile(profile)!;
   });
+  if (agentProfileStoreMigrated(homeDir)) {
+    // Migrated store (S1a interim): write through to .md files instead of
+    // recreating the legacy json. Bulk semantics: profile-backed .md files
+    // absent from the store are removed inside writeAgentProfilesMarkdown.
+    writeAgentProfilesMarkdown(profiles, homeDir);
+    return;
+  }
+  mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify({ version: 1, profiles }, null, 2), 'utf-8');
 }
 
@@ -236,7 +261,13 @@ export function upsertAgentProfile(profile: AgentProfile, homeDir?: string): {
   const normalized = normalizeAgentProfile(profile);
   if (!normalized) throw new Error('Missing profile fields');
   const validation = validateAgentProfile(normalized, homeDir);
-  const current = readAgentProfiles(homeDir);
+  const current = readAgentProfiles(homeDir); // triggers the json→md migration
+  // Write through only once migrated (or when the profile already lives in
+  // the .md store); a fresh store keeps the legacy json write for now (S3).
+  if (agentProfileStoreMigrated(homeDir) || profileStoredAsMarkdown(normalized.name, homeDir)) {
+    writeAgentProfileMarkdown(normalized, homeDir);
+    return { store: readAgentProfiles(homeDir), profile: validation.profile, warnings: validation.warnings };
+  }
   const nextProfiles = current.profiles.filter(existing => existing.name !== normalized.name);
   nextProfiles.push(normalized);
   const store = { version: 1 as const, profiles: nextProfiles };
@@ -245,7 +276,12 @@ export function upsertAgentProfile(profile: AgentProfile, homeDir?: string): {
 }
 
 export function deleteAgentProfile(name: string, homeDir?: string): PersistedAgentProfiles {
-  const current = readAgentProfiles(homeDir);
+  const current = readAgentProfiles(homeDir); // triggers the json→md migration
+  // Unified store copy (no-op when no .md definition carries this name).
+  deleteAgentProfileMarkdown(name, homeDir);
+  if (!existsSync(getAgentProfilesPath(homeDir))) {
+    return readAgentProfiles(homeDir);
+  }
   const next = {
     version: 1 as const,
     profiles: current.profiles.filter(profile => profile.name !== name),
