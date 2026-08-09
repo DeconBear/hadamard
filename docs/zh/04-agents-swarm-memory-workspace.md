@@ -106,9 +106,26 @@ team.setRuntimeContext({
 
 - [examples/hadamard-swarm.ts](../../examples/hadamard-swarm.ts)
 
-### GUI：让 Assistant 提议 Agent Graph
+### GUI：配置 Agent、Graph 与 Workflow
 
-Global Assistant 与 Project Manager 都能读取 Team 并生成 Agent Graph 提案，但没有绕过确认直接写 Team 文件的能力：
+Electron GUI 的 **Agents** 页面提供四类可保存对象：单 Agent、Router、Graph（协作 DAG）和 Workflow（步骤树）。Graph 与 Workflow 的执行节点使用同一个执行器选择器，可选择：
+
+1. 某个模型配置中的具体模型；选择身份是“配置名 + 模型名”，因此两个配置拥有同名模型时不会混淆。
+2. 已保存的 Agent；权限、effort、提示词模式、工具、workspace access、迭代数和超时沿用该 Agent 的设置。
+3. 另一个 Graph。
+4. 另一个 Workflow。
+
+Graph 与 Workflow 可以互相嵌套。保存和运行前会统一检查缺失引用、直接/间接循环以及嵌套深度；循环会报告完整路径。选择器会排除自身，并禁用当前快照中能够提前识别的循环目标。旧文件里的内联 `model`、`teamRef` 等字段仍可读取，新编辑会保存为类型化 `targetRef`。
+
+新建 Workflow 时会立即生成一个可编辑的根执行节点。编辑节点并选择执行器后即可保存、重新打开或运行，不需要手写 JSON。Graph 画布的 Pointer/Hand 是图标工具：`V` 选择 Pointer，`H` 选择 Hand，按住空格或使用鼠标中键可临时平移。
+
+当配置、Agent、Router、Graph 或 Workflow 被其他对象引用时，编辑器显示 **Used by N**。打开后可以查看影响来源，并用 **Go to** 跳到具体节点、路由或字段。加载引用索引失败会显示错误，不会伪装成“0 个引用”。
+
+### GUI：让全局 Assistant 管理与讲解配置
+
+右下角的 Global Assistant 是自然语言配置入口，能够读取当前未保存的 Agent/Graph/Workflow 草稿，管理 Agents 页面公开的配置，并从产品能力注册表回答“这个功能在哪里、前置条件是什么、怎么使用、有哪些限制”。Graph/Workflow 的专用 “Design with agent” 按钮已移除，避免出现两套功能不一致的设计入口。
+
+Global Assistant 与 Project Manager 都能读取 Team 并生成 Agent Graph 或 Workflow 提案，但没有绕过确认直接写 Team 文件的能力：
 
 1. 在 Assistant 面板新建或选择一个 Session。
 2. Global Assistant 需要明确指定已登记的项目路径；Project Manager 固定使用当前项目。

@@ -14581,9 +14581,11 @@ body { margin: 0; color: var(--text-1); background: var(--bg-app); }
 .router-form-route-head strong { font-size: 12.5px; color: var(--text-1); }
 .router-form-route-head button { min-height: 28px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-surface); color: var(--text-2); padding: 0 10px; font-size: 12px; }
 .router-form-route-head button:hover { color: var(--danger, #dc2626); border-color: color-mix(in srgb, #dc2626 35%, var(--border)); }
-.graph-toolbar { height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-surface); flex: 0 0 auto; }
+.graph-toolbar { min-height: 54px; height: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-surface); flex: 0 0 auto; }
 .team-graph.subagent-mode .graph-toolbar { width: 100%; align-self: stretch; }
 .graph-tabs, .graph-tools { display: flex; align-items: center; gap: 6px; }
+.graph-tabs { flex: 0 0 auto; }
+.graph-tools { flex: 1 1 520px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
 .graph-tabs button, .graph-tools button { min-height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); padding: 0 11px; color: var(--text-2); }
 .graph-tools button.graph-mode-btn { width: 32px; min-width: 32px; padding: 0; display: inline-grid; place-items: center; }
 .graph-tools button.graph-mode-btn .ui-icon { width: 16px; height: 16px; }
