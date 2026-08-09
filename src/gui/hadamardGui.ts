@@ -31,6 +31,14 @@ import {
 import {
   isSingleAgentSquadType,
 } from '../team/teamPropose.js';
+import {
+  buildAgentTargetPickerOptions,
+  encodeConfigModelTarget,
+  nestedTeamRefsInDefinition,
+  pickerValueToTargetRef,
+  targetRefToPickerValue,
+  teamDefinitionReaches,
+} from './agentTargetPicker.js';
 
 /**
  * Agent TUI vision (plan phase 6). The TerminalSnapshot tool lets the chat
@@ -15586,9 +15594,18 @@ export function createHadamardGuiClientScript(): string {
     computeTeamGraphAutoLayoutLanes.toString(),
     getTeamGraphBezierClientScript(),
   ].join('\n');
+  const targetPickerScript = [
+    encodeConfigModelTarget.toString(),
+    targetRefToPickerValue.toString(),
+    pickerValueToTargetRef.toString(),
+    nestedTeamRefsInDefinition.toString(),
+    teamDefinitionReaches.toString(),
+    buildAgentTargetPickerOptions.toString(),
+  ].join('\n');
   return `
 ${getTranscriptClientScript()}
 ${getProjectWorkbenchClientHelpers()}
+${targetPickerScript}
 const HADAMARD_TOKEN = window.__HADAMARD_TOKEN__ || '';
 // Client-side icon helper. eye/eyeOff are runtime-toggled; the workbench tab
 // bar is rendered client-side, so the pane icons it needs live here too.
@@ -28319,15 +28336,19 @@ function configModelGroups() {
   }
   return groups;
 }
-/** The config owning a model id (first match), '' when unknown. */
+/** The config owning a legacy bare model id (first match), '' when unknown. */
 function configForModel(model) {
   for (const g of configModelGroups()) if (g.models.includes(model)) return g.config;
   return '';
 }
+function configModelPickerValue(config, model) {
+  return encodeConfigModelTarget(String(config || ''), String(model || ''));
+}
 /**
  * ConfigModelPicker: a config-grouped model <select> (optgroup per config).
- * opts: { selected?, includeSession?, placeholder?, onChange?(model, config) }
- * The select value is the model id (back-compat with legacy call sites).
+ * opts: { selected?, selectedConfig?, includeSession?, placeholder?, onChange?(model, config) }
+ * Provider options use config+model as their HTML identity. Callbacks return
+ * the two fields separately for the existing editor persistence shapes.
  */
 function createConfigModelSelect(opts) {
   opts = opts || {};
@@ -28341,9 +28362,10 @@ function createConfigModelSelect(opts) {
   const sessionModel = state.snapshot?.session?.model;
   if (opts.includeSession && sessionModel) {
     const opt = document.createElement('option');
-    opt.value = sessionModel;
+    opt.value = configModelPickerValue('', sessionModel);
     opt.textContent = sessionModel + ' (session)';
     opt.dataset.config = '';
+    opt.dataset.model = sessionModel;
     select.appendChild(opt);
   }
   for (const g of configModelGroups()) {
@@ -28351,18 +28373,24 @@ function createConfigModelSelect(opts) {
     group.label = g.config + (g.runtime ? ' · ' + g.runtime : '');
     for (const model of g.models) {
       const opt = document.createElement('option');
-      opt.value = model;
+      opt.value = configModelPickerValue(g.config, model);
       opt.textContent = model;
       opt.dataset.config = g.config;
+      opt.dataset.model = model;
       group.appendChild(opt);
     }
     select.appendChild(group);
   }
-  if (opts.selected) select.value = opts.selected;
+  if (opts.selected) {
+    const exact = Array.from(select.options).find((option) =>
+      option.dataset.model === opts.selected
+      && (!opts.selectedConfig || option.dataset.config === opts.selectedConfig));
+    if (exact) exact.selected = true;
+  }
   if (opts.onChange) {
     select.addEventListener('change', () => {
       const opt = select.selectedOptions && select.selectedOptions[0];
-      opts.onChange(select.value, (opt && opt.dataset.config) || configForModel(select.value));
+      opts.onChange((opt && opt.dataset.model) || '', (opt && opt.dataset.config) || '');
     });
   }
   return select;
@@ -28371,60 +28399,22 @@ function createConfigModelSelect(opts) {
 // No router group — routers are never route/execution targets (§7-1).
 function agentTargetSelectOptions(opts) {
   opts = opts || {};
-  const options = [];
-  for (const g of configModelGroups()) {
-    for (const model of g.models) {
-      options.push({
-        value: 'model:' + g.config + ':' + model,
-        label: model,
-        group: 'Models · ' + g.config,
-      });
-    }
-  }
-  for (const p of state.snapshot?.agentProfiles || []) {
-    if (!p?.name) continue;
-    options.push({
-      value: 'agent:' + p.name,
-      label: p.name + (p.model ? ' (' + p.model + ')' : ''),
-      group: 'Agents',
-    });
-  }
-  if (opts.includeTeams !== false) {
-    for (const t of teamListForRegion()) {
-      if (t.kind !== 'team') continue;
-      if (opts.excludeTeam && t.name === opts.excludeTeam) continue;
-      options.push({
-        value: 'team:' + t.name,
-        label: t.name,
-        group: t.squadType === 'workflow' ? 'Workflows' : 'Graphs',
-      });
-    }
-  }
-  return options;
-}
-function targetRefToPickerValue(ref) {
-  if (!ref) return '';
-  if (ref.kind === 'agent') return 'agent:' + ref.name;
-  if (ref.kind === 'team') return 'team:' + ref.name;
-  return 'model:' + (ref.config || '') + ':' + ref.model;
-}
-function pickerValueToTargetRef(value) {
-  const v = String(value || '');
-  if (v.startsWith('agent:')) return v.length > 6 ? { kind: 'agent', name: v.slice(6) } : null;
-  if (v.startsWith('team:')) return v.length > 5 ? { kind: 'team', name: v.slice(5) } : null;
-  if (v.startsWith('model:')) {
-    const rest = v.slice(6);
-    const sep = rest.indexOf(':');
-    if (sep < 0) return rest ? { kind: 'model', config: '', model: rest } : null;
-    const model = rest.slice(sep + 1);
-    return model ? { kind: 'model', config: rest.slice(0, sep), model } : null;
-  }
-  // Bare legacy value = model id.
-  return v ? { kind: 'model', config: '', model: v } : null;
+  return buildAgentTargetPickerOptions({
+    modelGroups: configModelGroups(),
+    profiles: state.snapshot?.agentProfiles || [],
+    teams: opts.includeTeams === false
+      ? []
+      : (state.snapshot?.teams || []).map((team) => ({
+          name: team.name,
+          squadType: team.definition?.squadType || team.squadType || 'graph',
+          definition: team.definition,
+        })),
+    excludeTeam: opts.excludeTeam,
+  });
 }
 /**
  * AgentTargetPicker: grouped executor select outputting an AgentTargetRef.
- * Groups: Models (per config) / Agents / Graphs / Workflows.
+ * Groups: Model configurations / Agents / Graphs / Workflows.
  * opts: { value?, placeholder?, includeTeams?, onChange?(ref|null, rawValue) }
  */
 function createAgentTargetSelect(opts) {
@@ -28447,6 +28437,8 @@ function createAgentTargetSelect(opts) {
     const opt = document.createElement('option');
     opt.value = option.value;
     opt.textContent = option.label;
+    opt.disabled = Boolean(option.disabled);
+    if (option.disabled) opt.title = 'Unavailable because this reference would create a composition cycle';
     availableValues.add(option.value);
     groupEl.appendChild(opt);
   }
@@ -33316,7 +33308,11 @@ function mountAgentProfileModelPicker(selectedConfig, selectedModel, preferInher
   const mount = el('agentProfileModelPicker');
   if (!mount) return;
   mount.textContent = '';
-  const select = createConfigModelSelect({ placeholder: '(no provider configs)' });
+  const select = createConfigModelSelect({
+    placeholder: '(no provider configs)',
+    selected: selectedModel,
+    selectedConfig,
+  });
   select.id = 'agentProfilePicker';
   const inheritOpt = document.createElement('option');
   inheritOpt.value = '__inherit__';
@@ -33329,18 +33325,18 @@ function mountAgentProfileModelPicker(selectedConfig, selectedModel, preferInher
   } else if (selectedModel) {
     // A model id may live in several configs — prefer the profile's config.
     for (const opt of select.options) {
-      if (opt.value === selectedModel && (opt.dataset.config || '') === selectedConfig) { chosen = opt; break; }
+      if (opt.dataset.model === selectedModel && (opt.dataset.config || '') === selectedConfig) { chosen = opt; break; }
     }
     if (!chosen) {
       for (const opt of select.options) {
-        if (opt.value === selectedModel) { chosen = opt; break; }
+        if (opt.dataset.model === selectedModel) { chosen = opt; break; }
       }
     }
   }
   if (!chosen && selectedConfig) {
     // Model id no longer in the config list: fall back to that config's first model.
     for (const opt of select.options) {
-      if ((opt.dataset.config || '') === selectedConfig && opt.value && opt.value !== '__inherit__') {
+      if ((opt.dataset.config || '') === selectedConfig && opt.dataset.model) {
         chosen = opt;
         break;
       }
@@ -33349,7 +33345,7 @@ function mountAgentProfileModelPicker(selectedConfig, selectedModel, preferInher
   if (!chosen && !selectedConfig && !selectedModel && !preferInherit) {
     // New profile: default to the first config/model (legacy behavior).
     for (const opt of select.options) {
-      if (opt.value && opt.value !== '__inherit__') { chosen = opt; break; }
+      if (opt.dataset.model) { chosen = opt; break; }
     }
   }
   if (chosen) chosen.selected = true;
@@ -33370,7 +33366,9 @@ function selectedAgentProfileConfig() {
 
 function selectedAgentProfileModel() {
   if (agentProfilePickerIsInherit()) return '';
-  return el('agentProfilePicker')?.value || '';
+  const select = el('agentProfilePicker');
+  const opt = select && select.selectedOptions && select.selectedOptions[0];
+  return (opt && opt.dataset.model) || '';
 }
 
 function renderAgentProfileTools(selected) {
@@ -35703,7 +35701,11 @@ function mountManagerConfigModelPicker(selectedConfig, selectedModel) {
   const mount = el('managerCfgModelPicker');
   if (!mount) return;
   mount.textContent = '';
-  const select = createConfigModelSelect({ placeholder: 'Session default' });
+  const select = createConfigModelSelect({
+    placeholder: 'Session default',
+    selected: selectedModel,
+    selectedConfig,
+  });
   select.id = 'managerCfgPicker';
   for (const group of select.querySelectorAll('optgroup')) {
     const first = group.querySelector('option');
@@ -35711,29 +35713,32 @@ function mountManagerConfigModelPicker(selectedConfig, selectedModel) {
     def.value = '__config_default__';
     def.textContent = '(config default)';
     def.dataset.config = (first && first.dataset.config) || '';
+    def.dataset.model = '';
     group.insertBefore(def, first);
   }
   if (selectedConfig && !configModelGroups().some((g) => g.config === selectedConfig)) {
     const orphan = document.createElement('option');
-    orphan.value = selectedModel || '__config_default__';
+    orphan.value = selectedModel ? configModelPickerValue(selectedConfig, selectedModel) : '__config_default__';
     orphan.textContent = selectedConfig + ' (missing)';
     orphan.dataset.config = selectedConfig;
+    orphan.dataset.model = selectedModel || '';
     select.appendChild(orphan);
   } else if (selectedModel && !configForModel(selectedModel)) {
     const orphan = document.createElement('option');
-    orphan.value = selectedModel;
+    orphan.value = configModelPickerValue(selectedConfig, selectedModel);
     orphan.textContent = selectedModel + ' (saved)';
     orphan.dataset.config = selectedConfig || '';
+    orphan.dataset.model = selectedModel;
     select.appendChild(orphan);
   }
   let chosen = null;
   if (selectedModel) {
     for (const opt of select.options) {
-      if (opt.value === selectedModel && (opt.dataset.config || '') === selectedConfig) { chosen = opt; break; }
+      if (opt.dataset.model === selectedModel && (opt.dataset.config || '') === selectedConfig) { chosen = opt; break; }
     }
     if (!chosen) {
       for (const opt of select.options) {
-        if (opt.value === selectedModel) { chosen = opt; break; }
+        if (opt.dataset.model === selectedModel) { chosen = opt; break; }
       }
     }
   } else if (selectedConfig) {
@@ -35751,7 +35756,7 @@ function selectedManagerCfg() {
   if (!select || !select.value) return { bridgeConfig: '', model: '' };
   return {
     bridgeConfig: (opt && opt.dataset.config) || '',
-    model: select.value === '__config_default__' ? '' : select.value,
+    model: (opt && opt.dataset.model) || '',
   };
 }
 function openManagerConfigForm() {

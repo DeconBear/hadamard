@@ -23,13 +23,14 @@ import {
   runMemberAgent,
 } from './teamRuntime.js';
 import { buildGraphNodeTools, canonicalizeTeamDefinition, createNotifyTeammateTool, migrateTeamDefinitionToV3, orchestrateGraph } from './teamGraph.js';
-import { listTeamAgentLabels, loadTeamDefinition } from './teamDefinitions.js';
+import { listTeamAgentLabels } from './teamDefinitions.js';
 import { resolveGraphNodeSystemPrompt } from './teamPrompts.js';
 import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 import { AgentPool } from './agentPool.js';
 import { isSingleAgentSquadType } from './teamPropose.js';
 import { runSingleAgentSquad, runWorkflowSquad } from './workflowSquad.js';
 import { assertValidTeamComposition } from './teamComposition.js';
+import { resolveExecutorTarget } from './executorTarget.js';
 import {
   resolveEffectiveAgentRunOptions,
   type EffectiveAgentRunOptions,
@@ -236,15 +237,21 @@ async function runGraphMode(
           memberStatuses.push({ ...base, ok: false, error: `team recursion: ${cycle}`, toolCalls: 0, durationMs: 0 });
           return { report: `[team recursion detected: ${cycle}]`, ok: false, error: 'recursion' };
         }
-        const loaded = loadTeamDefinition(ref, cwd, executionOptions.homeDir);
-        if (!loaded) {
+        let nestedDefinition: TeamDefinition;
+        try {
+          const resolved = resolveExecutorTarget({ kind: 'team', name: ref }, {
+            projectDir: cwd,
+            homeDir: executionOptions.homeDir,
+          });
+          nestedDefinition = resolved.definition;
+        } catch {
           memberStatuses.push({ ...base, ok: false, error: `team "${ref}" not found`, toolCalls: 0, durationMs: 0 });
           return { report: `[team "${ref}" not found]`, ok: false, error: 'team not found' };
         }
         const subStarted = Date.now();
         try {
           const nestedSignal = memberSignal(signal, resolveMemberTimeout(node)) ?? signal;
-          const subResult = await askTeamDefinition(loaded.definition, task, nestedSignal, {
+          const subResult = await askTeamDefinition(nestedDefinition, task, nestedSignal, {
             ...executionOptions,
             workDir: cwd,
             onEvent,
@@ -279,7 +286,7 @@ async function runGraphMode(
         | ReturnType<typeof resolveTargetRef>['agentProfile'];
       if (node.targetRef && node.targetRef.kind !== 'team') {
         try {
-          const resolved = resolveTargetRef(node.targetRef, {
+          const resolved = resolveExecutorTarget(node.targetRef, {
             projectDir: cwd,
             homeDir: executionOptions.homeDir,
           });
@@ -434,7 +441,9 @@ export class ModelTeam {
     const teamStack = opts?.teamStack?.length ? opts.teamStack : [this.name];
     assertValidTeamComposition(this.definition, {
       projectDir: workDir,
+      homeDir: opts?.homeDir,
       ancestorStack: teamStack.slice(0, -1),
+      maxDepth: opts?.maxTeamNestingDepth,
     });
     return runGraphMode(
       prompt,
@@ -476,6 +485,7 @@ export async function askTeamDefinition(
     projectDir: workDir,
     homeDir: opts?.homeDir,
     ancestorStack: ancestors,
+    maxDepth: opts?.maxTeamNestingDepth,
   });
   const teamStack = [...ancestors, definition.name];
   if (squadType === 'workflow') {
