@@ -1,6 +1,6 @@
 /**
  * Team designer propose helpers — validate/canonicalize LLM drafts without
- * writing to disk. Used by POST /api/team/propose.
+ * writing to disk. Used by the global assistant's Team proposal tools.
  */
 import { robustJsonParse } from '../provider/json-parse.js';
 import type { TeamDefinition } from '../types.js';
