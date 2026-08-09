@@ -226,6 +226,56 @@ describe('renameDefinitionAndReferences', () => {
     expect(router.routes[0].target.config).toBe('cfg2');
   });
 
+  it('renames references stored by Issues and the global Assistant', async () => {
+    const { home, project } = seedHome();
+    let issueAgent: string | null = 'coder';
+    let assistant = { bridgeConfig: 'cfg', model: 'm1' };
+
+    await renameDefinitionAndReferences('agent', 'coder', 'coder2', {
+      projectDir: project,
+      homeDir: home,
+      issues: {
+        read: async () => [{ id: 'issue-1', number: 7, agentConfig: issueAgent ?? undefined }],
+        writeAgentConfig: async (_id, value) => { issueAgent = value; },
+      },
+    });
+    expect(issueAgent).toBe('coder2');
+
+    await renameDefinitionAndReferences('config', 'cfg', 'cfg2', {
+      projectDir: project,
+      homeDir: home,
+      assistantConfig: {
+        read: async () => assistant,
+        write: async (value) => { assistant = { ...assistant, ...value }; },
+      },
+    });
+    expect(assistant.bridgeConfig).toBe('cfg2');
+  });
+
+  it('restores files and external Issue state when an atomic rename fails', async () => {
+    const { home, project } = seedHome();
+    writeJson(path.join(project, '.hadamard', 'routers', 'r.json'), {
+      name: 'r',
+      routerModel: { model: 'lead' },
+      routes: [{ model: 'm1', when: 'a', target: { kind: 'agent', name: 'coder' } }],
+    });
+    let issueAgent: string | null = 'coder';
+    await expect(renameDefinitionAndReferences('agent', 'coder', 'coder2', {
+      projectDir: project,
+      homeDir: home,
+      issues: {
+        read: async () => [{ id: 'issue-1', agentConfig: issueAgent ?? undefined }],
+        writeAgentConfig: async (_id, value) => {
+          issueAgent = value;
+          if (value === 'coder2') throw new Error('simulated Issue storage failure');
+        },
+      },
+    })).rejects.toThrow(/simulated Issue storage failure/);
+    expect(issueAgent).toBe('coder');
+    expect(readJson(path.join(project, '.hadamard', 'routers', 'r.json')).routes[0].target.name).toBe('coder');
+    expect(readAgentProfiles(home).profiles.some(profile => profile.name === 'coder')).toBe(true);
+  });
+
   it('renames a team: file, other teams, automation tasks, defaultAttached', async () => {
     const { home, project } = seedHome();
     writeJson(path.join(project, '.hadamard', 'teams', 'child.json'), { name: 'child', mode: 'graph', members: [] });
@@ -294,6 +344,42 @@ describe('applyDeleteFallback', () => {
     expect(profiles.profiles.every((p) => p.bridgeConfig === 'other')).toBe(true);
     const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
     expect(router.routes[0].target.config).toBe('other');
+  });
+
+  it('repoints Assistant config, clears Issue assignment, and clears a deleted default team', async () => {
+    const { home, project } = seedHome();
+    let assistant: { bridgeConfig?: string } = { bridgeConfig: 'cfg' };
+    await applyDeleteFallback('config', 'cfg', { type: 'repoint', target: 'other' }, {
+      projectDir: project,
+      homeDir: home,
+      assistantConfig: {
+        read: async () => assistant,
+        write: async value => { assistant = value; },
+      },
+    });
+    expect(assistant.bridgeConfig).toBe('other');
+
+    let issueAgent: string | null = 'coder';
+    await applyDeleteFallback('agent', 'coder', { type: 'degrade-model' }, {
+      projectDir: project,
+      homeDir: home,
+      issues: {
+        read: async () => [{ id: 'issue-1', number: 3, agentConfig: issueAgent ?? undefined }],
+        writeAgentConfig: async (_id, value) => { issueAgent = value; },
+      },
+    });
+    expect(issueAgent).toBeNull();
+
+    let defaultAttached: string | null = 'child';
+    await applyDeleteFallback('team', 'child', { type: 'remove-nodes' }, {
+      projectDir: project,
+      homeDir: home,
+      teamPreferences: {
+        read: () => ({ autoInvoke: false, defaultAttached, confirmBeforeRun: true }),
+        write: prefs => { defaultAttached = prefs.defaultAttached; },
+      },
+    });
+    expect(defaultAttached).toBeNull();
   });
 
   it('agent degrade-model keeps the original model id as a raw model ref', async () => {
