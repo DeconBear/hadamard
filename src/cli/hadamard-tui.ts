@@ -2,7 +2,7 @@
 /**
  * Hadamard TUI entry point.
  *
- * Usage: hadamard-tui [work-dir] [--config <path>] [--permission-mode <mode>] [--model <model>]
+ * Usage: hadamard [work-dir] [--config <path>] [--permission-mode <mode>] [--model <model>]
  *
  * Runtime defaults: default Hadamard settings loading,
  * createHadamardCoreTools({ cwd }), bypassPermissions, and
@@ -66,9 +66,10 @@ if (args.version) {
 if (args.help) {
   process.stdout.write(
     [
-      'hadamard-tui — Clean SDK terminal UI',
+      'Hadamard SDK terminal UI',
       '',
-      'Usage: hadamard-tui [work-dir] [options]',
+      'Usage: hadamard [work-dir] [options]',
+      'Aliases: actoviq, hadamard-tui',
       '',
       'Options:',
       '  --config <path>            Load a specific Hadamard settings JSON file',
@@ -85,7 +86,7 @@ if (args.help) {
 }
 
 if (!process.stdin.isTTY || !process.stdout.isTTY) {
-  process.stderr.write('hadamard-tui requires an interactive terminal (TTY).\n');
+  process.stderr.write('Hadamard TUI requires an interactive terminal (TTY).\n');
   process.exit(1);
 }
 
