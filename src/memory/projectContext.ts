@@ -1,16 +1,15 @@
 /**
- * Project context loader (CLAUDE.md / AGENTS.md hierarchy).
+ * Hadamard instruction-file loader (AGENTS.md by default, with optional
+ * project-level CLAUDE.md compatibility).
  *
- * Aligned with Claude Code's discovery rules (`src/utils/claudemd.ts`) and
- * Codex's AGENTS.md fallback, kept lightweight:
+ * Global rules always come from ~/.hadamard/AGENTS.md. Projects load
+ * AGENTS.md unless the workspace explicitly enables Claude compatibility:
  *
  *  1. Managed (system) — not applicable for the SDK; skipped.
- *  2. User memory:      `~/.claude/CLAUDE.md`
- *  3. Project memory:   `CLAUDE.md`, `.claude/CLAUDE.md`,
- *                       `.claude/rules/*.md`, `AGENTS.md` at the
- *                       working dir and each ancestor up to (but not
- *                       including) the home directory.
- *  4. Local (private):  `CLAUDE.local.md` in the same ancestor walk.
+ *  1. Global rules:     `~/.hadamard/AGENTS.md`
+ *  2. Project default:  `AGENTS.md` in the ancestor walk.
+ *  3. Compatibility:    `CLAUDE.md`, `.claude/CLAUDE.md`,
+ *                       `.claude/rules/*.md`, and `CLAUDE.local.md`.
  *
  * Each file may pull in other files via `@<path>` include lines (relative to
  * the file's own directory; `@~/path` resolves from the home directory).
@@ -21,6 +20,8 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+import type { ProjectInstructionMode } from '../config/projectSettings.js';
 
 const MAX_TOTAL_CHARS = 50_000;
 const MAX_INCLUDE_DEPTH = 5;
@@ -90,62 +91,82 @@ export interface LoadedProjectContext {
   sources: string[];
 }
 
+export interface LoadProjectContextOptions {
+  projectInstructionMode?: ProjectInstructionMode;
+  hadamardHomeDir?: string;
+  userHomeDir?: string;
+}
+
 /**
- * Load the CLAUDE.md / AGENTS.md hierarchy for a working directory.
+ * Load global Hadamard AGENTS.md plus the selected project instruction files.
  * Returns an empty `text` when nothing is found (the common case for
  * arbitrary dirs), so callers can no-op cheaply.
  */
-export function loadProjectContext(workDir: string): LoadedProjectContext {
+export function loadProjectContext(
+  workDir: string,
+  options: LoadProjectContextOptions = {},
+): LoadedProjectContext {
   const seen = new Set<string>();
   const parts: { label: string; content: string }[] = [];
-  const home = os.homedir();
+  const userHome = path.resolve(options.userHomeDir ?? os.homedir());
+  const hadamardHomeDir = path.resolve(
+    options.hadamardHomeDir ?? process.env.HADAMARD_HOME ?? path.join(userHome, '.hadamard'),
+  );
+  const instructionMode = options.projectInstructionMode ?? 'agents';
+  const includeAgents = instructionMode === 'agents' || instructionMode === 'both';
+  const includeClaude = instructionMode === 'claude' || instructionMode === 'both';
 
-  // 1. User memory — ~/.claude/CLAUDE.md (Claude Code convention).
-  const userFile = path.join(home, '.claude', 'CLAUDE.md');
+  // Global Hadamard rules use one canonical file regardless of project mode.
+  const userFile = path.join(hadamardHomeDir, 'AGENTS.md');
   const userContent = readContextFile(userFile, seen);
-  if (userContent?.trim()) parts.push({ label: '~/.claude/CLAUDE.md', content: userContent });
+  if (userContent?.trim()) parts.push({ label: '~/.hadamard/AGENTS.md', content: userContent });
 
   // 2. Project + local memory — walk from farthest ancestor (just under home)
   //    to the cwd so the cwd's own files land last (most prominent).
   const ancestors: string[] = [];
   let dir = path.resolve(workDir);
-  while (dir && dir !== home && path.dirname(dir) !== dir) {
+  while (dir && dir !== userHome && path.dirname(dir) !== dir) {
     ancestors.unshift(dir);
     dir = path.dirname(dir);
   }
 
   for (const anc of ancestors) {
-    // Project: canonical names (Claude Code + Codex fallback).
-    for (const rel of ['CLAUDE.md', path.join('.claude', 'CLAUDE.md'), 'AGENTS.md']) {
+    // Project instruction formats are selected per workspace.
+    const projectFiles = [
+      ...(includeAgents ? ['AGENTS.md'] : []),
+      ...(includeClaude ? ['CLAUDE.md', path.join('.claude', 'CLAUDE.md')] : []),
+    ];
+    for (const rel of projectFiles) {
       const f = path.join(anc, rel);
       const c = readContextFile(f, seen);
       if (c?.trim()) {
-        const label = path.relative(home, f) || f;
+        const label = path.relative(userHome, f) || f;
         parts.push({ label, content: c });
       }
     }
 
     // Project: .claude/rules/*.md (Claude Code convention).
-    const rulesDir = path.join(anc, '.claude', 'rules');
-    try {
-      const entries = readRuleEntries(rulesDir);
-      for (const entry of entries) {
-        const c = readContextFile(entry, seen);
-        if (c?.trim()) {
-          const label = path.relative(home, entry) || entry;
-          parts.push({ label, content: c });
+    if (includeClaude) {
+      const rulesDir = path.join(anc, '.claude', 'rules');
+      try {
+        const entries = readRuleEntries(rulesDir);
+        for (const entry of entries) {
+          const c = readContextFile(entry, seen);
+          if (c?.trim()) {
+            const label = path.relative(userHome, entry) || entry;
+            parts.push({ label, content: c });
+          }
         }
+      } catch {
+        // Optional compatibility directory.
       }
-    } catch {
-      // rules dir may not exist — that's fine.
-    }
 
-    // Local: user-private, not checked into the repo (Claude Code convention).
-    const localFile = path.join(anc, 'CLAUDE.local.md');
-    const localContent = readContextFile(localFile, seen);
-    if (localContent?.trim()) {
-      const label = path.relative(home, localFile) || localFile;
-      parts.push({ label, content: localContent });
+      const localFile = path.join(anc, 'CLAUDE.local.md');
+      const localContent = readContextFile(localFile, seen);
+      if (localContent?.trim()) {
+        const label = path.relative(userHome, localFile) || localFile;
+        parts.push({ label, content: localContent });
+      }
     }
   }
 

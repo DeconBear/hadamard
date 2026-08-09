@@ -133,11 +133,26 @@ describe('filterInteractiveCommands', () => {
       expect(interactiveCommandRunPolicy(command)).toBe('during-run');
       expect(canRunInteractiveCommand(command, true)).toBe(true);
     }
-    for (const command of ['model', 'compact', 'resume', 'permissions', 'workflows']) {
+    for (const command of ['model', 'compact', 'resume', 'permissions', 'workflows', 'mcp', 'context settings', 'context setting both']) {
       expect(interactiveCommandRunPolicy(command)).toBe('idle-only');
       expect(canRunInteractiveCommand(command, true)).toBe(false);
       expect(canRunInteractiveCommand(command, false)).toBe(true);
     }
+  });
+
+  it('keeps the bare model command first until a trailing space is entered', () => {
+    expect(filterInteractiveCommands('/model')).toEqual([
+      'model',
+      'model config',
+      'model custom',
+      'model router',
+    ]);
+    expect(selectInteractiveCommand('/model')).toBe('/model');
+    expect(filterInteractiveCommands('/model ')).toEqual([
+      'model config',
+      'model custom',
+      'model router',
+    ]);
   });
 
   it('submits a selected sub-command exactly once', () => {

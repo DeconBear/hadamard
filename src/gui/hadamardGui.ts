@@ -767,7 +767,8 @@ const DEFAULT_GUI_PREFERENCES: GuiPreferences = {
 
 function buildGuiSystemPrompt(
   workDir: string,
-  settings: Pick<ProjectSettings, 'workMode' | 'customPrompt' | 'projectRules'> = DEFAULT_PROJECT_SETTINGS,
+  settings: Pick<ProjectSettings, 'workMode' | 'customPrompt' | 'projectRules' | 'context'> = DEFAULT_PROJECT_SETTINGS,
+  hadamardHomeDir = path.join(os.homedir(), '.hadamard'),
 ): string {
   let gitProbe = path.resolve(workDir);
   let isGit = false;
@@ -777,11 +778,14 @@ function buildGuiSystemPrompt(
     if (parent === gitProbe) break;
     gitProbe = parent;
   }
-  // Load the CLAUDE.md hierarchy (user + project, with @includes) so the agent
+  // Load Hadamard instruction files (AGENTS.md by default) so the agent
   // picks up project-specific instructions — the canonical Claude Code behavior.
-  const project = loadProjectContext(workDir);
+  const project = loadProjectContext(workDir, {
+    projectInstructionMode: settings.context.instructionMode,
+    hadamardHomeDir,
+  });
   const projectSection = project.text
-    ? `\n\n# Project context (CLAUDE.md)\n\nThe following project instructions were loaded from CLAUDE.md files. Treat them as authoritative guidance for this workspace.\n\n${project.text}\n`
+    ? `\n\n# Project context (AGENTS.md)\n\nThe following instruction files are authoritative guidance for this workspace.\n\n${project.text}\n`
     : '';
   const base = (
     `You are Hadamard Agent, an interactive GUI agent. Working directory: ${workDir}\n\n` +
@@ -2145,7 +2149,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
 
   try {
     projectSettings = await readProjectSettings(workDir, resolveGuiHomeDir());
-    systemPrompt = buildGuiSystemPrompt(workDir, projectSettings);
+    systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir());
   } catch {
     // Keep defaults when settings cannot be read.
   }
@@ -2594,7 +2598,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   }
   async function reloadProjectSystemPrompt(nextWorkDir = workDir): Promise<ProjectSettings> {
     projectSettings = await readProjectSettings(nextWorkDir, resolveGuiHomeDir());
-    systemPrompt = buildGuiSystemPrompt(nextWorkDir, projectSettings);
+    systemPrompt = buildGuiSystemPrompt(nextWorkDir, projectSettings, resolveGuiHomeDir());
     return projectSettings;
   }
   // Usage totals for /cost, /usage, /stats. Per-config breakdown attributes spend
@@ -5210,7 +5214,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       }
       case 'compact': {
         if (!sdk) return [{ type: 'error', message: 'Compaction requires a configured Hadamard provider credential.' }];
-        const result = await session.compact({ force: true, summaryInstructions: args || undefined });
+        const result = await session.compact({ summaryInstructions: args || undefined });
         if (!result.compacted) {
           return [{ type: 'error', message: result.error ?? `compact skipped: ${result.reason}` }];
         }
@@ -5824,11 +5828,36 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         return [{ type: 'error', message: 'usage: /manager [status|chat <message>|update [instruction]|config|schedule]' }];
       }
       case 'init': {
-        const prompt = 'Explore this repository (read package.json, README, and CLAUDE.md if present; list the top-level structure), then write or improve a root CLAUDE.md documenting: what the project is, key commands (build/test/run), the high-level architecture, and important conventions. Keep it concise and accurate.';
+        const prompt = 'Explore this repository (read package.json, README, and AGENTS.md if present; list the top-level structure), then write or improve a root AGENTS.md documenting: what the project is, key commands (build/test/run), the high-level architecture, and important conventions. Keep it concise and accurate.';
         return [{ type: 'agent.prompt', text: prompt }];
       }
       case 'context': {
-        const project = loadProjectContext(workDir);
+        const contextArgs = args.trim();
+        if (contextArgs === 'setting' || contextArgs === 'settings') {
+          return [{
+            type: 'command.result',
+            title: 'Context settings',
+            text: `Current: ${projectSettings.context.instructionMode}\nUse /context settings agents|claude|both, or Project settings > Context instructions.`,
+          }];
+        }
+        if (contextArgs.startsWith('setting ') || contextArgs.startsWith('settings ')) {
+          const instructionMode = contextArgs.replace(/^settings?\s+/u, '');
+          if (instructionMode !== 'agents' && instructionMode !== 'claude' && instructionMode !== 'both') {
+            return [{ type: 'error', message: 'usage: /context settings [agents|claude|both]' }];
+          }
+          projectSettings = await writeProjectSettings(workDir, resolveGuiHomeDir(), {
+            context: { instructionMode },
+          });
+          systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir());
+          return [{ type: 'notice', message: `context instructions: ${instructionMode}; global rules remain ~/.hadamard/AGENTS.md` }, { type: 'state' }];
+        }
+        if (contextArgs) {
+          return [{ type: 'error', message: 'usage: /context [settings [agents|claude|both]]' }];
+        }
+        const project = loadProjectContext(workDir, {
+          projectInstructionMode: projectSettings.context.instructionMode,
+          hadamardHomeDir: resolveGuiHomeDir(),
+        });
         const mcp = toolMetadata.filter(t => t.provider === 'mcp').length;
         const { resolveHadamardCompactBudget } = await import('../runtime/hadamardCompact.js');
         const compactBudget = resolveHadamardCompactBudget(sdk!.config.compact);
@@ -5843,7 +5872,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           `System prompt: ${systemPrompt.length} chars`,
           `Tools: ${toolMetadata.length} (${mcp} MCP)`,
           `Bridge: ${bridgeMode ? (activeBridgeConfig?.name ?? 'on') : 'off'}`,
-          `CLAUDE.md sources: ${project.sources.length ? project.sources.join(', ') : '(none)'}`,
+          `Instruction files: ${project.sources.length ? project.sources.join(', ') : '(none)'}`,
         ];
         return [{ type: 'command.result', title: 'Context', text: lines.join('\n') }];
       }
@@ -5867,7 +5896,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       }
       case 'doctor': {
         const env = readEnvFromSettings(getLoadedJsonConfig()?.raw ?? {});
-        const project = loadProjectContext(workDir);
+        const project = loadProjectContext(workDir, {
+          projectInstructionMode: projectSettings.context.instructionMode,
+          hadamardHomeDir: resolveGuiHomeDir(),
+        });
         const isGit = await gitText(['rev-parse', '--is-inside-work-tree']) === 'true';
         const key = env.HADAMARD_API_KEY ? maskApiKey(env.HADAMARD_API_KEY) : env.HADAMARD_AUTH_TOKEN ? '(auth token)' : '(none)';
         const lines = [
@@ -5880,7 +5912,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           `Session: ${session.id} (${session.messages.length} messages)`,
           `Permission: ${currentPermissionMode()}`,
           `Tools: ${toolMetadata.length}`,
-          `CLAUDE.md: ${project.sources.length ? project.sources.join(', ') : '(none)'}`,
+          `Instruction files: ${project.sources.length ? project.sources.join(', ') : '(none)'}`,
           `Bridge: ${bridgeMode ? `${activeBridgeConfig?.name ?? 'on'} → ${bridgeModelLabel ?? '?'}` : 'off'}`,
         ];
         return [{ type: 'command.result', title: 'Doctor', text: lines.join('\n') }];
@@ -8418,10 +8450,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         workMode: body.workMode === 'coding' || body.workMode === 'daily' ? body.workMode : undefined,
         customPrompt: typeof body.customPrompt === 'string' ? body.customPrompt : undefined,
         projectRules: typeof body.projectRules === 'string' ? body.projectRules : undefined,
+        context: body.context && typeof body.context === 'object'
+          ? { instructionMode: (body.context as Record<string, unknown>).instructionMode as ProjectSettings['context']['instructionMode'] }
+          : undefined,
         memory,
       });
       projectSettings = saved;
-      systemPrompt = buildGuiSystemPrompt(workDir, projectSettings);
+      systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir());
       invalidateHeavyState();
       return json(res, 200, { ok: true, path: workDir, settings: saved });
     } catch (error) {
@@ -20602,6 +20637,9 @@ function collectProjectSettingsBody() {
     workMode,
     customPrompt: el('projectCustomPrompt')?.value || '',
     projectRules: el('projectRulesPrompt')?.value || '',
+    context: {
+      instructionMode: el('projectInstructionMode')?.value || 'agents',
+    },
     memory: {
       compact: {
         // Always on — not user-configurable. Threshold and scope are fixed.
@@ -20721,7 +20759,7 @@ function wireProjectSettingsPanel() {
   panel.addEventListener('change', (event) => {
     const target = event.target;
     if (!target || !target.id) return;
-    if (target.id === 'projectWorkModeCoding' || target.id === 'projectWorkModeDaily' || target.id.startsWith('projectCompact') || target.id.startsWith('projectDurableMemory') || target.id === 'projectAutoDream' || target.id === 'projectDreamProfile' || target.id === 'projectDreamEffort' || target.id === 'projectDailyDreamTime') {
+    if (target.id === 'projectWorkModeCoding' || target.id === 'projectWorkModeDaily' || target.id === 'projectInstructionMode' || target.id.startsWith('projectCompact') || target.id.startsWith('projectDurableMemory') || target.id === 'projectAutoDream' || target.id === 'projectDreamProfile' || target.id === 'projectDreamEffort' || target.id === 'projectDailyDreamTime') {
       scheduleProjectSettingsSave();
     }
   });
@@ -20767,6 +20805,7 @@ async function mountProjectSettingsPanel(force) {
     if (daily) daily.checked = settings.workMode === 'daily';
     if (el('projectCustomPrompt')) el('projectCustomPrompt').value = settings.customPrompt || '';
     if (el('projectRulesPrompt')) el('projectRulesPrompt').value = settings.projectRules || '';
+    if (el('projectInstructionMode')) el('projectInstructionMode').value = settings.context?.instructionMode || 'agents';
     const memory = settings.memory || {};
     const compact = memory.compact || {};
     const durableMemory = memory.durableMemory || {};
@@ -23377,8 +23416,13 @@ function renderProjectDetail() {
     + '</div>'
     + '<div class="settings-group">'
     + '<h2>Project rules</h2>'
-    + '<p class="muted">Extra project rules injected after custom prompt (separate from CLAUDE.md / AGENTS.md).</p>'
+    + '<p class="muted">Extra project rules injected after the custom prompt, separate from instruction files.</p>'
     + '<textarea id="projectRulesPrompt" class="project-settings-textarea" rows="10" spellcheck="false" placeholder="Optional project rules\u2026"></textarea>'
+    + '</div>'
+    + '<div class="settings-group">'
+    + '<h2>Context instructions</h2>'
+    + '<p class="muted">Global rules always use ~/.hadamard/AGENTS.md. Choose which project instruction format this workspace loads.</p>'
+    + '<label class="settings-row"><span><strong>Project instruction files</strong><small>AGENTS.md is the Hadamard default; CLAUDE.md modes are compatibility options.</small></span><select id="projectInstructionMode"><option value="agents">AGENTS.md</option><option value="claude">CLAUDE.md</option><option value="both">AGENTS.md + CLAUDE.md</option></select></label>'
     + '</div>'
     + '<div class="settings-group">'
     + '<h2>Memory</h2>'

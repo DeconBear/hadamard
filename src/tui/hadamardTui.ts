@@ -85,6 +85,12 @@ import {
   persistHadamardSettingsStore,
   resolveHadamardSettingsStore,
 } from '../config/hadamardSettingsStore.js';
+import {
+  readProjectSettings,
+  writeProjectSettings,
+  type ProjectInstructionMode,
+  type ProjectSettings,
+} from '../config/projectSettings.js';
 import { createPreToolUseHookClassifier, readPreToolUseHooks, readPostToolUseHooks, runPostToolUseHooks, readSessionStartHooks, runSessionStartHooks } from '../hooks/userHooks.js';
 import { parseTypedHooks } from '../hooks/hookConfig.js';
 import type {
@@ -106,6 +112,7 @@ import { getLoadedJsonConfig } from '../config/loadJsonConfigFile.js';
 import {
   buildModelConfigurationCatalog,
   findModelConfiguration,
+  isModelCredentialConfigured,
   resolveHadamardConfigurationModel,
 } from '../config/modelConfigurationCatalog.js';
 import {
@@ -365,7 +372,11 @@ export function renderRichText(text: string, width: number, opts: { maxLines?: n
   return out;
 }
 
-function buildSystemPrompt(workDir: string): string {
+function buildSystemPrompt(
+  workDir: string,
+  projectSettings: Pick<ProjectSettings, 'context'>,
+  hadamardHomeDir: string,
+): string {
   let isGit = false;
   try {
     execSync('git rev-parse --is-inside-work-tree', { cwd: workDir, stdio: 'ignore' });
@@ -373,11 +384,14 @@ function buildSystemPrompt(workDir: string): string {
   } catch {
     // not a git repo
   }
-  // Load the CLAUDE.md hierarchy (user + project, with @includes) so the agent
+  // Load Hadamard instruction files (AGENTS.md by default) so the agent
   // picks up project-specific instructions — the canonical Claude Code behavior.
-  const project = loadProjectContext(workDir);
+  const project = loadProjectContext(workDir, {
+    projectInstructionMode: projectSettings.context.instructionMode,
+    hadamardHomeDir,
+  });
   const projectSection = project.text
-    ? `\n\n# Project context (CLAUDE.md)\n\nThe following project instructions were loaded from CLAUDE.md files. Treat them as authoritative guidance for this workspace.\n\n${project.text}\n`
+    ? `\n\n# Project context (AGENTS.md)\n\nThe following instruction files are authoritative guidance for this workspace.\n\n${project.text}\n`
     : '';
   return (
     `You are Hadamard Agent, an interactive CLI agent. Working directory: ${workDir}\n\n` +
@@ -438,7 +452,6 @@ async function onboardCredentials(configPath?: string): Promise<void> {
 export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<void> {
   const workDir = path.resolve(options.workDir ?? process.cwd());
   const permissionMode: HadamardPermissionMode = options.permissionMode ?? 'bypassPermissions';
-  const systemPrompt = buildSystemPrompt(workDir);
 
   try {
     if (options.configPath) {
@@ -449,6 +462,10 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   } catch {
     // Missing local config is fine; env vars may carry credentials.
   }
+
+  const hadamardHomeDir = resolveHadamardHome();
+  let projectSettings = await readProjectSettings(workDir, hadamardHomeDir);
+  let systemPrompt = buildSystemPrompt(workDir, projectSettings, hadamardHomeDir);
 
   let applyPlanPermission: (() => Promise<void>) | null = null;
   let managedPluginRuntime: ReturnType<typeof createManagedPluginRuntime> | null = null;
@@ -913,6 +930,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
   let dynamicRenderTimer: ReturnType<typeof setTimeout> | null = null;
   let runStartedAt = 0;
+  let requestStartedAt = 0;
+  let providerActivitySeen = false;
   let runToolCount = 0;
   let lastTokenEstimate: number | undefined;
   // Running token + USD totals for /cost and /usage. Per-config breakdown
@@ -921,9 +940,18 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   let totalOutputTokens = 0;
   let totalCostUsd: number | null = 0;
   const configUsage = new Map<string, { inputTokens: number; outputTokens: number; turns: number }>();
-  function recordUsage(model: string, usage: { input_tokens?: number; output_tokens?: number } | undefined): void {
+  function recordUsage(model: string, usage: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+  } | undefined): void {
     const inT = usage?.input_tokens ?? 0;
     const outT = usage?.output_tokens ?? 0;
+    const reportedContextTokens = inT
+      + (usage?.cache_creation_input_tokens ?? 0)
+      + (usage?.cache_read_input_tokens ?? 0);
+    if (reportedContextTokens > 0) lastTokenEstimate = reportedContextTokens;
     totalInputTokens += inT;
     totalOutputTokens += outT;
     const cost = estimateCost(model, inT, outT);
@@ -1324,8 +1352,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       const selected = index === menuSelected;
       const command = `/${name}`.padEnd(commandWidth);
       const label = selected ? `${A.inverse}${command}${A.reset}` : command;
-      const commandName = name.split(/\s/u, 1)[0] ?? name;
-      const unavailable = running && interactiveCommandRunPolicy(commandName) === 'idle-only';
+      const unavailable = running && interactiveCommandRunPolicy(name) === 'idle-only';
       const summary = TUI_SLASH_COMMANDS[name] ?? SUBCOMMAND_DESCRIPTIONS[name] ?? '';
       const description = truncateToWidth(
         unavailable ? `${summary} · after current run` : summary,
@@ -1344,7 +1371,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const selected = matches[Math.min(menuSelected, matches.length - 1)];
     if (selected) {
       const commandName = selected.split(/\s/u, 1)[0] ?? selected;
-      const availability = interactiveCommandRunPolicy(commandName) === 'during-run'
+      const availability = interactiveCommandRunPolicy(selected) === 'during-run'
         ? 'available while working'
         : 'idle session';
       lines.push(`${A.dim}  ${interactiveCommandUsage(commandName)} · ${availability}${A.reset}`);
@@ -1761,13 +1788,19 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     }
     running = true;
     runStartedAt = Date.now();
+    requestStartedAt = 0;
+    providerActivitySeen = false;
     runToolCount = 0;
-    statusNote = '';
+    statusNote = 'preparing locally';
     streamedTextSeen = false;
     lastTokenEstimate = undefined;
     abortCtrl = new AbortController();
     spinnerTimer = setInterval(() => {
       spinnerFrame += 1;
+      if (requestStartedAt > 0 && !providerActivitySeen) {
+        const waitingSeconds = Math.max(Math.round((Date.now() - requestStartedAt) / 1000), 0);
+        statusNote = `waiting for model ${waitingSeconds}s`;
+      }
       renderDynamic();
     }, 120);
 
@@ -1867,7 +1900,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       collapseReasoning();
       // Accumulate token + USD usage for /cost and /usage. The model is the
       // routed model (if a router is active) or the session model. Bridge runs
-      recordUsage(routed?.model ?? activeBridgeModelApi?.model ?? bridgeModelLabel ?? session.model, result.usage as { input_tokens?: number; output_tokens?: number } | undefined);
+      recordUsage(routed?.model ?? activeBridgeModelApi?.model ?? bridgeModelLabel ?? session.model, result.usage);
       const rest = flusher.drain();
       if (rest.length > 0) appendStatic(rest);
       if (!flusher.hasContent && result.text && runHadNoStreamedText()) {
@@ -1930,6 +1963,9 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         reasoningDisplay.reset();
         return;
       case 'request.started':
+        requestStartedAt = Date.now();
+        providerActivitySeen = false;
+        statusNote = 'waiting for model 0s';
         lastTokenEstimate = typeof data.requestTokenEstimate === 'number'
           ? data.requestTokenEstimate
           : undefined;
@@ -1938,6 +1974,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       case 'text.delta': {
         const delta = typeof data.delta === 'string' ? data.delta : '';
         if (!delta) return;
+        providerActivitySeen = true;
         collapseReasoning();
         streamedTextSeen = true;
         const flushed = flusher.push(delta);
@@ -1948,11 +1985,13 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       case 'reasoning.delta': {
         const delta = typeof data.delta === 'string' ? data.delta : '';
         if (!delta) return;
+        providerActivitySeen = true;
         reasoningDisplay.append(delta);
         scheduleDynamicRender();
         return;
       }
       case 'tool.input.delta': {
+        providerActivitySeen = true;
         const name = typeof data.name === 'string' && data.name ? data.name : 'tool';
         const snapshot = typeof data.snapshot === 'string'
           ? data.snapshot.trim().replace(/\s+/g, ' ')
@@ -1963,6 +2002,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         return;
       }
       case 'model.content': {
+        providerActivitySeen = true;
         const content = isRecord(data.content) ? data.content : undefined;
         if (data.kind === 'content' && content?.type === 'thinking' && !reasoningDisplay.hasStreamedContent) {
           const thinking = typeof content.thinking === 'string' ? content.thinking : '';
@@ -1972,6 +2012,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         return;
       }
       case 'tool.started': {
+        providerActivitySeen = true;
         collapseReasoning();
         const callId = typeof data.callId === 'string' ? data.callId : '';
         const publicName = typeof data.publicName === 'string'
@@ -2136,6 +2177,41 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     if (selected) await resumeSession(selected);
   }
 
+  async function configureContextSettings(requestedMode = ''): Promise<void> {
+    const normalized = requestedMode.trim().toLowerCase();
+    let instructionMode: ProjectInstructionMode | undefined;
+    if (normalized === 'agents' || normalized === 'claude' || normalized === 'both') {
+      instructionMode = normalized;
+    } else if (normalized) {
+      appendStatic([...formatErrorLine('usage: /context settings [agents|claude|both]'), '']);
+      return;
+    } else {
+      const selected = await selectItem({
+        title: 'Context settings',
+        subtitle: `Current project mode: ${projectSettings.context.instructionMode}`,
+        searchable: false,
+        items: [
+          { id: 'agents', label: 'AGENTS.md', description: 'Recommended Hadamard default' },
+          { id: 'claude', label: 'CLAUDE.md', description: 'Project-level Claude compatibility' },
+          { id: 'both', label: 'AGENTS.md + CLAUDE.md', description: 'Load both project instruction formats' },
+        ],
+      });
+      if (selected === 'agents' || selected === 'claude' || selected === 'both') {
+        instructionMode = selected;
+      }
+    }
+    if (!instructionMode) return;
+    projectSettings = await writeProjectSettings(workDir, hadamardHomeDir, {
+      context: { instructionMode },
+    });
+    systemPrompt = buildSystemPrompt(workDir, projectSettings, hadamardHomeDir);
+    appendStatic([
+      ...formatInfoLine(`context instructions: ${instructionMode}`),
+      ...formatInfoLine('Global rules remain ~/.hadamard/AGENTS.md.'),
+      '',
+    ]);
+  }
+
   async function chooseModel(): Promise<void> {
     const catalog = buildModelConfigurationCatalog(
       {
@@ -2244,7 +2320,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             id: 'api-key',
             label: 'API key',
             description:
-              env.HADAMARD_API_KEY || env.HADAMARD_AUTH_TOKEN ? 'configured' : 'not configured',
+              isModelCredentialConfigured(env, sdk.config) ? 'configured' : 'not configured',
           },
           {
             id: 'base-url',
@@ -3835,7 +3911,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const spaceIndex = raw.indexOf(' ');
     const name = (spaceIndex === -1 ? raw.slice(1) : raw.slice(1, spaceIndex)).toLowerCase();
     const args = spaceIndex === -1 ? '' : raw.slice(spaceIndex + 1).trim();
-    if (!canRunInteractiveCommand(name, running)) {
+    if (!canRunInteractiveCommand(raw.slice(1), running)) {
       appendStatic(formatInfoLine(`/${name} requires an idle session; it will be available after this run`));
       return;
     }
@@ -3869,11 +3945,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           renderDynamic();
           return;
         case 'init': {
-          // Bootstrap a CLAUDE.md by having the agent explore the repo and
-          // write concise guidance — complements the CLAUDE.md loader (the
+          // Bootstrap AGENTS.md by having the agent explore the repo and
+          // write concise guidance for subsequent Hadamard sessions.
           // generated file is then injected into every system prompt).
           await startRun(
-            'Create or update a CLAUDE.md at the repo root with concise guidance for AI coding assistants: the build/test/lint/run commands, a short architecture overview, key conventions, and non-obvious gotchas. Explore with Glob, Grep, and Read first (package.json, README, existing CLAUDE.md, key source dirs). If a CLAUDE.md already exists, improve it without discarding user-authored sections. Keep it focused — no filler.',
+            'Create or update an AGENTS.md at the repo root with concise guidance for AI coding assistants: build/test/lint/run commands, a short architecture overview, key conventions, and non-obvious gotchas. Explore with Glob, Grep, and Read first (package.json, README, existing AGENTS.md, key source dirs). If AGENTS.md already exists, improve it without discarding user-authored sections. Keep it focused and avoid filler.',
           );
           return;
         }
@@ -4244,9 +4320,22 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           return;
         }
         case 'context': {
+          const contextArgs = args.trim();
+          if (contextArgs === 'setting' || contextArgs === 'settings') {
+            await configureContextSettings();
+            return;
+          }
+          if (contextArgs.startsWith('setting ') || contextArgs.startsWith('settings ')) {
+            await configureContextSettings(contextArgs.replace(/^settings?\s+/u, ''));
+            return;
+          }
+          if (contextArgs) {
+            appendStatic([...formatErrorLine('usage: /context [settings [agents|claude|both]]'), '']);
+            return;
+          }
           // Break down what is consuming the context window (gap #9 vs
           // claude-code's /context) — usage, messages, system prompt, tools,
-          // the loaded CLAUDE.md sources, and the active config.
+          // the loaded project instruction sources, and the active config.
           const { resolveHadamardCompactBudget } = await import('../runtime/hadamardCompact.js');
           const compactBudget = resolveHadamardCompactBudget(sdk.config.compact);
           const window = compactBudget.effectiveContextWindowTokens;
@@ -4258,7 +4347,10 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           const messages = session.messages.length;
           const sysChars = systemPrompt.length;
           const mcpCount = toolMetadata.filter(t => t.provider === 'mcp').length;
-          const project = loadProjectContext(sdk.config.workDir);
+          const project = loadProjectContext(sdk.config.workDir, {
+            projectInstructionMode: projectSettings.context.instructionMode,
+            hadamardHomeDir,
+          });
           const team = activeTeamName ?? 'none';
           const router = activeRouter ? activeRouter.name : 'off';
           const bridge = bridgeMode && activeBridgeConfig ? activeBridgeConfig.name : 'off';
@@ -4270,7 +4362,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             `  ${A.dim}messages${A.reset}        ${messages}`,
             `  ${A.dim}system prompt${A.reset}   ~${sysChars} chars`,
             `  ${A.dim}tools${A.reset}           ${toolMetadata.length}${mcpCount > 0 ? ` (${mcpCount} MCP)` : ''}`,
-            `  ${A.dim}CLAUDE.md${A.reset}       ${project.sources.length ? project.sources.join(', ') : '(none loaded)'}`,
+            `  ${A.dim}instruction files${A.reset} ${project.sources.length ? project.sources.join(', ') : '(none loaded)'}`,
             `  ${A.dim}active${A.reset}         model=${session.model} · effort=${currentEffort() ?? 'auto'} · team=${team} · router=${router} · bridge=${bridge}`,
             '',
           ]);
@@ -4327,8 +4419,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           lines.push(`  ${ok(true)} permission mode ${A.dim}${currentPermissionMode()}${A.reset}`);
           lines.push(`  ${ok(toolMetadata.length > 0)} tools ${A.dim}${toolMetadata.length}${A.reset}`);
           // Context memory
-          const project = loadProjectContext(cfg.workDir);
-          lines.push(`  ${ok(project.sources.length > 0)} CLAUDE.md ${A.dim}${project.sources.length ? project.sources.join(', ') : '(none)'}${A.reset}`);
+          const project = loadProjectContext(cfg.workDir, {
+            projectInstructionMode: projectSettings.context.instructionMode,
+            hadamardHomeDir,
+          });
+          lines.push(`  ${ok(project.sources.length > 0)} instruction files ${A.dim}${project.sources.length ? project.sources.join(', ') : '(none)'}${A.reset}`);
           // Bridge runtimes
           const detections = await withSpinner('detecting runtimes', detectBridgeProviders);
           const avail = detections.filter(d => d.available);
@@ -4418,7 +4513,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           try {
             const summaryInstructions =
               args || undefined;
-            const result = await session.compact({ force: true, summaryInstructions });
+            const result = await session.compact({ summaryInstructions });
             if (!result.compacted) {
               appendStatic([
                 ...formatErrorLine(result.error ?? `compact skipped: ${result.reason}`),
@@ -5688,7 +5783,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       recalledFollowUp = null;
       editor.clear();
       menuSelected = 0;
-      if (running && !canRunInteractiveCommand(selectedName, true)) {
+      if (running && !canRunInteractiveCommand(selectedCommand.slice(1), true)) {
         appendStatic(formatInfoLine(`/${selectedName} requires an idle session; it will be available after this run`));
         renderDynamic();
         return;
@@ -5717,7 +5812,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         restoreAbandonedFollowUp(session, recalledFollowUp);
         recalledFollowUp = null;
         const command = text.slice(1).trim().split(/\s/u, 1)[0]?.toLowerCase() ?? '';
-        if (!canRunInteractiveCommand(command, true)) {
+        if (!canRunInteractiveCommand(text.slice(1), true)) {
           appendStatic(formatInfoLine(`/${command} requires an idle session; it will be available after this run`));
           renderDynamic();
           return;
