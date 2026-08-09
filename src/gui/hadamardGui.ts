@@ -5053,6 +5053,15 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       case 'model': {
         if (!args) return [{ type: 'command.result', title: 'Model', text: `current: ${session.model}` }];
         if (args === 'config') return [{ type: 'settings.open' }];
+        if (args === 'custom' || args.startsWith('custom ')) {
+          const customModel = args.slice('custom'.length).trim();
+          if (!customModel) return [{ type: 'error', message: 'usage: /model custom <model-id>' }];
+          return runtimeMutationCommand(async () => {
+            disableBridge();
+            await session.setModel(customModel);
+            return [{ type: 'notice', message: `custom model set to: ${session.model}` }];
+          });
+        }
         if (args === 'router' || args.startsWith('router ')) {
           const routerArg = args.slice('router'.length).trim();
           if (routerArg === 'off' || routerArg === 'none') {

@@ -88,6 +88,11 @@ interface AgentSessionBindings {
   deleteCheckpoint: (session: AgentSession, checkpointId: string) => Promise<void>;
 }
 
+export interface PendingAgentInputs {
+  steering: readonly string[];
+  followUps: readonly string[];
+}
+
 export class AgentSession {
   private readonly steeringInputs: string[] = [];
   private readonly followUpInputs: string[] = [];
@@ -130,6 +135,13 @@ export class AgentSession {
     return this.steeringInputs.length + this.followUpInputs.length;
   }
 
+  get pendingInputs(): PendingAgentInputs {
+    return {
+      steering: [...this.steeringInputs],
+      followUps: [...this.followUpInputs],
+    };
+  }
+
   snapshot(): StoredSession {
     return deepClone(this.stored);
   }
@@ -157,6 +169,11 @@ export class AgentSession {
       throw new Error('Follow-up input cannot be empty.');
     }
     this.followUpInputs.push(normalized);
+  }
+
+  /** Remove the newest queued follow-up so an interactive editor can recall it. */
+  cancelLatestFollowUp(): string | undefined {
+    return this.followUpInputs.pop();
   }
 
   /** @internal Runtime bridge for the conversation engine. */

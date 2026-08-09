@@ -151,6 +151,54 @@ describe('Hadamard Runtime parity file tools', () => {
     expect(grepOutput).toContain('two.ts:1:export const beta = 2;');
   });
 
+  it('searches an explicit file path and reports its basename', async () => {
+    const cwd = await createTempDir('hadamard-grep-file-');
+    const filePath = path.join(cwd, 'single.txt');
+    await writeFile(filePath, 'alpha\nbeta\n', 'utf8');
+    const Grep = getTool(createHadamardFileTools({ cwd }), 'Grep');
+
+    const result = await Grep.execute(
+      { pattern: 'beta', path: filePath, output_mode: 'content' },
+      createContext(cwd),
+    ) as { filenames: string[]; totalMatches: number };
+
+    expect(result.filenames).toEqual(['single.txt:2:beta']);
+    expect(result.totalMatches).toBe(1);
+  });
+
+  it('returns every line covered by a multiline match', async () => {
+    const cwd = await createTempDir('hadamard-grep-multiline-');
+    await writeFile(path.join(cwd, 'sample.txt'), 'alpha\nbeta\ngamma\n', 'utf8');
+    const Grep = getTool(createHadamardFileTools({ cwd }), 'Grep');
+
+    const result = await Grep.execute(
+      {
+        pattern: 'alpha\\s+beta',
+        path: cwd,
+        output_mode: 'content',
+        multiline: true,
+      },
+      createContext(cwd),
+    ) as { filenames: string[]; totalMatches: number };
+
+    expect(result.filenames).toEqual(['sample.txt:1:alpha', 'sample.txt:2:beta']);
+    expect(result.totalMatches).toBe(1);
+  });
+
+  it('counts regex matches independently from emitted context rows', async () => {
+    const cwd = await createTempDir('hadamard-grep-context-');
+    await writeFile(path.join(cwd, 'sample.txt'), 'before\nhit hit\nafter\n', 'utf8');
+    const Grep = getTool(createHadamardFileTools({ cwd }), 'Grep');
+
+    const result = await Grep.execute(
+      { pattern: 'hit', path: cwd, output_mode: 'content', '-C': 1 },
+      createContext(cwd),
+    ) as { filenames: string[]; totalMatches: number };
+
+    expect(result.filenames).toHaveLength(3);
+    expect(result.totalMatches).toBe(2);
+  });
+
   it('reports invalid Grep regular expressions instead of returning empty results', async () => {
     const cwd = await createTempDir('hadamard-parity-tools-');
     await writeFile(path.join(cwd, 'sample.txt'), 'alpha\n', 'utf8');

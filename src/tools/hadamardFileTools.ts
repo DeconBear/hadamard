@@ -337,33 +337,51 @@ const Grep = (opts: { cwd: string; defaultGrepLimit: number }) =>
       }
 
       const files = await findFiles(searchRoot, input.glob);
+      const searchRootIsFile = (await fsStat(searchRoot)).isFile();
       for (const f of files) {
+        await context.sandboxExecutor?.assertPathAllowed(f, 'read');
+        let buffer: Buffer;
         try {
-          await context.sandboxExecutor?.assertPathAllowed(f, 'read');
-          const buffer = await readFile(f);
-          if (isProbablyBinary(buffer)) continue;
-          const content = buffer.toString('utf-8');
-          const relPath = path.relative(searchRoot, f) || f;
+          buffer = await readFile(f);
+        } catch (error) {
+          if (isUnreadableFileError(error)) continue;
+          throw error;
+        }
+        if (isProbablyBinary(buffer)) continue;
+        const content = buffer.toString('utf-8');
+        const lines = content.split(/\r?\n/);
+        const relPath = path.relative(
+          searchRootIsFile ? path.dirname(searchRoot) : searchRoot,
+          f,
+        ) || path.basename(f);
 
-          if (outputMode === 'files_with_matches') {
-            if (matchRegex.test(content)) matchedFiles.push(relPath);
-          } else if (outputMode === 'count') {
-            globalMatchRegex.lastIndex = 0;
-            const count = [...content.matchAll(globalMatchRegex)].length;
-            if (count > 0) { totalMatches += count; countEntries.push({ file: relPath, count }); }
-          } else {
-            const lines = content.split(/\r?\n/);
-            const visited = new Set<number>();
-            for (let i = 0; i < lines.length; i++) {
-              if (!matchRegex.test(lines[i]!)) continue;
-              for (let j = Math.max(0, i - before); j <= Math.min(lines.length - 1, i + after); j++) {
-                if (visited.has(j)) continue;
-                visited.add(j);
-                contentLines.push(input['-n'] === false ? `${relPath}:${lines[j]}` : `${relPath}:${j + 1}:${lines[j]}`);
-              }
+        if (outputMode === 'files_with_matches') {
+          const found = multiline
+            ? matchRegex.test(content)
+            : lines.some(line => matchRegex.test(line));
+          if (found) matchedFiles.push(relPath);
+        } else if (outputMode === 'count') {
+          const count = multiline
+            ? countRegexMatches(content, globalMatchRegex)
+            : lines.reduce((sum, line) => sum + countRegexMatches(line, globalMatchRegex), 0);
+          if (count > 0) {
+            totalMatches += count;
+            countEntries.push({ file: relPath, count });
+          }
+        } else {
+          const matches = multiline
+            ? multilineMatchLines(content, globalMatchRegex)
+            : lineMatchIndexes(lines, globalMatchRegex);
+          totalMatches += matches.matchCount;
+          const visited = new Set<number>();
+          for (const index of matches.lineIndexes) {
+            for (let j = Math.max(0, index - before); j <= Math.min(lines.length - 1, index + after); j++) {
+              if (visited.has(j)) continue;
+              visited.add(j);
+              contentLines.push(input['-n'] === false ? `${relPath}:${lines[j]}` : `${relPath}:${j + 1}:${lines[j]}`);
             }
           }
-        } catch { /* skip unreadable files */ }
+        }
       }
 
       const off = input.offset ?? 0;
@@ -377,7 +395,7 @@ const Grep = (opts: { cwd: string; defaultGrepLimit: number }) =>
         return { mode: outputMode, root: searchRoot, filenames: sliced, totalMatches };
       }
       const sliced = limit === 0 ? contentLines.slice(off) : contentLines.slice(off, off + limit);
-      return { mode: outputMode, root: searchRoot, filenames: sliced, totalMatches: contentLines.length };
+      return { mode: outputMode, root: searchRoot, filenames: sliced, totalMatches };
     },
   );
 
@@ -432,8 +450,20 @@ function ensurePreviouslyRead(
 }
 
 async function findFiles(searchRoot: string, globPattern?: string): Promise<string[]> {
-  if (!globPattern) return listAllFiles(searchRoot);
-  return listGlobMatches(globPattern, searchRoot);
+  let stats;
+  try {
+    stats = await fsStat(searchRoot);
+  } catch {
+    throw new ToolExecutionError('Grep', `Search path not found: ${searchRoot}`);
+  }
+  if (stats.isFile()) return [searchRoot];
+  if (!stats.isDirectory()) {
+    throw new ToolExecutionError('Grep', `Search path is not a file or directory: ${searchRoot}`);
+  }
+  const files = globPattern
+    ? await listGlobMatches(globPattern, searchRoot)
+    : await listAllFiles(searchRoot);
+  return files.sort((left, right) => left.localeCompare(right));
 }
 
 async function listGlobMatches(pattern: string, root: string): Promise<string[]> {
@@ -450,7 +480,7 @@ async function listAllFiles(dir: string): Promise<string[]> {
     for (const entry of await readdirSafe(dir)) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === '.git' || entry.name === 'node_modules') continue;
+        if (['.git', 'node_modules', '.svn', '.hg', '.jj', '.sl'].includes(entry.name)) continue;
         results.push(...await listAllFiles(full));
       } else {
         results.push(full);
@@ -458,6 +488,64 @@ async function listAllFiles(dir: string): Promise<string[]> {
     }
   } catch { /* skip */ }
   return results;
+}
+
+function countRegexMatches(text: string, regex: RegExp): number {
+  regex.lastIndex = 0;
+  return [...text.matchAll(regex)].length;
+}
+
+function lineMatchIndexes(
+  lines: readonly string[],
+  regex: RegExp,
+): { lineIndexes: number[]; matchCount: number } {
+  const lineIndexes: number[] = [];
+  let matchCount = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const count = countRegexMatches(lines[index]!, regex);
+    if (count === 0) continue;
+    lineIndexes.push(index);
+    matchCount += count;
+  }
+  return { lineIndexes, matchCount };
+}
+
+function multilineMatchLines(
+  content: string,
+  regex: RegExp,
+): { lineIndexes: number[]; matchCount: number } {
+  const starts = [0];
+  for (let index = 0; index < content.length; index += 1) {
+    if (content[index] === '\n') starts.push(index + 1);
+  }
+  const lineIndexes = new Set<number>();
+  let matchCount = 0;
+  regex.lastIndex = 0;
+  for (const match of content.matchAll(regex)) {
+    const start = match.index ?? 0;
+    const end = start + Math.max(match[0].length - 1, 0);
+    const startLine = lineIndexAtOffset(starts, start);
+    const endLine = lineIndexAtOffset(starts, end);
+    for (let line = startLine; line <= endLine; line += 1) lineIndexes.add(line);
+    matchCount += 1;
+  }
+  return { lineIndexes: [...lineIndexes].sort((a, b) => a - b), matchCount };
+}
+
+function lineIndexAtOffset(starts: readonly number[], offset: number): number {
+  let low = 0;
+  let high = starts.length - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    if (starts[mid]! <= offset) low = mid + 1;
+    else high = mid - 1;
+  }
+  return Math.max(high, 0);
+}
+
+function isUnreadableFileError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false;
+  return ['EACCES', 'EPERM', 'ENOENT', 'EISDIR'].includes(String((error as { code?: unknown }).code));
 }
 
 async function readdirSafe(dir: string): Promise<{ name: string; isDirectory: () => boolean }[]> {
