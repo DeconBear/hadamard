@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import type { TeamDefinition, TeamGraphEdge, TeamGraphNode } from '../types.js';
+import type { TeamDefinition, TeamGraphEdge, TeamGraphNode, WorkflowNode } from '../types.js';
 import {
   canonicalizeTeamDefinition,
   graphNodeRef,
@@ -18,6 +18,7 @@ import {
   saveTeamDefinition,
   type LoadedTeamDefinition,
 } from './teamDefinitions.js';
+import { validateWorkflowSquad } from './workflowSquad.js';
 
 export type TeamProposalStatus = 'pending' | 'applied' | 'rejected' | 'conflict';
 
@@ -37,6 +38,8 @@ export interface TeamGraphProposal {
   teamName: string;
   baseFingerprint: string | null;
   baseSource: LoadedTeamDefinition['source'] | null;
+  /** Present when the proposal was based on the unsaved GUI editor draft. */
+  editorBaseDigest?: string;
   explanation: string;
   problems: string[];
   diff: TeamProposalDiff;
@@ -52,6 +55,10 @@ export interface StageTeamProposalInput {
   definition: TeamDefinition;
   explanation?: string;
   homeDir?: string;
+  /** Optional unsaved editor definition used as the diff base. */
+  baseDefinition?: TeamDefinition;
+  /** Stable digest supplied by the GUI for optimistic editor concurrency. */
+  editorBaseDigest?: string;
 }
 
 export interface ApplyTeamProposalResult {
@@ -129,6 +136,39 @@ export function diffTeamDefinitions(
   base: TeamDefinition | null,
   draft: TeamDefinition,
 ): TeamProposalDiff {
+  if (draft.squadType === 'workflow' || base?.squadType === 'workflow') {
+    const collect = (root?: WorkflowNode): { nodes: Map<string, WorkflowNode>; edges: Set<string> } => {
+      const nodes = new Map<string, WorkflowNode>();
+      const edges = new Set<string>();
+      const visit = (node: WorkflowNode): void => {
+        nodes.set(node.id, node);
+        for (const child of node.children ?? []) {
+          edges.add(`${node.id} → ${child.id}`);
+          visit(child);
+        }
+      };
+      if (root) visit(root);
+      return { nodes, edges };
+    };
+    const before = collect(base?.workflowTree);
+    const after = collect(draft.workflowTree);
+    const comparable = (node: WorkflowNode): unknown => {
+      const copy = structuredClone(node);
+      delete (copy as Partial<WorkflowNode>).children;
+      return stableValue(copy);
+    };
+    return {
+      addedNodes: [...after.nodes.keys()].filter(key => !before.nodes.has(key)),
+      removedNodes: [...before.nodes.keys()].filter(key => !after.nodes.has(key)),
+      changedNodes: [...after.nodes.entries()].filter(([key, node]) => {
+        const previous = before.nodes.get(key);
+        return previous != null && !valuesEqual(comparable(previous), comparable(node));
+      }).map(([key]) => key),
+      addedEdges: [...after.edges].filter(edge => !before.edges.has(edge)),
+      removedEdges: [...before.edges].filter(edge => !after.edges.has(edge)),
+      changedEdges: [],
+    };
+  }
   const baseNodes = new Map((base?.nodes ?? []).map(node => [nodeKey(node), node]));
   const draftNodes = new Map((draft.nodes ?? []).map(node => [nodeKey(node), node]));
   const baseEdges = new Map((base?.edges ?? []).map(edge => [edgeKey(edge), edge]));
@@ -267,6 +307,21 @@ function normalizeProposalDefinition(
   definition: TeamDefinition,
   base: TeamDefinition | null,
 ): { draft: TeamDefinition; problems: string[] } {
+  if (definition.squadType === 'workflow') {
+    const draft: TeamDefinition = {
+      ...structuredClone(definition),
+      mode: 'graph',
+      squadType: 'workflow',
+      members: Array.isArray(definition.members) ? definition.members : [],
+    };
+    return { draft, problems: validateWorkflowSquad(draft) };
+  }
+  if (definition.squadType && definition.squadType !== 'graph') {
+    return {
+      draft: structuredClone(definition),
+      problems: [`Team proposals support Graph or Workflow definitions, not "${definition.squadType}".`],
+    };
+  }
   try {
     const migrated = migrateTeamDefinitionToGraph(structuredClone(definition));
     const problems = validateTeamGraph(migrated);
@@ -295,9 +350,10 @@ export class TeamProposalStore {
         `"${name}" is a built-in Team and cannot be overwritten. Propose a new Team name instead.`,
       );
     }
+    const baseDefinition = input.baseDefinition ?? existing?.definition ?? null;
     const { draft, problems } = normalizeProposalDefinition(
       { ...input.definition, name },
-      existing?.definition ?? null,
+      baseDefinition,
     );
     const proposal: TeamGraphProposal = {
       id: randomUUID(),
@@ -306,9 +362,10 @@ export class TeamProposalStore {
       teamName: name,
       baseFingerprint: existing ? teamDefinitionFingerprint(existing.definition) : null,
       baseSource: existing?.source ?? null,
+      ...(input.editorBaseDigest ? { editorBaseDigest: input.editorBaseDigest } : {}),
       explanation: input.explanation?.trim() ?? '',
       problems,
-      diff: diffTeamDefinitions(existing?.definition ?? null, draft),
+      diff: diffTeamDefinitions(baseDefinition, draft),
       draft,
       status: 'pending',
       createdAt: new Date().toISOString(),
@@ -335,7 +392,11 @@ export class TeamProposalStore {
     return structuredClone(proposal);
   }
 
-  async apply(id: string, homeDir?: string): Promise<ApplyTeamProposalResult> {
+  async apply(
+    id: string,
+    homeDir?: string,
+    options: { editorBaseDigest?: string } = {},
+  ): Promise<ApplyTeamProposalResult> {
     const proposal = this.requirePending(id);
     if (proposal.problems.length) {
       throw new Error(`Team proposal is invalid: ${proposal.problems.join('; ')}`);
@@ -347,13 +408,21 @@ export class TeamProposalStore {
       );
     }
     const currentFingerprint = current ? teamDefinitionFingerprint(current.definition) : null;
-    if (currentFingerprint !== proposal.baseFingerprint) {
+    const editorConflict = proposal.editorBaseDigest != null
+      && options.editorBaseDigest !== proposal.editorBaseDigest;
+    const persistedConflict = proposal.editorBaseDigest == null
+      && currentFingerprint !== proposal.baseFingerprint;
+    if (editorConflict || persistedConflict) {
       proposal.status = 'conflict';
       throw new TeamProposalConflictError(
-        `Team "${proposal.teamName}" changed after this proposal was created. Generate a fresh proposal before applying.`,
+        proposal.editorBaseDigest
+          ? `The open ${proposal.teamName} editor changed after this proposal was created. Refresh the Assistant context and generate a fresh proposal.`
+          : `Team "${proposal.teamName}" changed after this proposal was created. Generate a fresh proposal before applying.`,
       );
     }
-    const validated = canonicalizeTeamDefinition(proposal.draft);
+    const validated = proposal.draft.squadType === 'workflow'
+      ? structuredClone(proposal.draft)
+      : canonicalizeTeamDefinition(proposal.draft);
     const filePath = await saveTeamDefinition(validated, {
       projectDir: proposal.projectPath,
       homeDir,

@@ -215,6 +215,7 @@ import {
   type HadamardAgentClient,
   type AgentProfile,
   type AgentDefinitionExtraFields,
+  type AssistantEditorContext,
   type ManagerConfig,
   type IssueCommentKind,
   type IssueStorageMode,
@@ -3765,7 +3766,25 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     return assistantGlobalSession;
   }
 
-  function buildAssistantGlobalHost(homeDir: string): Parameters<typeof createAssistantGlobalTools>[0] {
+  async function persistAssistantTeamPreferences(prefs: typeof teamPrefs): Promise<void> {
+    const store = await resolveHadamardSettingsStore({
+      configPath: options.configPath,
+      homeDir: currentHomeInput(),
+    }).catch(() => undefined);
+    const raw = isPlainRecord(store?.raw) ? structuredClone(store.raw) : {};
+    writeTeamPreferences(raw, prefs);
+    if (store) {
+      await persistHadamardSettingsStore(store.configPath, raw);
+      await loadJsonConfigFile(store.configPath);
+    }
+    teamPrefs = prefs;
+    invalidateHeavyState();
+  }
+
+  function buildAssistantGlobalHost(
+    homeDir: string,
+    editorContext?: AssistantEditorContext,
+  ): Parameters<typeof createAssistantGlobalTools>[0] {
     return {
       homeDir,
       currentWorkDir: workDir,
@@ -3777,6 +3796,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         bridgeMode,
         model: session?.model ?? null,
       }),
+      getEditorContext: () => editorContext ?? null,
       openProject: async (projectPath: string) => {
         await switchProject(projectPath);
         invalidateHeavyState();
@@ -3807,9 +3827,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       },
       // P3: ActivateAgent kind=router|team — same effects as /api/router/activate
       // and /team attach.
-      activateTarget: async (kind: 'router' | 'team', name: string) => {
+      activateTarget: async (kind: 'config' | 'router' | 'team', name: string) => {
         await withRuntimeMutation(async () => {
-          if (kind === 'router') {
+          if (kind === 'config') {
+            const config = findBridgeConfig(name, homeDir);
+            if (!config) throw new Error(`Provider configuration not found: ${name}`);
+            await activateBridgeConfig(config);
+          } else if (kind === 'router') {
             const loaded = loadRouterProfile(name, workDir, homeDir);
             if (!loaded) throw new Error(`Configured router not found: ${name}`);
             disableBridge();
@@ -3824,7 +3848,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         invalidateHeavyState();
         return {
           ok: true,
-          detail: kind === 'router' ? `Activated router ${name}` : `Attached team ${name}`,
+          detail: kind === 'config'
+            ? `Activated provider configuration ${name}`
+            : kind === 'router'
+              ? `Activated router ${name}`
+              : `Attached team ${name}`,
         };
       },
       // P3: reference snapshot extras (session/preference edges) and the
@@ -3836,26 +3864,15 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         activeTeamName,
       }),
       readTeamPreferences: () => teamPrefs,
+      writeTeamPreferences: persistAssistantTeamPreferences,
       referenceOperationContext: async () => {
-        const store = await resolveHadamardSettingsStore({
-          configPath: options.configPath,
-          homeDir: currentHomeInput(),
-        }).catch(() => undefined);
         return {
           projectDir: workDir,
           homeDir,
           managerProjectPath: projectPrimaryPath,
           teamPreferences: {
             read: () => teamPrefs,
-            write: async (prefs: typeof teamPrefs) => {
-              const raw = isPlainRecord(store?.raw) ? structuredClone(store.raw) : {};
-              writeTeamPreferences(raw, prefs);
-              if (store) {
-                await persistHadamardSettingsStore(store.configPath, raw);
-                await loadJsonConfigFile(store.configPath);
-              }
-              teamPrefs = prefs;
-            },
+            write: persistAssistantTeamPreferences,
           },
           issues: {
             read: async () => {
@@ -3958,6 +3975,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     send: (event: GuiRunEvent) => void;
     clientRequestId?: string;
     replayEvents?: Array<GuiRunEvent & { sequence: number }>;
+    editorContext?: AssistantEditorContext;
   }): Promise<string> {
     const scope = opts.scope === 'global' ? 'global' : 'project';
     const label = scope === 'global'
@@ -3974,6 +3992,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     send: (event: GuiRunEvent) => void;
     clientRequestId?: string;
     replayEvents?: Array<GuiRunEvent & { sequence: number }>;
+    editorContext?: AssistantEditorContext;
   }): Promise<string> {
     if (needsCredentials || !sdk) throw new Error('No API key configured — open Settings → Models to add one.');
     for (const run of runs.values()) {
@@ -4000,7 +4019,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       managerSession = await getAssistantGlobalSession();
       managerTools = [
         ...await createAssistantGlobalTools({
-          ...buildAssistantGlobalHost(homeDir),
+          ...buildAssistantGlobalHost(homeDir, opts.editorContext),
           assistantSessionId: managerSession.id,
           proposals: assistantProposals,
           teamProposals,
@@ -7879,8 +7898,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         return json(res, 200, { ok: true, proposal: teamProposals.reject(proposalId) });
       }
       if (req.method === 'POST' && action === 'apply') {
+        const body = await readJson(req).catch(() => ({})) as Record<string, unknown>;
         const applied = await withRuntimeMutation(
-          () => teamProposals.apply(proposalId, managerHomeDir()),
+          () => teamProposals.apply(proposalId, managerHomeDir(), {
+            editorBaseDigest: typeof body.editorBaseDigest === 'string' ? body.editorBaseDigest : undefined,
+          }),
         );
         return json(res, 200, {
           ok: true,
@@ -8229,6 +8251,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           mode: 'chat',
           scope,
           text: typeof body.text === 'string' ? body.text : '',
+          editorContext: isPlainRecord(body.editorContext)
+            ? body.editorContext as unknown as AssistantEditorContext
+            : undefined,
           send,
         });
       send({ type: 'manager.result', text, updated: isUpdate, scope });
@@ -15857,6 +15882,8 @@ const state = {
   teamGraphFitView: false,
   teamGraphBoardDragging: false,
   teamProposalPreviewId: null,
+  teamProposalPreviewBase: null,
+  routerDraft: null,
   teamDirty: false,
   lastTeamMemberId: null,
   lastTeamMemberRole: null,
@@ -27798,6 +27825,7 @@ async function renderTeamRegion() {
 async function selectAgentEntry(name, kind, opts) {
   opts = opts || {};
   kind = kind || 'team';
+  if (kind !== 'router') state.routerDraft = null;
   state.teamSelected = name;
   state.teamSelectedKind = kind;
   state.teamProposalPreviewId = null;
@@ -27937,6 +27965,7 @@ function renderRouterPane(router, opts) {
       maxTokens: route.maxTokens,
     })),
   };
+  state.routerDraft = draft;
   if (!draft.routes.length) {
     draft.routes.push({ targetKey: '', role: '', when: '', description: '' });
   }
@@ -35351,6 +35380,12 @@ async function previewManagerTeamProposal(proposal) {
     if (!res.ok) throw new Error(await res.text());
     const payload = await res.json();
     const fresh = payload.proposal;
+    if (fresh.editorBaseDigest) {
+      const currentBase = await collectAssistantEditorContext(false);
+      state.teamProposalPreviewBase = currentBase.entityName === fresh.teamName ? currentBase : null;
+    } else {
+      state.teamProposalPreviewBase = null;
+    }
     if (fresh.projectPath && !sameWorkspacePath(fresh.projectPath, state.snapshot?.workDir || '')) {
       await switchProject(fresh.projectPath, 'detail');
     }
@@ -35364,7 +35399,7 @@ async function previewManagerTeamProposal(proposal) {
     state.teamSelectedEdgeIdx = null;
     state.teamGraphFitView = true;
     renderTeamGraph(state.teamDefinition, fresh.teamName);
-    setTeamSavedStatus(true);
+    setTeamSavedStatus(false);
     showTeamGraphProblems(fresh.problems || null);
   } catch (error) {
     managerAddMsg('error', 'Preview failed: ' + (error.message || error));
@@ -35424,8 +35459,11 @@ function managerAddTeamProposal(proposal) {
     if (!window.confirm('Apply Team proposal "' + proposal.teamName + '"?\\n\\nThis writes the validated Team definition to ' + proposal.projectPath + '.')) return;
     apply.disabled = true;
     try {
+      const currentEditor = await collectAssistantEditorContext(state.teamProposalPreviewId === proposal.id);
       const res = await api('/api/team/proposals/' + encodeURIComponent(proposal.id) + '/apply', {
         method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ editorBaseDigest: currentEditor.baseDigest || undefined }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error || ('HTTP ' + res.status));
@@ -35437,6 +35475,7 @@ function managerAddTeamProposal(proposal) {
         await switchProject(payload.openCanvas.projectPath, 'detail');
       }
       state.teamProposalPreviewId = null;
+      state.teamProposalPreviewBase = null;
       delete state.teamDefinitionCache[payload.openCanvas?.teamName || proposal.teamName];
       await switchRegion('team');
       await refreshTeamsSnapshot();
@@ -35461,7 +35500,18 @@ function managerAddTeamProposal(proposal) {
       preview.disabled = true;
       apply.disabled = true;
       reject.disabled = true;
-      if (state.teamProposalPreviewId === proposal.id) state.teamProposalPreviewId = null;
+      if (state.teamProposalPreviewId === proposal.id) {
+        const base = state.teamProposalPreviewBase;
+        state.teamProposalPreviewId = null;
+        state.teamProposalPreviewBase = null;
+        if (base?.draft && base.entityName === proposal.teamName) {
+          state.teamDefinition = structuredClone(base.draft);
+          state.teamDefinitionCache[proposal.teamName] = structuredClone(base.draft);
+          state.teamDirty = base.dirty === true;
+          renderTeamGraph(state.teamDefinition, proposal.teamName);
+          setTeamSavedStatus(!state.teamDirty);
+        }
+      }
     } catch (error) {
       managerAddMsg('error', 'Reject failed: ' + (error.message || error));
     }
@@ -35693,6 +35743,69 @@ async function refreshManagerState(forceHydrate = false) {
     el('managerFab')?.classList.toggle('running', !!data.running);
   } catch (e) { /* panel state is best-effort */ }
 }
+function stableAssistantEditorValue(value) {
+  if (Array.isArray(value)) return value.map(stableAssistantEditorValue);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  Object.keys(value).sort().forEach(key => { out[key] = stableAssistantEditorValue(value[key]); });
+  return out;
+}
+async function assistantEditorDigest(draft) {
+  const bytes = new TextEncoder().encode(JSON.stringify(stableAssistantEditorValue(draft)));
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(hash)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+function currentAgentEditorDraft() {
+  if (!el('agentProfileEditorPanel') || el('agentProfileEditorPanel').classList.contains('hidden')) return null;
+  const inherit = agentProfilePickerIsInherit();
+  const draft = {
+    name: el('agentProfileName').value.trim(),
+    description: el('agentProfileDescription').value.trim(),
+    bridgeConfig: inherit ? '' : selectedAgentProfileConfig(),
+    model: inherit ? '' : selectedAgentProfileModel(),
+    permissionMode: el('agentProfilePermission').value,
+    effort: el('agentProfileEffort').value,
+    maxTokens: el('agentProfileMaxTokens').value.trim(),
+    temperature: el('agentProfileTemperature').value.trim(),
+    topP: el('agentProfileTopP').value.trim(),
+    systemPromptAppend: el('agentProfileSystemPrompt').value,
+    maxIterations: el('agentProfileMaxIterations').value.trim(),
+    timeoutMs: el('agentProfileTimeoutMs').value.trim(),
+    workspaceAccess: el('agentProfileWorkspace').value,
+    promptMode: el('agentProfilePromptMode').value,
+    subagent: el('agentProfileSubagent').checked !== false,
+    allowedTools: selectedAgentProfileTools(),
+  };
+  return { entityKind: 'agent', entityName: draft.name || editingAgentProfileName || '', dirty: true, draft };
+}
+async function collectAssistantEditorContext(preferPreviewBase) {
+  if (preferPreviewBase && state.teamProposalPreviewBase) return structuredClone(state.teamProposalPreviewBase);
+  let context = null;
+  if (state.activeRegion === 'team' && state.teamSelectedKind === 'team' && state.teamDefinition) {
+    const squadType = state.teamDefinition.squadType === 'workflow' ? 'workflow' : 'graph';
+    context = {
+      entityKind: squadType,
+      entityName: state.teamDefinition.name || state.teamSelected || '',
+      dirty: state.teamDirty === true,
+      draft: structuredClone(state.teamDefinition),
+    };
+  } else if (state.activeRegion === 'team' && state.teamSelectedKind === 'router' && state.routerDraft) {
+    context = {
+      entityKind: 'router',
+      entityName: state.routerDraft.name || state.teamSelected || '',
+      dirty: true,
+      draft: structuredClone(state.routerDraft),
+    };
+  } else if (state.activeRegion === 'team') {
+    context = currentAgentEditorDraft();
+  }
+  if (!context) return { activeRegion: state.activeRegion || 'project', dirty: false };
+  return {
+    activeRegion: state.activeRegion || 'team',
+    ...context,
+    baseDigest: await assistantEditorDigest(context.draft),
+  };
+}
 async function managerStream(path, payload) {
   if (managerBusy) { managerAddMsg('error', 'Assistant is busy — wait for the current run.'); return; }
   managerBusy = true;
@@ -35705,10 +35818,11 @@ async function managerStream(path, payload) {
   if (updateBtn) updateBtn.disabled = true;
   if (sendBtn) sendBtn.disabled = true;
   try {
+    const editorContext = assistantScope === 'global' ? await collectAssistantEditorContext(false) : undefined;
     const res = await api(path, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...(payload || {}), scope: assistantScope }),
+      body: JSON.stringify({ ...(payload || {}), scope: assistantScope, ...(editorContext ? { editorContext } : {}) }),
     });
     if (!res.ok || !res.body) { managerAddMsg('error', 'Assistant request failed (' + res.status + ')'); return; }
     const reader = res.body.getReader();

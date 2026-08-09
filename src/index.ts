@@ -686,10 +686,17 @@ export {
   isAssistantScope,
   DEFAULT_ASSISTANT_CONFIG,
 } from './manager/assistantGlobalTools.js';
+export {
+  productCapabilities,
+  getProductCapability,
+  searchProductCapabilities,
+} from './help/productCapabilities.js';
+export type { ProductCapability } from './help/productCapabilities.js';
 export type {
   AssistantScope,
   AssistantGlobalConfig,
   AssistantGlobalHost,
+  AssistantEditorContext,
   AssistantProjectBrief,
 } from './manager/assistantGlobalTools.js';
 export {
