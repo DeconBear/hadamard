@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.15 - 2026-08-10
+
+### Fixes
+
+- Prevent a completed reasoning segment from rendering twice when both streaming and final-response events contain it
+- Render each identified tool-call start and terminal event only once, even when equivalent lifecycle events arrive through multiple runtime paths
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.14...v0.4.15
+
 ## v0.4.14 - 2026-08-10
 
 ### Features
