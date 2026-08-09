@@ -11192,11 +11192,11 @@ export function createHadamardGuiHtml(): string {
             <form id="agentProfileEditorForm" class="dialog bridge-editor agent-editor-form">
 
       <h2 id="agentProfileEditorTitle">New agent profile</h2>
-      <div class="two-col">
+      <div class="agent-profile-primary">
         <label class="dialog-field">Profile name<input id="agentProfileName" autocomplete="off" placeholder="e.g. reviewer"></label>
-        <div class="dialog-field"><span>Configuration / model</span><div id="agentProfileModelPicker" class="agent-profile-model-picker"></div></div>
+        <div id="agentProfileModelPicker" class="agent-profile-model-picker" role="group" aria-label="Configuration / model"></div>
       </div>
-      <label class="dialog-field">Description *<input id="agentProfileDescription" autocomplete="off" placeholder="Role summary — subagent discovery depends on it"></label>
+      <label class="dialog-field">Description<input id="agentProfileDescription" autocomplete="off" placeholder="Optional — generated from the prompt when left blank"></label>
       <p class="muted" id="agentProfileInheritHint">Pick a Configuration and model from Settings → Models, or <strong>Inherit session model</strong> to follow the session's main model (inherit agents are not listed in the composer model picker). Runtime is taken from the selected configuration — not configured here.</p>
       <label class="dialog-field">Prompt mode<select id="agentProfilePromptMode">
         <option value="extend">Extend — built-in prompt + body appended</option>
@@ -15569,13 +15569,18 @@ body[data-density="compact"] .composer-meta { padding: 5px 12px; }
 .bridge-editor { width: min(560px, 100%); max-height: 86vh; overflow-y: auto; }
 .agent-profile-advanced { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; }
 .agent-profile-advanced > summary { cursor: pointer; color: var(--text-1); font-weight: 600; }
-.agent-profile-model-picker { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: end; }
+.agent-profile-primary { display: grid; gap: 14px; margin: 4px 0 2px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface-2); }
+.agent-profile-primary > .dialog-field { margin: 0; }
+.agent-profile-primary > .dialog-field input { box-sizing: border-box; width: 100%; background: var(--bg-surface); }
+.agent-profile-model-picker { display: grid; gap: 8px; min-width: 0; }
+.agent-profile-model-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-2); font-size: 13px; }
+.agent-profile-model-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; }
 .agent-profile-model-picker .dialog-field { margin: 0; min-width: 0; }
 .agent-profile-model-picker select { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; }
-.agent-profile-model-picker .secondary-btn { grid-column: 1 / -1; min-height: 32px; justify-self: end; white-space: nowrap; }
-@media (max-width: 900px) {
-  .agent-profile-model-picker { grid-template-columns: 1fr; }
-  .agent-profile-model-picker .secondary-btn { justify-self: start; }
+.agent-profile-model-settings { min-height: 0; padding: 2px 0; border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.agent-profile-model-settings:hover { color: var(--text-1); text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 720px) {
+  .agent-profile-model-fields { grid-template-columns: 1fr; }
 }
 .router-editor { width: min(720px, 100%); }
 .router-editor textarea { width: 100%; min-height: 56px; resize: vertical; border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; background: var(--bg-surface); color: var(--text-1); font: inherit; }
@@ -33456,9 +33461,18 @@ function mountAgentProfileModelPicker(selectedConfig, selectedModel, preferInher
 
   const configure = document.createElement('button');
   configure.type = 'button';
-  configure.className = 'secondary-btn';
+  configure.className = 'agent-profile-model-settings';
   configure.textContent = 'Manage models';
   configure.addEventListener('click', () => { void openSettings('models').catch(console.error); });
+
+  const heading = document.createElement('div');
+  heading.className = 'agent-profile-model-head';
+  const headingText = document.createElement('span');
+  headingText.textContent = 'Configuration / model';
+  heading.append(headingText, configure);
+
+  const fields = document.createElement('div');
+  fields.className = 'agent-profile-model-fields';
 
   const renderModels = (requestedModel) => {
     modelSelect.textContent = '';
@@ -33501,7 +33515,8 @@ function mountAgentProfileModelPicker(selectedConfig, selectedModel, preferInher
   };
   configSelect.addEventListener('change', () => renderModels(''));
   renderModels(selectedModel);
-  mount.append(configField, modelField, configure);
+  fields.append(configField, modelField);
+  mount.append(heading, fields);
 }
 
 function agentProfilePickerIsInherit() {
@@ -33675,11 +33690,6 @@ async function saveAgentProfileViaApi() {
   const inherit = agentProfilePickerIsInherit();
   const model = selectedAgentProfileModel();
   if (!name) { el('agentProfileCfgStatus').textContent = 'Profile name is required.'; return; }
-  // S2: description is required — delegation discovery depends on it.
-  if (!el('agentProfileDescription').value.trim()) {
-    el('agentProfileCfgStatus').textContent = 'Description is required.';
-    return;
-  }
   if (!inherit && !selectedAgentProfileConfig()) { el('agentProfileCfgStatus').textContent = 'Provider config is required.'; return; }
   if (!inherit && !model) { el('agentProfileCfgStatus').textContent = 'Model is required.'; return; }
   const renamed = Boolean(editingAgentProfileName) && name !== editingAgentProfileName;
