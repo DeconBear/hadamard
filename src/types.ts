@@ -3301,6 +3301,8 @@ export interface RouterProfile {
   description?: string;
   /** The leader: classifies each turn and dispatches it to a specialist route. */
   routerModel: RouterModelRef;
+  /** Typed identity for the leader's model configuration. */
+  routerModelTarget?: AgentTargetRef;
   /** The specialist roster the leader dispatches among. */
   routes: RouterRoute[];
   /** Used when the leader matches no route. Defaults to the first route. */

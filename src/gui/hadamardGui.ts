@@ -351,8 +351,10 @@ import {
 } from '../update/appUpdateService.js';
 import { discoverHadamardPlugins } from '../tui/pluginCatalog.js';
 import {
+  formatTeamAskCommand,
   HADAMARD_INTERACTIVE_COMMANDS,
   interactiveCommandUsage,
+  parseTeamAskArguments,
 } from '../ui/commandSurface.js';
 import {
   createAgentExecutionProjectView,
@@ -5519,10 +5521,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         }
         if (args.startsWith('ask ')) {
           const rest = args.slice(4).trim();
-          const split = rest.indexOf(' ');
-          if (split === -1) return [{ type: 'error', message: 'usage: /team ask <name> <prompt>' }];
-          const teamName = rest.slice(0, split);
-          const prompt = rest.slice(split + 1).trim();
+          const parsed = parseTeamAskArguments(rest);
+          if (!parsed) return [{ type: 'error', message: 'usage: /team ask <name> <prompt>' }];
+          const { name: teamName, prompt } = parsed;
           const definition = resolveTeamDefinition(teamName, workDir, session.model);
           if (!definition) return [{ type: 'error', message: `team not found: ${teamName}` }];
           session.metadata.__hadamardLastTeamName = definition.name;
@@ -6738,15 +6739,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       // this streams member activity as it happens via onEvent → forwardTeamEvent,
       // and registers a 'team' run so the Monitor pane shows it live.
       const rest = input.slice('/team ask '.length).trim();
-      const split = rest.indexOf(' ');
-      if (split === -1) {
+      const parsed = parseTeamAskArguments(rest);
+      if (!parsed) {
         send({ type: 'error', message: 'usage: /team ask <name> <prompt>' });
         send({ type: 'done' });
         res.end();
         return;
       }
-      const teamName = rest.slice(0, split);
-      const prompt = rest.slice(split + 1).trim();
+      const { name: teamName, prompt } = parsed;
       const definition = resolveTeamDefinition(teamName, workDir, session.model);
       if (!definition) {
         send({ type: 'error', message: `team not found: ${teamName}` });
@@ -9790,8 +9790,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         const body = await readJson(req);
         const name = typeof body.name === 'string' ? body.name.trim() : '';
         if (!name) return json(res, 400, { error: 'Missing router profile name' });
-        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name)) {
-          return json(res, 400, { error: 'Invalid name (use letters, digits, . _ -)' });
+        if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/.test(name)) {
+          return json(res, 400, { error: 'Invalid name (use letters, digits, spaces, . _ -)' });
         }
         const parseRef = (raw: unknown): RouterModelRef | null => {
           if (!raw || typeof raw !== 'object') return null;
@@ -9854,6 +9854,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           routerModel,
           routes,
         };
+        const routerModelTarget = parseTargetRef(body.routerModelTarget);
+        if (routerModelTarget?.kind === 'model') profile.routerModelTarget = routerModelTarget;
         if (typeof body.description === 'string' && body.description.trim()) {
           profile.description = body.description.trim();
         }
@@ -11192,7 +11194,7 @@ export function createHadamardGuiHtml(): string {
       <h2 id="agentProfileEditorTitle">New agent profile</h2>
       <div class="two-col">
         <label class="dialog-field">Profile name<input id="agentProfileName" autocomplete="off" placeholder="e.g. reviewer"></label>
-        <label class="dialog-field">Configuration / model<span id="agentProfileModelPicker"></span></label>
+        <div class="dialog-field"><span>Configuration / model</span><div id="agentProfileModelPicker" class="agent-profile-model-picker"></div></div>
       </div>
       <label class="dialog-field">Description *<input id="agentProfileDescription" autocomplete="off" placeholder="Role summary — subagent discovery depends on it"></label>
       <p class="muted" id="agentProfileInheritHint">Pick a Configuration and model from Settings → Models, or <strong>Inherit session model</strong> to follow the session's main model (inherit agents are not listed in the composer model picker). Runtime is taken from the selected configuration — not configured here.</p>
@@ -15567,6 +15569,14 @@ body[data-density="compact"] .composer-meta { padding: 5px 12px; }
 .bridge-editor { width: min(560px, 100%); max-height: 86vh; overflow-y: auto; }
 .agent-profile-advanced { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; }
 .agent-profile-advanced > summary { cursor: pointer; color: var(--text-1); font-weight: 600; }
+.agent-profile-model-picker { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: end; }
+.agent-profile-model-picker .dialog-field { margin: 0; min-width: 0; }
+.agent-profile-model-picker select { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; }
+.agent-profile-model-picker .secondary-btn { grid-column: 1 / -1; min-height: 32px; justify-self: end; white-space: nowrap; }
+@media (max-width: 900px) {
+  .agent-profile-model-picker { grid-template-columns: 1fr; }
+  .agent-profile-model-picker .secondary-btn { justify-self: start; }
+}
 .router-editor { width: min(720px, 100%); }
 .router-editor textarea { width: 100%; min-height: 56px; resize: vertical; border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; background: var(--bg-surface); color: var(--text-1); font: inherit; }
 .router-route-draft { margin-bottom: 8px; }
@@ -15597,6 +15607,7 @@ export function createHadamardGuiClientScript(): string {
     getTeamGraphBezierClientScript(),
   ].join('\n');
   const targetPickerScript = [
+    formatTeamAskCommand.toString(),
     encodeConfigModelTarget.toString(),
     targetRefToPickerValue.toString(),
     pickerValueToTargetRef.toString(),
@@ -27706,7 +27717,7 @@ function openNewSquadDialog() {
     try {
       if (chosen === 'agent') {
         overlay.remove();
-        openAgentProfileEditor({ name: squadName, description: desc || '', bridgeConfig: '', model: '' });
+        openAgentProfileEditor(null, null);
         el('agentProfileName').disabled = false;
         setField('agentProfileName', squadName);
         setField('agentProfileDescription', desc || '');
@@ -27799,6 +27810,7 @@ async function renderTeamRegion() {
 async function selectAgentEntry(name, kind, opts) {
   opts = opts || {};
   kind = kind || 'team';
+  if (kind !== 'profile' && kind !== 'agent-md') closeAgentProfileEditor();
   if (kind !== 'router') state.routerDraft = null;
   state.teamSelected = name;
   state.teamSelectedKind = kind;
@@ -27925,7 +27937,9 @@ function renderRouterPane(router, opts) {
     renameFrom: !creating && !isBuiltIn ? (router?.name || profile?.name || '') : null,
     description: profile?.description || '',
     target: router?.source === 'personal' ? 'personal' : 'project',
-    leaderKey: profile?.routerModel?.model || '',
+    leaderKey: profile?.routerModelTarget
+      ? targetRefToPickerValue(profile.routerModelTarget)
+      : modelToTargetKey(profile?.routerModel?.model || ''),
     fallbackKey: profile?.fallbackTarget
       ? targetRefToPickerValue(profile.fallbackTarget)
       : modelToTargetKey(profile?.fallback?.model || ''),
@@ -28014,11 +28028,15 @@ function renderRouterPane(router, opts) {
   const leaderSection = document.createElement('div');
   leaderSection.className = 'router-form-section';
   leaderSection.innerHTML = '<h4>Leader</h4><p class="te-hint">Classifies each chat turn and picks one specialist route.</p>';
+  const leaderRef = pickerValueToTargetRef(draft.leaderKey);
   leaderSection.appendChild(tePickerField('Leader model', createConfigModelSelect({
-    selected: draft.leaderKey,
+    selected: leaderRef?.kind === 'model' ? leaderRef.model : '',
+    selectedConfig: leaderRef?.kind === 'model' ? leaderRef.config : '',
     placeholder: 'Select model…',
     includeSession: true,
-    onChange: (model) => { draft.leaderKey = model; },
+    onChange: (model, config) => {
+      draft.leaderKey = model ? targetRefToPickerValue({ kind: 'model', config, model }) : '';
+    },
   })));
   wrap.appendChild(leaderSection);
 
@@ -28166,6 +28184,7 @@ async function saveRouterFormDraft(draft, opts) {
     target: draft.target === 'personal' ? 'personal' : 'project',
     description: String(draft.description || '').trim(),
     routerModel: { model: leader.model },
+    routerModelTarget: leader.target,
     routes,
   };
   if (leader.provider) body.routerModel.provider = leader.provider;
@@ -28260,11 +28279,78 @@ async function runSelectedSquad() {
   }
   state.teamSelected = name;
   state.teamSelectedKind = 'team';
-  const input = window.prompt('Run agent "' + name + '" with prompt:', '');
+  const input = await promptTeamRun(name);
   if (!input || !input.trim()) return;
+  if (state.teamDirty && state.teamDefinition?.name === name) {
+    const saved = await saveTeamDefinition();
+    if (!saved) return;
+  }
   await switchRegion('project');
   switchProjectView('conversation');
-  submitText('/team ask ' + name + ' ' + input.trim()).catch(console.error);
+  submitText(formatTeamAskCommand(name, input)).catch(console.error);
+}
+function promptTeamRun(name) {
+  return new Promise((resolve) => {
+    document.getElementById('teamRunDialog')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'teamRunDialog';
+    overlay.className = 'modal';
+    const panel = document.createElement('div');
+    panel.className = 'auto-dialog';
+    panel.style.cssText = 'max-width:520px;width:min(520px,92vw);';
+    const head = document.createElement('div');
+    head.className = 'ins-head';
+    const title = document.createElement('h3');
+    title.textContent = 'Run ' + name;
+    head.appendChild(title);
+    panel.appendChild(head);
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:0 18px 18px;display:grid;gap:12px;';
+    const label = document.createElement('label');
+    label.className = 'te-field';
+    label.appendChild(document.createTextNode('Prompt'));
+    const input = document.createElement('textarea');
+    input.id = 'teamRunPrompt';
+    input.rows = 5;
+    input.placeholder = 'What should this graph or workflow do?';
+    label.appendChild(input);
+    body.appendChild(label);
+    const status = document.createElement('p');
+    status.className = 'te-hint';
+    body.appendChild(status);
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
+    const finish = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'te-btn';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => finish(null));
+    const run = document.createElement('button');
+    run.type = 'button';
+    run.className = 'te-btn primary';
+    run.textContent = 'Run';
+    run.addEventListener('click', () => {
+      if (!input.value.trim()) {
+        status.textContent = 'Enter a prompt to run this definition.';
+        input.focus();
+        return;
+      }
+      finish(input.value.trim());
+    });
+    actions.append(cancel, run);
+    body.appendChild(actions);
+    panel.appendChild(body);
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) finish(null);
+    });
+    document.body.appendChild(overlay);
+    input.focus();
+  });
 }
 // --- Team editor (plan/UI_PLAN §5.3 / U6 + graph canvas inspector). ---
 const TEAM_CORE_TOOLS = ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash', 'TavilySearch', 'WebFetch', 'Task', 'TodoWrite', 'AskUserQuestion'];
@@ -28376,7 +28462,7 @@ function createConfigModelSelect(opts) {
     for (const model of g.models) {
       const opt = document.createElement('option');
       opt.value = configModelPickerValue(g.config, model);
-      opt.textContent = model;
+      opt.textContent = g.config + ' / ' + model;
       opt.dataset.config = g.config;
       opt.dataset.model = model;
       group.appendChild(opt);
@@ -29856,10 +29942,10 @@ function teField(label, value, onChange, textarea) {
 }
 async function saveTeamDefinition() {
   const def = state.teamDefinition;
-  if (!def || !def.name) return;
+  if (!def || !def.name) return false;
   if (state.teamProposalPreviewId) {
     window.alert('This is a staged Assistant proposal. Use Apply on its Proposal card so the base version is checked before saving.');
-    return;
+    return false;
   }
   // Server-side /api/team/save migrates (migrateTeamDefinitionToGraph) +
   // validates before writing — the renderer doesn't have that helper in scope.
@@ -29879,6 +29965,7 @@ async function saveTeamDefinition() {
       await refreshTeamsSnapshot();
       renderTeamSquadBar();
       await selectTeam(def.name, { force: true });
+      return true;
     } else {
       let problems = null;
       let message = '';
@@ -29889,9 +29976,11 @@ async function saveTeamDefinition() {
       } catch { /* non-JSON error body */ }
       showTeamGraphProblems(problems);
       addMessage('error', 'Save failed: ' + (message || res.status));
+      return false;
     }
   } catch (err) {
     addMessage('error', 'Save failed: ' + (err && err.message || err));
+    return false;
   }
 }
 // Inline validation problems (from the engine's validateTeamGraph) in the editor.
@@ -30252,7 +30341,24 @@ function renderWfNode(node, def, editable) {
   const meta = document.createElement('div');
   meta.className = 'wf-node-meta';
   if (node.runtime) { const s = document.createElement('span'); s.textContent = node.runtime; meta.appendChild(s); }
-  if (node.model) { const s = document.createElement('span'); s.textContent = node.model; meta.appendChild(s); }
+  if (node.targetRef?.kind === 'model') {
+    const s = document.createElement('span');
+    s.textContent = (node.targetRef.config ? node.targetRef.config + ' / ' : '') + node.targetRef.model;
+    meta.appendChild(s);
+  } else if (node.targetRef?.kind === 'agent') {
+    const s = document.createElement('span');
+    s.textContent = 'Agent / ' + node.targetRef.name;
+    meta.appendChild(s);
+  } else if (node.targetRef?.kind === 'team') {
+    const target = (state.snapshot?.teams || []).find((team) => team.name === node.targetRef.name);
+    const s = document.createElement('span');
+    s.textContent = (target?.definition?.squadType === 'workflow' ? 'Workflow / ' : 'Graph / ') + node.targetRef.name;
+    meta.appendChild(s);
+  } else if (node.model) {
+    const s = document.createElement('span');
+    s.textContent = node.model;
+    meta.appendChild(s);
+  }
   if (meta.children.length) card.appendChild(meta);
   col.appendChild(card);
   // Children and continuation controls.
@@ -30431,7 +30537,9 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
     }
     draft.type = nodeType;
     if (isNew) {
-      draft.children = nodeType === 'branch' ? [wfDefaultChild(), wfDefaultChild()] : [];
+      draft.children = nodeType === 'branch' || nodeType === 'parallel'
+        ? [wfDefaultChild(), wfDefaultChild()]
+        : [];
     }
     if (nodeType !== 'agent') {
       delete draft.prompt;
@@ -33302,75 +33410,112 @@ function renderAgentProfiles() {
   }
 }
 
-// P2 picker migration: the Provider-config + Model select pair is now the
-// shared config→model picker (optgroup per config; each option carries
-// dataset.config). The bridgeConfig name derives from the selected option.
-// S2 (§6-6): an "Inherit session model" option persists no bridgeConfig/model.
 function mountAgentProfileModelPicker(selectedConfig, selectedModel, preferInherit) {
   const mount = el('agentProfileModelPicker');
   if (!mount) return;
   mount.textContent = '';
-  const select = createConfigModelSelect({
-    placeholder: '(no provider configs)',
-    selected: selectedModel,
-    selectedConfig,
-  });
-  select.id = 'agentProfilePicker';
-  const inheritOpt = document.createElement('option');
-  inheritOpt.value = '__inherit__';
-  inheritOpt.textContent = 'Inherit session model';
-  inheritOpt.dataset.config = '';
-  select.insertBefore(inheritOpt, select.children[1] || null);
-  let chosen = null;
-  if (preferInherit) {
-    chosen = inheritOpt;
-  } else if (selectedModel) {
-    // A model id may live in several configs — prefer the profile's config.
-    for (const opt of select.options) {
-      if (opt.dataset.model === selectedModel && (opt.dataset.config || '') === selectedConfig) { chosen = opt; break; }
-    }
-    if (!chosen) {
-      for (const opt of select.options) {
-        if (opt.dataset.model === selectedModel) { chosen = opt; break; }
-      }
-    }
+  const configs = state.snapshot?.bridgeState?.configs || [];
+
+  const configField = document.createElement('label');
+  configField.className = 'dialog-field';
+  configField.appendChild(document.createTextNode('Configuration'));
+  const configSelect = document.createElement('select');
+  configSelect.id = 'agentProfileConfigPicker';
+  const inherit = document.createElement('option');
+  inherit.value = '__inherit__';
+  inherit.textContent = 'Inherit session model';
+  configSelect.appendChild(inherit);
+  for (const config of configs) {
+    const option = document.createElement('option');
+    option.value = config.name;
+    const count = agentProfileBridgeModels(config).length;
+    option.textContent = config.name + (count
+      ? ' · ' + count + ' model' + (count === 1 ? '' : 's')
+      : ' · no models');
+    configSelect.appendChild(option);
   }
-  if (!chosen && selectedConfig) {
-    // Model id no longer in the config list: fall back to that config's first model.
-    for (const opt of select.options) {
-      if ((opt.dataset.config || '') === selectedConfig && opt.dataset.model) {
-        chosen = opt;
-        break;
-      }
-    }
+  if (selectedConfig && !configs.some(config => config.name === selectedConfig)) {
+    const missing = document.createElement('option');
+    missing.value = selectedConfig;
+    missing.textContent = selectedConfig + ' (missing)';
+    missing.dataset.broken = 'true';
+    configSelect.appendChild(missing);
   }
-  if (!chosen && !selectedConfig && !selectedModel && !preferInherit) {
-    // New profile: default to the first config/model (legacy behavior).
-    for (const opt of select.options) {
-      if (opt.dataset.model) { chosen = opt; break; }
+  const firstUsableConfig = configs.find(config => agentProfileBridgeModels(config).length)?.name || '';
+  configSelect.value = preferInherit
+    ? '__inherit__'
+    : selectedConfig || firstUsableConfig || '__inherit__';
+  configField.appendChild(configSelect);
+
+  const modelField = document.createElement('label');
+  modelField.className = 'dialog-field';
+  modelField.appendChild(document.createTextNode('Model'));
+  const modelSelect = document.createElement('select');
+  modelSelect.id = 'agentProfileModelSelect';
+  modelField.appendChild(modelSelect);
+
+  const configure = document.createElement('button');
+  configure.type = 'button';
+  configure.className = 'secondary-btn';
+  configure.textContent = 'Manage models';
+  configure.addEventListener('click', () => { void openSettings('models').catch(console.error); });
+
+  const renderModels = (requestedModel) => {
+    modelSelect.textContent = '';
+    const configName = configSelect.value;
+    if (configName === '__inherit__') {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Uses the current session model';
+      modelSelect.appendChild(option);
+      modelSelect.disabled = true;
+      return;
     }
-  }
-  if (chosen) chosen.selected = true;
-  else select.value = '';
-  mount.appendChild(select);
+    const config = configs.find(candidate => candidate.name === configName);
+    const models = agentProfileBridgeModels(config);
+    if (requestedModel && !models.includes(requestedModel)) {
+      const missing = document.createElement('option');
+      missing.value = requestedModel;
+      missing.textContent = requestedModel + ' (missing)';
+      missing.dataset.broken = 'true';
+      modelSelect.appendChild(missing);
+    }
+    for (const model of models) {
+      const option = document.createElement('option');
+      option.value = model;
+      option.textContent = model;
+      modelSelect.appendChild(option);
+    }
+    if (!modelSelect.options.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = config ? 'No models configured' : 'Configuration is missing';
+      option.dataset.broken = 'true';
+      modelSelect.appendChild(option);
+      modelSelect.disabled = true;
+      return;
+    }
+    modelSelect.disabled = false;
+    if (requestedModel) modelSelect.value = requestedModel;
+    if (!modelSelect.value && models.length) modelSelect.value = models[0];
+  };
+  configSelect.addEventListener('change', () => renderModels(''));
+  renderModels(selectedModel);
+  mount.append(configField, modelField, configure);
 }
 
 function agentProfilePickerIsInherit() {
-  return el('agentProfilePicker')?.value === '__inherit__';
+  return el('agentProfileConfigPicker')?.value === '__inherit__';
 }
 
 function selectedAgentProfileConfig() {
   if (agentProfilePickerIsInherit()) return '';
-  const select = el('agentProfilePicker');
-  const opt = select && select.selectedOptions && select.selectedOptions[0];
-  return (opt && opt.dataset.config) || '';
+  return el('agentProfileConfigPicker')?.value || '';
 }
 
 function selectedAgentProfileModel() {
   if (agentProfilePickerIsInherit()) return '';
-  const select = el('agentProfilePicker');
-  const opt = select && select.selectedOptions && select.selectedOptions[0];
-  return (opt && opt.dataset.model) || '';
+  return el('agentProfileModelSelect')?.value || '';
 }
 
 function renderAgentProfileTools(selected) {
@@ -33497,7 +33642,7 @@ async function openAgentProfileEditor(profile, definition, sourceSquad) {
   el('agentProfileCfgStatus').textContent = editingAgentProfileName ? 'Editing "' + editingAgentProfileName + '".' : '';
   // Embedded in the Agents panel right pane (09 Aug 2026): switch there,
   // hide the graph/editor panes, and show the panel with a Used-by action.
-  void switchRegion('team');
+  if (state.activeRegion !== 'team') await switchRegion('team');
   el('teamEditor')?.classList.add('hidden');
   el('teamGraph')?.classList.add('hidden');
   const actions = el('agentEditorActions');
@@ -35629,10 +35774,11 @@ async function managerStream(path, payload) {
   el('managerFab')?.classList.add('running');
   const updateBtn = el('managerUpdateBtn');
   const sendBtn = el('managerChatSend');
+  let editorContext;
   if (updateBtn) updateBtn.disabled = true;
   if (sendBtn) sendBtn.disabled = true;
   try {
-    const editorContext = assistantScope === 'global' ? await collectAssistantEditorContext(false) : undefined;
+    editorContext = assistantScope === 'global' ? await collectAssistantEditorContext(false) : undefined;
     const res = await api(path, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -35690,10 +35836,23 @@ async function managerStream(path, payload) {
     setManagerThinking(false);
     el('managerPanel')?.classList.remove('running');
     el('managerFab')?.classList.remove('running');
+    refreshManagerState();
+    await loadState().catch(() => {});
+    if (
+      editorContext?.dirty
+      && (editorContext.entityKind === 'graph' || editorContext.entityKind === 'workflow')
+      && state.activeRegion === 'team'
+      && state.teamSelectedKind === 'team'
+      && state.teamSelected === editorContext.entityName
+      && !state.teamProposalPreviewId
+    ) {
+      state.teamDefinition = structuredClone(editorContext.draft);
+      state.teamDefinitionCache[editorContext.entityName] = structuredClone(editorContext.draft);
+      renderTeamGraph(state.teamDefinition, editorContext.entityName);
+      setTeamSavedStatus(false);
+    }
     if (updateBtn) updateBtn.disabled = false;
     if (sendBtn) sendBtn.disabled = false;
-    refreshManagerState();
-    loadState().catch(() => {});
   }
 }
 // P2 picker migration: bridge + model selects are now the shared config→model

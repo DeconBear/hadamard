@@ -73,6 +73,7 @@ function sampleIndex(): ReferenceEdge[] {
       {
         name: 'r1',
         routerModel: { model: 'lead' },
+        routerModelTarget: { kind: 'model', config: 'cfg', model: 'lead' },
         routes: [
           // legacy route whose role matches a saved agent profile
           { role: 'coder', model: 'm1', when: 'coding work' },
@@ -126,7 +127,7 @@ describe('buildReferenceIndex', () => {
   it('discovers config references from agent profiles, manager configs, and session state', () => {
     const usages = findUsages(sampleIndex(), 'config', 'cfg');
     const froms = usages.map((edge) => `${edge.from.kind}:${edge.from.name}`).sort();
-    expect(froms).toEqual(['agent:coder', 'assistant:global', 'manager:/proj', 'session:active', 'team:g1']);
+    expect(froms).toEqual(['agent:coder', 'assistant:global', 'manager:/proj', 'router:r1', 'session:active', 'team:g1']);
     expect(usages.find((edge) => edge.from.kind === 'agent')?.field).toBe('bridgeConfig');
     expect(usages.find((edge) => edge.from.kind === 'team')?.field).toBe('nodes[a3].targetRef');
   });

@@ -96,7 +96,7 @@ export function buildAgentTargetPickerOptions(input: {
     for (const model of group.models) {
       options.push({
         value: encodeConfigModelTarget(group.config, model),
-        label: model,
+        label: `${group.config} / ${model}`,
         group: `Model configurations · ${group.config}`,
       });
     }

@@ -247,6 +247,8 @@ export function migrateRouterProfileTargets(
   const names = new Set(agentNames ?? listAgentProfiles().map((p) => p.name));
   return {
     ...profile,
+    routerModelTarget: profile.routerModelTarget
+      ?? { kind: 'model', config: '', model: profile.routerModel.model },
     routes: profile.routes.map((route) => migrateRouterRouteTarget(route, names)),
     fallbackTarget: profile.fallbackTarget
       ?? (profile.fallback ? { kind: 'model', config: '', model: profile.fallback.model } : undefined),

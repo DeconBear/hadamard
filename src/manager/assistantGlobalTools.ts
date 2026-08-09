@@ -271,6 +271,7 @@ function redactRouterProfile(profile: RouterProfile): Record<string, unknown> {
     name: profile.name,
     description: profile.description,
     routerModel: redactRouterRef(profile.routerModel),
+    routerModelTarget: profile.routerModelTarget,
     routes: profile.routes.map(route => ({
       ...redactRouterRef(route),
       when: route.when,
@@ -1092,6 +1093,7 @@ export async function createAssistantGlobalTools(
         scope: z.enum(['project', 'personal']).optional(),
         description: z.string().optional(),
         routerModel: routerRefSchema,
+        routerModelTarget: targetRefSchema.optional(),
         routes: z.array(z.strictObject({
           model: z.string(),
           provider: z.enum(['anthropic', 'openai']).optional(),
@@ -1115,6 +1117,7 @@ export async function createAssistantGlobalTools(
         name: input.name.trim(),
         ...(input.description?.trim() ? { description: input.description.trim() } : {}),
         routerModel: input.routerModel,
+        ...(input.routerModelTarget ? { routerModelTarget: input.routerModelTarget } : {}),
         routes: input.routes,
         ...(input.fallback ? { fallback: input.fallback } : {}),
         ...(input.fallbackTarget ? { fallbackTarget: input.fallbackTarget } : {}),

@@ -34,7 +34,10 @@ describe('Agents UI option contract', () => {
   );
 
   it('maps the configuration/model picker to both persisted identity fields and target resolution', () => {
-    expect(gui).toContain("select.id = 'agentProfilePicker'");
+    expect(gui).toContain("configSelect.id = 'agentProfileConfigPicker'");
+    expect(gui).toContain("modelSelect.id = 'agentProfileModelSelect'");
+    expect(gui).toContain("missing.textContent = selectedConfig + ' (missing)'");
+    expect(gui).toContain("option.textContent = config ? 'No models configured' : 'Configuration is missing'");
     expect(gui).toContain('bridgeConfig: inherit ? \'\' : selectedAgentProfileConfig()');
     expect(gui).toContain('model: inherit ? \'\' : model');
     expect(gui).toContain('configModelPickerValue(g.config, model)');
@@ -46,6 +49,20 @@ describe('Agents UI option contract', () => {
     expect(gui).toContain('description: el(\'agentProfileDescription\').value.trim()');
     expect(runtime).toContain('definition.description');
     expect(runtime).toContain('definition.subagent !== false');
+  });
+
+  it('does not recursively re-enter the Agents region while an Agent editor is already open', () => {
+    expect(gui).toContain("if (state.activeRegion !== 'team') await switchRegion('team')");
+    expect(gui).toContain("if (kind !== 'profile' && kind !== 'agent-md') closeAgentProfileEditor()");
+  });
+
+  it('creates engine-valid Parallel nodes and saves dirty definitions before running them', () => {
+    expect(gui).toContain("nodeType === 'branch' || nodeType === 'parallel'");
+    expect(gui).toContain('? [wfDefaultChild(), wfDefaultChild()]');
+    expect(gui).toContain('if (state.teamDirty && state.teamDefinition?.name === name)');
+    expect(gui).toContain('const saved = await saveTeamDefinition()');
+    expect(gui).toContain('const input = await promptTeamRun(name)');
+    expect(gui).not.toContain("window.prompt('Run agent");
   });
 
   it('does not expose retired node-level runtime or reconnect controls', () => {

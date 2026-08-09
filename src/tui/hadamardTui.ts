@@ -132,6 +132,7 @@ import {
   SUBCOMMAND_DESCRIPTIONS,
   filterInteractiveCommands,
   interactiveCommandUsage,
+  parseTeamAskArguments,
   selectInteractiveCommand,
 } from '../ui/commandSurface.js';
 import {
@@ -4783,13 +4784,12 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           }
           if (args.startsWith('ask ')) {
             const rest = args.slice(4).trim();
-            const spaceIdx = rest.indexOf(' ');
-            if (spaceIdx === -1) {
+            const parsed = parseTeamAskArguments(rest);
+            if (!parsed) {
               appendStatic([...formatErrorLine('usage: /team ask <name> <prompt>'), '']);
               return;
             }
-            const teamName = rest.slice(0, spaceIdx);
-            const prompt = rest.slice(spaceIdx + 1).trim();
+            const { name: teamName, prompt } = parsed;
             const loaded = loadTeamDefinition(teamName, sdk.config.workDir);
             if (!loaded) {
               appendStatic([...formatErrorLine(`team not found: ${teamName}`), '']);
