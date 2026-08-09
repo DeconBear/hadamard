@@ -3194,6 +3194,8 @@ export interface TeamAskOptions {
    * appends its own ref before invoking the sub-team.
    */
   teamStack?: string[];
+  /** Maximum Graph/Workflow definitions allowed in one nested execution chain. Defaults to 16. */
+  maxTeamNestingDepth?: number;
 }
 
 export interface TeamResult {

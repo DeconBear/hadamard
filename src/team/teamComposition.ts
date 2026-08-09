@@ -6,7 +6,11 @@ export interface TeamCompositionValidationOptions {
   homeDir?: string;
   ancestorStack?: readonly string[];
   loadDefinition?: (name: string) => TeamDefinition | null;
+  /** Maximum number of definitions in one composition path. Defaults to 16. */
+  maxDepth?: number;
 }
+
+export const DEFAULT_MAX_TEAM_NESTING_DEPTH = 16;
 
 function collectWorkflowTeamRefs(node: WorkflowNode | undefined, refs: Set<string>): void {
   if (!node) return;
@@ -42,6 +46,9 @@ export function validateTeamComposition(
 ): string[] {
   const problems: string[] = [];
   const checked = new Set<string>();
+  const maxDepth = Number.isInteger(options.maxDepth) && (options.maxDepth ?? 0) > 0
+    ? options.maxDepth!
+    : DEFAULT_MAX_TEAM_NESTING_DEPTH;
   const load = options.loadDefinition ?? ((name: string) =>
     loadTeamDefinition(name, options.projectDir, options.homeDir)?.definition ?? null);
 
@@ -54,6 +61,10 @@ export function validateTeamComposition(
     }
 
     const stack = [...ancestors, name];
+    if (stack.length > maxDepth) {
+      problems.push(`Team composition exceeds maximum nesting depth ${maxDepth}: ${stack.join(' -> ')}`);
+      return;
+    }
     const key = `${name}\0${stack.slice(0, -1).join('\0')}`;
     if (checked.has(key)) return;
     checked.add(key);

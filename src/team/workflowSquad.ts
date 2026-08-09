@@ -10,7 +10,7 @@ import { AgentPool } from './agentPool.js';
 import { memberSignal, runMemberAgent } from './teamRuntime.js';
 import { buildGraphNodeTools } from './teamGraph.js';
 import { resolveTargetRef } from '../manager/resolveTargetRef.js';
-import { loadTeamDefinition } from './teamDefinitions.js';
+import { resolveExecutorTarget } from './executorTarget.js';
 import {
   resolveEffectiveAgentRunOptions,
   type EffectiveAgentRunOptions,
@@ -172,10 +172,15 @@ export async function runWorkflowSquad(
         statuses.push({ id: node.id, model: '', role: node.label || 'agent', ok: false, error, toolCalls: 0, durationMs: 0 });
         return `[team recursion detected: ${cycle}]`;
       }
-      const nested = dependencies.loadTeam
-        ? dependencies.loadTeam(ref, workDir)
-        : loadTeamDefinition(ref, workDir, options.homeDir)?.definition ?? null;
-      if (!nested) {
+      let nested: TeamDefinition;
+      try {
+        const resolved = resolveExecutorTarget(node.targetRef, {
+          projectDir: workDir,
+          homeDir: options.homeDir,
+          loadTeam: dependencies.loadTeam,
+        });
+        nested = resolved.definition;
+      } catch {
         const error = `team "${ref}" not found`;
         statuses.push({ id: node.id, model: '', role: node.label || 'agent', ok: false, error, toolCalls: 0, durationMs: 0 });
         return `[${error}]`;
@@ -229,7 +234,7 @@ export async function runWorkflowSquad(
     let targetInheritsModel = false;
     if (node.targetRef) {
       try {
-        const resolved = resolveTargetRef(node.targetRef, {
+        const resolved = resolveExecutorTarget(node.targetRef, {
           projectDir: workDir,
           homeDir: options.homeDir,
         });
@@ -327,7 +332,7 @@ export async function runSingleAgentSquad(
     | ReturnType<typeof resolveTargetRef>['agentProfile'];
   let targetInheritsModel = false;
   if (member.targetRef && member.targetRef.kind !== 'team') {
-    const resolved = resolveTargetRef(member.targetRef, {
+    const resolved = resolveExecutorTarget(member.targetRef, {
       projectDir: workDir,
       homeDir: opts?.homeDir,
     });
