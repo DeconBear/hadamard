@@ -208,8 +208,11 @@ describe('renameDefinitionAndReferences', () => {
     await writeManagerConfig(project, resolveHadamardHome(home), { ...DEFAULT_MANAGER_CONFIG, bridgeConfig: 'cfg' });
     writeJson(path.join(project, '.hadamard', 'routers', 'r.json'), {
       name: 'r',
-      routerModel: { model: 'lead' },
+      routerModel: { model: 'm1' },
+      routerModelTarget: { kind: 'model', config: 'cfg', model: 'm1' },
       routes: [{ model: 'm1', when: 'a', target: { kind: 'model', config: 'cfg', model: 'm1' } }],
+      fallback: { model: 'm1' },
+      fallbackTarget: { kind: 'model', config: 'cfg', model: 'm1' },
     });
 
     await renameDefinitionAndReferences('config', 'cfg', 'cfg2', {
@@ -223,7 +226,9 @@ describe('renameDefinitionAndReferences', () => {
     const profiles = readAgentProfiles(home);
     expect(profiles.profiles.every((p) => p.bridgeConfig === 'cfg2')).toBe(true);
     const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
+    expect(router.routerModelTarget.config).toBe('cfg2');
     expect(router.routes[0].target.config).toBe('cfg2');
+    expect(router.fallbackTarget.config).toBe('cfg2');
   });
 
   it('renames references stored by Issues and the global Assistant', async () => {
@@ -435,13 +440,21 @@ describe('repointConfigModel', () => {
     const { home, project } = seedHome();
     writeJson(path.join(project, '.hadamard', 'routers', 'r.json'), {
       name: 'r',
-      routerModel: { model: 'lead' },
+      routerModel: { model: 'm1' },
+      routerModelTarget: { kind: 'model', config: 'cfg', model: 'm1' },
       routes: [{ model: 'm1', when: 'a', target: { kind: 'model', config: 'cfg', model: 'm1' } }],
+      fallback: { model: 'm1' },
+      fallbackTarget: { kind: 'model', config: 'cfg', model: 'm1' },
     });
     await repointConfigModel('cfg', 'm1', 'm2', { projectDir: project, homeDir: home });
     expect(findAgentProfile('coder', home)?.model).toBe('m2');
     const router = readJson(path.join(project, '.hadamard', 'routers', 'r.json'));
+    expect(router.routerModel).toEqual({ model: 'm2' });
+    expect(router.routerModelTarget).toEqual({ kind: 'model', config: 'cfg', model: 'm2' });
+    expect(router.routes[0].model).toBe('m2');
     expect(router.routes[0].target).toEqual({ kind: 'model', config: 'cfg', model: 'm2' });
+    expect(router.fallback).toEqual({ model: 'm2' });
+    expect(router.fallbackTarget).toEqual({ kind: 'model', config: 'cfg', model: 'm2' });
   });
 });
 

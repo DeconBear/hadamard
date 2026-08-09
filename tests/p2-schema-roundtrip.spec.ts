@@ -108,6 +108,7 @@ describe('router profile editor fields (P2)', () => {
       {
         name: 'dispatch',
         routerModel: { model: 'lead' },
+        routerModelTarget: { kind: 'model', config: 'leader-cfg', model: 'lead' },
         classificationPrompt: 'You are a strict dispatcher.',
         routes: [
           {
@@ -134,6 +135,7 @@ describe('router profile editor fields (P2)', () => {
 
     const loaded = loadRouterProfile('dispatch', undefined, home)!;
     expect(loaded.profile.classificationPrompt).toBe('You are a strict dispatcher.');
+    expect(loaded.profile.routerModelTarget).toEqual({ kind: 'model', config: 'leader-cfg', model: 'lead' });
     const [coder, fast] = loaded.profile.routes;
     expect(coder?.effort).toBe('high');
     expect(coder?.maxTokens).toBe(64000);

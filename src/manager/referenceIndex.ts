@@ -164,6 +164,9 @@ export function buildReferenceIndex(input: ReferenceIndexInput): ReferenceEdge[]
   // agent/team/config ← router route targets + fallback (post-migration)
   for (const router of input.routers ?? []) {
     const from = { kind: 'router' as const, name: router.name };
+    const routerModelTarget = router.routerModelTarget
+      ?? { kind: 'model' as const, config: '', model: router.routerModel.model };
+    pushTargetRefEdge(edges, from, 'routerModelTarget', routerModelTarget);
     router.routes.forEach((route, index) => {
       const migrated = migrateRouterRouteTarget(route, agentNames);
       pushTargetRefEdge(edges, from, `routes[${index}].target`, migrated.target);

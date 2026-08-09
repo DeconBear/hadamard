@@ -131,6 +131,11 @@ export function rewriteRouterFileRefs(
   agentNames: ReadonlySet<string>,
 ): boolean {
   let changed = false;
+  const leader = rewriteTargetRef(raw.routerModelTarget, kind, oldName, newName);
+  if (leader.changed) {
+    raw.routerModelTarget = leader.ref;
+    changed = true;
+  }
   raw.routes = (raw.routes ?? []).map((route) => {
     const next = { ...route };
     const rewritten = rewriteTargetRef(next.target, kind, oldName, newName);
@@ -818,14 +823,21 @@ export async function repointConfigModel(
   };
   const mutateRouter = (raw: RouterProfile): boolean => {
     let changed = false;
+    const leader = rewriteModelRef(raw.routerModelTarget);
+    if (leader.changed) {
+      raw.routerModelTarget = leader.ref;
+      raw.routerModel.model = toModel;
+      changed = true;
+    }
     raw.routes = (raw.routes ?? []).map((route) => {
       const next = rewriteModelRef(route.target);
       if (next.changed) changed = true;
-      return { ...route, target: next.ref };
+      return { ...route, ...(next.changed ? { model: toModel } : {}), target: next.ref };
     });
     const fallback = rewriteModelRef(raw.fallbackTarget);
     if (fallback.changed) {
       raw.fallbackTarget = fallback.ref;
+      if (raw.fallback) raw.fallback.model = toModel;
       changed = true;
     }
     return changed;
