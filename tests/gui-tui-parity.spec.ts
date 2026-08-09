@@ -239,9 +239,13 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('pickAutoEdgeRoute');
     expect(js).toContain('spreadGraphPortIndex');
     expect(js).toContain('Need Dispatch → agents → Exit');
-    expect(js).toContain('Design with agent');
-    expect(js).toContain('/api/team/propose');
-    expect(js).toContain('openTeamDesignerDrawer');
+    expect(js).not.toContain('Design with agent');
+    expect(js).not.toContain('/api/team/propose');
+    expect(js).not.toContain('openTeamDesignerDrawer');
+    expect(js).toContain("pointerBtn.dataset.graphControlMode = 'pointer'");
+    expect(js).toContain("handBtn.dataset.graphControlMode = 'hand'");
+    expect(js).toContain("pointerBtn.setAttribute('aria-label', 'Pointer tool (V)')");
+    expect(js).toContain("handBtn.setAttribute('aria-label', 'Hand tool (H)')");
     expect(js).not.toContain('First Return reached ends the graph');
     expect(js).toContain('squadTypeLabel');
     expect(gui).toContain('/api/team/scaffold');
