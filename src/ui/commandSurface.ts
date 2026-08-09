@@ -43,6 +43,39 @@ export const HADAMARD_INTERACTIVE_COMMANDS: Record<string, string> = {
   exit: 'Quit',
 };
 
+export type InteractiveCommandRunPolicy = 'during-run' | 'idle-only';
+
+/**
+ * Commands in this set only inspect presentation/session state (or terminate
+ * the surface). They do not replace the active runtime, mutate the message
+ * history, or start a second agent run, so TUI and GUI may execute them while
+ * a response is streaming.
+ */
+const DURING_RUN_COMMANDS = new Set([
+  'help',
+  'clear',
+  'context',
+  'cost',
+  'usage',
+  'stats',
+  'tools',
+  'skills',
+  'agents',
+  'mcp',
+  'hooks',
+  'exit',
+]);
+
+export function interactiveCommandRunPolicy(command: string): InteractiveCommandRunPolicy {
+  return DURING_RUN_COMMANDS.has(command.trim().toLowerCase())
+    ? 'during-run'
+    : 'idle-only';
+}
+
+export function canRunInteractiveCommand(command: string, running: boolean): boolean {
+  return !running || interactiveCommandRunPolicy(command) === 'during-run';
+}
+
 export function formatTeamAskCommand(name: string, prompt: string): string {
   return `/team ask ${JSON.stringify(name)} ${prompt.trim()}`;
 }
@@ -97,7 +130,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     'off',
     'help',
   ],
-  model: ['router', 'config'],
+  model: ['config', 'custom', 'router'],
   team: ['ask', 'list', 'attach', 'off', 'status', 'clone', 'delete'],
   issues: ['list', 'show', 'create', 'start', 'review', 'done', 'block'],
   manager: ['chat', 'update', 'status', 'config', 'schedule', 'sessions', 'new', 'resume', 'team'],
@@ -133,7 +166,8 @@ export const SUBCOMMAND_DESCRIPTIONS: Record<string, string> = {
   'bridge off': 'Disable bridge mode',
   'bridge help': 'Show /bridge sub-commands',
   'model router': 'Pick a leader/dispatch router profile',
-  'model config': 'Edit provider / keys / model tiers',
+  'model config': 'Manage named model configurations',
+  'model custom': 'Use a model id with the default provider',
   'team ask': 'Ask a named team a prompt',
   'team list': 'List built-in + saved team definitions',
   'team attach': 'Attach a team to this conversation',
@@ -225,7 +259,7 @@ const COMMAND_USAGES: Record<string, string> = {
   batch: '/batch <file>',
   goal: '/goal [<objective>|status|run|pause|resume|clear]',
   export: '/export [filename]',
-  model: '/model [model|min|medium|max|default|config|router [name|off]]',
+  model: '/model [<configuration>|custom <model-id>|config|router [name|off]]',
   effort: '/effort [auto|low|medium|high|max]',
   permissions: '/permissions [read-only|workspace|full]',
   plan: '/plan [view|approve|revise <feedback>|off]',

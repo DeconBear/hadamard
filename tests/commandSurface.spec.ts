@@ -4,7 +4,9 @@ import {
   HADAMARD_INTERACTIVE_COMMANDS,
   SUBCOMMANDS,
   SUBCOMMAND_DESCRIPTIONS,
+  canRunInteractiveCommand,
   filterInteractiveCommands,
+  interactiveCommandRunPolicy,
   interactiveCommandUsage,
   selectInteractiveCommand,
 } from '../src/ui/commandSurface.js';
@@ -40,7 +42,7 @@ describe('filterInteractiveCommands', () => {
       'bridge off',
       'bridge help',
     ]);
-    expect(filterInteractiveCommands('/model ')).toEqual(['model router', 'model config']);
+    expect(filterInteractiveCommands('/model ')).toEqual(['model config', 'model custom', 'model router']);
     expect(filterInteractiveCommands('/automation ')).toEqual(['automation list', 'automation new']);
     expect(filterInteractiveCommands('/plan ')).toEqual([
       'plan view',
@@ -124,6 +126,18 @@ describe('filterInteractiveCommands', () => {
     expect(SUBCOMMANDS.automation).toEqual(['list', 'new']);
     expect(SUBCOMMAND_DESCRIPTIONS['automation list']).toBeTruthy();
     expect(SUBCOMMAND_DESCRIPTIONS['automation new']).toBeTruthy();
+  });
+
+  it('distinguishes commands that are safe during an active run', () => {
+    for (const command of ['help', 'context', 'cost', 'tools', 'agents', 'exit']) {
+      expect(interactiveCommandRunPolicy(command)).toBe('during-run');
+      expect(canRunInteractiveCommand(command, true)).toBe(true);
+    }
+    for (const command of ['model', 'compact', 'resume', 'permissions', 'workflows']) {
+      expect(interactiveCommandRunPolicy(command)).toBe('idle-only');
+      expect(canRunInteractiveCommand(command, true)).toBe(false);
+      expect(canRunInteractiveCommand(command, false)).toBe(true);
+    }
   });
 
   it('submits a selected sub-command exactly once', () => {

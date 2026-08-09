@@ -378,6 +378,28 @@ describe('run and hook deadlines', () => {
 });
 
 describe('session steering and follow-up queues', () => {
+  it('exposes immutable pending input snapshots and recalls the newest follow-up', async () => {
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory: await createSessionDirectory(),
+      modelApi: new MockModelApi({}),
+    });
+    const session = await sdk.createSession({ title: 'pending-inputs' });
+    try {
+      session.followUp('first');
+      session.followUp('second');
+      session.steer('immediate');
+      const snapshot = session.pendingInputs;
+
+      expect(snapshot).toEqual({ steering: ['immediate'], followUps: ['first', 'second'] });
+      expect(session.cancelLatestFollowUp()).toBe('second');
+      expect(session.pendingInputs).toEqual({ steering: ['immediate'], followUps: ['first'] });
+      expect(snapshot.followUps).toEqual(['first', 'second']);
+    } finally {
+      await sdk.close();
+    }
+  });
+
   it('injects steering queued during a tool before the next model request', async () => {
     const sessionDirectory = await createSessionDirectory();
     let sawSteering = false;
