@@ -11,6 +11,7 @@ import type {
   AgentToolDefinition,
 } from '../types.js';
 import { agentProfileRunOverrides, resolveSelectableAgentRun } from '../config/agentProfiles.js';
+import { resolveEffectiveAgentRunOptions } from '../runtime/effectiveAgentRunOptions.js';
 import {
   buildDecomposeIssuePrompt,
   buildManagerSystemPrompt,
@@ -153,7 +154,16 @@ export async function executeProjectIssue(
     ? await resolveSelectableAgentRun(profileName, options.homeDir)
     : undefined;
   const model = profile?.model ?? options.defaultModel;
-  const permissionMode = profile?.profile.permissionMode ?? options.permissionMode;
+  const effectiveProfileOptions = profile
+    ? resolveEffectiveAgentRunOptions(profile.profile, {
+        systemPrompt: [
+          options.systemPrompt,
+          `You are working on ISS-${issue.number}: ${issue.title}.`,
+        ].filter(Boolean).join('\n\n'),
+        fallbackPermissionMode: options.permissionMode,
+      })
+    : undefined;
+  const permissionMode = effectiveProfileOptions?.permissionMode ?? options.permissionMode;
   const workerSession = await options.sdk.createSession({
     title: `ISS-${issue.number} ${issue.title}`.slice(0, 120),
     ...(model ? { model } : {}),
@@ -221,19 +231,29 @@ export async function executeProjectIssue(
 
   try {
     const workerStream = workerSession.stream(workerPrompt, {
-      systemPrompt: [
-        options.systemPrompt,
-        `You are working on ISS-${issue.number}: ${issue.title}.`,
-        profile?.profile.systemPromptAppend
-          ? `Agent profile instructions:\n${profile.profile.systemPromptAppend}`
-          : undefined,
-      ].filter(Boolean).join('\n\n'),
+      systemPrompt: effectiveProfileOptions?.systemPrompt
+        ?? [options.systemPrompt, `You are working on ISS-${issue.number}: ${issue.title}.`]
+          .filter(Boolean).join('\n\n'),
       tools: [reportTool],
       ...(model ? { model } : {}),
       ...(profile?.modelApi ? { modelApi: profile.modelApi } : {}),
       ...(permissionMode ? { permissionMode } : {}),
       ...agentProfileRunOverrides(profile?.profile),
-      signal: options.signal,
+      ...(effectiveProfileOptions?.allowedTools
+        ? { allowedTools: [...effectiveProfileOptions.allowedTools, reportTool.name] }
+        : {}),
+      ...(effectiveProfileOptions
+        ? { workspaceAccess: effectiveProfileOptions.workspaceAccess }
+        : {}),
+      ...(typeof effectiveProfileOptions?.maxToolIterations === 'number'
+        ? { maxToolIterations: effectiveProfileOptions.maxToolIterations }
+        : {}),
+      signal: typeof effectiveProfileOptions?.timeoutMs === 'number'
+        ? AbortSignal.any([
+            ...(options.signal ? [options.signal] : []),
+            AbortSignal.timeout(effectiveProfileOptions.timeoutMs),
+          ])
+        : options.signal,
     });
     for await (const event of workerStream) {
       options.onEvent?.(event);

@@ -337,6 +337,36 @@ describe('resolveTargetRef', () => {
     expect(resolved).toMatchObject({ model: 'm2', provider: 'anthropic', baseURL: 'https://api.example', label: 'coder' });
   });
 
+  it('loads project Agents and preserves inherit-session-model definitions', () => {
+    const home = seededHome();
+    const project = tempHome();
+    const dir = path.join(project, '.hadamard', 'agents');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'inherit.md'), [
+      '---',
+      'name: inherit',
+      'description: Uses the caller model',
+      'promptMode: replace',
+      'workspaceAccess: workspace',
+      '---',
+      '',
+      'Project-only instructions.',
+      '',
+    ].join('\n'), 'utf8');
+
+    const resolved = resolveTargetRef(
+      { kind: 'agent', name: 'inherit' },
+      { homeDir: home, projectDir: project },
+    );
+    expect(resolved.model).toBeUndefined();
+    expect(resolved.agentDefinition).toMatchObject({
+      name: 'inherit',
+      promptMode: 'replace',
+      workspaceAccess: 'workspace',
+      systemPrompt: 'Project-only instructions.',
+    });
+  });
+
   it('throws BrokenReferenceError for a missing agent', () => {
     try {
       resolveTargetRef({ kind: 'agent', name: 'ghost' }, { homeDir: seededHome() });
