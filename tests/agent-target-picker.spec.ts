@@ -41,6 +41,10 @@ describe('Agents executor picker contract', () => {
       'model:primary:shared-model',
       'model:fallback:shared-model',
     ]);
+    expect(options.map(option => option.label)).toEqual([
+      'primary / shared-model',
+      'fallback / shared-model',
+    ]);
     expect(options.map(option => pickerValueToTargetRef(option.value))).toEqual([
       { kind: 'model', config: 'primary', model: 'shared-model' },
       { kind: 'model', config: 'fallback', model: 'shared-model' },
