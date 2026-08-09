@@ -280,6 +280,9 @@ try {
   await agentConfigPicker.selectOption('Alpha Config');
   assert.equal(await agentModelPicker.isEnabled(), true);
   assert.equal(await agentModelPicker.inputValue(), 'shared-model');
+  const agentDescriptionLabel = page.locator('label.dialog-field').filter({ has: page.locator('#agentProfileDescription') });
+  assert.equal((await agentDescriptionLabel.textContent()).trim().startsWith('Description *'), false);
+  await page.locator('#agentProfileDescription').fill('');
   await page.locator('#agentProfilePromptMode').selectOption('replace');
   await page.locator('#agentProfileSystemPrompt').fill('Validate every requested control.');
   await page.locator('#agentProfileSubagent').uncheck();
@@ -303,6 +306,7 @@ try {
   await page.locator('#agentProfileEditorTitle').filter({ hasText: 'Edit agent' }).waitFor();
   assert.equal(await page.locator('#agentProfileConfigPicker').inputValue(), 'Alpha Config');
   assert.equal(await page.locator('#agentProfileModelSelect').inputValue(), 'shared-model');
+  assert.equal(await page.locator('#agentProfileDescription').inputValue(), 'Validate every requested control.');
   assert.equal(await page.locator('#agentProfilePromptMode').inputValue(), 'replace');
   assert.equal(await page.locator('#agentProfileSystemPrompt').inputValue(), 'Validate every requested control.');
   assert.equal(await page.locator('#agentProfileSubagent').isChecked(), false);
