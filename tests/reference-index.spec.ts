@@ -116,6 +116,8 @@ function sampleIndex(): ReferenceEdge[] {
     ],
     teamPreferences: { autoInvoke: false, defaultAttached: 'g1', confirmBeforeRun: true },
     managerConfigs: [{ name: '/proj', bridgeConfig: 'cfg' }],
+    assistantConfig: { bridgeConfig: 'cfg' },
+    issues: [{ id: 'iss-7', number: 7, title: 'Ship it', agentConfig: 'coder' }],
     session: { activeAgent: 'coder', activeConfig: 'cfg', activeRouterName: 'r1', activeTeamName: 'g1' },
   });
 }
@@ -124,7 +126,7 @@ describe('buildReferenceIndex', () => {
   it('discovers config references from agent profiles, manager configs, and session state', () => {
     const usages = findUsages(sampleIndex(), 'config', 'cfg');
     const froms = usages.map((edge) => `${edge.from.kind}:${edge.from.name}`).sort();
-    expect(froms).toEqual(['agent:coder', 'manager:/proj', 'session:active', 'team:g1']);
+    expect(froms).toEqual(['agent:coder', 'assistant:global', 'manager:/proj', 'session:active', 'team:g1']);
     expect(usages.find((edge) => edge.from.kind === 'agent')?.field).toBe('bridgeConfig');
     expect(usages.find((edge) => edge.from.kind === 'team')?.field).toBe('nodes[a3].targetRef');
   });
@@ -133,6 +135,7 @@ describe('buildReferenceIndex', () => {
     const usages = findUsages(sampleIndex(), 'agent', 'coder');
     const fields = usages.map((edge) => `${edge.from.kind}:${edge.field}`).sort();
     expect(fields).toEqual([
+      'issue:agentConfig',
       'router:routes[0].target',
       'session:activeAgent',
       'team:nodes[a2].targetRef',
@@ -149,6 +152,9 @@ describe('buildReferenceIndex', () => {
       .toEqual(['preference', 'session']);
     // legacy script-runtime automation does not reference a team
     expect(findUsages(index, 'team', 'script-wf')).toEqual([]);
+    expect(findUsages(index, 'workflow-script', 'script-wf')).toEqual([
+      expect.objectContaining({ from: { kind: 'automation', name: 'legacy' }, field: 'workflowName' }),
+    ]);
   });
 
   it('discovers router references from session state only', () => {
@@ -171,6 +177,7 @@ describe('findBrokenRefs', () => {
       agents: ['coder'],
       teams: ['g1', 't1'],
       routers: ['r1'],
+      workflows: ['script-wf'],
     });
     const summary = broken.map((edge) => `${edge.from.kind}:${edge.from.name}→${edge.to.kind}:${edge.to.name}`).sort();
     expect(summary).toEqual([

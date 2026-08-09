@@ -347,6 +347,15 @@ async function getReferenceSnapshot(
     .catch(() => [] as ScheduledAutomationTask[]);
   const manager = await readManagerConfig(host.currentWorkDir, resolveHadamardHome(host.homeDir))
     .catch(() => undefined);
+  const projectMeta = await readProjectMeta(host.currentWorkDir, host.homeDir);
+  const issueStorage: IssueStorageMode = isIssueStorageMode(projectMeta.issueStorage)
+    ? projectMeta.issueStorage
+    : 'home';
+  const [issues, assistantConfig] = await Promise.all([
+    listProjectIssues(host.currentWorkDir, host.homeDir, issueStorage).catch(() => []),
+    readAssistantConfig(host.homeDir),
+  ]);
+  const workflows = listWorkflows(host.currentWorkDir, host.homeDir);
   const index = buildReferenceIndex({
     bridgeConfigs,
     agentProfiles,
@@ -357,6 +366,8 @@ async function getReferenceSnapshot(
     managerConfigs: manager
       ? [{ name: host.currentWorkDir, bridgeConfig: manager.bridgeConfig }]
       : [],
+    issues,
+    assistantConfig,
     session: host.getSessionRefState?.() ?? null,
   });
   return {
@@ -372,6 +383,7 @@ async function getReferenceSnapshot(
       ],
       teams: teams.map(team => team.name),
       routers: routers.map(router => router.name),
+      workflows: workflows.map(workflow => workflow.name),
     },
   };
 }
