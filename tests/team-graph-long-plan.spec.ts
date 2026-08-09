@@ -176,6 +176,21 @@ describe('single Caller Exit', () => {
 });
 
 describe('finalizeTeamProposeDraft', () => {
+  it('validates Workflow drafts as Workflow instead of migrating them to Graph', () => {
+    const raw = JSON.stringify({
+      definition: {
+        name: 'workflow-draft',
+        mode: 'graph',
+        squadType: 'workflow',
+        workflowTree: { id: 'root', type: 'agent', children: [] },
+      },
+    });
+    const result = finalizeTeamProposeDraft(raw, { squadType: 'workflow' });
+    expect(result.problems).toEqual([]);
+    expect(result.definition?.workflowTree?.id).toBe('root');
+    expect(result.definition?.nodes).toBeUndefined();
+  });
+
   it('returns problems with draft when validation fails', () => {
     const raw = JSON.stringify({
       explanation: 'bad draft',

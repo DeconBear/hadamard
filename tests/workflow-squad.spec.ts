@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   executeWorkflowTree,
+  runWorkflowSquad,
   validateWorkflowSquad,
 } from '../src/team/workflowSquad.js';
 import type { TeamDefinition, WorkflowNode } from '../src/types.js';
@@ -80,5 +81,65 @@ describe('Agent workflow squads', () => {
       expect.stringContaining('Branch node "duplicate" requires a condition'),
       expect.stringContaining('Branch node "duplicate" requires exactly two children'),
     ]));
+  });
+
+  it('executes a referenced Graph or Workflow as an executor node', async () => {
+    const definition: TeamDefinition = {
+      name: 'parent-workflow',
+      mode: 'graph',
+      version: 3,
+      orchestration: 'graph',
+      squadType: 'workflow',
+      members: [],
+      nodes: [],
+      edges: [],
+      workflowTree: {
+        id: 'nested',
+        type: 'agent',
+        prompt: 'nested: {{input}}',
+        targetRef: { kind: 'team', name: 'child-graph' },
+        children: [],
+      },
+    };
+    const child: TeamDefinition = {
+      name: 'child-graph',
+      mode: 'graph',
+      version: 3,
+      orchestration: 'graph',
+      members: [],
+      nodes: [],
+      edges: [],
+    };
+    const calls: string[] = [];
+
+    const result = await runWorkflowSquad(
+      definition,
+      'input',
+      new AbortController().signal,
+      process.cwd(),
+      undefined,
+      { teamStack: ['parent-workflow'] },
+      {
+        loadTeam: name => name === child.name ? child : null,
+        askTeam: async (nested, prompt) => {
+          calls.push(`${nested.name}:${prompt}`);
+          return {
+            answer: 'nested answer',
+            mode: 'graph',
+            cost: { totalInputTokens: 2, totalOutputTokens: 3, estimatedCost: null, breakdown: [] },
+            durationMs: 1,
+            memberStatuses: [],
+            reports: [],
+            skippedNodes: [],
+          };
+        },
+      },
+    );
+
+    expect(calls).toEqual(['child-graph:nested: input']);
+    expect(result.answer).toBe('nested answer');
+    expect(result.mode).toBe('workflow');
+    expect(result.cost.totalInputTokens).toBe(2);
+    expect(result.cost.totalOutputTokens).toBe(3);
   });
 });
