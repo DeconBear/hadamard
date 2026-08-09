@@ -104,6 +104,11 @@ import type {
 import { isRecord } from '../runtime/helpers.js';
 import { getLoadedJsonConfig } from '../config/loadJsonConfigFile.js';
 import {
+  buildModelConfigurationCatalog,
+  findModelConfiguration,
+  resolveHadamardConfigurationModel,
+} from '../config/modelConfigurationCatalog.js';
+import {
   findBridgeConfig,
   maskApiKey,
   readBridgeConfigs,
@@ -130,7 +135,9 @@ import { pathToFileURL } from 'node:url';
 import {
   HADAMARD_INTERACTIVE_COMMANDS,
   SUBCOMMAND_DESCRIPTIONS,
+  canRunInteractiveCommand,
   filterInteractiveCommands,
+  interactiveCommandRunPolicy,
   interactiveCommandUsage,
   parseTeamAskArguments,
   selectInteractiveCommand,
@@ -146,6 +153,13 @@ import { A, stringWidth, truncateToWidth, wrapToWidth } from './ansi.js';
 import { InputEditor } from './editor.js';
 import { discoverHadamardPlugins } from './pluginCatalog.js';
 import { TuiScreen } from './screen.js';
+import { ReasoningDisplayState } from './reasoningDisplay.js';
+import {
+  recallLatestFollowUp,
+  restoreAbandonedFollowUp,
+  submitActiveInput,
+  type ActiveInputMode,
+} from './pendingInput.js';
 import {
   filterTuiSelectionItems,
   moveTuiSelection,
@@ -160,7 +174,6 @@ import {
   formatErrorLine,
   formatInfoLine,
   formatQueuedPrompt,
-  formatThinking,
   formatToolCall,
   formatToolResult,
   formatUserPrompt,
@@ -549,6 +562,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   let running = false;
   let commandBusy = false;
   let shuttingDown = false;
+  /** Follow-up pulled out of the queue into the editor; restored if abandoned. */
+  let recalledFollowUp: string | null = null;
   // Active team tool the main agent may call (toggled via /team). null = no team.
   // The tool is only injected into runs when preferences.team.autoInvoke is on;
   // otherwise attach is a selection and /team ask stays the manual path.
@@ -932,7 +947,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   let ctrlCCount = 0;
   let ctrlCTimer: ReturnType<typeof setTimeout> | null = null;
   let streamedTextSeen = false;
-  let streamedThinkingSeen = false;
+  const reasoningDisplay = new ReasoningDisplayState();
   // Track tool names by callId for PostToolUse hook context.
   const toolCallNames = new Map<string, string>();
   // Live todo list (captured from TodoWrite tool calls). Rendered as a
@@ -1159,6 +1174,17 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     return lines;
   }
 
+  function promptCursorPosition(promptStartLine: number): { line: number; column: number } {
+    if (editor.isEmpty()) {
+      return { line: promptStartLine + 1, column: 2 };
+    }
+    const visual = editor.visualLines(Math.max(screen.width - 5, 7));
+    return {
+      line: promptStartLine + 1 + visual.cursorRow,
+      column: 2 + visual.cursorCol,
+    };
+  }
+
   // ── @-mention file completion ──────────────────────────────────────
   // Prefer git's view (tracked + untracked, honoring .gitignore) so the list
   // matches what the agent actually sees; fall back to a bounded fs walk for
@@ -1298,7 +1324,13 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       const selected = index === menuSelected;
       const command = `/${name}`.padEnd(commandWidth);
       const label = selected ? `${A.inverse}${command}${A.reset}` : command;
-      const description = truncateToWidth(TUI_SLASH_COMMANDS[name] ?? SUBCOMMAND_DESCRIPTIONS[name] ?? '', descriptionWidth);
+      const commandName = name.split(/\s/u, 1)[0] ?? name;
+      const unavailable = running && interactiveCommandRunPolicy(commandName) === 'idle-only';
+      const summary = TUI_SLASH_COMMANDS[name] ?? SUBCOMMAND_DESCRIPTIONS[name] ?? '';
+      const description = truncateToWidth(
+        unavailable ? `${summary} · after current run` : summary,
+        descriptionWidth,
+      );
       return `${label} ${A.dim}${description}${A.reset}`;
     });
     const hiddenAbove = windowStart;
@@ -1308,6 +1340,14 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       if (hiddenAbove > 0) parts.push(`↑${hiddenAbove}`);
       if (hiddenBelow > 0) parts.push(`↓${hiddenBelow}`);
       lines.push(`${A.dim}  ${parts.join('  ')} more · ${menuSelected + 1}/${matches.length} (↑/↓ to scroll)${A.reset}`);
+    }
+    const selected = matches[Math.min(menuSelected, matches.length - 1)];
+    if (selected) {
+      const commandName = selected.split(/\s/u, 1)[0] ?? selected;
+      const availability = interactiveCommandRunPolicy(commandName) === 'during-run'
+        ? 'available while working'
+        : 'idle session';
+      lines.push(`${A.dim}  ${interactiveCommandUsage(commandName)} · ${availability}${A.reset}`);
     }
     return lines;
   }
@@ -1423,7 +1463,9 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const ctxColor = pct >= 90 ? A.red : pct >= 70 ? A.yellow : A.dim;
     const modelLabel = activeRouter
       ? `router:${activeRouter.name}${routedModelLabel ? ` → ${routedModelLabel}` : ''}`
-      : session.model;
+      : !bridgeMode && activeBridgeConfig?.runtime === 'hadamard' && bridgeModelLabel
+        ? `${activeBridgeConfig.name}:${bridgeModelLabel}`
+        : session.model;
     const bridgeTag = bridgeMode && activeBridgeConfig
       ? ` · bridge:${activeBridgeConfig.name}${bridgeModelLabel ? ` · ${bridgeModelLabel}` : ''}`
       : '';
@@ -1449,9 +1491,41 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
   function buildHintLine(): string[] {
     if (running) {
-      return [`${A.dim}  enter to queue a steering message · esc interrupt · ctrl+c twice to exit${A.reset}`];
+      return [`${A.dim}  enter queue follow-up · shift+enter steer now · ↑ recall queued · esc interrupt${A.reset}`];
     }
     return [`${A.dim}  ? shortcuts · / commands · @ files · \\↵ newline · ↑↓ history · ctrl+c clear/exit${A.reset}`];
+  }
+
+  function buildPendingInputPanel(): string[] {
+    const pending = session.pendingInputs;
+    const visible = pending.followUps.slice(-3);
+    const hidden = pending.followUps.length - visible.length;
+    const lines = visible.map((text, index) => (
+      `${A.dim}  queued ${hidden + index + 1}: ${truncateToWidth(text.replace(/\s+/g, ' '), Math.max(screen.width - 15, 12))}${A.reset}`
+    ));
+    if (pending.steering.length > 0) {
+      lines.push(`${A.dim}  ${pending.steering.length} immediate steering message${pending.steering.length === 1 ? '' : 's'} pending${A.reset}`);
+    }
+    return lines;
+  }
+
+  function selectionDialogCursorPosition(startLine: number): { line: number; column: number } | undefined {
+    if (!selectionDialog?.searchable) return undefined;
+    return {
+      line: startLine + 2 + (selectionDialog.subtitle ? 1 : 0),
+      column: 4 + stringWidth(selectionDialog.query),
+    };
+  }
+
+  function textInputDialogCursorPosition(startLine: number): { line: number; column: number } | undefined {
+    if (!textInputDialog) return undefined;
+    const valueBeforeCursor = textInputDialog.secret
+      ? '•'.repeat(textInputDialog.editor.cursor)
+      : textInputDialog.editor.text.slice(0, textInputDialog.editor.cursor);
+    return {
+      line: startLine + 2 + (textInputDialog.description ? 1 : 0),
+      column: 2 + stringWidth(`${textInputDialog.label}: `) + stringWidth(valueBeforeCursor),
+    };
   }
 
   function buildTodoPanel(): string[] {
@@ -1486,7 +1560,14 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
   function renderDynamic(): void {
     const lines: string[] = [];
+    let promptCursor: { line: number; column: number } | undefined;
     lines.push(...buildStatusLine());
+    if (running && session.pendingInputCount > 0) {
+      lines.push(...buildPendingInputPanel());
+    }
+    if (reasoningDisplay.hasActive) {
+      lines.push(...reasoningDisplay.liveLines(screen.width));
+    }
     const tail = flusher.tail();
     if (running && tail) {
       lines.push(tail);
@@ -1499,11 +1580,17 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     if (dialog) {
       lines.push(...buildDialog());
     } else if (selectionDialog) {
+      const dialogStartLine = lines.length;
       lines.push(...buildSelectionDialog());
+      promptCursor = selectionDialogCursorPosition(dialogStartLine);
     } else if (textInputDialog) {
+      const dialogStartLine = lines.length;
       lines.push(...buildTextInputDialog());
+      promptCursor = textInputDialogCursorPosition(dialogStartLine);
     } else {
+      const promptStartLine = lines.length;
       lines.push(...buildPromptBar());
+      promptCursor = promptCursorPosition(promptStartLine);
       const atMenu = buildAtMenu();
       if (atMenu.length > 0) {
         lines.push(...atMenu);
@@ -1512,7 +1599,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         lines.push(...(menu.length > 0 ? menu : buildHintLine()));
       }
     }
-    screen.setDynamic(lines);
+    screen.setDynamic(lines, promptCursor);
   }
 
   function scheduleDynamicRender(): void {
@@ -1531,6 +1618,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
   function appendStatic(lines: readonly string[]): void {
     screen.appendStatic(lines);
+  }
+
+  function collapseReasoning(): void {
+    const lines = reasoningDisplay.complete();
+    if (lines.length > 0) appendStatic(lines);
   }
 
   // Inline CLI spinner for long async operations (probe, reload).
@@ -1743,6 +1835,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         eventStream = stream;
         resultPromise = stream.result;
       } else {
+        const selectedConfigModel = resolveHadamardConfigurationModel(
+          activeBridgeConfig,
+          bridgeMode,
+          bridgeModelLabel,
+        );
         const stream = session.stream(expandImageRefs(text), {
           systemPrompt: systemPrompt + buildAgentContext(),
           signal: abortCtrl.signal,
@@ -1751,7 +1848,9 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           effort: routed?.effort ?? currentEffort(),
           approver,
           classifier: preToolUseHookClassifier,
-          ...(routed ? { model: routed.model, modelApi: routed.modelApi } : {}),
+          ...(routed
+            ? { model: routed.model, modelApi: routed.modelApi }
+            : selectedConfigModel ? { model: selectedConfigModel } : {}),
           ...(activeTeamTool && teamPrefs.autoInvoke ? { tools: [...tools, activeTeamTool] } : {}),
           ...(canUseTool ? { canUseTool } : {}),
         });
@@ -1765,6 +1864,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         }
       }
       const result = await resultPromise;
+      collapseReasoning();
       // Accumulate token + USD usage for /cost and /usage. The model is the
       // routed model (if a router is active) or the session model. Bridge runs
       recordUsage(routed?.model ?? activeBridgeModelApi?.model ?? bridgeModelLabel ?? session.model, result.usage as { input_tokens?: number; output_tokens?: number } | undefined);
@@ -1795,6 +1895,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       }
       appendStatic(['']);
     } catch (error) {
+      collapseReasoning();
       const rest = flusher.drain();
       if (rest.length > 0) appendStatic(rest);
       const err = error as Error;
@@ -1826,7 +1927,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     switch (event.type) {
       case 'run.started':
         streamedTextSeen = false;
-        streamedThinkingSeen = false;
+        reasoningDisplay.reset();
         return;
       case 'request.started':
         lastTokenEstimate = typeof data.requestTokenEstimate === 'number'
@@ -1837,6 +1938,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       case 'text.delta': {
         const delta = typeof data.delta === 'string' ? data.delta : '';
         if (!delta) return;
+        collapseReasoning();
         streamedTextSeen = true;
         const flushed = flusher.push(delta);
         if (flushed.length > 0) appendStatic(flushed);
@@ -1846,9 +1948,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       case 'reasoning.delta': {
         const delta = typeof data.delta === 'string' ? data.delta : '';
         if (!delta) return;
-        const lines = formatThinking(delta, screen.width);
-        if (lines.length > 0) appendStatic(lines);
-        streamedThinkingSeen = true;
+        reasoningDisplay.append(delta);
         scheduleDynamicRender();
         return;
       }
@@ -1864,14 +1964,15 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       }
       case 'model.content': {
         const content = isRecord(data.content) ? data.content : undefined;
-        if (data.kind === 'content' && content?.type === 'thinking' && !streamedThinkingSeen) {
+        if (data.kind === 'content' && content?.type === 'thinking' && !reasoningDisplay.hasStreamedContent) {
           const thinking = typeof content.thinking === 'string' ? content.thinking : '';
-          const lines = formatThinking(thinking, screen.width);
-          if (lines.length > 0) appendStatic(lines);
+          reasoningDisplay.setCompleteContent(thinking);
+          scheduleDynamicRender();
         }
         return;
       }
       case 'tool.started': {
+        collapseReasoning();
         const callId = typeof data.callId === 'string' ? data.callId : '';
         const publicName = typeof data.publicName === 'string'
           ? data.publicName
@@ -2036,35 +2137,40 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   }
 
   async function chooseModel(): Promise<void> {
-    const items: TuiSelectionItem[] = [
+    const catalog = buildModelConfigurationCatalog(
       {
-        id: 'default',
-        label: 'Configured default',
-        description: sdk.config.model,
+        model: sdk.config.model,
+        provider: sdk.config.provider,
+        baseURL: sdk.config.baseURL,
       },
-      ...(['min', 'medium', 'max'] as const)
-        .filter(tier => Boolean(sdk.config.modelTiers[tier]))
-        .map(tier => ({
-          id: `tier:${tier}`,
-          label: tier,
-          description: sdk.config.modelTiers[tier],
-        })),
+      readBridgeConfigs().configs,
+    );
+    const items: TuiSelectionItem[] = [
+      ...catalog.map(config => ({
+        id: config.id,
+        label: config.source === 'default' ? 'default' : config.name,
+        description: [
+          config.execution === 'cli' ? `${config.runtime} CLI` : config.runtime,
+          config.model || 'runtime default',
+          config.models.length > 1 ? `${config.models.length} models` : '',
+        ].filter(Boolean).join(' · '),
+      })),
       {
         id: 'custom',
         label: 'Enter a model ID',
-        description: 'Session override',
+        description: 'Use the default provider for this session',
       },
       {
         id: 'configure',
-        label: 'Configure provider, API key, and models',
-        description: 'Updates the active Hadamard Agent settings file',
+        label: 'Manage configurations',
+        description: 'Default plus named provider configurations',
       },
     ];
     const selected = await selectItem({
       title: 'Select model',
       subtitle: `Current: ${session.model}`,
       items,
-      searchable: false,
+      searchable: true,
     });
     if (!selected) return;
     if (selected === 'configure') {
@@ -2078,13 +2184,34 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         initial: session.model,
       });
       if (!model?.trim()) return;
+      await disableBridge();
       await session.setModel(model.trim());
-    } else if (selected === 'default') {
-      await session.setModel(sdk.config.model);
     } else {
-      await session.setModel(selected.slice('tier:'.length));
+      const config = findModelConfiguration(catalog, selected);
+      if (!config) return;
+      if (config.source === 'default') {
+        await disableBridge();
+        await session.setModel(sdk.config.model);
+      } else if (config.config) {
+        let selectedConfig = { ...config.config, model: config.model };
+        if (config.models.length > 1) {
+          const model = await selectItem({
+            title: config.name,
+            subtitle: 'Select a model from this configuration',
+            searchable: true,
+            items: config.models.map(item => ({
+              id: item.name,
+              label: item.name,
+              description: item.modality ?? 'text',
+            })),
+          });
+          if (!model) return;
+          selectedConfig = { ...selectedConfig, model };
+        }
+        await activateBridgeConfig(selectedConfig);
+      }
     }
-    appendStatic([...formatInfoLine(`model set to: ${session.model}`), '']);
+    appendStatic([...formatInfoLine(`model configuration: ${activeBridgeConfig?.name ?? 'default'} · ${bridgeModelLabel ?? session.model}`), '']);
   }
 
   async function configureModelSettings(): Promise<void> {
@@ -2124,11 +2251,16 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             label: 'Base URL',
             description: env.HADAMARD_BASE_URL || 'provider default',
           },
-          ...(['min', 'medium', 'max'] as const).map(tier => ({
-            id: `tier:${tier}`,
-            label: `${tier} model`,
-            description: env[`HADAMARD_DEFAULT_${tier.toUpperCase()}_MODEL`] || 'not configured',
-          })),
+          {
+            id: 'model',
+            label: 'Default model',
+            description: env.HADAMARD_MODEL || sdk.config.model || 'not configured',
+          },
+          {
+            id: 'named',
+            label: 'Named configurations',
+            description: `${readBridgeConfigs().configs.length} configured`,
+          },
           {
             id: 'save',
             label: 'Save and apply',
@@ -2195,19 +2327,21 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         }
         continue;
       }
-      if (selected.startsWith('tier:')) {
-        const tier = selected.slice('tier:'.length).toUpperCase();
-        const key = `HADAMARD_DEFAULT_${tier}_MODEL`;
+      if (selected === 'model') {
         const model = await promptText({
-          title: `Configure ${tier.toLowerCase()} model`,
+          title: 'Configure default model',
           label: 'Model ID',
-          initial: env[key] ?? '',
+          initial: env.HADAMARD_MODEL ?? sdk.config.model,
         });
         if (model !== undefined) {
-          if (model.trim()) env[key] = model.trim();
-          else delete env[key];
+          if (model.trim()) env.HADAMARD_MODEL = model.trim();
+          else delete env.HADAMARD_MODEL;
           dirty = true;
         }
+        continue;
+      }
+      if (selected === 'named') {
+        await manageBridgeConfigs();
       }
     }
   }
@@ -3701,6 +3835,10 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const spaceIndex = raw.indexOf(' ');
     const name = (spaceIndex === -1 ? raw.slice(1) : raw.slice(1, spaceIndex)).toLowerCase();
     const args = spaceIndex === -1 ? '' : raw.slice(spaceIndex + 1).trim();
+    if (!canRunInteractiveCommand(name, running)) {
+      appendStatic(formatInfoLine(`/${name} requires an idle session; it will be available after this run`));
+      return;
+    }
     appendStatic(formatUserPrompt(raw));
     commandBusy = true;
     renderDynamic();
@@ -3727,6 +3865,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         }
         case 'clear':
           process.stdout.write('\x1b[2J\x1b[H');
+          screen.setDynamic([]);
           renderDynamic();
           return;
         case 'init': {
@@ -3755,8 +3894,71 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             await chooseRouter(args.slice('router'.length).trim());
             return;
           }
-          await session.setModel(args === 'default' ? sdk.config.model : args);
-          appendStatic([...formatInfoLine(`model set to: ${session.model}`), '']);
+          if (args === 'custom' || args.startsWith('custom ')) {
+            const customModel = args.slice('custom'.length).trim();
+            if (!customModel) {
+              appendStatic([...formatErrorLine('usage: /model custom <model-id>'), '']);
+              return;
+            }
+            await disableBridge();
+            await session.setModel(customModel);
+            appendStatic([...formatInfoLine(`custom model: ${session.model}`), '']);
+            return;
+          }
+          const catalog = buildModelConfigurationCatalog(
+            { model: sdk.config.model, provider: sdk.config.provider, baseURL: sdk.config.baseURL },
+            readBridgeConfigs().configs,
+          );
+          // `/model <config>` or `/model <config> <model-id>` — match the longest
+          // known configuration name so model ids with spaces still work.
+          let config = findModelConfiguration(catalog, args);
+          let explicitModel: string | undefined;
+          if (!config) {
+            const tokens = args.split(/\s+/u).filter(Boolean);
+            for (let i = tokens.length - 1; i >= 1; i -= 1) {
+              const candidate = tokens.slice(0, i).join(' ');
+              const match = findModelConfiguration(catalog, candidate);
+              if (match) {
+                config = match;
+                explicitModel = tokens.slice(i).join(' ');
+                break;
+              }
+            }
+          }
+          if (!config) {
+            appendStatic([
+              ...formatErrorLine(`unknown model configuration: ${args}`),
+              ...formatInfoLine('Use /model to choose one, or /model custom <model-id>.'),
+              '',
+            ]);
+            return;
+          }
+          if (config.source === 'default') {
+            await disableBridge();
+            await session.setModel(explicitModel || sdk.config.model);
+            appendStatic([...formatInfoLine(`model configuration: default · ${session.model}`), '']);
+            return;
+          }
+          if (!config.config) return;
+          let selectedConfig = { ...config.config, model: config.model };
+          if (explicitModel) {
+            selectedConfig = { ...selectedConfig, model: explicitModel };
+          } else if (config.models.length > 1) {
+            const model = await selectItem({
+              title: config.name,
+              subtitle: 'Select a model from this configuration',
+              searchable: true,
+              items: config.models.map(item => ({
+                id: item.name,
+                label: item.name,
+                description: item.modality ?? 'text',
+              })),
+            });
+            if (!model) return;
+            selectedConfig = { ...selectedConfig, model };
+          }
+          await activateBridgeConfig(selectedConfig);
+          appendStatic([...formatInfoLine(`model configuration: ${activeBridgeConfig?.name ?? config.name} · ${bridgeModelLabel ?? session.model}`), '']);
           return;
         }
         case 'effort':
@@ -5466,17 +5668,31 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
   // ── Submit / key handling ──────────────────────────────────────────
 
-  async function submit(): Promise<void> {
-    if (!running && applyAtCompletion()) {
+  /** If the editor was emptied after ↑-recall, put the follow-up back in queue. */
+  function restoreRecalledFollowUpIfAbandoned(): void {
+    if (!recalledFollowUp || !editor.isEmpty()) return;
+    restoreAbandonedFollowUp(session, recalledFollowUp);
+    recalledFollowUp = null;
+  }
+
+  async function submit(mode: ActiveInputMode = 'follow-up'): Promise<void> {
+    if (applyAtCompletion()) {
       renderDynamic();
       return;
     }
-    const selectedCommand = !running
-      ? selectInteractiveCommand(editor.text, menuSelected)
-      : undefined;
+    const selectedCommand = selectInteractiveCommand(editor.text, menuSelected);
     if (selectedCommand) {
+      const selectedName = selectedCommand.slice(1).split(/\s/u, 1)[0] ?? '';
+      // Slash completions are not a resubmit of the recalled follow-up.
+      restoreAbandonedFollowUp(session, recalledFollowUp);
+      recalledFollowUp = null;
       editor.clear();
       menuSelected = 0;
+      if (running && !canRunInteractiveCommand(selectedName, true)) {
+        appendStatic(formatInfoLine(`/${selectedName} requires an idle session; it will be available after this run`));
+        renderDynamic();
+        return;
+      }
       // A selected completion already contains its subcommand. Keeping the
       // partially typed second word would turn `/agents runs` into
       // `/agents runs runs` on Enter.
@@ -5491,17 +5707,31 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const text = value.trim();
     menuSelected = 0;
     if (!text) {
+      restoreRecalledFollowUpIfAbandoned();
       renderDynamic();
       return;
     }
     if (running) {
       if (text.startsWith('/')) {
-        appendStatic(formatInfoLine('slash commands are unavailable while the agent is working'));
+        // Slash commands are not a resubmit of the recalled follow-up.
+        restoreAbandonedFollowUp(session, recalledFollowUp);
+        recalledFollowUp = null;
+        const command = text.slice(1).trim().split(/\s/u, 1)[0]?.toLowerCase() ?? '';
+        if (!canRunInteractiveCommand(command, true)) {
+          appendStatic(formatInfoLine(`/${command} requires an idle session; it will be available after this run`));
+          renderDynamic();
+          return;
+        }
+        await runSlashCommand(text);
         renderDynamic();
         return;
       }
-      session.steer(text);
-      appendStatic(formatQueuedPrompt(text));
+      // Resubmit consumes the recalled draft (re-queued below).
+      recalledFollowUp = null;
+      submitActiveInput(session, text, mode);
+      appendStatic(mode === 'steer'
+        ? formatInfoLine(`steering now: ${text.replace(/\s+/g, ' ')}`)
+        : formatQueuedPrompt(text));
       renderDynamic();
       return;
     }
@@ -5510,9 +5740,12 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       return;
     }
     if (text.startsWith('/')) {
+      restoreAbandonedFollowUp(session, recalledFollowUp);
+      recalledFollowUp = null;
       await runSlashCommand(text);
       return;
     }
+    recalledFollowUp = null;
     void startRun(text);
   }
 
@@ -5682,6 +5915,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           } else if (!editor.isEmpty()) {
             editor.clear();
             menuSelected = 0;
+            restoreRecalledFollowUpIfAbandoned();
           }
           renderDynamic();
           return;
@@ -5692,6 +5926,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             return;
           }
           editor.deleteForward();
+          restoreRecalledFollowUpIfAbandoned();
           break;
         case 'a':
           editor.moveHome();
@@ -5701,12 +5936,15 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           break;
         case 'k':
           editor.killToEnd();
+          restoreRecalledFollowUpIfAbandoned();
           break;
         case 'u':
           editor.killToStart();
+          restoreRecalledFollowUpIfAbandoned();
           break;
         case 'w':
           editor.deleteWordLeft();
+          restoreRecalledFollowUpIfAbandoned();
           break;
         case 'left':
           editor.moveWordLeft();
@@ -5729,6 +5967,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
     switch (name) {
       case 'return': {
+        if (key.shift) {
+          if (running) void submit('steer');
+          else editor.insert('\n');
+          return;
+        }
         if (key.meta) {
           editor.insert('\n');
           break;
@@ -5737,6 +5980,10 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         return;
       }
       case 'enter':
+        if (key.shift && running) {
+          void submit('steer');
+          return;
+        }
         editor.insert('\n');
         break;
       case 'escape': {
@@ -5745,6 +5992,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         } else if (!editor.isEmpty()) {
           editor.clear();
           menuSelected = 0;
+          restoreRecalledFollowUpIfAbandoned();
         }
         break;
       }
@@ -5752,9 +6000,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         editor.backspace();
         menuSelected = 0;
         atSelected = 0;
+        restoreRecalledFollowUpIfAbandoned();
         break;
       case 'delete':
         editor.deleteForward();
+        restoreRecalledFollowUpIfAbandoned();
         break;
       case 'left':
         if (key.meta) editor.moveWordLeft();
@@ -5771,6 +6021,14 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         editor.moveEnd();
         break;
       case 'up': {
+        if (running && editor.isEmpty()) {
+          const recalled = recallLatestFollowUp(session);
+          if (recalled) {
+            recalledFollowUp = recalled;
+            editor.setText(recalled);
+            break;
+          }
+        }
         const atToken = activeAtToken(editor.text, editor.cursor);
         const atCount = atToken ? atCompletions(atToken.token).length : 0;
         const menu = filterSlashCommands(editor.text);

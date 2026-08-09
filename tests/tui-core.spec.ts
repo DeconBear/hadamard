@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { stringWidth, stripAnsi, truncateToWidth, wrapToWidth, A } from '../src/tui/ansi.js';
 import { InputEditor } from '../src/tui/editor.js';
 import { TuiScreen, type ScreenOutput } from '../src/tui/screen.js';
+import { ReasoningDisplayState } from '../src/tui/reasoningDisplay.js';
 import {
   StreamFlusher,
   formatToolCall,
@@ -186,6 +187,21 @@ describe('TuiScreen', () => {
     screen.stop();
   });
 
+  it('parks the real terminal cursor at the prompt caret for IME placement', () => {
+    const out = new FakeOutput();
+    const screen = new TuiScreen(out);
+    screen.start();
+    screen.setDynamic(['working', '> hello', 'hint'], { line: 1, column: 7 });
+
+    expect(out.output).toContain('\x1b[1A');
+    expect(out.output).toContain('\x1b[7C');
+
+    out.chunks = [];
+    screen.appendStatic(['result']);
+    expect(out.output.startsWith('\r\x1b[1A\x1b[0J')).toBe(true);
+    screen.stop();
+  });
+
   it('wraps overlong dynamic lines to the terminal width', () => {
     const out = new FakeOutput();
     out.columns = 10;
@@ -255,6 +271,23 @@ describe('transcript formatting', () => {
     expect(stripAnsi(ok[0]!)).toContain('1.5s');
     const err = formatToolResult({ isError: true, outputText: 'boom' }, 80);
     expect(stripAnsi(err[0]!)).toContain('✗');
+  });
+});
+
+describe('reasoning display state', () => {
+  it('aggregates tiny deltas and collapses the completed segment', () => {
+    const state = new ReasoningDisplayState();
+    for (const delta of ['先', '分析', '问题', '，再', '验证']) state.append(delta);
+
+    const live = state.liveLines(20).map(stripAnsi);
+    const reasoningText = live.map(line => line.replace(/^(?:∴ |  )/u, '')).join('');
+    expect(reasoningText).toContain('先分析问题，再验证');
+    expect(live.length).toBeLessThan(5);
+
+    const completed = state.complete().map(stripAnsi);
+    expect(completed).toEqual([expect.stringContaining('Thinking')]);
+    expect(completed[0]).toContain('collapsed');
+    expect(state.hasActive).toBe(false);
   });
 });
 
