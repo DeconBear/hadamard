@@ -26,12 +26,14 @@ function commandCase(
 }
 
 describe('interactive CLI convergence', () => {
-  it('publishes hadamard-tui as the only terminal agent entry point', async () => {
+  it('publishes hadamard and actoviq as aliases for the TUI entry point', async () => {
     const pkg = JSON.parse(await readFile(new URL('package.json', root), 'utf8')) as {
       bin: Record<string, string>;
     };
 
     expect(pkg.bin['hadamard-tui']).toBe('./bin/hadamard-tui.js');
+    expect(pkg.bin.hadamard).toBe('./bin/hadamard-tui.js');
+    expect(pkg.bin.actoviq).toBe('./bin/hadamard-tui.js');
     expect(pkg.bin).not.toHaveProperty('hadamard-react');
     expect(pkg.bin).not.toHaveProperty('hadamard-interactive-agent');
     await expect(access(new URL('src/cli/hadamard-react.ts', root))).rejects.toThrow();

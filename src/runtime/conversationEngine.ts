@@ -177,6 +177,10 @@ export async function executeConversation(
     options.mcpServers ?? [],
     { signal: options.signal, timeoutMs: options.config.mcpTimeoutMs },
   );
+  const fixedRequestTokens = estimateFixedRequestTokens(
+    options.systemPrompt ?? options.config.systemPrompt,
+    resolvedTools,
+  );
   const toolMap = new Map(resolvedTools.map((tool) => [tool.publicName, tool]));
   const requestSummaries: AgentRequestSummary[] = [];
   const toolCalls: AgentToolCallRecord[] = [];
@@ -215,7 +219,7 @@ export async function executeConversation(
       lastRequestInputTokens,
       tokenEstimateMultiplier,
       compactWindowPrefixTokens,
-      fixedInputTokens: estimateFixedRequestTokens(options.systemPrompt ?? options.config.systemPrompt, resolvedTools),
+      fixedInputTokens: fixedRequestTokens,
       runKey: options.runId,
       signal: options.signal,
     });
@@ -293,7 +297,7 @@ export async function executeConversation(
     };
     const requestByteLength = getRequestByteLength(request);
     const requestTokenEstimate = Math.ceil(
-      preparedMessages.tokenEstimateAfter * tokenEstimateMultiplier,
+      (preparedMessages.tokenEstimateAfter + fixedRequestTokens) * tokenEstimateMultiplier,
     );
 
     // Prompt caching: cache stable system/tools prefixes and the latest message

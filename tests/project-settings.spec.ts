@@ -52,6 +52,22 @@ describe('projectSettings', () => {
     });
   });
 
+  it('defaults project instructions to AGENTS.md and persists compatibility modes', async () => {
+    homeDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-home-'));
+    workDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-work-'));
+    await expect(readProjectSettings(workDir, homeDir)).resolves.toMatchObject({
+      context: { instructionMode: 'agents' },
+    });
+
+    const saved = await writeProjectSettings(workDir, homeDir, {
+      context: { instructionMode: 'both' },
+    });
+    expect(saved.context.instructionMode).toBe('both');
+    await expect(readProjectSettings(workDir, homeDir)).resolves.toMatchObject({
+      context: { instructionMode: 'both' },
+    });
+  });
+
   it('appends custom instructions and project rules sections', () => {
     const out = appendProjectSettingsToPrompt('BASE', {
       workMode: 'coding',

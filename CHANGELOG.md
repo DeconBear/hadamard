@@ -6,6 +6,24 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.14 - 2026-08-10
+
+### Features
+
+- Add `hadamard` and `actoviq` executable aliases for the packaged TUI
+- Add project instruction-file settings with AGENTS.md as the default and optional CLAUDE.md compatibility
+- Show distinct local-preparation and provider-waiting phases while the TUI is working
+
+### Fixes
+
+- Detect API credentials already resolved from local settings in the TUI model configuration screen
+- Keep bare `/model` first in completion until the user types a trailing space
+- Allow manual compact once context usage reaches 20% and include system/tool tokens in request estimates
+- Keep global rules on `~/.hadamard/AGENTS.md` and remove default global CLAUDE.md loading
+- Prevent MCP reloads and context-setting mutations while an agent run is active
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.13...v0.4.14
+
 ## v0.4.13 - 2026-08-09
 
 ### Features

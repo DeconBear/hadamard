@@ -82,11 +82,11 @@ ${envSections.join('\n')}
     .filter(p => p.length > 0)
     .join('\n\n');
 
-  // Load the CLAUDE.md hierarchy (user + project, with @includes) so the agent
+  // Load Hadamard instruction files (AGENTS.md by default) so the agent
   // picks up project-specific instructions — the canonical Claude Code behavior.
   const project = loadProjectContext(params.workDir);
   const projectSection = project.text
-    ? `\n\n# Project context (CLAUDE.md)\n\nThe following project instructions were loaded from CLAUDE.md files. Treat them as authoritative guidance for this workspace.\n\n${project.text}\n`
+    ? `\n\n# Project context (AGENTS.md)\n\nThe following instruction files are authoritative guidance for this workspace.\n\n${project.text}\n`
     : '';
 
   const withProject = `${base}${projectSection}`;

@@ -22,6 +22,20 @@ export interface ModelConfigurationCatalogItem {
   config?: PersistedBridgeConfig;
 }
 
+export function isModelCredentialConfigured(
+  environment: Readonly<Record<string, string | undefined>>,
+  resolved: { apiKey?: string; authToken?: string } = {},
+): boolean {
+  return Boolean(
+    environment.HADAMARD_API_KEY?.trim()
+    || environment.HADAMARD_AUTH_TOKEN?.trim()
+    || environment.ACTOVIQ_API_KEY?.trim()
+    || environment.ACTOVIQ_AUTH_TOKEN?.trim()
+    || resolved.apiKey?.trim()
+    || resolved.authToken?.trim(),
+  );
+}
+
 /**
  * Shared read model for model-configuration pickers. It deliberately contains
  * no TUI/GUI behavior; each surface decides how compactly to present it.

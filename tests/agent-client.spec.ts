@@ -605,6 +605,7 @@ describe('HadamardAgentClient', () => {
       const session = await sdk.createSession();
       await session.send('Walk through the release checklist in detail.');
       const compacted = await session.compact({
+        force: true,
         preserveRecentMessages: 1,
       });
       const compactState = await session.compactState();
@@ -630,6 +631,58 @@ describe('HadamardAgentClient', () => {
       expect(compactState.latestBoundarySummary).toContain('trigger=manual');
     } finally {
       await sdk.close();
+    }
+  });
+
+  it('allows manual compact at 20 percent context usage and skips below it', async () => {
+    const makeSdk = async (inputTokens: number) => {
+      const sessionDirectory = await createSessionDirectory();
+      const modelApi = new MockModelApi({
+        create: (request) => {
+          if ((request.metadata as Record<string, unknown> | undefined)?.hadamard_internal_task === 'compact') {
+            return makeMessage([{ type: 'text', text: 'Compact summary at manual threshold.' }]);
+          }
+          const message = makeMessage([{ type: 'text', text: 'Seed response.' }]);
+          message.usage = { ...message.usage!, input_tokens: inputTokens };
+          return message;
+        },
+      });
+      const sdk = await createAgentSdk({
+        model: 'test-model',
+        sessionDirectory,
+        modelApi,
+        compact: {
+          contextWindowTokens: 1_000,
+          effectiveContextWindowPercent: 100,
+        },
+      });
+      return { sdk, modelApi };
+    };
+
+    const below = await makeSdk(199);
+    try {
+      const session = await below.sdk.createSession();
+      await session.send('Seed below the manual compact threshold.');
+      await expect(session.compact()).resolves.toMatchObject({
+        compacted: false,
+        reason: 'threshold_not_met',
+      });
+      expect(below.modelApi.createCalls).toHaveLength(1);
+    } finally {
+      await below.sdk.close();
+    }
+
+    const atThreshold = await makeSdk(200);
+    try {
+      const session = await atThreshold.sdk.createSession();
+      await session.send('Seed at the manual compact threshold.');
+      await expect(session.compact()).resolves.toMatchObject({
+        compacted: true,
+        reason: 'compacted',
+      });
+      expect(atThreshold.modelApi.createCalls).toHaveLength(2);
+    } finally {
+      await atThreshold.sdk.close();
     }
   });
 
@@ -826,6 +879,7 @@ describe('HadamardAgentClient', () => {
       await session.send(longPrompt);
       await session.send('Follow up on the same release plan with extra detail.');
       await session.compact({
+        force: true,
         preserveRecentMessages: 1,
       });
       const compactState = await session.compactState();

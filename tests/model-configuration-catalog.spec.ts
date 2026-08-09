@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildModelConfigurationCatalog,
   findModelConfiguration,
+  isModelCredentialConfigured,
   resolveHadamardConfigurationModel,
 } from '../src/config/modelConfigurationCatalog.js';
 
@@ -27,6 +28,13 @@ describe('model configuration catalog', () => {
     ]);
     expect(findModelConfiguration(catalog, 'REVIEW')?.id).toBe('config:review');
     expect(findModelConfiguration(catalog, 'default')?.source).toBe('default');
+  });
+
+  it('reports credentials resolved from existing local settings or the process', () => {
+    expect(isModelCredentialConfigured({}, { apiKey: 'resolved-key' })).toBe(true);
+    expect(isModelCredentialConfigured({ HADAMARD_AUTH_TOKEN: 'token' })).toBe(true);
+    expect(isModelCredentialConfigured({ ACTOVIQ_API_KEY: 'legacy-key' })).toBe(true);
+    expect(isModelCredentialConfigured({})).toBe(false);
   });
 
   it('resolves the model that the next Hadamard SDK request must receive', () => {

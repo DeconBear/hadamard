@@ -5,6 +5,10 @@ import { getHadamardProjectSessionDirectory } from './projectSessionDirectory.js
 import type { HadamardRunEffort } from '../types.js';
 
 export type ProjectWorkMode = 'coding' | 'daily';
+export type ProjectInstructionMode = 'agents' | 'claude' | 'both';
+export interface ProjectContextSettings {
+  instructionMode: ProjectInstructionMode;
+}
 export type DreamExecutionProfileRef =
   | { kind: 'config'; name: string; model?: string; effort?: HadamardRunEffort }
   | { kind: 'agent'; name: string; effort?: HadamardRunEffort };
@@ -39,6 +43,7 @@ export type ProjectSettings = {
   workMode: ProjectWorkMode;
   customPrompt: string;
   projectRules: string;
+  context: ProjectContextSettings;
   memory: ProjectMemorySettings;
   updatedAt?: string;
 };
@@ -69,11 +74,16 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   workMode: 'coding',
   customPrompt: '',
   projectRules: '',
+  context: { instructionMode: 'agents' },
   memory: structuredClone(DEFAULT_PROJECT_MEMORY_SETTINGS),
 };
 
 export function isProjectWorkMode(value: unknown): value is ProjectWorkMode {
   return value === 'coding' || value === 'daily';
+}
+
+export function isProjectInstructionMode(value: unknown): value is ProjectInstructionMode {
+  return value === 'agents' || value === 'claude' || value === 'both';
 }
 
 export function projectSettingsPath(workDir: string, homeDir: string): string {
@@ -203,12 +213,18 @@ function normalizeMemorySettings(value: unknown): ProjectMemorySettings {
 
 export function normalizeProjectSettings(raw: unknown): ProjectSettings {
   if (!isRecord(raw)) return structuredClone(DEFAULT_PROJECT_SETTINGS);
+  const context = isRecord(raw.context) ? raw.context : {};
   return {
     workMode: isProjectWorkMode(raw.workMode)
       ? raw.workMode
       : DEFAULT_PROJECT_SETTINGS.workMode,
     customPrompt: typeof raw.customPrompt === 'string' ? raw.customPrompt : '',
     projectRules: typeof raw.projectRules === 'string' ? raw.projectRules : '',
+    context: {
+      instructionMode: isProjectInstructionMode(context.instructionMode)
+        ? context.instructionMode
+        : DEFAULT_PROJECT_SETTINGS.context.instructionMode,
+    },
     memory: normalizeMemorySettings(raw.memory),
     ...(typeof raw.updatedAt === 'string' ? { updatedAt: raw.updatedAt } : {}),
   };
@@ -277,7 +293,10 @@ export async function readProjectMemorySettingsPatch(
 export async function writeProjectSettings(
   workDir: string,
   homeDir: string,
-  patch: Partial<Omit<ProjectSettings, 'memory'>> & { memory?: ProjectMemorySettingsPatch },
+  patch: Partial<Omit<ProjectSettings, 'memory' | 'context'>> & {
+    context?: Partial<ProjectContextSettings>;
+    memory?: ProjectMemorySettingsPatch;
+  },
 ): Promise<ProjectSettings> {
   const current = await readProjectSettings(workDir, homeDir);
   const memoryPatch = patch.memory ?? {};
@@ -294,6 +313,11 @@ export async function writeProjectSettings(
     workMode: isProjectWorkMode(patch.workMode) ? patch.workMode : current.workMode,
     customPrompt: typeof patch.customPrompt === 'string' ? patch.customPrompt : current.customPrompt,
     projectRules: typeof patch.projectRules === 'string' ? patch.projectRules : current.projectRules,
+    context: {
+      instructionMode: isProjectInstructionMode(patch.context?.instructionMode)
+        ? patch.context.instructionMode
+        : current.context.instructionMode,
+    },
     memory,
     updatedAt: new Date().toISOString(),
   };

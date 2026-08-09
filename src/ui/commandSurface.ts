@@ -1,11 +1,11 @@
 export const HADAMARD_INTERACTIVE_COMMANDS: Record<string, string> = {
   help: 'Show available commands',
   clear: 'Clear the screen',
-  init: 'Generate a CLAUDE.md for this project',
+  init: 'Generate an AGENTS.md for this project',
   compact: 'Compact the current session',
   memory: 'Show memory/compact state',
   rules: 'Manage user, project, and path-scoped context rules',
-  context: 'Show what is in the context window',
+  context: 'Show context usage and configure project instruction files',
   cost: 'Show running token + spend totals',
   usage: 'Alias for /cost',
   doctor: 'Run configuration diagnostics',
@@ -27,15 +27,15 @@ export const HADAMARD_INTERACTIVE_COMMANDS: Record<string, string> = {
   tools: 'List available tools',
   skills: 'Browse available skills',
   agents: 'Browse subagent definitions and execution runs',
-  mcp: 'Inspect MCP servers and tools',
+  mcp: 'Inspect and configure MCP servers and tools',
   hooks: 'List configured lifecycle and legacy hooks',
-  plugins: 'Browse discovered Clean plugins',
+  plugins: 'Browse managed integrations and local plugins',
   plugin: 'Manage versioned plugin packages and trust',
   dream: 'Inspect or run memory consolidation',
   automation: 'List or create scheduled and webhook automation tasks',
   workflows: 'Browse saved dynamic workflows',
   worktree: 'Enter, exit, or list git worktrees',
-  team: 'List, attach, or run Model Team definitions (Graph = collab DAG; Workflow = light tree; blocks ≠ second engine)',
+  team: 'List, attach, or run Model Teams, Graphs, and Workflows',
   issues: 'List or update project issues',
   manager: 'Project Manager: progress docs + project chat',
   assistant: 'Global Assistant: cross-project chat, Sessions, and Team proposals',
@@ -61,13 +61,15 @@ const DURING_RUN_COMMANDS = new Set([
   'tools',
   'skills',
   'agents',
-  'mcp',
   'hooks',
   'exit',
 ]);
 
 export function interactiveCommandRunPolicy(command: string): InteractiveCommandRunPolicy {
-  return DURING_RUN_COMMANDS.has(command.trim().toLowerCase())
+  const normalized = command.trim().replace(/^\//u, '').toLowerCase();
+  if (/^context\s+settings?(?:\s|$)/u.test(normalized)) return 'idle-only';
+  const head = normalized.split(/\s/u, 1)[0] ?? normalized;
+  return DURING_RUN_COMMANDS.has(head)
     ? 'during-run'
     : 'idle-only';
 }
@@ -148,6 +150,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
   plugin: ['list', 'search', 'install', 'update', 'pin', 'enable', 'disable', 'remove', 'trust'],
   rules: ['list', 'add', 'remove', 'enable', 'disable'],
   memory: ['status', 'list', 'show', 'proposals', 'apply', 'reject'],
+  context: ['settings'],
 };
 
 /** Description-column text for sub-commands, keyed by `${head} ${sub}`. */
@@ -252,6 +255,7 @@ export const SUBCOMMAND_DESCRIPTIONS: Record<string, string> = {
   'memory show': 'Read one memory item by id or path',
   'memory apply': 'Apply a proposal after explicit --confirm',
   'memory reject': 'Reject a proposal without changing memory',
+  'context settings': 'Choose AGENTS.md, CLAUDE.md compatibility, or both for this project',
 };
 
 const COMMAND_USAGES: Record<string, string> = {
@@ -281,6 +285,7 @@ const COMMAND_USAGES: Record<string, string> = {
   assistant: '/assistant [chat <message>|sessions|new|resume <id>|team <prompt>]',
   bridge: '/bridge [run|background|runs|stop|status|history|resume|switch|model|config|setup|off|help]',
   diff: '/diff [show|apply --confirm]',
+  context: '/context [settings [agents|claude|both]]',
 };
 
 export function interactiveCommandUsage(command: string): string {
@@ -295,7 +300,11 @@ export function filterInteractiveCommands(input: string): string[] {
   // No space yet: complete the top-level command name.
   if (!input.includes(' ')) {
     const partial = head.toLowerCase();
-    return Object.keys(HADAMARD_INTERACTIVE_COMMANDS).filter((name) => name.startsWith(partial));
+    const matches = Object.keys(HADAMARD_INTERACTIVE_COMMANDS).filter((name) => name.startsWith(partial));
+    if (partial === 'model') {
+      return ['model', ...SUBCOMMANDS.model!.map(sub => `model ${sub}`)];
+    }
+    return matches;
   }
 
   // A space is present. Offer sub-commands only for commands that have them,
