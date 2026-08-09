@@ -29,11 +29,7 @@ import {
   type GraphTeamTemplate,
 } from '../team/teamGraphScaffold.js';
 import {
-  buildTeamProposeSystemPrompt,
-  buildTeamProposeUserPrompt,
-  finalizeTeamProposeDraft,
   isSingleAgentSquadType,
-  type TeamProposeSquadType,
 } from '../team/teamPropose.js';
 
 /**
@@ -921,6 +917,7 @@ function guiIcon(name: string): string {
     dashboard: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
     folder: '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
     gear: '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.8 1.8 0 0 0 15 19.4a1.8 1.8 0 0 0-1 .6 1.8 1.8 0 0 0-.42 1.12V21a2 2 0 1 1-4 0v-.09A1.8 1.8 0 0 0 8.6 19.4a1.8 1.8 0 0 0-1.98.36l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.8 1.8 0 0 0 4.6 15a1.8 1.8 0 0 0-.6-1 1.8 1.8 0 0 0-1.12-.42H3a2 2 0 1 1 0-4h.09A1.8 1.8 0 0 0 4.6 8.6a1.8 1.8 0 0 0-.36-1.98l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.8 1.8 0 0 0 9 4.6a1.8 1.8 0 0 0 1-.6 1.8 1.8 0 0 0 .42-1.12V3a2 2 0 1 1 4 0v.09A1.8 1.8 0 0 0 15.4 4.6a1.8 1.8 0 0 0 1.98-.36l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.8 1.8 0 0 0 19.4 9c.36.23.72.6 1 .6h.09a2 2 0 1 1 0 4h-.09a1.8 1.8 0 0 0-1 .6Z"/>',
+    pointer: '<path d="m4 3 7.5 17 2.2-6.3 6.3-2.2Z"/><path d="m13.7 13.7 4.3 4.3"/>',
     hand: '<path d="M18 11V6a2 2 0 0 0-4 0"/><path d="M14 10V4a2 2 0 0 0-4 0v8"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
     shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>',
     shieldAlert: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
@@ -7981,41 +7978,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
     }
   }
-  if (req.method === 'POST' && url.pathname === '/api/team/propose') {
-    try {
-      if (!sdk) return json(res, 503, { error: 'SDK not ready — configure a model first' });
-      const body = await readJson(req);
-      const instruction = typeof body.instruction === 'string' ? body.instruction.trim() : '';
-      if (!instruction) return json(res, 400, { error: 'instruction is required' });
-      const squadType: TeamProposeSquadType =
-        body.squadType === 'workflow' || body.squadType === 'agent' || body.squadType === 'subagent'
-          ? (body.squadType === 'subagent' ? 'agent' : body.squadType)
-          : 'graph';
-      const mode = body.mode === 'patch' ? 'patch' : 'replace';
-      const currentDefinition = (body.currentDefinition && typeof body.currentDefinition === 'object')
-        ? body.currentDefinition as TeamDefinition
-        : null;
-      const system = buildTeamProposeSystemPrompt(squadType);
-      const userPrompt = buildTeamProposeUserPrompt(instruction, currentDefinition, mode);
-      const result = await withRuntimeRun('team:proposal', () => sdk!.run(`${system}\n\n---\n\n${userPrompt}`, {
-        permissionMode: 'bypassPermissions',
-        systemPrompt: system,
-        tools: [],
-      }));
-      const text = typeof result.text === 'string' ? result.text : '';
-      const draft = finalizeTeamProposeDraft(text, {
-        squadType,
-        fallbackName: currentDefinition?.name || 'proposed-team',
-      });
-      return json(res, 200, {
-        definition: draft.definition,
-        problems: draft.problems,
-        explanation: draft.explanation,
-      });
-    } catch (error) {
-      return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-    }
-  }
   if (req.method === 'POST' && url.pathname === '/api/team/validate') {
     try {
       const body = await readJson(req);
@@ -14615,6 +14577,9 @@ body { margin: 0; color: var(--text-1); background: var(--bg-app); }
 .team-graph.subagent-mode .graph-toolbar { width: 100%; align-self: stretch; }
 .graph-tabs, .graph-tools { display: flex; align-items: center; gap: 6px; }
 .graph-tabs button, .graph-tools button { min-height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); padding: 0 11px; color: var(--text-2); }
+.graph-tools button.graph-mode-btn { width: 32px; min-width: 32px; padding: 0; display: inline-grid; place-items: center; }
+.graph-tools button.graph-mode-btn .ui-icon { width: 16px; height: 16px; }
+.graph-tools button.graph-mode-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .graph-tabs button.active { color: var(--brand); background: var(--brand-soft); border-color: var(--border-active-soft); }
 .graph-tools button.graph-save-btn.save-dirty { color: var(--btn-primary-fg); background: var(--btn-primary-bg); border-color: var(--btn-primary-bg); font-weight: 600; }
 .graph-tools span { font-size: 12px; color: var(--text-2); }
@@ -14690,17 +14655,6 @@ body { margin: 0; color: var(--text-1); background: var(--bg-app); }
 .graph-node.runtime .gn-icon { background: var(--role-runtime); }
 .graph-node.runtime .gn-tools span { background: rgba(14,165,233,.18); color: #7DD3FC; }
 .graph-node.runtime .gn-status { background: var(--ok); }
-.team-designer-drawer { position: fixed; top: 0; right: 0; width: min(420px, 100vw); height: 100vh; z-index: 360; background: var(--bg-surface); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0,0,0,.12); display: flex; flex-direction: column; }
-.team-designer-drawer.hidden { display: none; }
-.team-designer-drawer .td-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-.team-designer-drawer .td-head h3 { margin: 0; font-size: 14px; }
-.team-designer-drawer .td-body { flex: 1; overflow: auto; padding: 14px 16px; display: grid; gap: 10px; }
-.team-designer-drawer textarea { width: 100%; min-height: 96px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 12.5px; resize: vertical; background: var(--bg-app); color: var(--text-1); }
-.team-designer-drawer .td-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.team-designer-drawer .td-chip { border: 1px solid var(--border); border-radius: 999px; background: var(--bg-surface); padding: 3px 10px; font-size: 11.5px; color: var(--text-2); cursor: pointer; }
-.team-designer-drawer .td-chip:hover { border-color: var(--brand); color: var(--text-1); }
-.team-designer-drawer .td-preview { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-app); padding: 10px; font-size: 12px; color: var(--text-2); white-space: pre-wrap; min-height: 120px; max-height: 280px; overflow: auto; }
-.team-designer-drawer .td-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 16px 16px; border-top: 1px solid var(--border); }
 .te-cond-mode { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
 .te-cond-mode label { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-1); cursor: pointer; }
 .te-cond-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
@@ -15655,6 +15609,7 @@ const _ICONS = {
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
   computer: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/>',
+  pointer: '<path d="m4 3 7.5 17 2.2-6.3 6.3-2.2Z"/><path d="m13.7 13.7 4.3 4.3"/>',
   hand: '<path d="M18 11V6a2 2 0 0 0-4 0"/><path d="M14 10V4a2 2 0 0 0-4 0v8"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>',
   shieldAlert: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
@@ -28715,9 +28670,10 @@ function applyGraphControlModeCursor(viewport) {
 function syncGraphControlModeToolbar() {
   const tools = el('teamGraph')?.querySelector('.graph-tools');
   if (tools) {
-    tools.querySelectorAll('button').forEach((btn) => {
-      if (btn.textContent === 'Pointer') btn.classList.toggle('mode-active', state.graphControlMode === 'pointer');
-      if (btn.textContent === 'Hand') btn.classList.toggle('mode-active', state.graphControlMode === 'hand');
+    tools.querySelectorAll('[data-graph-control-mode]').forEach((btn) => {
+      const active = btn.dataset.graphControlMode === state.graphControlMode;
+      btn.classList.toggle('mode-active', active);
+      btn.setAttribute('aria-pressed', String(active));
     });
   }
   applyGraphControlModeCursor(el('teamGraph')?.querySelector('.graph-board-viewport'));
@@ -29435,7 +29391,7 @@ function renderTeamSquadPanel(def, host) {
   host.appendChild(h);
   const hint = document.createElement('p');
   hint.className = 'te-hint';
-  hint.textContent = 'Graph = collab DAG (Dispatch → agents → Exit). Workflow = light tree. Insert Parallel / Insert Loop are product blocks on the same engine — not a second runtime. Groups / condition edges / Design with agent are GUI helpers.';
+  hint.textContent = 'Graph = collab DAG (Dispatch → agents → Exit). Workflow = light tree. Insert Parallel / Insert Loop are product blocks on the same engine — not a second runtime. Groups and condition edges are GUI helpers.';
   host.appendChild(hint);
   host.appendChild(teFieldLive('Description', def.description || '', (v) => { def.description = v.trim() || undefined; setTeamSavedStatus(false); }, true));
   host.appendChild(teHintField(
@@ -30232,11 +30188,6 @@ function renderWorkflowSquadPlaceholder(g, def, name) {
   pill.textContent = 'workflow · ' + (def.name || name) + ' · ' + wfNodeCount(def.workflowTree) + ' steps';
   right.appendChild(pill);
   if (editable) {
-    const designBtn = document.createElement('button');
-    designBtn.type = 'button';
-    designBtn.textContent = 'Design with agent';
-    designBtn.addEventListener('click', () => openTeamDesignerDrawer(def));
-    right.appendChild(designBtn);
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button'; saveBtn.textContent = 'Save';
     saveBtn.className = 'graph-save-btn' + (state.teamDirty ? ' save-dirty' : '');
@@ -31735,143 +31686,6 @@ function wireGraphGroupBarDrag(bar, group, def, board) {
     window.addEventListener('mouseup', onUp);
   });
 }
-function openTeamDesignerDrawer(def) {
-  closeTeamDesignerDrawer();
-  const drawer = document.createElement('aside');
-  drawer.id = 'teamDesignerDrawer';
-  drawer.className = 'team-designer-drawer';
-  drawer._applySnap = null;
-  drawer._proposal = null;
-  const head = document.createElement('div');
-  head.className = 'td-head';
-  head.innerHTML = '<h3>Design with agent</h3>';
-  const closeBtn = document.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.className = 'te-btn';
-  closeBtn.textContent = 'Close';
-  closeBtn.addEventListener('click', () => closeTeamDesignerDrawer());
-  head.appendChild(closeBtn);
-  const body = document.createElement('div');
-  body.className = 'td-body';
-  const instrLabel = document.createElement('label');
-  instrLabel.textContent = 'Instruction';
-  const ta = document.createElement('textarea');
-  ta.placeholder = 'e.g. Add a skeptic reviewer loop with FINALIZE/CONTINUE conditions';
-  const chips = document.createElement('div');
-  chips.className = 'td-chips';
-  for (const chip of [
-    'Insert parallel fan-out with synthesizer',
-    'Add reviewer loop with FINALIZE exit',
-    'Tighten to Dispatch → agents → Exit',
-  ]) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'td-chip';
-    btn.textContent = chip;
-    btn.addEventListener('click', () => { ta.value = chip; });
-    chips.appendChild(btn);
-  }
-  const preview = document.createElement('div');
-  preview.className = 'td-preview';
-  preview.textContent = 'Preview will appear here after propose.';
-  const actions = document.createElement('div');
-  actions.className = 'td-actions';
-  const proposeBtn = document.createElement('button');
-  proposeBtn.type = 'button';
-  proposeBtn.className = 'te-btn primary';
-  proposeBtn.textContent = 'Propose';
-  const applyBtn = document.createElement('button');
-  applyBtn.type = 'button';
-  applyBtn.className = 'te-btn primary';
-  applyBtn.textContent = 'Apply';
-  applyBtn.disabled = true;
-  const undoBtn = document.createElement('button');
-  undoBtn.type = 'button';
-  undoBtn.className = 'te-btn';
-  undoBtn.textContent = 'Undo';
-  undoBtn.disabled = true;
-  proposeBtn.addEventListener('click', async () => {
-    preview.textContent = 'Proposing…';
-    applyBtn.disabled = true;
-    try {
-      const res = await api('/api/team/propose', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          squadType: def.squadType || 'graph',
-          instruction: ta.value.trim(),
-          currentDefinition: def,
-          mode: 'replace',
-        }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        preview.textContent = payload.error || ('HTTP ' + res.status);
-        drawer._proposal = null;
-        return;
-      }
-      drawer._proposal = payload;
-      const lines = [];
-      if (payload.explanation) lines.push(payload.explanation);
-      if (Array.isArray(payload.problems) && payload.problems.length) {
-        lines.push('', 'Problems:');
-        for (const p of payload.problems) lines.push('• ' + p);
-      }
-      if (payload.definition?.name) {
-        lines.push('', 'Proposed: ' + payload.definition.name
-          + ' · nodes=' + ((payload.definition.nodes || []).length));
-      }
-      preview.textContent = lines.join('\\n') || JSON.stringify(payload, null, 2);
-      applyBtn.disabled = !payload.definition;
-    } catch (err) {
-      preview.textContent = String(err && err.message || err);
-      drawer._proposal = null;
-    }
-  });
-  applyBtn.addEventListener('click', () => {
-    const proposal = drawer._proposal;
-    if (!proposal?.definition) return;
-    drawer._applySnap = {
-      nodes: structuredClone(def.nodes || []),
-      edges: structuredClone(def.edges || []),
-      uiGroups: structuredClone(def.uiGroups || []),
-      description: def.description,
-      maxRounds: def.maxRounds,
-    };
-    pushGraphHistory(def);
-    Object.assign(def, proposal.definition);
-    state.teamDefinition = def;
-    setTeamSavedStatus(false);
-    renderTeamGraph(def, def.name);
-    undoBtn.disabled = false;
-    preview.textContent = (preview.textContent || '') + '\\n\\nApplied.';
-  });
-  undoBtn.addEventListener('click', () => {
-    if (drawer._applySnap) {
-      const snap = drawer._applySnap;
-      pushGraphHistory(def);
-      def.nodes = structuredClone(snap.nodes || []);
-      def.edges = structuredClone(snap.edges || []);
-      def.uiGroups = structuredClone(snap.uiGroups || []);
-      if (snap.description !== undefined) def.description = snap.description;
-      if (snap.maxRounds !== undefined) def.maxRounds = snap.maxRounds;
-      setTeamSavedStatus(false);
-      renderTeamGraph(def, def.name);
-      drawer._applySnap = null;
-      undoBtn.disabled = true;
-      preview.textContent = 'Restored pre-apply snapshot.';
-      return;
-    }
-    undoGraph();
-  });
-  actions.append(proposeBtn, applyBtn, undoBtn);
-  body.append(instrLabel, ta, chips, preview);
-  drawer.append(head, body, actions);
-  document.body.appendChild(drawer);
-}
-function closeTeamDesignerDrawer() {
-  document.getElementById('teamDesignerDrawer')?.remove();
-}
 function wireGraphBoardConnect(board, svg, def, name) {
   board.addEventListener('mousedown', (e) => {
     let out = e.target.closest('.graph-port-out');
@@ -31974,9 +31788,12 @@ function renderGraphModeCanvas(g, def, name) {
   if (editable) {
     const pointerBtn = document.createElement('button');
     pointerBtn.type = 'button';
-    pointerBtn.textContent = 'Pointer';
-    pointerBtn.title = 'Select / marquee (V)';
-    pointerBtn.className = state.graphControlMode === 'pointer' ? 'mode-active' : '';
+    pointerBtn.dataset.graphControlMode = 'pointer';
+    pointerBtn.innerHTML = guiIcon('pointer');
+    pointerBtn.title = 'Pointer — select, marquee, drag, and connect (V)';
+    pointerBtn.setAttribute('aria-label', 'Pointer tool (V)');
+    pointerBtn.setAttribute('aria-pressed', String(state.graphControlMode === 'pointer'));
+    pointerBtn.className = 'graph-mode-btn' + (state.graphControlMode === 'pointer' ? ' mode-active' : '');
     pointerBtn.addEventListener('click', () => {
       state.graphControlMode = 'pointer';
       syncGraphControlModeToolbar();
@@ -31984,9 +31801,12 @@ function renderGraphModeCanvas(g, def, name) {
     right.appendChild(pointerBtn);
     const handBtn = document.createElement('button');
     handBtn.type = 'button';
-    handBtn.textContent = 'Hand';
-    handBtn.title = 'Pan canvas (H) · hold Space';
-    handBtn.className = state.graphControlMode === 'hand' ? 'mode-active' : '';
+    handBtn.dataset.graphControlMode = 'hand';
+    handBtn.innerHTML = guiIcon('hand');
+    handBtn.title = 'Hand — pan canvas (H; hold Space for temporary pan)';
+    handBtn.setAttribute('aria-label', 'Hand tool (H)');
+    handBtn.setAttribute('aria-pressed', String(state.graphControlMode === 'hand'));
+    handBtn.className = 'graph-mode-btn' + (state.graphControlMode === 'hand' ? ' mode-active' : '');
     handBtn.addEventListener('click', () => {
       state.graphControlMode = 'hand';
       syncGraphControlModeToolbar();
@@ -32066,12 +31886,6 @@ function renderGraphModeCanvas(g, def, name) {
       });
       right.appendChild(layoutBtn);
     }
-    const designBtn = document.createElement('button');
-    designBtn.type = 'button';
-    designBtn.textContent = 'Design with agent';
-    designBtn.title = 'Propose a graph redesign from a natural-language instruction';
-    designBtn.addEventListener('click', () => openTeamDesignerDrawer(def));
-    right.appendChild(designBtn);
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'graph-save-btn' + (state.teamDirty ? ' save-dirty' : '');
@@ -32091,7 +31905,7 @@ function renderGraphModeCanvas(g, def, name) {
     const e = document.createElement('p');
     e.className = 'region-empty';
     e.textContent = editable
-      ? 'Need Dispatch → agents → Exit. Use Insert Parallel / Insert Loop, Design with agent, or add nodes manually.'
+      ? 'Need Dispatch → agents → Exit. Use Insert Parallel / Insert Loop or add nodes manually.'
       : 'This graph has no nodes.';
     canvas.appendChild(e);
     const problems = document.createElement('div');
@@ -32106,7 +31920,7 @@ function renderGraphModeCanvas(g, def, name) {
   if (editable) {
     const hint = document.createElement('p');
     hint.className = 'graph-board-hint';
-    hint.textContent = 'Pointer 框选 · Hand/空格平移 · Shift 多选 · Delete 删除 · Ctrl+Z 撤销 · groups / condition edges · Design with agent · 右键菜单 · 滚轮缩放 · 双击编辑';
+    hint.textContent = 'Pointer 框选 · Hand/空格平移 · Shift 多选 · Delete 删除 · Ctrl+Z 撤销 · groups / condition edges · 右键菜单 · 滚轮缩放 · 双击编辑';
     canvas.appendChild(hint);
   }
   const canvasProblems = document.createElement('div');

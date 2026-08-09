@@ -206,32 +206,16 @@ describe('GUI runtime mutation gate', () => {
     }
   }, 30_000);
 
-  it('leases an unregistered Team proposal run before awaiting the provider', async () => {
+  it('does not expose the retired dedicated Team proposal endpoint', async () => {
     const provider = await startDeferredProvider();
     const { server } = await startConfiguredGui('hadamard-gui-runtime-gate-proposal-', provider.url);
     try {
-      const proposal = api<{ error?: string }>(server, '/api/team/propose', jsonRequest({
+      const proposal = await api<{ error?: string }>(server, '/api/team/propose', jsonRequest({
         instruction: 'Create a review team',
         squadType: 'graph',
       }));
-      await waitForProviderCall(provider.calls);
-
-      const blocked = await api<{ error: string }>(
-        server,
-        '/api/team/preferences',
-        jsonRequest({ autoInvoke: true }),
-      );
-      expect(blocked.status).toBe(409);
-      expect(blocked.body.error).toContain('team:proposal');
-
-      provider.release();
-      await proposal;
-      const allowed = await api<{ ok: boolean }>(
-        server,
-        '/api/team/preferences',
-        jsonRequest({ autoInvoke: false }),
-      );
-      expect(allowed.status).toBe(200);
+      expect(proposal.status).toBe(404);
+      expect(provider.calls()).toBe(0);
     } finally {
       provider.release();
       await server.close();
