@@ -142,7 +142,7 @@ async function selectAgent(page, name) {
   await openPicker(page);
   const responsePromise = page.waitForResponse(response =>
     response.url().endsWith('/api/agent/activate') && response.request().method() === 'POST');
-  await page.locator(`#modelPickerItems .picker-item[data-agent-name="${name}"]`).click();
+  await page.locator(`#modelPickerItems .picker-item[data-picker-value="agent:${name}"]`).click();
   const response = await responsePromise;
   assert.equal(response.status(), 200, `agent activation failed for ${name}`);
   const body = await response.json();
@@ -246,13 +246,14 @@ try {
   });
   await page.waitForLoadState('domcontentloaded');
   await page.waitForFunction(() => document.getElementById('overviewBody')?.children.length);
-  await page.locator('#newSession').evaluate(button => button.click());
+  await page.locator('#overviewChatsBtn').click();
+  await page.locator('#sessionCenterNew').click();
   await page.locator('#projectConversation').waitFor({ state: 'visible' });
   await page.locator('#modelPickerBtn').waitFor({ state: 'visible' });
 
   await openPicker(page);
-  await page.locator('[data-agent-name="hadamard-alpha"]').waitFor();
-  await page.locator('[data-agent-name="codex-beta"]').waitFor();
+  await page.locator('[data-picker-value="agent:hadamard-alpha"]').waitFor();
+  await page.locator('[data-picker-value="agent:codex-beta"]').waitFor();
   await shot(page, '01-agent-picker.png');
 
   await selectAgent(page, 'hadamard-alpha');
@@ -299,7 +300,8 @@ try {
   await shot(page, '05-beta-complete.png');
 
   const previousSessionId = (await apiState(page)).session.id;
-  await page.locator('#newSession').evaluate(button => button.click());
+  await page.locator('#backToOverviewBtn').click();
+  await page.locator('#detailNewConversationBtn').click();
   // Fresh chats clear the active agent; the button primary shows session model / Auto.
   await page.waitForFunction(() => {
     const text = document.getElementById('modelPickerBtn')?.textContent || '';

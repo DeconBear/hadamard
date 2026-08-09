@@ -7932,6 +7932,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       const body = await readJson(req);
       const def = body.definition as TeamDefinition;
       if (!def) return json(res, 400, { error: 'definition is required' });
+      if (def.squadType === 'workflow') {
+        const problems = validateWorkflowSquad(def);
+        return json(res, 200, { ok: problems.length === 0, problems, definition: def });
+      }
+      if (isSingleAgentSquadType(def.squadType)) {
+        const problems = def.members?.length ? [] : ['Agent squad requires at least one member'];
+        return json(res, 200, { ok: problems.length === 0, problems, definition: def });
+      }
       const migrated = ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph(def));
       const problems = validateTeamGraph(migrated);
       return json(res, 200, { ok: problems.length === 0, problems, definition: migrated });
@@ -27465,7 +27473,26 @@ function openNewSquadDialog() {
         const payload = await sc.json();
         def = payload.definition;
       } else {
-        def = { name: squadName, description: desc || undefined, mode: 'graph', version: 3, orchestration: 'graph', squadType: chosen === 'subagent' ? 'agent' : chosen, members: [], nodes: [], edges: [] };
+        def = {
+          name: squadName,
+          description: desc || undefined,
+          mode: 'graph',
+          version: 3,
+          orchestration: 'graph',
+          squadType: chosen === 'subagent' ? 'agent' : chosen,
+          members: [],
+          nodes: [],
+          edges: [],
+          ...(chosen === 'workflow' ? {
+            workflowTree: {
+              id: 'agent-1',
+              type: 'agent',
+              label: 'Agent',
+              prompt: '{{input}}',
+              children: [],
+            },
+          } : {}),
+        };
       }
       const res = await api('/api/team/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ definition: def }) });
       if (!res.ok) { const j = await res.json().catch(() => ({})); window.alert('Create failed: ' + (j.error || res.status)); return; }
@@ -28110,6 +28137,7 @@ function agentTargetSelectOptions(opts) {
   if (opts.includeTeams !== false) {
     for (const t of teamListForRegion()) {
       if (t.kind !== 'team') continue;
+      if (opts.excludeTeam && t.name === opts.excludeTeam) continue;
       options.push({
         value: 'team:' + t.name,
         label: t.name,
@@ -28153,6 +28181,7 @@ function createAgentTargetSelect(opts) {
   select.appendChild(ph);
   let lastGroup = null;
   let groupEl = null;
+  const availableValues = new Set();
   for (const option of agentTargetSelectOptions(opts)) {
     if (option.group !== lastGroup) {
       lastGroup = option.group;
@@ -28163,7 +28192,18 @@ function createAgentTargetSelect(opts) {
     const opt = document.createElement('option');
     opt.value = option.value;
     opt.textContent = option.label;
+    availableValues.add(option.value);
     groupEl.appendChild(opt);
+  }
+  if (opts.value && !availableValues.has(opts.value)) {
+    const brokenGroup = document.createElement('optgroup');
+    brokenGroup.label = 'Broken references';
+    const broken = document.createElement('option');
+    broken.value = opts.value;
+    broken.textContent = opts.value.replace(/^[^:]+:/, '') + ' (missing)';
+    broken.dataset.broken = 'true';
+    brokenGroup.appendChild(broken);
+    select.appendChild(brokenGroup);
   }
   if (opts.value) select.value = opts.value;
   if (opts.onChange) {
@@ -28206,6 +28246,16 @@ function applyNodeTargetRef(node, ref) {
       node.type = 'team';
       node.teamRef = ref.name;
     }
+    delete node.model;
+    delete node.provider;
+    delete node.baseURL;
+    delete node.apiKey;
+    delete node.runtime;
+    delete node.systemPrompt;
+    delete node.workspaceAccess;
+    delete node.allowedTools;
+    delete node.maxIterations;
+    delete node.reconnectAttempts;
     return;
   }
   if (node.type === 'team') {
@@ -28735,14 +28785,10 @@ function renderTeamNodeEditorPanel(node, def) {
   host.appendChild(teFieldLive('Agent id', node.id || '', (v) => { node.id = v.trim(); queuePromptPreview(); }));
   host.appendChild(teFieldLive('Role / specialty', node.role || '', (v) => { node.role = v; queuePromptPreview(); }));
   host.appendChild(teFieldLive('Responsibility', node.responsibility || '', (v) => { node.responsibility = v; queuePromptPreview(); }, true));
-  host.appendChild(teLabeledSelect('Runtime', node.runtime || '', teamRuntimeSelectOptions(), (v) => {
-    node.runtime = v || undefined;
-    setTeamSavedStatus(false);
-    queuePromptPreview();
-  }));
-  host.appendChild(tePickerField('Executor (model / agent / team)', createAgentTargetSelect({
+  host.appendChild(tePickerField('Executor (model configuration / Agent / Graph / Workflow)', createAgentTargetSelect({
     value: nodeTargetPickerValue(node),
-    placeholder: 'Raw model / session default',
+    placeholder: 'Select an executor',
+    excludeTeam: def.name,
     onChange: (ref) => {
       applyNodeTargetRef(node, ref);
       setTeamSavedStatus(false);
@@ -28750,37 +28796,18 @@ function renderTeamNodeEditorPanel(node, def) {
       renderTeamNodeEditorPanel(node, def);
     },
   })));
-  host.appendChild(teSelect('Agent type', node.type || 'react', ['react', 'single', 'team'], (v) => {
+  const nestedExecutor = node.targetRef?.kind === 'team' || node.type === 'team';
+  if (!nestedExecutor) host.appendChild(teSelect('Agent type', node.type || 'react', ['react', 'single'], (v) => {
     node.type = v === 'react' ? undefined : v;
     if (v !== 'team') node.teamRef = undefined;
     setTeamSavedStatus(false);
     renderTeamNodeEditorPanel(node, def);
     renderTeamGraph(def, def.name);
   }));
-  if (node.type === 'team') {
-    const selfName = def.name || '';
-    const teamNames = teamListForRegion().map((t) => t.name).filter((n) => n && n !== selfName);
-    if (teamNames.length) {
-      const current = node.teamRef && teamNames.includes(node.teamRef) ? node.teamRef : '';
-      if (!node.teamRef) {
-        // Require an explicit teamRef — empty until user picks.
-      }
-      host.appendChild(teSelect('Team (teamRef required)', current || teamNames[0], teamNames, (v) => {
-        node.teamRef = v || undefined;
-        setTeamSavedStatus(false);
-      }));
-      if (!node.teamRef && teamNames[0]) {
-        node.teamRef = teamNames[0];
-      }
-    } else {
-      host.appendChild(teFieldLive('Team (teamRef required)', node.teamRef || '', (v) => {
-        node.teamRef = v.trim() || undefined;
-        setTeamSavedStatus(false);
-      }));
-    }
+  if (nestedExecutor) {
     const teamHint = document.createElement('p');
     teamHint.className = 'te-hint';
-    teamHint.textContent = 'type=team: invokes the selected team as a sub-agent; its answer becomes this node output. teamRef is required — do not self-reference this squad. Model/tools below are ignored.';
+    teamHint.textContent = 'The selected Graph or Workflow owns its models, prompts, tools, and iteration limits. Its answer becomes this node output.';
     host.appendChild(teamHint);
   } else if (node.type === 'single') {
     const singleHint = document.createElement('p');
@@ -28788,43 +28815,42 @@ function renderTeamNodeEditorPanel(node, def) {
     singleHint.textContent = 'type=single: one LLM call, no tools — the agent answers directly from its specialist prompt.';
     host.appendChild(singleHint);
   }
-  host.appendChild(teSelect('Workspace access', node.workspaceAccess || 'workspace', ['workspace', 'full'], (v) => {
+  if (!nestedExecutor) host.appendChild(teSelect('Workspace access', node.workspaceAccess || 'workspace', ['workspace', 'full'], (v) => {
     node.workspaceAccess = v;
     queuePromptPreview();
   }));
-  host.appendChild(teFieldLive(
+  if (!nestedExecutor) host.appendChild(teFieldLive(
     'Specialist prompt (stored)',
     node.systemPrompt || '',
     (v) => { node.systemPrompt = v; queuePromptPreview(); },
     true,
   ));
-  const preview = teReadonlyPromptPreview(
+  const preview = !nestedExecutor ? teReadonlyPromptPreview(
     'Effective runtime prompt (SDK)',
     'Graph framing + team assignment + specialist prompt — matches what runMemberAgent receives.',
     () => resolveGraphNodeSystemPrompt(node),
-  );
-  promptPreviewFields.push(preview);
-  host.appendChild(preview);
+  ) : null;
+  if (preview) {
+    promptPreviewFields.push(preview);
+    host.appendChild(preview);
+  }
   host.appendChild(teSelect('Join incoming edges', node.join || 'all', ['all', 'any'], (v) => { node.join = v === 'any' ? 'any' : undefined; }));
   host.appendChild(teHintField('Timeout (ms)', 'Per-agent run timeout. Empty = 300000 ms.', String(node.timeoutMs ?? ''), (v) => {
     const n = Number(v);
     node.timeoutMs = v.trim() && Number.isFinite(n) && n > 0 ? n : undefined;
     setTeamSavedStatus(false);
   }));
+  if (!nestedExecutor) {
   host.appendChild(teHintField('Max tool iterations', 'ReAct loop cap. Empty or ∞ = unlimited.', formatTeamInfinityField(node.maxIterations), (v) => {
     node.maxIterations = parseTeamInfinityField(v);
     setTeamSavedStatus(false);
   }));
+  }
   host.appendChild(teHintField('Max rounds (loop)', 'Graph loop convergence cap for this agent. Empty or ∞ = unlimited.', formatTeamInfinityField(node.maxRounds), (v) => {
     node.maxRounds = parseTeamInfinityField(v);
     setTeamSavedStatus(false);
   }));
-  host.appendChild(teHintField('Network reconnect attempts', 'Retries on transient provider/network errors.', String(node.reconnectAttempts ?? 10), (v) => {
-    const n = Number(v);
-    node.reconnectAttempts = Number.isFinite(n) && n >= 0 ? n : 10;
-    setTeamSavedStatus(false);
-  }));
-  host.appendChild(teToolChecklist('Allowed tools', effectiveNodeAllowedTools(node), (next) => {
+  if (!nestedExecutor) host.appendChild(teToolChecklist('Allowed tools', effectiveNodeAllowedTools(node), (next) => {
     const prev = effectiveNodeAllowedTools(node);
     const added = next.filter((t) => RISKY_NODE_TOOLS.includes(t) && !prev.includes(t));
     if (added.length && !window.confirm('Grant ' + added.join(' + ') + ' to "' + graphRefOf(node) + '"?')) {
@@ -29154,12 +29180,10 @@ function addGraphNodeQuick(def) {
     kind: 'agent',
     id,
     role: id,
-    model: state.snapshot?.session?.model || '',
     systemPrompt: '',
     responsibility: '',
     workspaceAccess: 'workspace',
     allowedTools: TEAM_READ_ONLY_EXPERT_TOOLS.slice(),
-    reconnectAttempts: 10,
     timeoutMs: 300000,
     ui: { x: 120 + (n % 3) * 240, y: 120 + Math.floor(n / 3) * 190 },
   });
@@ -30090,6 +30114,7 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
     if (!typeFields) return;
     typeFields.textContent = '';
     if (nodeType === 'agent') {
+      const nestedExecutor = draft.targetRef?.kind === 'team';
       typeFields.appendChild(teFieldLive(
         'Prompt',
         draft.prompt || '',
@@ -30099,32 +30124,35 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
       ));
       // P2: workflow agent nodes align with graph nodes — typed executor,
       // system prompt, tools, timeout, iterations, workspace access.
-      typeFields.appendChild(tePickerField('Executor (model / agent / team)', createAgentTargetSelect({
+      typeFields.appendChild(tePickerField('Executor (model configuration / Agent / Graph / Workflow)', createAgentTargetSelect({
         value: nodeTargetPickerValue(draft),
-        placeholder: 'Session default model',
+        placeholder: 'Select an executor',
+        excludeTeam: def.name,
         onChange: (ref) => {
           applyNodeTargetRef(draft, ref);
           renderTypeFields();
         },
       })));
-      typeFields.appendChild(teFieldLive(
+      if (!nestedExecutor) typeFields.appendChild(teFieldLive(
         'System prompt (optional)',
         draft.systemPrompt || '',
         function (v) { draft.systemPrompt = v; },
         true,
         false,
       ));
-      typeFields.appendChild(teSelect('Workspace access', draft.workspaceAccess || 'workspace', ['workspace', 'full'], (v) => {
+      if (!nestedExecutor) typeFields.appendChild(teSelect('Workspace access', draft.workspaceAccess || 'workspace', ['workspace', 'full'], (v) => {
         draft.workspaceAccess = v === 'full' ? 'full' : undefined;
       }));
       typeFields.appendChild(teHintField('Timeout (ms)', 'Per-node run timeout. Empty = squad default (300000 ms).', String(draft.timeoutMs ?? ''), (v) => {
         const n = Number(v);
         draft.timeoutMs = v.trim() && Number.isFinite(n) && n > 0 ? n : undefined;
       }, false));
+      if (!nestedExecutor) {
       typeFields.appendChild(teHintField('Max tool iterations', 'ReAct loop cap. Empty or ∞ = unlimited.', formatTeamInfinityField(draft.maxIterations), (v) => {
         draft.maxIterations = parseTeamInfinityField(v);
       }, false));
-      typeFields.appendChild(teToolChecklist('Allowed tools', Array.isArray(draft.allowedTools) && draft.allowedTools.length ? draft.allowedTools : [], (next) => {
+      }
+      if (!nestedExecutor) typeFields.appendChild(teToolChecklist('Allowed tools', Array.isArray(draft.allowedTools) && draft.allowedTools.length ? draft.allowedTools : [], (next) => {
         const prev = Array.isArray(draft.allowedTools) ? draft.allowedTools : [];
         const added = next.filter((t) => RISKY_NODE_TOOLS.includes(t) && !prev.includes(t));
         if (added.length && !window.confirm('Grant ' + added.join(' + ') + ' to "' + (draft.label || draft.id || 'node') + '"?')) {
@@ -30140,20 +30168,6 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
         draft.condition || '',
         function (v) { draft.condition = v; },
         false,
-      ));
-    }
-    typeFields.appendChild(teLabeledSelect(
-      'Runtime',
-      draft.runtime || '',
-      teamRuntimeSelectOptions(),
-      function (v) { draft.runtime = v || undefined; },
-    ));
-    if (nodeType !== 'agent') {
-      typeFields.appendChild(teLabeledSelect(
-        'Model',
-        draft.model || '',
-        teamModelSelectOptions(),
-        function (v) { draft.model = v; },
       ));
     }
   }

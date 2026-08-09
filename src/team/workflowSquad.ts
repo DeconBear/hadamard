@@ -1,14 +1,16 @@
 import type {
   ModelTeamResult,
+  TeamAskOptions,
   TeamDefinition,
   TeamEvent,
   TeamMember,
   WorkflowNode,
 } from '../types.js';
 import { AgentPool } from './agentPool.js';
-import { runMemberAgent } from './teamRuntime.js';
+import { memberSignal, runMemberAgent } from './teamRuntime.js';
 import { buildGraphNodeTools } from './teamGraph.js';
 import { resolveTargetRef } from '../manager/resolveTargetRef.js';
+import { loadTeamDefinition } from './teamDefinitions.js';
 
 const MAX_WORKFLOW_NODES = 128;
 const MAX_WORKFLOW_DEPTH = 32;
@@ -83,12 +85,52 @@ export async function executeWorkflowTree(
   return execute(root, input);
 }
 
+export interface WorkflowRunDependencies {
+  runMember?: typeof runMemberAgent;
+  loadTeam?: (name: string, workDir: string) => TeamDefinition | null;
+  askTeam?: (
+    definition: TeamDefinition,
+    prompt: string,
+    signal: AbortSignal,
+    options: TeamAskOptions,
+  ) => Promise<ModelTeamResult>;
+}
+
+function namespaceTeamEvent(event: TeamEvent, prefix: string): TeamEvent {
+  switch (event.type) {
+    case 'team.started':
+      return { ...event, members: event.members.map(member => ({ ...member, id: `${prefix}/${member.id}` })) };
+    case 'team.member.started':
+    case 'team.member.tool':
+    case 'team.member.completed':
+      return { ...event, id: `${prefix}/${event.id}` };
+    case 'team.edge.triggered':
+      return { ...event, from: `${prefix}/${event.from}`, to: `${prefix}/${event.to}` };
+    case 'team.returned':
+      return { ...event, nodeId: `${prefix}/${event.nodeId}` };
+    default:
+      return event;
+  }
+}
+
+function workflowAgentNodes(root: WorkflowNode): WorkflowNode[] {
+  const result: WorkflowNode[] = [];
+  const visit = (node: WorkflowNode): void => {
+    if (node.type === 'agent') result.push(node);
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(root);
+  return result;
+}
+
 export async function runWorkflowSquad(
   definition: TeamDefinition,
   prompt: string,
   signal: AbortSignal,
   workDir: string,
   onEvent?: (event: TeamEvent) => void,
+  options: TeamAskOptions = {},
+  dependencies: WorkflowRunDependencies = {},
 ): Promise<ModelTeamResult> {
   const problems = validateWorkflowSquad(definition);
   if (problems.length > 0) {
@@ -98,17 +140,86 @@ export async function runWorkflowSquad(
   const pool = new AgentPool();
   const startedAt = Date.now();
   const statuses: ModelTeamResult['memberStatuses'] = [];
+  const reports: ModelTeamResult['reports'] = [];
   let totalInput = 0;
   let totalOutput = 0;
+  const agentNodes = workflowAgentNodes(definition.workflowTree!);
+
+  onEvent?.({
+    type: 'team.started',
+    mode: 'workflow',
+    members: agentNodes.map(node => ({
+      id: node.id,
+      model: node.targetRef?.kind === 'model' ? node.targetRef.model : node.model || '',
+      role: node.label || 'agent',
+    })),
+  });
 
   const answer = await executeWorkflowTree(definition.workflowTree!, prompt, async (node, input) => {
+    const task = node.prompt ? node.prompt.replace(/\{\{input\}\}/gu, input) : input;
+
+    if (node.targetRef?.kind === 'team') {
+      const ref = node.targetRef.name.trim();
+      const prefix = `${node.id}/${ref}`;
+      const startedAt = Date.now();
+      if ((options.teamStack ?? []).includes(ref)) {
+        const cycle = [...(options.teamStack ?? []), ref].join(' -> ');
+        const error = `team recursion: ${cycle}`;
+        statuses.push({ id: node.id, model: '', role: node.label || 'agent', ok: false, error, toolCalls: 0, durationMs: 0 });
+        return `[team recursion detected: ${cycle}]`;
+      }
+      const nested = dependencies.loadTeam
+        ? dependencies.loadTeam(ref, workDir)
+        : loadTeamDefinition(ref, workDir)?.definition ?? null;
+      if (!nested) {
+        const error = `team "${ref}" not found`;
+        statuses.push({ id: node.id, model: '', role: node.label || 'agent', ok: false, error, toolCalls: 0, durationMs: 0 });
+        return `[${error}]`;
+      }
+      try {
+        const askNested = dependencies.askTeam ?? (async (nestedDefinition, nestedPrompt, nestedSignal, nestedOptions) => {
+          const { askTeamDefinition } = await import('./modelTeam.js');
+          return askTeamDefinition(nestedDefinition, nestedPrompt, nestedSignal, nestedOptions);
+        });
+        const nestedSignal = memberSignal(signal, node.timeoutMs ?? definition.timeoutMs) ?? signal;
+        const result = await askNested(nested, task, nestedSignal, {
+          ...options,
+          workDir,
+          teamStack: options.teamStack,
+          onEvent: onEvent ? event => onEvent(namespaceTeamEvent(event, prefix)) : undefined,
+        });
+        totalInput += result.cost.totalInputTokens;
+        totalOutput += result.cost.totalOutputTokens;
+        for (const status of result.memberStatuses ?? []) {
+          statuses.push({ ...status, id: `${prefix}/${status.id}` });
+        }
+        for (const report of result.reports ?? []) {
+          reports.push({ ...report, id: `${prefix}/${report.id ?? report.model}` });
+        }
+        statuses.push({
+          id: node.id,
+          model: '',
+          role: node.label || 'agent',
+          ok: !result.incompleteReason,
+          error: result.incompleteReason,
+          toolCalls: 0,
+          durationMs: Date.now() - startedAt,
+        });
+        return result.answer;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        statuses.push({ id: node.id, model: '', role: node.label || 'agent', ok: false, error: message, toolCalls: 0, durationMs: Date.now() - startedAt });
+        return `[team "${ref}" failed: ${message}]`;
+      }
+    }
+
     // P2: per-node executor/targetRef + system prompt + tools + limits.
     const member: TeamMember = {
       model: node.model || '',
       role: node.label || 'agent',
       systemPrompt: node.systemPrompt || '',
     };
-    if (node.targetRef && node.targetRef.kind !== 'team') {
+    if (node.targetRef) {
       try {
         const resolved = resolveTargetRef(node.targetRef, { projectDir: workDir });
         if (resolved.model) member.model = resolved.model;
@@ -126,16 +237,21 @@ export async function runWorkflowSquad(
       node.systemPrompt || '',
       node.workspaceAccess === 'full' ? 'Workspace access: full filesystem' : '',
     ].filter(Boolean).join('\n\n');
-    const run = await runMemberAgent({
+    const run = await (dependencies.runMember ?? runMemberAgent)({
       identity: { id: node.id, model: member.model, role: node.label || node.type },
       member,
-      task: node.prompt ? node.prompt.replace(/\{\{input\}\}/gu, input) : input,
+      task,
       systemPrompt,
       cwd: workDir,
       tools,
       maxIterations: node.maxIterations ?? definition.maxIterations ?? Infinity,
       timeoutMs: node.timeoutMs ?? definition.timeoutMs ?? 300_000,
       signal,
+      permissionMode: options.permissionMode,
+      permissions: options.permissions,
+      classifier: options.classifier,
+      approver: options.approver,
+      hooks: options.hooks,
       pool,
       round: 1,
       onEvent,
@@ -146,9 +262,15 @@ export async function runWorkflowSquad(
     return run.report;
   });
 
+  const failed = statuses.filter(status => !status.ok);
+  const incompleteReason = failed.length > 0
+    ? `${failed.length} of ${statuses.length} workflow node run(s) failed`
+    : undefined;
+  onEvent?.({ type: 'team.completed', mode: 'workflow', rounds: 1, incompleteReason });
+
   return {
     answer,
-    mode: 'graph',
+    mode: 'workflow',
     cost: {
       totalInputTokens: totalInput,
       totalOutputTokens: totalOutput,
@@ -157,9 +279,9 @@ export async function runWorkflowSquad(
     },
     durationMs: Date.now() - startedAt,
     memberStatuses: statuses,
-    reports: [],
+    reports,
     skippedNodes: [],
-    incompleteReason: undefined,
+    incompleteReason,
   };
 }
 

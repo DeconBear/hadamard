@@ -19,6 +19,7 @@ import type {
 import { estimateCost, hasFullPricing } from './pricing.js';
 import {
   buildMemberIdentities,
+  memberSignal,
   runMemberAgent,
 } from './teamRuntime.js';
 import { buildGraphNodeTools, canonicalizeTeamDefinition, createNotifyTeammateTool, migrateTeamDefinitionToV3, orchestrateGraph } from './teamGraph.js';
@@ -28,6 +29,7 @@ import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 import { AgentPool } from './agentPool.js';
 import { isSingleAgentSquadType } from './teamPropose.js';
 import { runSingleAgentSquad, runWorkflowSquad } from './workflowSquad.js';
+import { assertValidTeamComposition } from './teamComposition.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Helpers
@@ -217,14 +219,14 @@ async function runGraphMode(
       const nodeType = node.type ?? 'react';
       const base = { id: identity.id, model: identity.model, role: identity.role };
 
-      // team-as-agent: invoke a persisted sub-team by teamRef.
-      if (nodeType === 'team') {
-        // Unified reference model: prefer the typed targetRef over legacy teamRef.
-        const ref = (node.targetRef?.kind === 'team' ? node.targetRef.name : node.teamRef)?.trim();
-        if (!ref) {
-          memberStatuses.push({ ...base, ok: false, error: 'team node missing teamRef', toolCalls: 0, durationMs: 0 });
-          return { report: `[team node "${identity.id}" has no teamRef]`, ok: false, error: 'missing teamRef' };
-        }
+      // Nested Graph/Workflow executor. A typed targetRef is authoritative even
+      // when a legacy node omitted type="team" alongside it.
+      const ref = node.targetRef?.kind === 'team'
+        ? node.targetRef.name.trim()
+        : nodeType === 'team'
+          ? node.teamRef?.trim()
+          : undefined;
+      if (ref) {
         if (teamStack.includes(ref)) {
           const cycle = [...teamStack, ref].join(' → ');
           memberStatuses.push({ ...base, ok: false, error: `team recursion: ${cycle}`, toolCalls: 0, durationMs: 0 });
@@ -237,12 +239,12 @@ async function runGraphMode(
         }
         const subStarted = Date.now();
         try {
-          const subTeam = new ModelTeam(loaded.definition, pool);
-          const subResult = await subTeam.ask(task, signal, {
+          const nestedSignal = memberSignal(signal, resolveMemberTimeout(node)) ?? signal;
+          const subResult = await askTeamDefinition(loaded.definition, task, nestedSignal, {
             ...executionOptions,
             workDir: cwd,
             onEvent,
-            teamStack: [...teamStack, ref],
+            teamStack,
           });
           for (const m of subResult.memberStatuses ?? []) memberStatuses.push(m);
           const subIn = subResult.cost?.totalInputTokens ?? 0;
@@ -392,14 +394,20 @@ export class ModelTeam {
    * has a single payload-return agent (reviewer-style presets).
    */
   async ask(prompt: string, signal?: AbortSignal, opts?: TeamAskOptions): Promise<ModelTeamResult> {
+    const workDir = opts?.workDir ?? process.cwd();
+    const teamStack = opts?.teamStack?.length ? opts.teamStack : [this.name];
+    assertValidTeamComposition(this.definition, {
+      projectDir: workDir,
+      ancestorStack: teamStack.slice(0, -1),
+    });
     return runGraphMode(
       prompt,
       this.definition,
       signal,
-      opts?.workDir,
+      workDir,
       opts?.onEvent,
       opts?.context,
-      opts?.teamStack,
+      teamStack,
       this.pool,
       opts,
     );
@@ -427,15 +435,21 @@ export async function askTeamDefinition(
   const squadType = definition.squadType || 'graph';
   const workDir = opts?.workDir || process.cwd();
   const abort = signal ?? new AbortController().signal;
+  const ancestors = opts?.teamStack ?? [];
+  assertValidTeamComposition(definition, { projectDir: workDir, ancestorStack: ancestors });
+  const teamStack = [...ancestors, definition.name];
   if (squadType === 'workflow') {
-    return runWorkflowSquad(definition, prompt, abort, workDir, opts?.onEvent);
+    return runWorkflowSquad(definition, prompt, abort, workDir, opts?.onEvent, {
+      ...opts,
+      teamStack,
+    });
   }
   if (isSingleAgentSquadType(squadType)) {
     return runSingleAgentSquad(definition, prompt, abort, workDir, opts?.onEvent, {
       context: opts?.context,
     });
   }
-  return createModelTeam(definition).ask(prompt, signal, opts);
+  return createModelTeam(definition).ask(prompt, signal, { ...opts, teamStack });
 }
 
 function isReviewerLikeAgent(definition: TeamDefinition): boolean {

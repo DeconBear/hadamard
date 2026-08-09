@@ -9,6 +9,7 @@ import {
   migrateTeamDefinitionToGraph,
   validateTeamGraph,
 } from './teamGraph.js';
+import { validateWorkflowSquad } from './workflowSquad.js';
 
 export type TeamProposeSquadType = 'graph' | 'workflow' | 'agent' | 'subagent';
 
@@ -104,7 +105,8 @@ export function finalizeTeamProposeDraft(
     squadType: defRaw.squadType || squadType,
   };
 
-  if (squadType === 'graph' || named.squadType === 'graph' || named.orchestration === 'graph' || named.mode === 'graph') {
+  const effectiveSquadType = named.squadType || squadType;
+  if (effectiveSquadType === 'graph') {
     try {
       const migrated = ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph(named));
       const problems = validateTeamGraph(migrated);
@@ -119,12 +121,12 @@ export function finalizeTeamProposeDraft(
     }
   }
 
-  // workflow / subagent — light shape checks only
+  // Workflow and single-Agent definitions use their own non-graph validation.
   const problems: string[] = [];
-  if (squadType === 'workflow' && !named.workflowTree) {
-    problems.push('workflow squad requires workflowTree');
+  if (effectiveSquadType === 'workflow') {
+    problems.push(...validateWorkflowSquad(named));
   }
-  if (isSingleAgentSquadType(squadType) && !(named.members?.length)) {
+  if (isSingleAgentSquadType(effectiveSquadType) && !(named.members?.length)) {
     problems.push('agent squad requires at least one member');
   }
   return { definition: named, problems, explanation, rawText };

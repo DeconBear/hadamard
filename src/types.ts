@@ -2837,7 +2837,7 @@ export interface WorktreeInfo {
  * convergence (the `panel` capability). `panel` and `analysis` are retained as
  * backward-compatible aliases that route to the same engine.
  */
-export type ModelTeamMode = 'panel-analysis' | 'panel' | 'analysis' | 'reviewer' | 'executor-reviewer' | 'graph';
+export type ModelTeamMode = 'panel-analysis' | 'panel' | 'analysis' | 'reviewer' | 'executor-reviewer' | 'graph' | 'workflow';
 
 /**
  * Unified typed reference to an execution target (reference model redesign).
@@ -3231,13 +3231,18 @@ export interface GraphTeamResult extends TeamResult {
   graphRounds?: number;
 }
 
+/** `workflow` mode result. It retains the common graph-era report/status shape for API compatibility. */
+export interface WorkflowTeamResult extends Omit<GraphTeamResult, 'mode'> {
+  mode: 'workflow';
+}
+
 /** @deprecated Runtime always returns {@link GraphTeamResult}. Kept for type compatibility. */
 export type ReviewerResult = GraphTeamResult & { report?: string; toolCalls?: number };
 
 /** @deprecated Runtime always returns {@link GraphTeamResult}. Kept for type compatibility. */
 export type AnalysisResult = GraphTeamResult & { rounds?: number };
 
-export type ModelTeamResult = GraphTeamResult;
+export type ModelTeamResult = GraphTeamResult | WorkflowTeamResult;
 
 // ── Model Router / Leader-Dispatch (a /model routing layer, not a team) ──
 
