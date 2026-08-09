@@ -191,6 +191,7 @@ import {
   listSelectableAgents,
   resolveSelectableAgentRun,
   agentProfileRunOverrides,
+  resolveEffectiveAgentRunOptions,
   transitionProjectIssue,
   updateProjectIssue,
   upsertAgentProfile,
@@ -2924,16 +2925,40 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     if (stored === 'auto') return 'auto';
     return isEffort(stored) ? stored : sdk?.config.effort;
   };
-  const currentAgentSamplingOverrides = () => {
+  const currentEffectiveAgentRunOptions = () => {
     const agent = activeAgentSelectionName
       ? findSelectableAgent(activeAgentSelectionName, resolveGuiHomeDir())
       : undefined;
-    const fromAgent = agentProfileRunOverrides(agent);
+    if (!agent) {
+      return {
+        systemPrompt,
+        permissionMode: currentPermissionMode(),
+        effort: currentEffort(),
+      };
+    }
+    const effective = resolveEffectiveAgentRunOptions(agent, {
+      systemPrompt,
+      fallbackPermissionMode: currentPermissionMode(),
+      fallbackEffort: currentEffort(),
+    });
+    const allowedTools = effective.allowedTools
+      ? [...effective.allowedTools]
+      : undefined;
+    if (allowedTools && activeTeamTool && teamPrefs.autoInvoke) {
+      allowedTools.push(activeTeamTool.name);
+    }
     return {
-      effort: fromAgent.effort ?? currentEffort(),
-      ...(typeof fromAgent.maxTokens === 'number' ? { maxTokens: fromAgent.maxTokens } : {}),
-      ...(typeof fromAgent.temperature === 'number' ? { temperature: fromAgent.temperature } : {}),
-      ...(typeof fromAgent.topP === 'number' ? { topP: fromAgent.topP } : {}),
+      systemPrompt: effective.systemPrompt,
+      permissionMode: effective.permissionMode,
+      effort: effective.effort,
+      ...(typeof effective.maxTokens === 'number' ? { maxTokens: effective.maxTokens } : {}),
+      ...(typeof effective.temperature === 'number' ? { temperature: effective.temperature } : {}),
+      ...(typeof effective.topP === 'number' ? { topP: effective.topP } : {}),
+      ...(allowedTools ? { allowedTools } : {}),
+      workspaceAccess: effective.workspaceAccess,
+      ...(typeof effective.maxToolIterations === 'number'
+        ? { maxToolIterations: effective.maxToolIterations }
+        : {}),
     };
   };
   // P2: an active agent profile may restrict the toolset (allowedTools). The
@@ -2952,14 +2977,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   };
   // P2 follow-up: an active agent profile may also cap tool iterations and set
   // a per-turn timeout — applied to the same runs as the sampling overrides.
-  const currentAgentIterationCap = (): { maxToolIterations?: number } => {
-    const agent = activeAgentSelectionName
-      ? findSelectableAgent(activeAgentSelectionName, resolveGuiHomeDir())
-      : undefined;
-    return typeof agent?.maxIterations === 'number'
-      ? { maxToolIterations: agent.maxIterations }
-      : {};
-  };
   const withAgentRunTimeout = (signal: AbortSignal): AbortSignal => {
     const agent = activeAgentSelectionName
       ? findSelectableAgent(activeAgentSelectionName, resolveGuiHomeDir())
@@ -4228,7 +4245,12 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       definition,
       task.input ?? '',
       abort.signal,
-      { workDir },
+      {
+        workDir,
+        homeDir: resolveGuiHomeDir(),
+        model: activeBridgeModelApi?.model ?? session.model,
+        modelApi: activeBridgeModelApi?.modelApi,
+      },
     );
     return [
       { type: 'notice', message: `running Agent workflow: ${definition.name}` },
@@ -4275,17 +4297,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         });
         routed = { model: decision.model, modelApi: decision.modelApi, effort: decision.effort };
       }
-      const systemPromptForRun = systemPrompt;
+      const effectiveAgentOptions = currentEffectiveAgentRunOptions();
       const hadamardModel = (!bridgeMode && activeBridgeConfig?.runtime === 'hadamard')
         ? (activeBridgeConfig.model || undefined)
         : undefined;
       const stream = bridgeMode && activeBridgeModelApi
         ? session.stream(expandImageRefs(input, workDir), {
-            systemPrompt: systemPromptForRun,
+            ...effectiveAgentOptions,
             signal: withAgentRunTimeout(runAbort.signal),
-            permissionMode: currentPermissionMode(),
-            ...currentAgentSamplingOverrides(),
-            ...currentAgentIterationCap(),
             approver: backgroundApprover,
             classifier: preToolUseHookClassifier,
             canUseTool,
@@ -4294,11 +4313,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             ...(() => { const runTools = currentRunTools(); return runTools ? { tools: runTools } : {}; })(),
           })
         : session.stream(expandImageRefs(input, workDir), {
-            systemPrompt: systemPromptForRun,
+            ...effectiveAgentOptions,
             signal: withAgentRunTimeout(runAbort.signal),
-            permissionMode: currentPermissionMode(),
-            ...currentAgentSamplingOverrides(),
-            ...currentAgentIterationCap(),
             approver: backgroundApprover,
             classifier: preToolUseHookClassifier,
             canUseTool,
@@ -5461,7 +5477,12 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           const definition = resolveTeamDefinition(teamName, workDir, session.model);
           if (!definition) return [{ type: 'error', message: `team not found: ${teamName}` }];
           session.metadata.__hadamardLastTeamName = definition.name;
-          const result = await askTeamDefinition(definition, prompt, undefined, { workDir });
+          const result = await askTeamDefinition(definition, prompt, undefined, {
+            workDir,
+            homeDir: resolveGuiHomeDir(),
+            model: activeBridgeModelApi?.model ?? session.model,
+            modelApi: activeBridgeModelApi?.modelApi,
+          });
           lastTeamRunSummary = `${teamName} · ${result.mode} · ${Math.round(result.durationMs / 1000)}s`;
           return [{ type: 'command.result', title: `Team response · ${result.mode}`, text: result.answer }];
         }
@@ -6298,9 +6319,18 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       }
     }
 
+    const fallbackEffort = context.effort === 'auto' || isEffort(context.effort)
+      ? context.effort
+      : undefined;
+    const effectiveProfileOptions = resolvedProfile
+      ? resolveEffectiveAgentRunOptions(resolvedProfile.profile, {
+          systemPrompt: context.systemPrompt,
+          fallbackPermissionMode: context.permissionMode,
+          fallbackEffort,
+        })
+      : undefined;
     const profileOverrides = agentProfileRunOverrides(resolvedProfile?.profile);
-    const effort = profileOverrides.effort
-      ?? (context.effort === 'auto' || isEffort(context.effort) ? context.effort : undefined);
+    const effort = effectiveProfileOptions?.effort ?? fallbackEffort;
 
     const workerSession = await sdk.resumeSession(context.sessionId, {
       model,
@@ -6318,9 +6348,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       },
     });
     const stream = workerSession.stream(context.prompt, {
-      systemPrompt: context.systemPrompt,
-      signal: request.options.signal,
-      permissionMode: context.permissionMode,
+      systemPrompt: effectiveProfileOptions?.systemPrompt ?? context.systemPrompt,
+      signal: typeof effectiveProfileOptions?.timeoutMs === 'number'
+        ? request.options.signal
+          ? AbortSignal.any([request.options.signal, AbortSignal.timeout(effectiveProfileOptions.timeoutMs)])
+          : AbortSignal.timeout(effectiveProfileOptions.timeoutMs)
+        : request.options.signal,
+      permissionMode: effectiveProfileOptions?.permissionMode ?? context.permissionMode,
       ...(effort ? { effort } : {}),
       approver,
       classifier: preToolUseHookClassifier,
@@ -6330,6 +6364,15 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       ...(typeof profileOverrides.maxTokens === 'number' ? { maxTokens: profileOverrides.maxTokens } : {}),
       ...(typeof profileOverrides.temperature === 'number' ? { temperature: profileOverrides.temperature } : {}),
       ...(typeof profileOverrides.topP === 'number' ? { topP: profileOverrides.topP } : {}),
+      ...(effectiveProfileOptions?.allowedTools
+        ? { allowedTools: [...effectiveProfileOptions.allowedTools, issueReportTool.name] }
+        : {}),
+      ...(effectiveProfileOptions
+        ? { workspaceAccess: effectiveProfileOptions.workspaceAccess }
+        : {}),
+      ...(typeof effectiveProfileOptions?.maxToolIterations === 'number'
+        ? { maxToolIterations: effectiveProfileOptions.maxToolIterations }
+        : {}),
       tools: [issueReportTool],
     });
     for await (const event of stream) {
@@ -6494,7 +6537,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         `You are working on ISS-${issue.number}: ${issue.title}.`,
         'When the work and self-checks are complete, call IssueReport with status="in_review".',
         'If you are blocked, call IssueReport with status="blocked" and explain the blocker.',
-        resolvedProfile?.profile.systemPromptAppend ? '\nAgent profile instructions:\n' + resolvedProfile.profile.systemPromptAppend : '',
       ].filter(Boolean).join('\n');
       const workerPrompt = [
         brief,
@@ -6682,7 +6724,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           definition,
           prompt,
           teamAbort.signal,
-          { workDir, onEvent },
+          {
+            workDir,
+            homeDir: resolveGuiHomeDir(),
+            onEvent,
+            model: activeBridgeModelApi?.model ?? session.model,
+            modelApi: activeBridgeModelApi?.modelApi,
+          },
         );
         teamDesc.status = 'done';
         lastTeamRunSummary = `${definition.name} · ${result.mode} · ${Math.round(result.durationMs / 1000)}s`;
@@ -6818,7 +6866,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       //  1. bridge config active → inject pre-built ModelApi (separate credentials)
       //  2. hadamard config active → inject model only (use SDK default provider)
       //  3. none active → in-process turn, optionally routed or teamed
-      const systemPromptForRun = systemPrompt;
+      const effectiveAgentOptions = currentEffectiveAgentRunOptions();
       const hadamardModel = (!bridgeMode && activeBridgeConfig?.runtime === 'hadamard')
         ? (activeBridgeConfig.model || undefined)
         : undefined;
@@ -6841,11 +6889,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         const bridgeName = activeBridgeConfig?.name ?? 'bridge';
         send({ type: 'notice', message: `bridge -> ${bridgeName} (${activeBridgeModelApi.model})` });
         stream = session.stream(expandImageRefs(input, workDir), {
-          systemPrompt: systemPromptForRun,
+          ...effectiveAgentOptions,
           signal: withAgentRunTimeout(runAbort.signal),
-          permissionMode: currentPermissionMode(),
-          ...currentAgentSamplingOverrides(),
-          ...currentAgentIterationCap(),
           approver,
           classifier: preToolUseHookClassifier,
           canUseTool,
@@ -6855,11 +6900,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         });
       } else {
         stream = session.stream(expandImageRefs(input, workDir), {
-          systemPrompt: systemPromptForRun,
+          ...effectiveAgentOptions,
           signal: withAgentRunTimeout(runAbort.signal),
-          permissionMode: currentPermissionMode(),
-          ...currentAgentSamplingOverrides(),
-          ...currentAgentIterationCap(),
           approver,
           classifier: preToolUseHookClassifier,
           canUseTool,
@@ -9378,6 +9420,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           if (typeof body.systemPromptAppend === 'string' && body.systemPromptAppend.trim()) {
             profile.systemPromptAppend = body.systemPromptAppend.trim();
           }
+          if (body.promptMode === 'extend' || body.promptMode === 'replace') {
+            profile.promptMode = body.promptMode;
+          }
+          if (typeof body.subagent === 'boolean') profile.subagent = body.subagent;
           if (typeof body.permissionMode === 'string' && body.permissionMode.trim()) {
             profile.permissionMode = body.permissionMode.trim() as AgentProfile['permissionMode'];
           }
@@ -9432,6 +9478,15 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           const extras: AgentDefinitionExtraFields = {};
           if (body.promptMode === 'extend' || body.promptMode === 'replace') extras.promptMode = body.promptMode;
           if (typeof body.subagent === 'boolean') extras.subagent = body.subagent;
+          extras.permissionMode = profile.permissionMode;
+          extras.effort = profile.effort;
+          extras.maxTokens = profile.maxTokens;
+          extras.temperature = profile.temperature;
+          extras.topP = profile.topP;
+          extras.tools = profile.allowedTools;
+          extras.workspaceAccess = profile.workspaceAccess;
+          extras.maxIterations = profile.maxIterations;
+          extras.timeoutMs = profile.timeoutMs;
           if (profile.bridgeConfig) {
             const bridgeCfg = findBridgeConfig(profile.bridgeConfig, resolveGuiHomeDir());
             const rt = bridgeCfg?.runtime?.trim();
@@ -33372,8 +33427,13 @@ async function openAgentProfileEditor(profile, definition, sourceSquad) {
   // S2 (§6-6): no bridgeConfig on an existing agent = "Inherit session model".
   const preferInherit = Boolean(editingAgentProfileName && !bridgeConfig);
   mountAgentProfileModelPicker(bridgeConfig, model, preferInherit);
-  setField('agentProfilePromptMode', fmStr('promptMode') === 'replace' ? 'replace' : 'extend');
-  el('agentProfileSubagent').checked = fmStr('subagent') !== 'false';
+  setField(
+    'agentProfilePromptMode',
+    (profile?.promptMode || fmStr('promptMode')) === 'replace' ? 'replace' : 'extend',
+  );
+  el('agentProfileSubagent').checked = typeof profile?.subagent === 'boolean'
+    ? profile.subagent
+    : fmStr('subagent') !== 'false';
   renderAgentProfileTools(profile?.allowedTools || (fmStr('tools') ? fmStr('tools').split(',').map(s => s.trim()).filter(Boolean) : undefined));
   el('agentProfileCfgStatus').textContent = editingAgentProfileName ? 'Editing "' + editingAgentProfileName + '".' : '';
   // Embedded in the Agents panel right pane (09 Aug 2026): switch there,

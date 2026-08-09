@@ -87,6 +87,7 @@ import {
   FileCheckpointService,
 } from '../checkpoint/index.js';
 import { SandboxExecutor } from '../sandbox/sandboxExecutor.js';
+import { resolveSandboxPolicy } from '../sandbox/policyResolver.js';
 import {
   CodeIntelligenceService,
   createCodeIntelligenceTools,
@@ -162,6 +163,7 @@ import { loadHadamardAgentDefinitions } from './hadamardAgentDefinitions.js';
 import { migrateAgentProfilesToMarkdown } from '../config/agentDefinitionMigration.js';
 import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 import { isExternalAgentRuntime, runExternalAgentOnce } from './externalAgentRunner.js';
+import { resolveEffectiveAgentRunOptions } from './effectiveAgentRunOptions.js';
 import {
   HadamardSkillsApi,
   getDefaultHadamardBundledSkills,
@@ -289,6 +291,7 @@ interface InternalAgentRunOptions extends AgentRunOptions {
   __hadamardSkillContext?: 'inline' | 'fork';
   __hadamardMaxToolIterations?: number;
   __hadamardAllowedTools?: string[];
+  __hadamardWorkspaceAccess?: 'workspace' | 'full';
   __hadamardDisallowedTools?: string[];
   __hadamardPreloadedSkills?: string[];
   __hadamardWorkDir?: string;
@@ -1757,11 +1760,17 @@ export class HadamardAgentClient {
     options: SessionCreateOptions = {},
   ): Promise<AgentSession> {
     const definition = this.requireAgentDefinition(agent);
+    const effective = resolveEffectiveAgentRunOptions(definition, {
+      permissionModeOverride: options.permissionMode,
+    });
     const session = await this.createSession({
       ...options,
       kind: options.kind ?? 'agent',
       model: options.model ?? definition.model,
-      systemPrompt: joinPromptParts(definition.systemPrompt, options.systemPrompt),
+      // Keep the caller prompt as session state; the definition is composed at
+      // send time so `extend` does not duplicate and `replace` stays exact.
+      systemPrompt: options.systemPrompt,
+      permissionMode: effective.permissionMode,
       metadata: {
         ...(definition.metadata ?? {}),
         ...(options.metadata ?? {}),
@@ -2792,13 +2801,19 @@ export class HadamardAgentClient {
       [HADAMARD_RUN_STATE_KEY]: createHadamardRunToolState(),
     };
 
+    const workspaceAccess = options.__hadamardWorkspaceAccess ?? options.workspaceAccess;
+    const sandboxExecutor = this.sandboxExecutorForWorkDir(workDir, workspaceAccess);
+    const workspaceProcessDenylist = workspaceAccess === 'workspace'
+      && !sandboxExecutor.capability.filesystemIsolation
+      ? ['Bash', 'PowerShell', 'EnterWorktree', 'ExitWorktree']
+      : [];
     const mergedTools = filterAgentTools(
       mergeUniqueByName(
       options.__hadamardUseDefaultTools === false ? [] : this.defaultTools,
       options.tools ?? [],
       ),
-      options.__hadamardAllowedTools,
-      options.__hadamardDisallowedTools,
+      options.__hadamardAllowedTools ?? options.allowedTools,
+      [...(options.__hadamardDisallowedTools ?? []), ...workspaceProcessDenylist],
     );
 
     // Goal runtime contract: when a session exists, expose the active goal to
@@ -2824,8 +2839,8 @@ export class HadamardAgentClient {
       );
       goalTools = filterAgentTools(
         toolsWithGoal,
-        options.__hadamardAllowedTools,
-        options.__hadamardDisallowedTools,
+        options.__hadamardAllowedTools ?? options.allowedTools,
+        [...(options.__hadamardDisallowedTools ?? []), ...workspaceProcessDenylist],
       );
     }
 
@@ -2844,7 +2859,6 @@ export class HadamardAgentClient {
       ],
     );
 
-    const sandboxExecutor = this.sandboxExecutorForWorkDir(workDir);
     const runMaxToolIterations =
       options.__hadamardMaxToolIterations ?? options.maxToolIterations;
     const runtimeConfig =
@@ -5160,8 +5174,23 @@ export class HadamardAgentClient {
     );
   }
 
-  private sandboxExecutorForWorkDir(workDir: string): SandboxExecutor {
+  private sandboxExecutorForWorkDir(
+    workDir: string,
+    workspaceAccess?: 'workspace' | 'full',
+  ): SandboxExecutor {
     const resolved = path.resolve(workDir);
+    if (workspaceAccess === 'workspace') {
+      return new SandboxExecutor(resolveSandboxPolicy(
+        resolved,
+        this.config.sandbox,
+        {
+          readRoots: [resolved],
+          writableRoots: [resolved],
+          allowUserDisable: false,
+          source: 'agent:workspace',
+        },
+      ));
+    }
     if (resolved === path.resolve(this.config.workDir)) return this.sandboxExecutor;
     const remap = (roots: string[]) => roots.map(root => {
       const relative = path.relative(this.config.workDir, root);
@@ -5206,6 +5235,7 @@ export class HadamardAgentClient {
         : undefined;
     const sessionOptions: InternalAgentRunOptions = {
       ...options,
+      systemPrompt: options.systemPrompt ?? session.systemPrompt,
       __hadamardPersistedWorkDir: persistedWorkDir,
     };
     const agentName =
@@ -5268,15 +5298,24 @@ export class HadamardAgentClient {
     }
     const nestedAgentDenylist =
       definition.allowNestedAgents === true ? [] : ['Agent', 'Task'];
+    const effective = resolveEffectiveAgentRunOptions(definition, {
+      systemPrompt: options.systemPrompt,
+      permissionModeOverride: options.permissionMode,
+      effortOverride: options.effort,
+    });
+    const signal = typeof definition.timeoutMs === 'number' && definition.timeoutMs > 0
+      ? combineAbortSignals(options.signal, AbortSignal.timeout(definition.timeoutMs))
+      : options.signal;
     return {
       ...options,
-      systemPrompt: joinPromptParts(definition.systemPrompt, options.systemPrompt),
+      systemPrompt: effective.systemPrompt,
       model: options.model ?? definition.model,
-      effort: options.effort ?? definition.effort,
-      permissionMode: options.permissionMode ?? definition.permissionMode,
-      maxTokens: options.maxTokens ?? definition.maxTokens,
-      temperature: options.temperature ?? definition.temperature,
-      topP: options.topP ?? definition.topP,
+      effort: effective.effort,
+      permissionMode: effective.permissionMode,
+      maxTokens: options.maxTokens ?? effective.maxTokens,
+      temperature: options.temperature ?? effective.temperature,
+      topP: options.topP ?? effective.topP,
+      signal,
       metadata: {
         ...(definition.metadata ?? {}),
         ...(options.metadata ?? {}),
@@ -5287,11 +5326,11 @@ export class HadamardAgentClient {
       mcpServers: [...(definition.mcpServers ?? []), ...(options.mcpServers ?? [])],
       __hadamardUseDefaultTools: definition.inheritDefaultTools !== false,
       __hadamardUseDefaultMcpServers: definition.inheritDefaultMcpServers !== false,
-      __hadamardMaxToolIterations:
-        definition.maxToolIterations ?? definition.maxTurns,
-      __hadamardAllowedTools: definition.allowedTools
-        ? [...definition.allowedTools]
+      __hadamardMaxToolIterations: effective.maxToolIterations ?? definition.maxTurns,
+      __hadamardAllowedTools: options.allowedTools ?? effective.allowedTools
+        ? [...(options.allowedTools ?? effective.allowedTools)!]
         : undefined,
+      __hadamardWorkspaceAccess: options.workspaceAccess ?? effective.workspaceAccess,
       __hadamardDisallowedTools: [
         ...(definition.disallowedTools ?? []),
         ...nestedAgentDenylist,
@@ -5639,6 +5678,4 @@ function normalizePathForCompare(value: string): string {
 function isWithinAllowedRoots(target: string, roots: readonly string[]): boolean {
   return roots.some((root) => target === root || target.startsWith(`${root}${path.sep}`));
 }
-
-
 

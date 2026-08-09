@@ -1011,6 +1011,10 @@ export interface AgentRunOptions {
   maxTokens?: number;
   /** Per-run tool-iteration cap; overrides the SDK config cap for this run. */
   maxToolIterations?: number;
+  /** Restrict the effective default/custom tool catalog to these names. */
+  allowedTools?: string[];
+  /** Apply Agent filesystem/process confinement for this run. */
+  workspaceAccess?: 'workspace' | 'full';
   temperature?: number;
   topP?: number;
   toolChoice?: ToolChoice;
@@ -3171,6 +3175,11 @@ export interface TeamAskOptions {
   context?: string;
   /** Working directory the team members operate over. */
   workDir?: string;
+  /** Hadamard data root input for personal Agents/configs/teams. */
+  homeDir?: string;
+  /** Caller model/client used by inherit-session-model Agent targets. */
+  model?: string;
+  modelApi?: ModelApi;
   /** Receives progress events as the team deliberates. */
   onEvent?: (event: TeamEvent) => void;
   /** Permission policy inherited by every member runtime. Defaults to `default`, never bypass. */

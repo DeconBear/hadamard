@@ -20,6 +20,7 @@ import type {
   TeamMember,
 } from '../types.js';
 import { AgentPool } from './agentPool.js';
+import type { EffectiveAgentRunOptions } from '../runtime/effectiveAgentRunOptions.js';
 
 /** Resolve a `$ENV_VAR` apiKey reference; literal keys pass through unchanged. */
 export function resolveApiKey(apiKey?: string): string | undefined {
@@ -134,6 +135,10 @@ export interface RunMemberOptions {
   classifier?: AgentRunOptions['classifier'];
   approver?: AgentRunOptions['approver'];
   hooks?: AgentRunOptions['hooks'];
+  /** Effective options from a saved Agent executor, when selected. */
+  effectiveAgentOptions?: EffectiveAgentRunOptions;
+  workspaceAccess?: 'workspace' | 'full';
+  modelApi?: AgentRunOptions['modelApi'];
   /** Runtime-owned concurrency controller. Omit only for a standalone one-member call. */
   pool?: AgentPool;
   round: number;
@@ -189,23 +194,43 @@ export async function runMemberAgent(opts: RunMemberOptions): Promise<MemberRunR
   try {
     slot = await pool.acquire(timeoutMs);
     const { createAgentSdk } = await import('../runtime/agentClient.js');
+    const effective = opts.effectiveAgentOptions;
     sdk = await createAgentSdk({
       model: member.model,
+      modelApi: opts.modelApi,
       provider: member.provider,
       baseURL: member.baseURL,
       authToken: resolveApiKey(member.apiKey),
-      maxTokens: member.maxTokens ?? 32000,
+      maxTokens: effective?.maxTokens ?? member.maxTokens ?? 32000,
       workDir: cwd,
       tools,
-      permissionMode: opts.permissionMode ?? 'default',
+      permissionMode: effective?.permissionMode ?? opts.permissionMode ?? 'default',
       permissions: opts.permissions,
       classifier: opts.classifier,
       approver: opts.approver,
       hooks: opts.hooks,
-      maxToolIterations: maxIterations,
-      systemPrompt,
+      maxToolIterations: effective?.maxToolIterations ?? maxIterations,
+      systemPrompt: effective?.systemPrompt ?? systemPrompt,
     });
-    const stream = sdk.stream(task, { signal: memberSignal(signal, timeoutMs) });
+    const stream = sdk.stream(task, {
+      signal: memberSignal(signal, timeoutMs),
+      ...(effective?.permissionMode ? { permissionMode: effective.permissionMode } : {}),
+      ...(effective?.effort ? { effort: effective.effort } : {}),
+      ...(typeof effective?.maxTokens === 'number' ? { maxTokens: effective.maxTokens } : {}),
+      ...(typeof effective?.temperature === 'number' ? { temperature: effective.temperature } : {}),
+      ...(typeof effective?.topP === 'number' ? { topP: effective.topP } : {}),
+      ...(effective?.allowedTools ? { allowedTools: effective.allowedTools } : {}),
+      ...(
+        effective
+          ? { workspaceAccess: effective.workspaceAccess }
+          : opts.workspaceAccess
+            ? { workspaceAccess: opts.workspaceAccess }
+            : {}
+      ),
+      ...(typeof effective?.maxToolIterations === 'number'
+        ? { maxToolIterations: effective.maxToolIterations }
+        : {}),
+    });
     for await (const event of stream) {
       if (event.type === 'tool.call' && onEvent) {
         onEvent({ type: 'team.member.tool', id: identity.id, model: identity.model, round, tool: event.call.publicName });

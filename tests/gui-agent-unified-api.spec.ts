@@ -77,6 +77,15 @@ describe('GUI unified agent API (S2)', () => {
           scope: 'project',
           promptMode: 'replace',
           subagent: true,
+          permissionMode: 'plan',
+          effort: 'max',
+          maxTokens: 8192,
+          temperature: 0.6,
+          topP: 0.9,
+          allowedTools: ['Read', 'Grep'],
+          workspaceAccess: 'full',
+          maxIterations: 23,
+          timeoutMs: 55000,
         }),
       });
       expect(saved.status).toBe(200);
@@ -89,6 +98,15 @@ describe('GUI unified agent API (S2)', () => {
         'model: claude-sonnet',
         'promptMode: replace',
         'subagent: true',
+        'permissionMode: plan',
+        'effort: max',
+        'maxTokens: 8192',
+        'temperature: 0.6',
+        'topP: 0.9',
+        'tools: Read, Grep',
+        'workspaceAccess: full',
+        'maxIterations: 23',
+        'timeoutMs: 55000',
       ]) {
         expect(md).toContain(line);
       }
@@ -125,6 +143,15 @@ describe('GUI unified agent API (S2)', () => {
           subagent: false,
           promptMode: 'extend',
           systemPromptAppend: 'Extra instructions.',
+          permissionMode: 'acceptEdits',
+          effort: 'high',
+          maxTokens: 4096,
+          temperature: 0.25,
+          topP: 0.8,
+          allowedTools: ['Read', 'Grep'],
+          workspaceAccess: 'workspace',
+          maxIterations: 17,
+          timeoutMs: 45000,
         }),
       });
       expect(saved.status).toBe(200);
@@ -135,6 +162,15 @@ describe('GUI unified agent API (S2)', () => {
       const md = await readFile(path.join(homeDir, '.hadamard', 'agents', 'follower.md'), 'utf8');
       expect(md).not.toContain('bridgeConfig');
       expect(md).toContain('subagent: false');
+      expect(md).toContain('permissionMode: acceptEdits');
+      expect(md).toContain('effort: high');
+      expect(md).toContain('maxTokens: 4096');
+      expect(md).toContain('temperature: 0.25');
+      expect(md).toContain('topP: 0.8');
+      expect(md).toContain('tools: Read, Grep');
+      expect(md).toContain('workspaceAccess: workspace');
+      expect(md).toContain('maxIterations: 17');
+      expect(md).toContain('timeoutMs: 45000');
       expect(md).toContain('Extra instructions.');
     } finally {
       await server.close();

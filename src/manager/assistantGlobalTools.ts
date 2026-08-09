@@ -850,6 +850,10 @@ export async function createAssistantGlobalTools(
         maxTokens: z.number().int().positive().optional(),
         temperature: z.number().min(0).max(2).optional(),
         topP: z.number().min(0).max(1).optional(),
+        allowedTools: z.array(z.string().min(1)).optional(),
+        workspaceAccess: z.enum(['workspace', 'full']).optional(),
+        maxIterations: z.number().int().positive().optional(),
+        timeoutMs: z.number().int().positive().optional(),
         systemPromptAppend: z.string().optional(),
         scope: z.enum(['project', 'personal']).optional().describe('Defaults to personal (~/.hadamard/agents)'),
         promptMode: z.enum(['extend', 'replace']).optional(),
@@ -861,6 +865,15 @@ export async function createAssistantGlobalTools(
       const extras: AgentDefinitionExtraFields = {
         ...(input.promptMode ? { promptMode: input.promptMode } : {}),
         ...(typeof input.subagent === 'boolean' ? { subagent: input.subagent } : {}),
+        ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
+        ...(input.effort ? { effort: input.effort } : {}),
+        ...(typeof input.maxTokens === 'number' ? { maxTokens: input.maxTokens } : {}),
+        ...(typeof input.temperature === 'number' ? { temperature: input.temperature } : {}),
+        ...(typeof input.topP === 'number' ? { topP: input.topP } : {}),
+        ...(input.allowedTools?.length ? { tools: input.allowedTools } : {}),
+        ...(input.workspaceAccess ? { workspaceAccess: input.workspaceAccess } : {}),
+        ...(typeof input.maxIterations === 'number' ? { maxIterations: input.maxIterations } : {}),
+        ...(typeof input.timeoutMs === 'number' ? { timeoutMs: input.timeoutMs } : {}),
       };
       const scope = input.scope === 'project' ? 'project' : 'personal';
       const unified = inheritModel || scope === 'project' || Object.keys(extras).length > 0;
@@ -874,7 +887,13 @@ export async function createAssistantGlobalTools(
         ...(typeof input.maxTokens === 'number' ? { maxTokens: input.maxTokens } : {}),
         ...(typeof input.temperature === 'number' ? { temperature: input.temperature } : {}),
         ...(typeof input.topP === 'number' ? { topP: input.topP } : {}),
+        ...(input.allowedTools?.length ? { allowedTools: input.allowedTools } : {}),
+        ...(input.workspaceAccess ? { workspaceAccess: input.workspaceAccess } : {}),
+        ...(typeof input.maxIterations === 'number' ? { maxIterations: input.maxIterations } : {}),
+        ...(typeof input.timeoutMs === 'number' ? { timeoutMs: input.timeoutMs } : {}),
         ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
+        ...(input.promptMode ? { promptMode: input.promptMode } : {}),
+        ...(typeof input.subagent === 'boolean' ? { subagent: input.subagent } : {}),
       };
       if (!unified) {
         const saved = upsertAgentProfile(profile, host.homeDir);
