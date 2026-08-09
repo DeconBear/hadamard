@@ -4,6 +4,7 @@ import { stringWidth, stripAnsi, truncateToWidth, wrapToWidth, A } from '../src/
 import { InputEditor } from '../src/tui/editor.js';
 import { TuiScreen, type ScreenOutput } from '../src/tui/screen.js';
 import { ReasoningDisplayState } from '../src/tui/reasoningDisplay.js';
+import { ToolActivityDisplayState } from '../src/tui/toolActivityDisplay.js';
 import {
   StreamFlusher,
   formatToolCall,
@@ -288,6 +289,49 @@ describe('reasoning display state', () => {
     expect(completed).toEqual([expect.stringContaining('Thinking')]);
     expect(completed[0]).toContain('collapsed');
     expect(state.hasActive).toBe(false);
+  });
+
+  it('suppresses a repeated completed segment while preserving distinct reasoning', () => {
+    const state = new ReasoningDisplayState();
+    state.append('inspect the tool output');
+    expect(state.complete()).toHaveLength(1);
+
+    state.setCompleteContent('inspect   the tool output');
+    expect(state.hasActive).toBe(false);
+    expect(state.complete()).toEqual([]);
+
+    state.setCompleteContent('verify a different result');
+    expect(state.complete()).toHaveLength(1);
+
+    state.reset();
+    state.setCompleteContent('inspect the tool output');
+    expect(state.complete()).toHaveLength(1);
+  });
+});
+
+describe('tool activity display state', () => {
+  it('renders each identified tool lifecycle phase once', () => {
+    const state = new ToolActivityDisplayState();
+
+    expect(state.markStarted('call-1')).toBe(true);
+    expect(state.markStarted('call-1')).toBe(false);
+    expect(state.markTerminal('call-1')).toBe(true);
+    expect(state.markTerminal('call-1')).toBe(false);
+    expect(state.markStarted('call-2')).toBe(true);
+    expect(state.markTerminal('call-2')).toBe(true);
+    expect(state.markStarted('call-2')).toBe(false);
+
+    state.reset();
+    expect(state.markStarted('call-1')).toBe(true);
+    expect(state.markTerminal('call-1')).toBe(true);
+  });
+
+  it('does not merge anonymous tool events without a stable call id', () => {
+    const state = new ToolActivityDisplayState();
+    expect(state.markStarted('')).toBe(true);
+    expect(state.markStarted('')).toBe(true);
+    expect(state.markTerminal('')).toBe(true);
+    expect(state.markTerminal('')).toBe(true);
   });
 });
 

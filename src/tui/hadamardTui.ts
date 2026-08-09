@@ -161,6 +161,7 @@ import { InputEditor } from './editor.js';
 import { discoverHadamardPlugins } from './pluginCatalog.js';
 import { TuiScreen } from './screen.js';
 import { ReasoningDisplayState } from './reasoningDisplay.js';
+import { ToolActivityDisplayState } from './toolActivityDisplay.js';
 import {
   recallLatestFollowUp,
   restoreAbandonedFollowUp,
@@ -976,6 +977,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   let ctrlCTimer: ReturnType<typeof setTimeout> | null = null;
   let streamedTextSeen = false;
   const reasoningDisplay = new ReasoningDisplayState();
+  const toolActivityDisplay = new ToolActivityDisplayState();
   // Track tool names by callId for PostToolUse hook context.
   const toolCallNames = new Map<string, string>();
   // Live todo list (captured from TodoWrite tool calls). Rendered as a
@@ -1791,6 +1793,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     requestStartedAt = 0;
     providerActivitySeen = false;
     runToolCount = 0;
+    toolActivityDisplay.reset();
+    toolCallNames.clear();
     statusNote = 'preparing locally';
     streamedTextSeen = false;
     lastTokenEstimate = undefined;
@@ -1961,6 +1965,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       case 'run.started':
         streamedTextSeen = false;
         reasoningDisplay.reset();
+        toolActivityDisplay.reset();
+        toolCallNames.clear();
         return;
       case 'request.started':
         requestStartedAt = Date.now();
@@ -2012,9 +2018,10 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         return;
       }
       case 'tool.started': {
+        const callId = typeof data.callId === 'string' ? data.callId : '';
+        if (!toolActivityDisplay.markStarted(callId)) return;
         providerActivitySeen = true;
         collapseReasoning();
-        const callId = typeof data.callId === 'string' ? data.callId : '';
         const publicName = typeof data.publicName === 'string'
           ? data.publicName
           : typeof data.name === 'string' ? data.name : 'tool';
@@ -2063,6 +2070,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       case 'tool.failed':
       case 'tool.rejected': {
         const callId = typeof data.callId === 'string' ? data.callId : '';
+        if (!toolActivityDisplay.markTerminal(callId)) return;
         const outputText = typeof data.outputText === 'string' ? data.outputText : '';
         statusNote = '';
         appendStatic(
@@ -2086,6 +2094,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             sdk.config.workDir,
           );
         }
+        if (callId) toolCallNames.delete(callId);
         renderDynamic();
         return;
       }
@@ -5361,8 +5370,14 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
               __hadamardUseDefaultTools: false,
               __hadamardAllowedTools: tools.map(item => item.name),
             } as Parameters<typeof globalSession.stream>[1]);
+            const assistantToolDisplay = new ToolActivityDisplayState();
             for await (const event of stream) {
-              if (event.type === 'tool.call') appendStatic([`${A.dim}  ⚙ ${event.call.name}${A.reset}`]);
+              if (
+                event.type === 'tool.call'
+                && assistantToolDisplay.markStarted(event.call.id)
+              ) {
+                appendStatic([`${A.dim}  ⚙ ${event.call.name}${A.reset}`]);
+              }
             }
             const result = await stream.result;
             if (result.text) appendStatic([...renderRichText(result.text, screen.width), '']);
@@ -5693,8 +5708,14 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
                 __hadamardAllowedTools: managerTools.map((tool) => tool.name),
               } as Parameters<typeof managerTuiSession.stream>[1];
               const stream = managerTuiSession.stream(prompt, runOptions);
+              const managerToolDisplay = new ToolActivityDisplayState();
               for await (const event of stream) {
-                if (event.type === 'tool.call') appendStatic([`${A.dim}  ⚡ ${event.call.name}${A.reset}`]);
+                if (
+                  event.type === 'tool.call'
+                  && managerToolDisplay.markStarted(event.call.id)
+                ) {
+                  appendStatic([`${A.dim}  ⚡ ${event.call.name}${A.reset}`]);
+                }
               }
               const result = await stream.result;
               if (result.text) appendStatic([...renderRichText(result.text, screen.width), '']);
