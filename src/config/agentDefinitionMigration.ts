@@ -117,6 +117,22 @@ function tryParseDefinition(filePath: string): HadamardAgentDefinition | undefin
   }
 }
 
+/** Load one project/personal `.md` Agent as a runtime definition (project wins). */
+export function readStoredAgentDefinition(
+  name: string,
+  homeDir?: string,
+  projectDir?: string,
+): HadamardAgentDefinition | null {
+  const dirs = [agentDefinitionsDir(homeDir)];
+  if (projectDir) dirs.unshift(projectAgentDefinitionsDir(projectDir));
+  for (const dir of dirs) {
+    const filePath = findDefinitionFileByName(dir, name);
+    if (!filePath) continue;
+    return tryParseDefinition(filePath) ?? null;
+  }
+  return null;
+}
+
 function findDefinitionFileByName(dir: string, name: string): string | undefined {
   return listMarkdownFiles(dir).find(filePath => definitionNameForFile(filePath) === name);
 }
@@ -168,7 +184,7 @@ function profileToMarkdownFields(
     model: profile.model,
     effort: profile.effort,
     permissionMode: profile.permissionMode,
-    promptMode: 'extend',
+    promptMode: profile.promptMode ?? 'extend',
     temperature: profile.temperature,
     topP: profile.topP,
     maxTokens: profile.maxTokens,
@@ -176,7 +192,7 @@ function profileToMarkdownFields(
     timeoutMs: profile.timeoutMs,
     workspaceAccess: profile.workspaceAccess,
     tools: profile.allowedTools,
-    subagent: true,
+    subagent: profile.subagent ?? true,
   };
 }
 
@@ -195,6 +211,8 @@ export function agentDefinitionToProfile(definition: HadamardAgentDefinition): A
     model,
     ...(definition.description ? { description: definition.description } : {}),
     ...(definition.systemPrompt?.trim() ? { systemPromptAppend: definition.systemPrompt.trim() } : {}),
+    ...(definition.promptMode ? { promptMode: definition.promptMode } : {}),
+    ...(typeof definition.subagent === 'boolean' ? { subagent: definition.subagent } : {}),
     ...(definition.permissionMode ? { permissionMode: definition.permissionMode } : {}),
     ...(definition.effort ? { effort: definition.effort } : {}),
     ...(typeof definition.maxTokens === 'number' ? { maxTokens: definition.maxTokens } : {}),
@@ -461,6 +479,8 @@ function normalizeMigrationProfile(raw: unknown): AgentProfile | null {
     model,
     description: stringOr(record.description),
     systemPromptAppend: stringOr(record.systemPromptAppend),
+    promptMode: record.promptMode === 'replace' ? 'replace' : record.promptMode === 'extend' ? 'extend' : undefined,
+    subagent: typeof record.subagent === 'boolean' ? record.subagent : undefined,
     permissionMode: record.permissionMode as AgentProfile['permissionMode'],
     effort: record.effort as AgentProfile['effort'],
     maxTokens: numberOr(record.maxTokens),

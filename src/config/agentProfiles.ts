@@ -39,6 +39,10 @@ export interface AgentProfile {
   bridgeConfig: string;
   model: string;
   systemPromptAppend?: string;
+  /** `extend` appends Agent instructions; `replace` replaces the caller prompt. */
+  promptMode?: 'extend' | 'replace';
+  /** False makes the Agent main-chat-only and unavailable to Agent/Task delegation. */
+  subagent?: boolean;
   permissionMode?: HadamardPermissionMode;
   /** Preferred effort for this agent; omit to keep session/default effort. */
   effort?: HadamardRunEffort;
@@ -150,6 +154,10 @@ function normalizeAgentProfile(raw: unknown): AgentProfile | null {
   if (typeof raw.systemPromptAppend === 'string' && raw.systemPromptAppend.trim()) {
     profile.systemPromptAppend = raw.systemPromptAppend.trim();
   }
+  if (raw.promptMode === 'extend' || raw.promptMode === 'replace') {
+    profile.promptMode = raw.promptMode;
+  }
+  if (typeof raw.subagent === 'boolean') profile.subagent = raw.subagent;
   const permissionMode = parsePermissionMode(raw.permissionMode);
   if (permissionMode) profile.permissionMode = permissionMode;
   const effort = parseEffort(raw.effort);
@@ -377,6 +385,8 @@ export interface SelectableAgent {
   description?: string;
   permissionMode?: HadamardPermissionMode;
   systemPromptAppend?: string;
+  promptMode?: 'extend' | 'replace';
+  subagent?: boolean;
   effort?: HadamardRunEffort;
   maxTokens?: number;
   temperature?: number;
@@ -483,6 +493,8 @@ export function listSelectableAgents(homeDir?: string): SelectableAgent[] {
       ...(profile.description ? { description: profile.description } : {}),
       ...(profile.permissionMode ? { permissionMode: profile.permissionMode } : {}),
       ...(profile.systemPromptAppend ? { systemPromptAppend: profile.systemPromptAppend } : {}),
+      ...(profile.promptMode ? { promptMode: profile.promptMode } : {}),
+      ...(typeof profile.subagent === 'boolean' ? { subagent: profile.subagent } : {}),
       ...(profile.effort ? { effort: profile.effort } : {}),
       ...(typeof profile.maxTokens === 'number' ? { maxTokens: profile.maxTokens } : {}),
       ...(typeof profile.temperature === 'number' ? { temperature: profile.temperature } : {}),

@@ -46,6 +46,14 @@ export type {
   SelectableAgent,
 } from './config/agentProfiles.js';
 export {
+  resolveEffectiveAgentRunOptions,
+} from './runtime/effectiveAgentRunOptions.js';
+export type {
+  AgentRunConfigurationSource,
+  EffectiveAgentRunOptions,
+  ResolveEffectiveAgentRunOptionsInput,
+} from './runtime/effectiveAgentRunOptions.js';
+export {
   agentProfileStoreMigrated,
   deleteAgentProfileMarkdown,
   migrateAgentProfilesToMarkdown,
@@ -54,6 +62,7 @@ export {
   readAllAgentReferenceProfiles,
   listAgentDefinitionNames,
   readProfilesFromAgentDefinitions,
+  readStoredAgentDefinition,
   serializeAgentDefinitionMarkdown,
   writeAgentDefinitionMarkdown,
   writeAgentProfileMarkdown,
