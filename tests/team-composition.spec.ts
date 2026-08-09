@@ -60,4 +60,22 @@ describe('Graph/Workflow composition validation', () => {
       loadDefinition: name => name === 'Self' ? workflow('Self', 'Self') : null,
     })).toContain('Team composition cycle: Self -> Self');
   });
+
+  it('rejects a composition path beyond the configurable nesting depth', () => {
+    const definitions = new Map([
+      workflow('A', 'B'),
+      workflow('B', 'C'),
+      workflow('C', 'D'),
+      workflow('D'),
+    ].map(definition => [definition.name, definition]));
+
+    expect(validateTeamComposition(definitions.get('A')!, {
+      maxDepth: 3,
+      loadDefinition: name => definitions.get(name) ?? null,
+    })).toContain('Team composition exceeds maximum nesting depth 3: A -> B -> C -> D');
+    expect(validateTeamComposition(definitions.get('A')!, {
+      maxDepth: 4,
+      loadDefinition: name => definitions.get(name) ?? null,
+    })).toEqual([]);
+  });
 });
