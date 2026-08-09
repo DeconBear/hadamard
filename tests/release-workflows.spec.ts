@@ -10,7 +10,7 @@ describe('release workflows', () => {
     const workflow = readFileSync(
       path.join(root, '.github', 'workflows', 'publish-npm.yml'),
       'utf8',
-    );
+    ).replaceAll('\r\n', '\n');
 
     expect(workflow).toMatch(/^on:\r?\n\s+release:\r?$/mu);
     expect(workflow).toContain('types:\n      - published');
