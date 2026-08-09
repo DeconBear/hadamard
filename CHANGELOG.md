@@ -6,6 +6,23 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.13 - 2026-08-09
+
+### Features
+
+- TUI pending input: Enter queues follow-up, Shift+Enter steers, ↑ recalls the newest queued follow-up
+- Restore abandoned ↑-recalled follow-ups when the editor is cleared without resubmitting
+- Shared model configuration catalog for TUI model pickers
+- Reasoning display aggregation in the TUI transcript
+- Slash `/model <configuration>` now opens the multi-model picker (same as interactive `/model`); `/model <configuration> <model-id>` selects directly
+
+### Fixes
+
+- Align slash model activation with the interactive multi-model selection path
+- Harden Hadamard file tools and long-run pending-input session APIs
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.12...v0.4.13
+
 ## v0.4.12 - 2026-08-05
 
 ### Features
