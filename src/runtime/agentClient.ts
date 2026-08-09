@@ -4723,12 +4723,49 @@ export class HadamardAgentClient {
     options: AgentSessionCompactOptions = {},
   ): Promise<HadamardSessionCompactResult> {
     const snapshot = session.snapshot();
+    const runtimeState = this.getSessionMemoryRuntimeState(snapshot);
+    const budget = resolveHadamardCompactBudget(this.config.compact);
+    const latestUsage = snapshot.runs.at(-1)?.usage;
+    const reportedInputTokens = latestUsage
+      ? [
+          latestUsage.input_tokens,
+          latestUsage.cache_creation_input_tokens,
+          latestUsage.cache_read_input_tokens,
+        ].reduce<number>(
+          (sum, value) => sum + (typeof value === 'number' && Number.isFinite(value) ? Math.max(value, 0) : 0),
+          0,
+        )
+      : undefined;
+    const estimatedInputTokens = estimateHadamardConversationTokens(snapshot.messages)
+      + Math.ceil((snapshot.systemPrompt ?? this.config.systemPrompt ?? '').length / 4);
+    const currentInputTokens = reportedInputTokens && reportedInputTokens > 0
+      ? reportedInputTokens
+      : estimatedInputTokens;
+    const manualThreshold = Math.ceil(budget.effectiveContextWindowTokens * 0.2);
+    if (
+      this.config.compact.enabled
+      && options.force !== true
+      && currentInputTokens < manualThreshold
+    ) {
+      const persistedState = getPersistedHadamardCompactState(snapshot.metadata);
+      return {
+        compacted: false,
+        trigger: 'manual',
+        reason: 'threshold_not_met',
+        tokenEstimateBefore: currentInputTokens,
+        compactCount: persistedState.compactCount,
+        microcompactCount: persistedState.microcompactCount,
+        state: runtimeState,
+        budget,
+      };
+    }
     const { session: compactedSession, result } = await compactHadamardSession(
       snapshot,
       {
         ...options,
         model: options.model ? this.resolveModel(options.model) : undefined,
-        force: options.force ?? true,
+        force: true,
+        preserveRecentMessages: options.preserveRecentMessages ?? 1,
         trigger: 'manual',
       },
       {
@@ -4737,7 +4774,8 @@ export class HadamardAgentClient {
         model: this.resolveModel(snapshot.model),
         modelApi: this.modelApi,
         compactConfig: this.config.compact,
-        runtimeState: this.getSessionMemoryRuntimeState(snapshot),
+        runtimeState,
+        reportedInputTokens: currentInputTokens,
       },
     );
 
@@ -4748,7 +4786,7 @@ export class HadamardAgentClient {
 
     return {
       ...result,
-      budget: resolveHadamardCompactBudget(this.config.compact),
+      budget,
     };
   }
 
@@ -5678,4 +5716,3 @@ function normalizePathForCompare(value: string): string {
 function isWithinAllowedRoots(target: string, roots: readonly string[]): boolean {
   return roots.some((root) => target === root || target.startsWith(`${root}${path.sep}`));
 }
-
