@@ -16,6 +16,7 @@ import { writeWorkspaceNote } from '../src/gui/workspaceNote.js';
 import { writeProjectMeta } from '../src/gui/projectMeta.js';
 import { addBridgeConfig } from '../src/parity/bridgeConfigs.js';
 import type { AgentToolDefinition } from '../src/types.js';
+import { TeamProposalStore } from '../src/team/teamProposalService.js';
 
 let workDir: string;
 let homeDir: string;
@@ -85,6 +86,9 @@ describe('createAssistantGlobalTools', () => {
     expect(names).toContain('UpsertRouterProfile');
     expect(names).toContain('DeleteRouterProfile');
     expect(names).toContain('OpenProject');
+    expect(names).toContain('GetCurrentEditorContext');
+    expect(names).toContain('SearchProductCapabilities');
+    expect(names).toContain('ReadProductCapability');
     for (const forbidden of ['Bash', 'Write', 'Edit', 'Task', 'TeamAsk']) {
       expect(names).not.toContain(forbidden);
     }
@@ -169,6 +173,136 @@ describe('createAssistantGlobalTools', () => {
     expect(patches[0]).toMatchObject({ defaultModel: 'demo-model', apiKey: 'sk-write-only' });
     expect(JSON.stringify(result)).not.toContain('sk-write-only');
     expect(result).toMatchObject({ ok: true, apiKeySet: true });
+  });
+
+  it('uses the capability registry for grounded product instructions', async () => {
+    const tools = await createAssistantGlobalTools({
+      homeDir,
+      currentWorkDir: workDir,
+      getEditorContext: () => ({
+        activeRegion: 'team',
+        entityKind: 'workflow',
+        entityName: 'release-flow',
+        dirty: true,
+        baseDigest: 'draft-v1',
+        draft: { name: 'release-flow', squadType: 'workflow' },
+      }),
+    });
+    const editor = await callTool(tools.find(tool => tool.name === 'GetCurrentEditorContext')!);
+    expect(editor).toMatchObject({ context: { entityKind: 'workflow', baseDigest: 'draft-v1' } });
+    const searched = await callTool(tools.find(tool => tool.name === 'SearchProductCapabilities')!, {
+      query: 'create workflow agent model configuration',
+    });
+    expect(JSON.stringify(searched)).toContain('gui.agents');
+    const read = await callTool(tools.find(tool => tool.name === 'ReadProductCapability')!, { id: 'gui.agents' });
+    expect(JSON.stringify(read)).toContain('Agents');
+    expect(JSON.stringify(read)).toContain('prerequisites');
+    expect(JSON.stringify(read)).toContain('limitations');
+  });
+
+  it('round-trips every provider configuration field without exposing its key', async () => {
+    const tools = await createAssistantGlobalTools({ homeDir, currentWorkDir: workDir });
+    await callTool(tools.find(tool => tool.name === 'UpsertBridgeConfig')!, {
+      name: 'complete-config',
+      runtime: 'claude',
+      execution: 'cli',
+      authSource: 'apiKey',
+      credentialProvider: 'openai',
+      trustProjectResources: true,
+      provider: 'openai',
+      baseURL: 'https://example.invalid/v1',
+      apiKey: '$COMPLETE_CONFIG_KEY',
+      model: 'vision-model',
+      models: [{
+        name: 'vision-model',
+        modality: 'multimodal',
+        contextWindowTokens: 200000,
+        maxContextWindowTokens: 1000000,
+        effectiveContextWindowPercent: 90,
+        autoCompactTokenLimit: 170000,
+      }],
+    });
+    const listed = await callTool(tools.find(tool => tool.name === 'ListBridgeConfigs')!);
+    expect(listed).toMatchObject({ configs: [expect.objectContaining({
+      name: 'complete-config',
+      authSource: 'apiKey',
+      credentialProvider: 'openai',
+      trustProjectResources: true,
+      models: [expect.objectContaining({
+        contextWindowTokens: 200000,
+        maxContextWindowTokens: 1000000,
+        effectiveContextWindowPercent: 90,
+        autoCompactTokenLimit: 170000,
+      })],
+    })] });
+    expect(JSON.stringify(listed)).not.toContain('$COMPLETE_CONFIG_KEY');
+  });
+
+  it('stages Workflow changes against the active unsaved editor digest', async () => {
+    const proposals = new TeamProposalStore();
+    const base = {
+      name: 'release-flow', mode: 'graph', squadType: 'workflow', members: [],
+      workflowTree: { id: 'root', type: 'agent', prompt: 'old', model: 'm1', children: [] },
+    } as const;
+    const tools = await createAssistantGlobalTools({
+      homeDir,
+      currentWorkDir: workDir,
+      assistantSessionId: 'assistant-1',
+      teamProposals: proposals,
+      getEditorContext: () => ({
+        activeRegion: 'team', entityKind: 'workflow', entityName: 'release-flow', dirty: true,
+        baseDigest: 'editor-v1', draft: base as any,
+      }),
+    });
+    const staged = await callTool(tools.find(tool => tool.name === 'UpsertTeam')!, {
+      baseDigest: 'editor-v1',
+      definition: {
+        ...base,
+        workflowTree: { ...base.workflowTree, prompt: 'new' },
+      },
+      explanation: 'Update the active Workflow prompt',
+    }) as { proposalId: string };
+    const proposal = proposals.get(staged.proposalId)!;
+    expect(proposal.editorBaseDigest).toBe('editor-v1');
+    expect(proposal.draft.squadType).toBe('workflow');
+    expect(proposal.diff.changedNodes).toEqual(['root']);
+    await expect(proposals.apply(staged.proposalId, homeDir, { editorBaseDigest: 'stale' }))
+      .rejects.toThrow(/editor changed/i);
+  });
+
+  it('lists personal, project, and inherit-session Agent definitions with source', async () => {
+    const personalDir = path.join(homeDir, 'agents');
+    const projectDir = path.join(workDir, '.hadamard', 'agents');
+    fs.mkdirSync(personalDir, { recursive: true });
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(path.join(personalDir, 'personal.md'), [
+      '---', 'name: personal', 'description: Personal agent', 'bridgeConfig: cfg', 'model: m1', '---', '', 'Personal prompt.', '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(projectDir, 'inherit.md'), [
+      '---', 'name: inherit', 'description: Project inherit agent', '---', '', 'Project prompt.', '',
+    ].join('\n'));
+    const tools = await createAssistantGlobalTools({ homeDir, currentWorkDir: workDir });
+    const listed = await callTool(tools.find(tool => tool.name === 'ListAgentProfiles')!);
+    expect(listed).toMatchObject({ definitions: expect.arrayContaining([
+      expect.objectContaining({ name: 'personal', source: 'user', inheritSessionModel: false }),
+      expect.objectContaining({ name: 'inherit', source: 'project', inheritSessionModel: true }),
+    ]) });
+  });
+
+  it('updates Agents-page team preferences through the shared host writer', async () => {
+    let preferences = { autoInvoke: false, defaultAttached: null as string | null, confirmBeforeRun: true };
+    const tools = await createAssistantGlobalTools({
+      homeDir,
+      currentWorkDir: workDir,
+      readTeamPreferences: () => preferences,
+      writeTeamPreferences: async next => { preferences = next; },
+    });
+    const result = await callTool(tools.find(tool => tool.name === 'UpdateTeamPreferences')!, {
+      autoInvoke: true,
+      confirmBeforeRun: false,
+    });
+    expect(result).toMatchObject({ ok: true, preferences: { autoInvoke: true, confirmBeforeRun: false } });
+    expect(preferences).toEqual({ autoInvoke: true, defaultAttached: null, confirmBeforeRun: false });
   });
 
   it('creates, lists, and deletes router profiles without exposing secrets', async () => {

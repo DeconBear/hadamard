@@ -54,6 +54,7 @@ import {
 } from '../scheduling/taskPersistence.js';
 import type {
   AgentToolDefinition,
+  AgentTargetRef,
   RouterModelRef,
   RouterProfile,
   ScheduledAutomationTask,
@@ -104,6 +105,12 @@ import type { TeamPreferences } from '../team/teamPreferences.js';
 import type { TeamDefinition } from '../types.js';
 import { deleteWorkflow, listWorkflows } from '../workflow/workflowPersistence.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { loadHadamardAgentDefinitions } from '../runtime/hadamardAgentDefinitions.js';
+import {
+  getProductCapability,
+  productCapabilities,
+  searchProductCapabilities,
+} from '../help/productCapabilities.js';
 
 export type AssistantScope = 'global' | 'project';
 
@@ -167,19 +174,30 @@ export interface AssistantProjectBrief {
   lastUsedAt: string;
 }
 
+export interface AssistantEditorContext {
+  activeRegion: string;
+  entityKind?: 'agent' | 'router' | 'graph' | 'workflow';
+  entityName?: string;
+  dirty: boolean;
+  baseDigest?: string;
+  draft?: TeamDefinition | Record<string, unknown>;
+}
+
 export interface AssistantGlobalHost {
   homeDir: string;
   currentWorkDir: string;
   /** Lightweight app snapshot for GetAppState (no secrets). */
   getAppState?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
+  /** Active GUI editor and unsaved draft captured at the start of this turn. */
+  getEditorContext?: () => AssistantEditorContext | null | Promise<AssistantEditorContext | null>;
   /** Open/switch the GUI workspace. */
   openProject?: (projectPath: string) => Promise<{ workDir: string }>;
   /** Apply a safe settings subset (prefs / env tiers / permission). */
   applySettings?: (patch: Record<string, unknown>) => Promise<{ ok: boolean; detail?: string }>;
   /** Activate a selectable agent / profile by name. */
   activateAgent?: (name: string) => Promise<{ ok: boolean; detail?: string }>;
-  /** Activate a router profile or attach a team (ActivateAgent kind=router|team). */
-  activateTarget?: (kind: 'router' | 'team', name: string) => Promise<{ ok: boolean; detail?: string }>;
+  /** Activate a provider config, router profile, or attached Graph/Workflow. */
+  activateTarget?: (kind: 'config' | 'router' | 'team', name: string) => Promise<{ ok: boolean; detail?: string }>;
   /** Optional raw settings store for managed plugin patches. */
   readSettingsRaw?: () => Promise<Record<string, unknown>>;
   writeSettingsRaw?: (raw: Record<string, unknown>) => Promise<void>;
@@ -199,6 +217,8 @@ export interface AssistantGlobalHost {
   getSessionRefState?: () => ReferenceIndexSessionState | null;
   /** teamPreferences for the defaultAttached reference edge. */
   readTeamPreferences?: () => TeamPreferences | null;
+  /** Persist Agents-page activation/confirmation preferences. */
+  writeTeamPreferences?: (preferences: TeamPreferences) => Promise<void>;
   /** Context for rename/delete transactions; defaults to currentWorkDir/homeDir. */
   referenceOperationContext?: () => Promise<ReferenceOperationContext> | ReferenceOperationContext;
 }
@@ -217,12 +237,19 @@ function redactBridgeConfig(config: PersistedBridgeConfig): Record<string, unkno
     name: config.name,
     runtime: config.runtime,
     execution: config.execution ?? 'api',
+    authSource: config.authSource ?? (config.execution === 'cli' ? 'native' : 'apiKey'),
+    credentialProvider: config.credentialProvider,
+    trustProjectResources: config.trustProjectResources === true,
     provider: config.provider,
     baseURL: config.baseURL || undefined,
     model: config.model || undefined,
     models: (config.models ?? []).map(model => ({
       name: model.name,
       context1M: model.context1M === true,
+      contextWindowTokens: model.contextWindowTokens,
+      maxContextWindowTokens: model.maxContextWindowTokens,
+      effectiveContextWindowPercent: model.effectiveContextWindowPercent,
+      autoCompactTokenLimit: model.autoCompactTokenLimit,
       modality: model.modality ?? 'text',
     })),
     hasApiKey: Boolean(typeof config.apiKey === 'string' && config.apiKey.trim()),
@@ -250,9 +277,33 @@ function redactRouterProfile(profile: RouterProfile): Record<string, unknown> {
       name: route.name,
       role: route.role,
       description: route.description,
+      effort: route.effort,
+      target: route.target,
     })),
     fallback: profile.fallback ? redactRouterRef(profile.fallback) : undefined,
+    fallbackTarget: profile.fallbackTarget,
     classificationPrompt: profile.classificationPrompt,
+  };
+}
+
+function redactEditorContext(context: AssistantEditorContext | null): AssistantEditorContext | null {
+  if (!context) return null;
+  const redact = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(redact);
+    if (!isRecord(value)) return value;
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (/^(apiKey|password|secret|accessToken|refreshToken)$/i.test(key)) {
+        out[`${key}Configured`] = Boolean(typeof item === 'string' ? item.trim() : item);
+      } else {
+        out[key] = redact(item);
+      }
+    }
+    return out;
+  };
+  return {
+    ...context,
+    ...(context.draft ? { draft: redact(context.draft) as AssistantEditorContext['draft'] } : {}),
   };
 }
 
@@ -459,7 +510,9 @@ export function buildAssistantGlobalSystemPrompt(currentWorkDir: string): string
     '- Rename tools (RenameBridgeConfig / RenameAgentProfile / RenameRouterProfile / RenameTeam) run one transaction that atomically rewrites every referencing definition.',
     '- Delete-class tools (DeleteBridgeConfig / DeleteAgentProfile / DeleteRouterProfile / DeleteTeam) delete immediately only when nothing references the definition. When references exist they stage a confirmation card with the reference list and fallback strategies; the delete happens only when the user applies that card. Never claim a delete completed while a proposal is pending.',
     '- UpsertTeam and UpsertWorkflow stage proposal cards (Preview/Apply) — they never write to disk directly. DeleteWorkflow removes an unreferenced script workflow directly and refuses while automation tasks still reference it.',
-    '- ActivateAgent activates a saved profile by default; pass kind: "router" to activate a router profile or kind: "team" to attach a team.',
+    '- For any question about how to use Hadamard or what a feature does, call SearchProductCapabilities (or List/ReadProductCapability) and ground the answer in its UI location, prerequisites, steps, commands, and limitations. Do not answer product instructions from memory alone.',
+    '- Before changing the currently open Agent, Router, Graph, or Workflow, call GetCurrentEditorContext. Preserve its baseDigest when staging a Graph/Workflow proposal so Apply can reject stale drafts.',
+    '- ActivateAgent activates a saved profile by default; kind "config" activates a model configuration, kind "router" activates a Router, and kind "team" attaches a Graph or Workflow.',
     '- Never echo API keys or other secrets. Tool results already redact them.',
     '- Coding and file edits belong in the main chat, not here. Prefer OpenProject + telling the user to continue in the main conversation when implementation work is needed.',
     '- Be concise and concrete.',
@@ -476,6 +529,11 @@ export async function createAssistantGlobalTools(
     apiKey: z.string().optional().describe('$ENV_VAR reference; literal secrets are not persisted'),
     maxTokens: z.number().int().positive().optional(),
   });
+  const targetRefSchema: z.ZodType<AgentTargetRef> = z.discriminatedUnion('kind', [
+    z.strictObject({ kind: z.literal('model'), config: z.string(), model: z.string() }),
+    z.strictObject({ kind: z.literal('agent'), name: z.string() }),
+    z.strictObject({ kind: z.literal('team'), name: z.string() }),
+  ]);
   const ListProjects = tool(
     {
       name: 'ListProjects',
@@ -597,6 +655,63 @@ export async function createAssistantGlobalTools(
     }),
   );
 
+  const GetCurrentEditorContext = tool(
+    {
+      name: 'GetCurrentEditorContext',
+      description: 'Read the active GUI page/entity and its unsaved Agent, Router, Graph, or Workflow draft with a stable base digest. Use before proposing editor changes.',
+      inputSchema: z.strictObject({}),
+      isReadOnly: () => true,
+    },
+    async () => ({
+      context: redactEditorContext(host.getEditorContext ? await host.getEditorContext() : null),
+    }),
+  );
+
+  const ListProductCapabilities = tool(
+    {
+      name: 'ListProductCapabilities',
+      description: 'List the machine-readable Hadamard capability catalog. Use this, SearchProductCapabilities, or ReadProductCapability before answering product how-to questions.',
+      inputSchema: z.strictObject({}),
+      isReadOnly: () => true,
+    },
+    async () => ({
+      capabilities: productCapabilities.map(capability => ({
+        id: capability.id,
+        title: capability.title,
+        summary: capability.summary,
+        uiLocations: capability.uiLocations,
+        commands: capability.commands,
+      })),
+    }),
+  );
+
+  const SearchProductCapabilities = tool(
+    {
+      name: 'SearchProductCapabilities',
+      description: 'Search grounded product instructions by feature, UI label, command, or user goal.',
+      inputSchema: z.strictObject({
+        query: z.string(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      isReadOnly: () => true,
+    },
+    async input => ({ capabilities: searchProductCapabilities(input.query, input.limit) }),
+  );
+
+  const ReadProductCapability = tool(
+    {
+      name: 'ReadProductCapability',
+      description: 'Read complete current instructions for one capability id returned by List/SearchProductCapabilities.',
+      inputSchema: z.strictObject({ id: z.string() }),
+      isReadOnly: () => true,
+    },
+    async input => {
+      const capability = getProductCapability(input.id);
+      if (!capability) throw new Error(`Unknown product capability: ${input.id}`);
+      return { capability };
+    },
+  );
+
   const ListBridgeConfigs = tool(
     {
       name: 'ListBridgeConfigs',
@@ -616,8 +731,33 @@ export async function createAssistantGlobalTools(
       inputSchema: z.strictObject({}),
       isReadOnly: () => true,
     },
-    async () => ({
+    async () => {
+      const definitions = await loadHadamardAgentDefinitions({
+        homeDir: host.homeDir,
+        workDir: host.currentWorkDir,
+      });
+      return {
       profiles: listAgentProfiles(host.homeDir),
+      definitions: definitions.map(definition => ({
+        name: definition.name,
+        description: definition.description,
+        source: definition.source,
+        sourcePath: definition.sourcePath,
+        bridgeConfig: definition.bridgeConfig,
+        model: definition.model,
+        inheritSessionModel: !definition.bridgeConfig || !definition.model,
+        promptMode: definition.promptMode,
+        permissionMode: definition.permissionMode,
+        effort: definition.effort,
+        maxTokens: definition.maxTokens,
+        temperature: definition.temperature,
+        topP: definition.topP,
+        allowedTools: definition.allowedTools,
+        workspaceAccess: definition.workspaceAccess,
+        maxIterations: definition.maxToolIterations ?? definition.maxTurns,
+        timeoutMs: definition.timeoutMs,
+        subagent: definition.subagent !== false,
+      })),
       selectable: listSelectableAgents(host.homeDir).map(agent => ({
         name: agent.name,
         source: agent.source,
@@ -626,7 +766,8 @@ export async function createAssistantGlobalTools(
         effort: agent.effort,
         ephemeral: agent.ephemeral === true,
       })),
-    }),
+    };
+    },
   );
 
   const ListRouterProfilesTool = tool(
@@ -820,6 +961,9 @@ export async function createAssistantGlobalTools(
         name: z.string(),
         runtime: z.enum(['hadamard', 'claude', 'codewhale', 'pi', 'codex', 'reasonix', 'crush']),
         execution: z.enum(['api', 'cli']).optional(),
+        authSource: z.enum(['native', 'apiKey']).optional(),
+        credentialProvider: z.string().optional(),
+        trustProjectResources: z.boolean().optional(),
         provider: z.enum(['anthropic', 'openai']).optional(),
         baseURL: z.string().optional(),
         apiKey: z.string().optional(),
@@ -827,6 +971,10 @@ export async function createAssistantGlobalTools(
         models: z.array(z.strictObject({
           name: z.string(),
           context1M: z.boolean().optional(),
+          contextWindowTokens: z.number().int().positive().optional(),
+          maxContextWindowTokens: z.number().int().positive().optional(),
+          effectiveContextWindowPercent: z.number().positive().max(100).optional(),
+          autoCompactTokenLimit: z.number().int().positive().optional(),
           modality: z.enum(['text', 'multimodal']).optional(),
         })).optional(),
       }),
@@ -837,6 +985,9 @@ export async function createAssistantGlobalTools(
         name: input.name.trim(),
         runtime: input.runtime,
         execution: input.execution ?? existing?.execution ?? 'api',
+        authSource: input.authSource ?? existing?.authSource,
+        credentialProvider: input.credentialProvider?.trim() || existing?.credentialProvider,
+        trustProjectResources: input.trustProjectResources ?? existing?.trustProjectResources,
         provider: input.provider ?? existing?.provider ?? 'anthropic',
         baseURL: input.baseURL?.trim() || existing?.baseURL,
         apiKey: input.apiKey?.trim() || existing?.apiKey,
@@ -951,8 +1102,11 @@ export async function createAssistantGlobalTools(
           name: z.string().optional(),
           role: z.string().optional(),
           description: z.string().optional(),
+          effort: z.enum(['auto', 'low', 'medium', 'high', 'max']).optional(),
+          target: targetRefSchema.optional(),
         })).min(1),
         fallback: routerRefSchema.optional(),
+        fallbackTarget: targetRefSchema.optional(),
         classificationPrompt: z.string().optional(),
       }),
     },
@@ -963,6 +1117,7 @@ export async function createAssistantGlobalTools(
         routerModel: input.routerModel,
         routes: input.routes,
         ...(input.fallback ? { fallback: input.fallback } : {}),
+        ...(input.fallbackTarget ? { fallbackTarget: input.fallbackTarget } : {}),
         ...(input.classificationPrompt?.trim()
           ? { classificationPrompt: input.classificationPrompt.trim() }
           : {}),
@@ -1057,10 +1212,10 @@ export async function createAssistantGlobalTools(
   const ActivateAgentTool = tool(
     {
       name: 'ActivateAgent',
-      description: 'Activate a selectable agent / profile in the current chat. kind "router" activates a router profile; kind "team" attaches a team.',
+      description: 'Activate a saved Agent/profile, provider config, Router, Graph, or Workflow in the current chat.',
       inputSchema: z.strictObject({
         name: z.string(),
-        kind: z.enum(['profile', 'router', 'team']).optional()
+        kind: z.enum(['profile', 'config', 'router', 'team']).optional()
           .describe('Defaults to "profile" (saved agent / selectable preset)'),
       }),
     },
@@ -1074,6 +1229,36 @@ export async function createAssistantGlobalTools(
         throw new Error('ActivateAgent router/team activation is unavailable in this host.');
       }
       return host.activateTarget(kind, input.name.trim());
+    },
+  );
+
+  const UpdateTeamPreferencesTool = tool(
+    {
+      name: 'UpdateTeamPreferences',
+      description: 'Update Agents-page team behavior: automatic invocation, default attached Graph/Workflow, and confirmation before runs.',
+      inputSchema: z.strictObject({
+        autoInvoke: z.boolean().optional(),
+        defaultAttached: z.string().nullable().optional(),
+        confirmBeforeRun: z.boolean().optional(),
+      }),
+    },
+    async input => {
+      if (!host.writeTeamPreferences) throw new Error('UpdateTeamPreferences is unavailable in this host.');
+      const current = host.readTeamPreferences?.() ?? {
+        autoInvoke: false,
+        defaultAttached: null,
+        confirmBeforeRun: true,
+      };
+      const next: TeamPreferences = {
+        autoInvoke: input.autoInvoke ?? current.autoInvoke,
+        defaultAttached: input.defaultAttached === undefined ? current.defaultAttached : input.defaultAttached,
+        confirmBeforeRun: input.confirmBeforeRun ?? current.confirmBeforeRun,
+      };
+      if (next.defaultAttached && !loadTeamDefinition(next.defaultAttached, host.currentWorkDir, host.homeDir)) {
+        throw new Error(`Graph/Workflow not found: ${next.defaultAttached}`);
+      }
+      await host.writeTeamPreferences(next);
+      return { ok: true, preferences: next };
     },
   );
 
@@ -1290,6 +1475,7 @@ export async function createAssistantGlobalTools(
         projectPath: z.string().optional().describe('Defaults to the current workspace'),
         definition: z.record(z.string(), z.unknown())
           .describe('Complete TeamDefinition JSON, preferably graph v3 with stable node ids'),
+        baseDigest: z.string().optional().describe('Digest from GetCurrentEditorContext; required automatically when changing the active unsaved Graph/Workflow draft'),
         explanation: z.string().optional(),
       }),
     },
@@ -1300,12 +1486,26 @@ export async function createAssistantGlobalTools(
       const projectPath = input.projectPath?.trim()
         ? await assertKnownProject(host, input.projectPath)
         : path.resolve(host.currentWorkDir);
+      const editor = host.getEditorContext ? await host.getEditorContext() : null;
+      const definition = input.definition as unknown as TeamDefinition;
+      const editorMatches = editor
+        && (editor.entityKind === 'graph' || editor.entityKind === 'workflow')
+        && editor.entityName === definition.name
+        && editor.draft
+        && editor.baseDigest;
+      if (editorMatches && input.baseDigest && input.baseDigest !== editor.baseDigest) {
+        throw new Error('The supplied editor base digest is stale. Read GetCurrentEditorContext and propose the change again.');
+      }
       const proposal = host.teamProposals.stage({
         assistantSessionId: host.assistantSessionId,
         projectPath,
-        definition: input.definition as unknown as TeamDefinition,
+        definition,
         explanation: input.explanation ?? '',
         homeDir: host.homeDir,
+        ...(editorMatches ? {
+          baseDefinition: editor.draft as TeamDefinition,
+          editorBaseDigest: editor.baseDigest,
+        } : {}),
       });
       host.onTeamProposal?.(proposal);
       return {
@@ -1390,6 +1590,10 @@ export async function createAssistantGlobalTools(
     GetProjectDocument,
     ListProjectIssues,
     GetAppState,
+    GetCurrentEditorContext,
+    ListProductCapabilities,
+    SearchProductCapabilities,
+    ReadProductCapability,
     ListBridgeConfigs,
     ListAgentProfiles,
     ListRouterProfilesTool,
@@ -1407,6 +1611,7 @@ export async function createAssistantGlobalTools(
     UpsertRouterProfileTool,
     DeleteRouterProfileTool,
     ActivateAgentTool,
+    UpdateTeamPreferencesTool,
     UpdateManagedPlugin,
     UpsertScheduledTask,
     ToggleScheduledTask,
