@@ -3857,6 +3857,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
               teamPrefs = prefs;
             },
           },
+          issues: {
+            read: async () => {
+              const storage = await issueStorageFor(workDir, resolveGuiHomeDir());
+              return listProjectIssues(workDir, resolveGuiHomeDir(), storage);
+            },
+            writeAgentConfig: async (id: string, agentConfig: string | null) => {
+              const storage = await issueStorageFor(workDir, resolveGuiHomeDir());
+              await updateProjectIssue(workDir, resolveGuiHomeDir(), id, { agentConfig }, storage);
+            },
+          },
+          assistantConfig: {
+            read: () => readAssistantConfig(resolveGuiHomeDir()),
+            write: async (patch: { bridgeConfig?: string }) => {
+              const current = await readAssistantConfig(resolveGuiHomeDir());
+              await writeAssistantConfig({ ...current, ...patch }, resolveGuiHomeDir());
+            },
+          },
         };
       },
       readSettingsRaw: async () => {
@@ -5333,6 +5350,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         if (args.startsWith('delete ')) {
           const name = args.slice(7).trim();
           if (!name) return [{ type: 'error', message: 'usage: /workflows delete <name>' }];
+          const referencing = (await listScheduledAutomationTasks(workDir)).filter(task =>
+            task.kind === 'workflow' && task.workflowSource !== 'agent' && task.workflowName === name);
+          if (referencing.length) {
+            return [{
+              type: 'error',
+              message: `workflow "${name}" is used by automation task(s): ${referencing.map(task => task.name || task.id).join(', ')}. Delete or re-point those tasks first.`,
+            }];
+          }
           const removed = await deleteWorkflow(name, workDir);
           return [{ type: 'notice', message: removed ? `deleted workflow: ${name}` : `workflow not found: ${name}` }];
         }
@@ -9246,14 +9271,19 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         bridgeConfigs: PersistedBridgeConfig[];
         teams: { name: string }[];
         routers: { name: string }[];
+        workflows: { name: string }[];
       }> {
         const homeDir = resolveGuiHomeDir();
-        const [teams, routers, automationTasks, managerConfig] = await Promise.all([
+        const issueStorage = await issueStorageFor(workDir, homeDir);
+        const [teams, routers, automationTasks, managerConfig, issues, assistantConfig] = await Promise.all([
           Promise.resolve(listTeamDefinitions(workDir, homeDir)),
           Promise.resolve(listRouterProfiles(workDir, homeDir)),
           listScheduledAutomationTasks(workDir),
           readManagerConfig(projectPrimaryPath, homeDir).catch(() => undefined),
+          listProjectIssues(workDir, homeDir, issueStorage),
+          readAssistantConfig(homeDir),
         ]);
+        const workflows = listWorkflows(workDir, homeDir);
         const bridgeConfigs = readBridgeConfigs(homeDir).configs;
         // S3 unified store: profile edges come from the legacy store AND .md
         // definitions in both scopes (incl. bridgeConfig-only definitions).
@@ -9272,6 +9302,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           managerConfigs: managerConfig
             ? [{ name: projectPrimaryPath, bridgeConfig: managerConfig.bridgeConfig }]
             : [],
+          issues,
+          assistantConfig,
           session: {
             activeAgent: activeAgentSelectionName,
             activeConfig: activeBridgeConfig?.name ?? null,
@@ -9279,35 +9311,50 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             activeTeamName,
           },
         });
-        return { index, bridgeConfigs, teams, routers };
+        return { index, bridgeConfigs, teams, routers, workflows };
       }
       if (req.method === 'GET' && url.pathname === '/api/references') {
-        const kind = url.searchParams.get('kind')?.trim() ?? '';
-        const name = url.searchParams.get('name')?.trim() ?? '';
-        const { index } = await buildGuiReferenceIndex();
-        if (!kind && !name) return json(res, 200, { edges: index });
-        const kinds: ReferenceTargetKind[] = ['config', 'agent', 'team', 'router'];
-        if (!kinds.includes(kind as ReferenceTargetKind) || !name) {
-          return json(res, 400, { error: 'Missing or invalid kind/name (kind: config|agent|team|router)' });
+        try {
+          const kind = url.searchParams.get('kind')?.trim() ?? '';
+          const name = url.searchParams.get('name')?.trim() ?? '';
+          const { index } = await buildGuiReferenceIndex();
+          if (!kind && !name) return json(res, 200, { edges: index });
+          const kinds: ReferenceTargetKind[] = ['config', 'agent', 'team', 'router', 'workflow-script'];
+          if (!kinds.includes(kind as ReferenceTargetKind) || !name) {
+            return json(res, 400, { code: 'INVALID_REFERENCE_QUERY', error: 'Missing or invalid kind/name' });
+          }
+          return json(res, 200, { edges: findUsages(index, kind as ReferenceTargetKind, name) });
+        } catch (error) {
+          return json(res, 503, {
+            code: 'REFERENCE_INDEX_UNAVAILABLE',
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
-        return json(res, 200, { edges: findUsages(index, kind as ReferenceTargetKind, name) });
       }
       if (req.method === 'GET' && url.pathname === '/api/references/broken') {
-        const homeDir = resolveGuiHomeDir();
-        const { index, bridgeConfigs, teams, routers } = await buildGuiReferenceIndex();
-        const broken = findBrokenRefs(index, {
-          configs: bridgeConfigs.map((config) => config.name),
-          // Selectable agents include ephemeral per-config presets so an active
-          // session edge to one of them is not falsely reported as broken; the
-          // .md definition names cover unified-store agents in both scopes (S3).
-          agents: [
-            ...listSelectableAgents(homeDir).map((agent) => agent.name),
-            ...listAgentDefinitionNames(homeDir, workDir),
-          ],
-          teams: teams.map((team) => team.name),
-          routers: routers.map((router) => router.name),
-        });
-        return json(res, 200, { edges: broken });
+        try {
+          const homeDir = resolveGuiHomeDir();
+          const { index, bridgeConfigs, teams, routers, workflows } = await buildGuiReferenceIndex();
+          const broken = findBrokenRefs(index, {
+            configs: bridgeConfigs.map((config) => config.name),
+            // Selectable agents include ephemeral per-config presets so an active
+            // session edge to one of them is not falsely reported as broken; the
+            // .md definition names cover unified-store agents in both scopes (S3).
+            agents: [
+              ...listSelectableAgents(homeDir).map((agent) => agent.name),
+              ...listAgentDefinitionNames(homeDir, workDir),
+            ],
+            teams: teams.map((team) => team.name),
+            routers: routers.map((router) => router.name),
+            workflows: workflows.map((workflow) => workflow.name),
+          });
+          return json(res, 200, { edges: broken });
+        } catch (error) {
+          return json(res, 503, {
+            code: 'REFERENCE_INDEX_UNAVAILABLE',
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
       // P1 cascade operations: transactional rename, delete-with-fallback, and
       // config-model re-point over the reference index (referenceOperations.ts).
@@ -9341,6 +9388,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
                 await loadJsonConfigFile(store.configPath);
               }
               teamPrefs = prefs;
+            },
+          },
+          issues: {
+            read: async () => {
+              const storage = await issueStorageFor(workDir, homeDir);
+              return listProjectIssues(workDir, homeDir, storage);
+            },
+            writeAgentConfig: async (id: string, agentConfig: string | null) => {
+              const storage = await issueStorageFor(workDir, homeDir);
+              await updateProjectIssue(workDir, homeDir, id, { agentConfig }, storage);
+            },
+          },
+          assistantConfig: {
+            read: () => readAssistantConfig(homeDir),
+            write: async (patch: { bridgeConfig?: string }) => {
+              const current = await readAssistantConfig(homeDir);
+              await writeAssistantConfig({ ...current, ...patch }, homeDir);
             },
           },
         };
@@ -11112,9 +11176,10 @@ export function createHadamardGuiHtml(): string {
         </div>
         <div class="region-actions">
           <span id="teamSavedStatus" class="team-saved-status saved">${guiIcon('gear')}<span>Saved</span></span>
-          <button type="button" id="teamRunSquadBtn" class="pill-btn">Run simulation</button>
-          <button type="button" id="teamEditToggleBtn" class="pill-btn">Agent settings</button>
-          <button type="button" id="teamNewSquadBtn" class="pill-btn">+ New agent</button>
+           <button type="button" id="teamRunSquadBtn" class="pill-btn">Run simulation</button>
+           <button type="button" id="teamEditToggleBtn" class="pill-btn">Agent settings</button>
+           <button type="button" id="teamNewSquadBtn" class="pill-btn">+ New agent</button>
+           <button type="button" id="teamReferenceMenuBtn" class="icon-btn" title="Reference tools" aria-label="Reference tools">${guiIcon('more')}</button>
         </div>
       </header>
       <div class="region-body team-layout">
@@ -25126,6 +25191,8 @@ async function renderAutomationRegion() {
 function renderAutomationRow(task) {
   const row = document.createElement('div');
   row.className = 'auto-row';
+  row.dataset.automationTaskId = String(task.id || '');
+  row.dataset.automationTaskName = String(task.name || '');
   const status = !task.enabled ? { cls: 'off', text: 'Paused' } : task.lastError ? { cls: 'err', text: 'Error' } : { cls: 'on', text: 'Active' };
   const cells = [
     '<div class="auto-cell"><span class="auto-name">' + escHtml(task.name) + '</span><span class="auto-sub">' + escHtml(task.scope === 'global' ? 'global' : (task.description || task.id)) + '</span></div>',
@@ -26650,13 +26717,99 @@ function loadBrokenRefBadges() {
   }).catch(function () { /* transient — keep previous badges */ });
 }
 // ── P1: reference cascade UI — impact dialog, broken-ref modal, rename ──────
+async function showReferenceHealthDialog() {
+  const res = await api('/api/references/broken');
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(payload.error || ('Reference health unavailable (' + res.status + ')'));
+  if (!Array.isArray(payload.edges)) throw new Error('Reference health returned an invalid response.');
+  const edges = payload.edges;
+  const old = document.getElementById('referenceHealthDialog');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'referenceHealthDialog';
+  overlay.className = 'modal';
+  const panel = document.createElement('div');
+  panel.className = 'auto-dialog';
+  panel.style.cssText = 'max-width:680px;width:min(680px,92vw);';
+  const head = document.createElement('div');
+  head.className = 'ins-head';
+  const title = document.createElement('h3');
+  title.textContent = 'Reference health';
+  head.appendChild(title);
+  panel.appendChild(head);
+  const host = document.createElement('div');
+  host.style.cssText = 'padding:0 18px 18px;display:grid;gap:12px;';
+  if (!edges.length) {
+    const healthy = document.createElement('p');
+    healthy.className = 'te-hint';
+    healthy.textContent = 'No broken Agent, configuration, Graph, Workflow, Automation, Issue, or Assistant references were found.';
+    host.appendChild(healthy);
+  } else {
+    const summary = document.createElement('p');
+    summary.className = 'te-hint';
+    summary.textContent = edges.length + ' broken reference' + (edges.length === 1 ? '' : 's') + '. Select Go to to repair the exact source.';
+    host.appendChild(summary);
+    const list = document.createElement('div');
+    list.className = 'impact-usage-list';
+    for (const edge of edges) {
+      const row = document.createElement('div');
+      row.className = 'impact-usage-row';
+      const label = document.createElement('span');
+      label.textContent = describeReferenceEdge(edge) + ' \u2192 missing ' + edge.to.kind + ' "' + edge.to.name + '"';
+      row.appendChild(label);
+      if (['agent', 'router', 'team', 'automation', 'preference', 'issue', 'assistant'].includes(edge.from?.kind)) {
+        const go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'te-btn';
+        go.textContent = 'Go to';
+        go.addEventListener('click', () => { overlay.remove(); goToReference(edge); });
+        row.appendChild(go);
+      }
+      list.appendChild(row);
+    }
+    host.appendChild(list);
+  }
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'te-btn primary';
+  close.textContent = 'Close';
+  close.style.justifySelf = 'end';
+  close.addEventListener('click', () => overlay.remove());
+  host.appendChild(close);
+  panel.appendChild(host);
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', event => { if (event.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+function openTeamReferenceMenu(event) {
+  const button = event.currentTarget;
+  const rect = button.getBoundingClientRect();
+  const items = [{
+    label: 'Reference health',
+    onClick: () => showReferenceHealthDialog().catch(error => window.alert('Unable to load reference health: ' + error.message)),
+  }];
+  const selectedKind = state.teamSelectedKind === 'profile' || state.teamSelectedKind === 'agent-md'
+    ? 'agent'
+    : state.teamSelectedKind;
+  if (state.teamSelected && ['agent', 'router', 'team'].includes(selectedKind)) {
+    items.unshift({
+      label: 'References for "' + state.teamSelected + '"',
+      onClick: () => fetchReferenceUsages(selectedKind, state.teamSelected)
+        .then(edges => showUsedByDialog(selectedKind, state.teamSelected, edges))
+        .catch(error => window.alert('Unable to load references: ' + error.message)),
+    });
+  }
+  showContextMenu(rect.right - 190, rect.bottom + 4, items);
+}
 async function fetchReferenceUsages(kind, name) {
-  try {
-    const res = await api('/api/references?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(name));
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data.edges) ? data.edges : [];
-  } catch { return []; }
+  const res = await api('/api/references?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(name));
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || ('Reference index unavailable (' + res.status + ')'));
+  }
+  const data = await res.json();
+  if (!Array.isArray(data.edges)) throw new Error('Reference index returned an invalid response.');
+  return data.edges;
 }
 function describeReferenceEdge(edge) {
   const from = edge.from || {};
@@ -26678,6 +26831,8 @@ function describeReferenceEdge(edge) {
     return 'Team "' + from.name + '"';
   }
   if (from.kind === 'automation') return 'Automation task "' + from.name + '"';
+  if (from.kind === 'issue') return 'Issue "' + from.name + '" 路 assigned Agent';
+  if (from.kind === 'assistant') return 'Global Assistant provider configuration';
   if (from.kind === 'preference') return 'Team preferences (default attached team)';
   if (from.kind === 'session') return 'Current session (' + field + ')';
   return String(from.kind || '?') + ' "' + String(from.name || '') + '" (' + field + ')';
@@ -26700,20 +26855,54 @@ function goToReference(edge) {
   }
   if (from.kind === 'router') {
     void switchRegion('team');
-    void selectAgentEntry(from.name, 'router');
+    Promise.resolve(selectAgentEntry(from.name, 'router')).then(() => {
+      const match = String(edge.field || '').match(/^routes\[(\d+)\]/);
+      const row = match ? document.querySelector('[data-router-route-index="' + match[1] + '"]') : null;
+      flashElement(row || el('teamGraph'));
+      row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }).catch(console.error);
     return true;
   }
   if (from.kind === 'team') {
     void switchRegion('team');
-    void selectAgentEntry(from.name, 'team');
+    Promise.resolve(selectAgentEntry(from.name, 'team')).then(() => {
+      const field = String(edge.field || '');
+      const graph = field.match(/^nodes\[(.+?)\]/);
+      const workflow = field.match(/^workflowTree\.(.+?)\.targetRef$/);
+      const nodeRef = graph?.[1] || workflow?.[1];
+      if (nodeRef) selectGraphNodes([nodeRef]);
+      const selected = document.querySelector('.graph-node.selected');
+      flashElement(selected || el('teamGraph'));
+      selected?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }).catch(console.error);
     return true;
   }
   if (from.kind === 'automation') {
-    void switchRegion('automation');
+    void switchRegion('automation').then(() => {
+      const byId = document.querySelector('[data-automation-task-id="' + CSS.escape(String(from.name || '')) + '"]');
+      const byName = document.querySelector('[data-automation-task-name="' + CSS.escape(String(from.name || '')) + '"]');
+      const row = byId || byName;
+      flashElement(row || el('regionAutomationBody'));
+      row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }).catch(console.error);
     return true;
   }
   if (from.kind === 'preference') {
     void openSettings().catch(console.error);
+    return true;
+  }
+  if (from.kind === 'issue') {
+    void switchRegion('project').then(() => openLinkedIssue(from.name)).then(() => {
+      const card = document.querySelector('[data-issue-id="' + CSS.escape(from.name) + '"]');
+      flashElement(card);
+      card?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }).catch(console.error);
+    return true;
+  }
+  if (from.kind === 'assistant') {
+    setAssistantScope('global');
+    setManagerUiMode('peek');
+    openManagerConfigForm();
     return true;
   }
   return false;
@@ -26757,7 +26946,7 @@ function openImpactDialog(opts) {
     const label = document.createElement('span');
     label.textContent = describeReferenceEdge(edge);
     row.appendChild(label);
-    if (['agent', 'router', 'team', 'automation', 'preference'].includes(edge.from?.kind)) {
+    if (['agent', 'router', 'team', 'automation', 'preference', 'issue', 'assistant'].includes(edge.from?.kind)) {
       const go = document.createElement('button');
       go.type = 'button';
       go.className = 'te-btn';
@@ -27120,7 +27309,7 @@ function showUsedByDialog(kind, name, edges) {
       const label = document.createElement('span');
       label.textContent = describeReferenceEdge(edge);
       row.appendChild(label);
-      if (['agent', 'router', 'team', 'automation', 'preference'].includes(edge.from?.kind)) {
+      if (['agent', 'router', 'team', 'automation', 'preference', 'issue', 'assistant'].includes(edge.from?.kind)) {
         const go = document.createElement('button');
         go.type = 'button';
         go.className = 'te-btn';
@@ -27156,13 +27345,39 @@ function appendUsedByButton(right, kind, name) {
   btn.type = 'button';
   btn.textContent = 'Used by';
   btn.title = 'Show everything that references this entry';
+  btn.classList.add('hidden');
+  let cachedEdges = null;
+  let loadError = null;
   btn.addEventListener('click', async () => {
     btn.disabled = true;
-    const edges = await fetchReferenceUsages(kind, name);
+    try {
+      cachedEdges = await fetchReferenceUsages(kind, name);
+      loadError = null;
+    } catch (error) {
+      loadError = error;
+    }
     btn.disabled = false;
-    showUsedByDialog(kind, name, edges);
+    if (loadError) {
+      window.alert('Unable to load references: ' + loadError.message);
+      return;
+    }
+    showUsedByDialog(kind, name, cachedEdges || []);
   });
   right.appendChild(btn);
+  fetchReferenceUsages(kind, name).then((edges) => {
+    cachedEdges = edges;
+    if (!edges.length) {
+      btn.remove();
+      return;
+    }
+    btn.textContent = 'Used by ' + edges.length;
+    btn.classList.remove('hidden');
+  }).catch((error) => {
+    loadError = error;
+    btn.textContent = 'References unavailable';
+    btn.title = error.message;
+    btn.classList.remove('hidden');
+  });
 }
 /** Team editor toolbar: Used by + Rename + Delete (P2 unified action bar). */
 function appendTeamEditorActions(right, name, source) {
@@ -27816,6 +28031,7 @@ function renderRouterPane(router, opts) {
     draft.routes.forEach((route, index) => {
       const row = document.createElement('div');
       row.className = 'router-form-route';
+      row.dataset.routerRouteIndex = String(index);
       const head = document.createElement('div');
       head.className = 'router-form-route-head';
       head.innerHTML = '<strong>Route ' + (index + 1) + '</strong>';
@@ -36327,6 +36543,7 @@ el('pluginsViewSkillsBtn').addEventListener('click', () => { renderPluginsRegion
 el('teamNewSquadBtn').addEventListener('click', () => { openNewSquadDialog(); });
 el('teamRunSquadBtn').addEventListener('click', () => { runSelectedSquad().catch(console.error); });
 el('teamEditToggleBtn').addEventListener('click', () => { openTeamSquadEditor(); });
+el('teamReferenceMenuBtn').addEventListener('click', openTeamReferenceMenu);
 el('teamAgentModalClose').addEventListener('click', closeTeamNodeEditor);
 el('teamAgentModalDone').addEventListener('click', closeTeamNodeEditor);
 el('teamAgentModalRestore').addEventListener('click', () => { void restoreTeamDefinitionDefaults(); });

@@ -30,10 +30,11 @@ export type ReferenceSourceKind =
   | 'assistant'
   | 'preference'
   | 'manager'
+  | 'issue'
   | 'session';
 
 /** What the reference points at. */
-export type ReferenceTargetKind = 'config' | 'agent' | 'team' | 'router';
+export type ReferenceTargetKind = 'config' | 'agent' | 'team' | 'router' | 'workflow-script';
 
 export interface ReferenceEdge {
   from: { kind: ReferenceSourceKind; name: string };
@@ -62,6 +63,8 @@ export interface ReferenceIndexInput {
   teamPreferences?: TeamPreferences | null;
   /** Project Manager configs; `name` identifies the project (path or label). */
   managerConfigs?: readonly { name: string; bridgeConfig?: string }[];
+  issues?: readonly { id: string; number?: number; title?: string; agentConfig?: string }[];
+  assistantConfig?: { bridgeConfig?: string } | null;
   session?: ReferenceIndexSessionState | null;
 }
 
@@ -71,6 +74,7 @@ export interface ReferenceKnownSets {
   agents?: Iterable<string>;
   teams?: Iterable<string>;
   routers?: Iterable<string>;
+  workflows?: Iterable<string>;
 }
 
 /** The index target of an `AgentTargetRef`; null for raw model refs (`config: ''`). */
@@ -138,6 +142,25 @@ export function buildReferenceIndex(input: ReferenceIndexInput): ReferenceEdge[]
     });
   }
 
+  const assistantConfig = input.assistantConfig?.bridgeConfig?.trim();
+  if (assistantConfig) {
+    edges.push({
+      from: { kind: 'assistant', name: 'global' },
+      to: { kind: 'config', name: assistantConfig },
+      field: 'bridgeConfig',
+    });
+  }
+
+  for (const issue of input.issues ?? []) {
+    const agent = issue.agentConfig?.trim();
+    if (!agent) continue;
+    edges.push({
+      from: { kind: 'issue', name: issue.id },
+      to: { kind: 'agent', name: agent },
+      field: 'agentConfig',
+    });
+  }
+
   // agent/team/config ← router route targets + fallback (post-migration)
   for (const router of input.routers ?? []) {
     const from = { kind: 'router' as const, name: router.name };
@@ -166,12 +189,14 @@ export function buildReferenceIndex(input: ReferenceIndexInput): ReferenceEdge[]
 
   // team ← automation tasks (Agent-page workflow squads referenced by name)
   for (const task of input.automationTasks ?? []) {
-    if (task.kind !== 'workflow' || task.workflowSource !== 'agent') continue;
+    if (task.kind !== 'workflow') continue;
     const name = task.workflowName?.trim();
     if (!name) continue;
     edges.push({
       from: { kind: 'automation', name: task.name || task.id },
-      to: { kind: 'team', name },
+      to: task.workflowSource === 'agent'
+        ? { kind: 'team', name }
+        : { kind: 'workflow-script', name },
       field: 'workflowName',
     });
   }
@@ -231,6 +256,7 @@ export function findBrokenRefs(
     agent: known.agents ? new Set(known.agents) : undefined,
     team: known.teams ? new Set(known.teams) : undefined,
     router: known.routers ? new Set(known.routers) : undefined,
+    'workflow-script': known.workflows ? new Set(known.workflows) : undefined,
   };
   return index.filter((edge) => {
     const set = sets[edge.to.kind];

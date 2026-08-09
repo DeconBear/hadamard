@@ -72,6 +72,16 @@ export interface ReferenceOperationContext {
     read(): TeamPreferences;
     write(prefs: TeamPreferences): void | Promise<void>;
   };
+  /** Issue-store adapter used to rewrite `agentConfig` across file/SQLite modes. */
+  issues?: {
+    read(): Promise<Array<{ id: string; number?: number; agentConfig?: string }>>;
+    writeAgentConfig(id: string, agentConfig: string | null): Promise<void>;
+  };
+  /** Global Assistant config adapter used to rewrite `bridgeConfig`. */
+  assistantConfig?: {
+    read(): Promise<{ bridgeConfig?: string }>;
+    write(config: { bridgeConfig?: string }): Promise<void>;
+  };
 }
 
 export interface ReferenceOperationReport {
@@ -357,6 +367,10 @@ export async function renameDefinitionAndReferences(
   const managerPath = ctx.managerProjectPath ?? projectDir;
   const manager = managerPath ? await readManagerConfig(managerPath, resolveHadamardHome(homeDir)) : undefined;
   const tasks = projectDir ? await listScheduledAutomationTasks(projectDir) : [];
+  const issues = kind === 'agent' && ctx.issues ? await ctx.issues.read() : [];
+  const assistantConfig = kind === 'config' && ctx.assistantConfig
+    ? await ctx.assistantConfig.read()
+    : undefined;
 
   if (kind === 'config' && !bridgeStore.configs.some((config) => config.name === from)) {
     throw new Error(`Bridge config not found: ${from}`);
@@ -434,6 +448,10 @@ export async function renameDefinitionAndReferences(
     && tasks.some((task) => task.kind === 'workflow' && task.workflowSource === 'agent' && task.workflowName === from);
   const prefs = ctx.teamPreferences?.read();
   const prefsChanged = kind === 'team' && prefs?.defaultAttached === from;
+  const changedIssues = kind === 'agent'
+    ? issues.filter(issue => issue.agentConfig === from)
+    : [];
+  const assistantChanged = kind === 'config' && assistantConfig?.bridgeConfig === from;
 
   if (kind === 'config') plannedFiles.add(getBridgeConfigsPath(homeDir));
   if (kind === 'agent' || profilesChanged) plannedFiles.add(getAgentProfilesPath(homeDir));
@@ -448,7 +466,8 @@ export async function renameDefinitionAndReferences(
   if (renamedAgentMdFile) plannedFiles.add(renamedAgentMdFile);
 
   // ── Write phase: referencers first, definition last ──
-  await withFileRollback(plannedFiles, async () => {
+  try {
+    await withFileRollback(plannedFiles, async () => {
     for (const filePath of changedRouterFiles) {
       rewriteJsonFile(filePath, (raw) => {
         if (!isRecord(raw)) return false;
@@ -488,6 +507,16 @@ export async function renameDefinitionAndReferences(
       await ctx.teamPreferences.write({ ...prefs, defaultAttached: to });
       rewritten.push('teamPreferences.defaultAttached');
     }
+    if (changedIssues.length && ctx.issues) {
+      for (const issue of changedIssues) {
+        await ctx.issues.writeAgentConfig(issue.id, to);
+        rewritten.push(`issue "${issue.number ?? issue.id}" (agentConfig)`);
+      }
+    }
+    if (assistantChanged && assistantConfig && ctx.assistantConfig) {
+      await ctx.assistantConfig.write({ ...assistantConfig, bridgeConfig: to });
+      rewritten.push('assistant.json (bridgeConfig)');
+    }
 
     // Definition itself.
     if (kind === 'config') {
@@ -523,7 +552,29 @@ export async function renameDefinitionAndReferences(
       await writeFile(renamedDefinitionFile, `${JSON.stringify(raw, null, 2)}\n`, 'utf-8');
       await rm(definitionFile, { force: true });
     }
-  });
+    });
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    if (prefsChanged && prefs && ctx.teamPreferences) {
+      try { await ctx.teamPreferences.write(prefs); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+    }
+    if (changedIssues.length && ctx.issues) {
+      for (const issue of changedIssues) {
+        try {
+          await ctx.issues.writeAgentConfig(issue.id, issue.agentConfig ?? null);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+    }
+    if (assistantChanged && assistantConfig && ctx.assistantConfig) {
+      try { await ctx.assistantConfig.write(assistantConfig); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError([error, ...rollbackErrors], 'Reference rename failed and one or more external references could not be restored.');
+    }
+    throw error;
+  }
 
   return { rewritten };
 }
@@ -551,6 +602,18 @@ export async function applyDeleteFallback(
   const profileStore = readAgentProfiles(homeDir);
   const managerPath = ctx.managerProjectPath ?? projectDir;
   const manager = managerPath ? await readManagerConfig(managerPath, resolveHadamardHome(homeDir)) : undefined;
+  const issues = kind === 'agent' && ctx.issues ? await ctx.issues.read() : [];
+  const assistantConfig = kind === 'config' && ctx.assistantConfig
+    ? await ctx.assistantConfig.read()
+    : undefined;
+  const prefs = ctx.teamPreferences?.read();
+  const changedIssues = kind === 'agent'
+    ? issues.filter(issue => issue.agentConfig === name)
+    : [];
+  const assistantChanged = kind === 'config'
+    && strategy.type === 'repoint'
+    && assistantConfig?.bridgeConfig === name;
+  const prefsChanged = kind === 'team' && prefs?.defaultAttached === name;
 
   if (strategy.type === 'repoint' && !strategy.target.trim()) {
     throw new Error('Re-point strategy requires a target name.');
@@ -590,7 +653,8 @@ export async function applyDeleteFallback(
   }
   for (const filePath of [...routerFiles, ...teamFiles]) plannedFiles.add(filePath);
 
-  await withFileRollback(plannedFiles, async () => {
+  try {
+    await withFileRollback(plannedFiles, async () => {
     for (const filePath of routerFiles) {
       if (rewriteJsonFile(filePath, (raw) => isRecord(raw) && mutateRouter(raw as unknown as RouterProfile))) {
         rewritten.push(`router "${path.basename(filePath, '.json')}"`);
@@ -614,8 +678,46 @@ export async function applyDeleteFallback(
         await writeManagerConfig(managerPath, resolveHadamardHome(homeDir), { ...manager, bridgeConfig: strategy.target });
         rewritten.push('manager.json (bridgeConfig)');
       }
+      if (assistantChanged && assistantConfig && ctx.assistantConfig) {
+        await ctx.assistantConfig.write({ ...assistantConfig, bridgeConfig: strategy.target });
+        rewritten.push('assistant.json (bridgeConfig)');
+      }
     }
-  });
+    if (kind === 'agent' && ctx.issues) {
+      for (const issue of changedIssues) {
+        const replacement = strategy.type === 'repoint' ? strategy.target : null;
+        await ctx.issues.writeAgentConfig(issue.id, replacement);
+        rewritten.push(`issue "${issue.number ?? issue.id}" (agentConfig)`);
+      }
+    }
+    if (prefsChanged && prefs && ctx.teamPreferences) {
+      const replacement = strategy.type === 'repoint' ? strategy.target : null;
+      await ctx.teamPreferences.write({ ...prefs, defaultAttached: replacement });
+      rewritten.push('teamPreferences.defaultAttached');
+    }
+    });
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    if (changedIssues.length && ctx.issues) {
+      for (const issue of changedIssues) {
+        try {
+          await ctx.issues.writeAgentConfig(issue.id, issue.agentConfig ?? null);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+    }
+    if (assistantChanged && assistantConfig && ctx.assistantConfig) {
+      try { await ctx.assistantConfig.write(assistantConfig); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+    }
+    if (prefsChanged && prefs && ctx.teamPreferences) {
+      try { await ctx.teamPreferences.write(prefs); } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError([error, ...rollbackErrors], 'Reference fallback failed and one or more external references could not be restored.');
+    }
+    throw error;
+  }
 
   return { rewritten };
 }
