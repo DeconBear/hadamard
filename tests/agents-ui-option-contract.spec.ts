@@ -47,6 +47,9 @@ describe('Agents UI option contract', () => {
 
   it('uses description for delegated-agent discovery and excludes main-chat-only Agents', () => {
     expect(gui).toContain('description: el(\'agentProfileDescription\').value.trim()');
+    expect(gui).toContain('>Description<input id="agentProfileDescription"');
+    expect(gui).not.toContain('Description *');
+    expect(gui).not.toContain('Description is required.');
     expect(runtime).toContain('definition.description');
     expect(runtime).toContain('definition.subagent !== false');
   });
