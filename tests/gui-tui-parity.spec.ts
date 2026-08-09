@@ -136,16 +136,23 @@ describe('TUI and GUI parity', () => {
     expect(html).not.toContain('id="agentProfileEditorModal"');
     expect(html).toContain('id="agentProfileModelPicker"');
     expect(html).toContain('id="agentProfilePromptMode"');
-    expect(html).toContain('id="agentProfileRuntime"');
+    // Custom model override removed (user decision, 09 Aug 2026) — models come
+    // from Settings → Models via the Configuration / model picker only.
+    expect(html).not.toContain('id="agentProfileModelCustom"');
+    // Runtime selector removed from Agent UI (user decision, 09 Aug 2026) —
+    // pick Configuration/model from Settings instead; runtime derives from config.
+    expect(html).not.toContain('id="agentProfileRuntime"');
+    expect(html).toContain('Configuration / model');
     expect(html).not.toContain('id="agentProfileScope"');
     expect(html).toContain('id="agentProfileSubagent"');
-    expect(html).toContain('id="agentProfileSubagentOptions"');
-    expect(html).toContain('id="agentProfileAllowedAgents"');
-    expect(html).toContain('id="agentProfileSkills"');
-    expect(html).toContain('id="agentProfileMemory"');
-    expect(html).toContain('id="agentProfileIsolation"');
-    expect(html).toContain('id="agentProfileBackground"');
-    expect(html).toContain('id="agentProfileInitialPrompt"');
+    // Subagent options section removed (user decision, 09 Aug 2026).
+    expect(html).not.toContain('id="agentProfileSubagentOptions"');
+    expect(html).not.toContain('id="agentProfileAllowedAgents"');
+    expect(html).not.toContain('id="agentProfileSkills"');
+    expect(html).not.toContain('id="agentProfileMemory"');
+    expect(html).not.toContain('id="agentProfileIsolation"');
+    expect(html).not.toContain('id="agentProfileBackground"');
+    expect(html).not.toContain('id="agentProfileInitialPrompt"');
     expect(js).toContain('openAgentTemplatePicker');
     expect(js).toContain('agentProfilePickerIsInherit');
     expect(js).toContain('te-tool-grid-head');

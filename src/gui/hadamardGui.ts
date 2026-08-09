@@ -9417,22 +9417,20 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           const scope = body.scope === 'project'
             ? 'project'
             : existingDefinition?.source === 'project' ? 'project' : 'personal';
-          const stringList = (value: unknown): string[] | undefined =>
-            Array.isArray(value)
-              ? value.filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 0)
-              : undefined;
+          // Subagent options + Runtime selector removed from Agent UI
+          // (user decision, 09 Aug 2026). Runtime is derived from the chosen
+          // Settings configuration (bridgeConfig); promptMode/subagent still
+          // flow through extras.
           const extras: AgentDefinitionExtraFields = {};
           if (body.promptMode === 'extend' || body.promptMode === 'replace') extras.promptMode = body.promptMode;
           if (typeof body.subagent === 'boolean') extras.subagent = body.subagent;
-          const allowedAgents = stringList(body.allowedAgents);
-          if (allowedAgents) extras.allowedAgents = allowedAgents;
-          const skills = stringList(body.skills);
-          if (skills) extras.skills = skills;
-          if (body.memory === 'user' || body.memory === 'project' || body.memory === 'local') extras.memory = body.memory;
-          if (typeof body.background === 'boolean') extras.background = body.background;
-          if (body.isolation === 'worktree') extras.isolation = 'worktree';
-          if (typeof body.initialPrompt === 'string' && body.initialPrompt.trim()) extras.initialPrompt = body.initialPrompt.trim();
-          if (typeof body.runtime === 'string' && body.runtime.trim()) extras.runtime = body.runtime.trim();
+          if (profile.bridgeConfig) {
+            const bridgeCfg = findBridgeConfig(profile.bridgeConfig, resolveGuiHomeDir());
+            const rt = bridgeCfg?.runtime?.trim();
+            if (rt && rt !== 'hadamard' && (bridgeCfg?.execution ?? 'api') === 'cli') {
+              extras.runtime = rt;
+            }
+          }
           const inheritModel = !profile.bridgeConfig || !profile.model;
           const unifiedWrite = inheritModel || scope === 'project' || Object.keys(extras).length > 0;
           const result = await withRuntimeMutation(async () => {
@@ -11071,38 +11069,16 @@ export function createHadamardGuiHtml(): string {
       <h2 id="agentProfileEditorTitle">New agent profile</h2>
       <div class="two-col">
         <label class="dialog-field">Profile name<input id="agentProfileName" autocomplete="off" placeholder="e.g. reviewer"></label>
-        <label class="dialog-field">Executor (model)<span id="agentProfileModelPicker"></span></label>
+        <label class="dialog-field">Configuration / model<span id="agentProfileModelPicker"></span></label>
       </div>
       <label class="dialog-field">Description *<input id="agentProfileDescription" autocomplete="off" placeholder="Role summary — subagent discovery depends on it"></label>
-      <label class="dialog-field">Custom model<input id="agentProfileModelCustom" autocomplete="off" placeholder="Typed model id overrides the picker selection"></label>
-      <p class="muted" id="agentProfileInheritHint">Pick <strong>Inherit session model</strong> in the picker to follow the session's main model — such agents are not listed in the composer model picker.</p>
-      <div class="two-col">
-        <label class="dialog-field">Prompt mode<select id="agentProfilePromptMode">
-          <option value="extend">Extend — built-in prompt + body appended</option>
-          <option value="replace">Replace — body is the full system prompt</option>
-        </select></label>
-        <label class="dialog-field">Runtime<select id="agentProfileRuntime"></select></label>
-      </div>
+      <p class="muted" id="agentProfileInheritHint">Pick a Configuration and model from Settings → Models, or <strong>Inherit session model</strong> to follow the session's main model (inherit agents are not listed in the composer model picker). Runtime is taken from the selected configuration — not configured here.</p>
+      <label class="dialog-field">Prompt mode<select id="agentProfilePromptMode">
+        <option value="extend">Extend — built-in prompt + body appended</option>
+        <option value="replace">Replace — body is the full system prompt</option>
+      </select></label>
+      <label class="dialog-field">System prompt append<textarea id="agentProfileSystemPrompt" rows="4" placeholder="Optional instructions appended when this agent runs"></textarea></label>
       <label class="manager-cfg-check" id="agentProfileSubagentRow"><input type="checkbox" id="agentProfileSubagent" checked> Available as a subagent — the Agent/Task tool may delegate to this agent</label>
-      <details id="agentProfileSubagentOptions" class="agent-profile-advanced">
-        <summary>Subagent options</summary>
-        <label class="dialog-field">Allowed agents<input id="agentProfileAllowedAgents" autocomplete="off" placeholder="Comma-separated names this agent may delegate to"></label>
-        <label class="dialog-field">Skills<input id="agentProfileSkills" autocomplete="off" placeholder="Comma-separated skill names preloaded for this agent"></label>
-        <div class="two-col">
-          <label class="dialog-field">Memory<select id="agentProfileMemory">
-            <option value="">None</option>
-            <option value="user">user</option>
-            <option value="project">project</option>
-            <option value="local">local</option>
-          </select></label>
-          <label class="dialog-field">Isolation<select id="agentProfileIsolation">
-            <option value="">None</option>
-            <option value="worktree">worktree</option>
-          </select></label>
-        </div>
-        <label class="manager-cfg-check"><input type="checkbox" id="agentProfileBackground"> Run in background by default</label>
-        <label class="dialog-field">Initial prompt<input id="agentProfileInitialPrompt" autocomplete="off" placeholder="Optional first task when this agent is spawned"></label>
-      </details>
       <label class="dialog-field">Permission mode<select id="agentProfilePermission">
         <option value="">Session default</option>
         <option value="default">Default</option>
@@ -11133,13 +11109,12 @@ export function createHadamardGuiHtml(): string {
           <label class="dialog-field">Timeout (ms)<input id="agentProfileTimeoutMs" type="number" min="1" step="1" placeholder="Blank = no profile timeout"></label>
         </div>
         <label class="dialog-field">Workspace access<select id="agentProfileWorkspace">
-          <option value="">Workspace (project only)</option>
-          <option value="full">Full filesystem</option>
+          <option value="full" selected>Full filesystem</option>
+          <option value="workspace">Workspace (project only)</option>
         </select></label>
         <div class="dialog-field"><span>Allowed tools</span><div id="agentProfileTools" class="te-tool-grid"></div>
         <p class="muted">All checked = full toolset. Unchecked tools are hidden from this agent's runs; granting Write/Edit/Bash asks for confirmation.</p></div>
       </details>
-      <label class="dialog-field">System prompt append<textarea id="agentProfileSystemPrompt" rows="4" placeholder="Optional instructions appended when this agent runs"></textarea></label>
       <p id="agentProfileCfgStatus" class="muted"></p>
       <div class="dialog-actions">
         <button type="button" id="agentProfileDeleteBtn" class="secondary-btn hidden">Delete agent</button>
@@ -33235,10 +33210,12 @@ function mountAgentProfileModelPicker(selectedConfig, selectedModel, preferInher
     }
   }
   if (!chosen && selectedConfig) {
-    // Custom model id: keep the profile's config selected (its first model);
-    // the custom-model input carries the actual model.
+    // Model id no longer in the config list: fall back to that config's first model.
     for (const opt of select.options) {
-      if ((opt.dataset.config || '') === selectedConfig && opt.value) { chosen = opt; break; }
+      if ((opt.dataset.config || '') === selectedConfig && opt.value && opt.value !== '__inherit__') {
+        chosen = opt;
+        break;
+      }
     }
   }
   if (!chosen && !selectedConfig && !selectedModel && !preferInherit) {
@@ -33249,7 +33226,6 @@ function mountAgentProfileModelPicker(selectedConfig, selectedModel, preferInher
   }
   if (chosen) chosen.selected = true;
   else select.value = '';
-  select.addEventListener('change', () => { el('agentProfileModelCustom').value = ''; });
   mount.appendChild(select);
 }
 
@@ -33266,8 +33242,6 @@ function selectedAgentProfileConfig() {
 
 function selectedAgentProfileModel() {
   if (agentProfilePickerIsInherit()) return '';
-  const custom = el('agentProfileModelCustom').value.trim();
-  if (custom) return custom;
   return el('agentProfilePicker')?.value || '';
 }
 
@@ -33330,15 +33304,6 @@ function selectedAgentProfileTools() {
   return checked.length >= TEAM_CORE_TOOLS.length ? null : checked;
 }
 
-function syncAgentProfileSubagentOptions() {
-  const on = el('agentProfileSubagent')?.checked !== false;
-  const details = el('agentProfileSubagentOptions');
-  if (details) details.classList.toggle('agent-subagent-off', !on);
-  for (const input of details?.querySelectorAll('input, select') || []) {
-    input.disabled = !on;
-  }
-}
-
 let editingAgentProfileSource = null;
 /** Set when the editor was opened from a legacy single-agent squad (convert-on-save). */
 let editingAgentSquadName = null;
@@ -33380,34 +33345,22 @@ async function openAgentProfileEditor(profile, definition, sourceSquad) {
   setField('agentProfileMaxIterations', profile?.maxIterations != null ? String(profile.maxIterations) : fmNum('maxIterations'));
   setField('agentProfileTimeoutMs', profile?.timeoutMs != null ? String(profile.timeoutMs) : fmNum('timeoutMs'));
   const workspace = profile?.workspaceAccess || fmStr('workspaceAccess');
-  setField('agentProfileWorkspace', workspace === 'full' ? 'full' : '');
+  // Default for new agents: full filesystem (user decision, 09 Aug 2026).
+  // Existing agents with no field keep the legacy "workspace" meaning.
+  setField(
+    'agentProfileWorkspace',
+    workspace === 'workspace' ? 'workspace'
+      : workspace === 'full' ? 'full'
+        : (editingAgentProfileName ? 'workspace' : 'full'),
+  );
   const bridgeConfig = profile?.bridgeConfig || fmStr('bridgeConfig');
   const model = profile?.model || fmStr('model');
   // S2 (§6-6): no bridgeConfig on an existing agent = "Inherit session model".
   const preferInherit = Boolean(editingAgentProfileName && !bridgeConfig);
   mountAgentProfileModelPicker(bridgeConfig, model, preferInherit);
-  // A model the picker does not know (custom id) goes to the override input.
-  el('agentProfileModelCustom').value = model && !configForModel(model) ? model : '';
   setField('agentProfilePromptMode', fmStr('promptMode') === 'replace' ? 'replace' : 'extend');
-  // External-CLI delegation runtime (09 Aug 2026): blank = hadamard SDK.
-  const runtimeSel = el('agentProfileRuntime');
-  runtimeSel.textContent = '';
-  for (const opt of teamRuntimeSelectOptions()) {
-    const o = document.createElement('option');
-    o.value = opt.value;
-    o.textContent = opt.label;
-    runtimeSel.appendChild(o);
-  }
-  runtimeSel.value = fmStr('runtime');
   el('agentProfileSubagent').checked = fmStr('subagent') !== 'false';
-  setField('agentProfileAllowedAgents', fmStr('allowedAgents'));
-  setField('agentProfileSkills', fmStr('skills'));
-  setField('agentProfileMemory', ['user', 'project', 'local'].includes(fmStr('memory')) ? fmStr('memory') : '');
-  el('agentProfileBackground').checked = fmStr('background') === 'true';
-  setField('agentProfileIsolation', fmStr('isolation') === 'worktree' ? 'worktree' : '');
-  setField('agentProfileInitialPrompt', fmStr('initialPrompt'));
   renderAgentProfileTools(profile?.allowedTools || (fmStr('tools') ? fmStr('tools').split(',').map(s => s.trim()).filter(Boolean) : undefined));
-  syncAgentProfileSubagentOptions();
   el('agentProfileCfgStatus').textContent = editingAgentProfileName ? 'Editing "' + editingAgentProfileName + '".' : '';
   // Embedded in the Agents panel right pane (09 Aug 2026): switch there,
   // hide the graph/editor panes, and show the panel with a Used-by action.
@@ -33469,7 +33422,6 @@ async function saveAgentProfileViaApi() {
     }
   }
   el('agentProfileCfgStatus').textContent = 'Saving...';
-  const csv = (v) => String(v || '').split(',').map(s => s.trim()).filter(Boolean);
   const body = {
     name,
     description: el('agentProfileDescription').value.trim(),
@@ -33483,18 +33435,11 @@ async function saveAgentProfileViaApi() {
     systemPromptAppend: el('agentProfileSystemPrompt').value.trim(),
     maxIterations: el('agentProfileMaxIterations').value.trim(),
     timeoutMs: el('agentProfileTimeoutMs').value.trim(),
-    workspaceAccess: el('agentProfileWorkspace').value || '',
+    workspaceAccess: el('agentProfileWorkspace').value === 'workspace' ? 'workspace' : 'full',
     promptMode: el('agentProfilePromptMode').value === 'replace' ? 'replace' : 'extend',
-    runtime: el('agentProfileRuntime').value || '',
     subagent: el('agentProfileSubagent').checked !== false,
     convertFromSquad: editingAgentSquadName || undefined,
-    allowedAgents: csv(el('agentProfileAllowedAgents').value),
-    skills: csv(el('agentProfileSkills').value),
-    background: el('agentProfileBackground').checked === true,
   };
-  if (el('agentProfileMemory').value) body.memory = el('agentProfileMemory').value;
-  if (el('agentProfileIsolation').value === 'worktree') body.isolation = 'worktree';
-  if (el('agentProfileInitialPrompt').value.trim()) body.initialPrompt = el('agentProfileInitialPrompt').value.trim();
   const profileTools = selectedAgentProfileTools();
   if (profileTools) body.allowedTools = profileTools;
   const res = await api('/api/agent-profiles', {
@@ -36455,7 +36400,6 @@ el('bridgeCfgReset').addEventListener('click', () => { closeBridgeEditor(); });
 el('agentProfileNew')?.addEventListener('click', () => { openAgentProfileEditor(null); });
 el('agentProfileCfgSave').addEventListener('click', () => { saveAgentProfileViaApi().catch(console.error); });
 el('agentProfileCfgReset').addEventListener('click', () => { closeAgentProfileEditor(); });
-el('agentProfileSubagent')?.addEventListener('change', syncAgentProfileSubagentOptions);
 el('agentProfileDeleteBtn')?.addEventListener('click', () => {
   if (!editingAgentProfileName) return;
   // Opened from a legacy squad (not yet converted): delete the squad itself.
