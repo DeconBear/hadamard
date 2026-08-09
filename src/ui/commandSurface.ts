@@ -43,6 +43,37 @@ export const HADAMARD_INTERACTIVE_COMMANDS: Record<string, string> = {
   exit: 'Quit',
 };
 
+export function formatTeamAskCommand(name: string, prompt: string): string {
+  return `/team ask ${JSON.stringify(name)} ${prompt.trim()}`;
+}
+
+export function parseTeamAskArguments(input: string): { name: string; prompt: string } | null {
+  const value = input.trim();
+  if (value.startsWith('"')) {
+    let escaped = false;
+    for (let index = 1; index < value.length; index += 1) {
+      const char = value[index];
+      if (char === '"' && !escaped) {
+        try {
+          const name = JSON.parse(value.slice(0, index + 1));
+          const prompt = value.slice(index + 1).trim();
+          return typeof name === 'string' && name && prompt ? { name, prompt } : null;
+        } catch {
+          return null;
+        }
+      }
+      escaped = char === '\\' && !escaped;
+      if (char !== '\\') escaped = false;
+    }
+    return null;
+  }
+  const split = value.indexOf(' ');
+  if (split === -1) return null;
+  const name = value.slice(0, split).trim();
+  const prompt = value.slice(split + 1).trim();
+  return name && prompt ? { name, prompt } : null;
+}
+
 /**
  * Sub-commands offered for completion once a top-level command is committed
  * (e.g. `/bridge ` → `run`/`switch`/…). Only commands that take a known
