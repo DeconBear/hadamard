@@ -854,12 +854,6 @@ export async function createAssistantGlobalTools(
         scope: z.enum(['project', 'personal']).optional().describe('Defaults to personal (~/.hadamard/agents)'),
         promptMode: z.enum(['extend', 'replace']).optional(),
         subagent: z.boolean().optional().describe('Default true: the Agent/Task tool may delegate to this agent'),
-        allowedAgents: z.array(z.string()).optional(),
-        skills: z.array(z.string()).optional(),
-        memory: z.enum(['user', 'project', 'local']).optional(),
-        background: z.boolean().optional(),
-        isolation: z.enum(['worktree']).optional(),
-        initialPrompt: z.string().optional(),
       }),
     },
     async (input) => {
@@ -867,12 +861,6 @@ export async function createAssistantGlobalTools(
       const extras: AgentDefinitionExtraFields = {
         ...(input.promptMode ? { promptMode: input.promptMode } : {}),
         ...(typeof input.subagent === 'boolean' ? { subagent: input.subagent } : {}),
-        ...(input.allowedAgents ? { allowedAgents: input.allowedAgents } : {}),
-        ...(input.skills ? { skills: input.skills } : {}),
-        ...(input.memory ? { memory: input.memory } : {}),
-        ...(typeof input.background === 'boolean' ? { background: input.background } : {}),
-        ...(input.isolation ? { isolation: input.isolation } : {}),
-        ...(input.initialPrompt?.trim() ? { initialPrompt: input.initialPrompt.trim() } : {}),
       };
       const scope = input.scope === 'project' ? 'project' : 'personal';
       const unified = inheritModel || scope === 'project' || Object.keys(extras).length > 0;

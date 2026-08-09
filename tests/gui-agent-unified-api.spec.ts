@@ -77,12 +77,6 @@ describe('GUI unified agent API (S2)', () => {
           scope: 'project',
           promptMode: 'replace',
           subagent: true,
-          allowedAgents: ['Explore'],
-          skills: ['pdf'],
-          memory: 'project',
-          background: true,
-          isolation: 'worktree',
-          initialPrompt: 'Survey the repo first.',
         }),
       });
       expect(saved.status).toBe(200);
@@ -95,12 +89,6 @@ describe('GUI unified agent API (S2)', () => {
         'model: claude-sonnet',
         'promptMode: replace',
         'subagent: true',
-        'allowedAgents: Explore',
-        'skills: pdf',
-        'memory: project',
-        'background: true',
-        'isolation: worktree',
-        'initialPrompt: Survey the repo first.',
       ]) {
         expect(md).toContain(line);
       }
@@ -112,7 +100,7 @@ describe('GUI unified agent API (S2)', () => {
       expect(definition.status).toBe(200);
       expect(definition.body.definition.source).toBe('project');
       expect(definition.body.definition.frontmatter.promptMode).toBe('replace');
-      expect(definition.body.definition.frontmatter.allowedAgents).toBe('Explore');
+      expect(definition.body.definition.frontmatter.subagent).toBe('true');
     } finally {
       await server.close();
     }
@@ -466,6 +454,57 @@ describe('legacy squad convert-on-save (09 Aug 2026)', () => {
       expect(md).toContain('My reviewer prompt.');
       // No squad file deletion attempted for built-ins (nothing on disk to remove).
       expect(saved.body.conversion.every(entry => !entry.includes('deleted'))).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('derives runtime from the selected CLI configuration (no Agent UI Runtime field)', async () => {
+    const root = await tempRoot('hadamard-gui-runtime-from-config-');
+    const { server, homeDir } = await startServer(root);
+    try {
+      addBridgeConfig({
+        name: 'claude-cli',
+        runtime: 'claude',
+        execution: 'cli',
+        provider: 'anthropic',
+        model: 'claude-sonnet',
+        models: [{ name: 'claude-sonnet' }],
+      }, homeDir);
+
+      const saved = await api<{ ok: boolean }>(server, 'api/agent-profiles', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'cli-coder',
+          description: 'Delegates to Claude CLI via Settings config',
+          bridgeConfig: 'claude-cli',
+          model: 'claude-sonnet',
+          subagent: true,
+          // body.runtime intentionally omitted — Agent UI no longer sends it
+        }),
+      });
+      expect(saved.status).toBe(200);
+      const md = await readFile(path.join(homeDir, '.hadamard', 'agents', 'cli-coder.md'), 'utf8');
+      expect(md).toContain('bridgeConfig: claude-cli');
+      expect(md).toContain('runtime: claude');
+
+      // Switching to an in-process hadamard config clears derived runtime.
+      const resaved = await api<{ ok: boolean }>(server, 'api/agent-profiles', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'cli-coder',
+          description: 'Now uses SDK config',
+          bridgeConfig: 'sdk-default',
+          model: 'claude-sonnet',
+          subagent: true,
+        }),
+      });
+      expect(resaved.status).toBe(200);
+      const md2 = await readFile(path.join(homeDir, '.hadamard', 'agents', 'cli-coder.md'), 'utf8');
+      expect(md2).toContain('bridgeConfig: sdk-default');
+      expect(md2).not.toMatch(/^runtime:/m);
     } finally {
       await server.close();
     }

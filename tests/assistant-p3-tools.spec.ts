@@ -494,7 +494,7 @@ describe('workflow tools', () => {
 // ── S3: assistant tools on the unified .md store ─────────────────────
 
 describe('assistant tools on the unified .md store (S3)', () => {
-  it('UpsertAgentProfile writes scope + delegation extras to the project agents dir', async () => {
+  it('UpsertAgentProfile writes scope + promptMode/subagent extras to the project agents dir', async () => {
     seedConfig('cfg-x');
     const tools = await createAssistantGlobalTools({ homeDir, currentWorkDir: workDir });
     await callTool(byName(tools, 'UpsertAgentProfile'), {
@@ -505,12 +505,6 @@ describe('assistant tools on the unified .md store (S3)', () => {
       scope: 'project',
       promptMode: 'replace',
       subagent: true,
-      allowedAgents: ['Explore'],
-      skills: ['pdf'],
-      memory: 'project',
-      background: true,
-      isolation: 'worktree',
-      initialPrompt: 'Start here.',
     });
     const md = fs.readFileSync(path.join(workDir, '.hadamard', 'agents', 'proj-agent.md'), 'utf8');
     for (const line of [
@@ -519,12 +513,6 @@ describe('assistant tools on the unified .md store (S3)', () => {
       'model: m1',
       'promptMode: replace',
       'subagent: true',
-      'allowedAgents: Explore',
-      'skills: pdf',
-      'memory: project',
-      'background: true',
-      'isolation: worktree',
-      'initialPrompt: Start here.',
     ]) {
       expect(md).toContain(line);
     }
