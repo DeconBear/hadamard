@@ -13,6 +13,11 @@
         "signature": "export interface AgentActivityEvent extends AgentExecutionEventBase {\ntype: 'activity';\nexecutionId: string;\nsessionId?: string;\nactivity: AgentExecutionActivity | null;\n}"
       },
       {
+        "name": "AgentDefinitionExtraFields",
+        "kind": "interface",
+        "signature": "export interface AgentDefinitionExtraFields {\npromptMode?: 'extend' | 'replace';\nsubagent?: boolean;\nallowedAgents?: string[];\nskills?: string[];\nmemory?: 'user' | 'project' | 'local';\nbackground?: boolean;\nisolation?: 'worktree';\ninitialPrompt?: string;\nmodel?: string;\nruntime?: string;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\ntemperature?: number;\ntopP?: number;\nmaxTokens?: number;\nmaxIterations?: number;\ntimeoutMs?: number;\nworkspaceAccess?: 'workspace' | 'full';\ntools?: string[];\n}"
+      },
+      {
         "name": "AgentEdgeCompletedEvent",
         "kind": "interface",
         "signature": "export interface AgentEdgeCompletedEvent extends AgentEdgeEventBase {\ntype: 'edge.completed';\nresult?: string | null;\n}"
@@ -155,12 +160,17 @@
       {
         "name": "AgentProfile",
         "kind": "interface",
-        "signature": "export interface AgentProfile {\nname: string;\ndescription?: string;\nbridgeConfig: string;\nmodel: string;\nsystemPromptAppend?: string;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\n}"
+        "signature": "export interface AgentProfile {\nname: string;\ndescription?: string;\nbridgeConfig: string;\nmodel: string;\nsystemPromptAppend?: string;\npromptMode?: 'extend' | 'replace';\nsubagent?: boolean;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess?: 'workspace' | 'full';\nmaxIterations?: number;\ntimeoutMs?: number;\n}"
       },
       {
         "name": "agentProfileRunOverrides",
         "kind": "function",
         "signature": "export declare function agentProfileRunOverrides(profile: Pick<AgentProfile, 'effort' | 'maxTokens' | 'temperature' | 'topP'> | null | undefined): {\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\n};"
+      },
+      {
+        "name": "agentProfileStoreMigrated",
+        "kind": "function",
+        "signature": "export declare function agentProfileStoreMigrated(homeDir?: string): boolean;"
       },
       {
         "name": "AgentProfileValidationResult",
@@ -173,9 +183,14 @@
         "signature": "export interface AgentRequestSummary {\niteration: number;\nmessageId: string;\nmodel: string;\nstopReason: StopReason | null;\nusage?: Usage;\ntext: string;\ncreatedAt: string;\nrequestTokenEstimate?: number;\nrequestByteLength?: number;\nlocalMicrocompact?: {\nenabled: boolean;\nclearedToolResults: number;\ntokenEstimateBefore: number;\ntokenEstimateAfter: number;\nrequestByteLengthBefore?: number;\nrequestByteLengthAfter?: number;\n};\n}"
       },
       {
+        "name": "AgentRunConfigurationSource",
+        "kind": "interface",
+        "signature": "export interface AgentRunConfigurationSource {\nsystemPrompt?: string;\nsystemPromptAppend?: string;\npromptMode?: 'extend' | 'replace';\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess?: 'workspace' | 'full';\nmaxIterations?: number;\nmaxToolIterations?: number;\ntimeoutMs?: number;\nsubagent?: boolean;\n}"
+      },
+      {
         "name": "AgentRunOptions",
         "kind": "interface",
-        "signature": "export interface AgentRunOptions {\nsystemPrompt?: string;\ntools?: AgentToolDefinition[];\nmcpServers?: AgentMcpServerDefinition[];\nmodel?: string;\nmodelApi?: CreateAgentSdkOptions['modelApi'];\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\ntoolChoice?: ToolChoice;\nuserId?: string;\nmetadata?: Record<string, unknown>;\neffort?: HadamardRunEffort;\nhooks?: HadamardHooks;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\ncanUseTool?: HadamardCanUseTool;\nsignal?: AbortSignal;\ndrainQueuedInputs?: () => string[] | Promise<string[]>;\ndrainFollowUpInputs?: () => string[];\nworkDir?: string;\ninheritWorktree?: boolean;\nsessionWorkDir?: string;\n}"
+        "signature": "export interface AgentRunOptions {\nsystemPrompt?: string;\ntools?: AgentToolDefinition[];\nmcpServers?: AgentMcpServerDefinition[];\nmodel?: string;\nmodelApi?: CreateAgentSdkOptions['modelApi'];\nmaxTokens?: number;\nmaxToolIterations?: number;\nallowedTools?: string[];\nworkspaceAccess?: 'workspace' | 'full';\ntemperature?: number;\ntopP?: number;\ntoolChoice?: ToolChoice;\nuserId?: string;\nmetadata?: Record<string, unknown>;\neffort?: HadamardRunEffort;\nhooks?: HadamardHooks;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\ncanUseTool?: HadamardCanUseTool;\nsignal?: AbortSignal;\ndrainQueuedInputs?: () => string[] | Promise<string[]>;\ndrainFollowUpInputs?: () => string[];\nworkDir?: string;\ninheritWorktree?: boolean;\nsessionWorkDir?: string;\n}"
       },
       {
         "name": "AgentRunResult",
@@ -210,7 +225,7 @@
       {
         "name": "AgentSession",
         "kind": "class",
-        "signature": "export declare class AgentSession {\nprivate readonly bindings;\nprivate readonly store;\nprivate stored;\nprivate readonly steeringInputs;\nprivate readonly followUpInputs;\nconstructor(bindings: AgentSessionBindings, store: SessionStore, stored: StoredSession);\nget id(): string;\nget title(): string;\nget model(): string;\nget messages(): MessageParam[];\nget metadata(): Record<string, unknown>;\nget tags(): string[];\nget permissionContext(): HadamardSessionPermissionState;\nget pendingInputCount(): number;\nsnapshot(): StoredSession;\nsteer(input: string): void;\nfollowUp(input: string): void;\ndrainSteeringInputs(): string[];\ndrainFollowUpInputs(): string[];\nsend(input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nstream(input: string | MessageParam['content'], options?: AgentRunOptions): AgentRunStream;\nrunSkill(skill: string, args?: string, options?: AgentRunOptions): Promise<AgentRunResult>;\nstreamSkill(skill: string, args?: string, options?: AgentRunOptions): AgentRunStream;\ndream(options?: AgentSessionDreamOptions): Promise<HadamardDreamRunResult>;\nmaybeAutoDream(options?: AgentSessionDreamOptions): Promise<HadamardDreamRunResult>;\ndreamState(): Promise<HadamardDreamState>;\ncompact(options?: AgentSessionCompactOptions): Promise<HadamardSessionCompactResult>;\ncompactState(options?: Omit<HadamardCompactStateOptions, 'projectPath' | 'runtimeState' | 'sessionId'>): Promise<HadamardCompactState>;\nagentContinuity(): Promise<HadamardAgentContinuityState>;\nsetHooks(hooks?: HadamardHooks): void;\nclearHooks(): void;\nsetModel(model: string): Promise<void>;\nsetPermissionContext(context: {\nmode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\n}): Promise<void>;\nclearPermissionContext(): Promise<void>;\nrename(title: string): Promise<void>;\nsetTags(tags: string[]): Promise<void>;\nappendMessages(messages: MessageParam[]): Promise<void>;\nmergeMetadata(metadata: Record<string, unknown>): Promise<void>;\nmutateMetadata(mutation: (metadata: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>>;\ndelete(): Promise<void>;\nfork(options?: SessionForkOptions): Promise<AgentSession>;\nsaveCheckpoint(label: string): Promise<SessionCheckpoint>;\nrestoreCheckpoint(checkpointId: string): Promise<void>;\nlistCheckpoints(): Promise<SessionCheckpointSummary[]>;\ndeleteCheckpoint(checkpointId: string): Promise<void>;\nreplace(next: StoredSession): void;\n}"
+        "signature": "export declare class AgentSession {\nprivate readonly bindings;\nprivate readonly store;\nprivate stored;\nprivate readonly steeringInputs;\nprivate readonly followUpInputs;\nconstructor(bindings: AgentSessionBindings, store: SessionStore, stored: StoredSession);\nget id(): string;\nget title(): string;\nget model(): string;\nget messages(): MessageParam[];\nget metadata(): Record<string, unknown>;\nget tags(): string[];\nget permissionContext(): HadamardSessionPermissionState;\nget pendingInputCount(): number;\nget pendingInputs(): PendingAgentInputs;\nsnapshot(): StoredSession;\nsteer(input: string): void;\nfollowUp(input: string): void;\ncancelLatestFollowUp(): string | undefined;\ndrainSteeringInputs(): string[];\ndrainFollowUpInputs(): string[];\nsend(input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nstream(input: string | MessageParam['content'], options?: AgentRunOptions): AgentRunStream;\nrunSkill(skill: string, args?: string, options?: AgentRunOptions): Promise<AgentRunResult>;\nstreamSkill(skill: string, args?: string, options?: AgentRunOptions): AgentRunStream;\ndream(options?: AgentSessionDreamOptions): Promise<HadamardDreamRunResult>;\nmaybeAutoDream(options?: AgentSessionDreamOptions): Promise<HadamardDreamRunResult>;\ndreamState(): Promise<HadamardDreamState>;\ncompact(options?: AgentSessionCompactOptions): Promise<HadamardSessionCompactResult>;\ncompactState(options?: Omit<HadamardCompactStateOptions, 'projectPath' | 'runtimeState' | 'sessionId'>): Promise<HadamardCompactState>;\nagentContinuity(): Promise<HadamardAgentContinuityState>;\nsetHooks(hooks?: HadamardHooks): void;\nclearHooks(): void;\nsetModel(model: string): Promise<void>;\nsetPermissionContext(context: {\nmode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\n}): Promise<void>;\nclearPermissionContext(): Promise<void>;\nrename(title: string): Promise<void>;\nsetTags(tags: string[]): Promise<void>;\nappendMessages(messages: MessageParam[]): Promise<void>;\nmergeMetadata(metadata: Record<string, unknown>): Promise<void>;\nmutateMetadata(mutation: (metadata: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>>;\ndelete(): Promise<void>;\nfork(options?: SessionForkOptions): Promise<AgentSession>;\nsaveCheckpoint(label: string): Promise<SessionCheckpoint>;\nrestoreCheckpoint(checkpointId: string): Promise<void>;\nlistCheckpoints(): Promise<SessionCheckpointSummary[]>;\ndeleteCheckpoint(checkpointId: string): Promise<void>;\nreplace(next: StoredSession): void;\n}"
       },
       {
         "name": "AgentSessionCompactOptions",
@@ -231,6 +246,11 @@
         "name": "AgentSessionsApi",
         "kind": "class",
         "signature": "export declare class AgentSessionsApi {\nprivate readonly store;\nprivate readonly resumeSession;\nprivate readonly manager?;\nconstructor(store: SessionStore, resumeSession: (sessionId: string, options?: SessionResumeOptions) => Promise<AgentSession>, manager?: import(\"./sessionManager.js\").SessionManager | undefined);\nlist(): Promise<SessionSummary[]>;\nget(sessionId: string): Promise<AgentSession>;\nresume(sessionId: string, options?: SessionResumeOptions): Promise<AgentSession>;\ncontinueMostRecent(options?: SessionResumeOptions): Promise<AgentSession>;\ndelete(sessionId: string): Promise<void>;\nstats(): Promise<import('../types.js').SessionStats>;\nprune(params?: import('../types.js').SessionPruneParams): Promise<number>;\ncloseIdle(): Promise<number>;\n}"
+      },
+      {
+        "name": "AgentTargetRef",
+        "kind": "type",
+        "signature": "export type AgentTargetRef = {\nkind: 'model';\nconfig: string;\nmodel: string;\n} | {\nkind: 'agent';\nname: string;\n} | {\nkind: 'team';\nname: string;\n};"
       },
       {
         "name": "AgentThreadStartedEvent",
@@ -260,7 +280,7 @@
       {
         "name": "AgentToolDefinition",
         "kind": "interface",
-        "signature": "export interface AgentToolDefinition<Input = any, Output = any> {\nkind: 'local';\nname: string;\ndescription: string;\ninputSchema: z.ZodType<Input>;\noutputSchema?: z.ZodType<Output>;\ninputJsonSchema: Record<string, unknown>;\nserialize?: (output: Output) => string | ToolResultBlockParam['content'];\nexecute: (input: Input, context: ToolExecutionContext, onProgress?: ToolCallProgress) => Promise<Output> | Output;\nstrict?: boolean;\nexamples?: Array<Record<string, unknown>>;\nisReadOnly?: (input?: Input) => boolean;\nisDestructive?: (input?: Input) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\naliases?: string[];\nuserFacingName?: (input?: Input) => string;\nsearchHint?: string;\ninterruptBehavior?: 'cancel' | 'block';\nisResultTruncated?: (output: Output) => boolean;\nmaxResultSizeChars?: number;\ninputsEquivalent?: (a: Input, b: Input) => boolean;\nvalidateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;\ngetToolUseSummary?: (input: Input) => string;\nprompt?: (options: ToolPromptOptions) => Promise<string> | string;\n}"
+        "signature": "export interface AgentToolDefinition<Input = any, Output = any> {\nkind: 'local';\nname: string;\ndescription: string;\ninputSchema: z.ZodType<Input>;\noutputSchema?: z.ZodType<Output>;\ninputJsonSchema: Record<string, unknown>;\nserialize?: (output: Output) => string | ToolResultBlockParam['content'];\nexecute: (input: Input, context: ToolExecutionContext, onProgress?: ToolCallProgress) => Promise<Output> | Output;\nstrict?: boolean;\nexamples?: Array<Record<string, unknown>>;\nisReadOnly?: (input?: Input) => boolean;\nisDestructive?: (input?: Input) => boolean;\nisPlanReadOnly?: (input?: Input) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\naliases?: string[];\nuserFacingName?: (input?: Input) => string;\nsearchHint?: string;\ninterruptBehavior?: 'cancel' | 'block';\nisResultTruncated?: (output: Output) => boolean;\nmaxResultSizeChars?: number;\ninputsEquivalent?: (a: Input, b: Input) => boolean;\nvalidateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;\ngetToolUseSummary?: (input: Input) => string;\nprompt?: (options: ToolPromptOptions) => Promise<string> | string;\n}"
       },
       {
         "name": "AgentTurnCompletedEvent",
@@ -291,6 +311,16 @@
         "name": "appendProjectSettingsToPrompt",
         "kind": "function",
         "signature": "export declare function appendProjectSettingsToPrompt(base: string, settings: Pick<ProjectSettings, 'customPrompt' | 'projectRules'> & Record<string, unknown>): string;"
+      },
+      {
+        "name": "ApplyAssistantProposalContext",
+        "kind": "interface",
+        "signature": "export interface ApplyAssistantProposalContext {\nhomeDir?: string;\nprojectDir?: string;\nreferenceContext?: ReferenceOperationContext;\n}"
+      },
+      {
+        "name": "ApplyAssistantProposalResult",
+        "kind": "interface",
+        "signature": "export interface ApplyAssistantProposalResult {\nproposal: AssistantProposal;\nrewritten: string[];\nfilePath?: string;\n}"
       },
       {
         "name": "applyIssueTransition",
@@ -353,6 +383,11 @@
         "signature": "ASK_USER_QUESTION_TOOL_NAME = \"AskUserQuestion\""
       },
       {
+        "name": "askTeamDefinition",
+        "kind": "function",
+        "signature": "export declare function askTeamDefinition(definition: TeamDefinition, prompt: string, signal?: AbortSignal, opts?: TeamAskOptions): Promise<ModelTeamResult>;"
+      },
+      {
         "name": "assertPolicyPatchAllowed",
         "kind": "function",
         "signature": "export declare function assertPolicyPatchAllowed(resolved: ResolvedPolicy, patch: Record<string, unknown>): void;"
@@ -368,6 +403,16 @@
         "signature": "export declare function assistantConfigPath(homeDir?: string): string;"
       },
       {
+        "name": "AssistantDeletePayload",
+        "kind": "interface",
+        "signature": "export interface AssistantDeletePayload {\nkind: ReferenceDefinitionKind;\nname: string;\nreferences: ReferenceEdge[];\nstrategies: DeleteFallbackOption[];\n}"
+      },
+      {
+        "name": "AssistantEditorContext",
+        "kind": "interface",
+        "signature": "export interface AssistantEditorContext {\nactiveRegion: string;\nentityKind?: 'agent' | 'router' | 'graph' | 'workflow';\nentityName?: string;\ndirty: boolean;\nbaseDigest?: string;\ndraft?: TeamDefinition | Record<string, unknown>;\n}"
+      },
+      {
         "name": "AssistantGlobalConfig",
         "kind": "interface",
         "signature": "export interface AssistantGlobalConfig {\nmodel?: string;\nbridgeConfig?: string;\nactiveSessionId?: string;\n}"
@@ -375,12 +420,32 @@
       {
         "name": "AssistantGlobalHost",
         "kind": "interface",
-        "signature": "export interface AssistantGlobalHost {\nhomeDir: string;\ncurrentWorkDir: string;\ngetAppState?: () => Record<string, unknown> | Promise<Record<string, unknown>>;\nopenProject?: (projectPath: string) => Promise<{\nworkDir: string;\n}>;\napplySettings?: (patch: Record<string, unknown>) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nactivateAgent?: (name: string) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nreadSettingsRaw?: () => Promise<Record<string, unknown>>;\nwriteSettingsRaw?: (raw: Record<string, unknown>) => Promise<void>;\n}"
+        "signature": "export interface AssistantGlobalHost {\nhomeDir: string;\ncurrentWorkDir: string;\ngetAppState?: () => Record<string, unknown> | Promise<Record<string, unknown>>;\ngetEditorContext?: () => AssistantEditorContext | null | Promise<AssistantEditorContext | null>;\nopenProject?: (projectPath: string) => Promise<{\nworkDir: string;\n}>;\napplySettings?: (patch: Record<string, unknown>) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nactivateAgent?: (name: string) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nactivateTarget?: (kind: 'config' | 'router' | 'team', name: string) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nreadSettingsRaw?: () => Promise<Record<string, unknown>>;\nwriteSettingsRaw?: (raw: Record<string, unknown>) => Promise<void>;\nassistantSessionId?: string;\nproposals?: AssistantProposalStore;\nonProposal?: (proposal: AssistantProposal) => void;\nteamProposals?: TeamProposalStore;\nonTeamProposal?: (proposal: TeamGraphProposal) => void;\ngetReferenceSnapshot?: () => Promise<{\nindex: ReferenceEdge[];\nknown: ReferenceKnownSets;\n}>;\ngetSessionRefState?: () => ReferenceIndexSessionState | null;\nreadTeamPreferences?: () => TeamPreferences | null;\nwriteTeamPreferences?: (preferences: TeamPreferences) => Promise<void>;\nreferenceOperationContext?: () => Promise<ReferenceOperationContext> | ReferenceOperationContext;\n}"
       },
       {
         "name": "AssistantProjectBrief",
         "kind": "interface",
         "signature": "export interface AssistantProjectBrief {\nname: string;\npath: string;\nnote: string;\nstatus: string;\nsessionCount: number;\nissueCounts: {\ntotal: number;\nopen: number;\nreview: number;\nclosed: number;\n};\nactive: boolean;\npinned: boolean;\nlastUsedAt: string;\n}"
+      },
+      {
+        "name": "AssistantProposal",
+        "kind": "interface",
+        "signature": "export interface AssistantProposal {\nid: string;\nassistantSessionId: string;\nkind: AssistantProposalKind;\ntitle: string;\nexplanation: string;\nstatus: AssistantProposalStatus;\ncreatedAt: string;\nappliedAt?: string;\ndelete?: AssistantDeletePayload;\nworkflow?: AssistantWorkflowUpsertPayload;\n}"
+      },
+      {
+        "name": "AssistantProposalKind",
+        "kind": "type",
+        "signature": "export type AssistantProposalKind = 'delete-definition' | 'workflow-upsert';"
+      },
+      {
+        "name": "AssistantProposalStatus",
+        "kind": "type",
+        "signature": "export type AssistantProposalStatus = 'pending' | 'applied' | 'rejected';"
+      },
+      {
+        "name": "AssistantProposalStore",
+        "kind": "class",
+        "signature": "export declare class AssistantProposalStore {\nprivate readonly proposals;\nstageDelete(input: StageDeleteProposalInput): AssistantProposal;\nstageWorkflowUpsert(input: StageWorkflowUpsertInput): AssistantProposal;\nget(id: string): AssistantProposal | null;\nlistForSession(assistantSessionId: string): AssistantProposal[];\nreject(id: string): AssistantProposal;\napply(id: string, ctx?: ApplyAssistantProposalContext, opts?: {\nstrategy?: DeleteFallbackStrategy;\n}): Promise<ApplyAssistantProposalResult>;\nprivate requirePending;\n}"
       },
       {
         "name": "AssistantScope",
@@ -396,6 +461,11 @@
         "name": "AssistantTeamToolScope",
         "kind": "type",
         "signature": "export type AssistantTeamToolScope = 'global' | 'project';"
+      },
+      {
+        "name": "AssistantWorkflowUpsertPayload",
+        "kind": "interface",
+        "signature": "export interface AssistantWorkflowUpsertPayload {\nname: string;\ndescription?: string;\nscript: string;\nscope: 'project' | 'personal';\nprojectPath?: string;\nproblems: string[];\n}"
       },
       {
         "name": "AsyncQueueOverflowError",
@@ -655,7 +725,7 @@
       {
         "name": "CreateAgentSdkOptions",
         "kind": "interface",
-        "signature": "export interface CreateAgentSdkOptions {\nhomeDir?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel?: string;\nmaxTokens?: number;\ntemperature?: number;\nrunTimeoutMs?: number;\ntoolTimeoutMs?: number;\nhookTimeoutMs?: number;\nmcpTimeoutMs?: number;\ntimeoutMs?: number;\nmaxRetries?: number;\nworkDir?: string;\nsessionDirectory?: string;\nclientName?: string;\nclientVersion?: string;\nsystemPrompt?: string;\nmaxToolIterations?: number;\nfallbackModel?: string;\npromptCachingEnabled?: boolean;\nuserId?: string;\nmetadata?: Record<string, unknown>;\ntools?: AgentToolDefinition[];\nmcpServers?: AgentMcpServerDefinition[];\nagents?: HadamardAgentDefinition[];\nagentDirectories?: string[];\nloadDefaultAgentDirectories?: boolean;\ndisableDefaultAgents?: boolean;\nmaxSubagentDepth?: number;\nmaxSubagentFanout?: number;\nskills?: HadamardSkillDefinition[];\nskillDirectories?: string[];\nexternalSkills?: boolean | HadamardExternalSkillsOptions;\ndisableDefaultSkills?: boolean;\nloadDefaultSkillDirectories?: boolean;\nhooks?: HadamardHooks;\ncompact?: Partial<HadamardCompactConfig>;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\ncomputerUse?: boolean | CreateHadamardComputerUseOptions;\nbrowserUse?: boolean | CreateHadamardBrowserUseOptions;\nprovider?: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nmodelApi?: ModelApi;\nsessionManager?: SessionManagerConfig;\nsandbox?: import('./sandbox/policyResolver.js').SandboxPolicyInput;\nlanguageServers?: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks?: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree?: boolean;\npolicyDocuments?: import('./policy/types.js').PolicyDocument[];\n}"
+        "signature": "export interface CreateAgentSdkOptions {\nhomeDir?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel?: string;\nmaxTokens?: number;\ntemperature?: number;\nrunTimeoutMs?: number;\ntoolTimeoutMs?: number;\nhookTimeoutMs?: number;\nmcpTimeoutMs?: number;\ntimeoutMs?: number;\nmaxRetries?: number;\nworkDir?: string;\nsessionDirectory?: string;\nclientName?: string;\nclientVersion?: string;\nsystemPrompt?: string;\nmaxToolIterations?: number;\nfallbackModel?: string;\npromptCachingEnabled?: boolean;\nuserId?: string;\nmetadata?: Record<string, unknown>;\ntools?: AgentToolDefinition[];\nmcpServers?: AgentMcpServerDefinition[];\nagents?: HadamardAgentDefinition[];\nagentDirectories?: string[];\nloadDefaultAgentDirectories?: boolean;\ndisableDefaultAgents?: boolean;\nexternalAgentRunner?: (request: ExternalAgentRunRequest) => Promise<ExternalAgentRunResult>;\nmaxSubagentDepth?: number;\nmaxSubagentFanout?: number;\nskills?: HadamardSkillDefinition[];\nskillDirectories?: string[];\nexternalSkills?: boolean | HadamardExternalSkillsOptions;\ndisableDefaultSkills?: boolean;\nloadDefaultSkillDirectories?: boolean;\nhooks?: HadamardHooks;\ncompact?: Partial<HadamardCompactConfig>;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\ncomputerUse?: boolean | CreateHadamardComputerUseOptions;\nbrowserUse?: boolean | CreateHadamardBrowserUseOptions;\nprovider?: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nmodelApi?: ModelApi;\nsessionManager?: SessionManagerConfig;\nsandbox?: import('./sandbox/policyResolver.js').SandboxPolicyInput;\nlanguageServers?: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks?: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree?: boolean;\npolicyDocuments?: import('./policy/types.js').PolicyDocument[];\n}"
       },
       {
         "name": "createAskUserQuestionTool",
@@ -870,7 +940,7 @@
       {
         "name": "createHadamardTaskTool",
         "kind": "function",
-        "signature": "export declare function createHadamardTaskTool(options: {\nlistAgentDefinitions?: () => HadamardAgentDefinitionSummary[];\ngetAgentDefinition: (agent: string) => HadamardAgentDefinition | undefined;\nrunAgent: (agent: string, prompt: string, options?: AgentRunOptions, delegation?: HadamardAgentDelegationContext) => Promise<{\nresult: AgentRunResult;\nsessionId?: string;\nworktreePath?: string;\nworktreeBranch?: string;\n}>;\nlaunchBackgroundAgent: (agent: string, prompt: string, options: {\nparentRunId: string;\nparentSessionId?: string;\n}, runOptions?: AgentRunOptions, delegation?: HadamardAgentDelegationContext) => Promise<HadamardBackgroundTaskRecord>;\nonDelegated?: (event: {\nsubagentType: string;\ndescription: string;\nparentRunId: string;\nparentSessionId?: string;\nrunId: string;\nsessionId?: string;\nstatus: 'completed' | 'async_launched';\ntaskId?: string;\nrequestCount?: number;\ntoolCallCount?: number;\ntoolErrorCount?: number;\ntextSummary?: string;\n}) => void;\nname?: string;\ndescription?: string;\nmaxDepth?: number;\nmaxFanout?: number;\n}): AgentToolDefinition<HadamardTaskToolInput, HadamardTaskToolResult>;"
+        "signature": "export declare function createHadamardTaskTool(options: {\nlistAgentDefinitions?: () => HadamardAgentDefinitionSummary[];\ngetAgentDefinition: (agent: string) => HadamardAgentDefinition | undefined;\nrunAgent: (agent: string, prompt: string, options?: AgentRunOptions, delegation?: HadamardAgentDelegationContext) => Promise<{\nresult: AgentRunResult;\nsessionId?: string;\nworktreePath?: string;\nworktreeBranch?: string;\n}>;\nlaunchBackgroundAgent: (agent: string, prompt: string, options: {\nparentRunId: string;\nparentSessionId?: string;\n}, runOptions?: AgentRunOptions, delegation?: HadamardAgentDelegationContext) => Promise<HadamardBackgroundTaskRecord>;\nonDelegated?: (event: {\nsubagentType: string;\ndescription: string;\nparentRunId: string;\nparentSessionId?: string;\nrunId: string;\nsessionId?: string;\nstatus: 'completed' | 'async_launched';\ntaskId?: string;\nrequestCount?: number;\ntoolCallCount?: number;\ntoolErrorCount?: number;\ntextSummary?: string;\n}) => void;\nlistAvailableTools?: () => AgentToolDefinition[];\nname?: string;\ndescription?: string;\nmaxDepth?: number;\nmaxFanout?: number;\n}): AgentToolDefinition<HadamardTaskToolInput, HadamardTaskToolResult>;"
       },
       {
         "name": "createHadamardTaskTools",
@@ -1010,7 +1080,7 @@
       {
         "name": "CreateToolOptions",
         "kind": "interface",
-        "signature": "export interface CreateToolOptions<Input = any, Output = any> {\nname: string;\ndescription: string;\ninputSchema: z.ZodType<Input>;\noutputSchema?: z.ZodType<Output>;\nserialize?: (output: Output) => string | ToolResultBlockParam['content'];\nstrict?: boolean;\nexamples?: Array<Record<string, unknown>>;\nisReadOnly?: (input?: Input) => boolean;\nisDestructive?: (input?: Input) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\naliases?: string[];\nuserFacingName?: (input?: Input) => string;\nsearchHint?: string;\ninterruptBehavior?: 'cancel' | 'block';\nisResultTruncated?: (output: Output) => boolean;\nmaxResultSizeChars?: number;\ninputsEquivalent?: (a: Input, b: Input) => boolean;\nvalidateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;\ngetToolUseSummary?: (input: Input) => string;\nprompt?: (options: ToolPromptOptions) => Promise<string> | string;\n}"
+        "signature": "export interface CreateToolOptions<Input = any, Output = any> {\nname: string;\ndescription: string;\ninputSchema: z.ZodType<Input>;\noutputSchema?: z.ZodType<Output>;\nserialize?: (output: Output) => string | ToolResultBlockParam['content'];\nstrict?: boolean;\nexamples?: Array<Record<string, unknown>>;\nisReadOnly?: (input?: Input) => boolean;\nisDestructive?: (input?: Input) => boolean;\nisPlanReadOnly?: (input?: Input) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\naliases?: string[];\nuserFacingName?: (input?: Input) => string;\nsearchHint?: string;\ninterruptBehavior?: 'cancel' | 'block';\nisResultTruncated?: (output: Output) => boolean;\nmaxResultSizeChars?: number;\ninputsEquivalent?: (a: Input, b: Input) => boolean;\nvalidateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;\ngetToolUseSummary?: (input: Input) => string;\nprompt?: (options: ToolPromptOptions) => Promise<string> | string;\n}"
       },
       {
         "name": "createToolSearchTool",
@@ -1128,6 +1198,21 @@
         "signature": "export declare function deleteAgentProfile(name: string, homeDir?: string): PersistedAgentProfiles;"
       },
       {
+        "name": "deleteAgentProfileMarkdown",
+        "kind": "function",
+        "signature": "export declare function deleteAgentProfileMarkdown(name: string, homeDir?: string, directory?: string): boolean;"
+      },
+      {
+        "name": "DeleteFallbackOption",
+        "kind": "interface",
+        "signature": "export interface DeleteFallbackOption {\ntype: DeleteFallbackStrategy['type'];\nlabel: string;\nneedsTarget?: boolean;\n}"
+      },
+      {
+        "name": "deleteFallbackOptionsForKind",
+        "kind": "function",
+        "signature": "export declare function deleteFallbackOptionsForKind(kind: ReferenceDefinitionKind): DeleteFallbackOption[];"
+      },
+      {
         "name": "deleteProjectIssue",
         "kind": "function",
         "signature": "export declare function deleteProjectIssue(workDir: string, homeDir: string, idOrNumber: string | number, mode?: IssueStorageMode): Promise<boolean>;"
@@ -1243,6 +1328,11 @@
         "signature": "export declare function edgeConditionPasses(condition: string | undefined, output: string): boolean;"
       },
       {
+        "name": "EffectiveAgentRunOptions",
+        "kind": "interface",
+        "signature": "export interface EffectiveAgentRunOptions {\nsystemPrompt?: string;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess: 'workspace' | 'full';\nmaxToolIterations?: number;\ntimeoutMs?: number;\nsubagent: boolean;\n}"
+      },
+      {
         "name": "EMPTY_PROJECT_PLAN",
         "kind": "value",
         "signature": "EMPTY_PROJECT_PLAN: ProjectPlan"
@@ -1331,6 +1421,16 @@
         "name": "ExpertPanelReport",
         "kind": "interface",
         "signature": "export interface ExpertPanelReport {\nmodel: string;\nid?: string;\nrole?: string;\nreport: string;\ntoolCalls: number;\ndurationMs: number;\nround?: number;\n}"
+      },
+      {
+        "name": "ExternalAgentRunRequest",
+        "kind": "interface",
+        "signature": "export interface ExternalAgentRunRequest {\nruntime: string;\nagentName: string;\nprompt: string;\nsystemPrompt?: string;\ncwd: string;\nsignal?: AbortSignal;\nmodel?: string;\npermissionMode?: string;\nhomeDir?: string;\n}"
+      },
+      {
+        "name": "ExternalAgentRunResult",
+        "kind": "interface",
+        "signature": "export interface ExternalAgentRunResult {\ntext: string;\nsessionId?: string;\ndurationMs?: number;\nnumTurns?: number;\n}"
       },
       {
         "name": "ExternalCliAuthProbeOptions",
@@ -1643,6 +1743,16 @@
         "signature": "export declare function getDefaultHadamardSettingsPath(homeDir?: string): string;"
       },
       {
+        "name": "getHadamardAgentTemplate",
+        "kind": "function",
+        "signature": "export declare function getHadamardAgentTemplate(name: string): HadamardAgentTemplate | undefined;"
+      },
+      {
+        "name": "getHadamardAgentTemplates",
+        "kind": "function",
+        "signature": "export declare function getHadamardAgentTemplates(): HadamardAgentTemplate[];"
+      },
+      {
         "name": "getHadamardApiContextManagement",
         "kind": "function",
         "signature": "export declare function getHadamardApiContextManagement(messages: readonly MessageParam[], compact: HadamardCompactConfig): Record<string, unknown> | undefined;"
@@ -1741,6 +1851,11 @@
         "name": "getPersistedHadamardSessionPermissionState",
         "kind": "function",
         "signature": "export declare function getPersistedHadamardSessionPermissionState(metadata: Record<string, unknown> | undefined): HadamardSessionPermissionState;"
+      },
+      {
+        "name": "getProductCapability",
+        "kind": "function",
+        "signature": "export declare function getProductCapability(id: string): ProductCapability | null;"
       },
       {
         "name": "getScheduledAutomationTask",
@@ -2100,7 +2215,7 @@
       {
         "name": "HadamardAgentClient",
         "kind": "class",
-        "signature": "export declare class HadamardAgentClient {\nreadonly config: Awaited<ReturnType<typeof resolveRuntimeConfig>>;\nprivate readonly store;\nprivate readonly backgroundTaskStore;\nprivate readonly mailboxStore;\nprivate readonly teammateStore;\nprivate readonly modelApi;\nprivate readonly mcpManager;\nprivate readonly defaultTools;\nprivate readonly defaultMcpServers;\nprivate readonly hooks?;\nprivate readonly maxSubagentDepth;\nprivate readonly maxSubagentFanout;\nreadonly sessions: AgentSessionsApi;\nreadonly agents: HadamardAgentsApi;\nreadonly skills: HadamardSkillsApi<AgentSession>;\nreadonly tools: HadamardToolsApi;\nreadonly tasks: HadamardBackgroundTasksApi;\nreadonly buddy: HadamardBuddyApi;\nreadonly memory: HadamardMemoryApi;\nreadonly memoryProposals: MemoryProposalService;\nreadonly dream: HadamardDreamApi;\nreadonly goals: ProjectGoalApi;\nreadonly swarm: HadamardSwarmApi;\nreadonly context: HadamardContextApi;\nreadonly slashCommands: HadamardSlashCommandsApi;\nreadonly workflow: WorkflowApi;\nreadonly checkpoints: FileCheckpointService;\nreadonly sessionGraph: SessionGraph;\nreadonly sessionForks: SessionForkService;\nreadonly taskWorktrees?: TaskWorktreeCoordinator;\nreadonly threadDiffs: ThreadDiffService;\nreadonly reviews: ReviewStore;\nreadonly approvalPolicy: ApprovalPolicy;\nreadonly auditLog: AuditLog;\nreadonly codeIntelligence?: CodeIntelligenceService;\nreadonly executions: HadamardAgentExecutionsApi;\nprivate readonly sessionManager;\nprivate readonly sessionTurnCoordinator;\nprivate readonly agentDefinitions;\nprivate readonly skillDefinitions;\nprivate readonly activatedConditionalSkills;\nprivate readonly pendingDelegations;\nprivate readonly pendingRuntimeNotifications;\nprivate readonly durableMemoryUsageSessions;\nprivate readonly sessionRuntimeOverrides;\nprivate readonly backgroundTaskManager;\nprivate readonly defaultPermissionMode?;\nprivate readonly defaultPermissions?;\nprivate readonly defaultClassifier?;\nprivate readonly defaultApprover?;\nprivate readonly fileChangeJournal;\nprivate readonly sandboxExecutor;\nprivate readonly typedHookRunner?;\nprivate readonly conversationRestoreStack;\nprivate constructor();\nlistToolMetadata(options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolMetadata[]>;\ngetToolMetadata(name: string, options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolMetadata | undefined>;\ngetTool(name: string): AgentToolDefinition | undefined;\ngetToolCatalog(options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolCatalog>;\ngetContextOverview(options?: import('../types.js').HadamardCleanContextOverviewOptions): Promise<import('../types.js').HadamardCleanContextOverview>;\nstatic create(options?: CreateAgentSdkOptions): Promise<HadamardAgentClient>;\nrun(input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nstream(input: string | MessageParam['content'], options?: AgentRunOptions): AgentRunStream;\nparallel<T>(tasks: Array<() => Promise<T>>, options?: import('../types.js').ParallelOptions): Promise<T[]>;\nrace<T>(tasks: Array<() => Promise<T>>, options?: import('../types.js').RaceOptions): Promise<T>;\ncreateSession(options?: SessionCreateOptions): Promise<AgentSession>;\nresumeSession(sessionId: string, options?: SessionResumeOptions): Promise<AgentSession>;\ngetSessionDiff(sessionId: string): Promise<import('../review/types.js').ThreadDiff>;\napplySessionDiff(sessionId: string, targetDir?: string): Promise<import('../review/types.js').DiffApplyResult>;\noneShotMessage(request: {\nsystem?: string;\nprompt: string;\nmaxTokens?: number;\ntemperature?: number;\nsignal?: AbortSignal;\n}): Promise<string>;\nprivate hasPersistedSessionResumeOverrides;\nprivate prepareResumedStoredSession;\nresolveModel(model?: string): string;\ncompactSessionById(sessionId: string, options?: AgentSessionCompactOptions): Promise<HadamardSessionCompactResult>;\ngetMemoryStateForSession(sessionId?: string, options?: Omit<import('../types.js').HadamardMemoryStateOptions, 'projectPath' | 'sessionId'>): Promise<import('../types.js').HadamardMemoryState>;\ndreamState(currentSessionId?: string): Promise<HadamardDreamState>;\nrunDream(options?: import('../types.js').HadamardDreamRunOptions): Promise<HadamardDreamRunResult>;\nmaybeAutoDream(options?: import('../types.js').HadamardDreamRunOptions): Promise<HadamardDreamRunResult>;\ncreateTeam(definition: import('../types.js').TeamDefinition): Promise<import('../team/modelTeam.js').ModelTeam>;\nclose(): Promise<void>;\nlistAgentDefinitions(): HadamardAgentDefinitionSummary[];\ngetAgentDefinition(agent: string): HadamardAgentDefinition | undefined;\nrunWithAgent(agent: string, input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\ncreateAgentSession(agent: string, options?: SessionCreateOptions): Promise<AgentSession>;\nlistSkillDefinitions(): HadamardSkillDefinitionSummary[];\nprivate activateConditionalSkillsForPaths;\nprivate activateConditionalSkillsFromEvent;\ngetSkillDefinition(skillName: string): HadamardSkillDefinition | undefined;\nrunSkill(skillName: string, args?: string, options?: AgentRunOptions): Promise<AgentRunResult>;\nstreamSkill(skillName: string, args?: string, options?: AgentRunOptions): AgentRunStream;\ncreateTaskTool(options?: {\nname?: string;\ndescription?: string;\n}): AgentToolDefinition;\nprivate replaceDefaultTool;\nprivate createSendMessageTool;\nprivate createSkillRegistryTool;\nprivate createBackgroundTaskListTool;\nprivate createBackgroundTaskGetTool;\nprivate createBackgroundTaskStopTool;\nprivate createBackgroundTaskOutputTool;\nprivate prepareSkillExecution;\nprivate runForkedSkillExecution;\nprivate forwardStreamResult;\nprivate getSessionRuntimeOverrides;\nprivate setSessionRuntimeHooks;\nprivate clearSessionRuntimeHooks;\nprivate setSessionRuntimePermissionContext;\nprivate clearSessionRuntimePermissionContext;\nprivate applySessionRuntimeOverrides;\nprivate hydrateSession;\nprivate setSessionModel;\nprivate restoreCheckpointToSession;\nprivate runSkillOnSession;\nprivate streamSkillOnSession;\nprivate runOnSession;\nprivate runOnSessionExclusive;\nprivate streamOnSession;\nprivate executeRun;\nprivate executeSessionRunWithReactiveCompact;\nprivate resolveGoalService;\nprivate resolveSystemPrompt;\nprivate prepareRunAugmentations;\nprivate preparePreloadedAgentSkillMessages;\nprivate prepareAgentMemoryMessages;\nprivate applyPostRunHooks;\nprivate recordPendingDelegation;\nprivate updatePendingDelegation;\nprivate consumePendingDelegations;\nprivate prepareRelevantMemoryContext;\nprivate prepareInvokedSkillContext;\nprivate getSessionMemoryRuntimeState;\nprivate getCompactStateForSession;\nprivate getAgentContinuityForSession;\nprivate tryReactiveCompactSession;\nprivate delegatedExecutionContext;\nprivate existingAgentExecutionContext;\nprivate tryStartExecutionEdge;\nprivate tryCompleteExecutionEdge;\nprivate tryFailExecutionEdge;\nprivate tryCompleteExecutionEdgeByCallId;\nprivate tryFailExecutionEdgeByCallId;\nprivate runDelegatedAgentTask;\nprivate routeMessageToAgent;\nprivate prepareDelegatedWorkspace;\nprivate prepareDelegatedRunOptions;\nprivate finalizeDelegatedWorkspace;\nprivate drainBackgroundTaskInputs;\nprivate collectPendingTaskNotifications;\nprivate enqueueTaskNotification;\nprivate drainRuntimeNotifications;\nprivate markTaskNotificationDelivered;\nprivate launchBackgroundAgentTask;\nprivate launchBackgroundOnSession;\nprivate resumeLateSubagentInputs;\nprivate settleTerminalPromptTooLong;\nprivate runBackgroundAgentSession;\nprivate reconcileInterruptedAgentExecutions;\nprivate compactSessionForSession;\nprivate runDreamExecution;\nprivate resolveDreamExecutionProfile;\nprivate resolveGoalContinuationRunOptions;\nprivate launchBackgroundDreamTask;\nprivate buildDreamSystemPrompt;\nprivate persistSessionAfterRun;\nprivate requireAgentDefinition;\nprivate requireSkillDefinition;\nprivate resolveRunWorkDir;\nprivate sandboxExecutorForWorkDir;\nprivate resolvePermissionClassifier;\nprivate resolveSessionAgentOptions;\nprivate mergeAgentRunOptions;\nprivate mergeSkillRunOptions;\n}"
+        "signature": "export declare class HadamardAgentClient {\nreadonly config: Awaited<ReturnType<typeof resolveRuntimeConfig>>;\nprivate readonly store;\nprivate readonly backgroundTaskStore;\nprivate readonly mailboxStore;\nprivate readonly teammateStore;\nprivate readonly modelApi;\nprivate readonly mcpManager;\nprivate readonly defaultTools;\nprivate readonly defaultMcpServers;\nprivate readonly hooks?;\nprivate readonly maxSubagentDepth;\nprivate readonly maxSubagentFanout;\nreadonly sessions: AgentSessionsApi;\nreadonly agents: HadamardAgentsApi;\nreadonly skills: HadamardSkillsApi<AgentSession>;\nreadonly tools: HadamardToolsApi;\nreadonly tasks: HadamardBackgroundTasksApi;\nreadonly buddy: HadamardBuddyApi;\nreadonly memory: HadamardMemoryApi;\nreadonly memoryProposals: MemoryProposalService;\nreadonly dream: HadamardDreamApi;\nreadonly goals: ProjectGoalApi;\nreadonly swarm: HadamardSwarmApi;\nreadonly context: HadamardContextApi;\nreadonly slashCommands: HadamardSlashCommandsApi;\nreadonly workflow: WorkflowApi;\nreadonly checkpoints: FileCheckpointService;\nreadonly sessionGraph: SessionGraph;\nreadonly sessionForks: SessionForkService;\nreadonly taskWorktrees?: TaskWorktreeCoordinator;\nreadonly threadDiffs: ThreadDiffService;\nreadonly reviews: ReviewStore;\nreadonly approvalPolicy: ApprovalPolicy;\nreadonly auditLog: AuditLog;\nreadonly codeIntelligence?: CodeIntelligenceService;\nreadonly executions: HadamardAgentExecutionsApi;\nprivate readonly sessionManager;\nprivate readonly sessionTurnCoordinator;\nprivate readonly agentDefinitions;\nprivate readonly agentSessionModelClients;\nprivate readonly externalAgentRunner;\nprivate readonly skillDefinitions;\nprivate readonly activatedConditionalSkills;\nprivate readonly pendingDelegations;\nprivate readonly pendingRuntimeNotifications;\nprivate readonly durableMemoryUsageSessions;\nprivate readonly sessionRuntimeOverrides;\nprivate readonly backgroundTaskManager;\nprivate readonly defaultPermissionMode?;\nprivate readonly defaultPermissions?;\nprivate readonly defaultClassifier?;\nprivate readonly defaultApprover?;\nprivate readonly fileChangeJournal;\nprivate readonly sandboxExecutor;\nprivate readonly typedHookRunner?;\nprivate readonly conversationRestoreStack;\nprivate constructor();\nlistToolMetadata(options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolMetadata[]>;\ngetToolMetadata(name: string, options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolMetadata | undefined>;\ngetTool(name: string): AgentToolDefinition | undefined;\ngetToolCatalog(options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolCatalog>;\ngetContextOverview(options?: import('../types.js').HadamardCleanContextOverviewOptions): Promise<import('../types.js').HadamardCleanContextOverview>;\nstatic create(options?: CreateAgentSdkOptions): Promise<HadamardAgentClient>;\nrun(input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nstream(input: string | MessageParam['content'], options?: AgentRunOptions): AgentRunStream;\nparallel<T>(tasks: Array<() => Promise<T>>, options?: import('../types.js').ParallelOptions): Promise<T[]>;\nrace<T>(tasks: Array<() => Promise<T>>, options?: import('../types.js').RaceOptions): Promise<T>;\ncreateSession(options?: SessionCreateOptions): Promise<AgentSession>;\nresumeSession(sessionId: string, options?: SessionResumeOptions): Promise<AgentSession>;\ngetSessionDiff(sessionId: string): Promise<import('../review/types.js').ThreadDiff>;\napplySessionDiff(sessionId: string, targetDir?: string): Promise<import('../review/types.js').DiffApplyResult>;\noneShotMessage(request: {\nsystem?: string;\nprompt: string;\nmaxTokens?: number;\ntemperature?: number;\nsignal?: AbortSignal;\n}): Promise<string>;\nprivate hasPersistedSessionResumeOverrides;\nprivate prepareResumedStoredSession;\nresolveModel(model?: string): string;\ncompactSessionById(sessionId: string, options?: AgentSessionCompactOptions): Promise<HadamardSessionCompactResult>;\ngetMemoryStateForSession(sessionId?: string, options?: Omit<import('../types.js').HadamardMemoryStateOptions, 'projectPath' | 'sessionId'>): Promise<import('../types.js').HadamardMemoryState>;\ndreamState(currentSessionId?: string): Promise<HadamardDreamState>;\nrunDream(options?: import('../types.js').HadamardDreamRunOptions): Promise<HadamardDreamRunResult>;\nmaybeAutoDream(options?: import('../types.js').HadamardDreamRunOptions): Promise<HadamardDreamRunResult>;\ncreateTeam(definition: import('../types.js').TeamDefinition): Promise<import('../team/modelTeam.js').ModelTeam>;\nclose(): Promise<void>;\nlistAgentDefinitions(): HadamardAgentDefinitionSummary[];\ngetAgentDefinition(agent: string): HadamardAgentDefinition | undefined;\nrunWithAgent(agent: string, input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nprivate runExternalDefinition;\ncreateAgentSession(agent: string, options?: SessionCreateOptions): Promise<AgentSession>;\nlistSkillDefinitions(): HadamardSkillDefinitionSummary[];\nprivate activateConditionalSkillsForPaths;\nprivate activateConditionalSkillsFromEvent;\ngetSkillDefinition(skillName: string): HadamardSkillDefinition | undefined;\nrunSkill(skillName: string, args?: string, options?: AgentRunOptions): Promise<AgentRunResult>;\nstreamSkill(skillName: string, args?: string, options?: AgentRunOptions): AgentRunStream;\ncreateTaskTool(options?: {\nname?: string;\ndescription?: string;\n}): AgentToolDefinition;\nprivate replaceDefaultTool;\nprivate createSendMessageTool;\nprivate createSkillRegistryTool;\nprivate createBackgroundTaskListTool;\nprivate createBackgroundTaskGetTool;\nprivate createBackgroundTaskStopTool;\nprivate createBackgroundTaskOutputTool;\nprivate prepareSkillExecution;\nprivate runForkedSkillExecution;\nprivate forwardStreamResult;\nprivate getSessionRuntimeOverrides;\nprivate setSessionRuntimeHooks;\nprivate clearSessionRuntimeHooks;\nprivate setSessionRuntimePermissionContext;\nprivate clearSessionRuntimePermissionContext;\nprivate applySessionRuntimeOverrides;\nprivate hydrateSession;\nprivate setSessionModel;\nprivate restoreCheckpointToSession;\nprivate runSkillOnSession;\nprivate streamSkillOnSession;\nprivate runOnSession;\nprivate runOnSessionExclusive;\nprivate streamOnSession;\nprivate executeRun;\nprivate executeSessionRunWithReactiveCompact;\nprivate resolveGoalService;\nprivate resolveSystemPrompt;\nprivate prepareRunAugmentations;\nprivate preparePreloadedAgentSkillMessages;\nprivate prepareAgentMemoryMessages;\nprivate applyPostRunHooks;\nprivate recordPendingDelegation;\nprivate updatePendingDelegation;\nprivate consumePendingDelegations;\nprivate prepareRelevantMemoryContext;\nprivate prepareInvokedSkillContext;\nprivate getSessionMemoryRuntimeState;\nprivate getCompactStateForSession;\nprivate getAgentContinuityForSession;\nprivate tryReactiveCompactSession;\nprivate delegatedExecutionContext;\nprivate existingAgentExecutionContext;\nprivate tryStartExecutionEdge;\nprivate tryCompleteExecutionEdge;\nprivate tryFailExecutionEdge;\nprivate tryCompleteExecutionEdgeByCallId;\nprivate tryFailExecutionEdgeByCallId;\nprivate runDelegatedAgentTask;\nprivate routeMessageToAgent;\nprivate prepareDelegatedWorkspace;\nprivate prepareDelegatedRunOptions;\nprivate finalizeDelegatedWorkspace;\nprivate drainBackgroundTaskInputs;\nprivate collectPendingTaskNotifications;\nprivate enqueueTaskNotification;\nprivate drainRuntimeNotifications;\nprivate markTaskNotificationDelivered;\nprivate launchBackgroundAgentTask;\nprivate launchBackgroundOnSession;\nprivate resumeLateSubagentInputs;\nprivate settleTerminalPromptTooLong;\nprivate runBackgroundAgentSession;\nprivate reconcileInterruptedAgentExecutions;\nprivate compactSessionForSession;\nprivate runDreamExecution;\nprivate resolveDreamExecutionProfile;\nprivate resolveGoalContinuationRunOptions;\nprivate launchBackgroundDreamTask;\nprivate buildDreamSystemPrompt;\nprivate persistSessionAfterRun;\nprivate requireAgentDefinition;\nprivate requireSkillDefinition;\nprivate resolveRunWorkDir;\nprivate sandboxExecutorForWorkDir;\nprivate resolvePermissionClassifier;\nprivate resolveSessionAgentOptions;\nprivate resolveDefinitionModelClient;\nprivate mergeAgentRunOptions;\nprivate mergeSkillRunOptions;\n}"
       },
       {
         "name": "HadamardAgentContinuityState",
@@ -2110,12 +2225,12 @@
       {
         "name": "HadamardAgentDefinition",
         "kind": "interface",
-        "signature": "export interface HadamardAgentDefinition {\nname: string;\ndescription: string;\nsystemPrompt?: string;\nmodel?: string;\neffort?: HadamardRunEffort;\npermissionMode?: HadamardPermissionMode;\nmaxToolIterations?: number;\nmaxTurns?: number;\nmetadata?: Record<string, unknown>;\nhooks?: HadamardHooks;\ntools?: AgentToolDefinition[];\nallowedTools?: string[];\ndisallowedTools?: string[];\nallowedAgents?: string[];\nskills?: string[];\nmcpServers?: AgentMcpServerDefinition[];\nrequiredMcpServers?: string[];\ninheritDefaultTools?: boolean;\ninheritDefaultMcpServers?: boolean;\ninitialPrompt?: string;\nmemory?: 'user' | 'project' | 'local';\nbackground?: boolean;\nisolation?: 'worktree';\ncwd?: string;\nallowNestedAgents?: boolean;\nsource?: 'built-in' | 'user' | 'project' | 'custom';\nsourcePath?: string;\n}"
+        "signature": "export interface HadamardAgentDefinition {\nname: string;\ndescription: string;\nsystemPrompt?: string;\nmodel?: string;\nbridgeConfig?: string;\nruntime?: string;\npromptMode?: 'extend' | 'replace';\neffort?: HadamardRunEffort;\npermissionMode?: HadamardPermissionMode;\ntemperature?: number;\ntopP?: number;\nmaxTokens?: number;\ntimeoutMs?: number;\nworkspaceAccess?: 'workspace' | 'full';\nsubagent?: boolean;\nmaxToolIterations?: number;\nmaxTurns?: number;\nmetadata?: Record<string, unknown>;\nhooks?: HadamardHooks;\ntools?: AgentToolDefinition[];\nallowedTools?: string[];\ndisallowedTools?: string[];\nallowedAgents?: string[];\nskills?: string[];\nmcpServers?: AgentMcpServerDefinition[];\nrequiredMcpServers?: string[];\ninheritDefaultTools?: boolean;\ninheritDefaultMcpServers?: boolean;\ninitialPrompt?: string;\nmemory?: 'user' | 'project' | 'local';\nbackground?: boolean;\nisolation?: 'worktree';\ncwd?: string;\nallowNestedAgents?: boolean;\nsource?: 'built-in' | 'user' | 'project' | 'custom';\nsourcePath?: string;\n}"
       },
       {
         "name": "HadamardAgentDefinitionSummary",
         "kind": "interface",
-        "signature": "export interface HadamardAgentDefinitionSummary {\nname: string;\ndescription: string;\nmodel?: string;\neffort?: HadamardRunEffort;\npermissionMode?: HadamardPermissionMode;\nmaxToolIterations?: number;\nmaxTurns?: number;\ntoolNames: string[];\nallowedTools: string[];\ndisallowedTools: string[];\nallowedAgents: string[];\nskills: string[];\nmcpServerNames: string[];\nrequiredMcpServers: string[];\ninheritDefaultTools: boolean;\ninheritDefaultMcpServers: boolean;\nbackground: boolean;\nisolation?: 'worktree';\nmemory?: 'user' | 'project' | 'local';\nsource?: 'built-in' | 'user' | 'project' | 'custom';\nsourcePath?: string;\nmetadataKeys: string[];\nhasSystemPrompt: boolean;\nhasHooks: boolean;\n}"
+        "signature": "export interface HadamardAgentDefinitionSummary {\nname: string;\ndescription: string;\nmodel?: string;\nbridgeConfig?: string;\nsubagent?: boolean;\neffort?: HadamardRunEffort;\npermissionMode?: HadamardPermissionMode;\nmaxToolIterations?: number;\nmaxTurns?: number;\ntoolNames: string[];\nallowedTools: string[];\ndisallowedTools: string[];\nallowedAgents: string[];\nskills: string[];\nmcpServerNames: string[];\nrequiredMcpServers: string[];\ninheritDefaultTools: boolean;\ninheritDefaultMcpServers: boolean;\nbackground: boolean;\nisolation?: 'worktree';\nmemory?: 'user' | 'project' | 'local';\nsource?: 'built-in' | 'user' | 'project' | 'custom';\nsourcePath?: string;\nmetadataKeys: string[];\nhasSystemPrompt: boolean;\nhasHooks: boolean;\n}"
       },
       {
         "name": "HadamardAgentExecutionsApi",
@@ -2141,6 +2256,16 @@
         "name": "HadamardAgentSummary",
         "kind": "interface",
         "signature": "export interface HadamardAgentSummary {\nname: string;\nsourceGroup: string;\nactive: boolean;\nrawLine: string;\nmodel?: string;\nmemory?: string;\nshadowedBy?: string;\n}"
+      },
+      {
+        "name": "HadamardAgentTemplate",
+        "kind": "interface",
+        "signature": "export interface HadamardAgentTemplate {\nname: string;\ndescription: string;\nfrontmatter: Record<string, string | number | boolean | string[]>;\nbody: string;\n}"
+      },
+      {
+        "name": "hadamardAgentTemplateToDefinition",
+        "kind": "function",
+        "signature": "export declare function hadamardAgentTemplateToDefinition(template: HadamardAgentTemplate): HadamardAgentDefinition;"
       },
       {
         "name": "HadamardBackgroundTaskHandle",
@@ -3273,6 +3398,11 @@
         "signature": "export declare function isExploratoryTool(name: string): boolean;"
       },
       {
+        "name": "isExternalAgentRuntime",
+        "kind": "function",
+        "signature": "export declare function isExternalAgentRuntime(runtime: string | undefined): boolean;"
+      },
+      {
         "name": "isHadamardDreamEligibleSession",
         "kind": "function",
         "signature": "export declare function isHadamardDreamEligibleSession(session: Pick<StoredSession, 'metadata'>): boolean;"
@@ -3311,6 +3441,11 @@
         "name": "isPortNode",
         "kind": "function",
         "signature": "export declare function isPortNode(node: TeamGraphNode): boolean;"
+      },
+      {
+        "name": "isProjectInstructionMode",
+        "kind": "function",
+        "signature": "export declare function isProjectInstructionMode(value: unknown): value is ProjectInstructionMode;"
       },
       {
         "name": "isProjectWorkMode",
@@ -3406,6 +3541,11 @@
         "name": "linuxSandboxCapabilities",
         "kind": "function",
         "signature": "export declare function linuxSandboxCapabilities(): SandboxCapabilityReport;"
+      },
+      {
+        "name": "listAgentDefinitionNames",
+        "kind": "function",
+        "signature": "export declare function listAgentDefinitionNames(homeDir?: string, projectDir?: string): string[];"
       },
       {
         "name": "listAgentProfileBridgeModels",
@@ -3768,6 +3908,11 @@
         "signature": "MESSAGE_IDS_KEY = \"__hadamardMessageIds\""
       },
       {
+        "name": "migrateAgentProfilesToMarkdown",
+        "kind": "function",
+        "signature": "export declare function migrateAgentProfilesToMarkdown(homeDir?: string, agentsDir?: string): {\nmigrated: string[];\nskipped: string[];\n};"
+      },
+      {
         "name": "migrateHadamardHomeData",
         "kind": "function",
         "signature": "export declare function migrateHadamardHomeData(options: MigrateHadamardHomeOptions): Promise<HadamardHomeMigrationSummary>;"
@@ -3835,12 +3980,12 @@
       {
         "name": "ModelTeamMode",
         "kind": "type",
-        "signature": "export type ModelTeamMode = 'panel-analysis' | 'panel' | 'analysis' | 'reviewer' | 'executor-reviewer' | 'graph';"
+        "signature": "export type ModelTeamMode = 'panel-analysis' | 'panel' | 'analysis' | 'reviewer' | 'executor-reviewer' | 'graph' | 'workflow';"
       },
       {
         "name": "ModelTeamResult",
         "kind": "type",
-        "signature": "export type ModelTeamResult = GraphTeamResult;"
+        "signature": "export type ModelTeamResult = GraphTeamResult | WorkflowTeamResult;"
       },
       {
         "name": "msUntilNextCron",
@@ -4108,6 +4253,21 @@
         "signature": "export declare function probeManagedPlugin(raw: Record<string, unknown>, pluginId: ManagedPluginId, options: ManagedPluginHealthOptions): Promise<ManagedPluginHealth>;"
       },
       {
+        "name": "productCapabilities",
+        "kind": "value",
+        "signature": "productCapabilities: readonly ProductCapability[]"
+      },
+      {
+        "name": "ProductCapability",
+        "kind": "interface",
+        "signature": "export interface ProductCapability {\nid: string;\ntitle: string;\nsummary: string;\nuiLocations: string[];\nprerequisites: string[];\nsteps: string[];\ncommands: string[];\nexamples: string[];\nlimitations: string[];\nrelatedSettings: string[];\nkeywords: string[];\n}"
+      },
+      {
+        "name": "profileStoredAsMarkdown",
+        "kind": "function",
+        "signature": "export declare function profileStoredAsMarkdown(name: string, homeDir?: string): boolean;"
+      },
+      {
         "name": "ProgressGoalInput",
         "kind": "interface",
         "signature": "export interface ProgressGoalInput {\nnote: string;\ntoolCalls?: number;\ntokens?: number;\nexpectedRevision?: number;\n}"
@@ -4116,6 +4276,11 @@
         "name": "PROJECT_GOAL_DATABASE",
         "kind": "value",
         "signature": "PROJECT_GOAL_DATABASE = \"goal-state.sqlite\""
+      },
+      {
+        "name": "ProjectContextSettings",
+        "kind": "interface",
+        "signature": "export interface ProjectContextSettings {\ninstructionMode: ProjectInstructionMode;\n}"
       },
       {
         "name": "ProjectGoalApi",
@@ -4141,6 +4306,11 @@
         "name": "ProjectGoalSummary",
         "kind": "interface",
         "signature": "export interface ProjectGoalSummary {\nid: string;\nobjective: string;\nstatus: Goal['status'];\nrevision: number;\ncreatedAt: string;\nupdatedAt: string;\nattachedSessionIds: string[];\n}"
+      },
+      {
+        "name": "ProjectInstructionMode",
+        "kind": "type",
+        "signature": "export type ProjectInstructionMode = 'agents' | 'claude' | 'both';"
       },
       {
         "name": "ProjectIssue",
@@ -4180,7 +4350,7 @@
       {
         "name": "ProjectSettings",
         "kind": "type",
-        "signature": "export type ProjectSettings = {\nworkMode: ProjectWorkMode;\ncustomPrompt: string;\nprojectRules: string;\nmemory: ProjectMemorySettings;\nupdatedAt?: string;\n};"
+        "signature": "export type ProjectSettings = {\nworkMode: ProjectWorkMode;\ncustomPrompt: string;\nprojectRules: string;\ncontext: ProjectContextSettings;\nmemory: ProjectMemorySettings;\nupdatedAt?: string;\n};"
       },
       {
         "name": "projectSettingsPath",
@@ -4208,9 +4378,19 @@
         "signature": "export interface RaceOptions {\ntimeoutMs?: number;\nsignal?: AbortSignal;\n}"
       },
       {
+        "name": "readAgentDefinitionMarkdown",
+        "kind": "function",
+        "signature": "export declare function readAgentDefinitionMarkdown(name: string, homeDir?: string, projectDir?: string): {\nfrontmatter: Record<string, string>;\nbody: string;\nfilePath: string;\nsource: 'project' | 'user';\n} | null;"
+      },
+      {
         "name": "readAgentProfiles",
         "kind": "function",
         "signature": "export declare function readAgentProfiles(homeDir?: string): PersistedAgentProfiles;"
+      },
+      {
+        "name": "readAllAgentReferenceProfiles",
+        "kind": "function",
+        "signature": "export declare function readAllAgentReferenceProfiles(homeDir?: string, projectDir?: string): AgentProfile[];"
       },
       {
         "name": "readAssistantConfig",
@@ -4268,6 +4448,11 @@
         "signature": "export declare function readManagerConfig(workDir: string, homeDir: string): Promise<ManagerConfig>;"
       },
       {
+        "name": "readProfilesFromAgentDefinitions",
+        "kind": "function",
+        "signature": "export declare function readProfilesFromAgentDefinitions(homeDir?: string): AgentProfile[];"
+      },
+      {
         "name": "readProgressFile",
         "kind": "function",
         "signature": "export declare function readProgressFile(workDir: string, homeDir: string): Promise<string | null>;"
@@ -4286,6 +4471,11 @@
         "name": "readProjectSettings",
         "kind": "function",
         "signature": "export declare function readProjectSettings(workDir: string, homeDir: string): Promise<ProjectSettings>;"
+      },
+      {
+        "name": "readStoredAgentDefinition",
+        "kind": "function",
+        "signature": "export declare function readStoredAgentDefinition(name: string, homeDir?: string, projectDir?: string): HadamardAgentDefinition | null;"
       },
       {
         "name": "readStoredManagedPluginConfig",
@@ -4410,7 +4600,7 @@
       {
         "name": "ResolvedToolAdapter",
         "kind": "interface",
-        "signature": "export interface ResolvedToolAdapter {\npublicName: string;\nsourceName: string;\nprovider: 'local' | 'mcp';\nmcpServerName?: string;\nproviderTool: ProviderTool;\nexecute: (input: unknown, context: ToolExecutionContext, onProgress?: ToolCallProgress) => Promise<ResolvedToolExecutionResult>;\nisReadOnly?: (input?: unknown) => boolean;\nisDestructive?: (input?: unknown) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ninterruptBehavior?: 'cancel' | 'block';\nmaxResultSizeChars?: number;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\n}"
+        "signature": "export interface ResolvedToolAdapter {\npublicName: string;\nsourceName: string;\nprovider: 'local' | 'mcp';\nmcpServerName?: string;\nproviderTool: ProviderTool;\nexecute: (input: unknown, context: ToolExecutionContext, onProgress?: ToolCallProgress) => Promise<ResolvedToolExecutionResult>;\nisReadOnly?: (input?: unknown) => boolean;\nisDestructive?: (input?: unknown) => boolean;\nisPlanReadOnly?: (input?: unknown) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ninterruptBehavior?: 'cancel' | 'block';\nmaxResultSizeChars?: number;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\n}"
       },
       {
         "name": "ResolvedToolExecutionResult",
@@ -4421,6 +4611,16 @@
         "name": "resolveEdgeBezierPoints",
         "kind": "function",
         "signature": "export declare function resolveEdgeBezierPoints(p1: GraphPoint, p2: GraphPoint, ui?: GraphEdgeBezierUi | TeamGraphEdge['ui']): {\nc1: GraphPoint;\nc2: GraphPoint;\npath: string;\n};"
+      },
+      {
+        "name": "resolveEffectiveAgentRunOptions",
+        "kind": "function",
+        "signature": "export declare function resolveEffectiveAgentRunOptions(source: AgentRunConfigurationSource | null | undefined, input?: ResolveEffectiveAgentRunOptionsInput): EffectiveAgentRunOptions;"
+      },
+      {
+        "name": "ResolveEffectiveAgentRunOptionsInput",
+        "kind": "interface",
+        "signature": "export interface ResolveEffectiveAgentRunOptionsInput {\nsystemPrompt?: string;\nfallbackPermissionMode?: HadamardPermissionMode;\npermissionModeOverride?: HadamardPermissionMode;\nfallbackEffort?: HadamardRunEffort;\neffortOverride?: HadamardRunEffort;\n}"
       },
       {
         "name": "resolveExaApiKey",
@@ -4515,7 +4715,7 @@
       {
         "name": "resolveRoutedRun",
         "kind": "function",
-        "signature": "export declare function resolveRoutedRun(profile: RouterProfile, userInput: string, signal?: AbortSignal): Promise<{\nmodel: string;\nmodelApi: ModelApi;\nlabel: string;\ndecision: RouterDecision;\n}>;"
+        "signature": "export declare function resolveRoutedRun(profile: RouterProfile, userInput: string, signal?: AbortSignal, options?: {\nhomeDir?: string;\nprojectDir?: string;\n}): Promise<{\nmodel: string;\nmodelApi: ModelApi;\nlabel: string;\ndecision: RouterDecision;\neffort?: HadamardRunEffort;\n}>;"
       },
       {
         "name": "resolveRuntimeConfig",
@@ -4605,7 +4805,7 @@
       {
         "name": "RouterDecision",
         "kind": "interface",
-        "signature": "export interface RouterDecision {\ntarget: RouterModelRef;\nlabel: string;\nclassification: string;\nmatched: boolean;\n}"
+        "signature": "export interface RouterDecision {\ntarget: RouterModelRef;\nlabel: string;\nclassification: string;\nmatched: boolean;\neffort?: HadamardRunEffort;\n}"
       },
       {
         "name": "RouterModelRef",
@@ -4615,12 +4815,12 @@
       {
         "name": "RouterProfile",
         "kind": "interface",
-        "signature": "export interface RouterProfile {\nname: string;\ndescription?: string;\nrouterModel: RouterModelRef;\nroutes: RouterRoute[];\nfallback?: RouterModelRef;\nclassificationPrompt?: string;\n}"
+        "signature": "export interface RouterProfile {\nname: string;\ndescription?: string;\nrouterModel: RouterModelRef;\nrouterModelTarget?: AgentTargetRef;\nroutes: RouterRoute[];\nfallback?: RouterModelRef;\nfallbackTarget?: AgentTargetRef;\nclassificationPrompt?: string;\n}"
       },
       {
         "name": "RouterRoute",
         "kind": "interface",
-        "signature": "export interface RouterRoute extends RouterModelRef {\nwhen: string;\nname?: string;\nrole?: string;\ndescription?: string;\n}"
+        "signature": "export interface RouterRoute extends RouterModelRef {\nwhen: string;\nname?: string;\nrole?: string;\ndescription?: string;\neffort?: HadamardRunEffort;\ntarget?: AgentTargetRef;\n}"
       },
       {
         "name": "RuleCommandResult",
@@ -4656,6 +4856,11 @@
         "name": "runExaSearch",
         "kind": "function",
         "signature": "export declare function runExaSearch(input: ExaSearchInput, options?: CreateExaSearchToolOptions): Promise<string>;"
+      },
+      {
+        "name": "runExternalAgentOnce",
+        "kind": "function",
+        "signature": "export declare function runExternalAgentOnce(request: ExternalAgentRunRequest): Promise<ExternalAgentRunResult>;"
       },
       {
         "name": "runHttpHook",
@@ -4833,9 +5038,14 @@
         "signature": "export interface ScheduledTaskStore {\nsave(task: ScheduledTaskRecord): Promise<void>;\nload(id: string): Promise<ScheduledTaskRecord | undefined>;\nlist(): Promise<ScheduledTaskRecord[]>;\ndelete(id: string): Promise<void>;\n}"
       },
       {
+        "name": "searchProductCapabilities",
+        "kind": "function",
+        "signature": "export declare function searchProductCapabilities(query: string, limit?: number): ProductCapability[];"
+      },
+      {
         "name": "SelectableAgent",
         "kind": "interface",
-        "signature": "export interface SelectableAgent {\nname: string;\nbridgeConfig: string;\nmodel: string;\nruntime?: BridgeRuntime;\nexecution?: BridgeExecutionMode;\nprovider?: InProcessProvider;\ncontext1M?: boolean;\ncontextWindowTokens?: number;\nmaxContextWindowTokens?: number;\neffectiveContextWindowPercent?: number;\nautoCompactTokenLimit?: number;\nmodality?: ModelModality;\nsource: 'profile' | 'config';\ndescription?: string;\npermissionMode?: HadamardPermissionMode;\nsystemPromptAppend?: string;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nephemeral?: boolean;\n}"
+        "signature": "export interface SelectableAgent {\nname: string;\nbridgeConfig: string;\nmodel: string;\nruntime?: BridgeRuntime;\nexecution?: BridgeExecutionMode;\nprovider?: InProcessProvider;\ncontext1M?: boolean;\ncontextWindowTokens?: number;\nmaxContextWindowTokens?: number;\neffectiveContextWindowPercent?: number;\nautoCompactTokenLimit?: number;\nmodality?: ModelModality;\nsource: 'profile' | 'config';\ndescription?: string;\npermissionMode?: HadamardPermissionMode;\nsystemPromptAppend?: string;\npromptMode?: 'extend' | 'replace';\nsubagent?: boolean;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess?: 'workspace' | 'full';\nmaxIterations?: number;\ntimeoutMs?: number;\nephemeral?: boolean;\n}"
       },
       {
         "name": "selectDefaultHadamardModel",
@@ -4846,6 +5056,11 @@
         "name": "selectHadamardRelevantMemories",
         "kind": "function",
         "signature": "export declare function selectRelevantMemories(query: string, memories: HadamardMemoryFileHeader[], options?: {\nrecentTools?: readonly string[];\nalreadySurfacedPaths?: ReadonlySet<string>;\nlimit?: number;\n}): HadamardRelevantMemory[];"
+      },
+      {
+        "name": "serializeAgentDefinitionMarkdown",
+        "kind": "function",
+        "signature": "export declare function serializeAgentDefinitionMarkdown(fields: Record<string, string | number | boolean | string[] | undefined>, body: string): string;"
       },
       {
         "name": "serializeAgentExecutionIdentity",
@@ -5078,9 +5293,19 @@
         "signature": "SKILL_TOOL_NAME = \"Skill\""
       },
       {
+        "name": "StageDeleteProposalInput",
+        "kind": "interface",
+        "signature": "export interface StageDeleteProposalInput {\nassistantSessionId: string;\nkind: ReferenceDefinitionKind;\nname: string;\nreferences: ReferenceEdge[];\nexplanation?: string;\n}"
+      },
+      {
         "name": "StageTeamProposalInput",
         "kind": "interface",
-        "signature": "export interface StageTeamProposalInput {\nassistantSessionId: string;\nprojectPath: string;\ndefinition: TeamDefinition;\nexplanation?: string;\nhomeDir?: string;\n}"
+        "signature": "export interface StageTeamProposalInput {\nassistantSessionId: string;\nprojectPath: string;\ndefinition: TeamDefinition;\nexplanation?: string;\nhomeDir?: string;\nbaseDefinition?: TeamDefinition;\neditorBaseDigest?: string;\n}"
+      },
+      {
+        "name": "StageWorkflowUpsertInput",
+        "kind": "interface",
+        "signature": "export interface StageWorkflowUpsertInput {\nassistantSessionId: string;\nname: string;\nscript: string;\nscope: 'project' | 'personal';\nprojectPath?: string;\ndescription?: string;\nexplanation?: string;\n}"
       },
       {
         "name": "StdioAppServerTransport",
@@ -5205,7 +5430,7 @@
       {
         "name": "TeamAskOptions",
         "kind": "interface",
-        "signature": "export interface TeamAskOptions {\ncontext?: string;\nworkDir?: string;\nonEvent?: (event: TeamEvent) => void;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\nhooks?: HadamardHooks;\nteamStack?: string[];\n}"
+        "signature": "export interface TeamAskOptions {\ncontext?: string;\nworkDir?: string;\nhomeDir?: string;\nmodel?: string;\nmodelApi?: ModelApi;\nonEvent?: (event: TeamEvent) => void;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\nhooks?: HadamardHooks;\nteamStack?: string[];\nmaxTeamNestingDepth?: number;\n}"
       },
       {
         "name": "TeamCost",
@@ -5215,7 +5440,7 @@
       {
         "name": "TeamDefinition",
         "kind": "interface",
-        "signature": "export interface TeamDefinition {\nname: string;\ndescription?: string;\nmode: ModelTeamMode;\nversion?: number;\norchestration?: 'legacy-mode' | 'graph';\nsquadType?: 'graph' | 'workflow' | 'subagent';\nworkflowTree?: WorkflowNode;\nmembers: TeamMember[];\nprimary?: TeamMember;\nreviewer?: TeamMember;\nreviewEdges?: TeamReviewEdge[];\nnodes?: TeamGraphNode[];\nedges?: TeamGraphEdge[];\nuiGroups?: TeamGraphUiGroup[];\nentryNodeIds?: string[];\nmaxParallel?: number;\ntimeoutMs?: number;\nmaxRounds?: number;\nmaxIterations?: number;\n}"
+        "signature": "export interface TeamDefinition {\nname: string;\ndescription?: string;\nmode: ModelTeamMode;\nversion?: number;\norchestration?: 'legacy-mode' | 'graph';\nsquadType?: 'graph' | 'workflow' | 'agent' | 'subagent';\nworkflowTree?: WorkflowNode;\nmembers: TeamMember[];\nprimary?: TeamMember;\nreviewer?: TeamMember;\nreviewEdges?: TeamReviewEdge[];\nnodes?: TeamGraphNode[];\nedges?: TeamGraphEdge[];\nuiGroups?: TeamGraphUiGroup[];\nentryNodeIds?: string[];\nmaxParallel?: number;\ntimeoutMs?: number;\nmaxRounds?: number;\nmaxIterations?: number;\n}"
       },
       {
         "name": "teamDefinitionFingerprint",
@@ -5240,7 +5465,7 @@
       {
         "name": "TeamGraphNode",
         "kind": "interface",
-        "signature": "export interface TeamGraphNode extends Omit<TeamMember, 'model'> {\nmodel?: string;\nkind?: TeamGraphNodeKind;\ntype?: 'react' | 'single' | 'team';\nteamRef?: string;\nreturnMode?: TeamGraphReturnMode;\npayloadTemplate?: string;\nentry?: boolean;\nallowedTools?: string[];\njoin?: 'all' | 'any';\nui?: {\nx?: number;\ny?: number;\ngroupId?: string;\n};\nmaxIterations?: number;\ntimeoutMs?: number;\nreconnectAttempts?: number;\nmaxRounds?: number;\n}"
+        "signature": "export interface TeamGraphNode extends Omit<TeamMember, 'model'> {\nmodel?: string;\nkind?: TeamGraphNodeKind;\ntype?: 'react' | 'single' | 'team';\nteamRef?: string;\ntargetRef?: AgentTargetRef;\nreturnMode?: TeamGraphReturnMode;\npayloadTemplate?: string;\nentry?: boolean;\nallowedTools?: string[];\njoin?: 'all' | 'any';\nui?: {\nx?: number;\ny?: number;\ngroupId?: string;\n};\nmaxIterations?: number;\ntimeoutMs?: number;\nreconnectAttempts?: number;\nmaxRounds?: number;\n}"
       },
       {
         "name": "TeamGraphNodeKind",
@@ -5250,7 +5475,7 @@
       {
         "name": "TeamGraphProposal",
         "kind": "interface",
-        "signature": "export interface TeamGraphProposal {\nid: string;\nassistantSessionId: string;\nprojectPath: string;\nteamName: string;\nbaseFingerprint: string | null;\nbaseSource: LoadedTeamDefinition['source'] | null;\nexplanation: string;\nproblems: string[];\ndiff: TeamProposalDiff;\ndraft: TeamDefinition;\nstatus: TeamProposalStatus;\ncreatedAt: string;\nappliedAt?: string;\n}"
+        "signature": "export interface TeamGraphProposal {\nid: string;\nassistantSessionId: string;\nprojectPath: string;\nteamName: string;\nbaseFingerprint: string | null;\nbaseSource: LoadedTeamDefinition['source'] | null;\neditorBaseDigest?: string;\nexplanation: string;\nproblems: string[];\ndiff: TeamProposalDiff;\ndraft: TeamDefinition;\nstatus: TeamProposalStatus;\ncreatedAt: string;\nappliedAt?: string;\n}"
       },
       {
         "name": "TeamGraphReturnMode",
@@ -5275,7 +5500,7 @@
       {
         "name": "TeamMember",
         "kind": "interface",
-        "signature": "export interface TeamMember {\nmodel: string;\nprovider?: 'anthropic' | 'openai';\nbaseURL?: string;\napiKey?: string;\nsystemPrompt?: string;\nmaxTokens?: number;\ndescription?: string;\nid?: string;\nname?: string;\nrole?: string;\nresponsibility?: string;\nreviews?: string[];\ndependsOn?: string[];\nruntime?: string;\ntoolScope?: string[];\nworkspaceAccess?: 'workspace' | 'full';\n}"
+        "signature": "export interface TeamMember {\nmodel: string;\nprovider?: 'anthropic' | 'openai';\nbaseURL?: string;\napiKey?: string;\nsystemPrompt?: string;\nmaxTokens?: number;\ndescription?: string;\nid?: string;\nname?: string;\nrole?: string;\nresponsibility?: string;\nreviews?: string[];\ndependsOn?: string[];\nruntime?: string;\ntoolScope?: string[];\nworkspaceAccess?: 'workspace' | 'full';\ntargetRef?: AgentTargetRef;\nallowedTools?: string[];\n}"
       },
       {
         "name": "TeamPreferences",
@@ -5300,7 +5525,7 @@
       {
         "name": "TeamProposalStore",
         "kind": "class",
-        "signature": "export declare class TeamProposalStore {\nprivate readonly proposals;\nstage(input: StageTeamProposalInput): TeamGraphProposal;\nget(id: string): TeamGraphProposal | null;\nlistForSession(assistantSessionId: string): TeamGraphProposal[];\nreject(id: string): TeamGraphProposal;\napply(id: string, homeDir?: string): Promise<ApplyTeamProposalResult>;\nprivate requirePending;\n}"
+        "signature": "export declare class TeamProposalStore {\nprivate readonly proposals;\nstage(input: StageTeamProposalInput): TeamGraphProposal;\nget(id: string): TeamGraphProposal | null;\nlistForSession(assistantSessionId: string): TeamGraphProposal[];\nreject(id: string): TeamGraphProposal;\napply(id: string, homeDir?: string, options?: {\neditorBaseDigest?: string;\n}): Promise<ApplyTeamProposalResult>;\nprivate requirePending;\n}"
       },
       {
         "name": "TeamResult",
@@ -5565,7 +5790,7 @@
       {
         "name": "WorkflowNode",
         "kind": "interface",
-        "signature": "export interface WorkflowNode {\nid: string;\ntype: 'agent' | 'branch' | 'parallel';\nlabel?: string;\nprompt?: string;\ncondition?: string;\nruntime?: string;\nmodel?: string;\nchildren: WorkflowNode[];\n}"
+        "signature": "export interface WorkflowNode {\nid: string;\ntype: 'agent' | 'branch' | 'parallel';\nlabel?: string;\nprompt?: string;\ncondition?: string;\nruntime?: string;\nmodel?: string;\nsystemPrompt?: string;\nallowedTools?: string[];\ntimeoutMs?: number;\nmaxIterations?: number;\nworkspaceAccess?: 'workspace' | 'full';\ntargetRef?: AgentTargetRef;\nchildren: WorkflowNode[];\n}"
       },
       {
         "name": "WorkflowParameter",
@@ -5603,6 +5828,11 @@
         "signature": "export interface WorkflowScriptContext {\nagent: (prompt: string, opts?: WorkflowAgentOptions) => Promise<any>;\nparallel: <T>(thunks: Array<() => Promise<T>>) => Promise<(T | null)[]>;\npipeline: <T, R>(items: T[], ...stages: Array<(prev: any, item: T, index: number) => Promise<R | null>>) => Promise<(R | null)[]>;\nphase: (title: string) => void;\nlog: (message: string) => void;\nbudget: WorkflowBudget;\nargs: any;\nmeta: WorkflowMeta;\n}"
       },
       {
+        "name": "workflowScriptProblems",
+        "kind": "function",
+        "signature": "export declare function workflowScriptProblems(name: string, script: string): string[];"
+      },
+      {
         "name": "WorkflowScriptRuntime",
         "kind": "class",
         "signature": "export declare class WorkflowScriptRuntime {\nprivate options;\nconstructor(options: WorkflowRuntimeOptions);\nexecute(script: string): Promise<{\nresult: any;\nstate: WorkflowRunState;\nresumeState: WorkflowResumeState;\nlogs: string[];\n}>;\n}"
@@ -5616,6 +5846,11 @@
         "name": "WorkflowStepResult",
         "kind": "interface",
         "signature": "export interface WorkflowStepResult {\nid: string;\nname: string;\nstatus: 'completed' | 'failed' | 'skipped';\ntext: string;\ntoolCalls: string[];\ndurationMs: number;\nsessionId: string;\nerror?: string;\n}"
+      },
+      {
+        "name": "WorkflowTeamResult",
+        "kind": "interface",
+        "signature": "export interface WorkflowTeamResult extends Omit<GraphTeamResult, 'mode'> {\nmode: 'workflow';\n}"
       },
       {
         "name": "WorkspaceSymbol",
@@ -5661,6 +5896,16 @@
         "name": "WorktreeStackEntry",
         "kind": "interface",
         "signature": "export interface WorktreeStackEntry {\nworkDir: string;\nworktreePath?: string;\nworktreeBranch?: string;\nsessionKind: 'main' | 'worktree';\n}"
+      },
+      {
+        "name": "writeAgentDefinitionMarkdown",
+        "kind": "function",
+        "signature": "export declare function writeAgentDefinitionMarkdown(options: {\nname: string;\ndescription?: string;\nbody?: string;\nextras?: AgentDefinitionExtraFields;\ndirectory?: string;\nhomeDir?: string;\n}): string;"
+      },
+      {
+        "name": "writeAgentProfileMarkdown",
+        "kind": "function",
+        "signature": "export declare function writeAgentProfileMarkdown(profile: AgentProfile, homeDir?: string, options?: {\ndirectory?: string;\nextras?: AgentDefinitionExtraFields;\n}): string;"
       },
       {
         "name": "writeAgentProfiles",
@@ -5720,7 +5965,7 @@
       {
         "name": "writeProjectSettings",
         "kind": "function",
-        "signature": "export declare function writeProjectSettings(workDir: string, homeDir: string, patch: Partial<Omit<ProjectSettings, 'memory'>> & {\nmemory?: ProjectMemorySettingsPatch;\n}): Promise<ProjectSettings>;"
+        "signature": "export declare function writeProjectSettings(workDir: string, homeDir: string, patch: Partial<Omit<ProjectSettings, 'memory' | 'context'>> & {\ncontext?: Partial<ProjectContextSettings>;\nmemory?: ProjectMemorySettingsPatch;\n}): Promise<ProjectSettings>;"
       },
       {
         "name": "writeTeamPreferences",
@@ -7859,6 +8104,11 @@
         "signature": "export interface AgentActivityEvent extends AgentExecutionEventBase {\ntype: 'activity';\nexecutionId: string;\nsessionId?: string;\nactivity: AgentExecutionActivity | null;\n}"
       },
       {
+        "name": "AgentDefinitionExtraFields",
+        "kind": "interface",
+        "signature": "export interface AgentDefinitionExtraFields {\npromptMode?: 'extend' | 'replace';\nsubagent?: boolean;\nallowedAgents?: string[];\nskills?: string[];\nmemory?: 'user' | 'project' | 'local';\nbackground?: boolean;\nisolation?: 'worktree';\ninitialPrompt?: string;\nmodel?: string;\nruntime?: string;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\ntemperature?: number;\ntopP?: number;\nmaxTokens?: number;\nmaxIterations?: number;\ntimeoutMs?: number;\nworkspaceAccess?: 'workspace' | 'full';\ntools?: string[];\n}"
+      },
+      {
         "name": "AgentEdgeCompletedEvent",
         "kind": "interface",
         "signature": "export interface AgentEdgeCompletedEvent extends AgentEdgeEventBase {\ntype: 'edge.completed';\nresult?: string | null;\n}"
@@ -8001,12 +8251,17 @@
       {
         "name": "AgentProfile",
         "kind": "interface",
-        "signature": "export interface AgentProfile {\nname: string;\ndescription?: string;\nbridgeConfig: string;\nmodel: string;\nsystemPromptAppend?: string;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\n}"
+        "signature": "export interface AgentProfile {\nname: string;\ndescription?: string;\nbridgeConfig: string;\nmodel: string;\nsystemPromptAppend?: string;\npromptMode?: 'extend' | 'replace';\nsubagent?: boolean;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess?: 'workspace' | 'full';\nmaxIterations?: number;\ntimeoutMs?: number;\n}"
       },
       {
         "name": "agentProfileRunOverrides",
         "kind": "function",
         "signature": "export declare function agentProfileRunOverrides(profile: Pick<AgentProfile, 'effort' | 'maxTokens' | 'temperature' | 'topP'> | null | undefined): {\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\n};"
+      },
+      {
+        "name": "agentProfileStoreMigrated",
+        "kind": "function",
+        "signature": "export declare function agentProfileStoreMigrated(homeDir?: string): boolean;"
       },
       {
         "name": "AgentProfileValidationResult",
@@ -8019,9 +8274,14 @@
         "signature": "export interface AgentRequestSummary {\niteration: number;\nmessageId: string;\nmodel: string;\nstopReason: StopReason | null;\nusage?: Usage;\ntext: string;\ncreatedAt: string;\nrequestTokenEstimate?: number;\nrequestByteLength?: number;\nlocalMicrocompact?: {\nenabled: boolean;\nclearedToolResults: number;\ntokenEstimateBefore: number;\ntokenEstimateAfter: number;\nrequestByteLengthBefore?: number;\nrequestByteLengthAfter?: number;\n};\n}"
       },
       {
+        "name": "AgentRunConfigurationSource",
+        "kind": "interface",
+        "signature": "export interface AgentRunConfigurationSource {\nsystemPrompt?: string;\nsystemPromptAppend?: string;\npromptMode?: 'extend' | 'replace';\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess?: 'workspace' | 'full';\nmaxIterations?: number;\nmaxToolIterations?: number;\ntimeoutMs?: number;\nsubagent?: boolean;\n}"
+      },
+      {
         "name": "AgentRunOptions",
         "kind": "interface",
-        "signature": "export interface AgentRunOptions {\nsystemPrompt?: string;\ntools?: AgentToolDefinition[];\nmcpServers?: AgentMcpServerDefinition[];\nmodel?: string;\nmodelApi?: CreateAgentSdkOptions['modelApi'];\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\ntoolChoice?: ToolChoice;\nuserId?: string;\nmetadata?: Record<string, unknown>;\neffort?: HadamardRunEffort;\nhooks?: HadamardHooks;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\ncanUseTool?: HadamardCanUseTool;\nsignal?: AbortSignal;\ndrainQueuedInputs?: () => string[] | Promise<string[]>;\ndrainFollowUpInputs?: () => string[];\nworkDir?: string;\ninheritWorktree?: boolean;\nsessionWorkDir?: string;\n}"
+        "signature": "export interface AgentRunOptions {\nsystemPrompt?: string;\ntools?: AgentToolDefinition[];\nmcpServers?: AgentMcpServerDefinition[];\nmodel?: string;\nmodelApi?: CreateAgentSdkOptions['modelApi'];\nmaxTokens?: number;\nmaxToolIterations?: number;\nallowedTools?: string[];\nworkspaceAccess?: 'workspace' | 'full';\ntemperature?: number;\ntopP?: number;\ntoolChoice?: ToolChoice;\nuserId?: string;\nmetadata?: Record<string, unknown>;\neffort?: HadamardRunEffort;\nhooks?: HadamardHooks;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\ncanUseTool?: HadamardCanUseTool;\nsignal?: AbortSignal;\ndrainQueuedInputs?: () => string[] | Promise<string[]>;\ndrainFollowUpInputs?: () => string[];\nworkDir?: string;\ninheritWorktree?: boolean;\nsessionWorkDir?: string;\n}"
       },
       {
         "name": "AgentRunResult",
@@ -8066,7 +8326,7 @@
       {
         "name": "AgentSession",
         "kind": "class",
-        "signature": "export declare class AgentSession {\nprivate readonly bindings;\nprivate readonly store;\nprivate stored;\nprivate readonly steeringInputs;\nprivate readonly followUpInputs;\nconstructor(bindings: AgentSessionBindings, store: SessionStore, stored: StoredSession);\nget id(): string;\nget title(): string;\nget model(): string;\nget messages(): MessageParam[];\nget metadata(): Record<string, unknown>;\nget tags(): string[];\nget permissionContext(): HadamardSessionPermissionState;\nget pendingInputCount(): number;\nsnapshot(): StoredSession;\nsteer(input: string): void;\nfollowUp(input: string): void;\ndrainSteeringInputs(): string[];\ndrainFollowUpInputs(): string[];\nsend(input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nstream(input: string | MessageParam['content'], options?: AgentRunOptions): AgentRunStream;\nrunSkill(skill: string, args?: string, options?: AgentRunOptions): Promise<AgentRunResult>;\nstreamSkill(skill: string, args?: string, options?: AgentRunOptions): AgentRunStream;\ndream(options?: AgentSessionDreamOptions): Promise<HadamardDreamRunResult>;\nmaybeAutoDream(options?: AgentSessionDreamOptions): Promise<HadamardDreamRunResult>;\ndreamState(): Promise<HadamardDreamState>;\ncompact(options?: AgentSessionCompactOptions): Promise<HadamardSessionCompactResult>;\ncompactState(options?: Omit<HadamardCompactStateOptions, 'projectPath' | 'runtimeState' | 'sessionId'>): Promise<HadamardCompactState>;\nagentContinuity(): Promise<HadamardAgentContinuityState>;\nsetHooks(hooks?: HadamardHooks): void;\nclearHooks(): void;\nsetModel(model: string): Promise<void>;\nsetPermissionContext(context: {\nmode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\n}): Promise<void>;\nclearPermissionContext(): Promise<void>;\nrename(title: string): Promise<void>;\nsetTags(tags: string[]): Promise<void>;\nappendMessages(messages: MessageParam[]): Promise<void>;\nmergeMetadata(metadata: Record<string, unknown>): Promise<void>;\nmutateMetadata(mutation: (metadata: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>>;\ndelete(): Promise<void>;\nfork(options?: SessionForkOptions): Promise<AgentSession>;\nsaveCheckpoint(label: string): Promise<SessionCheckpoint>;\nrestoreCheckpoint(checkpointId: string): Promise<void>;\nlistCheckpoints(): Promise<SessionCheckpointSummary[]>;\ndeleteCheckpoint(checkpointId: string): Promise<void>;\nreplace(next: StoredSession): void;\n}"
+        "signature": "export declare class AgentSession {\nprivate readonly bindings;\nprivate readonly store;\nprivate stored;\nprivate readonly steeringInputs;\nprivate readonly followUpInputs;\nconstructor(bindings: AgentSessionBindings, store: SessionStore, stored: StoredSession);\nget id(): string;\nget title(): string;\nget model(): string;\nget messages(): MessageParam[];\nget metadata(): Record<string, unknown>;\nget tags(): string[];\nget permissionContext(): HadamardSessionPermissionState;\nget pendingInputCount(): number;\nget pendingInputs(): PendingAgentInputs;\nsnapshot(): StoredSession;\nsteer(input: string): void;\nfollowUp(input: string): void;\ncancelLatestFollowUp(): string | undefined;\ndrainSteeringInputs(): string[];\ndrainFollowUpInputs(): string[];\nsend(input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nstream(input: string | MessageParam['content'], options?: AgentRunOptions): AgentRunStream;\nrunSkill(skill: string, args?: string, options?: AgentRunOptions): Promise<AgentRunResult>;\nstreamSkill(skill: string, args?: string, options?: AgentRunOptions): AgentRunStream;\ndream(options?: AgentSessionDreamOptions): Promise<HadamardDreamRunResult>;\nmaybeAutoDream(options?: AgentSessionDreamOptions): Promise<HadamardDreamRunResult>;\ndreamState(): Promise<HadamardDreamState>;\ncompact(options?: AgentSessionCompactOptions): Promise<HadamardSessionCompactResult>;\ncompactState(options?: Omit<HadamardCompactStateOptions, 'projectPath' | 'runtimeState' | 'sessionId'>): Promise<HadamardCompactState>;\nagentContinuity(): Promise<HadamardAgentContinuityState>;\nsetHooks(hooks?: HadamardHooks): void;\nclearHooks(): void;\nsetModel(model: string): Promise<void>;\nsetPermissionContext(context: {\nmode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\n}): Promise<void>;\nclearPermissionContext(): Promise<void>;\nrename(title: string): Promise<void>;\nsetTags(tags: string[]): Promise<void>;\nappendMessages(messages: MessageParam[]): Promise<void>;\nmergeMetadata(metadata: Record<string, unknown>): Promise<void>;\nmutateMetadata(mutation: (metadata: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>>;\ndelete(): Promise<void>;\nfork(options?: SessionForkOptions): Promise<AgentSession>;\nsaveCheckpoint(label: string): Promise<SessionCheckpoint>;\nrestoreCheckpoint(checkpointId: string): Promise<void>;\nlistCheckpoints(): Promise<SessionCheckpointSummary[]>;\ndeleteCheckpoint(checkpointId: string): Promise<void>;\nreplace(next: StoredSession): void;\n}"
       },
       {
         "name": "AgentSessionCompactOptions",
@@ -8087,6 +8347,11 @@
         "name": "AgentSessionsApi",
         "kind": "class",
         "signature": "export declare class AgentSessionsApi {\nprivate readonly store;\nprivate readonly resumeSession;\nprivate readonly manager?;\nconstructor(store: SessionStore, resumeSession: (sessionId: string, options?: SessionResumeOptions) => Promise<AgentSession>, manager?: import(\"./sessionManager.js\").SessionManager | undefined);\nlist(): Promise<SessionSummary[]>;\nget(sessionId: string): Promise<AgentSession>;\nresume(sessionId: string, options?: SessionResumeOptions): Promise<AgentSession>;\ncontinueMostRecent(options?: SessionResumeOptions): Promise<AgentSession>;\ndelete(sessionId: string): Promise<void>;\nstats(): Promise<import('../types.js').SessionStats>;\nprune(params?: import('../types.js').SessionPruneParams): Promise<number>;\ncloseIdle(): Promise<number>;\n}"
+      },
+      {
+        "name": "AgentTargetRef",
+        "kind": "type",
+        "signature": "export type AgentTargetRef = {\nkind: 'model';\nconfig: string;\nmodel: string;\n} | {\nkind: 'agent';\nname: string;\n} | {\nkind: 'team';\nname: string;\n};"
       },
       {
         "name": "AgentThreadStartedEvent",
@@ -8116,7 +8381,7 @@
       {
         "name": "AgentToolDefinition",
         "kind": "interface",
-        "signature": "export interface AgentToolDefinition<Input = any, Output = any> {\nkind: 'local';\nname: string;\ndescription: string;\ninputSchema: z.ZodType<Input>;\noutputSchema?: z.ZodType<Output>;\ninputJsonSchema: Record<string, unknown>;\nserialize?: (output: Output) => string | ToolResultBlockParam['content'];\nexecute: (input: Input, context: ToolExecutionContext, onProgress?: ToolCallProgress) => Promise<Output> | Output;\nstrict?: boolean;\nexamples?: Array<Record<string, unknown>>;\nisReadOnly?: (input?: Input) => boolean;\nisDestructive?: (input?: Input) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\naliases?: string[];\nuserFacingName?: (input?: Input) => string;\nsearchHint?: string;\ninterruptBehavior?: 'cancel' | 'block';\nisResultTruncated?: (output: Output) => boolean;\nmaxResultSizeChars?: number;\ninputsEquivalent?: (a: Input, b: Input) => boolean;\nvalidateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;\ngetToolUseSummary?: (input: Input) => string;\nprompt?: (options: ToolPromptOptions) => Promise<string> | string;\n}"
+        "signature": "export interface AgentToolDefinition<Input = any, Output = any> {\nkind: 'local';\nname: string;\ndescription: string;\ninputSchema: z.ZodType<Input>;\noutputSchema?: z.ZodType<Output>;\ninputJsonSchema: Record<string, unknown>;\nserialize?: (output: Output) => string | ToolResultBlockParam['content'];\nexecute: (input: Input, context: ToolExecutionContext, onProgress?: ToolCallProgress) => Promise<Output> | Output;\nstrict?: boolean;\nexamples?: Array<Record<string, unknown>>;\nisReadOnly?: (input?: Input) => boolean;\nisDestructive?: (input?: Input) => boolean;\nisPlanReadOnly?: (input?: Input) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\naliases?: string[];\nuserFacingName?: (input?: Input) => string;\nsearchHint?: string;\ninterruptBehavior?: 'cancel' | 'block';\nisResultTruncated?: (output: Output) => boolean;\nmaxResultSizeChars?: number;\ninputsEquivalent?: (a: Input, b: Input) => boolean;\nvalidateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;\ngetToolUseSummary?: (input: Input) => string;\nprompt?: (options: ToolPromptOptions) => Promise<string> | string;\n}"
       },
       {
         "name": "AgentTurnCompletedEvent",
@@ -8147,6 +8412,16 @@
         "name": "appendProjectSettingsToPrompt",
         "kind": "function",
         "signature": "export declare function appendProjectSettingsToPrompt(base: string, settings: Pick<ProjectSettings, 'customPrompt' | 'projectRules'> & Record<string, unknown>): string;"
+      },
+      {
+        "name": "ApplyAssistantProposalContext",
+        "kind": "interface",
+        "signature": "export interface ApplyAssistantProposalContext {\nhomeDir?: string;\nprojectDir?: string;\nreferenceContext?: ReferenceOperationContext;\n}"
+      },
+      {
+        "name": "ApplyAssistantProposalResult",
+        "kind": "interface",
+        "signature": "export interface ApplyAssistantProposalResult {\nproposal: AssistantProposal;\nrewritten: string[];\nfilePath?: string;\n}"
       },
       {
         "name": "applyIssueTransition",
@@ -8209,6 +8484,11 @@
         "signature": "ASK_USER_QUESTION_TOOL_NAME = \"AskUserQuestion\""
       },
       {
+        "name": "askTeamDefinition",
+        "kind": "function",
+        "signature": "export declare function askTeamDefinition(definition: TeamDefinition, prompt: string, signal?: AbortSignal, opts?: TeamAskOptions): Promise<ModelTeamResult>;"
+      },
+      {
         "name": "assertPolicyPatchAllowed",
         "kind": "function",
         "signature": "export declare function assertPolicyPatchAllowed(resolved: ResolvedPolicy, patch: Record<string, unknown>): void;"
@@ -8224,6 +8504,16 @@
         "signature": "export declare function assistantConfigPath(homeDir?: string): string;"
       },
       {
+        "name": "AssistantDeletePayload",
+        "kind": "interface",
+        "signature": "export interface AssistantDeletePayload {\nkind: ReferenceDefinitionKind;\nname: string;\nreferences: ReferenceEdge[];\nstrategies: DeleteFallbackOption[];\n}"
+      },
+      {
+        "name": "AssistantEditorContext",
+        "kind": "interface",
+        "signature": "export interface AssistantEditorContext {\nactiveRegion: string;\nentityKind?: 'agent' | 'router' | 'graph' | 'workflow';\nentityName?: string;\ndirty: boolean;\nbaseDigest?: string;\ndraft?: TeamDefinition | Record<string, unknown>;\n}"
+      },
+      {
         "name": "AssistantGlobalConfig",
         "kind": "interface",
         "signature": "export interface AssistantGlobalConfig {\nmodel?: string;\nbridgeConfig?: string;\nactiveSessionId?: string;\n}"
@@ -8231,12 +8521,32 @@
       {
         "name": "AssistantGlobalHost",
         "kind": "interface",
-        "signature": "export interface AssistantGlobalHost {\nhomeDir: string;\ncurrentWorkDir: string;\ngetAppState?: () => Record<string, unknown> | Promise<Record<string, unknown>>;\nopenProject?: (projectPath: string) => Promise<{\nworkDir: string;\n}>;\napplySettings?: (patch: Record<string, unknown>) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nactivateAgent?: (name: string) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nreadSettingsRaw?: () => Promise<Record<string, unknown>>;\nwriteSettingsRaw?: (raw: Record<string, unknown>) => Promise<void>;\n}"
+        "signature": "export interface AssistantGlobalHost {\nhomeDir: string;\ncurrentWorkDir: string;\ngetAppState?: () => Record<string, unknown> | Promise<Record<string, unknown>>;\ngetEditorContext?: () => AssistantEditorContext | null | Promise<AssistantEditorContext | null>;\nopenProject?: (projectPath: string) => Promise<{\nworkDir: string;\n}>;\napplySettings?: (patch: Record<string, unknown>) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nactivateAgent?: (name: string) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nactivateTarget?: (kind: 'config' | 'router' | 'team', name: string) => Promise<{\nok: boolean;\ndetail?: string;\n}>;\nreadSettingsRaw?: () => Promise<Record<string, unknown>>;\nwriteSettingsRaw?: (raw: Record<string, unknown>) => Promise<void>;\nassistantSessionId?: string;\nproposals?: AssistantProposalStore;\nonProposal?: (proposal: AssistantProposal) => void;\nteamProposals?: TeamProposalStore;\nonTeamProposal?: (proposal: TeamGraphProposal) => void;\ngetReferenceSnapshot?: () => Promise<{\nindex: ReferenceEdge[];\nknown: ReferenceKnownSets;\n}>;\ngetSessionRefState?: () => ReferenceIndexSessionState | null;\nreadTeamPreferences?: () => TeamPreferences | null;\nwriteTeamPreferences?: (preferences: TeamPreferences) => Promise<void>;\nreferenceOperationContext?: () => Promise<ReferenceOperationContext> | ReferenceOperationContext;\n}"
       },
       {
         "name": "AssistantProjectBrief",
         "kind": "interface",
         "signature": "export interface AssistantProjectBrief {\nname: string;\npath: string;\nnote: string;\nstatus: string;\nsessionCount: number;\nissueCounts: {\ntotal: number;\nopen: number;\nreview: number;\nclosed: number;\n};\nactive: boolean;\npinned: boolean;\nlastUsedAt: string;\n}"
+      },
+      {
+        "name": "AssistantProposal",
+        "kind": "interface",
+        "signature": "export interface AssistantProposal {\nid: string;\nassistantSessionId: string;\nkind: AssistantProposalKind;\ntitle: string;\nexplanation: string;\nstatus: AssistantProposalStatus;\ncreatedAt: string;\nappliedAt?: string;\ndelete?: AssistantDeletePayload;\nworkflow?: AssistantWorkflowUpsertPayload;\n}"
+      },
+      {
+        "name": "AssistantProposalKind",
+        "kind": "type",
+        "signature": "export type AssistantProposalKind = 'delete-definition' | 'workflow-upsert';"
+      },
+      {
+        "name": "AssistantProposalStatus",
+        "kind": "type",
+        "signature": "export type AssistantProposalStatus = 'pending' | 'applied' | 'rejected';"
+      },
+      {
+        "name": "AssistantProposalStore",
+        "kind": "class",
+        "signature": "export declare class AssistantProposalStore {\nprivate readonly proposals;\nstageDelete(input: StageDeleteProposalInput): AssistantProposal;\nstageWorkflowUpsert(input: StageWorkflowUpsertInput): AssistantProposal;\nget(id: string): AssistantProposal | null;\nlistForSession(assistantSessionId: string): AssistantProposal[];\nreject(id: string): AssistantProposal;\napply(id: string, ctx?: ApplyAssistantProposalContext, opts?: {\nstrategy?: DeleteFallbackStrategy;\n}): Promise<ApplyAssistantProposalResult>;\nprivate requirePending;\n}"
       },
       {
         "name": "AssistantScope",
@@ -8252,6 +8562,11 @@
         "name": "AssistantTeamToolScope",
         "kind": "type",
         "signature": "export type AssistantTeamToolScope = 'global' | 'project';"
+      },
+      {
+        "name": "AssistantWorkflowUpsertPayload",
+        "kind": "interface",
+        "signature": "export interface AssistantWorkflowUpsertPayload {\nname: string;\ndescription?: string;\nscript: string;\nscope: 'project' | 'personal';\nprojectPath?: string;\nproblems: string[];\n}"
       },
       {
         "name": "AsyncQueueOverflowError",
@@ -8526,7 +8841,7 @@
       {
         "name": "CreateAgentSdkOptions",
         "kind": "interface",
-        "signature": "export interface CreateAgentSdkOptions {\nhomeDir?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel?: string;\nmaxTokens?: number;\ntemperature?: number;\nrunTimeoutMs?: number;\ntoolTimeoutMs?: number;\nhookTimeoutMs?: number;\nmcpTimeoutMs?: number;\ntimeoutMs?: number;\nmaxRetries?: number;\nworkDir?: string;\nsessionDirectory?: string;\nclientName?: string;\nclientVersion?: string;\nsystemPrompt?: string;\nmaxToolIterations?: number;\nfallbackModel?: string;\npromptCachingEnabled?: boolean;\nuserId?: string;\nmetadata?: Record<string, unknown>;\ntools?: AgentToolDefinition[];\nmcpServers?: AgentMcpServerDefinition[];\nagents?: HadamardAgentDefinition[];\nagentDirectories?: string[];\nloadDefaultAgentDirectories?: boolean;\ndisableDefaultAgents?: boolean;\nmaxSubagentDepth?: number;\nmaxSubagentFanout?: number;\nskills?: HadamardSkillDefinition[];\nskillDirectories?: string[];\nexternalSkills?: boolean | HadamardExternalSkillsOptions;\ndisableDefaultSkills?: boolean;\nloadDefaultSkillDirectories?: boolean;\nhooks?: HadamardHooks;\ncompact?: Partial<HadamardCompactConfig>;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\ncomputerUse?: boolean | CreateHadamardComputerUseOptions;\nbrowserUse?: boolean | CreateHadamardBrowserUseOptions;\nprovider?: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nmodelApi?: ModelApi;\nsessionManager?: SessionManagerConfig;\nsandbox?: import('./sandbox/policyResolver.js').SandboxPolicyInput;\nlanguageServers?: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks?: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree?: boolean;\npolicyDocuments?: import('./policy/types.js').PolicyDocument[];\n}"
+        "signature": "export interface CreateAgentSdkOptions {\nhomeDir?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel?: string;\nmaxTokens?: number;\ntemperature?: number;\nrunTimeoutMs?: number;\ntoolTimeoutMs?: number;\nhookTimeoutMs?: number;\nmcpTimeoutMs?: number;\ntimeoutMs?: number;\nmaxRetries?: number;\nworkDir?: string;\nsessionDirectory?: string;\nclientName?: string;\nclientVersion?: string;\nsystemPrompt?: string;\nmaxToolIterations?: number;\nfallbackModel?: string;\npromptCachingEnabled?: boolean;\nuserId?: string;\nmetadata?: Record<string, unknown>;\ntools?: AgentToolDefinition[];\nmcpServers?: AgentMcpServerDefinition[];\nagents?: HadamardAgentDefinition[];\nagentDirectories?: string[];\nloadDefaultAgentDirectories?: boolean;\ndisableDefaultAgents?: boolean;\nexternalAgentRunner?: (request: ExternalAgentRunRequest) => Promise<ExternalAgentRunResult>;\nmaxSubagentDepth?: number;\nmaxSubagentFanout?: number;\nskills?: HadamardSkillDefinition[];\nskillDirectories?: string[];\nexternalSkills?: boolean | HadamardExternalSkillsOptions;\ndisableDefaultSkills?: boolean;\nloadDefaultSkillDirectories?: boolean;\nhooks?: HadamardHooks;\ncompact?: Partial<HadamardCompactConfig>;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\ncomputerUse?: boolean | CreateHadamardComputerUseOptions;\nbrowserUse?: boolean | CreateHadamardBrowserUseOptions;\nprovider?: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nmodelApi?: ModelApi;\nsessionManager?: SessionManagerConfig;\nsandbox?: import('./sandbox/policyResolver.js').SandboxPolicyInput;\nlanguageServers?: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks?: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree?: boolean;\npolicyDocuments?: import('./policy/types.js').PolicyDocument[];\n}"
       },
       {
         "name": "createAskUserQuestionTool",
@@ -8741,7 +9056,7 @@
       {
         "name": "createHadamardTaskTool",
         "kind": "function",
-        "signature": "export declare function createHadamardTaskTool(options: {\nlistAgentDefinitions?: () => HadamardAgentDefinitionSummary[];\ngetAgentDefinition: (agent: string) => HadamardAgentDefinition | undefined;\nrunAgent: (agent: string, prompt: string, options?: AgentRunOptions, delegation?: HadamardAgentDelegationContext) => Promise<{\nresult: AgentRunResult;\nsessionId?: string;\nworktreePath?: string;\nworktreeBranch?: string;\n}>;\nlaunchBackgroundAgent: (agent: string, prompt: string, options: {\nparentRunId: string;\nparentSessionId?: string;\n}, runOptions?: AgentRunOptions, delegation?: HadamardAgentDelegationContext) => Promise<HadamardBackgroundTaskRecord>;\nonDelegated?: (event: {\nsubagentType: string;\ndescription: string;\nparentRunId: string;\nparentSessionId?: string;\nrunId: string;\nsessionId?: string;\nstatus: 'completed' | 'async_launched';\ntaskId?: string;\nrequestCount?: number;\ntoolCallCount?: number;\ntoolErrorCount?: number;\ntextSummary?: string;\n}) => void;\nname?: string;\ndescription?: string;\nmaxDepth?: number;\nmaxFanout?: number;\n}): AgentToolDefinition<HadamardTaskToolInput, HadamardTaskToolResult>;"
+        "signature": "export declare function createHadamardTaskTool(options: {\nlistAgentDefinitions?: () => HadamardAgentDefinitionSummary[];\ngetAgentDefinition: (agent: string) => HadamardAgentDefinition | undefined;\nrunAgent: (agent: string, prompt: string, options?: AgentRunOptions, delegation?: HadamardAgentDelegationContext) => Promise<{\nresult: AgentRunResult;\nsessionId?: string;\nworktreePath?: string;\nworktreeBranch?: string;\n}>;\nlaunchBackgroundAgent: (agent: string, prompt: string, options: {\nparentRunId: string;\nparentSessionId?: string;\n}, runOptions?: AgentRunOptions, delegation?: HadamardAgentDelegationContext) => Promise<HadamardBackgroundTaskRecord>;\nonDelegated?: (event: {\nsubagentType: string;\ndescription: string;\nparentRunId: string;\nparentSessionId?: string;\nrunId: string;\nsessionId?: string;\nstatus: 'completed' | 'async_launched';\ntaskId?: string;\nrequestCount?: number;\ntoolCallCount?: number;\ntoolErrorCount?: number;\ntextSummary?: string;\n}) => void;\nlistAvailableTools?: () => AgentToolDefinition[];\nname?: string;\ndescription?: string;\nmaxDepth?: number;\nmaxFanout?: number;\n}): AgentToolDefinition<HadamardTaskToolInput, HadamardTaskToolResult>;"
       },
       {
         "name": "createHadamardTaskTools",
@@ -8881,7 +9196,7 @@
       {
         "name": "CreateToolOptions",
         "kind": "interface",
-        "signature": "export interface CreateToolOptions<Input = any, Output = any> {\nname: string;\ndescription: string;\ninputSchema: z.ZodType<Input>;\noutputSchema?: z.ZodType<Output>;\nserialize?: (output: Output) => string | ToolResultBlockParam['content'];\nstrict?: boolean;\nexamples?: Array<Record<string, unknown>>;\nisReadOnly?: (input?: Input) => boolean;\nisDestructive?: (input?: Input) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\naliases?: string[];\nuserFacingName?: (input?: Input) => string;\nsearchHint?: string;\ninterruptBehavior?: 'cancel' | 'block';\nisResultTruncated?: (output: Output) => boolean;\nmaxResultSizeChars?: number;\ninputsEquivalent?: (a: Input, b: Input) => boolean;\nvalidateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;\ngetToolUseSummary?: (input: Input) => string;\nprompt?: (options: ToolPromptOptions) => Promise<string> | string;\n}"
+        "signature": "export interface CreateToolOptions<Input = any, Output = any> {\nname: string;\ndescription: string;\ninputSchema: z.ZodType<Input>;\noutputSchema?: z.ZodType<Output>;\nserialize?: (output: Output) => string | ToolResultBlockParam['content'];\nstrict?: boolean;\nexamples?: Array<Record<string, unknown>>;\nisReadOnly?: (input?: Input) => boolean;\nisDestructive?: (input?: Input) => boolean;\nisPlanReadOnly?: (input?: Input) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\naliases?: string[];\nuserFacingName?: (input?: Input) => string;\nsearchHint?: string;\ninterruptBehavior?: 'cancel' | 'block';\nisResultTruncated?: (output: Output) => boolean;\nmaxResultSizeChars?: number;\ninputsEquivalent?: (a: Input, b: Input) => boolean;\nvalidateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;\ngetToolUseSummary?: (input: Input) => string;\nprompt?: (options: ToolPromptOptions) => Promise<string> | string;\n}"
       },
       {
         "name": "createToolSearchTool",
@@ -8999,6 +9314,21 @@
         "signature": "export declare function deleteAgentProfile(name: string, homeDir?: string): PersistedAgentProfiles;"
       },
       {
+        "name": "deleteAgentProfileMarkdown",
+        "kind": "function",
+        "signature": "export declare function deleteAgentProfileMarkdown(name: string, homeDir?: string, directory?: string): boolean;"
+      },
+      {
+        "name": "DeleteFallbackOption",
+        "kind": "interface",
+        "signature": "export interface DeleteFallbackOption {\ntype: DeleteFallbackStrategy['type'];\nlabel: string;\nneedsTarget?: boolean;\n}"
+      },
+      {
+        "name": "deleteFallbackOptionsForKind",
+        "kind": "function",
+        "signature": "export declare function deleteFallbackOptionsForKind(kind: ReferenceDefinitionKind): DeleteFallbackOption[];"
+      },
+      {
         "name": "deleteProjectIssue",
         "kind": "function",
         "signature": "export declare function deleteProjectIssue(workDir: string, homeDir: string, idOrNumber: string | number, mode?: IssueStorageMode): Promise<boolean>;"
@@ -9114,6 +9444,11 @@
         "signature": "export declare function edgeConditionPasses(condition: string | undefined, output: string): boolean;"
       },
       {
+        "name": "EffectiveAgentRunOptions",
+        "kind": "interface",
+        "signature": "export interface EffectiveAgentRunOptions {\nsystemPrompt?: string;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess: 'workspace' | 'full';\nmaxToolIterations?: number;\ntimeoutMs?: number;\nsubagent: boolean;\n}"
+      },
+      {
         "name": "EMPTY_PROJECT_PLAN",
         "kind": "value",
         "signature": "EMPTY_PROJECT_PLAN: ProjectPlan"
@@ -9202,6 +9537,16 @@
         "name": "ExpertPanelReport",
         "kind": "interface",
         "signature": "export interface ExpertPanelReport {\nmodel: string;\nid?: string;\nrole?: string;\nreport: string;\ntoolCalls: number;\ndurationMs: number;\nround?: number;\n}"
+      },
+      {
+        "name": "ExternalAgentRunRequest",
+        "kind": "interface",
+        "signature": "export interface ExternalAgentRunRequest {\nruntime: string;\nagentName: string;\nprompt: string;\nsystemPrompt?: string;\ncwd: string;\nsignal?: AbortSignal;\nmodel?: string;\npermissionMode?: string;\nhomeDir?: string;\n}"
+      },
+      {
+        "name": "ExternalAgentRunResult",
+        "kind": "interface",
+        "signature": "export interface ExternalAgentRunResult {\ntext: string;\nsessionId?: string;\ndurationMs?: number;\nnumTurns?: number;\n}"
       },
       {
         "name": "ExternalCliAuthProbeOptions",
@@ -9524,6 +9869,16 @@
         "signature": "export declare function getDefaultHadamardSettingsPath(homeDir?: string): string;"
       },
       {
+        "name": "getHadamardAgentTemplate",
+        "kind": "function",
+        "signature": "export declare function getHadamardAgentTemplate(name: string): HadamardAgentTemplate | undefined;"
+      },
+      {
+        "name": "getHadamardAgentTemplates",
+        "kind": "function",
+        "signature": "export declare function getHadamardAgentTemplates(): HadamardAgentTemplate[];"
+      },
+      {
         "name": "getHadamardApiContextManagement",
         "kind": "function",
         "signature": "export declare function getHadamardApiContextManagement(messages: readonly MessageParam[], compact: HadamardCompactConfig): Record<string, unknown> | undefined;"
@@ -9622,6 +9977,11 @@
         "name": "getPersistedHadamardSessionPermissionState",
         "kind": "function",
         "signature": "export declare function getPersistedHadamardSessionPermissionState(metadata: Record<string, unknown> | undefined): HadamardSessionPermissionState;"
+      },
+      {
+        "name": "getProductCapability",
+        "kind": "function",
+        "signature": "export declare function getProductCapability(id: string): ProductCapability | null;"
       },
       {
         "name": "getScheduledAutomationTask",
@@ -9981,7 +10341,7 @@
       {
         "name": "HadamardAgentClient",
         "kind": "class",
-        "signature": "export declare class HadamardAgentClient {\nreadonly config: Awaited<ReturnType<typeof resolveRuntimeConfig>>;\nprivate readonly store;\nprivate readonly backgroundTaskStore;\nprivate readonly mailboxStore;\nprivate readonly teammateStore;\nprivate readonly modelApi;\nprivate readonly mcpManager;\nprivate readonly defaultTools;\nprivate readonly defaultMcpServers;\nprivate readonly hooks?;\nprivate readonly maxSubagentDepth;\nprivate readonly maxSubagentFanout;\nreadonly sessions: AgentSessionsApi;\nreadonly agents: HadamardAgentsApi;\nreadonly skills: HadamardSkillsApi<AgentSession>;\nreadonly tools: HadamardToolsApi;\nreadonly tasks: HadamardBackgroundTasksApi;\nreadonly buddy: HadamardBuddyApi;\nreadonly memory: HadamardMemoryApi;\nreadonly memoryProposals: MemoryProposalService;\nreadonly dream: HadamardDreamApi;\nreadonly goals: ProjectGoalApi;\nreadonly swarm: HadamardSwarmApi;\nreadonly context: HadamardContextApi;\nreadonly slashCommands: HadamardSlashCommandsApi;\nreadonly workflow: WorkflowApi;\nreadonly checkpoints: FileCheckpointService;\nreadonly sessionGraph: SessionGraph;\nreadonly sessionForks: SessionForkService;\nreadonly taskWorktrees?: TaskWorktreeCoordinator;\nreadonly threadDiffs: ThreadDiffService;\nreadonly reviews: ReviewStore;\nreadonly approvalPolicy: ApprovalPolicy;\nreadonly auditLog: AuditLog;\nreadonly codeIntelligence?: CodeIntelligenceService;\nreadonly executions: HadamardAgentExecutionsApi;\nprivate readonly sessionManager;\nprivate readonly sessionTurnCoordinator;\nprivate readonly agentDefinitions;\nprivate readonly skillDefinitions;\nprivate readonly activatedConditionalSkills;\nprivate readonly pendingDelegations;\nprivate readonly pendingRuntimeNotifications;\nprivate readonly durableMemoryUsageSessions;\nprivate readonly sessionRuntimeOverrides;\nprivate readonly backgroundTaskManager;\nprivate readonly defaultPermissionMode?;\nprivate readonly defaultPermissions?;\nprivate readonly defaultClassifier?;\nprivate readonly defaultApprover?;\nprivate readonly fileChangeJournal;\nprivate readonly sandboxExecutor;\nprivate readonly typedHookRunner?;\nprivate readonly conversationRestoreStack;\nprivate constructor();\nlistToolMetadata(options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolMetadata[]>;\ngetToolMetadata(name: string, options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolMetadata | undefined>;\ngetTool(name: string): AgentToolDefinition | undefined;\ngetToolCatalog(options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolCatalog>;\ngetContextOverview(options?: import('../types.js').HadamardCleanContextOverviewOptions): Promise<import('../types.js').HadamardCleanContextOverview>;\nstatic create(options?: CreateAgentSdkOptions): Promise<HadamardAgentClient>;\nrun(input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nstream(input: string | MessageParam['content'], options?: AgentRunOptions): AgentRunStream;\nparallel<T>(tasks: Array<() => Promise<T>>, options?: import('../types.js').ParallelOptions): Promise<T[]>;\nrace<T>(tasks: Array<() => Promise<T>>, options?: import('../types.js').RaceOptions): Promise<T>;\ncreateSession(options?: SessionCreateOptions): Promise<AgentSession>;\nresumeSession(sessionId: string, options?: SessionResumeOptions): Promise<AgentSession>;\ngetSessionDiff(sessionId: string): Promise<import('../review/types.js').ThreadDiff>;\napplySessionDiff(sessionId: string, targetDir?: string): Promise<import('../review/types.js').DiffApplyResult>;\noneShotMessage(request: {\nsystem?: string;\nprompt: string;\nmaxTokens?: number;\ntemperature?: number;\nsignal?: AbortSignal;\n}): Promise<string>;\nprivate hasPersistedSessionResumeOverrides;\nprivate prepareResumedStoredSession;\nresolveModel(model?: string): string;\ncompactSessionById(sessionId: string, options?: AgentSessionCompactOptions): Promise<HadamardSessionCompactResult>;\ngetMemoryStateForSession(sessionId?: string, options?: Omit<import('../types.js').HadamardMemoryStateOptions, 'projectPath' | 'sessionId'>): Promise<import('../types.js').HadamardMemoryState>;\ndreamState(currentSessionId?: string): Promise<HadamardDreamState>;\nrunDream(options?: import('../types.js').HadamardDreamRunOptions): Promise<HadamardDreamRunResult>;\nmaybeAutoDream(options?: import('../types.js').HadamardDreamRunOptions): Promise<HadamardDreamRunResult>;\ncreateTeam(definition: import('../types.js').TeamDefinition): Promise<import('../team/modelTeam.js').ModelTeam>;\nclose(): Promise<void>;\nlistAgentDefinitions(): HadamardAgentDefinitionSummary[];\ngetAgentDefinition(agent: string): HadamardAgentDefinition | undefined;\nrunWithAgent(agent: string, input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\ncreateAgentSession(agent: string, options?: SessionCreateOptions): Promise<AgentSession>;\nlistSkillDefinitions(): HadamardSkillDefinitionSummary[];\nprivate activateConditionalSkillsForPaths;\nprivate activateConditionalSkillsFromEvent;\ngetSkillDefinition(skillName: string): HadamardSkillDefinition | undefined;\nrunSkill(skillName: string, args?: string, options?: AgentRunOptions): Promise<AgentRunResult>;\nstreamSkill(skillName: string, args?: string, options?: AgentRunOptions): AgentRunStream;\ncreateTaskTool(options?: {\nname?: string;\ndescription?: string;\n}): AgentToolDefinition;\nprivate replaceDefaultTool;\nprivate createSendMessageTool;\nprivate createSkillRegistryTool;\nprivate createBackgroundTaskListTool;\nprivate createBackgroundTaskGetTool;\nprivate createBackgroundTaskStopTool;\nprivate createBackgroundTaskOutputTool;\nprivate prepareSkillExecution;\nprivate runForkedSkillExecution;\nprivate forwardStreamResult;\nprivate getSessionRuntimeOverrides;\nprivate setSessionRuntimeHooks;\nprivate clearSessionRuntimeHooks;\nprivate setSessionRuntimePermissionContext;\nprivate clearSessionRuntimePermissionContext;\nprivate applySessionRuntimeOverrides;\nprivate hydrateSession;\nprivate setSessionModel;\nprivate restoreCheckpointToSession;\nprivate runSkillOnSession;\nprivate streamSkillOnSession;\nprivate runOnSession;\nprivate runOnSessionExclusive;\nprivate streamOnSession;\nprivate executeRun;\nprivate executeSessionRunWithReactiveCompact;\nprivate resolveGoalService;\nprivate resolveSystemPrompt;\nprivate prepareRunAugmentations;\nprivate preparePreloadedAgentSkillMessages;\nprivate prepareAgentMemoryMessages;\nprivate applyPostRunHooks;\nprivate recordPendingDelegation;\nprivate updatePendingDelegation;\nprivate consumePendingDelegations;\nprivate prepareRelevantMemoryContext;\nprivate prepareInvokedSkillContext;\nprivate getSessionMemoryRuntimeState;\nprivate getCompactStateForSession;\nprivate getAgentContinuityForSession;\nprivate tryReactiveCompactSession;\nprivate delegatedExecutionContext;\nprivate existingAgentExecutionContext;\nprivate tryStartExecutionEdge;\nprivate tryCompleteExecutionEdge;\nprivate tryFailExecutionEdge;\nprivate tryCompleteExecutionEdgeByCallId;\nprivate tryFailExecutionEdgeByCallId;\nprivate runDelegatedAgentTask;\nprivate routeMessageToAgent;\nprivate prepareDelegatedWorkspace;\nprivate prepareDelegatedRunOptions;\nprivate finalizeDelegatedWorkspace;\nprivate drainBackgroundTaskInputs;\nprivate collectPendingTaskNotifications;\nprivate enqueueTaskNotification;\nprivate drainRuntimeNotifications;\nprivate markTaskNotificationDelivered;\nprivate launchBackgroundAgentTask;\nprivate launchBackgroundOnSession;\nprivate resumeLateSubagentInputs;\nprivate settleTerminalPromptTooLong;\nprivate runBackgroundAgentSession;\nprivate reconcileInterruptedAgentExecutions;\nprivate compactSessionForSession;\nprivate runDreamExecution;\nprivate resolveDreamExecutionProfile;\nprivate resolveGoalContinuationRunOptions;\nprivate launchBackgroundDreamTask;\nprivate buildDreamSystemPrompt;\nprivate persistSessionAfterRun;\nprivate requireAgentDefinition;\nprivate requireSkillDefinition;\nprivate resolveRunWorkDir;\nprivate sandboxExecutorForWorkDir;\nprivate resolvePermissionClassifier;\nprivate resolveSessionAgentOptions;\nprivate mergeAgentRunOptions;\nprivate mergeSkillRunOptions;\n}"
+        "signature": "export declare class HadamardAgentClient {\nreadonly config: Awaited<ReturnType<typeof resolveRuntimeConfig>>;\nprivate readonly store;\nprivate readonly backgroundTaskStore;\nprivate readonly mailboxStore;\nprivate readonly teammateStore;\nprivate readonly modelApi;\nprivate readonly mcpManager;\nprivate readonly defaultTools;\nprivate readonly defaultMcpServers;\nprivate readonly hooks?;\nprivate readonly maxSubagentDepth;\nprivate readonly maxSubagentFanout;\nreadonly sessions: AgentSessionsApi;\nreadonly agents: HadamardAgentsApi;\nreadonly skills: HadamardSkillsApi<AgentSession>;\nreadonly tools: HadamardToolsApi;\nreadonly tasks: HadamardBackgroundTasksApi;\nreadonly buddy: HadamardBuddyApi;\nreadonly memory: HadamardMemoryApi;\nreadonly memoryProposals: MemoryProposalService;\nreadonly dream: HadamardDreamApi;\nreadonly goals: ProjectGoalApi;\nreadonly swarm: HadamardSwarmApi;\nreadonly context: HadamardContextApi;\nreadonly slashCommands: HadamardSlashCommandsApi;\nreadonly workflow: WorkflowApi;\nreadonly checkpoints: FileCheckpointService;\nreadonly sessionGraph: SessionGraph;\nreadonly sessionForks: SessionForkService;\nreadonly taskWorktrees?: TaskWorktreeCoordinator;\nreadonly threadDiffs: ThreadDiffService;\nreadonly reviews: ReviewStore;\nreadonly approvalPolicy: ApprovalPolicy;\nreadonly auditLog: AuditLog;\nreadonly codeIntelligence?: CodeIntelligenceService;\nreadonly executions: HadamardAgentExecutionsApi;\nprivate readonly sessionManager;\nprivate readonly sessionTurnCoordinator;\nprivate readonly agentDefinitions;\nprivate readonly agentSessionModelClients;\nprivate readonly externalAgentRunner;\nprivate readonly skillDefinitions;\nprivate readonly activatedConditionalSkills;\nprivate readonly pendingDelegations;\nprivate readonly pendingRuntimeNotifications;\nprivate readonly durableMemoryUsageSessions;\nprivate readonly sessionRuntimeOverrides;\nprivate readonly backgroundTaskManager;\nprivate readonly defaultPermissionMode?;\nprivate readonly defaultPermissions?;\nprivate readonly defaultClassifier?;\nprivate readonly defaultApprover?;\nprivate readonly fileChangeJournal;\nprivate readonly sandboxExecutor;\nprivate readonly typedHookRunner?;\nprivate readonly conversationRestoreStack;\nprivate constructor();\nlistToolMetadata(options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolMetadata[]>;\ngetToolMetadata(name: string, options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolMetadata | undefined>;\ngetTool(name: string): AgentToolDefinition | undefined;\ngetToolCatalog(options?: import('../types.js').HadamardCleanToolLookupOptions): Promise<import('../types.js').HadamardCleanToolCatalog>;\ngetContextOverview(options?: import('../types.js').HadamardCleanContextOverviewOptions): Promise<import('../types.js').HadamardCleanContextOverview>;\nstatic create(options?: CreateAgentSdkOptions): Promise<HadamardAgentClient>;\nrun(input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nstream(input: string | MessageParam['content'], options?: AgentRunOptions): AgentRunStream;\nparallel<T>(tasks: Array<() => Promise<T>>, options?: import('../types.js').ParallelOptions): Promise<T[]>;\nrace<T>(tasks: Array<() => Promise<T>>, options?: import('../types.js').RaceOptions): Promise<T>;\ncreateSession(options?: SessionCreateOptions): Promise<AgentSession>;\nresumeSession(sessionId: string, options?: SessionResumeOptions): Promise<AgentSession>;\ngetSessionDiff(sessionId: string): Promise<import('../review/types.js').ThreadDiff>;\napplySessionDiff(sessionId: string, targetDir?: string): Promise<import('../review/types.js').DiffApplyResult>;\noneShotMessage(request: {\nsystem?: string;\nprompt: string;\nmaxTokens?: number;\ntemperature?: number;\nsignal?: AbortSignal;\n}): Promise<string>;\nprivate hasPersistedSessionResumeOverrides;\nprivate prepareResumedStoredSession;\nresolveModel(model?: string): string;\ncompactSessionById(sessionId: string, options?: AgentSessionCompactOptions): Promise<HadamardSessionCompactResult>;\ngetMemoryStateForSession(sessionId?: string, options?: Omit<import('../types.js').HadamardMemoryStateOptions, 'projectPath' | 'sessionId'>): Promise<import('../types.js').HadamardMemoryState>;\ndreamState(currentSessionId?: string): Promise<HadamardDreamState>;\nrunDream(options?: import('../types.js').HadamardDreamRunOptions): Promise<HadamardDreamRunResult>;\nmaybeAutoDream(options?: import('../types.js').HadamardDreamRunOptions): Promise<HadamardDreamRunResult>;\ncreateTeam(definition: import('../types.js').TeamDefinition): Promise<import('../team/modelTeam.js').ModelTeam>;\nclose(): Promise<void>;\nlistAgentDefinitions(): HadamardAgentDefinitionSummary[];\ngetAgentDefinition(agent: string): HadamardAgentDefinition | undefined;\nrunWithAgent(agent: string, input: string | MessageParam['content'], options?: AgentRunOptions): Promise<AgentRunResult>;\nprivate runExternalDefinition;\ncreateAgentSession(agent: string, options?: SessionCreateOptions): Promise<AgentSession>;\nlistSkillDefinitions(): HadamardSkillDefinitionSummary[];\nprivate activateConditionalSkillsForPaths;\nprivate activateConditionalSkillsFromEvent;\ngetSkillDefinition(skillName: string): HadamardSkillDefinition | undefined;\nrunSkill(skillName: string, args?: string, options?: AgentRunOptions): Promise<AgentRunResult>;\nstreamSkill(skillName: string, args?: string, options?: AgentRunOptions): AgentRunStream;\ncreateTaskTool(options?: {\nname?: string;\ndescription?: string;\n}): AgentToolDefinition;\nprivate replaceDefaultTool;\nprivate createSendMessageTool;\nprivate createSkillRegistryTool;\nprivate createBackgroundTaskListTool;\nprivate createBackgroundTaskGetTool;\nprivate createBackgroundTaskStopTool;\nprivate createBackgroundTaskOutputTool;\nprivate prepareSkillExecution;\nprivate runForkedSkillExecution;\nprivate forwardStreamResult;\nprivate getSessionRuntimeOverrides;\nprivate setSessionRuntimeHooks;\nprivate clearSessionRuntimeHooks;\nprivate setSessionRuntimePermissionContext;\nprivate clearSessionRuntimePermissionContext;\nprivate applySessionRuntimeOverrides;\nprivate hydrateSession;\nprivate setSessionModel;\nprivate restoreCheckpointToSession;\nprivate runSkillOnSession;\nprivate streamSkillOnSession;\nprivate runOnSession;\nprivate runOnSessionExclusive;\nprivate streamOnSession;\nprivate executeRun;\nprivate executeSessionRunWithReactiveCompact;\nprivate resolveGoalService;\nprivate resolveSystemPrompt;\nprivate prepareRunAugmentations;\nprivate preparePreloadedAgentSkillMessages;\nprivate prepareAgentMemoryMessages;\nprivate applyPostRunHooks;\nprivate recordPendingDelegation;\nprivate updatePendingDelegation;\nprivate consumePendingDelegations;\nprivate prepareRelevantMemoryContext;\nprivate prepareInvokedSkillContext;\nprivate getSessionMemoryRuntimeState;\nprivate getCompactStateForSession;\nprivate getAgentContinuityForSession;\nprivate tryReactiveCompactSession;\nprivate delegatedExecutionContext;\nprivate existingAgentExecutionContext;\nprivate tryStartExecutionEdge;\nprivate tryCompleteExecutionEdge;\nprivate tryFailExecutionEdge;\nprivate tryCompleteExecutionEdgeByCallId;\nprivate tryFailExecutionEdgeByCallId;\nprivate runDelegatedAgentTask;\nprivate routeMessageToAgent;\nprivate prepareDelegatedWorkspace;\nprivate prepareDelegatedRunOptions;\nprivate finalizeDelegatedWorkspace;\nprivate drainBackgroundTaskInputs;\nprivate collectPendingTaskNotifications;\nprivate enqueueTaskNotification;\nprivate drainRuntimeNotifications;\nprivate markTaskNotificationDelivered;\nprivate launchBackgroundAgentTask;\nprivate launchBackgroundOnSession;\nprivate resumeLateSubagentInputs;\nprivate settleTerminalPromptTooLong;\nprivate runBackgroundAgentSession;\nprivate reconcileInterruptedAgentExecutions;\nprivate compactSessionForSession;\nprivate runDreamExecution;\nprivate resolveDreamExecutionProfile;\nprivate resolveGoalContinuationRunOptions;\nprivate launchBackgroundDreamTask;\nprivate buildDreamSystemPrompt;\nprivate persistSessionAfterRun;\nprivate requireAgentDefinition;\nprivate requireSkillDefinition;\nprivate resolveRunWorkDir;\nprivate sandboxExecutorForWorkDir;\nprivate resolvePermissionClassifier;\nprivate resolveSessionAgentOptions;\nprivate resolveDefinitionModelClient;\nprivate mergeAgentRunOptions;\nprivate mergeSkillRunOptions;\n}"
       },
       {
         "name": "HadamardAgentContinuityState",
@@ -9991,12 +10351,12 @@
       {
         "name": "HadamardAgentDefinition",
         "kind": "interface",
-        "signature": "export interface HadamardAgentDefinition {\nname: string;\ndescription: string;\nsystemPrompt?: string;\nmodel?: string;\neffort?: HadamardRunEffort;\npermissionMode?: HadamardPermissionMode;\nmaxToolIterations?: number;\nmaxTurns?: number;\nmetadata?: Record<string, unknown>;\nhooks?: HadamardHooks;\ntools?: AgentToolDefinition[];\nallowedTools?: string[];\ndisallowedTools?: string[];\nallowedAgents?: string[];\nskills?: string[];\nmcpServers?: AgentMcpServerDefinition[];\nrequiredMcpServers?: string[];\ninheritDefaultTools?: boolean;\ninheritDefaultMcpServers?: boolean;\ninitialPrompt?: string;\nmemory?: 'user' | 'project' | 'local';\nbackground?: boolean;\nisolation?: 'worktree';\ncwd?: string;\nallowNestedAgents?: boolean;\nsource?: 'built-in' | 'user' | 'project' | 'custom';\nsourcePath?: string;\n}"
+        "signature": "export interface HadamardAgentDefinition {\nname: string;\ndescription: string;\nsystemPrompt?: string;\nmodel?: string;\nbridgeConfig?: string;\nruntime?: string;\npromptMode?: 'extend' | 'replace';\neffort?: HadamardRunEffort;\npermissionMode?: HadamardPermissionMode;\ntemperature?: number;\ntopP?: number;\nmaxTokens?: number;\ntimeoutMs?: number;\nworkspaceAccess?: 'workspace' | 'full';\nsubagent?: boolean;\nmaxToolIterations?: number;\nmaxTurns?: number;\nmetadata?: Record<string, unknown>;\nhooks?: HadamardHooks;\ntools?: AgentToolDefinition[];\nallowedTools?: string[];\ndisallowedTools?: string[];\nallowedAgents?: string[];\nskills?: string[];\nmcpServers?: AgentMcpServerDefinition[];\nrequiredMcpServers?: string[];\ninheritDefaultTools?: boolean;\ninheritDefaultMcpServers?: boolean;\ninitialPrompt?: string;\nmemory?: 'user' | 'project' | 'local';\nbackground?: boolean;\nisolation?: 'worktree';\ncwd?: string;\nallowNestedAgents?: boolean;\nsource?: 'built-in' | 'user' | 'project' | 'custom';\nsourcePath?: string;\n}"
       },
       {
         "name": "HadamardAgentDefinitionSummary",
         "kind": "interface",
-        "signature": "export interface HadamardAgentDefinitionSummary {\nname: string;\ndescription: string;\nmodel?: string;\neffort?: HadamardRunEffort;\npermissionMode?: HadamardPermissionMode;\nmaxToolIterations?: number;\nmaxTurns?: number;\ntoolNames: string[];\nallowedTools: string[];\ndisallowedTools: string[];\nallowedAgents: string[];\nskills: string[];\nmcpServerNames: string[];\nrequiredMcpServers: string[];\ninheritDefaultTools: boolean;\ninheritDefaultMcpServers: boolean;\nbackground: boolean;\nisolation?: 'worktree';\nmemory?: 'user' | 'project' | 'local';\nsource?: 'built-in' | 'user' | 'project' | 'custom';\nsourcePath?: string;\nmetadataKeys: string[];\nhasSystemPrompt: boolean;\nhasHooks: boolean;\n}"
+        "signature": "export interface HadamardAgentDefinitionSummary {\nname: string;\ndescription: string;\nmodel?: string;\nbridgeConfig?: string;\nsubagent?: boolean;\neffort?: HadamardRunEffort;\npermissionMode?: HadamardPermissionMode;\nmaxToolIterations?: number;\nmaxTurns?: number;\ntoolNames: string[];\nallowedTools: string[];\ndisallowedTools: string[];\nallowedAgents: string[];\nskills: string[];\nmcpServerNames: string[];\nrequiredMcpServers: string[];\ninheritDefaultTools: boolean;\ninheritDefaultMcpServers: boolean;\nbackground: boolean;\nisolation?: 'worktree';\nmemory?: 'user' | 'project' | 'local';\nsource?: 'built-in' | 'user' | 'project' | 'custom';\nsourcePath?: string;\nmetadataKeys: string[];\nhasSystemPrompt: boolean;\nhasHooks: boolean;\n}"
       },
       {
         "name": "HadamardAgentExecutionsApi",
@@ -10022,6 +10382,16 @@
         "name": "HadamardAgentSummary",
         "kind": "interface",
         "signature": "export interface HadamardAgentSummary {\nname: string;\nsourceGroup: string;\nactive: boolean;\nrawLine: string;\nmodel?: string;\nmemory?: string;\nshadowedBy?: string;\n}"
+      },
+      {
+        "name": "HadamardAgentTemplate",
+        "kind": "interface",
+        "signature": "export interface HadamardAgentTemplate {\nname: string;\ndescription: string;\nfrontmatter: Record<string, string | number | boolean | string[]>;\nbody: string;\n}"
+      },
+      {
+        "name": "hadamardAgentTemplateToDefinition",
+        "kind": "function",
+        "signature": "export declare function hadamardAgentTemplateToDefinition(template: HadamardAgentTemplate): HadamardAgentDefinition;"
       },
       {
         "name": "HadamardBackgroundTaskHandle",
@@ -11154,6 +11524,11 @@
         "signature": "export declare function isExploratoryTool(name: string): boolean;"
       },
       {
+        "name": "isExternalAgentRuntime",
+        "kind": "function",
+        "signature": "export declare function isExternalAgentRuntime(runtime: string | undefined): boolean;"
+      },
+      {
         "name": "isHadamardDreamEligibleSession",
         "kind": "function",
         "signature": "export declare function isHadamardDreamEligibleSession(session: Pick<StoredSession, 'metadata'>): boolean;"
@@ -11192,6 +11567,11 @@
         "name": "isPortNode",
         "kind": "function",
         "signature": "export declare function isPortNode(node: TeamGraphNode): boolean;"
+      },
+      {
+        "name": "isProjectInstructionMode",
+        "kind": "function",
+        "signature": "export declare function isProjectInstructionMode(value: unknown): value is ProjectInstructionMode;"
       },
       {
         "name": "isProjectWorkMode",
@@ -11327,6 +11707,11 @@
         "name": "linuxSandboxCapabilities",
         "kind": "function",
         "signature": "export declare function linuxSandboxCapabilities(): SandboxCapabilityReport;"
+      },
+      {
+        "name": "listAgentDefinitionNames",
+        "kind": "function",
+        "signature": "export declare function listAgentDefinitionNames(homeDir?: string, projectDir?: string): string[];"
       },
       {
         "name": "listAgentProfileBridgeModels",
@@ -11689,6 +12074,11 @@
         "signature": "MESSAGE_IDS_KEY = \"__hadamardMessageIds\""
       },
       {
+        "name": "migrateAgentProfilesToMarkdown",
+        "kind": "function",
+        "signature": "export declare function migrateAgentProfilesToMarkdown(homeDir?: string, agentsDir?: string): {\nmigrated: string[];\nskipped: string[];\n};"
+      },
+      {
         "name": "migrateHadamardHomeData",
         "kind": "function",
         "signature": "export declare function migrateHadamardHomeData(options: MigrateHadamardHomeOptions): Promise<HadamardHomeMigrationSummary>;"
@@ -11761,12 +12151,12 @@
       {
         "name": "ModelTeamMode",
         "kind": "type",
-        "signature": "export type ModelTeamMode = 'panel-analysis' | 'panel' | 'analysis' | 'reviewer' | 'executor-reviewer' | 'graph';"
+        "signature": "export type ModelTeamMode = 'panel-analysis' | 'panel' | 'analysis' | 'reviewer' | 'executor-reviewer' | 'graph' | 'workflow';"
       },
       {
         "name": "ModelTeamResult",
         "kind": "type",
-        "signature": "export type ModelTeamResult = GraphTeamResult;"
+        "signature": "export type ModelTeamResult = GraphTeamResult | WorkflowTeamResult;"
       },
       {
         "name": "msUntilNextCron",
@@ -12034,6 +12424,21 @@
         "signature": "export declare function probeManagedPlugin(raw: Record<string, unknown>, pluginId: ManagedPluginId, options: ManagedPluginHealthOptions): Promise<ManagedPluginHealth>;"
       },
       {
+        "name": "productCapabilities",
+        "kind": "value",
+        "signature": "productCapabilities: readonly ProductCapability[]"
+      },
+      {
+        "name": "ProductCapability",
+        "kind": "interface",
+        "signature": "export interface ProductCapability {\nid: string;\ntitle: string;\nsummary: string;\nuiLocations: string[];\nprerequisites: string[];\nsteps: string[];\ncommands: string[];\nexamples: string[];\nlimitations: string[];\nrelatedSettings: string[];\nkeywords: string[];\n}"
+      },
+      {
+        "name": "profileStoredAsMarkdown",
+        "kind": "function",
+        "signature": "export declare function profileStoredAsMarkdown(name: string, homeDir?: string): boolean;"
+      },
+      {
         "name": "ProgressGoalInput",
         "kind": "interface",
         "signature": "export interface ProgressGoalInput {\nnote: string;\ntoolCalls?: number;\ntokens?: number;\nexpectedRevision?: number;\n}"
@@ -12042,6 +12447,11 @@
         "name": "PROJECT_GOAL_DATABASE",
         "kind": "value",
         "signature": "PROJECT_GOAL_DATABASE = \"goal-state.sqlite\""
+      },
+      {
+        "name": "ProjectContextSettings",
+        "kind": "interface",
+        "signature": "export interface ProjectContextSettings {\ninstructionMode: ProjectInstructionMode;\n}"
       },
       {
         "name": "ProjectGoalApi",
@@ -12067,6 +12477,11 @@
         "name": "ProjectGoalSummary",
         "kind": "interface",
         "signature": "export interface ProjectGoalSummary {\nid: string;\nobjective: string;\nstatus: Goal['status'];\nrevision: number;\ncreatedAt: string;\nupdatedAt: string;\nattachedSessionIds: string[];\n}"
+      },
+      {
+        "name": "ProjectInstructionMode",
+        "kind": "type",
+        "signature": "export type ProjectInstructionMode = 'agents' | 'claude' | 'both';"
       },
       {
         "name": "ProjectIssue",
@@ -12106,7 +12521,7 @@
       {
         "name": "ProjectSettings",
         "kind": "type",
-        "signature": "export type ProjectSettings = {\nworkMode: ProjectWorkMode;\ncustomPrompt: string;\nprojectRules: string;\nmemory: ProjectMemorySettings;\nupdatedAt?: string;\n};"
+        "signature": "export type ProjectSettings = {\nworkMode: ProjectWorkMode;\ncustomPrompt: string;\nprojectRules: string;\ncontext: ProjectContextSettings;\nmemory: ProjectMemorySettings;\nupdatedAt?: string;\n};"
       },
       {
         "name": "projectSettingsPath",
@@ -12134,9 +12549,19 @@
         "signature": "export interface RaceOptions {\ntimeoutMs?: number;\nsignal?: AbortSignal;\n}"
       },
       {
+        "name": "readAgentDefinitionMarkdown",
+        "kind": "function",
+        "signature": "export declare function readAgentDefinitionMarkdown(name: string, homeDir?: string, projectDir?: string): {\nfrontmatter: Record<string, string>;\nbody: string;\nfilePath: string;\nsource: 'project' | 'user';\n} | null;"
+      },
+      {
         "name": "readAgentProfiles",
         "kind": "function",
         "signature": "export declare function readAgentProfiles(homeDir?: string): PersistedAgentProfiles;"
+      },
+      {
+        "name": "readAllAgentReferenceProfiles",
+        "kind": "function",
+        "signature": "export declare function readAllAgentReferenceProfiles(homeDir?: string, projectDir?: string): AgentProfile[];"
       },
       {
         "name": "readAssistantConfig",
@@ -12194,6 +12619,11 @@
         "signature": "export declare function readManagerConfig(workDir: string, homeDir: string): Promise<ManagerConfig>;"
       },
       {
+        "name": "readProfilesFromAgentDefinitions",
+        "kind": "function",
+        "signature": "export declare function readProfilesFromAgentDefinitions(homeDir?: string): AgentProfile[];"
+      },
+      {
         "name": "readProgressFile",
         "kind": "function",
         "signature": "export declare function readProgressFile(workDir: string, homeDir: string): Promise<string | null>;"
@@ -12212,6 +12642,11 @@
         "name": "readProjectSettings",
         "kind": "function",
         "signature": "export declare function readProjectSettings(workDir: string, homeDir: string): Promise<ProjectSettings>;"
+      },
+      {
+        "name": "readStoredAgentDefinition",
+        "kind": "function",
+        "signature": "export declare function readStoredAgentDefinition(name: string, homeDir?: string, projectDir?: string): HadamardAgentDefinition | null;"
       },
       {
         "name": "readStoredManagedPluginConfig",
@@ -12346,7 +12781,7 @@
       {
         "name": "ResolvedToolAdapter",
         "kind": "interface",
-        "signature": "export interface ResolvedToolAdapter {\npublicName: string;\nsourceName: string;\nprovider: 'local' | 'mcp';\nmcpServerName?: string;\nproviderTool: ProviderTool;\nexecute: (input: unknown, context: ToolExecutionContext, onProgress?: ToolCallProgress) => Promise<ResolvedToolExecutionResult>;\nisReadOnly?: (input?: unknown) => boolean;\nisDestructive?: (input?: unknown) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ninterruptBehavior?: 'cancel' | 'block';\nmaxResultSizeChars?: number;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\n}"
+        "signature": "export interface ResolvedToolAdapter {\npublicName: string;\nsourceName: string;\nprovider: 'local' | 'mcp';\nmcpServerName?: string;\nproviderTool: ProviderTool;\nexecute: (input: unknown, context: ToolExecutionContext, onProgress?: ToolCallProgress) => Promise<ResolvedToolExecutionResult>;\nisReadOnly?: (input?: unknown) => boolean;\nisDestructive?: (input?: unknown) => boolean;\nisPlanReadOnly?: (input?: unknown) => boolean;\nrequiresUserInteraction?: () => boolean;\nisConcurrencySafe?: () => boolean;\ninterruptBehavior?: 'cancel' | 'block';\nmaxResultSizeChars?: number;\ncheckPermissions?: (context: {\nmode: HadamardPermissionMode;\nrunId: string;\nsessionId?: string;\n}) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;\n}"
       },
       {
         "name": "ResolvedToolExecutionResult",
@@ -12357,6 +12792,16 @@
         "name": "resolveEdgeBezierPoints",
         "kind": "function",
         "signature": "export declare function resolveEdgeBezierPoints(p1: GraphPoint, p2: GraphPoint, ui?: GraphEdgeBezierUi | TeamGraphEdge['ui']): {\nc1: GraphPoint;\nc2: GraphPoint;\npath: string;\n};"
+      },
+      {
+        "name": "resolveEffectiveAgentRunOptions",
+        "kind": "function",
+        "signature": "export declare function resolveEffectiveAgentRunOptions(source: AgentRunConfigurationSource | null | undefined, input?: ResolveEffectiveAgentRunOptionsInput): EffectiveAgentRunOptions;"
+      },
+      {
+        "name": "ResolveEffectiveAgentRunOptionsInput",
+        "kind": "interface",
+        "signature": "export interface ResolveEffectiveAgentRunOptionsInput {\nsystemPrompt?: string;\nfallbackPermissionMode?: HadamardPermissionMode;\npermissionModeOverride?: HadamardPermissionMode;\nfallbackEffort?: HadamardRunEffort;\neffortOverride?: HadamardRunEffort;\n}"
       },
       {
         "name": "resolveExaApiKey",
@@ -12451,7 +12896,7 @@
       {
         "name": "resolveRoutedRun",
         "kind": "function",
-        "signature": "export declare function resolveRoutedRun(profile: RouterProfile, userInput: string, signal?: AbortSignal): Promise<{\nmodel: string;\nmodelApi: ModelApi;\nlabel: string;\ndecision: RouterDecision;\n}>;"
+        "signature": "export declare function resolveRoutedRun(profile: RouterProfile, userInput: string, signal?: AbortSignal, options?: {\nhomeDir?: string;\nprojectDir?: string;\n}): Promise<{\nmodel: string;\nmodelApi: ModelApi;\nlabel: string;\ndecision: RouterDecision;\neffort?: HadamardRunEffort;\n}>;"
       },
       {
         "name": "resolveRuntimeConfig",
@@ -12541,7 +12986,7 @@
       {
         "name": "RouterDecision",
         "kind": "interface",
-        "signature": "export interface RouterDecision {\ntarget: RouterModelRef;\nlabel: string;\nclassification: string;\nmatched: boolean;\n}"
+        "signature": "export interface RouterDecision {\ntarget: RouterModelRef;\nlabel: string;\nclassification: string;\nmatched: boolean;\neffort?: HadamardRunEffort;\n}"
       },
       {
         "name": "RouterModelRef",
@@ -12551,12 +12996,12 @@
       {
         "name": "RouterProfile",
         "kind": "interface",
-        "signature": "export interface RouterProfile {\nname: string;\ndescription?: string;\nrouterModel: RouterModelRef;\nroutes: RouterRoute[];\nfallback?: RouterModelRef;\nclassificationPrompt?: string;\n}"
+        "signature": "export interface RouterProfile {\nname: string;\ndescription?: string;\nrouterModel: RouterModelRef;\nrouterModelTarget?: AgentTargetRef;\nroutes: RouterRoute[];\nfallback?: RouterModelRef;\nfallbackTarget?: AgentTargetRef;\nclassificationPrompt?: string;\n}"
       },
       {
         "name": "RouterRoute",
         "kind": "interface",
-        "signature": "export interface RouterRoute extends RouterModelRef {\nwhen: string;\nname?: string;\nrole?: string;\ndescription?: string;\n}"
+        "signature": "export interface RouterRoute extends RouterModelRef {\nwhen: string;\nname?: string;\nrole?: string;\ndescription?: string;\neffort?: HadamardRunEffort;\ntarget?: AgentTargetRef;\n}"
       },
       {
         "name": "RuleCommandResult",
@@ -12607,6 +13052,11 @@
         "name": "runExaSearch",
         "kind": "function",
         "signature": "export declare function runExaSearch(input: ExaSearchInput, options?: CreateExaSearchToolOptions): Promise<string>;"
+      },
+      {
+        "name": "runExternalAgentOnce",
+        "kind": "function",
+        "signature": "export declare function runExternalAgentOnce(request: ExternalAgentRunRequest): Promise<ExternalAgentRunResult>;"
       },
       {
         "name": "runHttpHook",
@@ -12789,9 +13239,14 @@
         "signature": "export interface ScheduledTaskStore {\nsave(task: ScheduledTaskRecord): Promise<void>;\nload(id: string): Promise<ScheduledTaskRecord | undefined>;\nlist(): Promise<ScheduledTaskRecord[]>;\ndelete(id: string): Promise<void>;\n}"
       },
       {
+        "name": "searchProductCapabilities",
+        "kind": "function",
+        "signature": "export declare function searchProductCapabilities(query: string, limit?: number): ProductCapability[];"
+      },
+      {
         "name": "SelectableAgent",
         "kind": "interface",
-        "signature": "export interface SelectableAgent {\nname: string;\nbridgeConfig: string;\nmodel: string;\nruntime?: BridgeRuntime;\nexecution?: BridgeExecutionMode;\nprovider?: InProcessProvider;\ncontext1M?: boolean;\ncontextWindowTokens?: number;\nmaxContextWindowTokens?: number;\neffectiveContextWindowPercent?: number;\nautoCompactTokenLimit?: number;\nmodality?: ModelModality;\nsource: 'profile' | 'config';\ndescription?: string;\npermissionMode?: HadamardPermissionMode;\nsystemPromptAppend?: string;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nephemeral?: boolean;\n}"
+        "signature": "export interface SelectableAgent {\nname: string;\nbridgeConfig: string;\nmodel: string;\nruntime?: BridgeRuntime;\nexecution?: BridgeExecutionMode;\nprovider?: InProcessProvider;\ncontext1M?: boolean;\ncontextWindowTokens?: number;\nmaxContextWindowTokens?: number;\neffectiveContextWindowPercent?: number;\nautoCompactTokenLimit?: number;\nmodality?: ModelModality;\nsource: 'profile' | 'config';\ndescription?: string;\npermissionMode?: HadamardPermissionMode;\nsystemPromptAppend?: string;\npromptMode?: 'extend' | 'replace';\nsubagent?: boolean;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess?: 'workspace' | 'full';\nmaxIterations?: number;\ntimeoutMs?: number;\nephemeral?: boolean;\n}"
       },
       {
         "name": "selectDefaultHadamardModel",
@@ -12802,6 +13257,11 @@
         "name": "selectHadamardRelevantMemories",
         "kind": "function",
         "signature": "export declare function selectRelevantMemories(query: string, memories: HadamardMemoryFileHeader[], options?: {\nrecentTools?: readonly string[];\nalreadySurfacedPaths?: ReadonlySet<string>;\nlimit?: number;\n}): HadamardRelevantMemory[];"
+      },
+      {
+        "name": "serializeAgentDefinitionMarkdown",
+        "kind": "function",
+        "signature": "export declare function serializeAgentDefinitionMarkdown(fields: Record<string, string | number | boolean | string[] | undefined>, body: string): string;"
       },
       {
         "name": "serializeAgentExecutionIdentity",
@@ -13044,9 +13504,19 @@
         "signature": "SKILL_TOOL_NAME = \"Skill\""
       },
       {
+        "name": "StageDeleteProposalInput",
+        "kind": "interface",
+        "signature": "export interface StageDeleteProposalInput {\nassistantSessionId: string;\nkind: ReferenceDefinitionKind;\nname: string;\nreferences: ReferenceEdge[];\nexplanation?: string;\n}"
+      },
+      {
         "name": "StageTeamProposalInput",
         "kind": "interface",
-        "signature": "export interface StageTeamProposalInput {\nassistantSessionId: string;\nprojectPath: string;\ndefinition: TeamDefinition;\nexplanation?: string;\nhomeDir?: string;\n}"
+        "signature": "export interface StageTeamProposalInput {\nassistantSessionId: string;\nprojectPath: string;\ndefinition: TeamDefinition;\nexplanation?: string;\nhomeDir?: string;\nbaseDefinition?: TeamDefinition;\neditorBaseDigest?: string;\n}"
+      },
+      {
+        "name": "StageWorkflowUpsertInput",
+        "kind": "interface",
+        "signature": "export interface StageWorkflowUpsertInput {\nassistantSessionId: string;\nname: string;\nscript: string;\nscope: 'project' | 'personal';\nprojectPath?: string;\ndescription?: string;\nexplanation?: string;\n}"
       },
       {
         "name": "StdioAppServerTransport",
@@ -13221,7 +13691,7 @@
       {
         "name": "TeamAskOptions",
         "kind": "interface",
-        "signature": "export interface TeamAskOptions {\ncontext?: string;\nworkDir?: string;\nonEvent?: (event: TeamEvent) => void;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\nhooks?: HadamardHooks;\nteamStack?: string[];\n}"
+        "signature": "export interface TeamAskOptions {\ncontext?: string;\nworkDir?: string;\nhomeDir?: string;\nmodel?: string;\nmodelApi?: ModelApi;\nonEvent?: (event: TeamEvent) => void;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\nhooks?: HadamardHooks;\nteamStack?: string[];\nmaxTeamNestingDepth?: number;\n}"
       },
       {
         "name": "TeamCost",
@@ -13231,7 +13701,7 @@
       {
         "name": "TeamDefinition",
         "kind": "interface",
-        "signature": "export interface TeamDefinition {\nname: string;\ndescription?: string;\nmode: ModelTeamMode;\nversion?: number;\norchestration?: 'legacy-mode' | 'graph';\nsquadType?: 'graph' | 'workflow' | 'subagent';\nworkflowTree?: WorkflowNode;\nmembers: TeamMember[];\nprimary?: TeamMember;\nreviewer?: TeamMember;\nreviewEdges?: TeamReviewEdge[];\nnodes?: TeamGraphNode[];\nedges?: TeamGraphEdge[];\nuiGroups?: TeamGraphUiGroup[];\nentryNodeIds?: string[];\nmaxParallel?: number;\ntimeoutMs?: number;\nmaxRounds?: number;\nmaxIterations?: number;\n}"
+        "signature": "export interface TeamDefinition {\nname: string;\ndescription?: string;\nmode: ModelTeamMode;\nversion?: number;\norchestration?: 'legacy-mode' | 'graph';\nsquadType?: 'graph' | 'workflow' | 'agent' | 'subagent';\nworkflowTree?: WorkflowNode;\nmembers: TeamMember[];\nprimary?: TeamMember;\nreviewer?: TeamMember;\nreviewEdges?: TeamReviewEdge[];\nnodes?: TeamGraphNode[];\nedges?: TeamGraphEdge[];\nuiGroups?: TeamGraphUiGroup[];\nentryNodeIds?: string[];\nmaxParallel?: number;\ntimeoutMs?: number;\nmaxRounds?: number;\nmaxIterations?: number;\n}"
       },
       {
         "name": "teamDefinitionFingerprint",
@@ -13256,7 +13726,7 @@
       {
         "name": "TeamGraphNode",
         "kind": "interface",
-        "signature": "export interface TeamGraphNode extends Omit<TeamMember, 'model'> {\nmodel?: string;\nkind?: TeamGraphNodeKind;\ntype?: 'react' | 'single' | 'team';\nteamRef?: string;\nreturnMode?: TeamGraphReturnMode;\npayloadTemplate?: string;\nentry?: boolean;\nallowedTools?: string[];\njoin?: 'all' | 'any';\nui?: {\nx?: number;\ny?: number;\ngroupId?: string;\n};\nmaxIterations?: number;\ntimeoutMs?: number;\nreconnectAttempts?: number;\nmaxRounds?: number;\n}"
+        "signature": "export interface TeamGraphNode extends Omit<TeamMember, 'model'> {\nmodel?: string;\nkind?: TeamGraphNodeKind;\ntype?: 'react' | 'single' | 'team';\nteamRef?: string;\ntargetRef?: AgentTargetRef;\nreturnMode?: TeamGraphReturnMode;\npayloadTemplate?: string;\nentry?: boolean;\nallowedTools?: string[];\njoin?: 'all' | 'any';\nui?: {\nx?: number;\ny?: number;\ngroupId?: string;\n};\nmaxIterations?: number;\ntimeoutMs?: number;\nreconnectAttempts?: number;\nmaxRounds?: number;\n}"
       },
       {
         "name": "TeamGraphNodeKind",
@@ -13266,7 +13736,7 @@
       {
         "name": "TeamGraphProposal",
         "kind": "interface",
-        "signature": "export interface TeamGraphProposal {\nid: string;\nassistantSessionId: string;\nprojectPath: string;\nteamName: string;\nbaseFingerprint: string | null;\nbaseSource: LoadedTeamDefinition['source'] | null;\nexplanation: string;\nproblems: string[];\ndiff: TeamProposalDiff;\ndraft: TeamDefinition;\nstatus: TeamProposalStatus;\ncreatedAt: string;\nappliedAt?: string;\n}"
+        "signature": "export interface TeamGraphProposal {\nid: string;\nassistantSessionId: string;\nprojectPath: string;\nteamName: string;\nbaseFingerprint: string | null;\nbaseSource: LoadedTeamDefinition['source'] | null;\neditorBaseDigest?: string;\nexplanation: string;\nproblems: string[];\ndiff: TeamProposalDiff;\ndraft: TeamDefinition;\nstatus: TeamProposalStatus;\ncreatedAt: string;\nappliedAt?: string;\n}"
       },
       {
         "name": "TeamGraphReturnMode",
@@ -13291,7 +13761,7 @@
       {
         "name": "TeamMember",
         "kind": "interface",
-        "signature": "export interface TeamMember {\nmodel: string;\nprovider?: 'anthropic' | 'openai';\nbaseURL?: string;\napiKey?: string;\nsystemPrompt?: string;\nmaxTokens?: number;\ndescription?: string;\nid?: string;\nname?: string;\nrole?: string;\nresponsibility?: string;\nreviews?: string[];\ndependsOn?: string[];\nruntime?: string;\ntoolScope?: string[];\nworkspaceAccess?: 'workspace' | 'full';\n}"
+        "signature": "export interface TeamMember {\nmodel: string;\nprovider?: 'anthropic' | 'openai';\nbaseURL?: string;\napiKey?: string;\nsystemPrompt?: string;\nmaxTokens?: number;\ndescription?: string;\nid?: string;\nname?: string;\nrole?: string;\nresponsibility?: string;\nreviews?: string[];\ndependsOn?: string[];\nruntime?: string;\ntoolScope?: string[];\nworkspaceAccess?: 'workspace' | 'full';\ntargetRef?: AgentTargetRef;\nallowedTools?: string[];\n}"
       },
       {
         "name": "TeamPreferences",
@@ -13316,7 +13786,7 @@
       {
         "name": "TeamProposalStore",
         "kind": "class",
-        "signature": "export declare class TeamProposalStore {\nprivate readonly proposals;\nstage(input: StageTeamProposalInput): TeamGraphProposal;\nget(id: string): TeamGraphProposal | null;\nlistForSession(assistantSessionId: string): TeamGraphProposal[];\nreject(id: string): TeamGraphProposal;\napply(id: string, homeDir?: string): Promise<ApplyTeamProposalResult>;\nprivate requirePending;\n}"
+        "signature": "export declare class TeamProposalStore {\nprivate readonly proposals;\nstage(input: StageTeamProposalInput): TeamGraphProposal;\nget(id: string): TeamGraphProposal | null;\nlistForSession(assistantSessionId: string): TeamGraphProposal[];\nreject(id: string): TeamGraphProposal;\napply(id: string, homeDir?: string, options?: {\neditorBaseDigest?: string;\n}): Promise<ApplyTeamProposalResult>;\nprivate requirePending;\n}"
       },
       {
         "name": "TeamResult",
@@ -13581,7 +14051,7 @@
       {
         "name": "WorkflowNode",
         "kind": "interface",
-        "signature": "export interface WorkflowNode {\nid: string;\ntype: 'agent' | 'branch' | 'parallel';\nlabel?: string;\nprompt?: string;\ncondition?: string;\nruntime?: string;\nmodel?: string;\nchildren: WorkflowNode[];\n}"
+        "signature": "export interface WorkflowNode {\nid: string;\ntype: 'agent' | 'branch' | 'parallel';\nlabel?: string;\nprompt?: string;\ncondition?: string;\nruntime?: string;\nmodel?: string;\nsystemPrompt?: string;\nallowedTools?: string[];\ntimeoutMs?: number;\nmaxIterations?: number;\nworkspaceAccess?: 'workspace' | 'full';\ntargetRef?: AgentTargetRef;\nchildren: WorkflowNode[];\n}"
       },
       {
         "name": "WorkflowParameter",
@@ -13619,6 +14089,11 @@
         "signature": "export interface WorkflowScriptContext {\nagent: (prompt: string, opts?: WorkflowAgentOptions) => Promise<any>;\nparallel: <T>(thunks: Array<() => Promise<T>>) => Promise<(T | null)[]>;\npipeline: <T, R>(items: T[], ...stages: Array<(prev: any, item: T, index: number) => Promise<R | null>>) => Promise<(R | null)[]>;\nphase: (title: string) => void;\nlog: (message: string) => void;\nbudget: WorkflowBudget;\nargs: any;\nmeta: WorkflowMeta;\n}"
       },
       {
+        "name": "workflowScriptProblems",
+        "kind": "function",
+        "signature": "export declare function workflowScriptProblems(name: string, script: string): string[];"
+      },
+      {
         "name": "WorkflowScriptRuntime",
         "kind": "class",
         "signature": "export declare class WorkflowScriptRuntime {\nprivate options;\nconstructor(options: WorkflowRuntimeOptions);\nexecute(script: string): Promise<{\nresult: any;\nstate: WorkflowRunState;\nresumeState: WorkflowResumeState;\nlogs: string[];\n}>;\n}"
@@ -13632,6 +14107,11 @@
         "name": "WorkflowStepResult",
         "kind": "interface",
         "signature": "export interface WorkflowStepResult {\nid: string;\nname: string;\nstatus: 'completed' | 'failed' | 'skipped';\ntext: string;\ntoolCalls: string[];\ndurationMs: number;\nsessionId: string;\nerror?: string;\n}"
+      },
+      {
+        "name": "WorkflowTeamResult",
+        "kind": "interface",
+        "signature": "export interface WorkflowTeamResult extends Omit<GraphTeamResult, 'mode'> {\nmode: 'workflow';\n}"
       },
       {
         "name": "WorkspaceSymbol",
@@ -13677,6 +14157,16 @@
         "name": "WorktreeStackEntry",
         "kind": "interface",
         "signature": "export interface WorktreeStackEntry {\nworkDir: string;\nworktreePath?: string;\nworktreeBranch?: string;\nsessionKind: 'main' | 'worktree';\n}"
+      },
+      {
+        "name": "writeAgentDefinitionMarkdown",
+        "kind": "function",
+        "signature": "export declare function writeAgentDefinitionMarkdown(options: {\nname: string;\ndescription?: string;\nbody?: string;\nextras?: AgentDefinitionExtraFields;\ndirectory?: string;\nhomeDir?: string;\n}): string;"
+      },
+      {
+        "name": "writeAgentProfileMarkdown",
+        "kind": "function",
+        "signature": "export declare function writeAgentProfileMarkdown(profile: AgentProfile, homeDir?: string, options?: {\ndirectory?: string;\nextras?: AgentDefinitionExtraFields;\n}): string;"
       },
       {
         "name": "writeAgentProfiles",
@@ -13736,7 +14226,7 @@
       {
         "name": "writeProjectSettings",
         "kind": "function",
-        "signature": "export declare function writeProjectSettings(workDir: string, homeDir: string, patch: Partial<Omit<ProjectSettings, 'memory'>> & {\nmemory?: ProjectMemorySettingsPatch;\n}): Promise<ProjectSettings>;"
+        "signature": "export declare function writeProjectSettings(workDir: string, homeDir: string, patch: Partial<Omit<ProjectSettings, 'memory' | 'context'>> & {\ncontext?: Partial<ProjectContextSettings>;\nmemory?: ProjectMemorySettingsPatch;\n}): Promise<ProjectSettings>;"
       },
       {
         "name": "writeTeamPreferences",
