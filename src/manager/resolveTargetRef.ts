@@ -13,7 +13,12 @@
  */
 import type { AgentTargetRef } from '../types.js';
 import { findBridgeConfig } from '../parity/bridgeConfigs.js';
-import { findAgentProfile } from '../config/agentProfiles.js';
+import { findAgentProfile, type AgentProfile } from '../config/agentProfiles.js';
+import {
+  agentDefinitionToProfile,
+  readStoredAgentDefinition,
+} from '../config/agentDefinitionMigration.js';
+import type { HadamardAgentDefinition } from '../types.js';
 import { loadTeamDefinition } from '../team/teamDefinitions.js';
 
 /** Target kinds an `AgentTargetRef` (or a legacy name reference) can point at. */
@@ -45,6 +50,10 @@ export interface ResolvedTargetRef {
   apiKey?: string;
   /** Human-readable label for UI/status surfaces. */
   label: string;
+  /** Present for Agent refs so every execution surface can apply its options. */
+  agentProfile?: AgentProfile;
+  /** Project/personal definition, including inherit-session-model Agents. */
+  agentDefinition?: HadamardAgentDefinition;
 }
 
 export interface ResolveTargetRefContext {
@@ -91,8 +100,18 @@ export function resolveTargetRef(
       };
     }
     case 'agent': {
-      const profile = findAgentProfile(ref.name, ctx.homeDir);
-      if (!profile) throw new BrokenReferenceError('agent', ref.name);
+      const definition = readStoredAgentDefinition(ref.name, ctx.homeDir, ctx.projectDir);
+      const profile = definition
+        ? agentDefinitionToProfile(definition)
+        : findAgentProfile(ref.name, ctx.homeDir);
+      if (!profile && !definition) throw new BrokenReferenceError('agent', ref.name);
+      if (!profile) {
+        return {
+          model: definition?.model,
+          label: ref.name,
+          agentDefinition: definition ?? undefined,
+        };
+      }
       const config = findBridgeConfig(profile.bridgeConfig, ctx.homeDir);
       if (!config) throw new BrokenReferenceError('config', profile.bridgeConfig);
       return {
@@ -101,6 +120,8 @@ export function resolveTargetRef(
         baseURL: config.baseURL,
         apiKey: config.apiKey,
         label: profile.name,
+        agentProfile: profile,
+        agentDefinition: definition ?? undefined,
       };
     }
     case 'team': {

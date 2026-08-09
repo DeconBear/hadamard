@@ -11,6 +11,10 @@ import { memberSignal, runMemberAgent } from './teamRuntime.js';
 import { buildGraphNodeTools } from './teamGraph.js';
 import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 import { loadTeamDefinition } from './teamDefinitions.js';
+import {
+  resolveEffectiveAgentRunOptions,
+  type EffectiveAgentRunOptions,
+} from '../runtime/effectiveAgentRunOptions.js';
 
 const MAX_WORKFLOW_NODES = 128;
 const MAX_WORKFLOW_DEPTH = 32;
@@ -170,7 +174,7 @@ export async function runWorkflowSquad(
       }
       const nested = dependencies.loadTeam
         ? dependencies.loadTeam(ref, workDir)
-        : loadTeamDefinition(ref, workDir)?.definition ?? null;
+        : loadTeamDefinition(ref, workDir, options.homeDir)?.definition ?? null;
       if (!nested) {
         const error = `team "${ref}" not found`;
         statuses.push({ id: node.id, model: '', role: node.label || 'agent', ok: false, error, toolCalls: 0, durationMs: 0 });
@@ -215,28 +219,45 @@ export async function runWorkflowSquad(
 
     // P2: per-node executor/targetRef + system prompt + tools + limits.
     const member: TeamMember = {
-      model: node.model || '',
+      model: node.model || options.model || '',
       role: node.label || 'agent',
       systemPrompt: node.systemPrompt || '',
     };
+    let targetAgentSource:
+      | ReturnType<typeof resolveTargetRef>['agentDefinition']
+      | ReturnType<typeof resolveTargetRef>['agentProfile'];
+    let targetInheritsModel = false;
     if (node.targetRef) {
       try {
-        const resolved = resolveTargetRef(node.targetRef, { projectDir: workDir });
+        const resolved = resolveTargetRef(node.targetRef, {
+          projectDir: workDir,
+          homeDir: options.homeDir,
+        });
         if (resolved.model) member.model = resolved.model;
         if (resolved.provider) member.provider = resolved.provider;
         if (resolved.baseURL) member.baseURL = resolved.baseURL;
         if (resolved.apiKey) member.apiKey = resolved.apiKey;
+        targetAgentSource = resolved.agentDefinition ?? resolved.agentProfile;
+        targetInheritsModel = Boolean(targetAgentSource && !resolved.model);
       } catch (err) {
         return `[unavailable: ${err instanceof Error ? err.message : String(err)}]`;
       }
     }
-    const tools = node.allowedTools?.length
-      ? await buildGraphNodeTools({ id: node.id, allowedTools: node.allowedTools }, workDir)
+    let effectiveAgentOptions: EffectiveAgentRunOptions | undefined;
+    if (targetAgentSource) {
+      effectiveAgentOptions = resolveEffectiveAgentRunOptions(targetAgentSource, {
+        systemPrompt: node.systemPrompt || '',
+        permissionModeOverride: options.permissionMode,
+      });
+      if (typeof node.maxIterations === 'number') {
+        effectiveAgentOptions.maxToolIterations = node.maxIterations;
+      }
+    }
+    const effectiveAllowedTools = effectiveAgentOptions?.allowedTools ?? node.allowedTools;
+    const tools = effectiveAllowedTools?.length
+      ? await buildGraphNodeTools({ id: node.id, allowedTools: effectiveAllowedTools }, workDir)
       : [];
-    const systemPrompt = [
-      node.systemPrompt || '',
-      node.workspaceAccess === 'full' ? 'Workspace access: full filesystem' : '',
-    ].filter(Boolean).join('\n\n');
+    const systemPrompt = effectiveAgentOptions?.systemPrompt ?? node.systemPrompt ?? '';
     const run = await (dependencies.runMember ?? runMemberAgent)({
       identity: { id: node.id, model: member.model, role: node.label || node.type },
       member,
@@ -245,13 +266,16 @@ export async function runWorkflowSquad(
       cwd: workDir,
       tools,
       maxIterations: node.maxIterations ?? definition.maxIterations ?? Infinity,
-      timeoutMs: node.timeoutMs ?? definition.timeoutMs ?? 300_000,
+      timeoutMs: node.timeoutMs ?? effectiveAgentOptions?.timeoutMs ?? definition.timeoutMs ?? 300_000,
       signal,
       permissionMode: options.permissionMode,
       permissions: options.permissions,
       classifier: options.classifier,
       approver: options.approver,
       hooks: options.hooks,
+      effectiveAgentOptions,
+      workspaceAccess: node.workspaceAccess,
+      modelApi: targetInheritsModel ? options.modelApi : undefined,
       pool,
       round: 1,
       onEvent,
@@ -292,18 +316,27 @@ export async function runSingleAgentSquad(
   signal: AbortSignal,
   workDir: string,
   onEvent?: (event: TeamEvent) => void,
-  opts?: { context?: string },
+  opts?: TeamAskOptions,
 ): Promise<ModelTeamResult> {
   const member = definition.members?.[0];
   if (!member) throw new Error(`Agent squad "${definition.name}" has no member`);
   // Unified reference model: a typed targetRef overrides the by-value fields.
-  const effectiveMember: TeamMember = { ...member, model: member.model || '' };
+  const effectiveMember: TeamMember = { ...member, model: member.model || opts?.model || '' };
+  let targetAgentSource:
+    | ReturnType<typeof resolveTargetRef>['agentDefinition']
+    | ReturnType<typeof resolveTargetRef>['agentProfile'];
+  let targetInheritsModel = false;
   if (member.targetRef && member.targetRef.kind !== 'team') {
-    const resolved = resolveTargetRef(member.targetRef, { projectDir: workDir });
+    const resolved = resolveTargetRef(member.targetRef, {
+      projectDir: workDir,
+      homeDir: opts?.homeDir,
+    });
     if (resolved.model) effectiveMember.model = resolved.model;
     if (resolved.provider) effectiveMember.provider = resolved.provider;
     if (resolved.baseURL) effectiveMember.baseURL = resolved.baseURL;
     if (resolved.apiKey) effectiveMember.apiKey = resolved.apiKey;
+    targetAgentSource = resolved.agentDefinition ?? resolved.agentProfile;
+    targetInheritsModel = Boolean(targetAgentSource && !resolved.model);
   }
   const pool = new AgentPool();
   const identity = {
@@ -312,11 +345,16 @@ export async function runSingleAgentSquad(
     role: member.role || member.name || definition.name,
   };
   const startedAt = Date.now();
-  const systemPrompt = [member.systemPrompt || '', opts?.context?.trim() || '']
+  const baseSystemPrompt = [member.systemPrompt || '', opts?.context?.trim() || '']
     .filter(Boolean)
     .join('\n\n');
-  const tools = member.allowedTools?.length
-    ? await buildGraphNodeTools({ id: identity.id, allowedTools: member.allowedTools }, workDir)
+  const effectiveAgentOptions = targetAgentSource
+    ? resolveEffectiveAgentRunOptions(targetAgentSource, { systemPrompt: baseSystemPrompt })
+    : undefined;
+  const systemPrompt = effectiveAgentOptions?.systemPrompt ?? baseSystemPrompt;
+  const effectiveAllowedTools = effectiveAgentOptions?.allowedTools ?? member.allowedTools;
+  const tools = effectiveAllowedTools?.length
+    ? await buildGraphNodeTools({ id: identity.id, allowedTools: effectiveAllowedTools }, workDir)
     : [];
   const run = await runMemberAgent({
     identity,
@@ -328,8 +366,11 @@ export async function runSingleAgentSquad(
     maxIterations: (member as { maxIterations?: number }).maxIterations
       ?? definition.maxIterations
       ?? Infinity,
-    timeoutMs: definition.timeoutMs ?? 300_000,
+    timeoutMs: effectiveAgentOptions?.timeoutMs ?? definition.timeoutMs ?? 300_000,
     signal,
+    effectiveAgentOptions,
+    workspaceAccess: member.workspaceAccess,
+    modelApi: targetInheritsModel ? opts?.modelApi : undefined,
     pool,
     round: 1,
     onEvent,

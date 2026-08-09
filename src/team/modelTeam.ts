@@ -30,6 +30,10 @@ import { AgentPool } from './agentPool.js';
 import { isSingleAgentSquadType } from './teamPropose.js';
 import { runSingleAgentSquad, runWorkflowSquad } from './workflowSquad.js';
 import { assertValidTeamComposition } from './teamComposition.js';
+import {
+  resolveEffectiveAgentRunOptions,
+  type EffectiveAgentRunOptions,
+} from '../runtime/effectiveAgentRunOptions.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Helpers
@@ -232,7 +236,7 @@ async function runGraphMode(
           memberStatuses.push({ ...base, ok: false, error: `team recursion: ${cycle}`, toolCalls: 0, durationMs: 0 });
           return { report: `[team recursion detected: ${cycle}]`, ok: false, error: 'recursion' };
         }
-        const loaded = loadTeamDefinition(ref, cwd);
+        const loaded = loadTeamDefinition(ref, cwd, executionOptions.homeDir);
         if (!loaded) {
           memberStatuses.push({ ...base, ok: false, error: `team "${ref}" not found`, toolCalls: 0, durationMs: 0 });
           return { report: `[team "${ref}" not found]`, ok: false, error: 'team not found' };
@@ -267,34 +271,61 @@ async function runGraphMode(
         }
       }
 
-      // single: one LLM call, no tools. react: full ReAct loop.
-      const tools = nodeType === 'single' ? [] : await buildGraphNodeTools(node, cwd);
-      if (nodeType !== 'single' && ctx.commTargets.length > 0) {
-        tools.push(await createNotifyTeammateTool(ctx));
-      }
       // Unified reference model: a typed targetRef (saved agent profile or
       // config-scoped model) overrides the legacy by-value model fields.
       let targetOverrides: Partial<TeamMember> = {};
+      let targetAgentSource:
+        | ReturnType<typeof resolveTargetRef>['agentDefinition']
+        | ReturnType<typeof resolveTargetRef>['agentProfile'];
       if (node.targetRef && node.targetRef.kind !== 'team') {
         try {
-          const resolved = resolveTargetRef(node.targetRef, { projectDir: cwd });
+          const resolved = resolveTargetRef(node.targetRef, {
+            projectDir: cwd,
+            homeDir: executionOptions.homeDir,
+          });
           targetOverrides = {
             model: resolved.model,
             provider: resolved.provider,
             baseURL: resolved.baseURL,
             apiKey: resolved.apiKey,
           };
+          targetAgentSource = resolved.agentDefinition ?? resolved.agentProfile;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           memberStatuses.push({ ...base, ok: false, error: msg, toolCalls: 0, durationMs: 0 });
           return { report: `[${msg}]`, ok: false, error: msg };
         }
       }
-      const member = { ...node, ...targetOverrides, model: targetOverrides.model ?? node.model ?? identity.model };
+      const member = {
+        ...node,
+        ...targetOverrides,
+        model: targetOverrides.model ?? node.model ?? executionOptions.model ?? identity.model,
+      };
       const singleReviewer = execDef.nodes?.filter((n) => (n.kind ?? 'agent') === 'agent').length === 1;
-      const systemPrompt = resolveGraphNodeSystemPrompt(member, {
+      const baseSystemPrompt = resolveGraphNodeSystemPrompt(member, {
         reviewerContext: singleReviewer ? reviewerContext : undefined,
       });
+      let effectiveAgentOptions: EffectiveAgentRunOptions | undefined;
+      if (targetAgentSource) {
+        effectiveAgentOptions = resolveEffectiveAgentRunOptions(targetAgentSource, {
+          systemPrompt: baseSystemPrompt,
+          permissionModeOverride: executionOptions.permissionMode,
+        });
+        if (typeof node.maxIterations === 'number') {
+          effectiveAgentOptions.maxToolIterations = node.maxIterations;
+        }
+      }
+      const systemPrompt = effectiveAgentOptions?.systemPrompt ?? baseSystemPrompt;
+      // single: one LLM call, no tools. react: full ReAct loop.
+      const tools = nodeType === 'single'
+        ? []
+        : await buildGraphNodeTools({
+            ...node,
+            allowedTools: effectiveAgentOptions?.allowedTools ?? node.allowedTools,
+          }, cwd);
+      if (nodeType !== 'single' && ctx.commTargets.length > 0) {
+        tools.push(await createNotifyTeammateTool(ctx));
+      }
       const run = await runMemberAgent({
         identity,
         member,
@@ -303,13 +334,18 @@ async function runGraphMode(
         cwd,
         tools,
         maxIterations: nodeType === 'single' ? 1 : resolveMemberMaxIterations(node),
-        timeoutMs: resolveMemberTimeout(node),
+        timeoutMs: node.timeoutMs ?? effectiveAgentOptions?.timeoutMs ?? squadTimeoutMs,
         signal,
         permissionMode: executionOptions.permissionMode,
         permissions: executionOptions.permissions,
         classifier: executionOptions.classifier,
         approver: executionOptions.approver,
         hooks: executionOptions.hooks,
+        effectiveAgentOptions,
+        workspaceAccess: node.workspaceAccess,
+        modelApi: targetAgentSource && !targetOverrides.model
+          ? executionOptions.modelApi
+          : undefined,
         pool,
         round: 1,
         onEvent,
@@ -436,7 +472,11 @@ export async function askTeamDefinition(
   const workDir = opts?.workDir || process.cwd();
   const abort = signal ?? new AbortController().signal;
   const ancestors = opts?.teamStack ?? [];
-  assertValidTeamComposition(definition, { projectDir: workDir, ancestorStack: ancestors });
+  assertValidTeamComposition(definition, {
+    projectDir: workDir,
+    homeDir: opts?.homeDir,
+    ancestorStack: ancestors,
+  });
   const teamStack = [...ancestors, definition.name];
   if (squadType === 'workflow') {
     return runWorkflowSquad(definition, prompt, abort, workDir, opts?.onEvent, {
@@ -445,9 +485,7 @@ export async function askTeamDefinition(
     });
   }
   if (isSingleAgentSquadType(squadType)) {
-    return runSingleAgentSquad(definition, prompt, abort, workDir, opts?.onEvent, {
-      context: opts?.context,
-    });
+    return runSingleAgentSquad(definition, prompt, abort, workDir, opts?.onEvent, opts);
   }
   return createModelTeam(definition).ask(prompt, signal, { ...opts, teamStack });
 }
@@ -574,6 +612,8 @@ export function createTeamTool(
           classifier: context.classifier,
           approver: context.approver,
           hooks: context.hooks,
+          model: context.model,
+          modelApi: context.modelApi,
         });
         return JSON.stringify({
           answer: result.answer,
@@ -598,6 +638,8 @@ export function createTeamTool(
         classifier: context.classifier,
         approver: context.approver,
         hooks: context.hooks,
+        model: context.model,
+        modelApi: context.modelApi,
       });
       const toolAnswer = result.returnMode === 'void'
         ? (result.answer.trim() || 'Team completed.')

@@ -22,7 +22,8 @@ describe('teamPrompts', () => {
     expect(prompt.startsWith(TEAM_GRAPH_MEMBER_FRAMING)).toBe(true);
     expect(prompt).toContain('## Team assignment');
     expect(prompt).toContain('Responsibility: Gather evidence');
-    expect(prompt).toContain('Workspace access: project workspace only');
+    // Access is enforced by the runtime sandbox/tool filter, not claimed in prompts.
+    expect(prompt).not.toContain('Workspace access:');
     expect(prompt).toContain(member.systemPrompt);
   });
 

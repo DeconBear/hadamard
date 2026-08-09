@@ -27,6 +27,9 @@ import {
 } from '../src/config/agentProfiles.js';
 import { BrokenReferenceError } from '../src/manager/resolveTargetRef.js';
 import { runExternalAgentOnce } from '../src/runtime/externalAgentRunner.js';
+import { createHadamardCoreTools } from '../src/tools/hadamardCoreTools.js';
+import { SandboxExecutor } from '../src/sandbox/sandboxExecutor.js';
+import { resolveSandboxPolicy } from '../src/sandbox/policyResolver.js';
 import type { ExternalAgentRunRequest, ExternalAgentRunResult } from '../src/types.js';
 import {
   createAgentSdk,
@@ -408,6 +411,76 @@ describe('subagent: false filtering', () => {
       // Still runnable directly (main-chat semantics).
       const result = await sdk.runWithAgent('chat-only', 'hello');
       expect(result.text).toContain('mock reply');
+    } finally {
+      await sdk.close();
+    }
+  });
+});
+
+describe('effective Agent runtime options', () => {
+  it('honors replace prompt, sampling, tool whitelist, limits, and workspace mode', async () => {
+    const modelApi = new MockModelApi();
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory: fs.mkdtempSync(path.join(os.tmpdir(), 'agent-options-sessions-')),
+      homeDir: home,
+      workDir,
+      modelApi,
+      tools: createHadamardCoreTools({ cwd: workDir, webTools: false }),
+      disableDefaultAgents: true,
+      agents: [{
+        name: 'scoped',
+        description: 'Scoped agent',
+        systemPrompt: 'Replacement instructions',
+        promptMode: 'replace',
+        temperature: 0.35,
+        topP: 0.75,
+        maxTokens: 2048,
+        maxToolIterations: 9,
+        allowedTools: ['Read'],
+        workspaceAccess: 'workspace',
+      }],
+    });
+    try {
+      await sdk.runWithAgent('scoped', 'hello', { systemPrompt: 'Caller prompt' });
+      const request = modelApi.createCalls[0]!;
+      expect(request.system).toContain('Replacement instructions');
+      expect(request.system).not.toContain('Caller prompt');
+      expect(request.temperature).toBe(0.35);
+      expect(request.top_p).toBe(0.75);
+      expect(request.max_tokens).toBe(2048);
+      expect(request.tools?.map(toolDefinition => toolDefinition.name)).toEqual(['Read']);
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('removes shell/process tools in workspace mode when the platform cannot confine them', async () => {
+    const capability = new SandboxExecutor(resolveSandboxPolicy(workDir)).capability;
+    if (capability.filesystemIsolation) return;
+    const modelApi = new MockModelApi();
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory: fs.mkdtempSync(path.join(os.tmpdir(), 'agent-workspace-sessions-')),
+      homeDir: home,
+      workDir,
+      modelApi,
+      tools: createHadamardCoreTools({ cwd: workDir, webTools: false }),
+      disableDefaultAgents: true,
+      agents: [{
+        name: 'workspace-only',
+        description: 'Workspace-only agent',
+        workspaceAccess: 'workspace',
+      }],
+    });
+    try {
+      await sdk.runWithAgent('workspace-only', 'hello');
+      const names = modelApi.createCalls[0]!.tools?.map(toolDefinition => toolDefinition.name) ?? [];
+      expect(names).not.toContain('Bash');
+      expect(names).not.toContain('PowerShell');
+      expect(names).not.toContain('EnterWorktree');
+      expect(names).not.toContain('ExitWorktree');
+      expect(names).toContain('Read');
     } finally {
       await sdk.close();
     }
