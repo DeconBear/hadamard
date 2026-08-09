@@ -21,6 +21,10 @@ const DEFAULT_HADAMARD_AGENTS: ReadonlyArray<HadamardAgentDefinition> = [
       'Work independently on the delegated task, inspect only what is needed, use tools when they materially help, and return a concise result with concrete findings, changes, and verification.',
       'Do not make broad unrelated changes.',
     ].join('\n'),
+    // The general-purpose built-in is the editing-capable fallback. Keep its
+    // legacy filesystem capability explicit; custom Agents still default to
+    // workspace-only access when they omit this field.
+    workspaceAccess: 'full',
     metadata: DEFAULT_AGENT_METADATA,
     source: 'built-in',
   },
