@@ -2,13 +2,8 @@ import type { HadamardCompactConfig, HadamardCompactState } from '../types.js';
 import { resolveHadamardCompactBudget } from '../runtime/hadamardCompact.js';
 import type { HadamardMemoryApi, HadamardMemoryBrowserEntry } from './hadamardMemory.js';
 import type { MemoryProposalService } from './memoryProposalService.js';
-
-export interface HadamardMemoryCommandResult {
-  title: string;
-  message: string;
-  text?: string;
-  items?: Array<{ label: string; description?: string; detail?: string }>;
-}
+import type { HadamardMemoryCommandResult } from './memoryCommandTypes.js';
+export type { HadamardMemoryCommandResult } from './memoryCommandTypes.js';
 
 export class HadamardMemoryCommandService {
   constructor(private readonly bindings: {

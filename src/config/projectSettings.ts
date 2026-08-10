@@ -2,41 +2,27 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { getHadamardProjectSessionDirectory } from './projectSessionDirectory.js';
-import type { HadamardRunEffort } from '../types.js';
+import type { HadamardRunEffort } from '../contracts/runtimeOptions.js';
+import type {
+  DreamExecutionProfileRef,
+  ProjectMemorySettings,
+  ProjectMemorySettingsPatch,
+} from './projectSettingsTypes.js';
+export type {
+  DreamExecutionProfileRef,
+  ProjectMemorySettings,
+  ProjectMemorySettingsPatch,
+} from './projectSettingsTypes.js';
 
 export type ProjectWorkMode = 'coding' | 'daily';
 export type ProjectInstructionMode = 'agents' | 'claude' | 'both';
 export interface ProjectContextSettings {
   instructionMode: ProjectInstructionMode;
 }
-export type DreamExecutionProfileRef =
-  | { kind: 'config'; name: string; model?: string; effort?: HadamardRunEffort }
-  | { kind: 'agent'; name: string; effort?: HadamardRunEffort };
-
 const DREAM_EFFORTS = new Set<HadamardRunEffort>(['auto', 'low', 'medium', 'high', 'max']);
 
 export function isDreamEffort(value: unknown): value is HadamardRunEffort {
   return typeof value === 'string' && DREAM_EFFORTS.has(value as HadamardRunEffort);
-}
-
-export interface ProjectMemorySettings {
-  compact: {
-    enabled: boolean;
-    autoCompactTokenLimit?: number;
-    autoCompactTokenLimitScope: 'total' | 'body_after_prefix';
-  };
-  durableMemory: {
-    use: boolean;
-    autoDream: boolean;
-    dreamExecutionProfile?: DreamExecutionProfileRef;
-    /** Local HH:mm for GUI-scheduled daily dream (default 03:00). */
-    dailyDreamTimeLocal: string;
-    /** YYYY-MM-DD of last GUI-triggered scheduled dream run. */
-    lastScheduledDreamDate?: string;
-    minRolloutIdleHours: number;
-    maxRolloutAgeDays: number;
-    maxRolloutsPerStartup: number;
-  };
 }
 
 export type ProjectSettings = {
@@ -46,13 +32,6 @@ export type ProjectSettings = {
   context: ProjectContextSettings;
   memory: ProjectMemorySettings;
   updatedAt?: string;
-};
-
-export type ProjectMemorySettingsPatch = {
-  compact?: Partial<ProjectMemorySettings['compact']>;
-  durableMemory?: Omit<Partial<ProjectMemorySettings['durableMemory']>, 'dreamExecutionProfile'> & {
-    dreamExecutionProfile?: DreamExecutionProfileRef | null;
-  };
 };
 
 export const DEFAULT_PROJECT_MEMORY_SETTINGS: ProjectMemorySettings = {
