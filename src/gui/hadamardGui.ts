@@ -374,6 +374,7 @@ import {
 import { GuiHttpRouter, json, readJson, text } from './guiHttpRouter.js';
 import { registerGuiShellHttpController } from './guiShellHttpController.js';
 import { registerGuiChatHttpController } from './guiChatHttpController.js';
+import { registerGuiSettingsHttpController } from './guiSettingsHttpController.js';
 import type {
   HadamardCanUseTool,
   HadamardEffort,
@@ -7445,6 +7446,69 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       body: runtimeMutationErrorBody(error),
     }),
   });
+  registerGuiSettingsHttpController(httpRouter, {
+    dataRootStatus,
+    changeDataRoot: body => withRuntimeMutation(() => changeDataRoot(body)),
+    openDataRoot: () => {
+      const root = resolveGuiHomeDir();
+      openPathInSystem(root);
+      return { path: root };
+    },
+    openConfig: async () => {
+      const store = await resolveHadamardSettingsStore({
+        configPath: options.configPath,
+        homeDir: currentHomeInput(),
+      }).catch(() => undefined);
+      if (!store?.configPath) return undefined;
+      openPathInSystem(store.configPath);
+      return { path: store.configPath };
+    },
+    saveSettings: body => withRuntimeMutation(() => saveSettings(body)),
+    readHooks: async () => {
+      const store = await resolveHadamardSettingsStore({
+        configPath: options.configPath,
+        homeDir: currentHomeInput(),
+      }).catch(() => undefined);
+      const raw = store?.raw ?? getLoadedJsonConfig()?.raw;
+      const typed = parseTypedHooks(raw?.typedHooks);
+      return {
+        configPath: store?.configPath ?? null,
+        hooks: readUserHooksConfig(raw),
+        typedHooks: typed.hooks,
+        typedHookIssues: typed.issues,
+      };
+    },
+    saveHooks: body => withRuntimeMutation(async () => {
+      const store = await resolveHadamardSettingsStore({
+        configPath: options.configPath,
+        homeDir: currentHomeInput(),
+      });
+      const raw = structuredClone(store.raw);
+      const hooks = 'hooks' in body
+        ? normalizeUserHooksConfig(body.hooks)
+        : readUserHooksConfig(raw);
+      if ('hooks' in body) raw.hooks = toSettingsHooksBlock(hooks);
+      const typed = 'typedHooks' in body
+        ? parseTypedHooks(body.typedHooks)
+        : parseTypedHooks(raw.typedHooks);
+      if (typed.issues.length > 0) throw new Error(typed.issues.join(' '));
+      if ('typedHooks' in body) raw.typedHooks = typed.hooks;
+      await persistHadamardSettingsStore(store.configPath, raw);
+      await loadJsonConfigFile(store.configPath);
+      if ('typedHooks' in body && sdk && !needsCredentials) await reloadSdk();
+      return {
+        ok: true,
+        configPath: store.configPath,
+        hooks,
+        typedHooks: typed.hooks,
+        typedHookIssues: [],
+      };
+    }),
+    mutationError: error => ({
+      status: runtimeMutationErrorStatus(error),
+      body: runtimeMutationErrorBody(error),
+    }),
+  });
 
   const server = createServer(async (req, res) => {
     try {
@@ -8742,31 +8806,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }
   }
       if (req.method === 'GET' && url.pathname === '/api/session/messages') return json(res, 200, { messages: renderableHistory(session) });
-      if (req.method === 'GET' && url.pathname === '/api/settings/data-root') {
-        return json(res, 200, dataRootStatus());
-      }
-      if (req.method === 'POST' && url.pathname === '/api/settings/data-root') {
-        try {
-          const body = await readJson(req);
-          return json(res, 200, await withRuntimeMutation(() => changeDataRoot(body)));
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-      }
-      if (req.method === 'POST' && url.pathname === '/api/settings/data-root/open') {
-        const root = resolveGuiHomeDir();
-        openPathInSystem(root);
-        return json(res, 200, { ok: true, path: root });
-      }
-      if (req.method === 'POST' && url.pathname === '/api/settings/open-config') {
-        const store = await resolveHadamardSettingsStore({
-          configPath: options.configPath,
-          homeDir: currentHomeInput(),
-        }).catch(() => undefined);
-        if (!store?.configPath) return json(res, 404, { error: 'Settings path unavailable' });
-        openPathInSystem(store.configPath);
-        return json(res, 200, { ok: true, path: store.configPath });
-      }
       if (req.method === 'POST' && url.pathname === '/api/screenshot') {
         try {
           const body = await readJson(req).catch(() => ({}));
@@ -8794,67 +8833,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             return json(res, 400, { error: error.message, cancelled: true });
           }
           return json(res, 500, { error: (error as Error).message });
-        }
-      }
-      if (req.method === 'POST' && url.pathname === '/api/settings') {
-        try {
-          const body = await readJson(req);
-          return json(res, 200, await withRuntimeMutation(() => saveSettings(body)));
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-      }
-      if (req.method === 'GET' && url.pathname === '/api/hooks') {
-        const store = await resolveHadamardSettingsStore({
-          configPath: options.configPath,
-          homeDir: currentHomeInput(),
-        }).catch(() => undefined);
-        const raw = store?.raw ?? getLoadedJsonConfig()?.raw;
-        const typed = parseTypedHooks(raw?.typedHooks);
-        return json(res, 200, {
-          configPath: store?.configPath ?? null,
-          hooks: readUserHooksConfig(raw),
-          typedHooks: typed.hooks,
-          typedHookIssues: typed.issues,
-        });
-      }
-      if (req.method === 'PUT' && url.pathname === '/api/hooks') {
-        try {
-          const body = await readJson(req);
-          const result = await withRuntimeMutation(async () => {
-            const store = await resolveHadamardSettingsStore({
-              configPath: options.configPath,
-              homeDir: currentHomeInput(),
-            });
-            const raw = structuredClone(store.raw);
-            const input = typeof body === 'object' && body !== null
-              ? body as Record<string, unknown>
-              : {};
-            const hooks = 'hooks' in input
-              ? normalizeUserHooksConfig(input.hooks)
-              : readUserHooksConfig(raw);
-            if ('hooks' in input) raw.hooks = toSettingsHooksBlock(hooks);
-            const typed = 'typedHooks' in input
-              ? parseTypedHooks(input.typedHooks)
-              : parseTypedHooks(raw.typedHooks);
-            if (typed.issues.length > 0) {
-              throw new Error(typed.issues.join(' '));
-            }
-            if ('typedHooks' in input) raw.typedHooks = typed.hooks;
-            await persistHadamardSettingsStore(store.configPath, raw);
-            await loadJsonConfigFile(store.configPath);
-            if ('typedHooks' in input && sdk && !needsCredentials) await reloadSdk();
-            return {
-              ok: true,
-              configPath: store.configPath,
-              hooks,
-              typedHooks: typed.hooks,
-              typedHookIssues: [],
-            };
-          });
-          return json(res, 200, result);
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
         }
       }
       if (req.method === 'GET' && url.pathname === '/api/bridge/detect') {
