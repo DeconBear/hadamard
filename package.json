@@ -189,6 +189,7 @@
     "test:watch": "vitest",
     "test:gui:e2e": "npm run build && node scripts/verify-gui-runtime-model-chat.mjs",
     "test:gui:external-cli-e2e": "npm run build && node scripts/verify-gui-external-cli-runtime.mjs",
+    "test:tui:e2e": "npm run build && node scripts/verify-tui-e2e.mjs",
     "test:sdk-v2:coverage": "vitest run --config vitest.sdk-v2.config.ts && node scripts/verify-sdk-v2-coverage.mjs",
     "verify:package": "node scripts/verify-package-exports.mjs && node scripts/public-api.mjs",
     "verify:packed": "node scripts/verify-packed-package.mjs",
