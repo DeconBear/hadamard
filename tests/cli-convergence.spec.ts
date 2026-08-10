@@ -15,6 +15,7 @@ async function readTuiSources(): Promise<string> {
     readFile(new URL('src/tui/hadamardTuiController.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiTextPresenter.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiSystemPrompt.ts', root), 'utf8'),
+    readFile(new URL('src/tui/tuiRuntimeLifecycle.ts', root), 'utf8'),
   ])).join('\n');
 }
 

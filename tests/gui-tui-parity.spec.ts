@@ -29,6 +29,7 @@ function readTuiSources(root: string): string {
     readFileSync(join(root, 'src', 'tui', 'hadamardTuiController.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'tui', 'tuiTextPresenter.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'tui', 'tuiSystemPrompt.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'tui', 'tuiRuntimeLifecycle.ts'), 'utf8'),
   ].join('\n');
 }
 

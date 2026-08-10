@@ -192,12 +192,25 @@ import {
   renderRichText,
 } from './tuiTextPresenter.js';
 import { buildTuiSystemPrompt } from './tuiSystemPrompt.js';
+import { onboardTuiCredentials } from './tuiOnboarding.js';
+import {
+  closeManagedPluginsForExit,
+  tuiErrorMessage as errorMessage,
+} from './tuiRuntimeLifecycle.js';
+import type {
+  HadamardTuiOptions,
+  PermissionDialogState,
+  SelectionDialogState,
+  TextInputDialogState,
+  TuiKey as Key,
+} from './tuiTypes.js';
 export {
   activeAtToken,
   filterSlashCommands,
   isTuiChatSession,
   renderRichText,
 } from './tuiTextPresenter.js';
+export type { HadamardTuiOptions } from './tuiTypes.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const CTRL_C_EXIT_WINDOW_MS = 600;
@@ -206,96 +219,15 @@ const MENU_MAX_ROWS = 12;
 const PROMPT_GLYPH = '❯';
 const SESSION_EFFORT_KEY = '__hadamardEffort';
 const EFFORT_LEVELS: readonly HadamardEffort[] = ['low', 'medium', 'high', 'max'];
-const MANAGED_PLUGIN_FINAL_CLOSE_ATTEMPTS = 2;
-const MANAGED_PLUGIN_FINAL_CLOSE_TIMEOUT_MS = 35_000;
 
 /** Core tools that mutate state and require approval in 'default' mode. */
 const MUTATING_TOOLS = new Set(['Bash', 'Write', 'Edit', 'NotebookEdit']);
 export const TUI_SLASH_COMMANDS = HADAMARD_INTERACTIVE_COMMANDS;
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function closeManagedPluginsForExit(close: () => Promise<void>): Promise<void> {
-  const failures: unknown[] = [];
-  for (let attempt = 1; attempt <= MANAGED_PLUGIN_FINAL_CLOSE_ATTEMPTS; attempt += 1) {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        close(),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => {
-            reject(new Error(
-              `managed plugin cleanup timed out after ${MANAGED_PLUGIN_FINAL_CLOSE_TIMEOUT_MS}ms`,
-            ));
-          }, MANAGED_PLUGIN_FINAL_CLOSE_TIMEOUT_MS);
-        }),
-      ]);
-      return;
-    } catch (error) {
-      failures.push(error);
-      process.stderr.write(
-        `[hadamard-tui] warning: managed plugin cleanup attempt ${attempt}/` +
-        `${MANAGED_PLUGIN_FINAL_CLOSE_ATTEMPTS} failed: ${errorMessage(error)}\n`,
-      );
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-  throw new AggregateError(
-    failures,
-    'Managed plugin cleanup failed after bounded retries; an external sandbox may remain active and billing may continue.',
-  );
-}
-
 /** Mask an API key for display: show first 4 + last 4, hide the middle. */
 function maskKey(key: string): string {
   if (key.length <= 8) return '****';
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
-}
-
-export interface HadamardTuiOptions {
-  workDir?: string;
-  configPath?: string;
-  permissionMode?: HadamardPermissionMode;
-  model?: string;
-  resumeSessionId?: string;
-  continueMostRecent?: boolean;
-}
-
-interface PermissionDialogState {
-  toolName: string;
-  summary: string;
-  selected: number; // 0 = yes, 1 = always (project), 2 = always (user), 3 = no
-  resolve: (outcome: 'allow' | 'always' | 'always-user' | 'deny') => void;
-}
-
-interface SelectionDialogState {
-  title: string;
-  subtitle?: string;
-  items: TuiSelectionItem[];
-  selected: number;
-  query: string;
-  searchable: boolean;
-  resolve: (itemId: string | undefined) => void;
-}
-
-interface TextInputDialogState {
-  title: string;
-  label: string;
-  description?: string;
-  editor: InputEditor;
-  secret: boolean;
-  resolve: (value: string | undefined) => void;
-}
-
-interface Key {
-  name?: string;
-  ctrl?: boolean;
-  meta?: boolean;
-  shift?: boolean;
-  sequence?: string;
 }
 
 /**
@@ -309,38 +241,6 @@ interface Key {
 // so ANSI codes never split mid-segment.
 // First-run onboarding: guides the user through creating the Hadamard settings file
 // when no credential is found. Uses plain readline (no TTY required beyond stdin).
-async function onboardCredentials(configPath?: string): Promise<void> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (q: string): Promise<string> => new Promise(r => rl.question(q, r));
-
-  console.log('\n  Welcome to Hadamard! Let\'s set up your first connection.\n');
-
-  const provider = await ask('  Provider (anthropic/openai) [anthropic]: ');
-  const apiKey = await ask('  API Key: ');
-  const baseURL = await ask('  Base URL [https://api.deepseek.com]: ');
-  const model = await ask('  Model [deepseek-chat]: ');
-
-  rl.close();
-
-  const resolvedProvider = provider.trim() || 'anthropic';
-  const resolvedBaseURL = baseURL.trim() || 'https://api.deepseek.com';
-  const resolvedModel = model.trim() || 'deepseek-chat';
-
-  const dir = resolveHadamardHome();
-  const file = configPath ?? path.join(dir, 'settings.json');
-
-  fs.mkdirSync(dir, { recursive: true });
-  const env: Record<string, string> = {
-    HADAMARD_API_KEY: apiKey.trim(),
-    HADAMARD_BASE_URL: resolvedBaseURL,
-    HADAMARD_MODEL: resolvedModel,
-  };
-  if (resolvedProvider === 'openai') env.HADAMARD_PROVIDER = 'openai';
-  const settings: Record<string, unknown> = { env };
-  fs.writeFileSync(file, JSON.stringify(settings, null, 2), 'utf-8');
-  console.log(`\n  Config saved to ${file}. Starting TUI...\n`);
-}
-
 export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<void> {
   const workDir = path.resolve(options.workDir ?? process.cwd());
   const permissionMode: HadamardPermissionMode = options.permissionMode ?? 'bypassPermissions';
@@ -412,7 +312,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     } catch (error) {
       if (error instanceof Error && error.message.includes('No Hadamard credential')) {
         // First-run onboarding: guide the user through creating ~/.hadamard/settings.json.
-        await onboardCredentials(options.configPath);
+        await onboardTuiCredentials(options.configPath);
         // After saving, retry SDK creation.
         continue;
       }
