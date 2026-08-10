@@ -32,6 +32,7 @@ async function readTuiSources(): Promise<string> {
     readFile(new URL('src/tui/tuiManagerCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiWorkspaceCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiContextCommandHandler.ts', root), 'utf8'),
+    readFile(new URL('src/tui/tuiCatalogCommandHandler.ts', root), 'utf8'),
   ])).join('\n');
 }
 
@@ -107,7 +108,11 @@ describe('interactive CLI convergence', () => {
       const tuiCase = tuiCases.get(command)!;
       const guiCase = guiCases.get(command)!;
       if (command === 'plugin' || command === 'rules') {
-        expect(tuiCase, `TUI /${command} delegates its argument`).toContain(".execute(args || 'list')");
+        expect(tuiCase, `TUI /${command} delegates its argument`).toContain(
+          command === 'plugin'
+            ? "port.pluginCommand(args || 'list')"
+            : "port.rulesCommand(args || 'list')",
+        );
         expect(guiCase, `GUI /${command} delegates its argument`).toContain(".execute(args || 'list')");
         continue;
       }

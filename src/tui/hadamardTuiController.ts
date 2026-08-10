@@ -188,6 +188,7 @@ import { runTuiAssistantCommand } from './tuiAssistantCommandHandler.js';
 import { runTuiManagerCommand } from './tuiManagerCommandHandler.js';
 import { runTuiWorkspaceCommand } from './tuiWorkspaceCommandHandler.js';
 import { runTuiContextCommand } from './tuiContextCommandHandler.js';
+import { runTuiCatalogCommand } from './tuiCatalogCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -4195,134 +4196,54 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         },
         appendStatic,
       })) return;
-      switch (name) {
-        case 'skills':
-          await showSkills();
-          return;
-        case 'agents': {
-          const trimmedArgs = args.trim();
-          const subcommandEnd = trimmedArgs.search(/\s/);
-          const subcommand = (subcommandEnd < 0 ? trimmedArgs : trimmedArgs.slice(0, subcommandEnd))
-            .toLowerCase() || 'list';
-          const target = subcommandEnd < 0 ? '' : trimmedArgs.slice(subcommandEnd + 1).trim();
-          if (subcommand === 'list') {
-            if (target) {
-              appendStatic([...formatErrorLine('usage: /agents [list|runs|show <root-execution-id>|open <session-or-execution-id>]'), '']);
-            } else {
-              await showAgents();
-            }
-            return;
-          }
-          if (subcommand === 'runs') {
-            if (target) await showAgentExecution(target);
-            else await showAgentRuns();
-            return;
-          }
-          if (subcommand === 'show') {
-            if (!target) {
-              appendStatic([...formatErrorLine('usage: /agents show <root-execution-id>'), '']);
-            } else {
-              await showAgentExecution(target);
-            }
-            return;
-          }
-          if (subcommand === 'open') {
-            if (!target) {
-              appendStatic([...formatErrorLine('usage: /agents open <session-or-execution-id>'), '']);
-            } else {
-              await openAgentExecutionConversation(target);
-            }
-            return;
-          }
-          appendStatic([...formatErrorLine('usage: /agents [list|runs|show <root-execution-id>|open <session-or-execution-id>]'), '']);
-          return;
-        }
-        case 'mcp':
-          await showMcp();
-          return;
-        case 'hooks': {
+      if (await runTuiCatalogCommand(name, args, {
+        showSkills,
+        showAgents,
+        showAgentRuns,
+        showAgentExecution,
+        openAgentExecution: openAgentExecutionConversation,
+        showMcp,
+        hooks: () => {
           const raw = getLoadedJsonConfig()?.raw;
           const typedHooks = parseTypedHooks(raw?.typedHooks);
-          const preHooks = readPreToolUseHooks(raw);
-          const postHooks = readPostToolUseHooks(raw);
-          const startHooks = readSessionStartHooks(raw);
-          const total = typedHooks.hooks.length + preHooks.length + postHooks.length + startHooks.length;
-          if (total === 0) {
-            appendStatic([
-              ...formatInfoLine('no hooks configured'),
-              ...formatInfoLine('open GUI Settings > Hooks or add typedHooks to ~/.hadamard/settings.json'),
-              '',
-            ]);
-          } else {
-            const lines: string[] = [`${A.bold}Hooks${A.reset} ${A.dim}(${total})${A.reset}`];
-            if (typedHooks.hooks.length > 0) {
-              lines.push(`${A.bold}  Lifecycle${A.reset} ${A.dim}(${typedHooks.hooks.length})${A.reset}`);
-              typedHooks.hooks.forEach((hook, index) => lines.push(
-                `    ${A.dim}${index + 1}.${A.reset} ${A.bold}${hook.id}${A.reset} ${hook.event} ${A.dim}-> ${hook.handler.type}${A.reset}`,
-              ));
-            }
-            typedHooks.issues.forEach(issue => lines.push(`    ${A.yellow}[invalid] ${issue}${A.reset}`));
-            if (preHooks.length > 0) {
-              lines.push(`${A.bold}  PreToolUse${A.reset} ${A.dim}(${preHooks.length}) — blocks tool on non-zero exit or "BLOCK" stdout${A.reset}`);
-              preHooks.forEach((h, i) => lines.push(`    ${A.dim}${i + 1}.${A.reset} ${A.bold}${h.matcher}${A.reset} ${A.dim}→${A.reset} ${truncateToWidth(h.command, 50)}`));
-            }
-            if (postHooks.length > 0) {
-              lines.push(`${A.bold}  PostToolUse${A.reset} ${A.dim}(${postHooks.length}) — fire-and-forget after tool completes${A.reset}`);
-              postHooks.forEach((h, i) => lines.push(`    ${A.dim}${i + 1}.${A.reset} ${A.bold}${h.matcher}${A.reset} ${A.dim}→${A.reset} ${truncateToWidth(h.command, 50)}`));
-            }
-            if (startHooks.length > 0) {
-              lines.push(`${A.bold}  SessionStart${A.reset} ${A.dim}(${startHooks.length}) — fire-and-forget on session init${A.reset}`);
-              startHooks.forEach((h, i) => lines.push(`    ${A.dim}${i + 1}.${A.reset} ${A.dim}→${A.reset} ${truncateToWidth(h.command, 50)}`));
-            }
-            lines.push('');
-            appendStatic(lines);
-          }
-          return;
-        }
-        case 'plugins':
-          await showPlugins();
-          return;
-        case 'plugin': {
-          try {
-            const { PluginPackageManager } = await import('../plugins/pluginManager.js');
-            const manager = new PluginPackageManager(
-              path.join(sdk.config.homeDir, 'plugin-packages'),
-              process.env.HADAMARD_PLUGIN_REGISTRY,
-              sdk.config.effectivePolicy,
-            );
-            const result = await manager.execute(args || 'list');
-            appendStatic([
-              ...formatInfoLine(result.message),
-              ...(result.items ?? []).map(item => `  ${A.bold}${item.label}${A.reset}${item.description ? ` ${A.dim}· ${item.description}${A.reset}` : ''}`),
-              '',
-            ]);
-          } catch (error) {
-            appendStatic([...formatErrorLine(error instanceof Error ? error.message : String(error)), '']);
-          }
-          return;
-        }
-        case 'rules': {
-          try {
-            const { RuleCommandService } = await import('../context/ruleCommandService.js');
-            const result = await new RuleCommandService(
-              sdk.config.homeDir,
-              sdk.config.workDir,
-            ).execute(args || 'list');
-            appendStatic([
-              ...formatInfoLine(result.message),
-              ...(result.items ?? []).map(item => `  ${A.bold}${item.label}${A.reset}${item.description ? ` ${A.dim}· ${item.description}${A.reset}` : ''}`),
-              '',
-            ]);
-          } catch (error) {
-            appendStatic([...formatErrorLine(error instanceof Error ? error.message : String(error)), '']);
-          }
-          return;
-        }
-        // ── Project Manager ──────────────────────────────────────
-        default:
-          appendStatic([...formatErrorLine(`unknown command: /${name} — type /help`), '']);
-          return;
-      }
+          return {
+            lifecycle: typedHooks.hooks.map(hook => ({
+              id: hook.id,
+              event: hook.event,
+              handlerType: hook.handler.type,
+            })),
+            issues: typedHooks.issues,
+            preToolUse: readPreToolUseHooks(raw).map(hook => ({
+              matcher: hook.matcher,
+              command: hook.command,
+            })),
+            postToolUse: readPostToolUseHooks(raw).map(hook => ({
+              matcher: hook.matcher,
+              command: hook.command,
+            })),
+            sessionStart: readSessionStartHooks(raw).map(hook => ({ command: hook.command })),
+          };
+        },
+        showPlugins,
+        pluginCommand: async commandArgs => {
+          const { PluginPackageManager } = await import('../plugins/pluginManager.js');
+          const manager = new PluginPackageManager(
+            path.join(sdk.config.homeDir, 'plugin-packages'),
+            process.env.HADAMARD_PLUGIN_REGISTRY,
+            sdk.config.effectivePolicy,
+          );
+          return manager.execute(commandArgs);
+        },
+        rulesCommand: async commandArgs => {
+          const { RuleCommandService } = await import('../context/ruleCommandService.js');
+          return new RuleCommandService(
+            sdk.config.homeDir,
+            sdk.config.workDir,
+          ).execute(commandArgs);
+        },
+        appendStatic,
+      })) return;
+      appendStatic([...formatErrorLine(`unknown command: /${name} — type /help`), '']);
     } finally {
       commandBusy = false;
       renderDynamic();
