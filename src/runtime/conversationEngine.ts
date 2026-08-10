@@ -8,7 +8,6 @@
 } from '../provider/types.js';
 
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { HadamardProviderApiError, HadamardSdkError, RunAbortedError, ToolExecutionError } from '../errors.js';
@@ -51,18 +50,24 @@ import { decideHadamardToolPermission } from './hadamardPermissions.js';
 import { createDenialTracker } from './denialTracking.js';
 import { markExplicitSafetyApproval } from './safetyChecks.js';
 import { HookRunner } from '../hooks/hookRunner.js';
-import type {
-  HadamardLifecycleEvent,
-  TypedHookOutput,
-} from '../hooks/hookTypes.js';
 import {
   assistantMessageToParam,
   buildUserMessage,
   extractTextFromContent,
-  extractTextFromToolResultContent,
 } from './messageUtils.js';
 import type { ExecuteConversationOptions } from './conversationPorts.js';
 export type { ExecuteConversationOptions } from './conversationPorts.js';
+import {
+  hasLifecycleBlock,
+  lifecycleBlockReason,
+  requireLifecycleContinue,
+  runTypedLifecycleHooks,
+} from './conversationLifecycle.js';
+import { appendRawTranscript } from './conversationPersistence.js';
+import {
+  artifactToolExecutionIfLarge,
+  enforceToolResultsAggregateBudget,
+} from './toolResultArtifactStore.js';
 
 const MAX_CONCURRENT_TOOL_USES = 10;
 const TODO_REMINDER_INTERVAL = 10;
@@ -1164,198 +1169,6 @@ function estimateFixedRequestTokens(
   return Math.ceil((systemChars + toolChars) / 4);
 }
 
-async function appendRawTranscript(
-  options: ExecuteConversationOptions,
-  messages: readonly MessageParam[],
-): Promise<void> {
-  if (!options.onTranscriptMessages || messages.length === 0) return;
-  try {
-    await options.onTranscriptMessages([...deepClone(messages)]);
-  } catch {
-    // Raw transcript durability must not turn a successful model/tool step into a failed turn.
-  }
-}
-
-async function runTypedLifecycleHooks(
-  options: ExecuteConversationOptions,
-  event: HadamardLifecycleEvent,
-  payload: Record<string, unknown>,
-  toolName?: string,
-): Promise<TypedHookOutput[]> {
-  if (!options.typedHookRunner) return [];
-  const outputs = await options.typedHookRunner.run({
-    event,
-    runId: options.runId,
-    sessionId: options.sessionId,
-    cwd: options.sessionWorkDir ?? options.config.workDir,
-    toolName,
-    payload,
-    signal: options.signal,
-  });
-  if (outputs.length > 0) {
-    options.emit?.({
-      type: 'hook.lifecycle',
-      runId: options.runId,
-      sessionId: options.sessionId,
-      lifecycleEvent: event,
-      outputs,
-      timestamp: nowIso(),
-    });
-  }
-  return outputs;
-}
-
-async function requireLifecycleContinue(
-  options: ExecuteConversationOptions,
-  event: HadamardLifecycleEvent,
-  payload: Record<string, unknown>,
-): Promise<void> {
-  const outputs = await runTypedLifecycleHooks(options, event, payload);
-  if (hasLifecycleBlock(outputs)) {
-    throw new HadamardSdkError(lifecycleBlockReason(event, outputs));
-  }
-}
-
-function hasLifecycleBlock(outputs: TypedHookOutput[]): boolean {
-  return outputs.some(output => output.behavior === 'block');
-}
-
-function lifecycleBlockReason(
-  event: HadamardLifecycleEvent,
-  outputs: TypedHookOutput[],
-): string {
-  const blocked = outputs.find(output => output.behavior === 'block');
-  return blocked?.feedback
-    ? `${event} hook "${blocked.hookId}" blocked: ${blocked.feedback}`
-    : `${event} hook "${blocked?.hookId ?? 'unknown'}" blocked.`;
-}
-
-const ARTIFACTED_OUTPUT_MARKER = 'Tool output was large (';
-
-async function writeToolResultArtifact(
-  text: string,
-  options: {
-    runId: string;
-    iteration: number;
-    toolUseId: string;
-    toolName: string;
-    workDir: string;
-    previewChars: number;
-  },
-): Promise<string> {
-  const artifactDir = path.join(
-    options.workDir,
-    '.hadamard-artifacts',
-    'tool-results',
-    sanitizeArtifactSegment(options.runId),
-  );
-  await mkdir(artifactDir, { recursive: true });
-  const artifactPath = path.join(
-    artifactDir,
-    `${String(options.iteration).padStart(3, '0')}-${sanitizeArtifactSegment(options.toolUseId)}-${sanitizeArtifactSegment(options.toolName)}.txt`,
-  );
-  await writeFile(artifactPath, text, 'utf8');
-  const preview = text.slice(0, Math.max(options.previewChars, 0));
-  const omittedChars = Math.max(text.length - preview.length, 0);
-  return [
-    `${ARTIFACTED_OUTPUT_MARKER}${text.length} characters).`,
-    `Full output saved to: ${artifactPath}`,
-    omittedChars > 0 ? `Preview (${preview.length} characters, ${omittedChars} omitted):` : 'Preview:',
-    preview,
-  ].join('\n');
-}
-
-async function artifactToolExecutionIfLarge(
-  execution: ResolvedToolExecutionResult,
-  options: {
-    runId: string;
-    iteration: number;
-    toolUseId: string;
-    toolName: string;
-    workDir: string;
-    maxChars: number;
-  },
-): Promise<{ text: string; content: ToolResultBlockParam['content'] | undefined }> {
-  if (options.maxChars <= 0 || execution.text.length <= options.maxChars) {
-    return {
-      text: execution.text,
-      content: execution.content,
-    };
-  }
-
-  const summary = await writeToolResultArtifact(execution.text, {
-    runId: options.runId,
-    iteration: options.iteration,
-    toolUseId: options.toolUseId,
-    toolName: options.toolName,
-    workDir: options.workDir,
-    previewChars: Math.min(options.maxChars, 4_000),
-  });
-
-  return {
-    text: summary,
-    content: summary,
-  };
-}
-
-/**
- * Enforce an aggregate character budget over all tool_result blocks produced
- * in one iteration. The largest non-error, not-yet-artifacted results are
- * persisted to disk (largest first) until the batch fits the budget.
- */
-async function enforceToolResultsAggregateBudget(
-  toolResults: ToolResultBlockParam[],
-  options: {
-    runId: string;
-    iteration: number;
-    workDir: string;
-    maxTotalChars: number;
-    nameByToolUseId: Map<string, string>;
-  },
-): Promise<void> {
-  if (options.maxTotalChars <= 0 || toolResults.length === 0) {
-    return;
-  }
-
-  const measured = toolResults.map((block, index) => ({
-    block,
-    index,
-    length: extractTextFromToolResultContent(block.content).length,
-  }));
-  let totalChars = measured.reduce((sum, entry) => sum + entry.length, 0);
-  if (totalChars <= options.maxTotalChars) {
-    return;
-  }
-
-  const candidates = measured
-    .filter((entry) => {
-      if (entry.block.is_error) return false;
-      const text = extractTextFromToolResultContent(entry.block.content);
-      return !text.startsWith(ARTIFACTED_OUTPUT_MARKER);
-    })
-    .sort((a, b) => b.length - a.length);
-
-  for (const candidate of candidates) {
-    if (totalChars <= options.maxTotalChars) {
-      break;
-    }
-    const text = extractTextFromToolResultContent(candidate.block.content);
-    if (!text) {
-      continue;
-    }
-    const summary = await writeToolResultArtifact(text, {
-      runId: options.runId,
-      iteration: options.iteration,
-      toolUseId: candidate.block.tool_use_id,
-      toolName: options.nameByToolUseId.get(candidate.block.tool_use_id) ?? 'tool',
-      workDir: options.workDir,
-      previewChars: 2_000,
-    });
-    candidate.block.content = summary;
-    totalChars = totalChars - text.length + summary.length;
-  }
-}
-
 interface ToolUseBatch {
   concurrent: boolean;
   toolUses: ToolUseBlock[];
@@ -1608,10 +1421,6 @@ function applyCacheControlToLastMessage(messages: MessageParam[]): void {
   if (lastBlock && typeof lastBlock === 'object') {
     (lastBlock as Record<string, unknown>).cache_control = { type: 'ephemeral' };
   }
-}
-
-function sanitizeArtifactSegment(value: string): string {
-  return value.replace(/[^A-Za-z0-9_.-]+/g, '_').slice(0, 80) || 'artifact';
 }
 
 function getRequestByteLength(request: ModelRequest): number {
