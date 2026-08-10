@@ -189,6 +189,7 @@ import {
 } from './tuiTextPresenter.js';
 import { buildTuiSystemPrompt } from './tuiSystemPrompt.js';
 import { TuiInputController } from './tuiInputController.js';
+import { runTuiMemoryCommand } from './tuiMemoryCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3498,37 +3499,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     }
   }
 
-  async function showDreamMenu(): Promise<void> {
-    const selected = await selectItem({
-      title: 'Dream memory consolidation',
-      searchable: false,
-      items: [
-        { id: 'status', label: 'Show dream state' },
-        { id: 'run', label: 'Run consolidation now' },
-      ],
-    });
-    if (selected) await runDreamCommand(selected);
-  }
-
-  async function runDreamCommand(action: string): Promise<void> {
-    if (action === 'status') {
-      const state = await session.dreamState();
-      appendStatic([`${A.dim}${JSON.stringify(state, null, 2)}${A.reset}`, '']);
-      return;
-    }
-    if (action !== 'run') {
-      appendStatic([...formatErrorLine('usage: /dream [run|status]'), '']);
-      return;
-    }
-    const result = await session.dream({ force: true });
-    appendStatic([
-      ...formatInfoLine(
-        result.reason ?? (result.skipped ? 'dream skipped' : result.success ? 'dream completed' : 'dream failed'),
-      ),
-      '',
-    ]);
-  }
-
   async function runSlashCommand(raw: string): Promise<void> {
     const spaceIndex = raw.indexOf(' ');
     const name = (spaceIndex === -1 ? raw.slice(1) : raw.slice(1, spaceIndex)).toLowerCase();
@@ -3541,6 +3511,31 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     commandBusy = true;
     renderDynamic();
     try {
+      const memoryCommandHandled = await runTuiMemoryCommand(name, args, {
+        runMemoryCommand: async input => {
+          const { HadamardMemoryCommandService } = await import('../memory/memoryCommandService.js');
+          return new HadamardMemoryCommandService({
+            memory: sdk.memory,
+            proposals: sdk.memoryProposals,
+            compactConfig: sdk.config.compact,
+            getState: () => session.compactState(),
+          }).execute(input);
+        },
+        compact: summaryInstructions => session.compact({ summaryInstructions }),
+        compactPromptMode: () => sdk.config.compact?.compactPromptMode ?? 'hybrid',
+        dreamState: () => session.dreamState(),
+        dream: () => session.dream({ force: true }),
+        selectDreamAction: () => selectItem({
+          title: 'Dream memory consolidation',
+          searchable: false,
+          items: [
+            { id: 'status', label: 'Show dream state' },
+            { id: 'run', label: 'Run consolidation now' },
+          ],
+        }),
+        appendStatic,
+      });
+      if (memoryCommandHandled) return;
       switch (name) {
         case 'help': {
           const selected = await selectItem({
@@ -3917,30 +3912,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             '',
           ]);
           return;
-        case 'memory': {
-          try {
-            const { HadamardMemoryCommandService } = await import('../memory/memoryCommandService.js');
-            const result = await new HadamardMemoryCommandService({
-              memory: sdk.memory,
-              proposals: sdk.memoryProposals,
-              compactConfig: sdk.config.compact,
-              getState: () => session.compactState(),
-            }).execute(args || 'status');
-            appendStatic([
-              `${A.bold}${result.title}${A.reset}`,
-              ...formatInfoLine(result.message),
-              ...(result.text ? result.text.split('\n').map(line => `${A.dim}${line}${A.reset}`) : []),
-              ...(result.items ?? []).flatMap(item => [
-                `  ${A.bold}${item.label}${A.reset}${item.description ? ` ${A.dim}· ${item.description}${A.reset}` : ''}`,
-                ...(item.detail ? [`    ${A.dim}${item.detail}${A.reset}`] : []),
-              ]),
-              '',
-            ]);
-          } catch (error) {
-            appendStatic([...formatErrorLine(error instanceof Error ? error.message : String(error)), '']);
-          }
-          return;
-        }
         case 'context': {
           const contextArgs = args.trim();
           if (contextArgs === 'setting' || contextArgs === 'settings') {
@@ -4128,37 +4099,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             appendStatic([...formatInfoLine(`conversation exported to ${file}`), '']);
           } catch (error) {
             appendStatic([...formatErrorLine(`export failed: ${(error as Error).message}`), '']);
-          }
-          return;
-        }
-        case 'compact': {
-          try {
-            const summaryInstructions =
-              args || undefined;
-            const result = await session.compact({ summaryInstructions });
-            if (!result.compacted) {
-              appendStatic([
-                ...formatErrorLine(result.error ?? `compact skipped: ${result.reason}`),
-                '',
-              ]);
-              return;
-            }
-            const mode = sdk.config.compact?.compactPromptMode ?? 'hybrid';
-            appendStatic([
-              `${A.green}\u2713 compacted${A.reset}${A.dim} \u00b7 ${result.messagesRemoved ?? '?'} messages summarized \u00b7 mode: ${mode}${A.reset}`,
-              '',
-            ]);
-          } catch (error) {
-            appendStatic([...formatErrorLine((error as Error).message), '']);
-          }
-          return;
-        }
-        case 'dream': {
-          try {
-            if (!args) await showDreamMenu();
-            else await runDreamCommand(args.toLowerCase());
-          } catch (error) {
-            appendStatic([...formatErrorLine((error as Error).message), '']);
           }
           return;
         }
