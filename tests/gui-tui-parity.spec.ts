@@ -16,6 +16,13 @@ import {
   createHadamardGuiStyles,
 } from '../src/gui/hadamardGui.js';
 
+function readGuiSources(root: string): string {
+  return [
+    readFileSync(join(root, 'src', 'gui', 'hadamardGui.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'gui', 'hadamardGuiAssets.ts'), 'utf8'),
+  ].join('\n');
+}
+
 describe('TUI and GUI parity', () => {
   it('keeps the TUI slash command surface on the shared command registry', () => {
     expect(TUI_SLASH_COMMANDS).toBe(HADAMARD_INTERACTIVE_COMMANDS);
@@ -72,7 +79,7 @@ describe('TUI and GUI parity', () => {
     const html = createHadamardGuiHtml();
     const css = createHadamardGuiStyles();
     const js = createHadamardGuiClientScript();
-    const gui = readFileSync(join(import.meta.dirname, '..', 'src', 'gui', 'hadamardGui.ts'), 'utf8');
+    const gui = readGuiSources(join(import.meta.dirname, '..'));
     const tui = readFileSync(join(import.meta.dirname, '..', 'src', 'tui', 'hadamardTui.ts'), 'utf8');
 
     expect(html).not.toContain('id="commands"');
@@ -542,7 +549,7 @@ describe('TUI and GUI parity', () => {
     const root = join(import.meta.dirname, '..');
     expect(SUBCOMMANDS.issues).toEqual(['list', 'show', 'create', 'start', 'review', 'done', 'block']);
     const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
-    const gui = readFileSync(join(root, 'src', 'gui', 'hadamardGui.ts'), 'utf8');
+    const gui = readGuiSources(root);
     for (const source of [tui, gui]) {
       expect(source).toContain('/issues [list|show <id>|create <title>|start <id> [agent-profile]|review <id>|done <id>|block <id>]');
       expect(source).toContain('createProjectIssue');
@@ -559,7 +566,7 @@ describe('TUI and GUI parity', () => {
     expect(SUBCOMMANDS.manager).toContain('update');
     // Each surface must both parse the chat subcommand and show it in usage.
     const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
-    const gui = readFileSync(join(root, 'src', 'gui', 'hadamardGui.ts'), 'utf8');
+    const gui = readGuiSources(root);
     for (const source of [tui, gui]) {
       expect(source).toContain('/manager chat <message>');
     }
@@ -570,7 +577,7 @@ describe('TUI and GUI parity', () => {
   it('controls External CLI background work and native history from the TUI', () => {
     const root = join(import.meta.dirname, '..');
     const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
-    const gui = readFileSync(join(root, 'src', 'gui', 'hadamardGui.ts'), 'utf8');
+    const gui = readGuiSources(root);
     const html = createHadamardGuiHtml();
     const js = createHadamardGuiClientScript();
     const managedRuntimes = [
@@ -721,7 +728,7 @@ describe('TUI and GUI parity', () => {
     const root = join(import.meta.dirname, '..');
     expect(SUBCOMMANDS.team).toContain('clone');
     const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
-    const gui = readFileSync(join(root, 'src', 'gui', 'hadamardGui.ts'), 'utf8');
+    const gui = readGuiSources(root);
     for (const source of [tui, gui]) {
       expect(source).toContain('cloneTeamDefinition');
       expect(source).toContain("startsWith('clone ')");
@@ -733,7 +740,7 @@ describe('TUI and GUI parity', () => {
     expect(SUBCOMMANDS.team).toContain('delete');
     expect(SUBCOMMANDS.workflows).toEqual(expect.arrayContaining(['list', 'run', 'save', 'delete']));
     const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
-    const gui = readFileSync(join(root, 'src', 'gui', 'hadamardGui.ts'), 'utf8');
+    const gui = readGuiSources(root);
     for (const source of [tui, gui]) {
       expect(source).toContain('deleteTeamDefinition');
       expect(source).toContain('deleteWorkflow');
@@ -772,7 +779,7 @@ describe('TUI and GUI parity', () => {
   it('renders the Team Run tree + graph editor surfaces in the GUI (plan Phase 4/5)', () => {
     const js = createHadamardGuiClientScript();
     const css = createHadamardGuiStyles();
-    const gui = readFileSync(join(import.meta.dirname, '..', 'src', 'gui', 'hadamardGui.ts'), 'utf8');
+    const gui = readGuiSources(join(import.meta.dirname, '..'));
     // Phase 5: TeamEvent-driven run tree (hidden with no team run) + edge lines.
     expect(js).toContain('renderTeamRunTree');
     expect(js).toContain("event.type === 'team.edge.triggered'");
@@ -823,7 +830,7 @@ describe('TUI and GUI parity', () => {
   it('keeps Team Run tree formatting in the TUI and GUI (plan Phase 5)', () => {
     const root = join(import.meta.dirname, '..');
     const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
-    const gui = readFileSync(join(root, 'src', 'gui', 'hadamardGui.ts'), 'utf8');
+    const gui = readGuiSources(root);
     expect(tui).toContain('formatTeamRunTreeLines');
     expect(tui).toContain('applyTeamRunEvent');
     const js = createHadamardGuiClientScript();

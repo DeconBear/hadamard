@@ -3,7 +3,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = process.cwd();
-const gui = readFileSync(path.join(root, 'src/gui/hadamardGui.ts'), 'utf8');
+const gui = [
+  readFileSync(path.join(root, 'src/gui/hadamardGui.ts'), 'utf8'),
+  readFileSync(path.join(root, 'src/gui/hadamardGuiAssets.ts'), 'utf8'),
+].join('\n');
 const effective = readFileSync(path.join(root, 'src/runtime/effectiveAgentRunOptions.ts'), 'utf8');
 const runtime = readFileSync(path.join(root, 'src/runtime/agentClient.ts'), 'utf8');
 const targetResolver = readFileSync(path.join(root, 'src/manager/resolveTargetRef.ts'), 'utf8');
