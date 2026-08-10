@@ -11,6 +11,8 @@ import type {
   Usage,
 } from './provider/types.js';
 import type { z } from 'zod';
+import type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
+export type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
 
 export interface LoadedJsonConfigData {
   path: string;
@@ -70,9 +72,6 @@ export type HadamardPermissionMode =
   | 'auto';
 
 export type HadamardModelTier = 'min' | 'medium' | 'max';
-export type HadamardEffort = 'low' | 'medium' | 'high' | 'max';
-export type HadamardRunEffort = HadamardEffort | 'auto';
-
 export interface HadamardModelTierConfig {
   min?: string;
   medium?: string;
@@ -407,7 +406,7 @@ export interface ResolvedRuntimeConfig {
   userId?: string;
   metadata: Record<string, unknown>;
   compact: HadamardCompactConfig;
-  projectMemory: import('./config/projectSettings.js').ProjectMemorySettings;
+  projectMemory: import('./config/projectSettingsTypes.js').ProjectMemorySettings;
   provider: 'anthropic' | 'openai';
   effort?: HadamardEffort;
   sandbox: import('./sandbox/types.js').SandboxPolicy;
@@ -799,7 +798,7 @@ export interface HadamardRunSlashCommandResult {
     | HadamardCleanToolMetadata[]
     | HadamardSkillDefinitionSummary[]
     | HadamardAgentDefinitionSummary[]
-    | import('./memory/memoryCommandService.js').HadamardMemoryCommandResult;
+    | import('./memory/memoryCommandTypes.js').HadamardMemoryCommandResult;
 }
 
 export interface HadamardInvokedSkillRecord {
@@ -1219,7 +1218,7 @@ export interface HadamardDreamRunOptions {
   currentSessionId?: string;
   extraContext?: string;
   model?: string;
-  executionProfile?: import('./config/projectSettings.js').DreamExecutionProfileRef;
+  executionProfile?: import('./config/projectSettingsTypes.js').DreamExecutionProfileRef;
   maxTokens?: number;
   signal?: AbortSignal;
 }
