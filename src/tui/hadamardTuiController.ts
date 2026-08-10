@@ -167,11 +167,7 @@ import {
   submitActiveInput,
   type ActiveInputMode,
 } from './pendingInput.js';
-import {
-  filterTuiSelectionItems,
-  moveTuiSelection,
-  type TuiSelectionItem,
-} from './selection.js';
+import type { TuiSelectionItem } from './selection.js';
 import {
   StreamFlusher,
   formatBanner,
@@ -192,6 +188,7 @@ import {
   renderRichText,
 } from './tuiTextPresenter.js';
 import { buildTuiSystemPrompt } from './tuiSystemPrompt.js';
+import { TuiInputController } from './tuiInputController.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -222,7 +219,6 @@ export {
 export type { HadamardTuiOptions } from './tuiTypes.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const CTRL_C_EXIT_WINDOW_MS = 600;
 const DYNAMIC_FRAME_MS = 33;
 const MENU_MAX_ROWS = 12;
 const SESSION_EFFORT_KEY = '__hadamardEffort';
@@ -772,8 +768,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     return cost !== null ? `$${cost.toFixed(4)}` : null;
   }
   let statusNote = '';
-  let ctrlCCount = 0;
-  let ctrlCTimer: ReturnType<typeof setTimeout> | null = null;
   let streamedTextSeen = false;
   const reasoningDisplay = new ReasoningDisplayState();
   const toolActivityDisplay = new ToolActivityDisplayState();
@@ -5484,342 +5478,42 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     void startRun(text);
   }
 
-  function handleDialogKey(key: Key): void {
-    if (!dialog) return;
-    const name = key.name ?? '';
-    if (name === 'up') {
-      dialog.selected = (dialog.selected + 3) % 4;
-    } else if (name === 'down' || name === 'tab') {
-      dialog.selected = (dialog.selected + 1) % 4;
-    } else if (name === 'return' || name === 'enter') {
-      dialog.resolve(dialog.selected === 0 ? 'allow' : dialog.selected === 1 ? 'always' : dialog.selected === 2 ? 'always-user' : 'deny');
-      return;
-    } else if (name === 'y') {
-      dialog.resolve('allow');
-      return;
-    } else if (name === 'a') {
-      dialog.resolve('always');
-      return;
-    } else if (name === 'n' || name === 'escape') {
-      dialog.resolve('deny');
-      return;
-    } else if (name === 'c' && key.ctrl) {
-      dialog.resolve('deny');
-      return;
-    }
-    renderDynamic();
-  }
-
-  function finishSelection(value: string | undefined): void {
-    const active = selectionDialog;
-    if (!active) return;
-    selectionDialog = null;
-    renderDynamic();
-    active.resolve(value);
-  }
-
-  function handleSelectionKey(char: string | undefined, key: Key): void {
-    if (!selectionDialog) return;
-    const name = key.name ?? '';
-    const filtered = filterTuiSelectionItems(
-      selectionDialog.items,
-      selectionDialog.query,
-    );
-    if (name === 'up') {
-      selectionDialog.selected = moveTuiSelection(
-        selectionDialog.selected,
-        filtered.length,
-        -1,
-      );
-    } else if (name === 'down' || name === 'tab') {
-      selectionDialog.selected = moveTuiSelection(
-        selectionDialog.selected,
-        filtered.length,
-        1,
-      );
-    } else if (name === 'pageup') {
-      selectionDialog.selected = Math.max(selectionDialog.selected - 8, 0);
-    } else if (name === 'pagedown') {
-      selectionDialog.selected = Math.max(
-        Math.min(selectionDialog.selected + 8, filtered.length - 1),
-        0,
-      );
-    } else if (name === 'return' || name === 'enter') {
-      finishSelection(filtered[selectionDialog.selected]?.id);
-      return;
-    } else if (name === 'escape' || (name === 'c' && key.ctrl)) {
-      finishSelection(undefined);
-      return;
-    } else if (selectionDialog.searchable && name === 'backspace') {
-      selectionDialog.query = selectionDialog.query.slice(0, -1);
-      selectionDialog.selected = 0;
-    } else if (selectionDialog.searchable && name === 'u' && key.ctrl) {
-      selectionDialog.query = '';
-      selectionDialog.selected = 0;
-    } else if (selectionDialog.searchable && !key.ctrl && !key.meta) {
-      const sequence = key.sequence ?? char ?? '';
-      const cleaned = sequence.replace(/[\x00-\x1f\x7f]/g, '');
-      if (cleaned) {
-        selectionDialog.query += cleaned;
-        selectionDialog.selected = 0;
-      }
-    }
-    renderDynamic();
-  }
-
-  function finishTextInput(value: string | undefined): void {
-    const active = textInputDialog;
-    if (!active) return;
-    textInputDialog = null;
-    renderDynamic();
-    active.resolve(value);
-  }
-
-  function handleTextInputKey(char: string | undefined, key: Key): void {
-    if (!textInputDialog) return;
-    const name = key.name ?? '';
-    const inputEditor = textInputDialog.editor;
-    if (name === 'return' || name === 'enter') {
-      finishTextInput(inputEditor.text);
-      return;
-    }
-    if (name === 'escape' || (name === 'c' && key.ctrl)) {
-      finishTextInput(undefined);
-      return;
-    }
-    if (key.ctrl) {
-      if (name === 'a') inputEditor.moveHome();
-      else if (name === 'e') inputEditor.moveEnd();
-      else if (name === 'u') inputEditor.clear();
-      else if (name === 'w') inputEditor.deleteWordLeft();
-    } else if (name === 'backspace') {
-      inputEditor.backspace();
-    } else if (name === 'delete') {
-      inputEditor.deleteForward();
-    } else if (name === 'left') {
-      inputEditor.moveLeft();
-    } else if (name === 'right') {
-      inputEditor.moveRight();
-    } else if (name === 'home') {
-      inputEditor.moveHome();
-    } else if (name === 'end') {
-      inputEditor.moveEnd();
-    } else {
-      const sequence = key.sequence ?? char ?? '';
-      const cleaned = sequence.replace(/[\x00-\x1f\x7f]/g, '');
-      if (cleaned) inputEditor.insert(cleaned);
-    }
-    renderDynamic();
-  }
-
-  function handleKey(char: string | undefined, key: Key): void {
-    if (shuttingDown) return;
-    const name = key.name ?? '';
-
-    if (name !== 'c' || !key.ctrl) {
-      ctrlCCount = 0;
-    }
-
-    if (dialog) {
-      handleDialogKey(key);
-      return;
-    }
-    if (selectionDialog) {
-      handleSelectionKey(char, key);
-      return;
-    }
-    if (textInputDialog) {
-      handleTextInputKey(char, key);
-      return;
-    }
-
-    if (key.ctrl) {
-      switch (name) {
-        case 'c': {
-          ctrlCCount += 1;
-          if (ctrlCTimer) clearTimeout(ctrlCTimer);
-          ctrlCTimer = setTimeout(() => {
-            ctrlCCount = 0;
-          }, CTRL_C_EXIT_WINDOW_MS);
-          if (ctrlCCount >= 2) {
-            void shutdown(0);
-            return;
-          }
-          if (running && abortCtrl) {
-            abortCtrl.abort();
-          } else if (!editor.isEmpty()) {
-            editor.clear();
-            menuSelected = 0;
-            restoreRecalledFollowUpIfAbandoned();
-          }
-          renderDynamic();
-          return;
-        }
-        case 'd':
-          if (editor.isEmpty()) {
-            void shutdown(0);
-            return;
-          }
-          editor.deleteForward();
-          restoreRecalledFollowUpIfAbandoned();
-          break;
-        case 'a':
-          editor.moveHome();
-          break;
-        case 'e':
-          editor.moveEnd();
-          break;
-        case 'k':
-          editor.killToEnd();
-          restoreRecalledFollowUpIfAbandoned();
-          break;
-        case 'u':
-          editor.killToStart();
-          restoreRecalledFollowUpIfAbandoned();
-          break;
-        case 'w':
-          editor.deleteWordLeft();
-          restoreRecalledFollowUpIfAbandoned();
-          break;
-        case 'left':
-          editor.moveWordLeft();
-          break;
-        case 'right':
-          editor.moveWordRight();
-          break;
-        case 'l':
-          process.stdout.write('\x1b[2J\x1b[H');
-          break;
-        case 'j':
-          editor.insert('\n');
-          break;
-        default:
-          break;
-      }
-      renderDynamic();
-      return;
-    }
-
-    switch (name) {
-      case 'return': {
-        if (key.shift) {
-          if (running) void submit('steer');
-          else editor.insert('\n');
-          return;
-        }
-        if (key.meta) {
-          editor.insert('\n');
-          break;
-        }
-        void submit();
-        return;
-      }
-      case 'enter':
-        if (key.shift && running) {
-          void submit('steer');
-          return;
-        }
-        editor.insert('\n');
-        break;
-      case 'escape': {
-        if (running && abortCtrl) {
-          abortCtrl.abort();
-        } else if (!editor.isEmpty()) {
-          editor.clear();
-          menuSelected = 0;
-          restoreRecalledFollowUpIfAbandoned();
-        }
-        break;
-      }
-      case 'backspace':
-        editor.backspace();
-        menuSelected = 0;
-        atSelected = 0;
-        restoreRecalledFollowUpIfAbandoned();
-        break;
-      case 'delete':
-        editor.deleteForward();
-        restoreRecalledFollowUpIfAbandoned();
-        break;
-      case 'left':
-        if (key.meta) editor.moveWordLeft();
-        else editor.moveLeft();
-        break;
-      case 'right':
-        if (key.meta) editor.moveWordRight();
-        else editor.moveRight();
-        break;
-      case 'home':
-        editor.moveHome();
-        break;
-      case 'end':
-        editor.moveEnd();
-        break;
-      case 'up': {
-        if (running && editor.isEmpty()) {
-          const recalled = recallLatestFollowUp(session);
-          if (recalled) {
-            recalledFollowUp = recalled;
-            editor.setText(recalled);
-            break;
-          }
-        }
-        const atToken = activeAtToken(editor.text, editor.cursor);
-        const atCount = atToken ? atCompletions(atToken.token).length : 0;
-        const menu = filterSlashCommands(editor.text);
-        if (atCount > 0) {
-          atSelected = (atSelected + atCount - 1) % atCount;
-        } else if (menu.length > 0) {
-          menuSelected = (menuSelected + menu.length - 1) % menu.length;
-        } else if (!editor.onFirstLine()) {
-          editor.moveUp();
-        } else {
-          editor.historyPrev();
-        }
-        break;
-      }
-      case 'down': {
-        const atToken = activeAtToken(editor.text, editor.cursor);
-        const atCount = atToken ? atCompletions(atToken.token).length : 0;
-        const menu = filterSlashCommands(editor.text);
-        if (atCount > 0) {
-          atSelected = (atSelected + 1) % atCount;
-        } else if (menu.length > 0) {
-          menuSelected = (menuSelected + 1) % menu.length;
-        } else if (!editor.onLastLine()) {
-          editor.moveDown();
-        } else {
-          editor.historyNext();
-        }
-        break;
-      }
-      case 'tab': {
-        if (applyAtCompletion()) break;
-        const menu = filterSlashCommands(editor.text);
-        if (menu.length > 0) {
-          const selected = menu[Math.min(menuSelected, menu.length - 1)]!;
-          editor.setText(`/${selected} `);
-        }
-        break;
-      }
-      default: {
-        const sequence = key.sequence ?? char ?? '';
-        if (sequence) {
-          const cleaned = sequence
-            .replace(/\x1b\[20[01]~/g, '')
-            .replace(/\r\n?/g, '\n')
-            .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, (match) => (match === '\n' ? '\n' : ''));
-          if (cleaned) {
-            editor.insert(cleaned);
-            menuSelected = 0;
-            atSelected = 0;
-          }
-        }
-        break;
-      }
-    }
-    renderDynamic();
-  }
+  const inputController = new TuiInputController({
+    editor,
+    dialogs: {
+      permission: () => dialog,
+      selection: () => selectionDialog,
+      setSelection: value => { selectionDialog = value; },
+      textInput: () => textInputDialog,
+      setTextInput: value => { textInputDialog = value; },
+    },
+    run: {
+      isRunning: () => running,
+      isShuttingDown: () => shuttingDown,
+      abort: () => {
+        if (!abortCtrl) return false;
+        abortCtrl.abort();
+        return true;
+      },
+      shutdown: () => { void shutdown(0); },
+      submit: mode => { void submit(mode); },
+      recallFollowUp: () => recallLatestFollowUp(session),
+      setRecalledFollowUp: value => { recalledFollowUp = value; },
+      restoreAbandonedRecall: restoreRecalledFollowUpIfAbandoned,
+    },
+    completions: {
+      atCompletions,
+      applyAtCompletion,
+      menuSelected: () => menuSelected,
+      setMenuSelected: value => { menuSelected = value; },
+      atSelected: () => atSelected,
+      setAtSelected: value => { atSelected = value; },
+    },
+    view: {
+      render: renderDynamic,
+      clearTerminal: () => process.stdout.write('\x1b[2J\x1b[H'),
+    },
+  });
 
   // ── Lifecycle ──────────────────────────────────────────────────────
 
@@ -5883,7 +5577,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   process.stdin.resume();
   process.stdin.on('keypress', (char: string | undefined, key: Key | undefined) => {
     try {
-      handleKey(char, key ?? {});
+      inputController.handleKey(char, key ?? {});
     } catch (error) {
       appendStatic(formatErrorLine(`input error: ${(error as Error).message}`));
       renderDynamic();
