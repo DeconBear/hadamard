@@ -20,6 +20,7 @@ async function readSurfaceSource(file: string): Promise<string> {
         'src/tui/tuiConfigurationCommandHandler.ts',
         'src/tui/tuiBasicCommandHandler.ts',
         'src/tui/tuiPlanCommandHandler.ts',
+        'src/tui/tuiSessionCommandHandler.ts',
       ]
     : [file];
   return (await Promise.all(files.map(source =>
