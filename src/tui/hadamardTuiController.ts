@@ -185,6 +185,7 @@ import { runTuiBridgeCommand } from './tuiBridgeCommandHandler.js';
 import { runTuiTeamCommand } from './tuiTeamCommandHandler.js';
 import { runTuiIssueCommand } from './tuiIssueCommandHandler.js';
 import { runTuiAssistantCommand } from './tuiAssistantCommandHandler.js';
+import { runTuiManagerCommand } from './tuiManagerCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3925,6 +3926,177 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         renderRichText: text => renderRichText(text, screen.width),
         appendStatic,
       })) return;
+      if (await runTuiManagerCommand(name, args, {
+        manager: {
+          listSessions: async () => {
+            const config = await readManagerConfig(sdk.config.workDir, sdk.config.homeDir);
+            return (await sdk.sessions.list())
+              .filter(item => item.kind === 'manager')
+              .map(item => ({
+                id: item.id,
+                title: item.title,
+                messageCount: item.messageCount,
+                active: item.id === config.activeSessionId,
+              }));
+          },
+          createSession: async () => {
+            const config = await readManagerConfig(sdk.config.workDir, sdk.config.homeDir);
+            managerTuiSession = await sdk.createSession({
+              title: 'Manager',
+              kind: 'manager',
+              metadata: { __hadamardKind: 'manager', __hadamardAssistantScope: 'project' },
+              permissionMode: 'bypassPermissions',
+            });
+            await writeManagerConfig(sdk.config.workDir, sdk.config.homeDir, {
+              ...config,
+              activeSessionId: managerTuiSession.id,
+            });
+            return managerTuiSession.id;
+          },
+          resumeSession: async id => {
+            const found = (await sdk.sessions.list())
+              .find(item => item.id === id && item.kind === 'manager');
+            if (!found) return undefined;
+            const config = await readManagerConfig(sdk.config.workDir, sdk.config.homeDir);
+            managerTuiSession = await sdk.resumeSession(id, { permissionMode: 'bypassPermissions' });
+            await writeManagerConfig(sdk.config.workDir, sdk.config.homeDir, {
+              ...config,
+              activeSessionId: id,
+            });
+            return { title: found.title };
+          },
+          status: async () => {
+            const config = await readManagerConfig(sdk.config.workDir, sdk.config.homeDir);
+            const plan = await readProjectPlanFile(sdk.config.workDir, sdk.config.homeDir);
+            const progress = await readProgressFile(sdk.config.workDir, sdk.config.homeDir);
+            return {
+              model: config.model ?? `${session.model} (session default)`,
+              readScope: config.readScope,
+              mirrorProgressToWorkspace: config.mirrorProgressToWorkspace,
+              milestones: plan.milestones.length,
+              today: plan.today.length,
+              upcoming: plan.upcoming.length,
+              progressChars: progress ? progress.length : null,
+            };
+          },
+          config: () => readManagerConfig(sdk.config.workDir, sdk.config.homeDir),
+          setConfig: async (key, value) => {
+            const config = await readManagerConfig(sdk.config.workDir, sdk.config.homeDir);
+            if (key === 'model') config.model = value || undefined;
+            else if (key === 'bridgeConfig' || key === 'config') config.bridgeConfig = value || undefined;
+            else if (key === 'readScope') {
+              if (value !== 'workspace-only' && value !== 'workspace+docs' && value !== 'explicit-allowlist' && value !== 'full-access') {
+                return { ok: false, message: 'readScope must be workspace-only | workspace+docs | explicit-allowlist | full-access' };
+              }
+              config.readScope = value;
+            } else if (key === 'mirror') {
+              config.mirrorProgressToWorkspace = value === 'on' || value === 'true';
+            } else if (key === 'allow') {
+              config.allowedReadPaths = value ? value.split(',').map(item => item.trim()).filter(Boolean) : [];
+            } else {
+              return { ok: false, message: 'usage: /manager config set <model|bridgeConfig|readScope|mirror|allow> <value>' };
+            }
+            await writeManagerConfig(sdk.config.workDir, sdk.config.homeDir, config);
+            return { ok: true, message: `Manager config updated: ${key}` };
+          },
+          schedules: async () => (await listScheduledAutomationTasks(sdk.config.workDir))
+            .filter(task => task.kind === 'manager')
+            .map(task => ({ name: task.name, cron: task.cron, enabled: task.enabled })),
+          run: async (kind, instruction, onNotice, onTool) => {
+            const config = await readManagerConfig(sdk.config.workDir, sdk.config.homeDir);
+            const proposals: import('../team/teamProposalService.js').TeamGraphProposal[] = [];
+            managerTuiSession = await resolveManagerTuiSession();
+            const managerTools = [
+              ...await createManagerTools({
+                workDir: sdk.config.workDir,
+                homeDir: sdk.config.homeDir,
+                config,
+              }),
+              ...createAssistantTeamTools({
+                scope: 'project',
+                assistantSessionId: managerTuiSession.id,
+                currentWorkDir: sdk.config.workDir,
+                homeDir: sdk.config.homeDir,
+                proposals: assistantTeamProposals,
+                onProposal: proposal => { proposals.push(proposal); },
+              }),
+            ];
+            let prompt = kind === 'team'
+              ? `Propose a Team Graph for this request. Inspect existing Teams first when relevant. ${instruction}`
+              : instruction;
+            if (kind === 'update') {
+              let gitSummary = '';
+              try {
+                const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: sdk.config.workDir, encoding: 'utf8' }).trim();
+                const dirty = execSync('git status --porcelain', { cwd: sdk.config.workDir, encoding: 'utf8' }).trim();
+                const log = execSync('git log --oneline -10', { cwd: sdk.config.workDir, encoding: 'utf8' }).trim();
+                gitSummary = `branch: ${branch}\ndirty files: ${dirty ? dirty.split('\n').length : 0}\nrecent commits:\n${log}`;
+              } catch { /* not a git repo */ }
+              const stored = await sdk.sessions.list();
+              const conversationSummaries = stored
+                .filter((s) => s.kind !== 'manager')
+                .slice(0, 20)
+                .map((s) => `- [${s.updatedAt.slice(0, 10)}] ${s.title} (${s.messageCount} msgs): ${s.preview}`)
+                .join('\n');
+              const plan = await readProjectPlanFile(sdk.config.workDir, sdk.config.homeDir);
+              const progress = await readProgressFile(sdk.config.workDir, sdk.config.homeDir);
+              onNotice(formatManagerUpdatePreview(plan, progress).split('\n').slice(0, 2).join(' · '));
+              const githubDigest = await resolveGitHubDigestForUpdate(
+                sdk.config.workDir,
+                instruction || undefined,
+              );
+              prompt = buildUpdateProgressPrompt({
+                instruction: instruction || undefined,
+                gitSummary,
+                conversationSummaries,
+                githubDigest,
+                currentPlanJson: JSON.stringify(plan, null, 2),
+                currentProgress: progress ?? undefined,
+              });
+            }
+            try {
+              const compactResult = await managerTuiSession.compact({});
+              if (compactResult.compacted) {
+                onNotice(`manager compacted ${compactResult.messagesRemoved ?? '?'} older messages`);
+              }
+            } catch { /* auto-compact is best-effort */ }
+            const stream = managerTuiSession.stream(prompt, {
+              systemPrompt: `${buildManagerSystemPrompt(sdk.config.workDir, config)}\n${buildAssistantTeamSystemPrompt('project')}`,
+              tools: managerTools,
+              ...(config.model ? { model: config.model } : {}),
+              __hadamardUseDefaultTools: false,
+              __hadamardAllowedTools: managerTools.map(tool => tool.name),
+            } as Parameters<typeof managerTuiSession.stream>[1]);
+            const managerToolDisplay = new ToolActivityDisplayState();
+            for await (const event of stream) {
+              if (event.type === 'tool.call' && managerToolDisplay.markStarted(event.call.id)) {
+                onTool(event.call.name);
+              }
+            }
+            const result = await stream.result;
+            return {
+              text: result.text,
+              proposals,
+              ...(kind === 'update'
+                ? { progressPath: managerProgressPath(sdk.config.workDir, sdk.config.homeDir) }
+                : {}),
+            };
+          },
+          proposalDiff: proposal => [
+            `${A.dim}${proposal.explanation || '(no explanation)'}${A.reset}`,
+            ...managerProposalDiffForTui(proposal),
+            ...proposal.problems.map(problem => `${A.red}invalid: ${problem}${A.reset}`),
+          ],
+          applyProposal: async id => {
+            const applied = await assistantTeamProposals.apply(id, sdk.config.homeDir);
+            return { teamName: applied.proposal.teamName, filePath: applied.filePath };
+          },
+          rejectProposal: id => { assistantTeamProposals.reject(id); },
+        },
+        selectItem,
+        renderRichText: text => renderRichText(text, screen.width),
+        appendStatic,
+      })) return;
       switch (name) {
         case 'context': {
           const contextArgs = args.trim();
@@ -4219,243 +4391,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           } catch (error) {
             appendStatic([...formatErrorLine(error instanceof Error ? error.message : String(error)), '']);
           }
-          return;
-        }
-        case 'manager': {
-          const homeDir = sdk.config.homeDir;
-          if (args === 'sessions') {
-            const managers = (await sdk.sessions.list()).filter(item => item.kind === 'manager');
-            const cfg = await readManagerConfig(sdk.config.workDir, homeDir);
-            appendStatic([
-              `${A.bold}Manager Sessions${A.reset}`,
-              ...managers.map(item => `${item.id === cfg.activeSessionId ? A.green + '●' : A.dim + '○'} ${item.id} · ${item.title} · ${item.messageCount} messages${A.reset}`),
-              '',
-            ]);
-            return;
-          }
-          if (args === 'new') {
-            const cfg = await readManagerConfig(sdk.config.workDir, homeDir);
-            managerTuiSession = await sdk.createSession({
-              title: 'Manager',
-              kind: 'manager',
-              metadata: { __hadamardKind: 'manager', __hadamardAssistantScope: 'project' },
-              permissionMode: 'bypassPermissions',
-            });
-            await writeManagerConfig(sdk.config.workDir, homeDir, { ...cfg, activeSessionId: managerTuiSession.id });
-            appendStatic([...formatInfoLine(`Manager Session created: ${managerTuiSession.id}`), '']);
-            return;
-          }
-          if (args.startsWith('resume ')) {
-            const id = args.slice('resume '.length).trim();
-            const found = (await sdk.sessions.list()).find(item => item.id === id && item.kind === 'manager');
-            if (!found) {
-              appendStatic([...formatErrorLine(`Manager Session not found: ${id}`), '']);
-              return;
-            }
-            const cfg = await readManagerConfig(sdk.config.workDir, homeDir);
-            managerTuiSession = await sdk.resumeSession(id, { permissionMode: 'bypassPermissions' });
-            await writeManagerConfig(sdk.config.workDir, homeDir, { ...cfg, activeSessionId: id });
-            appendStatic([...formatInfoLine(`Manager Session selected: ${found.title}`), '']);
-            return;
-          }
-          if (!args || args === 'status') {
-            const cfg = await readManagerConfig(sdk.config.workDir, homeDir);
-            const plan = await readProjectPlanFile(sdk.config.workDir, homeDir);
-            const progress = await readProgressFile(sdk.config.workDir, homeDir);
-            appendStatic([
-              `${A.bold}Manager${A.reset}`,
-              `${A.dim}model: ${cfg.model ?? `${session.model} (session default)`}${A.reset}`,
-              `${A.dim}readScope: ${cfg.readScope}${A.reset}`,
-              `${A.dim}mirror to workspace: ${cfg.mirrorProgressToWorkspace ? 'on' : 'off'}${A.reset}`,
-              `${A.dim}plan.json: ${plan.milestones.length} milestones · ${plan.today.length} today · ${plan.upcoming.length} upcoming${A.reset}`,
-              `${A.dim}PROGRESS.md: ${progress ? `${progress.length} chars` : '(none yet — /manager update)'}${A.reset}`,
-              '',
-            ]);
-            return;
-          }
-          if (args === 'config') {
-            const cfg = await readManagerConfig(sdk.config.workDir, homeDir);
-            appendStatic([
-              ...JSON.stringify(cfg, null, 2).split('\n').map((l) => `${A.dim}${l}${A.reset}`),
-              `${A.dim}Set: /manager config set <model|bridgeConfig|readScope|mirror|allow> <value>${A.reset}`,
-              `${A.dim}The Manager always runs read-only regardless of model.${A.reset}`,
-              '',
-            ]);
-            return;
-          }
-          if (args.startsWith('config set ')) {
-            const rest = args.slice('config set '.length).trim();
-            const spIdx = rest.indexOf(' ');
-            const key = spIdx === -1 ? rest : rest.slice(0, spIdx);
-            const value = spIdx === -1 ? '' : rest.slice(spIdx + 1).trim();
-            const cfg = await readManagerConfig(sdk.config.workDir, homeDir);
-            if (key === 'model') cfg.model = value || undefined;
-            else if (key === 'bridgeConfig' || key === 'config') cfg.bridgeConfig = value || undefined;
-            else if (key === 'readScope') {
-              if (value !== 'workspace-only' && value !== 'workspace+docs' && value !== 'explicit-allowlist' && value !== 'full-access') {
-                appendStatic([...formatErrorLine('readScope must be workspace-only | workspace+docs | explicit-allowlist | full-access'), '']);
-                return;
-              }
-              cfg.readScope = value;
-            } else if (key === 'mirror') cfg.mirrorProgressToWorkspace = value === 'on' || value === 'true';
-            else if (key === 'allow') cfg.allowedReadPaths = value ? value.split(',').map((p) => p.trim()).filter(Boolean) : [];
-            else {
-              appendStatic([...formatErrorLine('usage: /manager config set <model|bridgeConfig|readScope|mirror|allow> <value>'), '']);
-              return;
-            }
-            await writeManagerConfig(sdk.config.workDir, homeDir, cfg);
-            appendStatic([...formatInfoLine(`Manager config updated: ${key}`), '']);
-            return;
-          }
-          if (args === 'schedule') {
-            const tasks = (await listScheduledAutomationTasks(sdk.config.workDir)).filter((task) => task.kind === 'manager');
-            appendStatic([
-              `${A.bold}Manager schedules${A.reset}`,
-              ...(tasks.length === 0
-                ? [`${A.dim}none — add kind:"manager" tasks to .hadamard/scheduled-tasks.json${A.reset}`]
-                : tasks.map((task) => `${A.cyan}${task.name}${A.reset}${A.dim} · ${task.cron} · ${task.enabled ? 'enabled' : 'paused'}${A.reset}`)),
-              '',
-            ]);
-            return;
-          }
-          const isTeam = args === 'team' || args.startsWith('team ');
-          const isUpdate = args === 'update' || args.startsWith('update ');
-          const isChat = args === 'chat' || args.startsWith('chat ') || isTeam;
-          if (isUpdate || isChat) {
-            const arg = isUpdate
-              ? (args === 'update' ? '' : args.slice('update'.length).trim())
-              : isTeam
-                ? (args === 'team'
-                  ? ''
-                  : `Propose a Team Graph for this request. Inspect existing Teams first when relevant. ${args.slice('team'.length).trim()}`)
-                : args.slice('chat'.length).trim();
-            if (isChat && !arg) {
-              appendStatic([...formatErrorLine(isTeam ? 'usage: /manager team <request>' : 'usage: /manager chat <message>'), '']);
-              return;
-            }
-            if (isUpdate) appendStatic([...formatInfoLine('Manager: updating progress documents…'), '']);
-            try {
-              const cfg = await readManagerConfig(sdk.config.workDir, homeDir);
-              const turnProposals: import('../team/teamProposalService.js').TeamGraphProposal[] = [];
-              managerTuiSession = await resolveManagerTuiSession();
-              const managerTools = [
-                ...await createManagerTools({ workDir: sdk.config.workDir, homeDir, config: cfg }),
-                ...createAssistantTeamTools({
-                  scope: 'project',
-                  assistantSessionId: managerTuiSession.id,
-                  currentWorkDir: sdk.config.workDir,
-                  homeDir,
-                  proposals: assistantTeamProposals,
-                  onProposal: proposal => { turnProposals.push(proposal); },
-                }),
-              ];
-              let prompt: string;
-              if (isUpdate) {
-                // Host-collected context — the Manager itself has no shell.
-                let gitSummary = '';
-                try {
-                  const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: sdk.config.workDir, encoding: 'utf8' }).trim();
-                  const dirty = execSync('git status --porcelain', { cwd: sdk.config.workDir, encoding: 'utf8' }).trim();
-                  const log = execSync('git log --oneline -10', { cwd: sdk.config.workDir, encoding: 'utf8' }).trim();
-                  gitSummary = `branch: ${branch}\ndirty files: ${dirty ? dirty.split('\n').length : 0}\nrecent commits:\n${log}`;
-                } catch { /* not a git repo */ }
-                const stored = await sdk.sessions.list();
-                const conversationSummaries = stored
-                  .filter((s) => s.kind !== 'manager')
-                  .slice(0, 20)
-                  .map((s) => `- [${s.updatedAt.slice(0, 10)}] ${s.title} (${s.messageCount} msgs): ${s.preview}`)
-                  .join('\n');
-                const plan = await readProjectPlanFile(sdk.config.workDir, homeDir);
-                const progress = await readProgressFile(sdk.config.workDir, homeDir);
-                appendStatic([...formatInfoLine(formatManagerUpdatePreview(plan, progress).split('\n').slice(0, 2).join(' · ')), '']);
-                const githubDigest = await resolveGitHubDigestForUpdate(sdk.config.workDir, arg || undefined);
-                prompt = buildUpdateProgressPrompt({
-                  instruction: arg || undefined,
-                  gitSummary,
-                  conversationSummaries,
-                  githubDigest,
-                  currentPlanJson: JSON.stringify(plan, null, 2),
-                  currentProgress: progress ?? undefined,
-                });
-              } else {
-                prompt = arg;
-              }
-              try {
-                const compactResult = await managerTuiSession.compact({});
-                if (compactResult.compacted) {
-                  appendStatic([...formatInfoLine(`manager compacted ${compactResult.messagesRemoved ?? '?'} older messages`), '']);
-                }
-              } catch { /* auto-compact is best-effort */ }
-              const runOptions = {
-                systemPrompt: `${buildManagerSystemPrompt(sdk.config.workDir, cfg)}\n${buildAssistantTeamSystemPrompt('project')}`,
-                tools: managerTools,
-                ...(cfg.model ? { model: cfg.model } : {}),
-                __hadamardUseDefaultTools: false,
-                __hadamardAllowedTools: managerTools.map((tool) => tool.name),
-              } as Parameters<typeof managerTuiSession.stream>[1];
-              const stream = managerTuiSession.stream(prompt, runOptions);
-              const managerToolDisplay = new ToolActivityDisplayState();
-              for await (const event of stream) {
-                if (
-                  event.type === 'tool.call'
-                  && managerToolDisplay.markStarted(event.call.id)
-                ) {
-                  appendStatic([`${A.dim}  ⚡ ${event.call.name}${A.reset}`]);
-                }
-              }
-              const result = await stream.result;
-              if (result.text) appendStatic([...renderRichText(result.text, screen.width), '']);
-              for (const proposal of turnProposals) {
-                const diff = proposal.diff;
-                appendStatic([
-                  `${A.bold}Team proposal · ${proposal.teamName}${A.reset}`,
-                  `${A.dim}${proposal.explanation || '(no explanation)'}${A.reset}`,
-                  ...[
-                    ['+ nodes', diff.addedNodes],
-                    ['- nodes', diff.removedNodes],
-                    ['~ nodes', diff.changedNodes],
-                    ['+ edges', diff.addedEdges],
-                    ['- edges', diff.removedEdges],
-                    ['~ edges', diff.changedEdges],
-                  ].filter(([, values]) => (values as string[]).length)
-                    .map(([label, values]) => `${A.dim}${label}: ${(values as string[]).join(', ')}${A.reset}`),
-                  ...(proposal.problems.length
-                    ? proposal.problems.map(problem => `${A.red}invalid: ${problem}${A.reset}`)
-                    : []),
-                  '',
-                ]);
-                const choice = await selectItem({
-                  title: `Team proposal "${proposal.teamName}"`,
-                  subtitle: proposal.problems.length
-                    ? 'Invalid proposal — Apply is unavailable'
-                    : `Target: ${proposal.projectPath}`,
-                  items: [
-                    ...(!proposal.problems.length
-                      ? [{ id: 'apply', label: 'Apply', description: 'validate base version and write the Team definition' }]
-                      : []),
-                    { id: 'reject', label: 'Reject', description: 'discard without writing' },
-                    { id: 'later', label: 'Keep pending', description: 'do not write now' },
-                  ],
-                });
-                if (choice === 'apply') {
-                  try {
-                    const applied = await assistantTeamProposals.apply(proposal.id, homeDir);
-                    appendStatic([...formatInfoLine(`Team saved: ${applied.proposal.teamName} (${applied.filePath})`), '']);
-                  } catch (error: any) {
-                    appendStatic([...formatErrorLine(`Team apply failed: ${error.message}`), '']);
-                  }
-                } else if (choice === 'reject') {
-                  assistantTeamProposals.reject(proposal.id);
-                  appendStatic([...formatInfoLine('Team proposal rejected; no file was written.'), '']);
-                }
-              }
-              if (isUpdate) appendStatic([...formatInfoLine(`progress updated · ${managerProgressPath(sdk.config.workDir, homeDir)}`), '']);
-            } catch (error: any) {
-              appendStatic([...formatErrorLine(`manager error: ${error.message}`), '']);
-            }
-            return;
-          }
-          appendStatic([...formatErrorLine('usage: /manager [status|chat <message>|update [instruction]|sessions|new|resume <id>|team <request>|config|schedule]'), '']);
           return;
         }
         default:
