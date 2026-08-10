@@ -29,14 +29,34 @@
 import type {
   MemberStatus,
   TeamDefinition,
-  TeamEvent,
   TeamGraphEdge,
   TeamGraphNode,
-  TeamGraphReturnMode,
   TeamGraphTrigger,
-  TeamMember,
 } from '../types.js';
-import { buildMemberIdentities, TEAM_READ_ONLY_EXPERT_TOOL_NAMES, type MemberIdentity } from './teamRuntime.js';
+import { buildMemberIdentities, type MemberIdentity } from './teamMemberIdentity.js';
+import { TEAM_READ_ONLY_EXPERT_TOOL_NAMES } from './teamToolPolicy.js';
+import {
+  edgeConditionPasses,
+  expandTeamGraphEdges,
+  graphNodeRef,
+  type GraphNodeRunContext,
+  type GraphNotifyResult,
+  type OrchestrateGraphOptions,
+  type OrchestrateGraphResult,
+} from './teamGraphShared.js';
+export {
+  edgeConditionPasses,
+  expandTeamGraphEdges,
+  formatTeamGraphEdgeLabel,
+  graphNodeRef,
+  isUndirectedTeamGraphEdge,
+  migrateTeamDefinitionToV2,
+  type GraphNodeRunContext,
+  type GraphNodeRunResult,
+  type GraphNotifyResult,
+  type OrchestrateGraphOptions,
+  type OrchestrateGraphResult,
+} from './teamGraphShared.js';
 import {
   isTeamGraphV3,
   graphNodeKind,
@@ -57,44 +77,6 @@ export {
 
 /** v1 cap: nodes per graph (kept in the same order as the AgentPool bound). */
 export const MAX_GRAPH_NODES = 16;
-
-/** The ref a node is addressed by in edges/entryNodeIds: id → name → role → model. */
-export function graphNodeRef(node: TeamMember | TeamGraphNode): string {
-  const gn = node as TeamGraphNode;
-  if (gn.kind === 'task') return (gn.id ?? 'task').trim() || 'task';
-  if (gn.kind === 'return') return (gn.id ?? 'return').trim() || 'return';
-  return (node.id ?? node.name ?? node.role ?? node.model ?? '').trim();
-}
-
-/** True when the edge is stored/configured as bidirectional (↔). */
-export function isUndirectedTeamGraphEdge(edge: TeamGraphEdge): boolean {
-  return edge.direction === 'undirected';
-}
-
-/** Label for GUI edge titles: `A → B` or `A ↔ B`. */
-export function formatTeamGraphEdgeLabel(edge: Pick<TeamGraphEdge, 'from' | 'to' | 'direction'>): string {
-  const sep = isUndirectedTeamGraphEdge(edge) ? ' ↔ ' : ' → ';
-  return `${edge.from}${sep}${edge.to}`;
-}
-
-/**
- * Runtime expansion: undirected edges gain a reverse directed sibling.
- * Loop back-edges stay one-way to preserve convergence semantics.
- */
-export function expandTeamGraphEdges(edges: TeamGraphEdge[]): TeamGraphEdge[] {
-  const expanded: TeamGraphEdge[] = [];
-  for (const edge of edges) {
-    expanded.push(edge);
-    if (!isUndirectedTeamGraphEdge(edge) || edge.loop) continue;
-    expanded.push({
-      ...edge,
-      from: edge.to,
-      to: edge.from,
-      direction: 'directed',
-    });
-  }
-  return expanded;
-}
 
 interface NormalizedGraph {
   nodes: TeamGraphNode[];
@@ -293,130 +275,9 @@ export function toPersistedTeamDefinition(definition: TeamDefinition): TeamDefin
   };
 }
 
-/**
- * Pure v1 → v2 migrator. Maps legacy members/primary/reviewer onto graph
- * nodes + edges and converts `reviewEdges` into `channel: 'review'` edges,
- * dropping the legacy field (no long-term dual-track). The input is not
- * mutated; a definition that is already graph-orchestrated is returned as-is.
- *
- * Shape produced:
- *  - panel modes: every member is an entry node; with a `primary` each member
- *    additionally feeds it via an `on_complete` edge (parallel → synthesize).
- *  - reviewer modes: the reviewer becomes the single entry node.
- */
-export function migrateTeamDefinitionToV2(definition: TeamDefinition): TeamDefinition {
-  if (definition.orchestration === 'graph' || definition.mode === 'graph') {
-    return definition;
-  }
-
-  const nodes: TeamGraphNode[] = [];
-  const edges: TeamGraphEdge[] = [];
-  const isReviewer = definition.mode === 'reviewer' || definition.mode === 'executor-reviewer';
-
-  if (isReviewer) {
-    if (definition.reviewer) nodes.push({ ...definition.reviewer, entry: true });
-  } else {
-    for (const member of definition.members ?? []) {
-      nodes.push({ ...member, entry: true });
-    }
-    if (definition.primary) {
-      const primaryNode: TeamGraphNode = { ...definition.primary };
-      nodes.push(primaryNode);
-      const primaryRef = graphNodeRef(primaryNode) || 'primary';
-      for (const member of definition.members ?? []) {
-        const from = graphNodeRef(member);
-        if (from) edges.push({ from, to: primaryRef, channel: 'message', trigger: 'on_complete' });
-      }
-    }
-  }
-
-  // reviewEdges → review edges (then dropped — the field does not carry forward).
-  for (const reviewEdge of definition.reviewEdges ?? []) {
-    if (!reviewEdge?.from || !reviewEdge?.to) continue;
-    edges.push({
-      from: reviewEdge.from,
-      to: reviewEdge.to,
-      channel: 'review',
-      trigger: 'on_complete',
-      note: reviewEdge.note,
-    });
-  }
-
-  const migrated: TeamDefinition = {
-    ...definition,
-    mode: 'graph',
-    version: 2,
-    orchestration: 'graph',
-    nodes,
-    edges,
-  };
-  delete migrated.reviewEdges;
-  return migrated;
-}
-
 // ═══════════════════════════════════════════════════════════════════
 //  Engine — injectable-runner orchestration (unit-testable, no model calls)
 // ═══════════════════════════════════════════════════════════════════
-
-export interface GraphNodeRunResult {
-  report: string;
-  ok: boolean;
-  error?: string;
-}
-
-/** Outcome of one `NotifyTeammate` push from a running node. */
-export interface GraphNotifyResult {
-  ok: boolean;
-  /** Identity ids the message was delivered to. */
-  delivered: string[];
-  error?: string;
-}
-
-/** Per-node context the engine hands to `runNode`. */
-export interface GraphNodeRunContext {
-  /**
-   * Identity ids reachable from this node over communication edges
-   * (`on_tool_call` / `on_handoff` / `on_review_request`). Empty when the
-   * node has none — do not offer a NotifyTeammate tool then.
-   */
-  commTargets: string[];
-  /**
-   * Push a message along this node's communication edges. `to: '*'`
-   * broadcasts to every commTarget. Delivery wakes a target that is not yet
-   * running and whose `on_complete` requirements are satisfied; a target
-   * already running (or done) does not receive it.
-   */
-  notify: (to: string, message: string) => GraphNotifyResult;
-}
-
-export interface OrchestrateGraphOptions {
-  prompt: string;
-  definition: TeamDefinition;
-  /** Runs one node to completion (the real engine wraps `runMemberAgent`). */
-  runNode: (
-    node: TeamGraphNode,
-    identity: MemberIdentity,
-    task: string,
-    ctx: GraphNodeRunContext,
-  ) => Promise<GraphNodeRunResult>;
-  onEvent?: (event: TeamEvent) => void;
-}
-
-export interface OrchestrateGraphResult {
-  answer: string;
-  /** Identity ids of nodes that never ran (unreachable / gated out / never notified). */
-  skipped: string[];
-  /** Per-node reports in completion order. */
-  reports: Array<{ id: string; report: string; ok: boolean }>;
-  /** v3: null when Return mode is void (natural convergence). */
-  returnValue?: string | null;
-  returnMode?: TeamGraphReturnMode;
-  returnNodeId?: string;
-  rounds?: number;
-  incompleteReason?: string;
-  /** v3: output from the last edge that completed the run (e.g. primary FINALIZE). */
-  lastFromOutput?: string;
-}
 
 function renderPayload(edge: TeamGraphEdge, fromId: string, output: string, runPrompt: string): string {
   if (edge.payloadTemplate) {
@@ -446,20 +307,6 @@ function isCommunicationTrigger(trigger: TeamGraphTrigger | undefined): boolean 
  * Evaluate an edge's `condition` gate against the upstream output.
  * `/pattern/flags` → regex test; anything else → substring test.
  */
-export function edgeConditionPasses(condition: string | undefined, output: string): boolean {
-  if (!condition) return true;
-  const trimmed = condition.trim();
-  const regexMatch = trimmed.match(/^\/(.*)\/([a-z]*)$/);
-  if (regexMatch) {
-    try {
-      return new RegExp(regexMatch[1]!, regexMatch[2]).test(output);
-    } catch {
-      return false;
-    }
-  }
-  return output.includes(trimmed);
-}
-
 /**
  * Execute the graph: entries start in parallel with the run prompt; every
  * completed node fires its `on_complete` out-edges (emitting
@@ -757,7 +604,7 @@ export function ensureConfiguredTeamGraph(definition: TeamDefinition): TeamDefin
  * the editor confirms it, the engine honors it).
  */
 export async function buildGraphNodeTools(node: TeamGraphNode, cwd: string) {
-  const { buildReadOnlyExpertTools } = await import('./teamRuntime.js');
+  const { buildReadOnlyExpertTools } = await import('./teamReadOnlyTools.js');
   if (!node.allowedTools?.length) return buildReadOnlyExpertTools(cwd);
   const { createHadamardCoreTools } = await import('../tools/hadamardCoreTools.js');
   const { createTavilySearchTool } = await import('../tools/tavilySearch.js');

@@ -6,11 +6,9 @@
  * status, and cleanup are handled in exactly one place instead of being
  * duplicated per mode.
  *
- * Leaf module: it imports `agentClient` only lazily (inside `runMemberAgent`)
- * to avoid the agentClient → modelTeam → teamRuntime require cycle. The
- * top-level import of `createAgentSdk` is type-only (erased at runtime).
+ * The concrete SDK client is supplied through the application runner port;
+ * this module never imports the agentClient composition root.
  */
-import type { createAgentSdk as CreateAgentSdk } from '../runtime/agentClient.js';
 import type {
   AgentPoolSlot,
   AgentRunOptions,
@@ -21,6 +19,12 @@ import type {
 } from '../types.js';
 import { AgentPool } from './agentPool.js';
 import type { EffectiveAgentRunOptions } from '../runtime/effectiveAgentRunOptions.js';
+import type { TeamAgentRunner } from '../application/teamAgentRunnerPort.js';
+import { getTeamAgentRunnerFactory } from '../application/teamAgentRunnerRegistry.js';
+import type { MemberIdentity } from './teamMemberIdentity.js';
+export { buildMemberIdentities, type MemberIdentity } from './teamMemberIdentity.js';
+export { TEAM_READ_ONLY_EXPERT_TOOL_NAMES } from './teamToolPolicy.js';
+export { buildReadOnlyExpertTools } from './teamReadOnlyTools.js';
 
 /** Resolve a `$ENV_VAR` apiKey reference; literal keys pass through unchanged. */
 export function resolveApiKey(apiKey?: string): string | undefined {
@@ -59,45 +63,7 @@ export async function mapWithConcurrency<T, R>(
 }
 
 /** Default read-only tool names for graph agent nodes (matches buildReadOnlyExpertTools). */
-export const TEAM_READ_ONLY_EXPERT_TOOL_NAMES = ['Read', 'Glob', 'Grep', 'WebFetch', 'TavilySearch'] as const;
-
 /** Read-only tool set for expert/reviewer agents (no write/edit/bash/delegation). */
-export async function buildReadOnlyExpertTools(cwd: string): Promise<AgentToolDefinition[]> {
-  const { createHadamardFileTools } = await import('../tools/hadamardFileTools.js');
-  const { createHadamardWebTools } = await import('../tools/hadamardWebTools.js');
-  const { createTavilySearchTool } = await import('../tools/tavilySearch.js');
-  const READ_ONLY_FILE_TOOLS = new Set(['Read', 'Glob', 'Grep']);
-  return [
-    ...createHadamardFileTools({ cwd }).filter((t) => READ_ONLY_FILE_TOOLS.has(t.name)),
-    ...createHadamardWebTools().filter((t) => t.name === 'WebFetch'),
-    createTavilySearchTool(),
-  ];
-}
-
-export interface MemberIdentity {
-  id: string;
-  model: string;
-  role?: string;
-}
-
-/**
- * Assign each member a stable, unique identity for reports/events/status.
- * Preference: explicit id → name → role → model; duplicates get a `#n` suffix so
- * two members sharing a model (the common default) never collide in labels.
- */
-export function buildMemberIdentities(
-  members: Array<{ id?: string; name?: string; role?: string; model?: string }>,
-): MemberIdentity[] {
-  const used = new Map<string, number>();
-  return members.map((member) => {
-    const base = (member.id ?? member.name ?? member.role ?? member.model ?? 'member').trim() || 'member';
-    const seen = used.get(base) ?? 0;
-    used.set(base, seen + 1);
-    const id = seen === 0 ? base : `${base}#${seen + 1}`;
-    return { id, model: member.model ?? '', role: member.role };
-  });
-}
-
 export interface PreflightResult {
   ok: boolean;
   error?: string;
@@ -189,13 +155,12 @@ export async function runMemberAgent(opts: RunMemberOptions): Promise<MemberRunR
 
   const pool = opts.pool ?? new AgentPool(1);
   let slot: AgentPoolSlot | undefined;
-  let sdk: Awaited<ReturnType<typeof CreateAgentSdk>> | undefined;
+  let sdk: TeamAgentRunner | undefined;
 
   try {
     slot = await pool.acquire(timeoutMs);
-    const { createAgentSdk } = await import('../runtime/agentClient.js');
     const effective = opts.effectiveAgentOptions;
-    sdk = await createAgentSdk({
+    sdk = await getTeamAgentRunnerFactory()({
       model: member.model,
       modelApi: opts.modelApi,
       provider: member.provider,

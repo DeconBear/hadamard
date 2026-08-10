@@ -9,7 +9,7 @@ import {
   migrateTeamDefinitionToGraph,
   validateTeamGraph,
 } from './teamGraph.js';
-import { validateWorkflowSquad } from './workflowSquad.js';
+import { validateWorkflowSquad } from './workflowSquadValidation.js';
 
 export type TeamProposeSquadType = 'graph' | 'workflow' | 'agent' | 'subagent';
 
