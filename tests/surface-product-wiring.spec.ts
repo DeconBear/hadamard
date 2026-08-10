@@ -10,7 +10,12 @@ const PRODUCT_SURFACES = [
 
 async function readSurfaceSource(file: string): Promise<string> {
   const files = file === 'src/tui/hadamardTui.ts'
-    ? [file, 'src/tui/hadamardTuiController.ts', 'src/tui/tuiRuntimeLifecycle.ts']
+    ? [
+        file,
+        'src/tui/hadamardTuiController.ts',
+        'src/tui/tuiRuntimeLifecycle.ts',
+        'src/tui/tuiFramePresenter.ts',
+      ]
     : [file];
   return (await Promise.all(files.map(source =>
     readFile(new URL(`../${source}`, import.meta.url), 'utf8')))).join('\n');
