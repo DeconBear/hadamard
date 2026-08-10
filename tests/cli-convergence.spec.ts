@@ -9,6 +9,22 @@ import {
 
 const root = new URL('../', import.meta.url);
 
+async function readTuiSources(): Promise<string> {
+  return (await Promise.all([
+    readFile(new URL('src/tui/hadamardTui.ts', root), 'utf8'),
+    readFile(new URL('src/tui/hadamardTuiController.ts', root), 'utf8'),
+    readFile(new URL('src/tui/tuiTextPresenter.ts', root), 'utf8'),
+    readFile(new URL('src/tui/tuiSystemPrompt.ts', root), 'utf8'),
+  ])).join('\n');
+}
+
+async function readGuiSources(): Promise<string> {
+  return (await Promise.all([
+    readFile(new URL('src/gui/hadamardGui.ts', root), 'utf8'),
+    readFile(new URL('src/gui/hadamardGuiAssets.ts', root), 'utf8'),
+  ])).join('\n');
+}
+
 function commandCase(
   source: string,
   marker: string,
@@ -44,8 +60,8 @@ describe('interactive CLI convergence', () => {
 
   it('keeps every shared top-level and second-level command wired in TUI and GUI', async () => {
     const [tui, gui] = await Promise.all([
-      readFile(new URL('src/tui/hadamardTui.ts', root), 'utf8'),
-      readFile(new URL('src/gui/hadamardGui.ts', root), 'utf8'),
+      readTuiSources(),
+      readGuiSources(),
     ]);
 
     const tuiCases = new Map(Object.keys(HADAMARD_INTERACTIVE_COMMANDS).map(command => [
@@ -108,8 +124,8 @@ describe('interactive CLI convergence', () => {
 
   it('creates Automation targets from Agent-page workflows on both interactive surfaces', async () => {
     const [tui, gui] = await Promise.all([
-      readFile(new URL('src/tui/hadamardTui.ts', root), 'utf8'),
-      readFile(new URL('src/gui/hadamardGui.ts', root), 'utf8'),
+      readTuiSources(),
+      readGuiSources(),
     ]);
     const tuiAutomation = commandCase(tui, 'async function runSlashCommand(raw: string)', '        ', 'automation');
     const guiAutomation = commandCase(gui, 'async function runSlashCommand(raw: string)', '      ', 'automation');
