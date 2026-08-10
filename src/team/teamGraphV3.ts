@@ -9,7 +9,7 @@ import type {
   TeamGraphReturnMode,
   TeamMember,
 } from '../types.js';
-import { buildMemberIdentities, type MemberIdentity } from './teamRuntime.js';
+import { buildMemberIdentities, type MemberIdentity } from './teamMemberIdentity.js';
 import {
   edgeConditionPasses,
   expandTeamGraphEdges,
@@ -17,7 +17,7 @@ import {
   migrateTeamDefinitionToV2,
   type OrchestrateGraphOptions,
   type OrchestrateGraphResult,
-} from './teamGraph.js';
+} from './teamGraphShared.js';
 
 export function graphNodeKind(node: TeamGraphNode): 'task' | 'agent' | 'return' {
   return node.kind ?? 'agent';

@@ -221,6 +221,7 @@ import {
   extractTextFromContent,
 } from './messageUtils.js';
 import { AgentSession } from './agentSession.js';
+import { registerTeamAgentRunnerFactory } from '../application/teamAgentRunnerRegistry.js';
 import {
   HADAMARD_EXECUTION_ID_KEY,
   HADAMARD_PARENT_EXECUTION_ID_KEY,
@@ -5421,6 +5422,8 @@ export async function createAgentSdk(
   recordCompatUsage('createAgentSdk');
   return HadamardAgentClient.create(options);
 }
+
+registerTeamAgentRunnerFactory(createAgentSdk);
 
 function resolveTaskId(input: { task_id?: string; taskId?: string }): string | undefined {
   return [input.task_id, input.taskId]
