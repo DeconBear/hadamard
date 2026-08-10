@@ -25,6 +25,7 @@ function readGuiSources(root: string): string {
     readFileSync(join(root, 'src', 'gui', 'guiChatHttpController.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'gui', 'guiSettingsHttpController.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'gui', 'guiTeamHttpController.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'gui', 'guiAgentHttpController.ts'), 'utf8'),
   ].join('\n');
 }
 

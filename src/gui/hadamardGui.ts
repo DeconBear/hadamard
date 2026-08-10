@@ -376,6 +376,7 @@ import { registerGuiShellHttpController } from './guiShellHttpController.js';
 import { registerGuiChatHttpController } from './guiChatHttpController.js';
 import { registerGuiSettingsHttpController } from './guiSettingsHttpController.js';
 import { registerGuiTeamHttpController } from './guiTeamHttpController.js';
+import { registerGuiAgentHttpController } from './guiAgentHttpController.js';
 import type {
   HadamardCanUseTool,
   HadamardEffort,
@@ -7834,6 +7835,248 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       }
     },
   });
+  registerGuiAgentHttpController(httpRouter, {
+    listProfiles: () => ({
+      status: 200,
+      body: { profiles: listAgentProfiles(resolveGuiHomeDir()) },
+    }),
+    saveProfile: async body => {
+      try {
+        const profile: AgentProfile = {
+          name: typeof body.name === 'string' ? body.name.trim() : '',
+          bridgeConfig: typeof body.bridgeConfig === 'string' ? body.bridgeConfig.trim() : '',
+          model: typeof body.model === 'string' ? body.model.trim() : '',
+        };
+        if (typeof body.description === 'string' && body.description.trim()) {
+          profile.description = body.description.trim();
+        }
+        if (typeof body.systemPromptAppend === 'string' && body.systemPromptAppend.trim()) {
+          profile.systemPromptAppend = body.systemPromptAppend.trim();
+        }
+        if (body.promptMode === 'extend' || body.promptMode === 'replace') {
+          profile.promptMode = body.promptMode;
+        }
+        if (typeof body.subagent === 'boolean') profile.subagent = body.subagent;
+        if (typeof body.permissionMode === 'string' && body.permissionMode.trim()) {
+          profile.permissionMode = body.permissionMode.trim() as AgentProfile['permissionMode'];
+        }
+        if (typeof body.effort === 'string' && body.effort.trim()) {
+          profile.effort = body.effort.trim() as AgentProfile['effort'];
+        }
+        if (body.maxTokens !== undefined && body.maxTokens !== null && body.maxTokens !== '') {
+          const maxTokens = typeof body.maxTokens === 'number' ? body.maxTokens : Number(body.maxTokens);
+          if (Number.isFinite(maxTokens) && maxTokens > 0) profile.maxTokens = Math.floor(maxTokens);
+        }
+        if (body.temperature !== undefined && body.temperature !== null && body.temperature !== '') {
+          const temperature = typeof body.temperature === 'number' ? body.temperature : Number(body.temperature);
+          if (Number.isFinite(temperature) && temperature >= 0 && temperature <= 2) {
+            profile.temperature = temperature;
+          }
+        }
+        if (body.topP !== undefined && body.topP !== null && body.topP !== '') {
+          const topP = typeof body.topP === 'number' ? body.topP : Number(body.topP);
+          if (Number.isFinite(topP) && topP >= 0 && topP <= 1) profile.topP = topP;
+        }
+        if (Array.isArray(body.allowedTools)) {
+          const tools = body.allowedTools.filter(
+            (tool: unknown): tool is string => typeof tool === 'string' && tool.trim().length > 0,
+          );
+          if (tools.length) profile.allowedTools = tools;
+        }
+        if (body.workspaceAccess === 'workspace' || body.workspaceAccess === 'full') {
+          profile.workspaceAccess = body.workspaceAccess;
+        }
+        if (body.maxIterations !== undefined && body.maxIterations !== null && body.maxIterations !== '') {
+          const maxIterations = typeof body.maxIterations === 'number'
+            ? body.maxIterations
+            : Number(body.maxIterations);
+          if (Number.isFinite(maxIterations) && maxIterations > 0) {
+            profile.maxIterations = Math.floor(maxIterations);
+          }
+        }
+        if (body.timeoutMs !== undefined && body.timeoutMs !== null && body.timeoutMs !== '') {
+          const timeoutMs = typeof body.timeoutMs === 'number' ? body.timeoutMs : Number(body.timeoutMs);
+          if (Number.isFinite(timeoutMs) && timeoutMs > 0) profile.timeoutMs = Math.floor(timeoutMs);
+        }
+        const existingDefinition = readAgentDefinitionMarkdown(profile.name, resolveGuiHomeDir(), workDir);
+        const scope = body.scope === 'project'
+          ? 'project'
+          : existingDefinition?.source === 'project' ? 'project' : 'personal';
+        const extras: AgentDefinitionExtraFields = {};
+        if (body.promptMode === 'extend' || body.promptMode === 'replace') extras.promptMode = body.promptMode;
+        if (typeof body.subagent === 'boolean') extras.subagent = body.subagent;
+        extras.permissionMode = profile.permissionMode;
+        extras.effort = profile.effort;
+        extras.maxTokens = profile.maxTokens;
+        extras.temperature = profile.temperature;
+        extras.topP = profile.topP;
+        extras.tools = profile.allowedTools;
+        extras.workspaceAccess = profile.workspaceAccess;
+        extras.maxIterations = profile.maxIterations;
+        extras.timeoutMs = profile.timeoutMs;
+        if (profile.bridgeConfig) {
+          const bridgeCfg = findBridgeConfig(profile.bridgeConfig, resolveGuiHomeDir());
+          const runtime = bridgeCfg?.runtime?.trim();
+          if (runtime && runtime !== 'hadamard' && (bridgeCfg?.execution ?? 'api') === 'cli') {
+            extras.runtime = runtime;
+          }
+        }
+        const inheritModel = !profile.bridgeConfig || !profile.model;
+        const unifiedWrite = inheritModel || scope === 'project' || Object.keys(extras).length > 0;
+        const result = await withRuntimeMutation(async () => {
+          if (!unifiedWrite) {
+            const saved = upsertAgentProfile(profile, resolveGuiHomeDir());
+            return { ok: true, profile: saved.profile, warnings: saved.warnings, state: await state() };
+          }
+          if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(profile.name)) {
+            throw new Error('Invalid profile name (use letters, digits, . _ -)');
+          }
+          const directory = scope === 'project'
+            ? path.join(workDir, '.hadamard', 'agents')
+            : undefined;
+          let warnings: string[] = [];
+          if (inheritModel) {
+            writeAgentDefinitionMarkdown({
+              name: profile.name,
+              description: profile.description,
+              body: profile.systemPromptAppend,
+              extras,
+              directory,
+              homeDir: resolveGuiHomeDir(),
+            });
+          } else {
+            const validation = validateAgentProfile(profile, resolveGuiHomeDir());
+            warnings = validation.warnings;
+            writeAgentProfileMarkdown(validation.profile, resolveGuiHomeDir(), { directory, extras });
+          }
+          let conversion: string[] = [];
+          if (typeof body.convertFromSquad === 'string' && body.convertFromSquad.trim()) {
+            const report = await convertAgentSquadToAgentDefinition(
+              body.convertFromSquad.trim(),
+              profile.name,
+              await referenceOperationContext(),
+            );
+            conversion = report.rewritten;
+          }
+          return {
+            ok: true,
+            profile: inheritModel ? null : profile,
+            warnings,
+            conversion,
+            state: await state(),
+          };
+        });
+        return { status: 200, body: result };
+      } catch (error) {
+        return { status: runtimeMutationErrorStatus(error), body: runtimeMutationErrorBody(error) };
+      }
+    },
+    deleteProfile: async body => {
+      try {
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name) return { status: 400, body: { error: 'Missing profile name' } };
+        const strategy = parseDeleteStrategy(body.strategy);
+        const next = await withRuntimeMutation(async () => {
+          if (strategy.type !== 'leave') {
+            await applyDeleteFallback('agent', name, strategy, await referenceOperationContext());
+          }
+          deleteAgentProfile(name, resolveGuiHomeDir());
+          if (body.scope === 'project') {
+            deleteAgentProfileMarkdown(name, resolveGuiHomeDir(), path.join(workDir, '.hadamard', 'agents'));
+          }
+          if (activeAgentSelectionName === name) {
+            activeAgentSelectionName = null;
+            disableBridge();
+            await persistSessionRuntimeMetadata();
+          }
+          return state();
+        });
+        return { status: 200, body: next };
+      } catch (error) {
+        return { status: runtimeMutationErrorStatus(error), body: runtimeMutationErrorBody(error) };
+      }
+    },
+    definition: name => {
+      if (!name) return { status: 400, body: { error: 'Missing name' } };
+      const definition = readAgentDefinitionMarkdown(name, resolveGuiHomeDir(), workDir);
+      if (!definition) return { status: 404, body: { error: `Agent definition not found: ${name}` } };
+      return { status: 200, body: { definition } };
+    },
+    templates: () => ({ status: 200, body: { templates: getHadamardAgentTemplates() } }),
+    instantiateTemplate: async body => {
+      try {
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        const template = name ? getHadamardAgentTemplate(name) : undefined;
+        if (!template) return { status: 404, body: { error: `Unknown agent template: ${name}` } };
+        const scope = body.scope === 'project' ? 'project' : 'personal';
+        const directory = scope === 'project'
+          ? path.join(workDir, '.hadamard', 'agents')
+          : undefined;
+        const result = await withRuntimeMutation(async () => {
+          if (readAgentDefinitionMarkdown(template.name, resolveGuiHomeDir(), workDir)) {
+            throw new Error(`An agent named "${template.name}" already exists.`);
+          }
+          const filePath = writeAgentDefinitionMarkdown({
+            name: template.name,
+            description: template.description,
+            body: template.body,
+            extras: {
+              permissionMode: template.frontmatter.permissionMode as AgentDefinitionExtraFields['permissionMode'],
+              tools: Array.isArray(template.frontmatter.tools)
+                ? template.frontmatter.tools.map(String)
+                : undefined,
+            },
+            directory,
+            homeDir: resolveGuiHomeDir(),
+          });
+          return { filePath };
+        });
+        invalidateHeavyState();
+        return { status: 200, body: { ok: true, ...result, state: await state() } };
+      } catch (error) {
+        return { status: runtimeMutationErrorStatus(error), body: runtimeMutationErrorBody(error) };
+      }
+    },
+    activate: async body => {
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      const configName = typeof body.bridgeConfig === 'string' ? body.bridgeConfig.trim() : '';
+      const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
+      if (!name && !configName) {
+        return { status: 400, body: { error: 'Missing agent name or config name' } };
+      }
+      try {
+        await withRuntimeMutation(async () => {
+          let config: PersistedBridgeConfig;
+          let defaultEffort: string | undefined;
+          let nextAgentSelectionName: string | null = null;
+          if (name) {
+            const resolved = await resolveSelectableAgentRun(name, resolveGuiHomeDir());
+            config = { ...resolved.bridgeConfig, model: resolved.selectable.model };
+            nextAgentSelectionName = resolved.selectable.name;
+            defaultEffort = resolved.profile.effort || resolved.selectable.effort;
+          } else {
+            const stored = findBridgeConfig(configName, resolveGuiHomeDir());
+            if (!stored) throw new Error(`Bridge config not found: ${configName}`);
+            config = { ...stored, ...(requestedModel ? { model: requestedModel } : {}) };
+          }
+          await activateBridgeConfig(config);
+          activeAgentSelectionName = nextAgentSelectionName;
+          activeRouter = null;
+          routedModelLabel = null;
+          await persistSessionRuntimeMetadata();
+          const requestedEffort = typeof body.effort === 'string' ? body.effort.trim() : '';
+          const effort = requestedEffort || defaultEffort;
+          if (effort === 'auto' || isEffort(effort)) {
+            await session.mergeMetadata({ __hadamardEffort: effort });
+          }
+        });
+      } catch (error) {
+        return { status: runtimeMutationErrorStatus(error), body: runtimeMutationErrorBody(error) };
+      }
+      invalidateHeavyState();
+      return { status: 200, body: await state() };
+    },
+  });
 
   const server = createServer(async (req, res) => {
     try {
@@ -9380,278 +9623,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         } catch (error) {
           return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
         }
-      }
-      if (req.method === 'GET' && url.pathname === '/api/agent-profiles') {
-        return json(res, 200, { profiles: listAgentProfiles(resolveGuiHomeDir()) });
-      }
-      if (req.method === 'POST' && url.pathname === '/api/agent-profiles') {
-        try {
-          const body = await readJson(req);
-          const profile: AgentProfile = {
-            name: typeof body.name === 'string' ? body.name.trim() : '',
-            bridgeConfig: typeof body.bridgeConfig === 'string' ? body.bridgeConfig.trim() : '',
-            model: typeof body.model === 'string' ? body.model.trim() : '',
-          };
-          if (typeof body.description === 'string' && body.description.trim()) {
-            profile.description = body.description.trim();
-          }
-          if (typeof body.systemPromptAppend === 'string' && body.systemPromptAppend.trim()) {
-            profile.systemPromptAppend = body.systemPromptAppend.trim();
-          }
-          if (body.promptMode === 'extend' || body.promptMode === 'replace') {
-            profile.promptMode = body.promptMode;
-          }
-          if (typeof body.subagent === 'boolean') profile.subagent = body.subagent;
-          if (typeof body.permissionMode === 'string' && body.permissionMode.trim()) {
-            profile.permissionMode = body.permissionMode.trim() as AgentProfile['permissionMode'];
-          }
-          if (typeof body.effort === 'string' && body.effort.trim()) {
-            profile.effort = body.effort.trim() as AgentProfile['effort'];
-          }
-          if (body.maxTokens !== undefined && body.maxTokens !== null && body.maxTokens !== '') {
-            const maxTokens = typeof body.maxTokens === 'number' ? body.maxTokens : Number(body.maxTokens);
-            if (Number.isFinite(maxTokens) && maxTokens > 0) profile.maxTokens = Math.floor(maxTokens);
-          }
-          if (body.temperature !== undefined && body.temperature !== null && body.temperature !== '') {
-            const temperature = typeof body.temperature === 'number' ? body.temperature : Number(body.temperature);
-            if (Number.isFinite(temperature) && temperature >= 0 && temperature <= 2) {
-              profile.temperature = temperature;
-            }
-          }
-          if (body.topP !== undefined && body.topP !== null && body.topP !== '') {
-            const topP = typeof body.topP === 'number' ? body.topP : Number(body.topP);
-            if (Number.isFinite(topP) && topP >= 0 && topP <= 1) {
-              profile.topP = topP;
-            }
-          }
-          if (Array.isArray(body.allowedTools)) {
-            const tools = body.allowedTools.filter(
-              (tool: unknown): tool is string => typeof tool === 'string' && tool.trim().length > 0,
-            );
-            if (tools.length) profile.allowedTools = tools;
-          }
-          if (body.workspaceAccess === 'workspace' || body.workspaceAccess === 'full') {
-            profile.workspaceAccess = body.workspaceAccess;
-          }
-          if (body.maxIterations !== undefined && body.maxIterations !== null && body.maxIterations !== '') {
-            const maxIterations = typeof body.maxIterations === 'number' ? body.maxIterations : Number(body.maxIterations);
-            if (Number.isFinite(maxIterations) && maxIterations > 0) profile.maxIterations = Math.floor(maxIterations);
-          }
-          if (body.timeoutMs !== undefined && body.timeoutMs !== null && body.timeoutMs !== '') {
-            const timeoutMs = typeof body.timeoutMs === 'number' ? body.timeoutMs : Number(body.timeoutMs);
-            if (Number.isFinite(timeoutMs) && timeoutMs > 0) profile.timeoutMs = Math.floor(timeoutMs);
-          }
-          // S2 unified store: scope + promptMode + subagent/delegation fields.
-          // Scope UI removed (user decision, 08 Aug 2026): new agents always
-          // save personal; an existing definition silently keeps its current
-          // location (the explicit scope param stays supported server-side).
-          const existingDefinition = readAgentDefinitionMarkdown(profile.name, resolveGuiHomeDir(), workDir);
-          const scope = body.scope === 'project'
-            ? 'project'
-            : existingDefinition?.source === 'project' ? 'project' : 'personal';
-          // Subagent options + Runtime selector removed from Agent UI
-          // (user decision, 09 Aug 2026). Runtime is derived from the chosen
-          // Settings configuration (bridgeConfig); promptMode/subagent still
-          // flow through extras.
-          const extras: AgentDefinitionExtraFields = {};
-          if (body.promptMode === 'extend' || body.promptMode === 'replace') extras.promptMode = body.promptMode;
-          if (typeof body.subagent === 'boolean') extras.subagent = body.subagent;
-          extras.permissionMode = profile.permissionMode;
-          extras.effort = profile.effort;
-          extras.maxTokens = profile.maxTokens;
-          extras.temperature = profile.temperature;
-          extras.topP = profile.topP;
-          extras.tools = profile.allowedTools;
-          extras.workspaceAccess = profile.workspaceAccess;
-          extras.maxIterations = profile.maxIterations;
-          extras.timeoutMs = profile.timeoutMs;
-          if (profile.bridgeConfig) {
-            const bridgeCfg = findBridgeConfig(profile.bridgeConfig, resolveGuiHomeDir());
-            const rt = bridgeCfg?.runtime?.trim();
-            if (rt && rt !== 'hadamard' && (bridgeCfg?.execution ?? 'api') === 'cli') {
-              extras.runtime = rt;
-            }
-          }
-          const inheritModel = !profile.bridgeConfig || !profile.model;
-          const unifiedWrite = inheritModel || scope === 'project' || Object.keys(extras).length > 0;
-          const result = await withRuntimeMutation(async () => {
-            if (!unifiedWrite) {
-              const saved = upsertAgentProfile(profile, resolveGuiHomeDir());
-              return { ok: true, profile: saved.profile, warnings: saved.warnings, state: await state() };
-            }
-            if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(profile.name)) {
-              throw new Error('Invalid profile name (use letters, digits, . _ -)');
-            }
-            const directory = scope === 'project'
-              ? path.join(workDir, '.hadamard', 'agents')
-              : undefined;
-            let warnings: string[] = [];
-            if (inheritModel) {
-              // "Inherit session model": a pure .md agent — no profile entry,
-              // so it stays out of the composer picker (S1a compat rule).
-              writeAgentDefinitionMarkdown({
-                name: profile.name,
-                description: profile.description,
-                body: profile.systemPromptAppend,
-                extras,
-                directory,
-                homeDir: resolveGuiHomeDir(),
-              });
-            } else {
-              const validation = validateAgentProfile(profile, resolveGuiHomeDir());
-              warnings = validation.warnings;
-              writeAgentProfileMarkdown(validation.profile, resolveGuiHomeDir(), { directory, extras });
-            }
-            // Convert-on-save (09 Aug 2026): saving from a legacy single-agent
-            // squad writes the .md agent above, then removes the squad json
-            // and rewires teamRef/targetRef references to the agent.
-            let conversion: string[] = [];
-            if (typeof body.convertFromSquad === 'string' && body.convertFromSquad.trim()) {
-              const report = await convertAgentSquadToAgentDefinition(
-                body.convertFromSquad.trim(),
-                profile.name,
-                await referenceOperationContext(),
-              );
-              conversion = report.rewritten;
-            }
-            return {
-              ok: true,
-              profile: inheritModel ? null : profile,
-              warnings,
-              conversion,
-              state: await state(),
-            };
-          });
-          return json(res, 200, result);
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-      }
-      if (req.method === 'POST' && url.pathname === '/api/agent-profiles/delete') {
-        try {
-          const body = await readJson(req);
-          const name = typeof body.name === 'string' ? body.name.trim() : '';
-          if (!name) return json(res, 400, { error: 'Missing profile name' });
-          const strategy = parseDeleteStrategy(body.strategy);
-          const next = await withRuntimeMutation(async () => {
-            if (strategy.type !== 'leave') {
-              await applyDeleteFallback('agent', name, strategy, await referenceOperationContext());
-            }
-            deleteAgentProfile(name, resolveGuiHomeDir());
-            // S2: project-scoped agents live in <workDir>/.hadamard/agents.
-            if (body.scope === 'project') {
-              deleteAgentProfileMarkdown(name, resolveGuiHomeDir(), path.join(workDir, '.hadamard', 'agents'));
-            }
-            // Active agent deleted: fall back to the session default model.
-            if (activeAgentSelectionName === name) {
-              activeAgentSelectionName = null;
-              disableBridge();
-              await persistSessionRuntimeMetadata();
-            }
-            return state();
-          });
-          return json(res, 200, next);
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-      }
-      // S2: one unified .md agent definition (raw frontmatter + body) for
-      // editor prefill — the profile compat view does not carry the
-      // subagent/delegation extras.
-      if (req.method === 'GET' && url.pathname === '/api/agent-definition') {
-        const name = url.searchParams.get('name')?.trim() ?? '';
-        if (!name) return json(res, 400, { error: 'Missing name' });
-        const definition = readAgentDefinitionMarkdown(name, resolveGuiHomeDir(), workDir);
-        if (!definition) return json(res, 404, { error: `Agent definition not found: ${name}` });
-        return json(res, 200, { definition });
-      }
-      // S2 template library (§9.2): list inert templates; instantiate writes a
-      // .md into the chosen scope and the agent becomes a normal user agent.
-      if (req.method === 'GET' && url.pathname === '/api/agent-templates') {
-        return json(res, 200, { templates: getHadamardAgentTemplates() });
-      }
-      if (req.method === 'POST' && url.pathname === '/api/agent-templates/instantiate') {
-        try {
-          const body = await readJson(req);
-          const name = typeof body.name === 'string' ? body.name.trim() : '';
-          const template = name ? getHadamardAgentTemplate(name) : undefined;
-          if (!template) return json(res, 404, { error: `Unknown agent template: ${name}` });
-          const scope = body.scope === 'project' ? 'project' : 'personal';
-          const directory = scope === 'project'
-            ? path.join(workDir, '.hadamard', 'agents')
-            : undefined; // writeAgentDefinitionMarkdown defaults to the personal dir
-          const result = await withRuntimeMutation(async () => {
-            if (readAgentDefinitionMarkdown(template.name, resolveGuiHomeDir(), workDir)) {
-              throw new Error(`An agent named "${template.name}" already exists.`);
-            }
-            const filePath = writeAgentDefinitionMarkdown({
-              name: template.name,
-              description: template.description,
-              body: template.body,
-              extras: {
-                permissionMode: template.frontmatter.permissionMode as AgentDefinitionExtraFields['permissionMode'],
-                tools: Array.isArray(template.frontmatter.tools)
-                  ? template.frontmatter.tools.map(String)
-                  : undefined,
-              },
-              directory,
-              homeDir: resolveGuiHomeDir(),
-            });
-            return { filePath };
-          });
-          invalidateHeavyState();
-          return json(res, 200, { ok: true, ...result, state: await state() });
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-      }
-      if (req.method === 'POST' && url.pathname === '/api/agent/activate') {
-        const body = await readJson(req);
-        const name = typeof body.name === 'string' ? body.name.trim() : '';
-        const configName = typeof body.bridgeConfig === 'string' ? body.bridgeConfig.trim() : '';
-        const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
-        if (!name && !configName) {
-          return json(res, 400, { error: 'Missing agent name or config name' });
-        }
-        try {
-          await withRuntimeMutation(async () => {
-            let cfg: PersistedBridgeConfig;
-            let defaultEffort: string | undefined;
-            let nextAgentSelectionName: string | null = null;
-            if (name) {
-              const resolved = await resolveSelectableAgentRun(name, resolveGuiHomeDir());
-              // Keep the selectable/profile model string (may be a min/medium/max
-              // tier alias). activateBridgeConfig expands tiers for the ModelApi.
-              cfg = {
-                ...resolved.bridgeConfig,
-                model: resolved.selectable.model,
-              };
-              nextAgentSelectionName = resolved.selectable.name;
-              defaultEffort = resolved.profile.effort || resolved.selectable.effort;
-            } else {
-              const stored = findBridgeConfig(configName, resolveGuiHomeDir());
-              if (!stored) throw new Error(`Bridge config not found: ${configName}`);
-              cfg = {
-                ...stored,
-                ...(requestedModel ? { model: requestedModel } : {}),
-              };
-            }
-            await activateBridgeConfig(cfg);
-            activeAgentSelectionName = nextAgentSelectionName;
-            activeRouter = null;
-            routedModelLabel = null;
-            await persistSessionRuntimeMetadata();
-            const requestedEffort = typeof body.effort === 'string' ? body.effort.trim() : '';
-            const effort = requestedEffort || defaultEffort;
-            if (effort === 'auto' || isEffort(effort)) {
-              await session.mergeMetadata({ __hadamardEffort: effort });
-            }
-          });
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-        invalidateHeavyState();
-        return json(res, 200, await state());
       }
       if (req.method === 'POST' && url.pathname === '/api/router/activate') {
         const body = await readJson(req);
