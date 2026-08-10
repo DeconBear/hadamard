@@ -191,6 +191,7 @@ import { buildTuiSystemPrompt } from './tuiSystemPrompt.js';
 import { TuiInputController } from './tuiInputController.js';
 import { runTuiMemoryCommand } from './tuiMemoryCommandHandler.js';
 import { runTuiConfigurationCommand } from './tuiConfigurationCommandHandler.js';
+import { runTuiBasicCommand } from './tuiBasicCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -1736,10 +1737,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   }
 
   // ── Slash commands ─────────────────────────────────────────────────
-
-  function commandUsage(name: string): string {
-    return interactiveCommandUsage(name);
-  }
 
   async function resumeSession(
     sessionId: string,
@@ -3564,44 +3561,38 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         appendStatic,
       });
       if (configurationCommandHandled) return;
-      switch (name) {
-        case 'help': {
-          const selected = await selectItem({
-            title: 'Help',
-            items: Object.entries(TUI_SLASH_COMMANDS).map(([command, description]) => ({
-              id: command,
-              label: `/${command}`,
-              description,
-              detail: commandUsage(command),
-            })),
-          });
-          if (selected) {
-            appendStatic([
-              `${A.cyan}${commandUsage(selected)}${A.reset}`,
-              `${A.dim}${TUI_SLASH_COMMANDS[selected]}${A.reset}`,
-              '',
-            ]);
-          }
-          return;
-        }
-        case 'clear':
+      const basicCommandHandled = await runTuiBasicCommand(name, args, {
+        selectItem,
+        clear: () => {
           process.stdout.write('\x1b[2J\x1b[H');
           screen.setDynamic([]);
           renderDynamic();
-          return;
-        case 'init': {
-          // Bootstrap AGENTS.md by having the agent explore the repo and
-          // write concise guidance for subsequent Hadamard sessions.
-          // generated file is then injected into every system prompt).
-          await startRun(
-            'Create or update an AGENTS.md at the repo root with concise guidance for AI coding assistants: build/test/lint/run commands, a short architecture overview, key conventions, and non-obvious gotchas. Explore with Glob, Grep, and Read first (package.json, README, existing AGENTS.md, key source dirs). If AGENTS.md already exists, improve it without discarding user-authored sections. Keep it focused and avoid filler.',
-          );
-          return;
-        }
-        case 'exit':
-        case 'quit':
-          await shutdown(0);
-          return;
+        },
+        startRun,
+        shutdown: () => { void shutdown(0); },
+        toolNames: () => toolMetadata.map(tool => tool.name),
+        snapshot: () => ({
+          model: session.model,
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          costUsd: totalCostUsd,
+          usageByConfiguration: [...configUsage].map(([name, record]) => ({
+            name,
+            ...record,
+            cost: configCost(name, record),
+            active: activeBridgeConfig?.name === name,
+          })),
+          messages: session.messages.length,
+          toolCount: toolMetadata.length,
+          mcpToolCount: toolMetadata.filter(tool => tool.provider === 'mcp').length,
+          bridgeName: bridgeMode ? activeBridgeConfig?.name : undefined,
+          planMode: session.permissionContext.mode === 'plan',
+        }),
+        runGoal: async args => (await sdk.goals.command(session, args)).message,
+        appendStatic,
+      });
+      if (basicCommandHandled) return;
+      switch (name) {
         case 'plan': {
           // Plan mode (gap #6). The model can enter/exit via EnterPlanMode /
           // ExitPlanMode tools; /plan toggles the permission mode and lets the
@@ -3809,12 +3800,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           else await resumeSession(args);
           return;
         }
-        case 'tools':
-          appendStatic([
-            ...formatInfoLine(toolMetadata.map((tool) => tool.name).join(', ')),
-            '',
-          ]);
-          return;
         case 'context': {
           const contextArgs = args.trim();
           if (contextArgs === 'setting' || contextArgs === 'settings') {
@@ -3862,34 +3847,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             `  ${A.dim}active${A.reset}         model=${session.model} · effort=${currentEffort() ?? 'auto'} · team=${team} · router=${router} · bridge=${bridge}`,
             '',
           ]);
-          return;
-        }
-        case 'cost':
-        case 'usage': {
-          // Running token + spend totals for the session (gap #20).
-          const fmtTok = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
-          const costStr = totalCostUsd === null
-            ? `${A.dim}(unknown — model lacks pricing; set ~/.hadamard/pricing.json)${A.reset}`
-            : `$${totalCostUsd.toFixed(4)}`;
-          const lines = [
-            `${A.bold}Session usage${A.reset}`,
-            `  ${A.dim}tokens${A.reset}   ${fmtTok(totalInputTokens)} in · ${fmtTok(totalOutputTokens)} out`,
-            `  ${A.dim}cost${A.reset}     ${costStr}`,
-            `  ${A.dim}model${A.reset}    ${session.model}`,
-          ];
-          // Per-config breakdown panel.
-          if (configUsage.size > 0) {
-            lines.push('');
-            lines.push(`${A.bold}By config${A.reset}`);
-            for (const [name, rec] of configUsage) {
-              const active = activeBridgeConfig?.name === name;
-              const star = active ? ` ${A.green}*${A.reset}` : '';
-              const cfgCost = configCost(name, rec);
-              lines.push(`  ${A.bold}${name}${star}${A.reset}  ${A.dim}${rec.turns} turn${rec.turns === 1 ? '' : 's'}${A.reset}  ${fmtTok(rec.inputTokens)} in · ${fmtTok(rec.outputTokens)} out${cfgCost ? `  ${cfgCost}` : ''}`);
-            }
-          }
-          lines.push('');
-          appendStatic(lines);
           return;
         }
         case 'doctor': {
@@ -3957,11 +3914,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           appendStatic([...formatInfoLine(`batch complete — ${prompts.length} prompt${prompts.length === 1 ? '' : 's'} done`), '']);
           return;
         }
-        case 'goal': {
-          const commandResult = await sdk.goals.command(session, args);
-          appendStatic([...formatInfoLine(commandResult.message), '']);
-          return;
-        }
         case 'review': {
           // Run a code-review prompt on the current git diff (gap #5 subset).
           let diff = '';
@@ -3977,19 +3929,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             'File-by-file, note any real problems with file_path:line_number. Skip trivial style nits.\n\n```diff\n' +
             diff.slice(0, 80_000) + '\n```',
           );
-          return;
-        }
-        case 'stats': {
-          const fmtTok = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
-          appendStatic([
-            `${A.bold}Session stats${A.reset}`,
-            `  ${A.dim}messages${A.reset}     ${session.messages.length}`,
-            `  ${A.dim}tokens${A.reset}       ${fmtTok(totalInputTokens)} in · ${fmtTok(totalOutputTokens)} out`,
-            `  ${A.dim}tools${A.reset}        ${toolMetadata.length}${toolMetadata.filter(t => t.provider === 'mcp').length ? ` (${toolMetadata.filter(t => t.provider === 'mcp').length} MCP)` : ''}`,
-            `  ${A.dim}model${A.reset}       ${session.model}${bridgeMode && activeBridgeConfig ? ` · bridge:${activeBridgeConfig.name}` : ''}`,
-            `  ${A.dim}plan mode${A.reset}   ${session.permissionContext.mode === 'plan' ? 'on' : 'off'}`,
-            '',
-          ]);
           return;
         }
         case 'export': {
