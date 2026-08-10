@@ -371,8 +371,9 @@ import {
   workspaceActiveWorkPath,
   workspaceWorkPaths,
 } from './workspaceRegistry.js';
-import { GuiHttpRouter, json, text } from './guiHttpRouter.js';
+import { GuiHttpRouter, json, readJson, text } from './guiHttpRouter.js';
 import { registerGuiShellHttpController } from './guiShellHttpController.js';
+import { registerGuiChatHttpController } from './guiChatHttpController.js';
 import type {
   HadamardCanUseTool,
   HadamardEffort,
@@ -775,14 +776,6 @@ function buildGuiSystemPrompt(
       : ``)
   );
   return appendProjectSettingsToPrompt(base, settings) + projectSection;
-}
-
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  if (chunks.length === 0) return {};
-  const raw = Buffer.concat(chunks).toString('utf8');
-  return raw.trim() ? JSON.parse(raw) as Record<string, unknown> : {};
 }
 
 /** Read the raw request body as a string (for webhook filter matching). */
@@ -7377,6 +7370,81 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   terminalCapable = await ptyAvailable();
   const httpRouter = new GuiHttpRouter();
   registerGuiShellHttpController(httpRouter, authToken);
+  registerGuiChatHttpController(httpRouter, {
+    runtimeMutationInProgress: () => runtimeMutationInProgress,
+    send: streamRun,
+    sendIssue: (id, agentConfig, res) => streamIssueDispatch({
+      id,
+      ...(agentConfig ? { agentConfig } : {}),
+    }, res),
+    submitPendingInput: (input, mode) => {
+      const active = [...runs.values()].some(record =>
+        record.desc.status === 'running' && record.desc.sessionId === session.id,
+      );
+      if (!active) return { active: false, pendingInputCount: session.pendingInputCount };
+      if (mode === 'steer') session.steer(input);
+      else session.followUp(input);
+      return { active: true, pendingInputCount: session.pendingInputCount };
+    },
+    createSession: async () => {
+      await withRuntimeMutation(async () => {
+        session = await createGuiSession({ model: options.model, permissionMode });
+        await restoreSessionRuntimeSelection();
+      });
+      return state();
+    },
+    resumeSession: req => withRuntimeMutation(() => enqueueServerSessionResume(async () => {
+      const body = await readJson(req);
+      const id = typeof body.id === 'string' ? body.id : '';
+      if (!id) return { status: 400, error: 'Missing session id' };
+      const listed = await listGuiSessions();
+      const target = listed.find(item => item.id === id);
+      if (target?.kind === 'manager') {
+        return { status: 400, error: 'Manager sessions live in the Project Manager panel only.' };
+      }
+      try {
+        session = await resumeGuiSession(id, {
+          model: options.model,
+          permissionMode: options.permissionMode,
+        });
+      } catch {
+        const restored = await unarchiveSession(id);
+        if (!restored) return { status: 404, error: 'Session not found' };
+        session = await resumeGuiSession(id, {
+          model: options.model,
+          permissionMode: options.permissionMode,
+        });
+      }
+      await restoreSessionRuntimeSelection();
+      return { status: 200, state: await state() };
+    })),
+    resolvePermission: (id, decision, answers) => {
+      const pending = pendingPermissions.get(id);
+      if (!pending) return false;
+      pending.resolve({ decision, answers });
+      return true;
+    },
+    replayRun: (runId, after) => {
+      const target = runId ? (runs.get(runId) ?? runReplayTombstones.get(runId)) : undefined;
+      if (!target) return undefined;
+      return {
+        active: target.desc.status === 'running',
+        run: target.desc,
+        earliestSequence: target.events?.[0]?.sequence ?? null,
+        events: (target.events ?? []).filter(event => event.sequence > after),
+      };
+    },
+    abortRun: runId => {
+      const id = runId ?? foregroundRunId;
+      const target = id ? runs.get(id) : undefined;
+      target?.abort.abort();
+      return Boolean(target);
+    },
+    mutationError: error => ({
+      status: runtimeMutationErrorStatus(error),
+      body: runtimeMutationErrorBody(error),
+    }),
+  });
 
   const server = createServer(async (req, res) => {
     try {
@@ -10212,131 +10280,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         } catch (error) {
           return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
         }
-      }
-      if (req.method === 'POST' && url.pathname === '/api/send') {
-        if (runtimeMutationInProgress) {
-          return json(res, 409, { error: 'Runtime configuration is being updated. Try again in a moment.' });
-        }
-        const body = await readJson(req);
-        const input = typeof body.text === 'string' ? body.text.trim() : '';
-        const clientRequestId = typeof body.clientRequestId === 'string'
-          && /^[A-Za-z0-9._:-]{1,128}$/.test(body.clientRequestId)
-          ? body.clientRequestId
-          : undefined;
-        if (!input) return json(res, 400, { error: 'Missing text' });
-        const issueStart = input.match(/^\/issues\s+start\s+(\S+)(?:\s+(\S+))?\s*$/i);
-        if (issueStart) {
-          return streamIssueDispatch({
-            id: issueStart[1],
-            ...(issueStart[2] ? { agentConfig: issueStart[2] } : {}),
-          }, res);
-        }
-        return streamRun(input, res, clientRequestId);
-      }
-      if (req.method === 'POST' && url.pathname === '/api/session/input') {
-        const body = await readJson(req);
-        const input = typeof body.text === 'string' ? body.text.trim() : '';
-        const mode = body.mode === 'steer' ? 'steer' : 'followUp';
-        if (!input) return json(res, 400, { error: 'Missing text' });
-        const active = [...runs.values()].some(record =>
-          record.desc.status === 'running' && record.desc.sessionId === session.id,
-        );
-        if (!active) return json(res, 409, { error: 'No active run for this session' });
-        if (mode === 'steer') session.steer(input);
-        else session.followUp(input);
-        return json(res, 202, {
-          ok: true,
-          mode,
-          pendingInputCount: session.pendingInputCount,
-        });
-      }
-      if (req.method === 'POST' && url.pathname === '/api/session/new') {
-        try {
-          await withRuntimeMutation(async () => {
-            session = await createGuiSession({ model: options.model, permissionMode });
-            await restoreSessionRuntimeSelection();
-          });
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-        return json(res, 200, await state());
-      }
-      if (req.method === 'POST' && url.pathname === '/api/session/resume') {
-        // Register the full mutation before the first await. If the POST
-        // connection drops, /api/session/active waits for this operation and
-        // can never report the previous session while a late switch is pending.
-        let resumeResult: { status: number; error?: string };
-        try {
-          resumeResult = await withRuntimeMutation(() => enqueueServerSessionResume(async () => {
-            const body = await readJson(req);
-            const id = typeof body.id === 'string' ? body.id : '';
-            if (!id) return { status: 400, error: 'Missing session id' };
-            const listed = await listGuiSessions();
-            const target = listed.find(item => item.id === id);
-            if (target?.kind === 'manager') {
-              return { status: 400, error: 'Manager sessions live in the Project Manager panel only.' };
-            }
-            try {
-              session = await resumeGuiSession(id, { model: options.model, permissionMode: options.permissionMode });
-            } catch {
-              const restored = await unarchiveSession(id);
-              if (!restored) return { status: 404, error: 'Session not found' };
-              session = await resumeGuiSession(id, { model: options.model, permissionMode: options.permissionMode });
-            }
-            await restoreSessionRuntimeSelection();
-            return { status: 200 };
-          }));
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-        if (resumeResult.status !== 200) {
-          return json(res, resumeResult.status, { error: resumeResult.error });
-        }
-        return json(res, 200, await state());
-      }
-      if (req.method === 'POST' && url.pathname === '/api/permission') {
-        const body = await readJson(req);
-        const id = typeof body.id === 'string' ? body.id : '';
-        const decision = body.decision;
-        const pending = pendingPermissions.get(id);
-        if (!pending) return json(res, 404, { error: 'Permission request not found' });
-        if (decision !== 'allow' && decision !== 'always' && decision !== 'always-user' && decision !== 'deny') {
-          return json(res, 400, { error: 'Invalid decision' });
-        }
-        const answers =
-          body.answers && typeof body.answers === 'object' && !Array.isArray(body.answers)
-            ? Object.fromEntries(
-                Object.entries(body.answers as Record<string, unknown>)
-                  .filter(([, v]) => typeof v === 'string')
-                  .map(([k, v]) => [k, String(v)]),
-              )
-            : undefined;
-        pending.resolve({
-          decision: decision as 'allow' | 'always' | 'always-user' | 'deny',
-          answers,
-        });
-        return json(res, 200, { ok: true });
-      }
-      if (req.method === 'GET' && url.pathname === '/api/run/events') {
-        const runId = url.searchParams.get('runId')?.trim() ?? '';
-        const afterRaw = Number(url.searchParams.get('after') ?? 0);
-        const after = Number.isSafeInteger(afterRaw) && afterRaw >= 0 ? afterRaw : 0;
-        const target = runId ? (runs.get(runId) ?? runReplayTombstones.get(runId)) : undefined;
-        if (!target) return json(res, 404, { active: false, events: [] });
-        const events = (target.events ?? []).filter(event => event.sequence > after);
-        return json(res, 200, {
-          active: target.desc.status === 'running',
-          run: target.desc,
-          earliestSequence: target.events?.[0]?.sequence ?? null,
-          events,
-        });
-      }
-      if (req.method === 'POST' && url.pathname === '/api/abort') {
-        const body = await readJson(req);
-        const id = typeof body.runId === 'string' && body.runId ? body.runId : foregroundRunId;
-        const target = id ? runs.get(id) : undefined;
-        target?.abort.abort();
-        return json(res, 200, { ok: true, aborted: Boolean(target) });
       }
       // --- Terminal engine (plan phase 3). Token-gated like every /api/ route. ---
       if (req.method === 'POST' && url.pathname === '/api/terminal/create') {
