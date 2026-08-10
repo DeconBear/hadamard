@@ -43,7 +43,7 @@ import type {
   HadamardRunEffort,
 } from '../types.js';
 import { resolveHadamardHome } from './hadamardHome.js';
-import type { AgentProfile } from './agentProfiles.js';
+import type { AgentProfile } from './agentProfileTypes.js';
 
 const MIGRATED_BACKUP_SUFFIX = '.migrated.bak';
 
