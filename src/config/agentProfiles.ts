@@ -7,7 +7,7 @@ import type {
   HadamardPermissionMode,
   HadamardRunEffort,
 } from '../types.js';
-import { buildRouteModelApi } from '../router/modelRouter.js';
+import { buildRouteModelApi } from '../router/routeModelApi.js';
 import {
   findBridgeConfig,
   readBridgeConfigs,
@@ -32,35 +32,8 @@ import {
   isHadamardModelTier,
   resolveHadamardModelReference,
 } from './modelTiers.js';
-
-export interface AgentProfile {
-  name: string;
-  description?: string;
-  bridgeConfig: string;
-  model: string;
-  systemPromptAppend?: string;
-  /** `extend` appends Agent instructions; `replace` replaces the caller prompt. */
-  promptMode?: 'extend' | 'replace';
-  /** False makes the Agent main-chat-only and unavailable to Agent/Task delegation. */
-  subagent?: boolean;
-  permissionMode?: HadamardPermissionMode;
-  /** Preferred effort for this agent; omit to keep session/default effort. */
-  effort?: HadamardRunEffort;
-  /** Optional sampling override for this agent. */
-  maxTokens?: number;
-  /** Optional sampling override for this agent (0–2). */
-  temperature?: number;
-  /** Optional nucleus sampling override for this agent (0-1). */
-  topP?: number;
-  /** Core-tool whitelist for runs under this agent. Absent → full toolset. */
-  allowedTools?: string[];
-  /** `workspace` (default): project workspace only; `full`: unrestricted filesystem. */
-  workspaceAccess?: 'workspace' | 'full';
-  /** ReAct tool-iteration cap. Omit or ≤0 = unlimited. */
-  maxIterations?: number;
-  /** Run timeout (ms). Omit → no profile-level timeout. */
-  timeoutMs?: number;
-}
+import type { AgentProfile } from './agentProfileTypes.js';
+export type { AgentProfile } from './agentProfileTypes.js';
 
 export interface PersistedAgentProfiles {
   version: 1;
