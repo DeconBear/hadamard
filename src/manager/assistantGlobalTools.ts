@@ -7,11 +7,16 @@
  *   - Project-scoped tools require an explicit projectPath that exists in the
  *     workspace registry (or is the current workDir).
  */
-import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 
 import { resolveHadamardHome } from '../config/hadamardHome.js';
+import { readProjectMeta } from '../gui/projectMeta.js';
+import {
+  isIssueStorageMode,
+  listProjectIssues,
+  type IssueStorageMode,
+} from '../issues/issueStore.js';
 import {
   deleteAgentProfile,
   validateAgentProfile,
@@ -20,13 +25,6 @@ import {
   upsertAgentProfile,
   type AgentProfile,
 } from '../config/agentProfiles.js';
-import { getHadamardProjectSessionDirectory } from '../config/projectSessionDirectory.js';
-import {
-  listProjectIssues,
-  type IssueStorageMode,
-  isIssueStorageMode,
-} from '../issues/issueStore.js';
-import { addMcpServer, readMcpServerConfig, removeMcpServer } from '../mcp/mcpServerConfig.js';
 import {
   addBridgeConfig,
   findBridgeConfig,
@@ -49,8 +47,6 @@ import { isRecord } from '../runtime/helpers.js';
 import { tool } from '../runtime/tools.js';
 import {
   listScheduledAutomationTasks,
-  setScheduledAutomationEnabled,
-  upsertScheduledAutomationTask,
 } from '../scheduling/taskPersistence.js';
 import type {
   AgentToolDefinition,
@@ -58,15 +54,9 @@ import type {
   RouterModelRef,
   RouterProfile,
   ScheduledAutomationTask,
-  ScheduledAutomationTaskInput,
 } from '../types.js';
-import { isProjectStatus, readProjectMeta, writeProjectMeta } from '../gui/projectMeta.js';
-import { readWorkspaceNote, writeWorkspaceNote } from '../gui/workspaceNote.js';
-import { readWorkspaceRegistry } from '../gui/workspaceRegistry.js';
 import {
   readManagerConfig,
-  readProgressFile,
-  readProjectPlanFile,
 } from './projectManager.js';
 import {
   buildReferenceIndex,
@@ -106,11 +96,17 @@ import type { TeamDefinition } from '../types.js';
 import { deleteWorkflow, listWorkflows } from '../workflow/workflowPersistence.js';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { loadHadamardAgentDefinitions } from '../runtime/hadamardAgentDefinitions.js';
+import { createAssistantProductHelpTools } from './assistantProductHelpTools.js';
+import { createAssistantMcpTools } from './assistantMcpTools.js';
+import { createAssistantAutomationTools } from './assistantAutomationTools.js';
 import {
-  getProductCapability,
-  productCapabilities,
-  searchProductCapabilities,
-} from '../help/productCapabilities.js';
+  assertAssistantKnownProject,
+  createAssistantProjectTools,
+  listAssistantProjectBriefs,
+  type AssistantProjectBrief,
+} from './assistantProjectTools.js';
+
+export { listAssistantProjectBriefs, type AssistantProjectBrief } from './assistantProjectTools.js';
 
 export type AssistantScope = 'global' | 'project';
 
@@ -162,18 +158,6 @@ export async function writeAssistantConfig(
   }, null, 2), 'utf8');
 }
 
-export interface AssistantProjectBrief {
-  name: string;
-  path: string;
-  note: string;
-  status: string;
-  sessionCount: number;
-  issueCounts: { total: number; open: number; review: number; closed: number };
-  active: boolean;
-  pinned: boolean;
-  lastUsedAt: string;
-}
-
 export interface AssistantEditorContext {
   activeRegion: string;
   entityKind?: 'agent' | 'router' | 'graph' | 'workflow';
@@ -221,15 +205,6 @@ export interface AssistantGlobalHost {
   writeTeamPreferences?: (preferences: TeamPreferences) => Promise<void>;
   /** Context for rename/delete transactions; defaults to currentWorkDir/homeDir. */
   referenceOperationContext?: () => Promise<ReferenceOperationContext> | ReferenceOperationContext;
-}
-
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await access(target);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function redactBridgeConfig(config: PersistedBridgeConfig): Record<string, unknown> {
@@ -287,97 +262,11 @@ function redactRouterProfile(profile: RouterProfile): Record<string, unknown> {
   };
 }
 
-function redactEditorContext(context: AssistantEditorContext | null): AssistantEditorContext | null {
-  if (!context) return null;
-  const redact = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(redact);
-    if (!isRecord(value)) return value;
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) {
-      if (/^(apiKey|password|secret|accessToken|refreshToken)$/i.test(key)) {
-        out[`${key}Configured`] = Boolean(typeof item === 'string' ? item.trim() : item);
-      } else {
-        out[key] = redact(item);
-      }
-    }
-    return out;
-  };
-  return {
-    ...context,
-    ...(context.draft ? { draft: redact(context.draft) as AssistantEditorContext['draft'] } : {}),
-  };
-}
-
-export async function listAssistantProjectBriefs(
-  homeDir: string,
-  currentWorkDir: string,
-): Promise<AssistantProjectBrief[]> {
-  const current = path.resolve(currentWorkDir);
-  const byPath = new Map<string, AssistantProjectBrief>();
-  const add = (projectPath: string, pinned = false, lastUsedAt = '') => {
-    const resolved = path.resolve(projectPath);
-    const key = resolved.toLowerCase();
-    const existing = byPath.get(key);
-    byPath.set(key, {
-      name: path.basename(resolved) || resolved,
-      path: resolved,
-      note: existing?.note ?? '',
-      status: existing?.status ?? 'not_started',
-      sessionCount: existing?.sessionCount ?? 0,
-      issueCounts: existing?.issueCounts ?? { total: 0, open: 0, review: 0, closed: 0 },
-      active: path.resolve(resolved).toLowerCase() === current.toLowerCase(),
-      pinned: Boolean(existing?.pinned || pinned),
-      lastUsedAt: existing?.lastUsedAt && existing.lastUsedAt > lastUsedAt
-        ? existing.lastUsedAt
-        : lastUsedAt,
-    });
-  };
-  add(current);
-  const registry = await readWorkspaceRegistry(homeDir);
-  for (const entry of registry) {
-    if (!(await pathExists(entry.path))) continue;
-    add(entry.path, entry.pinned === true, entry.lastOpenedAt || '');
-  }
-  const rows = [...byPath.values()];
-  await Promise.all(rows.map(async (project) => {
-    const [note, meta] = await Promise.all([
-      readWorkspaceNote(project.path, homeDir),
-      readProjectMeta(project.path, homeDir),
-    ]);
-    project.note = note;
-    project.status = meta.status;
-    const storage: IssueStorageMode = isIssueStorageMode(meta.issueStorage) ? meta.issueStorage : 'home';
-    const issues = await listProjectIssues(project.path, homeDir, storage).catch(() => []);
-    project.issueCounts = {
-      total: issues.length,
-      open: issues.filter(issue => issue.status !== 'done' && issue.status !== 'cancelled').length,
-      review: issues.filter(issue => issue.status === 'in_review').length,
-      closed: issues.filter(issue => issue.status === 'done' || issue.status === 'cancelled').length,
-    };
-  }));
-  return rows.sort((a, b) => {
-    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-    if (a.active !== b.active) return a.active ? -1 : 1;
-    return (b.lastUsedAt || '').localeCompare(a.lastUsedAt || '');
-  });
-}
-
 async function assertKnownProject(
   host: AssistantGlobalHost,
   projectPath: string,
 ): Promise<string> {
-  const resolved = path.resolve(projectPath);
-  if (!(await pathExists(resolved))) {
-    throw new Error(`Project path does not exist: ${resolved}`);
-  }
-  const briefs = await listAssistantProjectBriefs(host.homeDir, host.currentWorkDir);
-  const known = briefs.some(item => path.resolve(item.path).toLowerCase() === resolved.toLowerCase());
-  if (!known) {
-    throw new Error(
-      `Unknown project path: ${resolved}. Use ListProjects and pass a registered workspace path.`,
-    );
-  }
-  return resolved;
+  return assertAssistantKnownProject(host.homeDir, host.currentWorkDir, projectPath);
 }
 
 /** Reference snapshot used by the P3 reference/delete tools (same edges as /api/references). */
@@ -535,183 +424,8 @@ export async function createAssistantGlobalTools(
     z.strictObject({ kind: z.literal('agent'), name: z.string() }),
     z.strictObject({ kind: z.literal('team'), name: z.string() }),
   ]);
-  const ListProjects = tool(
-    {
-      name: 'ListProjects',
-      description: 'List remembered Hadamard workspaces with brief note, status, and issue counts.',
-      inputSchema: z.strictObject({}),
-      isReadOnly: () => true,
-    },
-    async () => ({
-      currentWorkDir: host.currentWorkDir,
-      projects: await listAssistantProjectBriefs(host.homeDir, host.currentWorkDir),
-    }),
-  );
-
-  const GetProjectOverview = tool(
-    {
-      name: 'GetProjectOverview',
-      description: 'Get a compact overview for one registered project (note, status, plan/progress summaries, issues).',
-      inputSchema: z.strictObject({
-        projectPath: z.string().describe('Absolute workspace path from ListProjects'),
-      }),
-      isReadOnly: () => true,
-    },
-    async (input) => {
-      const projectPath = await assertKnownProject(host, input.projectPath);
-      const [note, meta, plan, progress] = await Promise.all([
-        readWorkspaceNote(projectPath, host.homeDir),
-        readProjectMeta(projectPath, host.homeDir),
-        readProjectPlanFile(projectPath, host.homeDir),
-        readProgressFile(projectPath, host.homeDir),
-      ]);
-      const storage: IssueStorageMode = isIssueStorageMode(meta.issueStorage) ? meta.issueStorage : 'home';
-      const issues = await listProjectIssues(projectPath, host.homeDir, storage).catch(() => []);
-      return {
-        path: projectPath,
-        name: path.basename(projectPath),
-        note,
-        status: meta.status,
-        plan: {
-          milestones: plan.milestones.length,
-          today: plan.today.length,
-          upcoming: plan.upcoming.length,
-          milestoneTitles: plan.milestones.slice(0, 8).map(item => item.title),
-        },
-        progressChars: progress?.length ?? 0,
-        progressPreview: progress ? progress.slice(0, 1200) : null,
-        issueCounts: {
-          total: issues.length,
-          open: issues.filter(issue => issue.status !== 'done' && issue.status !== 'cancelled').length,
-          review: issues.filter(issue => issue.status === 'in_review').length,
-          closed: issues.filter(issue => issue.status === 'done' || issue.status === 'cancelled').length,
-        },
-        sessionDirectory: getHadamardProjectSessionDirectory(projectPath, host.homeDir),
-      };
-    },
-  );
-
-  const GetProjectDocument = tool(
-    {
-      name: 'GetProjectDocument',
-      description: 'Read full plan.json, PROGRESS.md, or project note for a registered project.',
-      inputSchema: z.strictObject({
-        projectPath: z.string(),
-        kind: z.enum(['plan', 'progress', 'note']),
-      }),
-      isReadOnly: () => true,
-    },
-    async (input) => {
-      const projectPath = await assertKnownProject(host, input.projectPath);
-      if (input.kind === 'plan') {
-        return { kind: 'plan', content: await readProjectPlanFile(projectPath, host.homeDir) };
-      }
-      if (input.kind === 'progress') {
-        return { kind: 'progress', content: await readProgressFile(projectPath, host.homeDir) };
-      }
-      return { kind: 'note', content: await readWorkspaceNote(projectPath, host.homeDir) };
-    },
-  );
-
-  const ListProjectIssues = tool(
-    {
-      name: 'ListProjectIssues',
-      description: 'List issues for a registered project.',
-      inputSchema: z.strictObject({
-        projectPath: z.string(),
-      }),
-      isReadOnly: () => true,
-    },
-    async (input) => {
-      const projectPath = await assertKnownProject(host, input.projectPath);
-      const meta = await readProjectMeta(projectPath, host.homeDir);
-      const storage: IssueStorageMode = isIssueStorageMode(meta.issueStorage) ? meta.issueStorage : 'home';
-      const issues = await listProjectIssues(projectPath, host.homeDir, storage);
-      return {
-        projectPath,
-        issues: issues.map(issue => ({
-          id: issue.id,
-          key: `ISS-${issue.number}`,
-          title: issue.title,
-          status: issue.status,
-          priority: issue.priority,
-          agentConfig: issue.agentConfig ?? null,
-          updatedAt: issue.updatedAt,
-        })),
-      };
-    },
-  );
-
-  const GetAppState = tool(
-    {
-      name: 'GetAppState',
-      description: 'Get the current GUI focus (region, workDir, credentials flag). No secrets.',
-      inputSchema: z.strictObject({}),
-      isReadOnly: () => true,
-    },
-    async () => ({
-      currentWorkDir: host.currentWorkDir,
-      homeDir: host.homeDir,
-      ...(host.getAppState ? await host.getAppState() : {}),
-    }),
-  );
-
-  const GetCurrentEditorContext = tool(
-    {
-      name: 'GetCurrentEditorContext',
-      description: 'Read the active GUI page/entity and its unsaved Agent, Router, Graph, or Workflow draft with a stable base digest. Use before proposing editor changes.',
-      inputSchema: z.strictObject({}),
-      isReadOnly: () => true,
-    },
-    async () => ({
-      context: redactEditorContext(host.getEditorContext ? await host.getEditorContext() : null),
-    }),
-  );
-
-  const ListProductCapabilities = tool(
-    {
-      name: 'ListProductCapabilities',
-      description: 'List the machine-readable Hadamard capability catalog. Use this, SearchProductCapabilities, or ReadProductCapability before answering product how-to questions.',
-      inputSchema: z.strictObject({}),
-      isReadOnly: () => true,
-    },
-    async () => ({
-      capabilities: productCapabilities.map(capability => ({
-        id: capability.id,
-        title: capability.title,
-        summary: capability.summary,
-        uiLocations: capability.uiLocations,
-        commands: capability.commands,
-      })),
-    }),
-  );
-
-  const SearchProductCapabilities = tool(
-    {
-      name: 'SearchProductCapabilities',
-      description: 'Search grounded product instructions by feature, UI label, command, or user goal.',
-      inputSchema: z.strictObject({
-        query: z.string(),
-        limit: z.number().int().min(1).max(50).optional(),
-      }),
-      isReadOnly: () => true,
-    },
-    async input => ({ capabilities: searchProductCapabilities(input.query, input.limit) }),
-  );
-
-  const ReadProductCapability = tool(
-    {
-      name: 'ReadProductCapability',
-      description: 'Read complete current instructions for one capability id returned by List/SearchProductCapabilities.',
-      inputSchema: z.strictObject({ id: z.string() }),
-      isReadOnly: () => true,
-    },
-    async input => {
-      const capability = getProductCapability(input.id);
-      if (!capability) throw new Error(`Unknown product capability: ${input.id}`);
-      return { capability };
-    },
-  );
+  const projectTools = createAssistantProjectTools(host);
+  const productHelpTools = createAssistantProductHelpTools();
 
   const ListBridgeConfigs = tool(
     {
@@ -811,98 +525,12 @@ export async function createAssistantGlobalTools(
     },
   );
 
-  const ListScheduledTasks = tool(
-    {
-      name: 'ListScheduledTasks',
-      description: 'List automation tasks for the current workspace.',
-      inputSchema: z.strictObject({
-        projectPath: z.string().optional().describe('Defaults to current workDir'),
-      }),
-      isReadOnly: () => true,
-    },
-    async (input) => {
-      const projectPath = input.projectPath
-        ? await assertKnownProject(host, input.projectPath)
-        : path.resolve(host.currentWorkDir);
-      const tasks = await listScheduledAutomationTasks(projectPath);
-      return {
-        projectPath,
-        tasks: tasks.map(task => ({
-          id: task.id,
-          name: task.name,
-          kind: task.kind,
-          trigger: task.trigger ?? 'schedule',
-          cron: task.cron,
-          enabled: task.enabled,
-          workflowName: task.workflowName,
-          nextRunAt: task.nextRunAt,
-          lastRunAt: task.lastRunAt,
-          lastResult: task.lastResult,
-        })),
-      };
-    },
-  );
+  const automationTools = createAssistantAutomationTools({
+    currentWorkDir: host.currentWorkDir,
+    assertKnownProject: projectPath => assertKnownProject(host, projectPath),
+  });
 
-  const ListMcpServers = tool(
-    {
-      name: 'ListMcpServers',
-      description: 'List configured MCP servers.',
-      inputSchema: z.strictObject({}),
-      isReadOnly: () => true,
-    },
-    async () => ({
-      servers: readMcpServerConfig(host.homeDir).servers,
-    }),
-  );
-
-  const OpenProject = tool(
-    {
-      name: 'OpenProject',
-      description: 'Switch the GUI to a registered workspace path.',
-      inputSchema: z.strictObject({
-        projectPath: z.string(),
-      }),
-    },
-    async (input) => {
-      if (!host.openProject) throw new Error('OpenProject is unavailable in this host.');
-      const projectPath = await assertKnownProject(host, input.projectPath);
-      const result = await host.openProject(projectPath);
-      return { ok: true, workDir: result.workDir };
-    },
-  );
-
-  const UpdateProjectNote = tool(
-    {
-      name: 'UpdateProjectNote',
-      description: 'Update the short workspace note shown on the project card.',
-      inputSchema: z.strictObject({
-        projectPath: z.string(),
-        content: z.string(),
-      }),
-    },
-    async (input) => {
-      const projectPath = await assertKnownProject(host, input.projectPath);
-      const saved = await writeWorkspaceNote(projectPath, host.homeDir, input.content);
-      return { ok: true, path: saved };
-    },
-  );
-
-  const UpdateProjectStatus = tool(
-    {
-      name: 'UpdateProjectStatus',
-      description: 'Update the manual project lifecycle status.',
-      inputSchema: z.strictObject({
-        projectPath: z.string(),
-        status: z.enum(['in_progress', 'planning', 'on_hold', 'not_started', 'completed']),
-      }),
-    },
-    async (input) => {
-      const projectPath = await assertKnownProject(host, input.projectPath);
-      if (!isProjectStatus(input.status)) throw new Error(`Invalid status: ${input.status}`);
-      const meta = await writeProjectMeta(projectPath, host.homeDir, { status: input.status });
-      return { ok: true, meta };
-    },
-  );
+  const mcpTools = createAssistantMcpTools(host.homeDir);
 
   const UpdateGuiPreferences = tool(
     {
@@ -1302,107 +930,6 @@ export async function createAssistantGlobalTools(
     },
   );
 
-  const UpsertScheduledTask = tool(
-    {
-      name: 'UpsertScheduledTask',
-      description: 'Create or update an automation task for a project workspace.',
-      inputSchema: z.strictObject({
-        projectPath: z.string().optional(),
-        id: z.string().optional(),
-        name: z.string().optional(),
-        kind: z.enum(['workflow', 'prompt', 'manager']),
-        cron: z.string().optional(),
-        enabled: z.boolean().optional(),
-        workflowName: z.string().optional(),
-        workflowSource: z.enum(['agent', 'script']).optional(),
-        input: z.string().optional(),
-        prompt: z.string().optional(),
-        trigger: z.enum(['schedule', 'webhook']).optional(),
-      }),
-    },
-    async (input) => {
-      const projectPath = input.projectPath
-        ? await assertKnownProject(host, input.projectPath)
-        : path.resolve(host.currentWorkDir);
-      const body: ScheduledAutomationTaskInput = {
-        id: input.id,
-        name: input.name,
-        kind: input.kind,
-        cron: input.cron,
-        enabled: input.enabled,
-        workflowName: input.workflowName,
-        workflowSource: input.workflowSource,
-        input: input.input,
-        prompt: input.prompt,
-        trigger: input.trigger,
-      };
-      const task = await upsertScheduledAutomationTask(projectPath, body);
-      return { ok: true, projectPath, task: { id: task.id, name: task.name, kind: task.kind, cron: task.cron, enabled: task.enabled } };
-    },
-  );
-
-  const ToggleScheduledTask = tool(
-    {
-      name: 'ToggleScheduledTask',
-      description: 'Enable or pause an automation task.',
-      inputSchema: z.strictObject({
-        projectPath: z.string().optional(),
-        id: z.string(),
-        enabled: z.boolean(),
-      }),
-    },
-    async (input) => {
-      const projectPath = input.projectPath
-        ? await assertKnownProject(host, input.projectPath)
-        : path.resolve(host.currentWorkDir);
-      const task = await setScheduledAutomationEnabled(projectPath, input.id, input.enabled);
-      if (!task) throw new Error(`Scheduled task not found: ${input.id}`);
-      return { ok: true, projectPath, task: { id: task.id, name: task.name, enabled: task.enabled } };
-    },
-  );
-
-  const AddMcpServerTool = tool(
-    {
-      name: 'AddMcpServer',
-      description: 'Add an MCP server to ~/.hadamard/mcp.json.',
-      inputSchema: z.strictObject({
-        name: z.string(),
-        type: z.enum(['stdio', 'http']),
-        command: z.string().optional(),
-        args: z.array(z.string()).optional(),
-        url: z.string().optional(),
-      }),
-    },
-    async (input) => {
-      if (input.type === 'stdio') {
-        if (!input.command?.trim()) throw new Error('stdio MCP servers require command');
-        addMcpServer({
-          name: input.name.trim(),
-          command: input.command.trim(),
-          args: input.args,
-        }, host.homeDir);
-      } else {
-        if (!input.url?.trim()) throw new Error('http MCP servers require url');
-        addMcpServer({
-          name: input.name.trim(),
-          url: input.url.trim(),
-        }, host.homeDir);
-      }
-      return { ok: true, servers: readMcpServerConfig(host.homeDir).servers };
-    },
-  );
-
-  const RemoveMcpServerTool = tool(
-    {
-      name: 'RemoveMcpServer',
-      description: 'Remove an MCP server by name.',
-      inputSchema: z.strictObject({ name: z.string() }),
-    },
-    async (input) => {
-      removeMcpServer(input.name.trim(), host.homeDir);
-      return { ok: true, servers: readMcpServerConfig(host.homeDir).servers };
-    },
-  );
 
   const ListReferencesTool = tool(
     {
@@ -1588,24 +1115,14 @@ export async function createAssistantGlobalTools(
   );
 
   return [
-    ListProjects,
-    GetProjectOverview,
-    GetProjectDocument,
-    ListProjectIssues,
-    GetAppState,
-    GetCurrentEditorContext,
-    ListProductCapabilities,
-    SearchProductCapabilities,
-    ReadProductCapability,
+    ...projectTools,
+    ...productHelpTools,
     ListBridgeConfigs,
     ListAgentProfiles,
     ListRouterProfilesTool,
     ListPlugins,
-    ListScheduledTasks,
-    ListMcpServers,
-    OpenProject,
-    UpdateProjectNote,
-    UpdateProjectStatus,
+    ...automationTools,
+    ...mcpTools,
     UpdateGuiPreferences,
     UpdateRuntimeEnv,
     UpsertBridgeConfigTool,
@@ -1616,10 +1133,6 @@ export async function createAssistantGlobalTools(
     ActivateAgentTool,
     UpdateTeamPreferencesTool,
     UpdateManagedPlugin,
-    UpsertScheduledTask,
-    ToggleScheduledTask,
-    AddMcpServerTool,
-    RemoveMcpServerTool,
     ListReferencesTool,
     ListBrokenReferencesTool,
     RenameBridgeConfigTool,
