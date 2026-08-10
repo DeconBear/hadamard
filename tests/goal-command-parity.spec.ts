@@ -62,6 +62,7 @@ describe('Goal interactive surface parity', () => {
       Promise.all([
         readFile(path.resolve('src/tui/hadamardTui.ts'), 'utf8'),
         readFile(path.resolve('src/tui/hadamardTuiController.ts'), 'utf8'),
+        readFile(path.resolve('src/tui/tuiRuntimeLifecycle.ts'), 'utf8'),
       ]).then(parts => parts.join('\n')),
       Promise.all([
         readFile(path.resolve('src/gui/hadamardGui.ts'), 'utf8'),
