@@ -192,6 +192,15 @@ import {
   renderRichText,
 } from './tuiTextPresenter.js';
 import { buildTuiSystemPrompt } from './tuiSystemPrompt.js';
+import {
+  buildTuiPermissionDialog,
+  buildTuiPromptBar,
+  buildTuiSelectionDialog,
+  buildTuiTextInputDialog,
+  tuiPromptCursorPosition,
+  tuiSelectionDialogCursorPosition,
+  tuiTextInputDialogCursorPosition,
+} from './tuiFramePresenter.js';
 import { onboardTuiCredentials } from './tuiOnboarding.js';
 import {
   closeManagedPluginsForExit,
@@ -216,7 +225,6 @@ const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', 
 const CTRL_C_EXIT_WINDOW_MS = 600;
 const DYNAMIC_FRAME_MS = 33;
 const MENU_MAX_ROWS = 12;
-const PROMPT_GLYPH = '❯';
 const SESSION_EFFORT_KEY = '__hadamardEffort';
 const EFFORT_LEVELS: readonly HadamardEffort[] = ['low', 'medium', 'high', 'max'];
 
@@ -936,76 +944,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
   // ── Dynamic region rendering ───────────────────────────────────────
 
-  /** Wrap content into `│ {content padded to width-4} │` with a border color. */
-  function boxRow(content: string, borderColor: string): string {
-    const inner = Math.max(screen.width - 4, 8);
-    const contentWidth = stringWidth(content);
-    const padded =
-      contentWidth > inner
-        ? truncateToWidth(content, inner)
-        : content + ' '.repeat(inner - contentWidth);
-    return `${borderColor}│${A.reset} ${padded} ${borderColor}│${A.reset}`;
-  }
-
-  function boxTop(borderColor: string): string {
-    return `${borderColor}╭${'─'.repeat(Math.max(screen.width - 2, 2))}╮${A.reset}`;
-  }
-
-  function boxBottom(borderColor: string): string {
-    return `${borderColor}╰${'─'.repeat(Math.max(screen.width - 2, 2))}╯${A.reset}`;
-  }
-
-  function promptDivider(): string {
-    return `${A.gray}${'─'.repeat(Math.max(screen.width, 8))}${A.reset}`;
-  }
-
-  /** Insert an inverse-video caret at a display column of a plain line. */
-  function withCaret(line: string, caretCol: number): string {
-    let width = 0;
-    let index = 0;
-    for (const char of line) {
-      if (width >= caretCol) break;
-      width += stringWidth(char);
-      index += char.length;
-    }
-    const before = line.slice(0, index);
-    const rest = line.slice(index);
-    const caretChar = rest.length > 0 ? [...rest][0]! : ' ';
-    const after = rest.length > 0 ? rest.slice(caretChar.length) : '';
-    return `${before}${A.inverse}${caretChar}${A.reset}${after}`;
-  }
-
-  function buildPromptBar(): string[] {
-    const editorWidth = Math.max(screen.width - 4, 8); // '> ' prefix on the first row
-    const lines: string[] = [];
-    lines.push(promptDivider());
-    if (editor.isEmpty()) {
-      // Always-visible block caret on the empty input so the box reads as active.
-      const placeholder = truncateToWidth('Try "write a test for <filepath>"', editorWidth - 4);
-      lines.push(`${A.magenta}${PROMPT_GLYPH}${A.reset} ${A.inverse} ${A.reset} ${A.dim}${placeholder}${A.reset}`);
-    } else {
-      const visual = editor.visualLines(editorWidth - 1);
-      visual.lines.forEach((line, row) => {
-        const prefix = row === 0 ? `${A.magenta}${PROMPT_GLYPH}${A.reset} ` : '  ';
-        const body = row === visual.cursorRow ? withCaret(line, visual.cursorCol) : line;
-        lines.push(`${prefix}${body}`);
-      });
-    }
-    lines.push(promptDivider());
-    return lines;
-  }
-
-  function promptCursorPosition(promptStartLine: number): { line: number; column: number } {
-    if (editor.isEmpty()) {
-      return { line: promptStartLine + 1, column: 2 };
-    }
-    const visual = editor.visualLines(Math.max(screen.width - 5, 7));
-    return {
-      line: promptStartLine + 1 + visual.cursorRow,
-      column: 2 + visual.cursorCol,
-    };
-  }
-
   // ── @-mention file completion ──────────────────────────────────────
   // Prefer git's view (tracked + untracked, honoring .gitignore) so the list
   // matches what the agent actually sees; fall back to a bounded fs walk for
@@ -1172,99 +1110,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     return lines;
   }
 
-  function buildDialog(): string[] {
-    if (!dialog) return [];
-    const inner = Math.max(screen.width - 4, 8);
-    const options = ['Yes', `Always ${dialog.toolName} (project)`, `Always ${dialog.toolName} (user)`, 'No (esc)'];
-    const lines: string[] = [];
-    lines.push(boxTop(A.yellow));
-    lines.push(boxRow(`${A.bold}Permission required · ${dialog.toolName}${A.reset}`, A.yellow));
-    lines.push(boxRow(`${A.dim}${truncateToWidth(dialog.summary || '(no arguments)', inner)}${A.reset}`, A.yellow));
-    options.forEach((option, index) => {
-      const selected = index === dialog!.selected;
-      lines.push(
-        boxRow(selected ? `${A.inverse} ${option} ${A.reset}` : `  ${option}`, A.yellow),
-      );
-    });
-    lines.push(boxBottom(A.yellow));
-    lines.push(`${A.dim}  y/enter approve · a always (project) · n/esc deny · ↑↓ select${A.reset}`);
-    return lines;
-  }
-
-  function buildSelectionDialog(): string[] {
-    if (!selectionDialog) return [];
-    const filtered = filterTuiSelectionItems(
-      selectionDialog.items,
-      selectionDialog.query,
-    );
-    if (selectionDialog.selected >= filtered.length) {
-      selectionDialog.selected = Math.max(filtered.length - 1, 0);
-    }
-    const lines = [
-      boxTop(A.cyan),
-      boxRow(`${A.bold}${selectionDialog.title}${A.reset}`, A.cyan),
-    ];
-    if (selectionDialog.subtitle) {
-      lines.push(boxRow(`${A.dim}${selectionDialog.subtitle}${A.reset}`, A.cyan));
-    }
-    if (selectionDialog.searchable) {
-      const query = selectionDialog.query || 'type to filter';
-      lines.push(
-        boxRow(
-          `${A.magenta}›${A.reset} ${selectionDialog.query ? query : `${A.dim}${query}${A.reset}`}`,
-          A.cyan,
-        ),
-      );
-    }
-    if (filtered.length === 0) {
-      lines.push(boxRow(`${A.dim}No matching items${A.reset}`, A.cyan));
-    } else {
-      const visibleRows = Math.min(10, Math.max((process.stdout.rows ?? 24) - 10, 4));
-      const start = Math.max(
-        0,
-        Math.min(
-          selectionDialog.selected - Math.floor(visibleRows / 2),
-          filtered.length - visibleRows,
-        ),
-      );
-      for (let index = start; index < Math.min(start + visibleRows, filtered.length); index += 1) {
-        const item = filtered[index]!;
-        const description = item.description ? ` · ${item.description}` : '';
-        const label = truncateToWidth(`${item.label}${description}`, Math.max(screen.width - 8, 8));
-        lines.push(
-          boxRow(
-            index === selectionDialog.selected
-              ? `${A.inverse} ${label} ${A.reset}`
-              : `  ${label}`,
-            A.cyan,
-          ),
-        );
-      }
-    }
-    lines.push(boxBottom(A.cyan));
-    lines.push(`${A.dim}  ↑↓ select · enter confirm · esc cancel${selectionDialog.searchable ? ' · type to filter' : ''}${A.reset}`);
-    return lines;
-  }
-
-  function buildTextInputDialog(): string[] {
-    if (!textInputDialog) return [];
-    const value = textInputDialog.secret
-      ? '•'.repeat(textInputDialog.editor.text.length)
-      : textInputDialog.editor.text;
-    const displayed = withCaret(value, textInputDialog.editor.cursor);
-    const lines = [
-      boxTop(A.cyan),
-      boxRow(`${A.bold}${textInputDialog.title}${A.reset}`, A.cyan),
-    ];
-    if (textInputDialog.description) {
-      lines.push(boxRow(`${A.dim}${textInputDialog.description}${A.reset}`, A.cyan));
-    }
-    lines.push(boxRow(`${textInputDialog.label}: ${displayed}`, A.cyan));
-    lines.push(boxBottom(A.cyan));
-    lines.push(`${A.dim}  enter confirm · esc cancel${textInputDialog.secret ? ' · value hidden' : ''}${A.reset}`);
-    return lines;
-  }
-
   /** Friendly permission label matching the /permissions presets. */
   function permissionLabel(): string {
     const m = currentPermissionMode();
@@ -1329,25 +1174,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     return lines;
   }
 
-  function selectionDialogCursorPosition(startLine: number): { line: number; column: number } | undefined {
-    if (!selectionDialog?.searchable) return undefined;
-    return {
-      line: startLine + 2 + (selectionDialog.subtitle ? 1 : 0),
-      column: 4 + stringWidth(selectionDialog.query),
-    };
-  }
-
-  function textInputDialogCursorPosition(startLine: number): { line: number; column: number } | undefined {
-    if (!textInputDialog) return undefined;
-    const valueBeforeCursor = textInputDialog.secret
-      ? '•'.repeat(textInputDialog.editor.cursor)
-      : textInputDialog.editor.text.slice(0, textInputDialog.editor.cursor);
-    return {
-      line: startLine + 2 + (textInputDialog.description ? 1 : 0),
-      column: 2 + stringWidth(`${textInputDialog.label}: `) + stringWidth(valueBeforeCursor),
-    };
-  }
-
   function buildTodoPanel(): string[] {
     if (currentTodos.length === 0) return [];
     const max = 8;
@@ -1398,19 +1224,21 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       lines.push(...buildTodoPanel());
     }
     if (dialog) {
-      lines.push(...buildDialog());
+      lines.push(...buildTuiPermissionDialog(dialog, screen.width));
     } else if (selectionDialog) {
       const dialogStartLine = lines.length;
-      lines.push(...buildSelectionDialog());
-      promptCursor = selectionDialogCursorPosition(dialogStartLine);
+      const rendered = buildTuiSelectionDialog(selectionDialog, screen.width, process.stdout.rows ?? 24);
+      selectionDialog.selected = rendered.selected;
+      lines.push(...rendered.lines);
+      promptCursor = tuiSelectionDialogCursorPosition(selectionDialog, dialogStartLine);
     } else if (textInputDialog) {
       const dialogStartLine = lines.length;
-      lines.push(...buildTextInputDialog());
-      promptCursor = textInputDialogCursorPosition(dialogStartLine);
+      lines.push(...buildTuiTextInputDialog(textInputDialog, screen.width));
+      promptCursor = tuiTextInputDialogCursorPosition(textInputDialog, dialogStartLine);
     } else {
       const promptStartLine = lines.length;
-      lines.push(...buildPromptBar());
-      promptCursor = promptCursorPosition(promptStartLine);
+      lines.push(...buildTuiPromptBar(editor, screen.width));
+      promptCursor = tuiPromptCursorPosition(editor, screen.width, promptStartLine);
       const atMenu = buildAtMenu();
       if (atMenu.length > 0) {
         lines.push(...atMenu);
