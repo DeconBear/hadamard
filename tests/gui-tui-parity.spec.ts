@@ -32,6 +32,7 @@ function readTuiSources(root: string): string {
     readFileSync(join(root, 'src', 'tui', 'tuiRuntimeLifecycle.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'tui', 'tuiFramePresenter.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'tui', 'tuiInputController.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'tui', 'tuiMemoryCommandHandler.ts'), 'utf8'),
   ].join('\n');
 }
 
