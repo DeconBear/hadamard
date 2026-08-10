@@ -23,6 +23,15 @@ function readGuiSources(root: string): string {
   ].join('\n');
 }
 
+function readTuiSources(root: string): string {
+  return [
+    readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'tui', 'hadamardTuiController.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'tui', 'tuiTextPresenter.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'tui', 'tuiSystemPrompt.ts'), 'utf8'),
+  ].join('\n');
+}
+
 describe('TUI and GUI parity', () => {
   it('keeps the TUI slash command surface on the shared command registry', () => {
     expect(TUI_SLASH_COMMANDS).toBe(HADAMARD_INTERACTIVE_COMMANDS);
@@ -80,7 +89,7 @@ describe('TUI and GUI parity', () => {
     const css = createHadamardGuiStyles();
     const js = createHadamardGuiClientScript();
     const gui = readGuiSources(join(import.meta.dirname, '..'));
-    const tui = readFileSync(join(import.meta.dirname, '..', 'src', 'tui', 'hadamardTui.ts'), 'utf8');
+    const tui = readTuiSources(join(import.meta.dirname, '..'));
 
     expect(html).not.toContain('id="commands"');
     expect(html).not.toContain('class="command-section"');
@@ -548,7 +557,7 @@ describe('TUI and GUI parity', () => {
   it('keeps /issues available in the TUI and GUI (project issue workflow)', () => {
     const root = join(import.meta.dirname, '..');
     expect(SUBCOMMANDS.issues).toEqual(['list', 'show', 'create', 'start', 'review', 'done', 'block']);
-    const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
+    const tui = readTuiSources(root);
     const gui = readGuiSources(root);
     for (const source of [tui, gui]) {
       expect(source).toContain('/issues [list|show <id>|create <title>|start <id> [agent-profile]|review <id>|done <id>|block <id>]');
@@ -565,7 +574,7 @@ describe('TUI and GUI parity', () => {
     expect(SUBCOMMANDS.manager).toContain('chat');
     expect(SUBCOMMANDS.manager).toContain('update');
     // Each surface must both parse the chat subcommand and show it in usage.
-    const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
+    const tui = readTuiSources(root);
     const gui = readGuiSources(root);
     for (const source of [tui, gui]) {
       expect(source).toContain('/manager chat <message>');
@@ -576,7 +585,7 @@ describe('TUI and GUI parity', () => {
 
   it('controls External CLI background work and native history from the TUI', () => {
     const root = join(import.meta.dirname, '..');
-    const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
+    const tui = readTuiSources(root);
     const gui = readGuiSources(root);
     const html = createHadamardGuiHtml();
     const js = createHadamardGuiClientScript();
@@ -727,7 +736,7 @@ describe('TUI and GUI parity', () => {
   it('keeps /team clone available in the TUI and GUI (plan Phase 1)', () => {
     const root = join(import.meta.dirname, '..');
     expect(SUBCOMMANDS.team).toContain('clone');
-    const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
+    const tui = readTuiSources(root);
     const gui = readGuiSources(root);
     for (const source of [tui, gui]) {
       expect(source).toContain('cloneTeamDefinition');
@@ -739,7 +748,7 @@ describe('TUI and GUI parity', () => {
     const root = join(import.meta.dirname, '..');
     expect(SUBCOMMANDS.team).toContain('delete');
     expect(SUBCOMMANDS.workflows).toEqual(expect.arrayContaining(['list', 'run', 'save', 'delete']));
-    const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
+    const tui = readTuiSources(root);
     const gui = readGuiSources(root);
     for (const source of [tui, gui]) {
       expect(source).toContain('deleteTeamDefinition');
@@ -751,7 +760,7 @@ describe('TUI and GUI parity', () => {
 
   it('keeps manager config knobs (model/readScope/mirror) in the TUI and GUI (plan M0/M3)', () => {
     const root = join(import.meta.dirname, '..');
-    const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
+    const tui = readTuiSources(root);
     expect(tui).toContain("startsWith('config set ')");
     expect(tui).toContain('writeManagerConfig');
     expect(tui).toContain('read-only regardless of model');
@@ -829,7 +838,7 @@ describe('TUI and GUI parity', () => {
 
   it('keeps Team Run tree formatting in the TUI and GUI (plan Phase 5)', () => {
     const root = join(import.meta.dirname, '..');
-    const tui = readFileSync(join(root, 'src', 'tui', 'hadamardTui.ts'), 'utf8');
+    const tui = readTuiSources(root);
     const gui = readGuiSources(root);
     expect(tui).toContain('formatTeamRunTreeLines');
     expect(tui).toContain('applyTeamRunEvent');
