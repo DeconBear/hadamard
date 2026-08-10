@@ -20,7 +20,7 @@ import type {
   WorkflowBudget,
   AgentToolDefinition,
 } from '../types.js';
-import type { HadamardAgentClient } from '../runtime/agentClient.js';
+import type { AgentRunner } from '../application/agentRunnerPort.js';
 import { ConfigurationError, RunAbortedError } from '../errors.js';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -103,7 +103,7 @@ function tryParseStructuredOutput(text: string): { parsed: unknown; json: string
 // ═══════════════════════════════════════════════════════════════════
 
 export interface WorkflowRuntimeOptions {
-  sdk: HadamardAgentClient;
+  sdk: AgentRunner;
   /** Required for the in-process node:vm compatibility executor. */
   trust?: 'trusted' | 'untrusted';
   /** Wall-clock and synchronous CPU deadline. Default: 60 seconds. */
@@ -198,7 +198,7 @@ class HostBridge {
   private totalAgents = 0;
   private readonly maxTotal = 1000;
   private signal?: AbortSignal;
-  private sdk: HadamardAgentClient;
+  private sdk: AgentRunner;
   private cache: Map<string, WorkflowCacheEntry>;
   private agentRecords: WorkflowAgentCallRecord[];
   private onEvent?: (event: any) => void;
