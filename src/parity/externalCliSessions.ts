@@ -1,10 +1,8 @@
 import { Buffer } from 'node:buffer';
 import type { Dirent, Stats } from 'node:fs';
-import { realpath as realpathCallback } from 'node:fs';
-import { lstat, readdir, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { promisify } from 'node:util';
 
 import { resolveHadamardHome } from '../config/hadamardHome.js';
 import { HadamardSdkError } from '../errors.js';
@@ -44,9 +42,23 @@ import {
 } from './codewhaleExternalCliSessionCodec.js';
 import { createLegacyExternalCliSessionCodec } from './legacyExternalCliSessionCodec.js';
 import { reasonixExternalCliSessionCodec } from './reasonixExternalCliSessionCodec.js';
+import {
+  nodeExternalCliSessionFileStore,
+  type ExternalCliSessionFileCandidate as SessionFileCandidate,
+  type ExternalCliSessionRoot as RootSpec,
+} from './externalCliSessionFileStore.js';
 
-/** Prefer native realpath so Windows 8.3 short names canonicalize consistently. */
-const realpathNative = promisify(realpathCallback.native);
+const {
+  collectCodewhaleSessionFiles,
+  collectJsonlFiles,
+  collectReasonixSessionFiles,
+  inspectSessionFile,
+  isPathInside,
+  isSessionFileForRuntime,
+  resolveDirectory,
+  resolveFile,
+  sameResolvedPath,
+} = nodeExternalCliSessionFileStore;
 
 export interface ExternalCliSessionOptions {
   /** Used only to derive the default Claude, Codex, Pi, CodeWhale, and Reasonix session roots. */
@@ -86,20 +98,9 @@ export interface CodewhaleNativeSessionCorrelationOptions {
   codewhaleRoot?: string;
 }
 
-interface RootSpec {
-  runtime: ExternalCliRuntime;
-  root: string;
-}
-
 interface ManagedCrushHistoryProfile {
   id: string;
   dataDir: string;
-}
-
-interface SessionFileCandidate {
-  runtime: ExternalCliRuntime;
-  path: string;
-  stats: Stats;
 }
 
 interface SummaryCacheEntry {
@@ -553,145 +554,6 @@ function resolveManagedHadamardHome(
   return options.hadamardHomeDir?.trim()
     ? resolveHadamardHome(options.hadamardHomeDir, { inputKind: 'dataRoot' })
     : resolveHadamardHome(options.homeDir);
-}
-
-async function resolveDirectory(directory: string): Promise<string | undefined> {
-  try {
-    const requestedInfo = await lstat(directory);
-    if (requestedInfo.isSymbolicLink() || !requestedInfo.isDirectory()) {
-      return undefined;
-    }
-    const canonicalPath = await realpathNative(directory);
-    return (await stat(canonicalPath)).isDirectory() ? canonicalPath : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-async function resolveFile(filePath: string): Promise<string | undefined> {
-  try {
-    const requestedInfo = await lstat(filePath);
-    if (requestedInfo.isSymbolicLink() || !requestedInfo.isFile()) {
-      return undefined;
-    }
-    const canonicalPath = await realpathNative(filePath);
-    const canonicalInfo = await lstat(canonicalPath);
-    return !canonicalInfo.isSymbolicLink() && canonicalInfo.isFile() ? canonicalPath : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-async function inspectSessionFile(
-  runtime: ExternalCliRuntime,
-  root: string,
-  filePath: string,
-): Promise<SessionFileCandidate | undefined> {
-  try {
-    const resolvedPath = path.resolve(filePath);
-    if (!isPathInside(root, resolvedPath)) {
-      return undefined;
-    }
-    const fileInfo = await lstat(resolvedPath);
-    if (fileInfo.isSymbolicLink() || !fileInfo.isFile()) {
-      return undefined;
-    }
-    return {
-      runtime,
-      path: resolvedPath,
-      stats: fileInfo,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-async function collectJsonlFiles(directory: string): Promise<string[]> {
-  let entries: Dirent[];
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  const files: string[] = [];
-  for (const entry of entries) {
-    if (entry.isSymbolicLink()) {
-      continue;
-    }
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      for (const nestedFile of await collectJsonlFiles(entryPath)) {
-        files.push(nestedFile);
-      }
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.jsonl')) {
-      files.push(entryPath);
-    }
-  }
-  return files;
-}
-
-async function collectCodewhaleSessionFiles(directory: string): Promise<string[]> {
-  let entries: Dirent[];
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  return entries
-    .filter(entry => entry.isFile() && isCodewhaleSessionFileName(entry.name))
-    .map(entry => path.join(directory, entry.name));
-}
-
-async function collectReasonixSessionFiles(directory: string): Promise<string[]> {
-  let entries: Dirent[];
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  return entries
-    .filter(entry => entry.isFile() && isReasonixSessionFileName(entry.name))
-    .map(entry => path.join(directory, entry.name));
-}
-
-function isSessionFileForRuntime(root: RootSpec, filePath: string): boolean {
-  if (root.runtime === 'codewhale') {
-    return path.relative(root.root, path.dirname(filePath)) === '' &&
-      isCodewhaleSessionFileName(path.basename(filePath));
-  }
-  if (root.runtime === 'reasonix') {
-    return path.relative(root.root, path.dirname(filePath)) === '' &&
-      isReasonixSessionFileName(path.basename(filePath));
-  }
-  return path.extname(filePath).toLowerCase() === '.jsonl';
-}
-
-function isCodewhaleSessionFileName(fileName: string): boolean {
-  return /^[A-Za-z0-9_-]+\.json$/u.test(fileName);
-}
-
-function isReasonixSessionFileName(fileName: string): boolean {
-  return /^[^\\/\u0000-\u001f\u007f]+\.jsonl$/iu.test(fileName) &&
-    !/(?:^|\.)(?:events|guardian)\.jsonl$/iu.test(fileName);
-}
-
-function sameResolvedPath(left: string, right: string): boolean {
-  const resolvedLeft = path.resolve(left);
-  const resolvedRight = path.resolve(right);
-  return process.platform === 'win32'
-    ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
-    : resolvedLeft === resolvedRight;
-}
-
-function isPathInside(root: string, candidate: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return relative !== '' &&
-    relative !== '..' &&
-    !relative.startsWith(`..${path.sep}`) &&
-    !path.isAbsolute(relative);
 }
 
 function unsafeSessionPath(filePath: string): HadamardSdkError {
