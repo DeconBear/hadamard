@@ -6,7 +6,7 @@
  * rendering (no React/Ink).
  */
 import { execSync, spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as readline from 'node:readline';
@@ -18,10 +18,6 @@ import {
   detectBridgeProviders,
   loadDefaultHadamardSettings,
   loadJsonConfigFile,
-  listWorkflows,
-  loadWorkflow,
-  saveWorkflow,
-  deleteWorkflow,
   listTeamDefinitions,
   loadTeamDefinition,
   cloneTeamDefinition,
@@ -57,7 +53,6 @@ import {
   isIssueStorageMode,
   listProjectIssues,
   listScheduledAutomationTasks,
-  upsertScheduledAutomationTask,
   resolveHadamardHome,
   externalSkillPreferencesToRuntimeOptions,
   readHadamardExternalSkillPreferences,
@@ -194,6 +189,7 @@ import { runTuiConfigurationCommand } from './tuiConfigurationCommandHandler.js'
 import { runTuiBasicCommand } from './tuiBasicCommandHandler.js';
 import { runTuiPlanCommand } from './tuiPlanCommandHandler.js';
 import { runTuiSessionCommand } from './tuiSessionCommandHandler.js';
+import { runTuiWorkflowCommand } from './tuiWorkflowCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3737,6 +3733,26 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         appendStatic,
       });
       if (sessionCommandHandled) return;
+      const workflowCommandHandled = await runTuiWorkflowCommand(name, args, {
+        workDir: sdk.config.workDir,
+        homeDir: sdk.config.homeDir,
+        selectItem,
+        promptText,
+        runWorkflowScript: async (script, workflowArgs, onEvent) => {
+          const { WorkflowScriptRuntime } = await import('../workflow/workflowScriptRuntime.js');
+          const runtime = new WorkflowScriptRuntime({
+            sdk,
+            trust: 'trusted',
+            args: workflowArgs,
+            onEvent,
+          });
+          const output = await runtime.execute(script);
+          return { result: output.result, errors: output.state.errors };
+        },
+        renderRichText: text => renderRichText(text, screen.width),
+        appendStatic,
+      });
+      if (workflowCommandHandled) return;
       switch (name) {
         case 'context': {
           const contextArgs = args.trim();
@@ -4001,223 +4017,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             ]);
           } catch (error) {
             appendStatic([...formatErrorLine(error instanceof Error ? error.message : String(error)), '']);
-          }
-          return;
-        }
-        // ── v0.5.0: Dynamic Workflows ────────────────────────────
-        case 'automation': {
-          if (!args || args === 'list') {
-            const tasks = await listScheduledAutomationTasks(sdk.config.workDir);
-            appendStatic([
-              ...formatInfoLine(tasks.length ? `Automation tasks (${tasks.length})` : 'No automation tasks configured.'),
-              ...tasks.map(task => `  ${A.bold}${task.name}${A.reset} ${A.dim}· ${task.kind} · ${task.trigger ?? 'schedule'} · ${task.enabled ? 'enabled' : 'paused'}${A.reset}`),
-              '',
-            ]);
-            return;
-          }
-          if (args !== 'new') {
-            appendStatic([...formatErrorLine('usage: /automation [list|new]'), '']);
-            return;
-          }
-
-          const kind = await selectItem({
-            title: 'New automation task',
-            subtitle: 'Choose what the task runs',
-            items: [
-              { id: 'workflow', label: 'Agent Workflow', description: 'Run a Workflow saved on the Agent page' },
-              { id: 'prompt', label: 'Prompt', description: 'Run one background prompt' },
-              { id: 'manager', label: 'Manager update', description: 'Update project progress' },
-            ],
-          });
-          if (kind !== 'workflow' && kind !== 'prompt' && kind !== 'manager') return;
-
-          let workflowName: string | undefined;
-          let workflowSource: 'agent' | undefined;
-          let input: string | undefined;
-          let prompt: string | undefined;
-          if (kind === 'workflow') {
-            const workflows = listTeamDefinitions(sdk.config.workDir, sdk.config.homeDir)
-              .filter(team => team.definition.squadType === 'workflow');
-            if (!workflows.length) {
-              appendStatic([...formatErrorLine('Create and save a Workflow on the Agent page first.'), '']);
-              return;
-            }
-            workflowName = await selectItem({
-              title: 'Agent Workflow',
-              items: workflows.map(workflow => ({
-                id: workflow.name,
-                label: workflow.name,
-                description: `${workflow.source} · ${workflow.definition.description ?? ''}`,
-              })),
-            });
-            if (!workflowName) return;
-            workflowSource = 'agent';
-            input = (await promptText({ title: workflowName, label: 'Input (optional)' }))?.trim() || undefined;
-          } else if (kind === 'prompt') {
-            prompt = (await promptText({ title: 'Prompt automation', label: 'Prompt' }))?.trim();
-            if (!prompt) return;
-          } else {
-            input = (await promptText({ title: 'Manager update', label: 'Instruction (optional)' }))?.trim() || undefined;
-          }
-
-          const trigger = await selectItem({
-            title: 'Trigger',
-            items: [
-              { id: 'schedule', label: 'Schedule', description: 'Run from a cron expression' },
-              { id: 'webhook', label: 'Webhook', description: 'Run when its local webhook URL is called' },
-            ],
-          });
-          if (trigger !== 'schedule' && trigger !== 'webhook') return;
-          const cron = trigger === 'schedule'
-            ? (await promptText({ title: 'Schedule', label: 'Cron', initial: '0 9 * * *', description: 'min hour day month weekday' }))?.trim()
-            : '';
-          if (trigger === 'schedule' && !cron) return;
-          const defaultName = workflowName ?? (prompt ? prompt.slice(0, 48) : 'Manager progress update');
-          const taskName = (await promptText({ title: 'Automation task', label: 'Name', initial: defaultName }))?.trim();
-          if (!taskName) return;
-          try {
-            const task = await upsertScheduledAutomationTask(sdk.config.workDir, {
-              name: taskName,
-              kind,
-              trigger,
-              cron,
-              enabled: true,
-              workflowName,
-              workflowSource,
-              input,
-              prompt,
-              ...(trigger === 'webhook' ? { webhookId: `wh-${randomUUID().slice(0, 8)}` } : {}),
-            });
-            appendStatic([...formatInfoLine(`Automation task saved: ${task.name}`), '']);
-          } catch (error) {
-            appendStatic([...formatErrorLine(errorMessage(error)), '']);
-          }
-          return;
-        }
-        case 'workflows': {
-          const runSavedWorkflow = async (wfName: string, wfTask?: string): Promise<void> => {
-            const wf = loadWorkflow(wfName, sdk.config.workDir);
-            if (!wf) {
-              appendStatic([...formatErrorLine(`workflow not found: ${wfName}`), '']);
-              return;
-            }
-            appendStatic([
-              ...formatInfoLine(`running workflow: ${wfName}`),
-              ...formatInfoLine(`phases: ${wf.meta?.phases?.map((p) => p.title).join(', ') ?? 'none'}`),
-              '',
-            ]);
-            try {
-              const { WorkflowScriptRuntime } = await import('../workflow/workflowScriptRuntime.js');
-              const runtime = new WorkflowScriptRuntime({
-                sdk: sdk as any,
-                trust: 'trusted',
-                args: wfTask,
-                onEvent: (e: any) => {
-                  if (e.type === 'workflow.phase.start') {
-                    appendStatic([`${A.bold}${A.magenta}▶ ${e.title}${A.reset}`]);
-                  } else if (e.type === 'workflow.agent.start') {
-                    appendStatic([`${A.dim}  ⚡ ${e.label ?? e.agentId}${e.cached ? ' (cached)' : ''}${A.reset}`]);
-                  } else if (e.type === 'workflow.agent.done') {
-                    const secs = e.durationMs ? ` · ${Math.round(e.durationMs / 1000)}s` : '';
-                    appendStatic([`${A.dim}  ✓ ${e.label ?? e.agentId}${secs}${A.reset}`]);
-                  } else if (e.type === 'workflow.log') {
-                    appendStatic([`${A.dim}  │ ${e.message}${A.reset}`]);
-                  } else if (e.type === 'workflow.script.done') {
-                    const secs = e.durationMs ? ` · ${Math.round(e.durationMs / 1000)}s` : '';
-                    appendStatic([
-                      `${A.green}✓ workflow done${A.reset}${A.dim} · ${e.agentCount} agents · ${e.totalTokens} tokens${secs}${A.reset}`,
-                      '',
-                    ]);
-                  }
-                },
-              });
-              const output = await runtime.execute(wf.script);
-              if (typeof output.result === 'string' && output.result.trim()) {
-                appendStatic([...formatInfoLine('workflow result:'), ...renderRichText(output.result, screen.width), '']);
-              }
-              if (output.state.errors.length > 0) {
-                appendStatic([...formatErrorLine(`${output.state.errors.length} errors during workflow execution`), '']);
-              }
-            } catch (error: any) {
-              appendStatic([...formatErrorLine(`workflow error: ${error.message}`), '']);
-            }
-          };
-
-          if (args.startsWith('run ')) {
-            const runRest = args.slice(4).trim();
-            const runSpace = runRest.indexOf(' ');
-            await runSavedWorkflow(
-              runSpace === -1 ? runRest : runRest.slice(0, runSpace),
-              runSpace === -1 ? undefined : runRest.slice(runSpace + 1).trim(),
-            );
-            return;
-          }
-          if (args.startsWith('delete ')) {
-            const name = args.slice(7).trim();
-            if (!name) {
-              appendStatic([...formatErrorLine('usage: /workflows delete <name>'), '']);
-              return;
-            }
-            const removed = await deleteWorkflow(name, sdk.config.workDir);
-            appendStatic([...formatInfoLine(removed ? `deleted workflow: ${name}` : `workflow not found: ${name}`), '']);
-            return;
-          }
-          if (args.startsWith('save ')) {
-            const rest = args.slice(5).trim();
-            const split = rest.indexOf(' ');
-            if (split === -1) {
-              appendStatic([...formatErrorLine('usage: /workflows save <name> <script-path> [--overwrite]'), '']);
-              return;
-            }
-            const name = rest.slice(0, split).trim();
-            const pathParts = rest.slice(split + 1).trim().split(/\s+/);
-            const overwrite = pathParts.includes('--overwrite');
-            const scriptPath = pathParts.filter((part) => part !== '--overwrite').join(' ');
-            try {
-              const resolved = path.isAbsolute(scriptPath) ? scriptPath : path.resolve(sdk.config.workDir, scriptPath);
-              const script = fs.readFileSync(resolved, 'utf8');
-              const filePath = await saveWorkflow(name, script, { projectDir: sdk.config.workDir, overwrite });
-              appendStatic([...formatInfoLine(`saved workflow: ${name} -> ${filePath}`), '']);
-            } catch (error: any) {
-              appendStatic([...formatErrorLine(error.message || String(error)), '']);
-            }
-            return;
-          }
-          if (args && args !== 'list') {
-            appendStatic([...formatErrorLine('usage: /workflows [list|run <name> [task]|save <name> <script-path>|delete <name>]'), '']);
-            return;
-          }
-
-          // No sub-command → selection picker.
-          const saved = listWorkflows(sdk.config.workDir);
-          const items = [
-            ...saved.map((w) => ({
-              id: `run:${w.name}`,
-              label: w.name,
-              description: `${w.source} · ${w.description}`.slice(0, 80),
-            })),
-            {
-              id: '__orchestrate__',
-              label: '+ ask the agent to orchestrate a new workflow',
-              description: 'describe a task in the prompt box; the agent designs & runs a workflow, then you can save it',
-            },
-          ];
-          const choice = await selectItem({
-            title: 'Workflows',
-            subtitle: 'run a saved workflow, or have the agent build a new one',
-            items,
-          });
-          if (!choice) return;
-          if (choice.startsWith('run:')) {
-            const name = choice.slice('run:'.length);
-            const task = await promptText({ title: `Run /${name}`, label: 'Task / input (optional — Enter to skip)' });
-            await runSavedWorkflow(name, task && task.trim() ? task.trim() : undefined);
-          } else if (choice === '__orchestrate__') {
-            appendStatic([
-              ...formatInfoLine('Type your task in the prompt box and ask: "orchestrate a workflow to <task>".'),
-              `${A.dim}After it runs and works, ask me to save it as a reusable workflow.${A.reset}`,
-              '',
-            ]);
           }
           return;
         }
