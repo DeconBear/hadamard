@@ -8,9 +8,17 @@ const PRODUCT_SURFACES = [
   ['src/parity/hadamardCleanBridgeCompatSdk.ts', 'bridge'],
 ] as const;
 
+async function readSurfaceSource(file: string): Promise<string> {
+  const files = file === 'src/tui/hadamardTui.ts'
+    ? [file, 'src/tui/hadamardTuiController.ts']
+    : [file];
+  return (await Promise.all(files.map(source =>
+    readFile(new URL(`../${source}`, import.meta.url), 'utf8')))).join('\n');
+}
+
 describe('product RunEvent wiring boundary', () => {
   it.each(PRODUCT_SURFACES)('%s projects legacy events through shared %s semantics', async (file, target) => {
-    const source = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
+    const source = await readSurfaceSource(file);
 
     expect(source).toContain('LegacySurfaceEventPipeline');
     expect(source).toContain('new LegacySurfaceEventPipeline(');
@@ -45,7 +53,7 @@ describe('product RunEvent wiring boundary', () => {
     'src/tui/hadamardTui.ts',
     'src/gui/hadamardGui.ts',
   ])('%s mounts and closes the managed plugin runtime', async (file) => {
-    const source = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
+    const source = await readSurfaceSource(file);
     expect(source).toContain('createManagedPluginRuntime');
     expect(source).toMatch(/managedPluginRuntime(?:Close)?/);
     expect(source).toMatch(/managedPluginRuntime(?:Close)?(?:\(\)|\.close(?:\(\))?)/);
@@ -54,7 +62,7 @@ describe('product RunEvent wiring boundary', () => {
   it.each([
     'src/tui/hadamardTui.ts',
   ])('%s retries managed plugin cleanup and exits nonzero on failure', async (file) => {
-    const source = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
+    const source = await readSurfaceSource(file);
     expect(source).toContain('closeManagedPluginsForExit');
     expect(source).toContain('MANAGED_PLUGIN_FINAL_CLOSE_ATTEMPTS = 2');
     expect(source).toContain('billing may continue');

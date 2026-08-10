@@ -38,16 +38,19 @@ describe('team preferences (plan §3.3 / Phase 0)', () => {
     // the main agent's tool list must NOT include the team tool. All three
     // TUI and GUI implement this with the same guard expression.
     const root = join(import.meta.dirname, '..');
-    for (const file of [
-      join(root, 'src', 'tui', 'hadamardTui.ts'),
-      join(root, 'src', 'gui', 'hadamardGui.ts'),
-    ]) {
-      const source = readFileSync(file, 'utf8');
-      expect(source, file).toContain('activeTeamTool && teamPrefs.autoInvoke ?');
+    for (const [label, files] of [
+      ['TUI', [
+        join(root, 'src', 'tui', 'hadamardTui.ts'),
+        join(root, 'src', 'tui', 'hadamardTuiController.ts'),
+      ]],
+      ['GUI', [join(root, 'src', 'gui', 'hadamardGui.ts')]],
+    ] as const) {
+      const source = files.map(file => readFileSync(file, 'utf8')).join('\n');
+      expect(source, label).toContain('activeTeamTool && teamPrefs.autoInvoke ?');
       // Every injection site of the team tool must carry the autoInvoke guard.
       const injections = source.match(/activeTeamTool[^\n]*tools:/g) ?? [];
       for (const site of injections) {
-        expect(site, `${file}: ${site}`).toContain('teamPrefs.autoInvoke');
+        expect(site, `${label}: ${site}`).toContain('teamPrefs.autoInvoke');
       }
     }
   });

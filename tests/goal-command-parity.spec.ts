@@ -59,8 +59,14 @@ describe('Goal interactive surface parity', () => {
 
   it('keeps TUI and GUI wired to the same ProjectGoalApi command method', async () => {
     const [tui, gui] = await Promise.all([
-      readFile(path.resolve('src/tui/hadamardTui.ts'), 'utf8'),
-      readFile(path.resolve('src/gui/hadamardGui.ts'), 'utf8'),
+      Promise.all([
+        readFile(path.resolve('src/tui/hadamardTui.ts'), 'utf8'),
+        readFile(path.resolve('src/tui/hadamardTuiController.ts'), 'utf8'),
+      ]).then(parts => parts.join('\n')),
+      Promise.all([
+        readFile(path.resolve('src/gui/hadamardGui.ts'), 'utf8'),
+        readFile(path.resolve('src/gui/hadamardGuiAssets.ts'), 'utf8'),
+      ]).then(parts => parts.join('\n')),
     ]);
     expect(tui).toContain('sdk.goals.command(session, args)');
     expect(gui).toContain('sdk.goals.command(session, args)');
