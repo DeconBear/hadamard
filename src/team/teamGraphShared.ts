@@ -103,7 +103,7 @@ export interface OrchestrateGraphOptions {
     node: TeamGraphNode,
     identity: MemberIdentity,
     task: string,
-    context: GraphNodeRunContext,
+    ctx: GraphNodeRunContext,
   ) => Promise<GraphNodeRunResult>;
   onEvent?: (event: TeamEvent) => void;
 }
