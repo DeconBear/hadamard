@@ -1,4 +1,4 @@
-import type { HadamardAgentClient } from '../runtime/agentClient.js';
+import type { AgentRunner } from '../application/agentRunnerPort.js';
 import { WorkflowEngine } from './workflowEngine.js';
 import type {
   WorkflowDefinition,
@@ -88,7 +88,7 @@ export class WorkflowApi {
   private readonly engine: WorkflowEngine;
   private readonly workDir: string;
 
-  constructor(sdk: HadamardAgentClient) {
+  constructor(sdk: AgentRunner) {
     this.engine = new WorkflowEngine(sdk);
     this.workDir = sdk.config.workDir;
   }
