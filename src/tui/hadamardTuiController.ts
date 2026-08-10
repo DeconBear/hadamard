@@ -18,14 +18,8 @@ import {
   detectBridgeProviders,
   loadDefaultHadamardSettings,
   loadJsonConfigFile,
-  listTeamDefinitions,
   loadTeamDefinition,
-  cloneTeamDefinition,
-  deleteTeamDefinition,
-  getBuiltInTeamDefinition,
   instantiateTeamDefinition,
-  listTeamAgentLabels,
-  countTeamAgents,
   askTeamDefinition,
   createTeamTool,
   readTeamPreferences,
@@ -125,7 +119,6 @@ import { addMcpServer, readMcpServerConfig, removeMcpServer } from '../mcp/mcpSe
 import type { ContentBlockParam } from '../provider/types.js';
 import { isReadOnlyBashCommand } from '../runtime/bashClassification.js';
 import { estimateCost } from '../team/pricing.js';
-import { applyTeamRunEvent, createTeamRunViewState, formatTeamRunTreeLines } from '../team/teamRunView.js';
 import { planFilePath, readPlanFile } from '../tools/planMode/PlanModeTools.js';
 import { loadProjectContext } from '../memory/projectContext.js';
 import {
@@ -139,7 +132,6 @@ import {
   canRunInteractiveCommand,
   interactiveCommandRunPolicy,
   interactiveCommandUsage,
-  parseTeamAskArguments,
   selectInteractiveCommand,
 } from '../ui/commandSurface.js';
 import {
@@ -191,6 +183,7 @@ import { runTuiSessionCommand } from './tuiSessionCommandHandler.js';
 import { runTuiWorkflowCommand } from './tuiWorkflowCommandHandler.js';
 import { runTuiWorktreeCommand } from './tuiWorktreeCommandHandler.js';
 import { runTuiBridgeCommand } from './tuiBridgeCommandHandler.js';
+import { runTuiTeamCommand } from './tuiTeamCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3779,6 +3772,33 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         },
         appendStatic,
       })) return;
+      if (await runTuiTeamCommand(name, args, {
+        workDir: sdk.config.workDir,
+        state: {
+          activeName: () => activeTeamName,
+          hasActiveTool: () => Boolean(activeTeamTool),
+          preferences: () => teamPrefs,
+          lastRunSummary: () => lastTeamRunSummary,
+          currentModel: () => session.model,
+          attach: attachTeamByName,
+          clear: () => {
+            activeTeamTool = null;
+            activeTeamName = null;
+          },
+          setLastRunSummary: summary => { lastTeamRunSummary = summary; },
+        },
+        execution: {
+          ask: (definition, prompt, onEvent) => askTeamDefinition(definition, prompt, undefined, {
+            workDir: sdk.config.workDir,
+            onEvent,
+          }),
+        },
+        ui: {
+          selectItem,
+          renderRichText: text => renderRichText(text, screen.width),
+          appendStatic,
+        },
+      })) return;
       switch (name) {
         case 'context': {
           const contextArgs = args.trim();
@@ -4043,190 +4063,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             ]);
           } catch (error) {
             appendStatic([...formatErrorLine(error instanceof Error ? error.message : String(error)), '']);
-          }
-          return;
-        }
-        // ── v0.5.0: Model Team ───────────────────────────────────
-        case 'team': {
-          if (args === 'status') {
-            appendStatic([
-              `${A.bold}Team status${A.reset}`,
-              `${A.dim}attached: ${activeTeamName ?? 'none'}${A.reset}`,
-              `${A.dim}autoInvoke: ${teamPrefs.autoInvoke ? 'on — the main agent can call the team as a tool' : 'off — manual /team ask only'}${A.reset}`,
-              `${A.dim}defaultAttached: ${teamPrefs.defaultAttached ?? 'none'}${teamPrefs.defaultAttached && !activeTeamName ? ' (not found)' : ''}${A.reset}`,
-              `${A.dim}last run: ${lastTeamRunSummary ?? 'none'}${A.reset}`,
-              '',
-            ]);
-            return;
-          }
-          if (args === 'off') {
-            activeTeamTool = null;
-            activeTeamName = null;
-            appendStatic([...formatInfoLine('team: none — the agent works individually'), '']);
-            return;
-          }
-          if (args === 'list') {
-            const teams = listTeamDefinitions(sdk.config.workDir);
-            appendStatic([
-              `${A.bold}Teams${A.reset}`,
-              ...teams.map((t) =>
-                `${t.name === activeTeamName ? `${A.green}*${A.reset}` : ' '}${A.cyan}${t.name}${A.reset}${A.dim} · ${t.definition.mode} · ${t.source} · ${countTeamAgents(t.definition)} agents${A.reset}`),
-              `${A.dim}/team attach <name> · /team ask <name> <prompt> · /team off · /team status${A.reset}`,
-              '',
-            ]);
-            return;
-          }
-          if (args.startsWith('attach ')) {
-            const teamName = args.slice(7).trim();
-            const definition = attachTeamByName(teamName);
-            if (!definition) {
-              appendStatic([...formatErrorLine(`team not found: ${teamName}`), '']);
-              return;
-            }
-            appendStatic([
-              ...formatInfoLine(`team attached: ${definition.name} (${definition.mode}) · autoInvoke ${teamPrefs.autoInvoke ? 'on' : 'off — run /team ask <name> <prompt> to use it'}`),
-              '',
-            ]);
-            return;
-          }
-          if (args.startsWith('clone ')) {
-            const parts = args.slice(6).trim().split(/\s+/);
-            if (parts.length !== 2) {
-              appendStatic([...formatErrorLine('usage: /team clone <source> <new-name>'), '']);
-              return;
-            }
-            try {
-              const clone = await cloneTeamDefinition(parts[0]!, parts[1]!, { projectDir: sdk.config.workDir });
-              appendStatic([...formatInfoLine(`team cloned: ${parts[0]} → ${clone.name} (${clone.filePath})`), '']);
-            } catch (error: any) {
-              appendStatic([...formatErrorLine(`clone failed: ${error.message}`), '']);
-            }
-            return;
-          }
-          if (args.startsWith('delete ')) {
-            const teamName = args.slice(7).trim();
-            if (!teamName) {
-              appendStatic([...formatErrorLine('usage: /team delete <name>'), '']);
-              return;
-            }
-            if (getBuiltInTeamDefinition(teamName)) {
-              appendStatic([...formatErrorLine(`cannot delete built-in team: ${teamName}`), '']);
-              return;
-            }
-            const removed = await deleteTeamDefinition(teamName, sdk.config.workDir);
-            if (!removed) {
-              appendStatic([...formatErrorLine(`team not found: ${teamName}`), '']);
-              return;
-            }
-            if (activeTeamName === teamName) {
-              activeTeamTool = null;
-              activeTeamName = null;
-            }
-            appendStatic([...formatInfoLine(`deleted team: ${teamName}`), '']);
-            return;
-          }
-          if (args.startsWith('ask ')) {
-            const rest = args.slice(4).trim();
-            const parsed = parseTeamAskArguments(rest);
-            if (!parsed) {
-              appendStatic([...formatErrorLine('usage: /team ask <name> <prompt>'), '']);
-              return;
-            }
-            const { name: teamName, prompt } = parsed;
-            const loaded = loadTeamDefinition(teamName, sdk.config.workDir);
-            if (!loaded) {
-              appendStatic([...formatErrorLine(`team not found: ${teamName}`), '']);
-              return;
-            }
-            const definition = instantiateTeamDefinition(loaded.definition, session.model);
-            const memberModels = listTeamAgentLabels(definition);
-            if (teamPrefs.confirmBeforeRun) {
-              const go = await selectItem({
-                title: `Run team "${definition.name}"?`,
-                subtitle: `${definition.mode} · members: ${memberModels.join(', ') || '(none)'}`,
-                items: [
-                  { id: 'run', label: 'Run', description: 'convene the team now' },
-                  { id: 'cancel', label: 'Cancel', description: 'do nothing' },
-                ],
-              });
-              if (go !== 'run') return;
-            }
-            appendStatic([
-              ...formatInfoLine(`asking team "${teamName}" (${definition.mode} mode)`),
-              `${A.dim}convening: ${memberModels.join(', ') || 'configured members'}${A.reset}`,
-              '',
-            ]);
-            try {
-              const teamRunView = createTeamRunViewState(definition.name);
-              const printTeamRunTree = () => {
-                const lines = formatTeamRunTreeLines(teamRunView);
-                if (!lines.length) return;
-                appendStatic([...lines.map((line) => `${A.dim}${line}${A.reset}`), '']);
-              };
-              const result = await askTeamDefinition(definition, prompt, undefined, {
-                workDir: sdk.config.workDir,
-                onEvent: (e) => {
-                  applyTeamRunEvent(teamRunView, e);
-                  if (e.type === 'team.synthesis') {
-                    appendStatic([`${A.dim}  ◈ synthesis round ${e.round}: ${e.decision}${A.reset}`]);
-                  } else if (
-                    e.type === 'team.started'
-                    || e.type === 'team.member.completed'
-                    || e.type === 'team.edge.triggered'
-                    || e.type === 'team.completed'
-                  ) {
-                    printTeamRunTree();
-                  }
-                },
-              });
-              lastTeamRunSummary = `${teamName} · ${result.mode} · ${Math.round(result.durationMs / 1000)}s`;
-              appendStatic([
-                `${A.green}✓ team response${A.reset}${A.dim} · ${result.mode} · ${Math.round(result.durationMs / 1000)}s${A.reset}`,
-                `${A.dim}cost: ${result.cost.estimatedCost !== null ? `$${result.cost.estimatedCost.toFixed(4)}` : 'N/A'} · ${result.cost.totalInputTokens + result.cost.totalOutputTokens} tokens${A.reset}`,
-                '',
-                ...renderRichText(result.answer, screen.width),
-                '',
-              ]);
-            } catch (error: any) {
-              appendStatic([...formatErrorLine(`team error: ${error.message}`), '']);
-            }
-            return;
-          }
-
-          // No sub-command → picker that toggles which team the agent may call.
-          const teams = listTeamDefinitions(sdk.config.workDir);
-          const items = [
-            { id: '__none__', label: activeTeamTool ? `No team — remove "${activeTeamName}"` : 'No team (individual) — current', description: 'the agent works solo, no team attached' },
-            ...teams.map((t) => ({
-              id: `team:${t.name}`,
-              label: `${t.name}${t.name === activeTeamName ? ' — attached' : ''}`,
-              description: `${t.source} · ${t.definition.mode} · ${countTeamAgents(t.definition)} agents`,
-            })),
-          ];
-          const choice = await selectItem({ title: 'Team', subtitle: `attach a team (autoInvoke ${teamPrefs.autoInvoke ? 'on' : 'off'} — settings preferences.team)`, items });
-          if (!choice) return;
-          if (choice === '__none__') {
-            activeTeamTool = null;
-            activeTeamName = null;
-            appendStatic([...formatInfoLine('team: none — the agent works individually'), '']);
-            return;
-          }
-          try {
-            const definition = attachTeamByName(choice.slice('team:'.length));
-            if (!definition) {
-              appendStatic([...formatErrorLine('could not load team definition'), '']);
-              return;
-            }
-            appendStatic([
-              ...formatInfoLine(
-                teamPrefs.autoInvoke
-                  ? `team active: ${definition.name} (${definition.mode}) — the agent can now call "${definition.name}" as a tool when it helps`
-                  : `team attached: ${definition.name} (${definition.mode}) — run /team ask ${definition.name} <prompt> (autoInvoke off)`,
-              ),
-              '',
-            ]);
-          } catch (error: any) {
-            appendStatic([...formatErrorLine(`team error: ${error.message}`), '']);
           }
           return;
         }
