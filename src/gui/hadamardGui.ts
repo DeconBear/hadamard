@@ -239,10 +239,6 @@ import {
 import { buildRouteModelApi } from '../router/modelRouter.js';
 import {
   buildReferenceIndex,
-  findBrokenRefs,
-  findUsages,
-  type ReferenceEdge,
-  type ReferenceTargetKind,
 } from '../manager/referenceIndex.js';
 import {
   applyDeleteFallback,
@@ -250,7 +246,6 @@ import {
   renameDefinitionAndReferences,
   repointConfigModel,
   type DeleteFallbackStrategy,
-  type ReferenceDefinitionKind,
 } from '../manager/referenceOperations.js';
 import { BrokenReferenceError } from '../manager/resolveTargetRef.js';
 import {
@@ -377,6 +372,11 @@ import { registerGuiChatHttpController } from './guiChatHttpController.js';
 import { registerGuiSettingsHttpController } from './guiSettingsHttpController.js';
 import { registerGuiTeamHttpController } from './guiTeamHttpController.js';
 import { registerGuiAgentHttpController } from './guiAgentHttpController.js';
+import { registerGuiReferenceHttpController } from './guiReferenceHttpController.js';
+import {
+  createGuiReferenceHttpService,
+  type GuiReferenceSnapshot,
+} from './guiReferenceHttpService.js';
 import type {
   HadamardCanUseTool,
   HadamardEffort,
@@ -7563,6 +7563,57 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     };
   }
 
+  async function buildGuiReferenceIndex(): Promise<GuiReferenceSnapshot> {
+    const homeDir = resolveGuiHomeDir();
+    const issueStorage = await issueStorageFor(workDir, homeDir);
+    const [teams, routers, automationTasks, managerConfig, issues, assistantConfig] = await Promise.all([
+      Promise.resolve(listTeamDefinitions(workDir, homeDir)),
+      Promise.resolve(listRouterProfiles(workDir, homeDir)),
+      listScheduledAutomationTasks(workDir),
+      readManagerConfig(projectPrimaryPath, homeDir).catch(() => undefined),
+      listProjectIssues(workDir, homeDir, issueStorage),
+      readAssistantConfig(homeDir),
+    ]);
+    const workflows = listWorkflows(workDir, homeDir);
+    const bridgeConfigs = readBridgeConfigs(homeDir).configs;
+    const profileByName = new Map(listAgentProfiles(homeDir).map(profile => [profile.name, profile]));
+    for (const profile of readAllAgentReferenceProfiles(homeDir, workDir)) {
+      profileByName.set(profile.name, profile);
+    }
+    const index = buildReferenceIndex({
+      bridgeConfigs,
+      agentProfiles: [...profileByName.values()],
+      routers: routers.map((entry) => entry.profile),
+      teams: teams.map((entry) => entry.definition),
+      automationTasks,
+      teamPreferences: teamPrefs,
+      managerConfigs: managerConfig
+        ? [{ name: projectPrimaryPath, bridgeConfig: managerConfig.bridgeConfig }]
+        : [],
+      issues,
+      assistantConfig,
+      session: {
+        activeAgent: activeAgentSelectionName,
+        activeConfig: activeBridgeConfig?.name ?? null,
+        activeRouterName: activeRouter?.name ?? null,
+        activeTeamName,
+      },
+    });
+    return {
+      index,
+      known: {
+        configs: bridgeConfigs.map(config => config.name),
+        agents: [
+          ...listSelectableAgents(homeDir).map(agent => agent.name),
+          ...listAgentDefinitionNames(homeDir, workDir),
+        ],
+        teams: teams.map(team => team.name),
+        routers: routers.map(router => router.name),
+        workflows: workflows.map(workflow => workflow.name),
+      },
+    };
+  }
+
   registerGuiTeamHttpController(httpRouter, {
     definition: name => {
       const loaded = loadTeamDefinition(name, workDir);
@@ -8077,6 +8128,47 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       return { status: 200, body: await state() };
     },
   });
+  registerGuiReferenceHttpController(httpRouter, createGuiReferenceHttpService({
+    snapshot: buildGuiReferenceIndex,
+    rename: async (kind, oldName, newName) => {
+      const report = await withRuntimeMutation(async () => {
+        const result = await renameDefinitionAndReferences(
+          kind,
+          oldName,
+          newName,
+          await referenceOperationContext(),
+        );
+        if (kind === 'config' && activeBridgeConfig?.name === oldName) {
+          const renamed = findBridgeConfig(newName, resolveGuiHomeDir());
+          if (renamed) await activateBridgeConfig(renamed);
+        }
+        if (kind === 'agent' && activeAgentSelectionName === oldName) {
+          activeAgentSelectionName = newName;
+        }
+        if (kind === 'router' && activeRouter?.name === oldName) {
+          activeRouter = loadRouterProfile(newName, workDir, resolveGuiHomeDir())?.profile ?? null;
+          routedModelLabel = null;
+        }
+        if (kind === 'team' && activeTeamName === oldName) {
+          try { attachTeamByName(newName); } catch { /* keep stale attach state */ }
+        }
+        await persistSessionRuntimeMetadata();
+        return result;
+      });
+      invalidateHeavyState();
+      return { rewritten: report.rewritten, state: await state() };
+    },
+    repointModel: async (config, fromModel, toModel) => {
+      const report = await withRuntimeMutation(async () =>
+        repointConfigModel(config, fromModel, toModel, await referenceOperationContext()));
+      invalidateHeavyState();
+      return { rewritten: report.rewritten, state: await state() };
+    },
+    mutationError: error => ({
+      status: runtimeMutationErrorStatus(error),
+      body: runtimeMutationErrorBody(error),
+    }),
+  }));
 
   const server = createServer(async (req, res) => {
     try {
@@ -9470,156 +9562,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             invalidateHeavyState();
             return json(res, 200, await state());
           });
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-      }
-      // Unified reference model (P0): build the reference index over the same
-      // data the state snapshot loads, then serve usage / broken-ref queries.
-      async function buildGuiReferenceIndex(): Promise<{
-        index: ReferenceEdge[];
-        bridgeConfigs: PersistedBridgeConfig[];
-        teams: { name: string }[];
-        routers: { name: string }[];
-        workflows: { name: string }[];
-      }> {
-        const homeDir = resolveGuiHomeDir();
-        const issueStorage = await issueStorageFor(workDir, homeDir);
-        const [teams, routers, automationTasks, managerConfig, issues, assistantConfig] = await Promise.all([
-          Promise.resolve(listTeamDefinitions(workDir, homeDir)),
-          Promise.resolve(listRouterProfiles(workDir, homeDir)),
-          listScheduledAutomationTasks(workDir),
-          readManagerConfig(projectPrimaryPath, homeDir).catch(() => undefined),
-          listProjectIssues(workDir, homeDir, issueStorage),
-          readAssistantConfig(homeDir),
-        ]);
-        const workflows = listWorkflows(workDir, homeDir);
-        const bridgeConfigs = readBridgeConfigs(homeDir).configs;
-        // S3 unified store: profile edges come from the legacy store AND .md
-        // definitions in both scopes (incl. bridgeConfig-only definitions).
-        const profileByName = new Map(listAgentProfiles(homeDir).map(profile => [profile.name, profile]));
-        for (const profile of readAllAgentReferenceProfiles(homeDir, workDir)) {
-          profileByName.set(profile.name, profile);
-        }
-        const agentProfiles = [...profileByName.values()];
-        const index = buildReferenceIndex({
-          bridgeConfigs,
-          agentProfiles,
-          routers: routers.map((entry) => entry.profile),
-          teams: teams.map((entry) => entry.definition),
-          automationTasks,
-          teamPreferences: teamPrefs,
-          managerConfigs: managerConfig
-            ? [{ name: projectPrimaryPath, bridgeConfig: managerConfig.bridgeConfig }]
-            : [],
-          issues,
-          assistantConfig,
-          session: {
-            activeAgent: activeAgentSelectionName,
-            activeConfig: activeBridgeConfig?.name ?? null,
-            activeRouterName: activeRouter?.name ?? null,
-            activeTeamName,
-          },
-        });
-        return { index, bridgeConfigs, teams, routers, workflows };
-      }
-      if (req.method === 'GET' && url.pathname === '/api/references') {
-        try {
-          const kind = url.searchParams.get('kind')?.trim() ?? '';
-          const name = url.searchParams.get('name')?.trim() ?? '';
-          const { index } = await buildGuiReferenceIndex();
-          if (!kind && !name) return json(res, 200, { edges: index });
-          const kinds: ReferenceTargetKind[] = ['config', 'agent', 'team', 'router', 'workflow-script'];
-          if (!kinds.includes(kind as ReferenceTargetKind) || !name) {
-            return json(res, 400, { code: 'INVALID_REFERENCE_QUERY', error: 'Missing or invalid kind/name' });
-          }
-          return json(res, 200, { edges: findUsages(index, kind as ReferenceTargetKind, name) });
-        } catch (error) {
-          return json(res, 503, {
-            code: 'REFERENCE_INDEX_UNAVAILABLE',
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-      if (req.method === 'GET' && url.pathname === '/api/references/broken') {
-        try {
-          const homeDir = resolveGuiHomeDir();
-          const { index, bridgeConfigs, teams, routers, workflows } = await buildGuiReferenceIndex();
-          const broken = findBrokenRefs(index, {
-            configs: bridgeConfigs.map((config) => config.name),
-            // Selectable agents include ephemeral per-config presets so an active
-            // session edge to one of them is not falsely reported as broken; the
-            // .md definition names cover unified-store agents in both scopes (S3).
-            agents: [
-              ...listSelectableAgents(homeDir).map((agent) => agent.name),
-              ...listAgentDefinitionNames(homeDir, workDir),
-            ],
-            teams: teams.map((team) => team.name),
-            routers: routers.map((router) => router.name),
-            workflows: workflows.map((workflow) => workflow.name),
-          });
-          return json(res, 200, { edges: broken });
-        } catch (error) {
-          return json(res, 503, {
-            code: 'REFERENCE_INDEX_UNAVAILABLE',
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-      if (req.method === 'POST' && url.pathname === '/api/references/rename') {
-        try {
-          const body = await readJson(req);
-          const kind = typeof body.kind === 'string' ? body.kind.trim() : '';
-          if (!['config', 'agent', 'router', 'team'].includes(kind)) {
-            return json(res, 400, { error: 'Invalid kind (config|agent|router|team)' });
-          }
-          const oldName = typeof body.oldName === 'string' ? body.oldName.trim() : '';
-          const newName = typeof body.newName === 'string' ? body.newName.trim() : '';
-          const report = await withRuntimeMutation(async () => {
-            const opCtx = await referenceOperationContext();
-            const result = await renameDefinitionAndReferences(
-              kind as ReferenceDefinitionKind,
-              oldName,
-              newName,
-              opCtx,
-            );
-            // Keep the active session state pointed at the renamed definition.
-            if (kind === 'config' && activeBridgeConfig?.name === oldName) {
-              const renamed = findBridgeConfig(newName, resolveGuiHomeDir());
-              if (renamed) await activateBridgeConfig(renamed);
-            }
-            if (kind === 'agent' && activeAgentSelectionName === oldName) {
-              activeAgentSelectionName = newName;
-            }
-            if (kind === 'router' && activeRouter?.name === oldName) {
-              activeRouter = loadRouterProfile(newName, workDir, resolveGuiHomeDir())?.profile ?? null;
-              routedModelLabel = null;
-            }
-            if (kind === 'team' && activeTeamName === oldName) {
-              try { attachTeamByName(newName); } catch { /* keep stale attach state */ }
-            }
-            await persistSessionRuntimeMetadata();
-            return result;
-          });
-          invalidateHeavyState();
-          return json(res, 200, { ok: true, rewritten: report.rewritten, state: await state() });
-        } catch (error) {
-          return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-        }
-      }
-      if (req.method === 'POST' && url.pathname === '/api/references/repoint-model') {
-        try {
-          const body = await readJson(req);
-          const config = typeof body.config === 'string' ? body.config.trim() : '';
-          const fromModel = typeof body.fromModel === 'string' ? body.fromModel.trim() : '';
-          const toModel = typeof body.toModel === 'string' ? body.toModel.trim() : '';
-          if (!config || !fromModel || !toModel) {
-            return json(res, 400, { error: 'Missing config/fromModel/toModel' });
-          }
-          const report = await withRuntimeMutation(async () =>
-            repointConfigModel(config, fromModel, toModel, await referenceOperationContext()));
-          invalidateHeavyState();
-          return json(res, 200, { ok: true, rewritten: report.rewritten, state: await state() });
         } catch (error) {
           return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
         }
