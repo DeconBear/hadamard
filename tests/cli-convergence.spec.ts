@@ -21,6 +21,7 @@ async function readTuiSources(): Promise<string> {
     readFile(new URL('src/tui/tuiMemoryCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiConfigurationCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiBasicCommandHandler.ts', root), 'utf8'),
+    readFile(new URL('src/tui/tuiPlanCommandHandler.ts', root), 'utf8'),
   ])).join('\n');
 }
 
@@ -41,7 +42,11 @@ function commandCase(
   expect(handlerStart, `${marker} exists`).toBeGreaterThanOrEqual(0);
   const lines = source.slice(handlerStart).split(/\r?\n/u);
   const start = lines.findIndex(line => line.trimStart().startsWith(`case '${command}'`));
-  expect(start, `/${command} case exists`).toBeGreaterThanOrEqual(0);
+  if (start < 0) {
+    const guardedHandler = lines.findIndex(line => line.includes(`name !== '${command}'`));
+    expect(guardedHandler, `/${command} handler exists`).toBeGreaterThanOrEqual(0);
+    return lines.slice(guardedHandler).join('\n');
+  }
   const next = lines.slice(start + 1).findIndex(line => {
     const trimmed = line.trimStart();
     return trimmed.startsWith("case '") || trimmed.startsWith('default:');
