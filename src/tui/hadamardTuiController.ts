@@ -76,7 +76,6 @@ import {
   readProjectSettings,
   writeProjectSettings,
   type ProjectInstructionMode,
-  type ProjectSettings,
 } from '../config/projectSettings.js';
 import { createPreToolUseHookClassifier, readPreToolUseHooks, readPostToolUseHooks, runPostToolUseHooks, readSessionStartHooks, runSessionStartHooks } from '../hooks/userHooks.js';
 import { parseTypedHooks } from '../hooks/hookConfig.js';
@@ -85,12 +84,10 @@ import type {
   HadamardRunEffort,
   HadamardCanUseTool,
   HadamardPermissionMode,
-  HadamardPermissionRule,
   HadamardToolApprover,
   AgentEvent,
   AgentRunResult,
   AgentToolDefinition,
-  SessionSummary,
   TeamDefinition,
   RouterProfile,
 } from '../types.js';
@@ -140,7 +137,7 @@ import {
   type AgentExecutionNodeView,
   type AgentExecutionRootView,
 } from '../ui/agentExecutionView.js';
-import { A, stringWidth, truncateToWidth, wrapToWidth } from './ansi.js';
+import { A, truncateToWidth, wrapToWidth } from './ansi.js';
 import { InputEditor } from './editor.js';
 import { discoverHadamardPlugins } from './pluginCatalog.js';
 import { TuiScreen } from './screen.js';
