@@ -102,8 +102,6 @@ import { createAssistantAutomationTools } from './assistantAutomationTools.js';
 import {
   assertAssistantKnownProject,
   createAssistantProjectTools,
-  listAssistantProjectBriefs,
-  type AssistantProjectBrief,
 } from './assistantProjectTools.js';
 
 export { listAssistantProjectBriefs, type AssistantProjectBrief } from './assistantProjectTools.js';
