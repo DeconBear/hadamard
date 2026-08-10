@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -46,6 +46,25 @@ try {
     tarball,
   ], consumerDirectory);
 
+  const installedPackageJson = JSON.parse(await readFile(path.join(
+    consumerDirectory,
+    'node_modules',
+    packageJson.name,
+    'package.json',
+  ), 'utf8'));
+  for (const command of ['hadamard', 'actoviq']) {
+    if (installedPackageJson.bin?.[command] !== './bin/hadamard-tui.js') {
+      throw new Error(`Installed package has an invalid ${command} binary mapping.`);
+    }
+    const shim = path.join(
+      consumerDirectory,
+      'node_modules',
+      '.bin',
+      `${command}${process.platform === 'win32' ? '.cmd' : ''}`,
+    );
+    await access(shim);
+  }
+
   const specifiers = Object.keys(packageJson.exports ?? {}).map(subpath => (
     subpath === '.' ? packageJson.name : `${packageJson.name}${subpath.slice(1)}`
   ));
@@ -63,6 +82,7 @@ try {
 
   const verified = await run(process.execPath, ['verify.mjs'], consumerDirectory);
   process.stdout.write(verified.stdout);
+  process.stdout.write('Verified hadamard and actoviq command shims from the installed tarball.\n');
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });
 }
