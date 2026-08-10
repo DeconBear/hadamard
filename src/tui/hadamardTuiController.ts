@@ -192,6 +192,7 @@ import { TuiInputController } from './tuiInputController.js';
 import { runTuiMemoryCommand } from './tuiMemoryCommandHandler.js';
 import { runTuiConfigurationCommand } from './tuiConfigurationCommandHandler.js';
 import { runTuiBasicCommand } from './tuiBasicCommandHandler.js';
+import { runTuiPlanCommand } from './tuiPlanCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3592,81 +3593,31 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         appendStatic,
       });
       if (basicCommandHandled) return;
+      const planCommandHandled = await runTuiPlanCommand(name, args, {
+        defaultPermissionMode: () => permissionMode,
+        currentPermissionMode,
+        setPermissionMode: mode => session.setPermissionContext({
+          mode,
+          permissions: [],
+          approver,
+        }),
+        readPlan: () => readPlanFile(sdk.config.workDir),
+        planFile: () => planFilePath(sdk.config.workDir),
+        openPlanFile: () => {
+          try {
+            const editorBin = process.env.EDITOR || process.env.VISUAL || 'notepad';
+            spawnSync(editorBin, [planFilePath(sdk.config.workDir)], { stdio: 'ignore', shell: false });
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        startRun,
+        renderRichText: text => renderRichText(text, screen.width),
+        appendStatic,
+      });
+      if (planCommandHandled) return;
       switch (name) {
-        case 'plan': {
-          // Plan mode (gap #6). The model can enter/exit via EnterPlanMode /
-          // ExitPlanMode tools; /plan toggles the permission mode and lets the
-          // user view/open the plan file the agent wrote.
-          const arg = args.trim().toLowerCase();
-          if (arg === 'off' || arg === 'approve') {
-            if (arg === 'approve' && !readPlanFile(sdk.config.workDir)) {
-              appendStatic([...formatErrorLine('there is no saved plan to approve'), '']);
-              return;
-            }
-            await session.setPermissionContext({ mode: permissionMode === 'bypassPermissions' ? 'bypassPermissions' : 'default', permissions: [], approver });
-            appendStatic([
-              ...formatInfoLine(arg === 'approve'
-                ? 'plan approved — implementation permissions restored'
-                : 'plan mode off without approval'),
-              '',
-            ]);
-            return;
-          }
-          if (arg === 'view') {
-            const plan = readPlanFile(sdk.config.workDir);
-            appendStatic(plan
-              ? [
-                  `${A.bold}Current plan · awaiting approval${A.reset}`,
-                  '',
-                  ...renderRichText(plan, screen.width),
-                  '',
-                ]
-              : [...formatInfoLine('no saved plan yet'), '']);
-            return;
-          }
-          if (arg === 'revise' || arg.startsWith('revise ')) {
-            if (session.permissionContext.mode !== 'plan') {
-              await session.setPermissionContext({ mode: 'plan', permissions: [], approver });
-            }
-            const feedback = args.trim().slice('revise'.length).trim();
-            if (!feedback) {
-              appendStatic([...formatInfoLine('plan remains read-only; use /plan revise <feedback>'), '']);
-              return;
-            }
-            await startRun(
-              `Revise the saved plan using this feedback. Stay in Plan mode and call ExitPlanMode again when ready:\n\n${feedback}`,
-            );
-            return;
-          }
-          if (arg === 'open') {
-            const file = planFilePath(sdk.config.workDir);
-            try {
-              const editorBin = process.env.EDITOR || process.env.VISUAL || 'notepad';
-              spawnSync(editorBin, [file], { stdio: 'ignore', shell: false });
-            } catch {
-              appendStatic([...formatErrorLine(`could not open plan file: ${file}`), '']);
-            }
-            return;
-          }
-          // Default: enter plan mode (if not already) and show the current plan.
-          const current = session.permissionContext.mode;
-          if (current !== 'plan') {
-            await session.setPermissionContext({ mode: 'plan', permissions: [], approver });
-            appendStatic([...formatInfoLine('plan mode on — mutating tools blocked; research, then ExitPlanMode'), '']);
-          }
-          const plan = readPlanFile(sdk.config.workDir);
-          if (plan) {
-            appendStatic([
-              `${A.bold}Current plan${A.reset} ${A.dim}(${planFilePath(sdk.config.workDir)})${A.reset}`,
-              '',
-              ...renderRichText(plan, screen.width),
-              '',
-            ]);
-          } else {
-            appendStatic([...formatInfoLine('no plan yet — ask the agent to plan a task (it will call ExitPlanMode)'), '']);
-          }
-          return;
-        }
         case 'checkpoint': {
           const [action = 'list', checkpointId, modeValue, ...flags] = args.trim().split(/\s+/u).filter(Boolean);
           if (action === 'list') {
