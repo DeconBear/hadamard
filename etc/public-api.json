@@ -2785,7 +2785,7 @@
       {
         "name": "HadamardDreamRunOptions",
         "kind": "interface",
-        "signature": "export interface HadamardDreamRunOptions {\nforce?: boolean;\nbackground?: boolean;\ncurrentSessionId?: string;\nextraContext?: string;\nmodel?: string;\nexecutionProfile?: import('./config/projectSettings.js').DreamExecutionProfileRef;\nmaxTokens?: number;\nsignal?: AbortSignal;\n}"
+        "signature": "export interface HadamardDreamRunOptions {\nforce?: boolean;\nbackground?: boolean;\ncurrentSessionId?: string;\nextraContext?: string;\nmodel?: string;\nexecutionProfile?: import('./config/projectSettingsTypes.js').DreamExecutionProfileRef;\nmaxTokens?: number;\nsignal?: AbortSignal;\n}"
       },
       {
         "name": "HadamardDreamRunResult",
@@ -3015,7 +3015,7 @@
       {
         "name": "HadamardRunSlashCommandResult",
         "kind": "interface",
-        "signature": "export interface HadamardRunSlashCommandResult {\nname: HadamardCleanSlashCommandName;\ntext: string;\ndata: HadamardCleanContextOverview | HadamardSessionCompactResult | HadamardMemoryState | HadamardDreamRunResult | HadamardDreamState | HadamardCleanToolMetadata[] | HadamardSkillDefinitionSummary[] | HadamardAgentDefinitionSummary[] | import('./memory/memoryCommandService.js').HadamardMemoryCommandResult;\n}"
+        "signature": "export interface HadamardRunSlashCommandResult {\nname: HadamardCleanSlashCommandName;\ntext: string;\ndata: HadamardCleanContextOverview | HadamardSessionCompactResult | HadamardMemoryState | HadamardDreamRunResult | HadamardDreamState | HadamardCleanToolMetadata[] | HadamardSkillDefinitionSummary[] | HadamardAgentDefinitionSummary[] | import('./memory/memoryCommandTypes.js').HadamardMemoryCommandResult;\n}"
       },
       {
         "name": "HadamardRuntimeCatalog",
@@ -4595,7 +4595,7 @@
       {
         "name": "ResolvedRuntimeConfig",
         "kind": "interface",
-        "signature": "export interface ResolvedRuntimeConfig {\nhomeDir: string;\nloadedConfigPath?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel: string;\nmodelTier?: HadamardModelTier;\nmodelTiers: HadamardModelTierConfig;\nmaxTokens: number;\ntemperature?: number;\nrunTimeoutMs: number;\ntoolTimeoutMs: number;\nhookTimeoutMs: number;\nmcpTimeoutMs: number;\ntimeoutMs: number;\nmaxRetries: number;\nworkDir: string;\nsessionDirectory: string;\nclientName: string;\nclientVersion: string;\nsystemPrompt?: string;\nmaxToolIterations: number;\nfallbackModel?: string;\npromptCachingEnabled: boolean;\nuserId?: string;\nmetadata: Record<string, unknown>;\ncompact: HadamardCompactConfig;\nprojectMemory: import('./config/projectSettings.js').ProjectMemorySettings;\nprovider: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nsandbox: import('./sandbox/types.js').SandboxPolicy;\nsandboxCapabilities: import('./sandbox/types.js').SandboxCapabilityReport;\nlanguageServers: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree: boolean;\neffectivePolicy: import('./policy/types.js').ResolvedPolicy;\n}"
+        "signature": "export interface ResolvedRuntimeConfig {\nhomeDir: string;\nloadedConfigPath?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel: string;\nmodelTier?: HadamardModelTier;\nmodelTiers: HadamardModelTierConfig;\nmaxTokens: number;\ntemperature?: number;\nrunTimeoutMs: number;\ntoolTimeoutMs: number;\nhookTimeoutMs: number;\nmcpTimeoutMs: number;\ntimeoutMs: number;\nmaxRetries: number;\nworkDir: string;\nsessionDirectory: string;\nclientName: string;\nclientVersion: string;\nsystemPrompt?: string;\nmaxToolIterations: number;\nfallbackModel?: string;\npromptCachingEnabled: boolean;\nuserId?: string;\nmetadata: Record<string, unknown>;\ncompact: HadamardCompactConfig;\nprojectMemory: import('./config/projectSettingsTypes.js').ProjectMemorySettings;\nprovider: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nsandbox: import('./sandbox/types.js').SandboxPolicy;\nsandboxCapabilities: import('./sandbox/types.js').SandboxCapabilityReport;\nlanguageServers: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree: boolean;\neffectivePolicy: import('./policy/types.js').ResolvedPolicy;\n}"
       },
       {
         "name": "ResolvedToolAdapter",
@@ -5755,7 +5755,7 @@
       {
         "name": "WorkflowApi",
         "kind": "class",
-        "signature": "export declare class WorkflowApi {\nprivate readonly engine;\nprivate readonly workDir;\nconstructor(sdk: HadamardAgentClient);\ndefine(name: string, description?: string): WorkflowBuilder;\nrun(definition: WorkflowDefinition, params?: Record<string, unknown>, options?: Partial<WorkflowRunOptions>): Promise<WorkflowRunResult>;\n}"
+        "signature": "export declare class WorkflowApi {\nprivate readonly engine;\nprivate readonly workDir;\nconstructor(sdk: AgentRunner);\ndefine(name: string, description?: string): WorkflowBuilder;\nrun(definition: WorkflowDefinition, params?: Record<string, unknown>, options?: Partial<WorkflowRunOptions>): Promise<WorkflowRunResult>;\n}"
       },
       {
         "name": "WorkflowBudget",
@@ -5780,7 +5780,7 @@
       {
         "name": "WorkflowEngine",
         "kind": "class",
-        "signature": "export declare class WorkflowEngine {\nprivate readonly sdk;\nconstructor(sdk: HadamardAgentClient);\nrun(definition: WorkflowDefinition, params: Record<string, unknown>, options: WorkflowRunOptions): Promise<WorkflowRunResult>;\nprivate executeStep;\n}"
+        "signature": "export declare class WorkflowEngine {\nprivate readonly sdk;\nconstructor(sdk: AgentRunner);\nrun(definition: WorkflowDefinition, params: Record<string, unknown>, options: WorkflowRunOptions): Promise<WorkflowRunResult>;\nprivate executeStep;\n}"
       },
       {
         "name": "WorkflowMeta",
@@ -10911,7 +10911,7 @@
       {
         "name": "HadamardDreamRunOptions",
         "kind": "interface",
-        "signature": "export interface HadamardDreamRunOptions {\nforce?: boolean;\nbackground?: boolean;\ncurrentSessionId?: string;\nextraContext?: string;\nmodel?: string;\nexecutionProfile?: import('./config/projectSettings.js').DreamExecutionProfileRef;\nmaxTokens?: number;\nsignal?: AbortSignal;\n}"
+        "signature": "export interface HadamardDreamRunOptions {\nforce?: boolean;\nbackground?: boolean;\ncurrentSessionId?: string;\nextraContext?: string;\nmodel?: string;\nexecutionProfile?: import('./config/projectSettingsTypes.js').DreamExecutionProfileRef;\nmaxTokens?: number;\nsignal?: AbortSignal;\n}"
       },
       {
         "name": "HadamardDreamRunResult",
@@ -11141,7 +11141,7 @@
       {
         "name": "HadamardRunSlashCommandResult",
         "kind": "interface",
-        "signature": "export interface HadamardRunSlashCommandResult {\nname: HadamardCleanSlashCommandName;\ntext: string;\ndata: HadamardCleanContextOverview | HadamardSessionCompactResult | HadamardMemoryState | HadamardDreamRunResult | HadamardDreamState | HadamardCleanToolMetadata[] | HadamardSkillDefinitionSummary[] | HadamardAgentDefinitionSummary[] | import('./memory/memoryCommandService.js').HadamardMemoryCommandResult;\n}"
+        "signature": "export interface HadamardRunSlashCommandResult {\nname: HadamardCleanSlashCommandName;\ntext: string;\ndata: HadamardCleanContextOverview | HadamardSessionCompactResult | HadamardMemoryState | HadamardDreamRunResult | HadamardDreamState | HadamardCleanToolMetadata[] | HadamardSkillDefinitionSummary[] | HadamardAgentDefinitionSummary[] | import('./memory/memoryCommandTypes.js').HadamardMemoryCommandResult;\n}"
       },
       {
         "name": "HadamardRuntimeCatalog",
@@ -12776,7 +12776,7 @@
       {
         "name": "ResolvedRuntimeConfig",
         "kind": "interface",
-        "signature": "export interface ResolvedRuntimeConfig {\nhomeDir: string;\nloadedConfigPath?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel: string;\nmodelTier?: HadamardModelTier;\nmodelTiers: HadamardModelTierConfig;\nmaxTokens: number;\ntemperature?: number;\nrunTimeoutMs: number;\ntoolTimeoutMs: number;\nhookTimeoutMs: number;\nmcpTimeoutMs: number;\ntimeoutMs: number;\nmaxRetries: number;\nworkDir: string;\nsessionDirectory: string;\nclientName: string;\nclientVersion: string;\nsystemPrompt?: string;\nmaxToolIterations: number;\nfallbackModel?: string;\npromptCachingEnabled: boolean;\nuserId?: string;\nmetadata: Record<string, unknown>;\ncompact: HadamardCompactConfig;\nprojectMemory: import('./config/projectSettings.js').ProjectMemorySettings;\nprovider: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nsandbox: import('./sandbox/types.js').SandboxPolicy;\nsandboxCapabilities: import('./sandbox/types.js').SandboxCapabilityReport;\nlanguageServers: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree: boolean;\neffectivePolicy: import('./policy/types.js').ResolvedPolicy;\n}"
+        "signature": "export interface ResolvedRuntimeConfig {\nhomeDir: string;\nloadedConfigPath?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel: string;\nmodelTier?: HadamardModelTier;\nmodelTiers: HadamardModelTierConfig;\nmaxTokens: number;\ntemperature?: number;\nrunTimeoutMs: number;\ntoolTimeoutMs: number;\nhookTimeoutMs: number;\nmcpTimeoutMs: number;\ntimeoutMs: number;\nmaxRetries: number;\nworkDir: string;\nsessionDirectory: string;\nclientName: string;\nclientVersion: string;\nsystemPrompt?: string;\nmaxToolIterations: number;\nfallbackModel?: string;\npromptCachingEnabled: boolean;\nuserId?: string;\nmetadata: Record<string, unknown>;\ncompact: HadamardCompactConfig;\nprojectMemory: import('./config/projectSettingsTypes.js').ProjectMemorySettings;\nprovider: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nsandbox: import('./sandbox/types.js').SandboxPolicy;\nsandboxCapabilities: import('./sandbox/types.js').SandboxCapabilityReport;\nlanguageServers: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree: boolean;\neffectivePolicy: import('./policy/types.js').ResolvedPolicy;\n}"
       },
       {
         "name": "ResolvedToolAdapter",
@@ -14016,7 +14016,7 @@
       {
         "name": "WorkflowApi",
         "kind": "class",
-        "signature": "export declare class WorkflowApi {\nprivate readonly engine;\nprivate readonly workDir;\nconstructor(sdk: HadamardAgentClient);\ndefine(name: string, description?: string): WorkflowBuilder;\nrun(definition: WorkflowDefinition, params?: Record<string, unknown>, options?: Partial<WorkflowRunOptions>): Promise<WorkflowRunResult>;\n}"
+        "signature": "export declare class WorkflowApi {\nprivate readonly engine;\nprivate readonly workDir;\nconstructor(sdk: AgentRunner);\ndefine(name: string, description?: string): WorkflowBuilder;\nrun(definition: WorkflowDefinition, params?: Record<string, unknown>, options?: Partial<WorkflowRunOptions>): Promise<WorkflowRunResult>;\n}"
       },
       {
         "name": "WorkflowBudget",
@@ -14041,7 +14041,7 @@
       {
         "name": "WorkflowEngine",
         "kind": "class",
-        "signature": "export declare class WorkflowEngine {\nprivate readonly sdk;\nconstructor(sdk: HadamardAgentClient);\nrun(definition: WorkflowDefinition, params: Record<string, unknown>, options: WorkflowRunOptions): Promise<WorkflowRunResult>;\nprivate executeStep;\n}"
+        "signature": "export declare class WorkflowEngine {\nprivate readonly sdk;\nconstructor(sdk: AgentRunner);\nrun(definition: WorkflowDefinition, params: Record<string, unknown>, options: WorkflowRunOptions): Promise<WorkflowRunResult>;\nprivate executeStep;\n}"
       },
       {
         "name": "WorkflowMeta",
