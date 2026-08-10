@@ -187,6 +187,7 @@ import { runTuiIssueCommand } from './tuiIssueCommandHandler.js';
 import { runTuiAssistantCommand } from './tuiAssistantCommandHandler.js';
 import { runTuiManagerCommand } from './tuiManagerCommandHandler.js';
 import { runTuiWorkspaceCommand } from './tuiWorkspaceCommandHandler.js';
+import { runTuiContextCommand } from './tuiContextCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -4123,95 +4124,78 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         startRun,
         appendStatic,
       })) return;
-      switch (name) {
-        case 'context': {
-          const contextArgs = args.trim();
-          if (contextArgs === 'setting' || contextArgs === 'settings') {
-            await configureContextSettings();
-            return;
-          }
-          if (contextArgs.startsWith('setting ') || contextArgs.startsWith('settings ')) {
-            await configureContextSettings(contextArgs.replace(/^settings?\s+/u, ''));
-            return;
-          }
-          if (contextArgs) {
-            appendStatic([...formatErrorLine('usage: /context [settings [agents|claude|both]]'), '']);
-            return;
-          }
-          // Break down what is consuming the context window (gap #9 vs
-          // claude-code's /context) — usage, messages, system prompt, tools,
-          // the loaded project instruction sources, and the active config.
+      if (await runTuiContextCommand(name, args, {
+        configureContext: configureContextSettings,
+        contextSnapshot: async () => {
           const { resolveHadamardCompactBudget } = await import('../runtime/hadamardCompact.js');
           const compactBudget = resolveHadamardCompactBudget(sdk.config.compact);
-          const window = compactBudget.effectiveContextWindowTokens;
-          const used = lastTokenEstimate ?? 0;
-          const pct = window > 0 ? Math.min(100, Math.round((used / window) * 100)) : 0;
-          const usedK = used >= 1000 ? `${(used / 1000).toFixed(1)}k` : `${used}`;
-          const windowK = window >= 1000 ? `${(window / 1000).toFixed(0)}k` : `${window}`;
-          const ctxColor = pct >= 90 ? A.red : pct >= 70 ? A.yellow : A.dim;
-          const messages = session.messages.length;
-          const sysChars = systemPrompt.length;
-          const mcpCount = toolMetadata.filter(t => t.provider === 'mcp').length;
           const project = loadProjectContext(sdk.config.workDir, {
             projectInstructionMode: projectSettings.context.instructionMode,
             hadamardHomeDir,
           });
-          const team = activeTeamName ?? 'none';
-          const router = activeRouter ? activeRouter.name : 'off';
-          const bridge = bridgeMode && activeBridgeConfig ? activeBridgeConfig.name : 'off';
-          appendStatic([
-            `${A.bold}Context window${A.reset}`,
-            `  ${ctxColor}${pct}% used (${usedK} / ${windowK} tokens)${A.reset}`,
-            `  ${A.dim}raw window${A.reset}      ${compactBudget.rawContextWindowTokens}`,
-            `  ${A.dim}compact limit${A.reset}  ${compactBudget.autoCompactTokenLimit} (${compactBudget.source})`,
-            `  ${A.dim}messages${A.reset}        ${messages}`,
-            `  ${A.dim}system prompt${A.reset}   ~${sysChars} chars`,
-            `  ${A.dim}tools${A.reset}           ${toolMetadata.length}${mcpCount > 0 ? ` (${mcpCount} MCP)` : ''}`,
-            `  ${A.dim}instruction files${A.reset} ${project.sources.length ? project.sources.join(', ') : '(none loaded)'}`,
-            `  ${A.dim}active${A.reset}         model=${session.model} · effort=${currentEffort() ?? 'auto'} · team=${team} · router=${router} · bridge=${bridge}`,
-            '',
-          ]);
-          return;
-        }
-        case 'doctor': {
-          // Configuration diagnostics (gap #21, partial). Checks the things a
-          // user would actually need to fix to get a run working.
-          const cfg = sdk.config;
-          const ok = (b: boolean) => b ? `${A.green}✓${A.reset}` : `${A.red}✗${A.reset}`;
-          const lines: string[] = [`${A.bold}Hadamard diagnostics${A.reset}`];
-          // Model + provider
-          lines.push(`  ${ok(Boolean(cfg.model))} model ${A.dim}${cfg.model || '(unset)'}${A.reset}`);
-          lines.push(`  ${ok(Boolean(cfg.provider))} provider ${A.dim}${cfg.provider || '(unset)'}${A.reset}`);
-          // API key (env or settings)
-          const apiKey = cfg.apiKey ?? process.env.HADAMARD_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? process.env.OPENAI_API_KEY;
-          lines.push(`  ${ok(Boolean(apiKey))} api key ${A.dim}${apiKey ? 'set (' + maskKey(apiKey) + ')' : '(not set — set HADAMARD_API_KEY or configure via /model config)'}${A.reset}`);
-          if (cfg.baseURL) lines.push(`  ${A.dim}base url${A.reset} ${cfg.baseURL}`);
-          // Workspace + git
+          return {
+            effectiveWindowTokens: compactBudget.effectiveContextWindowTokens,
+            rawWindowTokens: compactBudget.rawContextWindowTokens,
+            autoCompactTokenLimit: compactBudget.autoCompactTokenLimit,
+            compactSource: compactBudget.source,
+            usedTokens: lastTokenEstimate ?? 0,
+            messages: session.messages.length,
+            systemPromptChars: systemPrompt.length,
+            toolCount: toolMetadata.length,
+            mcpToolCount: toolMetadata.filter(tool => tool.provider === 'mcp').length,
+            instructionFiles: project.sources,
+            model: session.model,
+            effort: currentEffort() ?? 'auto',
+            team: activeTeamName ?? 'none',
+            router: activeRouter?.name ?? 'off',
+            bridge: bridgeMode && activeBridgeConfig ? activeBridgeConfig.name : 'off',
+          };
+        },
+        doctorSnapshot: async () => {
+          const config = sdk.config;
+          const apiKey = config.apiKey
+            ?? process.env.HADAMARD_API_KEY
+            ?? process.env.ANTHROPIC_API_KEY
+            ?? process.env.OPENAI_API_KEY;
           let isGit = false;
-          try { execSync('git rev-parse --is-inside-work-tree', { cwd: cfg.workDir, stdio: 'ignore' }); isGit = true; } catch { /* not git */ }
-          lines.push(`  ${ok(true)} workdir ${A.dim}${cfg.workDir}${A.reset}`);
-          lines.push(`  ${ok(isGit)} git repo ${A.dim}${isGit ? 'yes' : 'no'}${A.reset}`);
-          // Session + permissions
-          lines.push(`  ${ok(true)} session ${A.dim}${session.id}${A.reset} · ${session.messages.length} messages`);
-          lines.push(`  ${ok(true)} permission mode ${A.dim}${currentPermissionMode()}${A.reset}`);
-          lines.push(`  ${ok(toolMetadata.length > 0)} tools ${A.dim}${toolMetadata.length}${A.reset}`);
-          // Context memory
-          const project = loadProjectContext(cfg.workDir, {
+          try {
+            execSync('git rev-parse --is-inside-work-tree', {
+              cwd: config.workDir,
+              stdio: 'ignore',
+            });
+            isGit = true;
+          } catch { /* not git */ }
+          const project = loadProjectContext(config.workDir, {
             projectInstructionMode: projectSettings.context.instructionMode,
             hadamardHomeDir,
           });
-          lines.push(`  ${ok(project.sources.length > 0)} instruction files ${A.dim}${project.sources.length ? project.sources.join(', ') : '(none)'}${A.reset}`);
-          // Bridge runtimes
           const detections = await withSpinner('detecting runtimes', detectBridgeProviders);
-          const avail = detections.filter(d => d.available);
-          lines.push(`  ${ok(avail.length > 0)} bridge runtimes ${A.dim}${avail.length ? avail.map(d => d.id).join(', ') : '(none on PATH)'}${A.reset}`);
-          if (bridgeMode && activeBridgeConfig) {
-            lines.push(`  ${A.dim}active bridge${A.reset} ${activeBridgeConfig.name}${bridgeModelLabel ? ` · ${bridgeModelLabel}` : ''}`);
-          }
-          lines.push('');
-          appendStatic(lines);
-          return;
-        }
+          return {
+            model: config.model,
+            provider: config.provider,
+            apiKey: apiKey ? `set (${maskKey(apiKey)})` : null,
+            ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+            workDir: config.workDir,
+            isGit,
+            sessionId: session.id,
+            messageCount: session.messages.length,
+            permissionMode: currentPermissionMode(),
+            toolCount: toolMetadata.length,
+            instructionFiles: project.sources,
+            bridgeRuntimes: detections.filter(item => item.available).map(item => item.id),
+            ...(bridgeMode && activeBridgeConfig
+              ? {
+                  activeBridge: {
+                    name: activeBridgeConfig.name,
+                    ...(bridgeModelLabel ? { model: bridgeModelLabel } : {}),
+                  },
+                }
+              : {}),
+          };
+        },
+        appendStatic,
+      })) return;
+      switch (name) {
         case 'skills':
           await showSkills();
           return;
