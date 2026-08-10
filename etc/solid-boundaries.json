@@ -26,7 +26,7 @@
     "runtime/agentExecution.ts#AgentExecutionNode": { "maxMembers": 22, "reason": "Versioned execution snapshot DTO." },
     "runtime/externalSkillCatalog.ts#HadamardSkillCatalogEntry": { "maxMembers": 21, "reason": "Catalog compatibility DTO." },
     "storage/sessionCatalog.ts#SessionCatalogItem": { "maxMembers": 21, "reason": "Session catalog compatibility DTO." },
-    "team/teamRuntime.ts#RunMemberOptions": { "maxMembers": 21, "reason": "Existing internal orchestration options." },
+    "team/teamRuntime.ts#RunMemberOptions": { "maxMembers": 22, "reason": "Existing internal orchestration options plus optional createRunner injection." },
     "types.ts#CreateToolOptions": { "maxMembers": 23, "reason": "Public compatibility options." },
     "types.ts#AgentToolDefinition": { "maxMembers": 26, "reason": "Public compatibility contract." },
     "types.ts#ResolvedRuntimeConfig": { "maxMembers": 36, "reason": "Public resolved-config snapshot." },
