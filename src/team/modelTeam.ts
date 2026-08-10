@@ -492,6 +492,8 @@ export async function askTeamDefinition(
     return runWorkflowSquad(definition, prompt, abort, workDir, opts?.onEvent, {
       ...opts,
       teamStack,
+    }, {
+      askTeam: askTeamDefinition,
     });
   }
   if (isSingleAgentSquadType(squadType)) {
