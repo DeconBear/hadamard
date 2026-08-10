@@ -43,7 +43,6 @@ import {
   managerProgressPath,
   createProjectIssue,
   executeProjectIssue,
-  isIssueStatus,
   isIssueStorageMode,
   listProjectIssues,
   listScheduledAutomationTasks,
@@ -184,6 +183,7 @@ import { runTuiWorkflowCommand } from './tuiWorkflowCommandHandler.js';
 import { runTuiWorktreeCommand } from './tuiWorktreeCommandHandler.js';
 import { runTuiBridgeCommand } from './tuiBridgeCommandHandler.js';
 import { runTuiTeamCommand } from './tuiTeamCommandHandler.js';
+import { runTuiIssueCommand } from './tuiIssueCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3799,6 +3799,50 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           appendStatic,
         },
       })) return;
+      if (await runTuiIssueCommand(name, args, {
+        issues: {
+          storage: async () => {
+            const meta = await readProjectMeta(sdk.config.workDir, sdk.config.homeDir);
+            return isIssueStorageMode(meta.issueStorage) ? meta.issueStorage : 'home';
+          },
+          list: storage => listProjectIssues(sdk.config.workDir, sdk.config.homeDir, storage),
+          create: (title, storage) => createProjectIssue(
+            sdk.config.workDir,
+            sdk.config.homeDir,
+            { title },
+            storage,
+          ),
+          execute: async (issue, agentProfile, storage) => {
+            const dispatched = await executeProjectIssue({
+              sdk,
+              managerSession: await resolveManagerTuiSession(),
+              workDir: sdk.config.workDir,
+              homeDir: sdk.config.homeDir,
+              storageMode: storage,
+              issue,
+              agentProfile,
+              defaultModel: session.model,
+              permissionMode: currentPermissionMode(),
+              systemPrompt,
+            });
+            session = dispatched.session;
+            return {
+              issue: dispatched.issue,
+              sessionId: session.id,
+              text: dispatched.result.text,
+            };
+          },
+          transition: (id, status, storage) => transitionProjectIssue(
+            sdk.config.workDir,
+            sdk.config.homeDir,
+            id,
+            status,
+            'user',
+            storage,
+          ),
+        },
+        appendStatic,
+      })) return;
       switch (name) {
         case 'context': {
           const contextArgs = args.trim();
@@ -4067,107 +4111,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           return;
         }
         // ── Project Manager ──────────────────────────────────────
-        case 'issues': {
-          const homeDir = sdk.config.homeDir;
-          const meta = await readProjectMeta(sdk.config.workDir, homeDir);
-          const storage = isIssueStorageMode(meta.issueStorage) ? meta.issueStorage : 'home';
-          if (!args || args === 'list') {
-            const issues = await listProjectIssues(sdk.config.workDir, homeDir, storage);
-            if (issues.length === 0) {
-              appendStatic([...formatInfoLine('no issues yet; use /issues create <title>'), '']);
-              return;
-            }
-            appendStatic([
-              `${A.cyan}Issues (${storage})${A.reset}`,
-              ...issues.map(issue => `#${issue.number} ${issue.title} ${A.dim}${issue.status} · ${issue.priority}${A.reset}`),
-              '',
-            ]);
-            return;
-          }
-          if (args.startsWith('create ')) {
-            const title = args.slice(7).trim();
-            if (!title) {
-              appendStatic([...formatErrorLine('usage: /issues create <title>'), '']);
-              return;
-            }
-            const issue = await createProjectIssue(sdk.config.workDir, homeDir, { title }, storage);
-            appendStatic([...formatInfoLine(`issue created: #${issue.number} ${issue.title}`), '']);
-            return;
-          }
-          if (args.startsWith('show ')) {
-            const rawId = args.slice(5).trim().replace(/^#/, '');
-            const issues = await listProjectIssues(sdk.config.workDir, homeDir, storage);
-            const issue = issues.find(candidate =>
-              candidate.id === rawId ||
-              String(candidate.number) === rawId ||
-              `ISS-${candidate.number}` === rawId.toUpperCase(),
-            );
-            if (!issue) {
-              appendStatic([...formatErrorLine(`issue not found: ${rawId}`), '']);
-              return;
-            }
-            appendStatic([
-              `${A.bold}ISS-${issue.number} ${issue.title}${A.reset}`,
-              `${A.dim}${issue.status} · ${issue.priority}${A.reset}`,
-              issue.description || '(no description)',
-              ...(issue.acceptanceCriteria.length
-                ? ['', 'Acceptance criteria:', ...issue.acceptanceCriteria.map(item => `- ${item}`)]
-                : []),
-              ...(issue.brief ? ['', 'Manager brief:', issue.brief] : []),
-              '',
-            ]);
-            return;
-          }
-          if (args.startsWith('start ')) {
-            const [, rawId, agentProfile] = args.split(/\s+/, 3);
-            const id = rawId?.replace(/^#/, '');
-            const issues = await listProjectIssues(sdk.config.workDir, homeDir, storage);
-            const issue = issues.find(candidate =>
-              candidate.id === id ||
-              String(candidate.number) === id ||
-              `ISS-${candidate.number}` === id?.toUpperCase(),
-            );
-            if (!issue) {
-              appendStatic([...formatErrorLine(`issue not found: ${rawId ?? ''}`), '']);
-              return;
-            }
-            appendStatic([...formatInfoLine(`decomposing and dispatching ISS-${issue.number}...`), '']);
-            const dispatched = await executeProjectIssue({
-              sdk,
-              managerSession: await resolveManagerTuiSession(),
-              workDir: sdk.config.workDir,
-              homeDir,
-              storageMode: storage,
-              issue,
-              agentProfile,
-              defaultModel: session.model,
-              permissionMode: currentPermissionMode(),
-              systemPrompt,
-            });
-            session = dispatched.session;
-            appendStatic([
-              ...formatInfoLine(`ISS-${dispatched.issue.number}: ${dispatched.issue.status} · session ${session.id}`),
-              ...(dispatched.result.text ? [dispatched.result.text] : []),
-              '',
-            ]);
-            return;
-          }
-          const transitions: Record<string, string> = {
-            review: 'in_review',
-            done: 'done',
-            block: 'blocked',
-          };
-          const [verb, rawId] = args.split(/\s+/, 2);
-          const nextStatus = transitions[verb ?? ''];
-          if (nextStatus && isIssueStatus(nextStatus) && rawId) {
-            const issue = await transitionProjectIssue(sdk.config.workDir, homeDir, rawId.replace(/^#/, ''), nextStatus, 'user', storage);
-            if (!issue) appendStatic([...formatErrorLine(`issue not found: ${rawId}`), '']);
-            else appendStatic([...formatInfoLine(`issue #${issue.number}: ${issue.status}`), '']);
-            return;
-          }
-          appendStatic([...formatErrorLine('usage: /issues [list|show <id>|create <title>|start <id> [agent-profile]|review <id>|done <id>|block <id>]'), '']);
-          return;
-        }
         case 'assistant': {
           const homeDir = sdk.config.homeDir;
           const globalSession = await resolveGlobalAssistantSession();
