@@ -119,7 +119,6 @@ import type {
   HadamardSkillDefinitionSummary,
   HadamardInvokedSkillRecord,
   HadamardSurfacedMemory,
-  HadamardPermissionMode,
   HadamardToolApprover,
   HadamardToolClassifier,
   CreateAgentSdkOptions,
@@ -127,7 +126,6 @@ import type {
   CreateHadamardBrowserUseOptions,
   SessionCreateOptions,
   SessionResumeOptions,
-  SessionSummary,
   StoredSession,
 } from '../types.js';
 import { HadamardSwarmApi } from '../swarm/hadamardSwarm.js';
@@ -221,6 +219,26 @@ import {
   extractTextFromContent,
 } from './messageUtils.js';
 import { AgentSession } from './agentSession.js';
+import { AgentSessionsApi } from './agentSessionsApi.js';
+export { AgentSessionsApi } from './agentSessionsApi.js';
+import {
+  formatTaskNotification,
+  resolveTaskId,
+  serializeBackgroundTaskOutput,
+} from './agentClientBackgroundHelpers.js';
+import {
+  createHadamardDreamClassifier,
+  extractHadamardDreamTouchedFiles,
+} from './agentClientDreamHelpers.js';
+import {
+  collectToolPrompts,
+  combineAbortSignals,
+  filterAgentTools,
+  isGitWorkspaceDirty,
+  joinPromptParts,
+  mergeUniqueByName,
+  sanitizeWorkspaceName,
+} from './agentClientRunHelpers.js';
 import { registerTeamAgentRunnerFactory } from '../application/teamAgentRunnerRegistry.js';
 import {
   HADAMARD_EXECUTION_ID_KEY,
@@ -374,60 +392,6 @@ function cloneSkillDefinition(definition: HadamardSkillDefinition): HadamardSkil
     allowedTools: definition.allowedTools ? [...definition.allowedTools] : undefined,
     paths: definition.paths ? [...definition.paths] : undefined,
   };
-}
-
-export class AgentSessionsApi {
-  constructor(
-    private readonly store: SessionStore,
-    private readonly resumeSession: (
-      sessionId: string,
-      options?: SessionResumeOptions,
-    ) => Promise<AgentSession>,
-    private readonly manager?: import('./sessionManager.js').SessionManager,
-  ) {}
-
-  list(): Promise<SessionSummary[]> {
-    return this.store.list();
-  }
-
-  get(sessionId: string): Promise<AgentSession> {
-    return this.resumeSession(sessionId);
-  }
-
-  resume(sessionId: string, options: SessionResumeOptions = {}): Promise<AgentSession> {
-    return this.resumeSession(sessionId, options);
-  }
-
-  async continueMostRecent(options: SessionResumeOptions = {}): Promise<AgentSession> {
-    const sessions = await this.store.list();
-    const chatSessions = sessions.filter(session => session.kind !== 'manager');
-    const mostRecent = chatSessions.find(session => session.status !== 'closed') ?? chatSessions[0];
-    if (!mostRecent) {
-      throw new Error('No stored sessions are available to resume.');
-    }
-    return this.resumeSession(mostRecent.id, options);
-  }
-
-  delete(sessionId: string): Promise<void> {
-    return this.store.delete(sessionId);
-  }
-
-  async stats(): Promise<import('../types.js').SessionStats> {
-    if (!this.manager) throw new Error('SessionManager is not configured');
-    return this.manager.getStats();
-  }
-
-  async prune(
-    params?: import('../types.js').SessionPruneParams,
-  ): Promise<number> {
-    if (!this.manager) throw new Error('SessionManager is not configured');
-    return this.manager.prune(params);
-  }
-
-  async closeIdle(): Promise<number> {
-    if (!this.manager) throw new Error('SessionManager is not configured');
-    return this.manager.closeIdle();
-  }
 }
 
 function getRelevantMemorySessionState(metadata: Record<string, unknown> | undefined): PersistedRelevantMemorySessionState {
@@ -5425,54 +5389,6 @@ export async function createAgentSdk(
 
 registerTeamAgentRunnerFactory(createAgentSdk);
 
-function resolveTaskId(input: { task_id?: string; taskId?: string }): string | undefined {
-  return [input.task_id, input.taskId]
-    .map(value => value?.trim())
-    .find((value): value is string => Boolean(value));
-}
-
-function serializeBackgroundTaskOutput(task: HadamardBackgroundTaskRecord): string {
-  return [
-    `Task id: ${task.id}`,
-    `Status: ${task.status}`,
-    `Subagent: ${task.subagentType}`,
-    task.agentName ? `Agent name: ${task.agentName}` : undefined,
-    task.runId ? `Run id: ${task.runId}` : undefined,
-    task.sessionId ? `Session id: ${task.sessionId}` : undefined,
-    task.model ? `Model: ${task.model}` : undefined,
-    typeof task.toolCallCount === 'number' ? `Tool calls: ${task.toolCallCount}` : undefined,
-    typeof task.toolErrorCount === 'number' ? `Tool errors: ${task.toolErrorCount}` : undefined,
-    typeof task.requestCount === 'number' ? `Requests: ${task.requestCount}` : undefined,
-    task.currentToolName ? `Current tool: ${task.currentToolName}` : undefined,
-    task.progressSummary ? `Progress: ${task.progressSummary}` : undefined,
-    task.worktreePath ? `Worktree: ${task.worktreePath}` : undefined,
-    task.worktreeBranch ? `Branch: ${task.worktreeBranch}` : undefined,
-    task.error ? `Error:\n${task.error}` : undefined,
-    task.text
-      ? `Output:\n${task.text}`
-      : task.partialText
-        ? `Partial output:\n${task.partialText}`
-        : 'Output: <not available yet>',
-  ].filter(Boolean).join('\n');
-}
-
-function joinPromptParts(...parts: Array<string | undefined>): string | undefined {
-  const normalized = parts.filter(
-    (value): value is string => typeof value === 'string' && value.trim().length > 0,
-  );
-  if (normalized.length === 0) {
-    return undefined;
-  }
-  return normalized.join('\n\n');
-}
-
-function combineAbortSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
-  const available = signals.filter((signal): signal is AbortSignal => signal != null);
-  if (available.length === 0) return undefined;
-  if (available.length === 1) return available[0];
-  return AbortSignal.any(available);
-}
-
 function mergeAgentDefinitions(
   ...groups: ReadonlyArray<readonly HadamardAgentDefinition[]>
 ): HadamardAgentDefinition[] {
@@ -5483,239 +5399,4 @@ function mergeAgentDefinitions(
     }
   }
   return [...merged.values()];
-}
-
-function filterAgentTools(
-  tools: AgentToolDefinition[],
-  allowedTools?: string[],
-  disallowedTools?: string[],
-): AgentToolDefinition[] {
-  const allowed = allowedTools?.length ? new Set(allowedTools) : undefined;
-  const denied = new Set(disallowedTools ?? []);
-  return tools.filter(toolDefinition => {
-    const names = [toolDefinition.name, ...(toolDefinition.aliases ?? [])];
-    if (names.some(name => denied.has(name))) {
-      return false;
-    }
-    return !allowed || names.some(name => allowed.has(name));
-  });
-}
-
-function formatTaskNotification(task: HadamardBackgroundTaskRecord): string {
-  const result =
-    task.status === 'completed'
-      ? task.text ?? task.partialText ?? ''
-      : task.partialText ?? '';
-  const actor =
-    task.subagentType === 'bash'
-      ? `Background command "${task.description}"`
-      : `Agent "${task.agentName ?? task.subagentType}"`;
-  return [
-    '<task_notification>',
-    `<task_id>${escapeXml(task.id)}</task_id>`,
-    task.sessionId ? `<agent_id>${escapeXml(task.sessionId)}</agent_id>` : undefined,
-    task.agentName ? `<agent_name>${escapeXml(task.agentName)}</agent_name>` : undefined,
-    `<status>${task.status}</status>`,
-    `<summary>${escapeXml(
-      task.status === 'completed'
-        ? `${actor} completed.`
-        : `${actor} ${task.status}.`,
-    )}</summary>`,
-    result ? `<result>${escapeXml(result)}</result>` : undefined,
-    task.error ? `<error>${escapeXml(task.error)}</error>` : undefined,
-    `<usage><requests>${task.requestCount ?? 0}</requests><tool_uses>${task.toolCallCount ?? 0}</tool_uses><tool_errors>${task.toolErrorCount ?? 0}</tool_errors></usage>`,
-    task.retainedWorktree && task.worktreePath
-      ? `<worktree><path>${escapeXml(task.worktreePath)}</path>${task.worktreeBranch ? `<branch>${escapeXml(task.worktreeBranch)}</branch>` : ''}</worktree>`
-      : undefined,
-    '</task_notification>',
-  ]
-    .filter((line): line is string => Boolean(line))
-    .join('\n');
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/gu, '&amp;')
-    .replace(/</gu, '&lt;')
-    .replace(/>/gu, '&gt;');
-}
-
-function sanitizeWorkspaceName(value: string): string {
-  return value
-    .trim()
-    .replace(/[^A-Za-z0-9_-]+/gu, '-')
-    .replace(/^-+|-+$/gu, '')
-    .slice(0, 40) || 'agent';
-}
-
-async function isGitWorkspaceDirty(workDir: string): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
-    try {
-      const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-        const child = execFileCallback(
-          'git',
-          ['-C', workDir, 'status', '--porcelain', '--untracked-files=all'],
-          {
-          windowsHide: true,
-          signal: controller.signal,
-          },
-        );
-        child.on('error', reject);
-        let stdout = '';
-        let stderr = '';
-        child.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
-        child.stderr?.on('data', (data: Buffer) => { stderr += data.toString(); });
-        child.on('close', (code) => {
-          if (code === 0) {
-            resolve({ stdout, stderr });
-          } else {
-            reject(new Error(`git status exited with code ${code}: ${stderr}`));
-          }
-        });
-      });
-      return stdout.trim().length > 0;
-    } finally {
-      clearTimeout(timeout);
-    }
-  } catch {
-    // A failed status check must never authorize deleting a worktree that may
-    // contain edits. Retaining it is safer than losing delegated work.
-    return true;
-  }
-}
-
-function mergeUniqueByName<T extends { name: string }>(defaults: T[], overrides: T[]): T[] {
-  const merged = new Map<string, T>();
-  for (const item of defaults) {
-    merged.set(item.name, item);
-  }
-  for (const item of overrides) {
-    merged.set(item.name, item);
-  }
-  return [...merged.values()];
-}
-
-async function collectToolPrompts(
-  tools: AgentToolDefinition[],
-  context: { workDir: string; permissionMode?: HadamardPermissionMode },
-): Promise<string[]> {
-  const parts: string[] = [];
-  const toolNames = tools.map((t) => t.name);
-  for (const toolDef of tools) {
-    if (!toolDef.prompt) continue;
-    try {
-      const result = await toolDef.prompt({
-        tools: toolNames,
-        workDir: context.workDir,
-        permissionMode: context.permissionMode,
-      });
-      if (result && result.trim().length > 0) {
-        parts.push(result.trim());
-      }
-    } catch {
-      // Silently skip prompt failures — don't break the run
-    }
-  }
-  return parts;
-}
-
-function createHadamardDreamClassifier(paths: {
-  memoryDir: string;
-  teamMemoryDir: string;
-  transcriptDir: string;
-  memoryEntrypoint: string;
-  memorySummaryPath: string;
-}): HadamardToolClassifier {
-  const readRoots = [paths.memoryDir, paths.transcriptDir].map(normalizePathForCompare);
-  const writeFiles = [paths.memoryEntrypoint, paths.memorySummaryPath].map(normalizePathForCompare);
-
-  return ({ publicName, input }) => {
-    const targetPath = extractHadamardDreamTargetPath(publicName, input);
-    if (!targetPath) {
-      return {
-        behavior: 'deny',
-        reason: `Dream requires an explicit absolute path for ${publicName}.`,
-      };
-    }
-
-    const normalizedTarget = normalizePathForCompare(targetPath);
-    switch (publicName) {
-      case 'Read':
-      case 'Glob':
-      case 'Grep':
-        return isWithinAllowedRoots(normalizedTarget, readRoots)
-          ? {
-              behavior: 'allow',
-              reason: `Dream may inspect memory files and session transcripts.`,
-            }
-          : {
-              behavior: 'deny',
-              reason: `Dream only reads memory and transcript roots: ${targetPath}`,
-            };
-      case 'Write':
-      case 'Edit':
-        return writeFiles.includes(normalizedTarget)
-          ? {
-              behavior: 'allow',
-              reason: `Dream may update MEMORY.md and memory_summary.md only.`,
-            }
-          : {
-              behavior: 'deny',
-              reason: `Dream only writes MEMORY.md and memory_summary.md: ${targetPath}`,
-            };
-      default:
-        return {
-          behavior: 'deny',
-          reason: `Dream only allows Read, Write, Edit, Glob, and Grep.`,
-        };
-    }
-  };
-}
-
-function extractHadamardDreamTargetPath(publicName: string, input: unknown): string | undefined {
-  if (!isRecord(input)) {
-    return undefined;
-  }
-
-  switch (publicName) {
-    case 'Read':
-    case 'Write':
-    case 'Edit':
-      return typeof input.file_path === 'string' ? input.file_path : undefined;
-    case 'Glob':
-    case 'Grep':
-      return typeof input.path === 'string' ? input.path : undefined;
-    default:
-      return undefined;
-  }
-}
-
-function extractHadamardDreamTouchedFiles(result: AgentRunResult): string[] {
-  const touched = new Set<string>();
-  for (const call of result.toolCalls) {
-    if (call.publicName !== 'Write' && call.publicName !== 'Edit') {
-      continue;
-    }
-
-    if (isRecord(call.input) && typeof call.input.file_path === 'string') {
-      touched.add(call.input.file_path);
-      continue;
-    }
-
-    if (isRecord(call.output) && typeof call.output.filePath === 'string') {
-      touched.add(call.output.filePath);
-    }
-  }
-  return [...touched];
-}
-
-function normalizePathForCompare(value: string): string {
-  const normalized = path.resolve(value);
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
-}
-
-function isWithinAllowedRoots(target: string, roots: readonly string[]): boolean {
-  return roots.some((root) => target === root || target.startsWith(`${root}${path.sep}`));
 }

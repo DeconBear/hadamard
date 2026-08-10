@@ -4,9 +4,7 @@
   ToolUseBlock,
 } from '../provider/types.js';
 
-import path from 'node:path';
-
-import { HadamardSdkError, ToolExecutionError } from '../errors.js';
+import { HadamardSdkError } from '../errors.js';
 import {
   getHadamardTodoSnapshot,
   TODO_WRITE_TOOL_NAME,
@@ -16,14 +14,11 @@ import type {
   AgentRequestSummary,
   AgentRunResult,
   HadamardPermissionDecision,
-  AgentToolCallEventPayload,
   AgentToolCallRecord,
   ModelApi,
   ModelRequest,
-  ToolCallProgress,
 } from '../types.js';
 import { asError, deepClone, nowIso } from './helpers.js';
-import { withDeadline } from './deadline.js';
 import { resolveHadamardPostSamplingHooks, resolveHadamardStopHooks } from '../hooks/hadamardHooks.js';
 import {
   compactHadamardConversationIfNeeded,
@@ -33,9 +28,7 @@ import {
   getHadamardApiContextManagement,
   prepareHadamardProviderRequestMessages,
 } from './hadamardApiMicrocompact.js';
-import { decideHadamardToolPermission } from './hadamardPermissions.js';
 import { createDenialTracker } from './denialTracking.js';
-import { markExplicitSafetyApproval } from './safetyChecks.js';
 import {
   assistantMessageToParam,
   buildUserMessage,
@@ -43,17 +36,14 @@ import {
 } from './messageUtils.js';
 import type { ExecuteConversationOptions } from './conversationPorts.js';
 export type { ExecuteConversationOptions } from './conversationPorts.js';
+import { withDeadline } from './deadline.js';
 import {
-  hasLifecycleBlock,
-  lifecycleBlockReason,
   requireLifecycleContinue,
   runTypedLifecycleHooks,
 } from './conversationLifecycle.js';
 import { appendRawTranscript } from './conversationPersistence.js';
-import {
-  artifactToolExecutionIfLarge,
-  enforceToolResultsAggregateBudget,
-} from './toolResultArtifactStore.js';
+import { enforceToolResultsAggregateBudget } from './toolResultArtifactStore.js';
+import { executeConversationToolUse } from './conversationToolExecutor.js';
 import { consumeStream } from './modelStreamConsumer.js';
 import {
   appendTextToToolResultContent,
@@ -712,237 +702,24 @@ export async function executeConversation(
       );
     }
 
-    const runSingleToolUse = async (
-      toolUse: ToolUseBlock,
-    ): Promise<{
-      record: AgentToolCallRecord;
-      resultBlock: ToolResultBlockParam;
-      permissionBehavior?: HadamardPermissionDecision['behavior'];
-    }> => {
-      ensureNotAborted(options.signal);
-      const started = nowIso();
-      const startedClock = Date.now();
-      const adapter = toolMap.get(toolUse.name);
-
-      const callPayload: AgentToolCallEventPayload = {
-        id: toolUse.id,
-        name: adapter?.sourceName ?? toolUse.name,
-        publicName: toolUse.name,
-        provider: adapter?.provider ?? 'local',
-        mcpServerName: adapter?.mcpServerName,
-        input: deepClone(toolUse.input),
-        startedAt: started,
-      };
-
-      options.emit?.({
-        type: 'tool.call',
-        runId: options.runId,
+    const runSingleToolUse = (toolUse: ToolUseBlock) =>
+      executeConversationToolUse({
+        options,
         iteration,
-        call: callPayload,
-        timestamp: started,
-      });
-
-      let outputText = '';
-      let output: unknown;
-      let isError = false;
-      let content: ToolResultBlockParam['content'] | undefined;
-      let permissionBehavior: HadamardPermissionDecision['behavior'] | undefined;
-
-      try {
-        if (!adapter) {
-          throw new ToolExecutionError(
-            toolUse.name,
-            `No tool named "${toolUse.name}" is currently registered.`,
-          );
-        }
-        const preToolOutputs = await runTypedLifecycleHooks(
-          options,
-          'PreToolUse',
-          { iteration, input: toolUse.input },
-          toolUse.name,
-        );
-        if (hasLifecycleBlock(preToolOutputs)) {
-          throw new ToolExecutionError(
-            toolUse.name,
-            lifecycleBlockReason('PreToolUse', preToolOutputs),
-          );
-        }
-        const permissionDecision = await decideHadamardToolPermission({
-          mode: options.permissionMode ?? 'default',
-          rules: options.permissions ?? [],
-          classifier: options.classifier,
-          approver: options.approver,
-          canUseTool: options.canUseTool,
-          adapter: {
-            isReadOnly: adapter.isReadOnly as ((input?: unknown) => boolean) | undefined,
-            isDestructive: adapter.isDestructive as ((input?: unknown) => boolean) | undefined,
-            isPlanReadOnly: adapter.isPlanReadOnly as ((input?: unknown) => boolean) | undefined,
-            requiresUserInteraction: adapter.requiresUserInteraction,
-            checkPermissions: adapter.checkPermissions,
-          },
-          runId: options.runId,
-          sessionId: options.sessionId,
-          workDir: workDir,
-          toolName: adapter.sourceName,
-          publicName: toolUse.name,
-          prompt: promptText,
-          toolInput: toolUse.input,
-          iteration,
-        });
-        permissionBehavior = permissionDecision.behavior;
-        permissionDecisions.push(permissionDecision);
-        options.emit?.({
-          type: 'tool.permission',
-          runId: options.runId,
-          iteration,
-          decision: permissionDecision,
-          timestamp: permissionDecision.timestamp,
-        });
-        const permissionHookOutputs = await runTypedLifecycleHooks(
-          options,
-          'PermissionDecision',
-          { iteration, decision: permissionDecision },
-          toolUse.name,
-        );
-        if (hasLifecycleBlock(permissionHookOutputs)) {
-          throw new ToolExecutionError(
-            toolUse.name,
-            lifecycleBlockReason('PermissionDecision', permissionHookOutputs),
-          );
-        }
-        if (permissionDecision.behavior === 'deny') {
-          throw new ToolExecutionError(toolUse.name, permissionDecision.reason);
-        }
-        const onProgress: ToolCallProgress | undefined = options.emit
-          ? (progress) => {
-              options.emit?.({
-                type: 'tool.progress',
-                runId: options.runId,
-                iteration,
-                toolUseId: progress.toolUseID || toolUse.id,
-                data: progress.data,
-                timestamp: nowIso(),
-              });
-            }
-          : undefined;
-
-        const executionInput =
-          permissionDecision.updatedInput !== undefined
-            ? permissionDecision.updatedInput
-            : toolUse.input;
-        const executionContext = {
-          signal: undefined as AbortSignal | undefined,
-          runId: options.runId,
-          toolUseId: toolUse.id,
-          sessionId: options.sessionId,
-          cwd: workDir,
-          metadata: { ...(options.metadata ?? {}) },
-          prompt: promptText,
-          iteration,
-          permissionMode: options.permissionMode,
-          permissions: options.permissions,
-          classifier: options.classifier,
-          approver: options.approver,
-          hooks: options.hooks,
-          modelApi: options.modelApi,
-          model,
-          provider: options.config.provider,
-          effort,
-          fileChangeJournal: options.fileChangeJournal,
-          sandboxExecutor: options.sandboxExecutor,
-        };
-        const execution = await withDeadline(
-          `Tool ${toolUse.name}`,
-          options.config.toolTimeoutMs,
-          adapter.interruptBehavior === 'cancel' ? options.signal : undefined,
-          ({ signal }) => adapter.execute(
-            executionInput,
-            markExplicitSafetyApproval(
-              { ...executionContext, signal },
-              permissionDecision.source === 'approver',
-            ),
-            onProgress,
-          ),
-        );
-        const nextWorkDir = executionContext.metadata.__hadamardWorkDir;
-        if (typeof nextWorkDir === 'string' && nextWorkDir.trim()) {
-          const resolved = path.resolve(nextWorkDir.trim());
-          if (resolved !== workDir) {
-            workDir = resolved;
-            options.onSessionWorkDirChange?.(workDir);
-          }
-        }
-        // Per-tool declared cap first (default 50k via tool factory), clamped
-        // by the global artifact ceiling. MCP tools without a declared cap use
-        // the global ceiling only.
-        const artifactMaxChars = Math.min(
-          adapter.maxResultSizeChars ?? Number.POSITIVE_INFINITY,
-          options.config.compact.toolResultArtifactMaxChars ?? 80_000,
-        );
-        const modelFacingExecution = await artifactToolExecutionIfLarge(execution, {
-          runId: options.runId,
-          iteration,
-          toolUseId: toolUse.id,
-          toolName: toolUse.name,
-          workDir: workDir,
-          maxChars: artifactMaxChars,
-        });
-        outputText = modelFacingExecution.text;
-        output = execution.rawOutput;
-        isError = execution.isError ?? false;
-        content = modelFacingExecution.content;
-        const postToolOutputs = await runTypedLifecycleHooks(
-          options,
-          'PostToolUse',
-          {
-            iteration,
-            input: executionInput,
-            output: execution.rawOutput,
-            isError,
-          },
-          toolUse.name,
-        );
-        if (hasLifecycleBlock(postToolOutputs)) {
-          throw new ToolExecutionError(
-            toolUse.name,
-            lifecycleBlockReason('PostToolUse', postToolOutputs),
-          );
-        }
-      } catch (error) {
-        const normalized =
-          error instanceof ToolExecutionError
-            ? error
-            : new ToolExecutionError(
-                toolUse.name,
-                asError(error).message,
-                { cause: error },
-              );
-        outputText = normalized.message;
-        output = { error: normalized.message };
-        isError = true;
-        content = normalized.message;
-      }
-
-      const record: AgentToolCallRecord = {
-        ...callPayload,
-        outputText,
-        output,
-        isError,
-        completedAt: nowIso(),
-        durationMs: Date.now() - startedClock,
-      };
-
-      return {
-        record,
-        resultBlock: {
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content,
-          is_error: isError,
+        toolUse,
+        adapter: toolMap.get(toolUse.name),
+        workDir,
+        promptText,
+        model,
+        effort,
+        onPermissionDecision: decision => {
+          permissionDecisions.push(decision);
         },
-        permissionBehavior,
-      };
-    };
+        onWorkDirChange: nextWorkDir => {
+          workDir = nextWorkDir;
+          options.onSessionWorkDirChange?.(workDir);
+        },
+      });
 
     // Execute tool batches: consecutive concurrency-safe (read-only) tools run
     // in parallel (limit 10), everything else serially. Results are recorded
