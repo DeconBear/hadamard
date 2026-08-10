@@ -22,6 +22,7 @@ async function readTuiSources(): Promise<string> {
     readFile(new URL('src/tui/tuiConfigurationCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiBasicCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiPlanCommandHandler.ts', root), 'utf8'),
+    readFile(new URL('src/tui/tuiSessionCommandHandler.ts', root), 'utf8'),
   ])).join('\n');
 }
 

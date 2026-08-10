@@ -193,6 +193,7 @@ import { runTuiMemoryCommand } from './tuiMemoryCommandHandler.js';
 import { runTuiConfigurationCommand } from './tuiConfigurationCommandHandler.js';
 import { runTuiBasicCommand } from './tuiBasicCommandHandler.js';
 import { runTuiPlanCommand } from './tuiPlanCommandHandler.js';
+import { runTuiSessionCommand } from './tuiSessionCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3617,140 +3618,126 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         appendStatic,
       });
       if (planCommandHandled) return;
-      switch (name) {
-        case 'checkpoint': {
-          const [action = 'list', checkpointId, modeValue, ...flags] = args.trim().split(/\s+/u).filter(Boolean);
-          if (action === 'list') {
-            const checkpoints = await sdk.checkpoints.list(session.id);
-            appendStatic(checkpoints.length > 0
-              ? [
-                  `${A.bold}Checkpoints${A.reset}`,
-                  ...checkpoints.map(item =>
-                    `  ${item.id}  ${A.dim}${item.status} · ${item.entries.length} file(s) · ${item.createdAt}${A.reset}`
-                  ),
-                  '',
-                ]
-              : [...formatInfoLine('no checkpoints for this Session'), '']);
-            return;
-          }
-          if (!checkpointId) {
-            appendStatic([...formatErrorLine('usage: /checkpoint show <id> | restore <id> [files|conversation|both] --confirm'), '']);
-            return;
-          }
-          if (action === 'show') {
-            const preview = await sdk.checkpoints.preview(session.id, checkpointId);
-            appendStatic([
-              `${A.bold}Checkpoint ${checkpointId}${A.reset}`,
-              ...preview.files.map(file => `  ${file.action.padEnd(13)} ${file.path}${file.binary ? ' · binary' : ''}`),
-              ...(preview.conflicts.length > 0
-                ? ['', `${A.red}Conflicts${A.reset}`, ...preview.conflicts.map(conflict => `  ${conflict.path}: ${conflict.message}`)]
-                : ['', `${A.dim}No restore conflicts detected.${A.reset}`]),
-              '',
-            ]);
-            return;
-          }
-          if (action === 'restore') {
-            const mode = ['files', 'conversation', 'both'].includes(modeValue ?? '')
-              ? modeValue as import('../checkpoint/types.js').CheckpointRestoreMode
-              : 'both';
-            const confirmed = flags.includes('--confirm') || modeValue === '--confirm';
-            if (!confirmed) {
-              appendStatic([
-                ...formatErrorLine(`preview first, then run /checkpoint restore ${checkpointId} ${mode} --confirm`),
-                '',
-              ]);
-              return;
-            }
-            const preview = await sdk.checkpoints.preview(session.id, checkpointId);
-            const result = await sdk.checkpoints.restore({
-              sessionId: session.id,
-              checkpointId,
-              mode,
-            });
-            if (result.conflicts.length > 0) {
-              appendStatic([
-                ...result.conflicts.flatMap(conflict => formatErrorLine(`${conflict.path}: ${conflict.message}`)),
-                '',
-              ]);
-              return;
-            }
-            if (result.conversationRestored && preview.checkpoint.conversationCheckpointId) {
-              await session.restoreCheckpoint(preview.checkpoint.conversationCheckpointId);
-            }
-            appendStatic([
-              ...formatInfoLine(`checkpoint restored · ${result.restoredFiles.length} file(s)${result.conversationRestored ? ' · conversation' : ''}`),
-              '',
-            ]);
-            return;
-          }
-          appendStatic([...formatErrorLine('usage: /checkpoint list|show|restore'), '']);
-          return;
-        }
-        case 'rewind': {
-          const n = parseInt(args, 10);
-          if (!n || n < 1) {
-            appendStatic([...formatErrorLine('usage: /rewind <N> — drops the last N messages (best-effort, no file restore)'), '']);
-            return;
-          }
-          const msgs = session.messages;
-          if (n >= msgs.length) {
-            appendStatic([...formatErrorLine('cannot rewind beyond session start'), '']);
-            return;
-          }
-          const kept = msgs.slice(0, msgs.length - n);
-          // Create a fresh session with only the kept messages.
+      const sessionCommandHandled = await runTuiSessionCommand(name, args, {
+        current: () => ({
+          id: session.id,
+          title: session.title,
+          model: session.model,
+          messageCount: session.messages.length,
+        }),
+        checkpoints: {
+          list: () => sdk.checkpoints.list(session.id),
+          preview: checkpointId => sdk.checkpoints.preview(session.id, checkpointId),
+          restore: (checkpointId, mode) => sdk.checkpoints.restore({
+            sessionId: session.id,
+            checkpointId,
+            mode,
+          }),
+          restoreConversation: checkpointId => session.restoreCheckpoint(checkpointId),
+        },
+        rewind: async messageCount => {
+          const kept = session.messages.slice(0, session.messages.length - messageCount);
           const nextSession = await sdk.createSession({ title: session.title, model: session.model });
           if (kept.length > 0) await nextSession.appendMessages(kept);
-          // Switch the active session.
-          const prevSession = session;
+          const previousSession = session;
           session = nextSession;
           await restoreSessionRuntimeSelection();
-          await prevSession.delete().catch(() => undefined);
-          appendStatic([...formatInfoLine(`rewound ${n} message${n === 1 ? '' : 's'} (session ${session.id}), files unchanged`), '']);
-          return;
-        }
-        case 'sessions': {
-          if (args) {
-            const value = (flag: string) => args.match(new RegExp(`(?:^|\\s)--${flag}\\s+("[^"]+"|\\S+)`))?.[1]?.replace(/^"|"$/g, '');
-            const rawType = value('type') || 'user';
-            const types = rawType === 'all'
-              ? ['user', 'assistant-global', 'assistant-project', 'agent'] as const
-              : [rawType as import('../storage/sessionCatalog.js').SessionCatalogType];
-            const archiveFlag = value('archived') || 'active';
-            const page = await (await interactiveSessionCatalog()).query({
-              types: [...types],
-              archived: archiveFlag === 'all' ? 'all' : archiveFlag === 'archived',
-              ...(value('project') ? { projectPaths: [value('project')!] } : {}),
-              ...(value('status')
-                ? { runtimeStatuses: [value('status') as import('../storage/sessionCatalog.js').SessionCatalogRuntimeStatus] }
-                : {}),
-              keyword: value('query'),
-              pageSize: 200,
+          await previousSession.delete().catch(() => undefined);
+          return session.id;
+        },
+        listStoredSessions: async () => (await sdk.sessions.list())
+          .filter(isTuiChatSession)
+          .map(item => ({
+            id: item.id,
+            title: item.title,
+            model: item.model,
+            status: item.status,
+            kind: item.kind,
+          })),
+        querySessions: async filters => {
+          const page = await (await interactiveSessionCatalog()).query({
+            types: filters.types as import('../storage/sessionCatalog.js').SessionCatalogType[],
+            archived: filters.archived === 'all' ? 'all' : filters.archived === 'archived',
+            ...(filters.project ? { projectPaths: [filters.project] } : {}),
+            ...(filters.status
+              ? { runtimeStatuses: [filters.status as import('../storage/sessionCatalog.js').SessionCatalogRuntimeStatus] }
+              : {}),
+            keyword: filters.query,
+            pageSize: 200,
+          });
+          return page.items.map(item => ({
+            sessionId: item.locator.sessionId,
+            projectName: item.projectName,
+            type: item.type,
+            title: item.title,
+            archived: item.archived,
+            pinned: item.pinned,
+          }));
+        },
+        resume: async sessionId => {
+          if (sessionId) await resumeSession(sessionId);
+          else await chooseSessionToResume();
+        },
+        tree: async () => {
+          const mapNode = (node: Awaited<ReturnType<typeof sdk.sessionGraph.roots>>[number]): import('./tuiSessionCommandHandler.js').TuiSessionTreeNode => ({
+            id: node.session.id,
+            title: node.session.title,
+            branchName: node.session.branchName,
+            children: node.children.map(mapNode),
+          });
+          return (await sdk.sessionGraph.roots()).map(mapNode);
+        },
+        ensureMessageIds: async () => (await sdk.sessionGraph.ensureMessageIds(session.id))
+          .map(ref => ({ id: ref.id, role: ref.message.role })),
+        fork: async (messageId, label) => {
+          const forked = await sdk.sessionForks.forkAtMessage(session.id, messageId, {
+            branchName: label,
+          });
+          session = await sdk.resumeSession(forked.id);
+          return forked.id;
+        },
+        clone: async label => {
+          const cloned = await sdk.sessionForks.clone(session.id, { branchName: label });
+          session = await sdk.resumeSession(cloned.id);
+          return cloned.id;
+        },
+        label: async value => {
+          await sdk.sessionForks.label(session.id, value);
+          session = await sdk.resumeSession(session.id);
+        },
+        catalogAction: async (action, targetId, value) => {
+          const catalog = await interactiveSessionCatalog();
+          const all = await catalog.query({
+            types: ['user', 'assistant-global', 'assistant-project'],
+            archived: 'all',
+            pageSize: 200,
+          });
+          const item = all.items.find(candidate => candidate.locator.sessionId === targetId);
+          if (!item) return false;
+          if (action === 'rename') {
+            await catalog.action({ action, locator: item.locator, title: String(value) });
+            if (targetId === session.id) session = await sdk.resumeSession(session.id);
+          } else if (action === 'pin') {
+            await catalog.action({
+              action,
+              locator: item.locator,
+              pinned: typeof value === 'boolean' ? value : undefined,
             });
-            appendStatic([
-              ...(page.items.length
-                ? page.items.map(item => `${item.pinned ? '★' : ' '} ${item.locator.sessionId} · ${item.projectName} · ${item.type} · ${item.title}${item.archived ? ' · archived' : ''}`)
-                : formatInfoLine('no matching Sessions')),
-              '',
-            ]);
-            return;
+          } else {
+            await catalog.action({ action, locator: item.locator });
+            if (action === 'archive' && targetId === session.id) {
+              session = await sdk.createSession({
+                model: session.model,
+                permissionMode: currentPermissionMode(),
+              });
+            }
           }
-          const sessions = (await sdk.sessions.list()).filter(isTuiChatSession);
-          appendStatic([
-            ...(sessions.length > 0
-              ? sessions.map(item =>
-                  `${item.id === session.id ? A.green : A.dim}${item.id}${A.reset} ${item.title} · ${item.model} · ${item.status}`,
-                )
-              : formatInfoLine('no stored sessions')),
-            '',
-          ]);
-          return;
-        }
-        case 'resume': {
-          if (!args) await chooseSessionToResume();
-          else await resumeSession(args);
-          return;
-        }
+          return true;
+        },
+        appendStatic,
+      });
+      if (sessionCommandHandled) return;
+      switch (name) {
         case 'context': {
           const contextArgs = args.trim();
           if (contextArgs === 'setting' || contextArgs === 'settings') {
@@ -4782,103 +4769,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           } catch (error) {
             appendStatic([...formatErrorLine(error instanceof Error ? error.message : String(error)), '']);
           }
-          return;
-        }
-        case 'session': {
-          const [action, ...rest] = args.split(/\s+/);
-          if (!action) {
-            appendStatic([...formatErrorLine('usage: /session tree | fork <message-id> [label] | clone [label] | label <name> | rename <title> | pin [on|off] | archive | restore <id> | delete <id>'), '']);
-            return;
-          }
-          if (action === 'tree') {
-            const roots = await sdk.sessionGraph.roots();
-            const lines: string[] = [`${A.bold}Session Tree${A.reset}`];
-            const visit = (node: (typeof roots)[number], depth: number) => {
-              const marker = node.session.id === session.id ? `${A.green}*${A.reset}` : '-';
-              lines.push(`${'  '.repeat(depth)}${marker} ${node.session.branchName || node.session.title} ${A.dim}${node.session.id}${A.reset}`);
-              node.children.forEach(child => visit(child, depth + 1));
-            };
-            roots.forEach(root => visit(root, 0));
-            appendStatic([...lines, '']);
-            return;
-          }
-          if (action === 'fork') {
-            const messageId = rest.shift();
-            if (!messageId) {
-              const refs = await sdk.sessionGraph.ensureMessageIds(session.id);
-              appendStatic([
-                ...formatErrorLine('usage: /session fork <message-id> [label]'),
-                ...refs.map(ref => `  ${A.dim}${ref.id}${A.reset} · ${ref.message.role}`),
-                '',
-              ]);
-              return;
-            }
-            const forked = await sdk.sessionForks.forkAtMessage(session.id, messageId, {
-              branchName: rest.join(' ').trim() || undefined,
-            });
-            session = await sdk.resumeSession(forked.id);
-            appendStatic([...formatInfoLine(`Session branch created: ${forked.id}`), '']);
-            return;
-          }
-          if (action === 'clone') {
-            const cloned = await sdk.sessionForks.clone(session.id, {
-              branchName: rest.join(' ').trim() || undefined,
-            });
-            session = await sdk.resumeSession(cloned.id);
-            appendStatic([...formatInfoLine(`Session cloned: ${cloned.id}`), '']);
-            return;
-          }
-          if (action === 'label') {
-            const label = rest.join(' ').trim();
-            if (!label) {
-              appendStatic([...formatErrorLine('usage: /session label <name>'), '']);
-              return;
-            }
-            await sdk.sessionForks.label(session.id, label);
-            session = await sdk.resumeSession(session.id);
-            appendStatic([...formatInfoLine(`Session branch labeled: ${label}`), '']);
-            return;
-          }
-          const catalog = await interactiveSessionCatalog();
-          const all = await catalog.query({
-            types: ['user', 'assistant-global', 'assistant-project'],
-            archived: 'all',
-            pageSize: 200,
-          });
-          const targetId = action === 'restore' || action === 'delete' ? rest[0] : session.id;
-          const item = all.items.find(candidate => candidate.locator.sessionId === targetId);
-          if (!item) {
-            appendStatic([...formatErrorLine(`Session not found: ${targetId || ''}`), '']);
-            return;
-          }
-          if (action === 'rename') {
-            const title = rest.join(' ').trim();
-            if (!title) {
-              appendStatic([...formatErrorLine('usage: /session rename <title>'), '']);
-              return;
-            }
-            await catalog.action({ action: 'rename', locator: item.locator, title });
-            if (item.locator.sessionId === session.id) session = await sdk.resumeSession(session.id);
-          } else if (action === 'pin') {
-            await catalog.action({
-              action: 'pin',
-              locator: item.locator,
-              pinned: rest[0] === 'off' ? false : rest[0] === 'on' ? true : undefined,
-            });
-          } else if (action === 'archive') {
-            await catalog.action({ action: 'archive', locator: item.locator });
-            if (item.locator.sessionId === session.id) {
-              session = await sdk.createSession({ model: session.model, permissionMode: currentPermissionMode() });
-            }
-          } else if (action === 'restore') {
-            await catalog.action({ action: 'restore', locator: item.locator });
-          } else if (action === 'delete') {
-            await catalog.action({ action: 'delete', locator: item.locator });
-          } else {
-            appendStatic([...formatErrorLine(`unknown /session action: ${action}`), '']);
-            return;
-          }
-          appendStatic([...formatInfoLine(`Session ${action} complete.`), '']);
           return;
         }
         case 'manager': {
