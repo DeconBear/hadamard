@@ -16,6 +16,13 @@ import {
   filterTuiSelectionItems,
   moveTuiSelection,
 } from '../src/tui/selection.js';
+import {
+  buildTuiPermissionDialog,
+  buildTuiPromptBar,
+  buildTuiSelectionDialog,
+  buildTuiTextInputDialog,
+  tuiPromptCursorPosition,
+} from '../src/tui/tuiFramePresenter.js';
 
 describe('ansi helpers', () => {
   it('measures display width with CJK and ANSI codes', () => {
@@ -272,6 +279,58 @@ describe('transcript formatting', () => {
     expect(stripAnsi(ok[0]!)).toContain('1.5s');
     const err = formatToolResult({ isError: true, outputText: 'boom' }, 80);
     expect(stripAnsi(err[0]!)).toContain('✗');
+  });
+});
+
+describe('TUI frame presenter', () => {
+  it('preserves the empty prompt placeholder and caret position', () => {
+    const editor = new InputEditor();
+    const lines = buildTuiPromptBar(editor, 40).map(stripAnsi);
+
+    expect(lines).toEqual([
+      '─'.repeat(40),
+      '❯   Try "write a test for <filepath…',
+      '─'.repeat(40),
+    ]);
+    expect(tuiPromptCursorPosition(editor, 40, 3)).toEqual({ line: 4, column: 2 });
+  });
+
+  it('preserves permission choices and selection highlighting', () => {
+    const lines = buildTuiPermissionDialog({
+      toolName: 'Bash',
+      summary: 'npm test',
+      selected: 1,
+      resolve: () => undefined,
+    }, 48);
+
+    expect(lines.map(stripAnsi).some(line => line.includes('Always Bash (project)'))).toBe(true);
+    expect(lines[4]).toContain(A.inverse);
+  });
+
+  it('clamps filtered selections and keeps secret input hidden', () => {
+    const selection = buildTuiSelectionDialog({
+      title: 'Model',
+      items: [{ id: 'a', label: 'alpha' }, { id: 'b', label: 'beta' }],
+      selected: 4,
+      query: 'be',
+      searchable: true,
+      resolve: () => undefined,
+    }, 40, 24);
+    expect(selection.selected).toBe(0);
+    expect(selection.lines.map(stripAnsi).join('\n')).toContain('beta');
+    expect(selection.lines.map(stripAnsi).join('\n')).not.toContain('alpha');
+
+    const editor = new InputEditor();
+    editor.insert('secret-value');
+    const text = buildTuiTextInputDialog({
+      title: 'API key',
+      label: 'Key',
+      editor,
+      secret: true,
+      resolve: () => undefined,
+    }, 40).join('\n');
+    expect(text).not.toContain('secret-value');
+    expect(stripAnsi(text)).toContain('••••••••••••');
   });
 });
 
