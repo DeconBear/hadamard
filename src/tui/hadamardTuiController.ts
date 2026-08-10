@@ -184,6 +184,7 @@ import { runTuiWorktreeCommand } from './tuiWorktreeCommandHandler.js';
 import { runTuiBridgeCommand } from './tuiBridgeCommandHandler.js';
 import { runTuiTeamCommand } from './tuiTeamCommandHandler.js';
 import { runTuiIssueCommand } from './tuiIssueCommandHandler.js';
+import { runTuiAssistantCommand } from './tuiAssistantCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3843,6 +3844,87 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         },
         appendStatic,
       })) return;
+      if (await runTuiAssistantCommand(name, args, {
+        assistant: {
+          initialize: async () => { await resolveGlobalAssistantSession(); },
+          listSessions: async () => {
+            const config = await readAssistantConfig(sdk.config.homeDir);
+            return (await globalAssistantSdk!.sessions.list())
+              .filter(item => item.kind === 'manager')
+              .map(item => ({
+                id: item.id,
+                title: item.title,
+                messageCount: item.messageCount,
+                active: item.id === config.activeSessionId,
+              }));
+          },
+          createSession: async () => {
+            const config = await readAssistantConfig(sdk.config.homeDir);
+            globalAssistantSession = await globalAssistantSdk!.createSession({
+              title: 'Assistant (Global)',
+              kind: 'manager',
+              metadata: { __hadamardKind: 'manager', __hadamardAssistantScope: 'global' },
+              permissionMode: 'bypassPermissions',
+            });
+            await writeAssistantConfig({
+              ...config,
+              activeSessionId: globalAssistantSession.id,
+            }, sdk.config.homeDir);
+            return globalAssistantSession.id;
+          },
+          resumeSession: async id => {
+            const found = (await globalAssistantSdk!.sessions.list())
+              .find(item => item.id === id && item.kind === 'manager');
+            if (!found) return undefined;
+            const config = await readAssistantConfig(sdk.config.homeDir);
+            globalAssistantSession = await globalAssistantSdk!.resumeSession(id, {
+              permissionMode: 'bypassPermissions',
+            });
+            await writeAssistantConfig({ ...config, activeSessionId: id }, sdk.config.homeDir);
+            return { title: found.title };
+          },
+          run: async (prompt, onTool) => {
+            const globalSession = await resolveGlobalAssistantSession();
+            const proposals: import('../team/teamProposalService.js').TeamGraphProposal[] = [];
+            const assistantTools = [
+              ...await createAssistantGlobalTools({
+                homeDir: sdk.config.homeDir,
+                currentWorkDir: sdk.config.workDir,
+              }),
+              ...createAssistantTeamTools({
+                scope: 'global',
+                assistantSessionId: globalSession.id,
+                currentWorkDir: sdk.config.workDir,
+                homeDir: sdk.config.homeDir,
+                proposals: assistantTeamProposals,
+                onProposal: proposal => { proposals.push(proposal); },
+              }),
+            ];
+            const config = await readAssistantConfig(sdk.config.homeDir);
+            const stream = globalSession.stream(prompt, {
+              systemPrompt: `${buildAssistantGlobalSystemPrompt(sdk.config.workDir)}\n${buildAssistantTeamSystemPrompt('global')}`,
+              tools: assistantTools,
+              ...(config.model ? { model: config.model } : {}),
+              __hadamardUseDefaultTools: false,
+              __hadamardAllowedTools: assistantTools.map(item => item.name),
+            } as Parameters<typeof globalSession.stream>[1]);
+            const assistantToolDisplay = new ToolActivityDisplayState();
+            for await (const event of stream) {
+              if (event.type === 'tool.call' && assistantToolDisplay.markStarted(event.call.id)) {
+                onTool(event.call.name);
+              }
+            }
+            const result = await stream.result;
+            return { text: result.text, proposals };
+          },
+          proposalDiff: managerProposalDiffForTui,
+          applyProposal: async id => (await assistantTeamProposals.apply(id, sdk.config.homeDir)).filePath,
+          rejectProposal: id => { assistantTeamProposals.reject(id); },
+        },
+        selectItem,
+        renderRichText: text => renderRichText(text, screen.width),
+        appendStatic,
+      })) return;
       switch (name) {
         case 'context': {
           const contextArgs = args.trim();
@@ -4111,121 +4193,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           return;
         }
         // ── Project Manager ──────────────────────────────────────
-        case 'assistant': {
-          const homeDir = sdk.config.homeDir;
-          const globalSession = await resolveGlobalAssistantSession();
-          if (args === 'sessions') {
-            const config = await readAssistantConfig(homeDir);
-            const sessions = (await globalAssistantSdk!.sessions.list()).filter(item => item.kind === 'manager');
-            appendStatic([
-              `${A.bold}Global Assistant Sessions${A.reset}`,
-              ...sessions.map(item => `${item.id === config.activeSessionId ? A.green + '●' : A.dim + '○'} ${item.id} · ${item.title} · ${item.messageCount} messages${A.reset}`),
-              '',
-            ]);
-            return;
-          }
-          if (args === 'new') {
-            const config = await readAssistantConfig(homeDir);
-            globalAssistantSession = await globalAssistantSdk!.createSession({
-              title: 'Assistant (Global)',
-              kind: 'manager',
-              metadata: { __hadamardKind: 'manager', __hadamardAssistantScope: 'global' },
-              permissionMode: 'bypassPermissions',
-            });
-            await writeAssistantConfig({ ...config, activeSessionId: globalAssistantSession.id }, homeDir);
-            appendStatic([...formatInfoLine(`Global Assistant Session created: ${globalAssistantSession.id}`), '']);
-            return;
-          }
-          if (args.startsWith('resume ')) {
-            const id = args.slice('resume '.length).trim();
-            const found = (await globalAssistantSdk!.sessions.list())
-              .find(item => item.id === id && item.kind === 'manager');
-            if (!found) {
-              appendStatic([...formatErrorLine(`Global Assistant Session not found: ${id}`), '']);
-              return;
-            }
-            const config = await readAssistantConfig(homeDir);
-            globalAssistantSession = await globalAssistantSdk!.resumeSession(id, { permissionMode: 'bypassPermissions' });
-            await writeAssistantConfig({ ...config, activeSessionId: id }, homeDir);
-            appendStatic([...formatInfoLine(`Global Assistant Session selected: ${found.title}`), '']);
-            return;
-          }
-          const isTeam = args === 'team' || args.startsWith('team ');
-          const isChat = args === 'chat' || args.startsWith('chat ') || isTeam;
-          if (!isChat) {
-            appendStatic([...formatErrorLine('usage: /assistant [chat <message>|sessions|new|resume <id>|team <request>]'), '']);
-            return;
-          }
-          const prompt = isTeam
-            ? (args === 'team'
-              ? ''
-              : `Propose a Team Graph for this request. Use an explicit registered projectPath. ${args.slice('team'.length).trim()}`)
-            : args.slice('chat'.length).trim();
-          if (!prompt) {
-            appendStatic([...formatErrorLine(isTeam ? 'usage: /assistant team <request>' : 'usage: /assistant chat <message>'), '']);
-            return;
-          }
-          const proposals: import('../team/teamProposalService.js').TeamGraphProposal[] = [];
-          const tools = [
-            ...await createAssistantGlobalTools({ homeDir, currentWorkDir: sdk.config.workDir }),
-            ...createAssistantTeamTools({
-              scope: 'global',
-              assistantSessionId: globalSession.id,
-              currentWorkDir: sdk.config.workDir,
-              homeDir,
-              proposals: assistantTeamProposals,
-              onProposal: proposal => { proposals.push(proposal); },
-            }),
-          ];
-          try {
-            const config = await readAssistantConfig(homeDir);
-            const stream = globalSession.stream(prompt, {
-              systemPrompt: `${buildAssistantGlobalSystemPrompt(sdk.config.workDir)}\n${buildAssistantTeamSystemPrompt('global')}`,
-              tools,
-              ...(config.model ? { model: config.model } : {}),
-              __hadamardUseDefaultTools: false,
-              __hadamardAllowedTools: tools.map(item => item.name),
-            } as Parameters<typeof globalSession.stream>[1]);
-            const assistantToolDisplay = new ToolActivityDisplayState();
-            for await (const event of stream) {
-              if (
-                event.type === 'tool.call'
-                && assistantToolDisplay.markStarted(event.call.id)
-              ) {
-                appendStatic([`${A.dim}  ⚙ ${event.call.name}${A.reset}`]);
-              }
-            }
-            const result = await stream.result;
-            if (result.text) appendStatic([...renderRichText(result.text, screen.width), '']);
-            for (const proposal of proposals) {
-              appendStatic([
-                `${A.bold}Team proposal · ${proposal.teamName}${A.reset}`,
-                ...managerProposalDiffForTui(proposal),
-                '',
-              ]);
-              const choice = await selectItem({
-                title: `Team proposal "${proposal.teamName}"`,
-                subtitle: proposal.problems.length ? proposal.problems.join(' · ') : `Target: ${proposal.projectPath}`,
-                items: [
-                  ...(!proposal.problems.length
-                    ? [{ id: 'apply', label: 'Apply', description: 'check base version and save' }]
-                    : []),
-                  { id: 'reject', label: 'Reject', description: 'no file write' },
-                  { id: 'later', label: 'Keep pending', description: 'decide later' },
-                ],
-              });
-              if (choice === 'apply') {
-                const applied = await assistantTeamProposals.apply(proposal.id, homeDir);
-                appendStatic([...formatInfoLine(`Team saved: ${applied.filePath}`), '']);
-              } else if (choice === 'reject') {
-                assistantTeamProposals.reject(proposal.id);
-              }
-            }
-          } catch (error: any) {
-            appendStatic([...formatErrorLine(`Assistant error: ${error.message}`), '']);
-          }
-          return;
-        }
         case 'diff': {
           const sub = args || 'show';
           try {
