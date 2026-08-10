@@ -18,6 +18,7 @@ async function readTuiSources(): Promise<string> {
     readFile(new URL('src/tui/tuiRuntimeLifecycle.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiFramePresenter.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiInputController.ts', root), 'utf8'),
+    readFile(new URL('src/tui/tuiMemoryCommandHandler.ts', root), 'utf8'),
   ])).join('\n');
 }
 
@@ -37,10 +38,12 @@ function commandCase(
   const handlerStart = source.indexOf(marker);
   expect(handlerStart, `${marker} exists`).toBeGreaterThanOrEqual(0);
   const lines = source.slice(handlerStart).split(/\r?\n/u);
-  const start = lines.findIndex(line => line.startsWith(`${indent}case '${command}'`));
+  const start = lines.findIndex(line => line.trimStart().startsWith(`case '${command}'`));
   expect(start, `/${command} case exists`).toBeGreaterThanOrEqual(0);
-  const next = lines.slice(start + 1).findIndex(line =>
-    line.startsWith(`${indent}case '`) || line.startsWith(`${indent}default:`));
+  const next = lines.slice(start + 1).findIndex(line => {
+    const trimmed = line.trimStart();
+    return trimmed.startsWith("case '") || trimmed.startsWith('default:');
+  });
   return lines.slice(start, next === -1 ? undefined : start + 1 + next).join('\n');
 }
 
@@ -92,14 +95,15 @@ describe('interactive CLI convergence', () => {
         continue;
       }
       if (command === 'memory') {
-        expect(tuiCase).toContain('HadamardMemoryCommandService');
+        expect(tuiCase).toContain('port.runMemoryCommand');
+        expect(tui).toContain('HadamardMemoryCommandService');
         expect(guiCase).toContain('HadamardMemoryCommandService');
-        expect(tuiCase).toContain(".execute(args || 'status')");
+        expect(tuiCase).toContain("args || 'status'");
         expect(guiCase).toContain(".execute(args || 'status')");
         continue;
       }
       if (command === 'dream') {
-        expect(tuiCase).toContain('runDreamCommand(args.toLowerCase())');
+        expect(tuiCase).toContain('runDreamCommand(action.toLowerCase(), port)');
         expect(tui).toContain("if (action === 'status')");
         expect(tui).toContain("if (action !== 'run')");
       }
