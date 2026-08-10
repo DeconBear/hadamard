@@ -113,13 +113,14 @@ describe('projectWorkbench helpers', () => {
 
   it('ships hidden-dotfile listing and image preview wiring in the GUI', async () => {
     const src = await readFile(new URL('../src/gui/hadamardGui.ts', import.meta.url), 'utf8');
+    const assets = await readFile(new URL('../src/gui/hadamardGuiAssets.ts', import.meta.url), 'utf8');
     expect(src).not.toMatch(
       /if \(entry\.name\.startsWith\('\.'\) && entry\.name !== '\.hadamard'\) continue;/,
     );
     expect(src).toContain("...(entry.name.startsWith('.') ? { hidden: true } : {})");
-    expect(src).toContain('files-image-preview');
-    expect(src).toContain('hidden-entry');
-    expect(src).toContain('data.image');
+    expect(assets).toContain('files-image-preview');
+    expect(assets).toContain('hidden-entry');
+    expect(assets).toContain('data.image');
   });
 
   it('writes text files only within the workspace', async () => {
@@ -160,33 +161,34 @@ describe('projectWorkbench helpers', () => {
 
   it('gui source wires the five project tabs and workbench CSS', async () => {
     const src = await readFile(new URL('../src/gui/hadamardGui.ts', import.meta.url), 'utf8');
-    expect(src).toContain("['git', 'Git']");
-    expect(src).toContain("['terminal', 'Terminal']");
-    expect(src).toContain("['files', 'Files']");
-    expect(src).toContain('function renderProjectFilesPanel');
-    expect(src).toContain('function renderProjectGitPanel');
-    expect(src).toContain('function mountProjectTerminal');
-    expect(src).toContain('/api/workspace-file');
-    expect(src).toContain('function saveFilesPreview');
-    expect(src).toContain("method: 'PUT'");
-    expect(src).toContain('detectEditorLanguage');
-    expect(src).toContain('highlightCode');
-    expect(src).toContain('files-preview-modes');
-    expect(src).toContain('files-hl-overlay');
-    expect(src).toContain('files-md-preview');
-    expect(src).toContain('position: absolute; inset: 0');
-    expect(src).toMatch(/\.files-preview-editor[^}]*overflow:\s*auto/);
-    expect(src).toContain('files-image-preview');
-    expect(src).toContain('hidden-entry');
-    expect(src).toContain('data.image');
+    const assets = await readFile(new URL('../src/gui/hadamardGuiAssets.ts', import.meta.url), 'utf8');
+    expect(assets).toContain("['git', 'Git']");
+    expect(assets).toContain("['terminal', 'Terminal']");
+    expect(assets).toContain("['files', 'Files']");
+    expect(assets).toContain('function renderProjectFilesPanel');
+    expect(assets).toContain('function renderProjectGitPanel');
+    expect(assets).toContain('function mountProjectTerminal');
+    expect(assets).toContain('/api/workspace-file');
+    expect(assets).toContain('function saveFilesPreview');
+    expect(assets).toContain("method: 'PUT'");
+    expect(assets).toContain('detectEditorLanguage');
+    expect(assets).toContain('highlightCode');
+    expect(assets).toContain('files-preview-modes');
+    expect(assets).toContain('files-hl-overlay');
+    expect(assets).toContain('files-md-preview');
+    expect(assets).toContain('position: absolute; inset: 0');
+    expect(assets).toMatch(/\.files-preview-editor[^}]*overflow:\s*auto/);
+    expect(assets).toContain('files-image-preview');
+    expect(assets).toContain('hidden-entry');
+    expect(assets).toContain('data.image');
     expect(src).toContain('/api/git/diff');
-    expect(src).toContain('.project-files-split');
-    expect(src).toContain('.project-git-split');
-    expect(src).toContain('.tree-row');
+    expect(assets).toContain('.project-files-split');
+    expect(assets).toContain('.project-git-split');
+    expect(assets).toContain('.tree-row');
     expect(src).toContain('parseGitCommitLog');
-    expect(src).toContain('.git-history-ref');
-    expect(src).toContain('.git-history-graph');
-    expect(src).toContain('relativeDate');
-    expect(src).toContain('history: false');
+    expect(assets).toContain('.git-history-ref');
+    expect(assets).toContain('.git-history-graph');
+    expect(assets).toContain('relativeDate');
+    expect(assets).toContain('history: false');
   });
 });
