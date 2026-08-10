@@ -30,7 +30,7 @@ export class AgentSessionsApi {
       sessionId: string,
       options?: SessionResumeOptions,
     ) => Promise<AgentSession>,
-    manager?: import('./sessionManager.js').SessionManager | undefined,
+    manager?: import("./sessionManager.js").SessionManager | undefined,
   );
   constructor(
     store: SessionStore,
