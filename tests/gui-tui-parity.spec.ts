@@ -20,6 +20,8 @@ function readGuiSources(root: string): string {
   return [
     readFileSync(join(root, 'src', 'gui', 'hadamardGui.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'gui', 'hadamardGuiAssets.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'gui', 'guiHttpRouter.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'gui', 'guiShellHttpController.ts'), 'utf8'),
   ].join('\n');
 }
 

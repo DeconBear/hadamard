@@ -40,6 +40,8 @@ async function readGuiSources(): Promise<string> {
   return (await Promise.all([
     readFile(new URL('src/gui/hadamardGui.ts', root), 'utf8'),
     readFile(new URL('src/gui/hadamardGuiAssets.ts', root), 'utf8'),
+    readFile(new URL('src/gui/guiHttpRouter.ts', root), 'utf8'),
+    readFile(new URL('src/gui/guiShellHttpController.ts', root), 'utf8'),
   ])).join('\n');
 }
 

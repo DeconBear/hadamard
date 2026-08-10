@@ -84,6 +84,8 @@ describe('Goal interactive surface parity', () => {
       Promise.all([
         readFile(path.resolve('src/gui/hadamardGui.ts'), 'utf8'),
         readFile(path.resolve('src/gui/hadamardGuiAssets.ts'), 'utf8'),
+        readFile(path.resolve('src/gui/guiHttpRouter.ts'), 'utf8'),
+        readFile(path.resolve('src/gui/guiShellHttpController.ts'), 'utf8'),
       ]).then(parts => parts.join('\n')),
     ]);
     expect(tui).toContain('sdk.goals.command(session, args)');
