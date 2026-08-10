@@ -63,7 +63,6 @@ import {
   loadRouterProfile,
   resolveRoutedRun,
   transitionProjectIssue,
-  WorktreeService,
 } from '../index.js';
 import { adaptBridgeRun } from '../parity/bridgeEventAdapter.js';
 import { ExternalCliRuntimeManager } from '../parity/externalCliRuntimeManager.js';
@@ -190,6 +189,8 @@ import { runTuiBasicCommand } from './tuiBasicCommandHandler.js';
 import { runTuiPlanCommand } from './tuiPlanCommandHandler.js';
 import { runTuiSessionCommand } from './tuiSessionCommandHandler.js';
 import { runTuiWorkflowCommand } from './tuiWorkflowCommandHandler.js';
+import { runTuiWorktreeCommand } from './tuiWorktreeCommandHandler.js';
+import { runTuiBridgeCommand } from './tuiBridgeCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3753,6 +3754,31 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         appendStatic,
       });
       if (workflowCommandHandled) return;
+      if (await runTuiWorktreeCommand(name, args, {
+        workDir: sdk.config.workDir,
+        appendStatic,
+      })) return;
+      if (await runTuiBridgeCommand(name, args, {
+        runs: {
+          run: runBridgePrompt,
+          background: startExternalCliBackgroundRun,
+          listRuns: printExternalCliRuns,
+          stop: stopExternalCliRun,
+          status: printBridgeStatus,
+          history: printExternalCliHistory,
+          resume: resumeExternalCliHistorySession,
+        },
+        configuration: {
+          switchProvider: switchBridgeProvider,
+          setup: configureBridgeSettings,
+          manage: manageBridgeConfigs,
+          disable: async () => { await disableBridge(); },
+          selectModel: selectBridgeModel,
+          help: printBridgeHelp,
+          openBoard: openBridgeBoard,
+        },
+        appendStatic,
+      })) return;
       switch (name) {
         case 'context': {
           const contextArgs = args.trim();
@@ -4018,127 +4044,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           } catch (error) {
             appendStatic([...formatErrorLine(error instanceof Error ? error.message : String(error)), '']);
           }
-          return;
-        }
-        // ── v0.5.0: Worktrees ────────────────────────────────────
-        case 'worktree': {
-          const ws = new WorktreeService(sdk.config.workDir);
-          if (args === 'list') {
-            await ws.init();
-            const trees = await ws.listWorktrees();
-            if (trees.length === 0) {
-              appendStatic([...formatInfoLine('no worktrees'), '']);
-            } else {
-              appendStatic([
-                ...trees.map((t) =>
-                  `${A.dim}${t.path}${A.reset} · ${t.isDirty ? `${A.yellow}dirty${A.reset}` : `${A.green}clean${A.reset}`}`,
-                ),
-                '',
-              ]);
-            }
-            return;
-          }
-          if (args === 'exit') {
-            try {
-              ws.exitWorktree();
-              appendStatic([...formatInfoLine(`exited worktree, cwd: ${ws.currentWorkDir}`), '']);
-            } catch (error: any) {
-              appendStatic([...formatErrorLine(error.message), '']);
-            }
-            return;
-          }
-          if (args.startsWith('enter ')) {
-            const wfName = args.slice(6).trim();
-            try {
-              await ws.init();
-              await ws.createAndEnterWorktree({ name: wfName });
-              appendStatic([...formatInfoLine(`entered worktree: ${wfName} (${ws.currentWorkDir})`), '']);
-            } catch (error: any) {
-              appendStatic([...formatErrorLine(error.message), '']);
-            }
-            return;
-          }
-          appendStatic([...formatInfoLine('usage: /worktree [enter <name>|exit|list]'), '']);
-          return;
-        }
-        case 'bridge': {
-          if (args === 'run' || args.startsWith('run ')) {
-            const bp = args.startsWith('run ') ? args.slice(4).trim() : '';
-            if (!bp) { appendStatic([...formatErrorLine('usage: /bridge run <prompt>'), '']); return; }
-            await runBridgePrompt(bp);
-            return;
-          }
-          if (args === 'background' || args.startsWith('background ')) {
-            const prompt = args.startsWith('background ') ? args.slice(11).trim() : '';
-            if (!prompt) {
-              appendStatic([...formatErrorLine('usage: /bridge background <prompt>'), '']);
-              return;
-            }
-            await startExternalCliBackgroundRun(prompt);
-            return;
-          }
-          if (args === 'runs') {
-            printExternalCliRuns();
-            return;
-          }
-          if (args === 'stop' || args.startsWith('stop ')) {
-            const runId = args.startsWith('stop ') ? args.slice(5).trim() : '';
-            if (!runId) {
-              appendStatic([...formatErrorLine('usage: /bridge stop <runId>'), '']);
-              return;
-            }
-            stopExternalCliRun(runId);
-            return;
-          }
-          if (args === 'status') {
-            printBridgeStatus();
-            return;
-          }
-          if (args === 'history' || args.startsWith('history ')) {
-            const nativeSessionId = args.startsWith('history ') ? args.slice(8).trim() : '';
-            await printExternalCliHistory(nativeSessionId);
-            return;
-          }
-          if (args === 'resume' || args.startsWith('resume ')) {
-            const nativeSessionId = args.startsWith('resume ') ? args.slice(7).trim() : '';
-            if (!nativeSessionId) {
-              appendStatic([...formatErrorLine('usage: /bridge resume <native-id>'), '']);
-              return;
-            }
-            await resumeExternalCliHistorySession(nativeSessionId);
-            return;
-          }
-          if (args === 'switch' || args.startsWith('switch ')) {
-            const target = args.startsWith('switch ') ? args.slice(7).trim() : '';
-            await switchBridgeProvider(target);
-            return;
-          }
-          if (args === 'setup') {
-            await configureBridgeSettings();
-            return;
-          }
-          if (args === 'config') {
-            await manageBridgeConfigs();
-            return;
-          }
-          if (args === 'off') {
-            await disableBridge();
-            return;
-          }
-          if (args === 'model' || args.startsWith('model ')) {
-            const modelId = args.startsWith('model ') ? args.slice(6).trim() : '';
-            await selectBridgeModel(modelId);
-            return;
-          }
-          if (args === 'help') {
-            printBridgeHelp();
-            return;
-          }
-          if (!args) {
-            await openBridgeBoard();
-            return;
-          }
-          await configureBridgeSettings();
           return;
         }
         // ── v0.5.0: Model Team ───────────────────────────────────
