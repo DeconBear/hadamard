@@ -2,33 +2,24 @@
   MessageParam,
   ToolResultBlockParam,
   ToolUseBlock,
-  Usage,
 } from '../provider/types.js';
 
 import path from 'node:path';
 
-import { HadamardSdkError, RunAbortedError, ToolExecutionError } from '../errors.js';
+import { HadamardSdkError, ToolExecutionError } from '../errors.js';
 import {
   getHadamardTodoSnapshot,
   TODO_WRITE_TOOL_NAME,
 } from '../tools/todo/TodoWriteTool.js';
 import type {
-  AgentEvent,
   AgentLoopCompactionRecord,
-  AgentMcpServerDefinition,
   AgentRequestSummary,
-  AgentRunOptions,
   AgentRunResult,
   HadamardPermissionDecision,
-  HadamardHooks,
   AgentToolCallEventPayload,
   AgentToolCallRecord,
-  AgentToolDefinition,
   ModelApi,
   ModelRequest,
-  ResolvedToolExecutionResult,
-  ResolvedRuntimeConfig,
-  ToolExecutionContext,
   ToolCallProgress,
 } from '../types.js';
 import { asError, deepClone, nowIso } from './helpers.js';
@@ -45,7 +36,6 @@ import {
 import { decideHadamardToolPermission } from './hadamardPermissions.js';
 import { createDenialTracker } from './denialTracking.js';
 import { markExplicitSafetyApproval } from './safetyChecks.js';
-import { HookRunner } from '../hooks/hookRunner.js';
 import {
   assistantMessageToParam,
   buildUserMessage,
@@ -1187,5 +1177,4 @@ function estimateFixedRequestTokens(
   }
   return Math.ceil((systemChars + toolChars) / 4);
 }
-
 
