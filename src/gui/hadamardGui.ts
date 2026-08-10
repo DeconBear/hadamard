@@ -375,6 +375,7 @@ import { GuiHttpRouter, json, readJson, text } from './guiHttpRouter.js';
 import { registerGuiShellHttpController } from './guiShellHttpController.js';
 import { registerGuiChatHttpController } from './guiChatHttpController.js';
 import { registerGuiSettingsHttpController } from './guiSettingsHttpController.js';
+import { registerGuiTeamHttpController } from './guiTeamHttpController.js';
 import type {
   HadamardCanUseTool,
   HadamardEffort,
@@ -7509,6 +7510,330 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       body: runtimeMutationErrorBody(error),
     }),
   });
+  function parseDeleteStrategy(raw: unknown): DeleteFallbackStrategy {
+    if (!isPlainRecord(raw)) return { type: 'leave' };
+    if (raw.type === 'repoint' && typeof raw.target === 'string' && raw.target.trim()) {
+      return { type: 'repoint', target: raw.target.trim() };
+    }
+    if (raw.type === 'degrade-model') return { type: 'degrade-model' };
+    if (raw.type === 'remove-nodes') return { type: 'remove-nodes' };
+    return { type: 'leave' };
+  }
+
+  async function referenceOperationContext() {
+    const homeDir = resolveGuiHomeDir();
+    const store = await resolveHadamardSettingsStore({
+      configPath: options.configPath,
+      homeDir: currentHomeInput(),
+    }).catch(() => undefined);
+    return {
+      projectDir: workDir,
+      homeDir,
+      managerProjectPath: projectPrimaryPath,
+      teamPreferences: {
+        read: () => teamPrefs,
+        write: async (prefs: typeof teamPrefs) => {
+          const raw = isPlainRecord(store?.raw) ? structuredClone(store.raw) : {};
+          writeTeamPreferences(raw, prefs);
+          if (store) {
+            await persistHadamardSettingsStore(store.configPath, raw);
+            await loadJsonConfigFile(store.configPath);
+          }
+          teamPrefs = prefs;
+        },
+      },
+      issues: {
+        read: async () => {
+          const storage = await issueStorageFor(workDir, homeDir);
+          return listProjectIssues(workDir, homeDir, storage);
+        },
+        writeAgentConfig: async (id: string, agentConfig: string | null) => {
+          const storage = await issueStorageFor(workDir, homeDir);
+          await updateProjectIssue(workDir, homeDir, id, { agentConfig }, storage);
+        },
+      },
+      assistantConfig: {
+        read: () => readAssistantConfig(homeDir),
+        write: async (patch: { bridgeConfig?: string }) => {
+          const current = await readAssistantConfig(homeDir);
+          await writeAssistantConfig({ ...current, ...patch }, homeDir);
+        },
+      },
+    };
+  }
+
+  registerGuiTeamHttpController(httpRouter, {
+    definition: name => {
+      const loaded = loadTeamDefinition(name, workDir);
+      const raw = loaded?.definition ?? resolveTeamDefinition(name, workDir, session?.model ?? '');
+      const squadType = (raw as TeamDefinition | null)?.squadType || 'graph';
+      const definition = raw
+        ? (squadType === 'graph' ? ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph(raw)) : raw)
+        : null;
+      return { status: 200, body: { definition, source: loaded?.source ?? null } };
+    },
+    restoreDefault: name => {
+      if (!name) return { status: 400, body: { error: 'name is required' } };
+      const builtIn = getBuiltInTeamDefinition(name);
+      if (builtIn) {
+        return {
+          status: 200,
+          body: {
+            definition: instantiateTeamDefinition(builtIn, session?.model ?? ''),
+            source: 'built-in',
+          },
+        };
+      }
+      const loaded = loadTeamDefinition(name, workDir);
+      if (!loaded) return { status: 404, body: { error: `team not found: ${name}` } };
+      if (loaded.source === 'built-in') {
+        return {
+          status: 200,
+          body: {
+            definition: instantiateTeamDefinition(loaded.definition, session?.model ?? ''),
+            source: 'built-in',
+          },
+        };
+      }
+      try {
+        const raw = JSON.parse(readFileSync(loaded.filePath, 'utf-8')) as TeamDefinition;
+        const squadType = raw.squadType || 'graph';
+        const shaped = squadType === 'graph'
+          ? ensureConfiguredTeamGraph(canonicalizeTeamDefinition(raw))
+          : raw;
+        return {
+          status: 200,
+          body: {
+            definition: instantiateTeamDefinition(shaped, session?.model ?? ''),
+            source: loaded.source,
+          },
+        };
+      } catch (error) {
+        return { status: 400, body: { error: (error as Error).message } };
+      }
+    },
+    save: async body => {
+      try {
+        let definition = body.definition as TeamDefinition;
+        if (!definition || typeof definition.name !== 'string' || !definition.name) {
+          return { status: 400, body: { error: 'definition.name is required' } };
+        }
+        const squadType = (definition.squadType || 'graph') as 'graph' | 'workflow' | 'agent' | 'subagent';
+        if (squadType === 'graph') {
+          const migrated = ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph(definition));
+          const problems = validateTeamGraph(migrated);
+          if (problems.length) return { status: 400, body: { error: problems.join('; '), problems } };
+          definition = migrated;
+        } else if (squadType === 'workflow') {
+          const problems = validateWorkflowSquad(definition);
+          if (problems.length) return { status: 400, body: { error: problems.join('; '), problems } };
+          definition = { ...definition, squadType, mode: 'graph', version: 3, orchestration: 'graph' };
+        } else if (isSingleAgentSquadType(squadType)) {
+          definition = { ...definition, squadType: 'agent', mode: 'graph', version: 3, orchestration: 'graph' };
+        } else {
+          return { status: 400, body: { error: `unsupported squadType: ${squadType}` } };
+        }
+        const existing = loadTeamDefinition(definition.name, workDir, resolveGuiHomeDir());
+        const target = body.target === 'project' || body.target === 'personal'
+          ? body.target
+          : existing?.source === 'project' ? 'project' : 'personal';
+        const filePath = await saveTeamDefinition(definition, {
+          projectDir: target === 'project' ? workDir : undefined,
+          homeDir: resolveGuiHomeDir(),
+          overwrite: true,
+        });
+        return { status: 200, body: { ok: true, filePath, target } };
+      } catch (error) {
+        return { status: 400, body: { error: (error as Error).message } };
+      }
+    },
+    scaffold: body => {
+      try {
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name) return { status: 400, body: { error: 'name is required' } };
+        const description = typeof body.description === 'string' ? body.description.trim() : undefined;
+        const template = (body.template === 'parallel' || body.template === 'review-loop' ? body.template : 'blank') as GraphTeamTemplate;
+        const definition = buildGraphTeamFromTemplate(name, template, description || undefined, {
+          parallel: isPlainRecord(body.parallel) ? body.parallel as never : undefined,
+          loop: isPlainRecord(body.loop) ? body.loop as never : undefined,
+        });
+        return { status: 200, body: { definition } };
+      } catch (error) {
+        return { status: 400, body: { error: (error as Error).message } };
+      }
+    },
+    applyBlock: body => {
+      try {
+        const definition = body.definition as TeamDefinition;
+        if (!definition || typeof definition.name !== 'string') {
+          return { status: 400, body: { error: 'definition is required' } };
+        }
+        const block = body.block === 'loop' ? 'loop' : 'parallel';
+        const blockOptions = isPlainRecord(body.options) ? body.options : {};
+        if (block === 'parallel') {
+          const members = Array.isArray(blockOptions.members) ? blockOptions.members : [];
+          const parallelOptions = {
+            members: members as never,
+            join: blockOptions.join === 'any' ? 'any' as const : 'all' as const,
+            synthesizer: blockOptions.synthesizer !== false,
+            synthesizerId: typeof blockOptions.synthesizerId === 'string' ? blockOptions.synthesizerId : undefined,
+            returnMode: blockOptions.returnMode === 'payload' ? 'payload' as const : 'void' as const,
+          };
+          if (blockOptions.mode === 'nested' || blockOptions.saveAsNested === true) {
+            const nestedName = typeof blockOptions.nestedName === 'string' && blockOptions.nestedName.trim()
+              ? blockOptions.nestedName.trim()
+              : `${definition.name}-parallel`;
+            const result = insertParallelAsNestedTeam(definition, { ...parallelOptions, nestedName });
+            return { status: 200, body: { definition: result.definition, nested: result.nested } };
+          }
+          return { status: 200, body: { definition: insertParallelBlock(definition, parallelOptions) } };
+        }
+        if (blockOptions.mode === 'nested' || blockOptions.saveAsNested === true) {
+          const nestedName = typeof blockOptions.nestedName === 'string' && blockOptions.nestedName.trim()
+            ? blockOptions.nestedName.trim()
+            : `${definition.name}-review-loop`;
+          const result = insertLoopAsNestedTeam(definition, {
+            executorId: typeof blockOptions.executorId === 'string' ? blockOptions.executorId : undefined,
+            reviewerId: typeof blockOptions.reviewerId === 'string' ? blockOptions.reviewerId : undefined,
+            maxRounds: typeof blockOptions.maxRounds === 'number' ? blockOptions.maxRounds : undefined,
+            returnMode: blockOptions.returnMode === 'payload' ? 'payload' : 'void',
+            nestedName,
+          });
+          return { status: 200, body: { definition: result.definition, nested: result.nested } };
+        }
+        return {
+          status: 200,
+          body: {
+            definition: insertLoopBlock(definition, {
+              executorId: typeof blockOptions.executorId === 'string' ? blockOptions.executorId : undefined,
+              reviewerId: typeof blockOptions.reviewerId === 'string' ? blockOptions.reviewerId : undefined,
+              maxRounds: typeof blockOptions.maxRounds === 'number' ? blockOptions.maxRounds : undefined,
+              returnMode: blockOptions.returnMode === 'payload' ? 'payload' : 'void',
+            }),
+          },
+        };
+      } catch (error) {
+        return { status: 400, body: { error: (error as Error).message } };
+      }
+    },
+    proposal: async (proposalId, action, method, body) => {
+      try {
+        const proposal = teamProposals.get(proposalId);
+        if (!proposal) return { status: 404, body: { error: `Unknown Team proposal: ${proposalId}` } };
+        if (method === 'GET' && !action) return { status: 200, body: { proposal } };
+        if (method === 'POST' && action === 'reject') {
+          return { status: 200, body: { ok: true, proposal: teamProposals.reject(proposalId) } };
+        }
+        if (method === 'POST' && action === 'apply') {
+          const applied = await withRuntimeMutation(() => teamProposals.apply(
+            proposalId,
+            managerHomeDir(),
+            { editorBaseDigest: typeof body.editorBaseDigest === 'string' ? body.editorBaseDigest : undefined },
+          ));
+          return {
+            status: 200,
+            body: {
+              ok: true,
+              proposal: applied.proposal,
+              filePath: applied.filePath,
+              definition: applied.proposal.draft,
+              openCanvas: {
+                projectPath: applied.proposal.projectPath,
+                teamName: applied.proposal.teamName,
+              },
+            },
+          };
+        }
+        return { status: 405, body: { error: 'Method not allowed' } };
+      } catch (error) {
+        return { status: runtimeMutationErrorStatus(error), body: runtimeMutationErrorBody(error) };
+      }
+    },
+    validate: body => {
+      try {
+        const definition = body.definition as TeamDefinition;
+        if (!definition) return { status: 400, body: { error: 'definition is required' } };
+        if (definition.squadType === 'workflow') {
+          const problems = validateWorkflowSquad(definition);
+          return { status: 200, body: { ok: problems.length === 0, problems, definition } };
+        }
+        if (isSingleAgentSquadType(definition.squadType)) {
+          const problems = definition.members?.length ? [] : ['Agent squad requires at least one member'];
+          return { status: 200, body: { ok: problems.length === 0, problems, definition } };
+        }
+        const migrated = ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph(definition));
+        const problems = validateTeamGraph(migrated);
+        return { status: 200, body: { ok: problems.length === 0, problems, definition: migrated } };
+      } catch (error) {
+        return { status: 400, body: { error: (error as Error).message } };
+      }
+    },
+    upgrade: body => {
+      try {
+        const name = typeof body.name === 'string' ? body.name : '';
+        const definition = resolveTeamDefinition(name, workDir, session?.model ?? '');
+        if (!definition) return { status: 404, body: { error: `team not found: ${name}` } };
+        return { status: 200, body: { definition: migrateTeamDefinitionToGraph(definition) } };
+      } catch (error) {
+        return { status: 400, body: { error: (error as Error).message } };
+      }
+    },
+    delete: async body => {
+      try {
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name) return { status: 400, body: { error: 'Missing team name' } };
+        if (getBuiltInTeamDefinition(name)) {
+          return { status: 400, body: { error: `cannot delete built-in team: ${name}` } };
+        }
+        const strategy = parseDeleteStrategy(body.strategy);
+        const next = await withRuntimeMutation(async () => {
+          if (strategy.type !== 'leave') {
+            await applyDeleteFallback('team', name, strategy, await referenceOperationContext());
+          }
+          const removed = await deleteTeamDefinition(name, workDir, resolveGuiHomeDir());
+          if (!removed) throw new Error(`team not found: ${name}`);
+          if (activeTeamName === name) {
+            activeTeamTool = null;
+            activeTeamName = null;
+            await persistSessionRuntimeMetadata();
+          }
+          return state();
+        });
+        invalidateHeavyState();
+        return { status: 200, body: next };
+      } catch (error) {
+        return { status: runtimeMutationErrorStatus(error), body: runtimeMutationErrorBody(error) };
+      }
+    },
+    preferences: async body => {
+      try {
+        const next = await withRuntimeMutation(async () => {
+          const store = await resolveHadamardSettingsStore({
+            configPath: options.configPath,
+            homeDir: currentHomeInput(),
+          });
+          const raw = isPlainRecord(store.raw) ? structuredClone(store.raw) : {};
+          const preferences = {
+            autoInvoke: typeof body.autoInvoke === 'boolean' ? body.autoInvoke : teamPrefs.autoInvoke,
+            defaultAttached: typeof body.defaultAttached === 'string'
+              ? (body.defaultAttached.trim() || null)
+              : teamPrefs.defaultAttached,
+            confirmBeforeRun: typeof body.confirmBeforeRun === 'boolean'
+              ? body.confirmBeforeRun
+              : teamPrefs.confirmBeforeRun,
+          };
+          writeTeamPreferences(raw, preferences);
+          await persistHadamardSettingsStore(store.configPath, raw);
+          await loadJsonConfigFile(store.configPath);
+          teamPrefs = preferences;
+          return preferences;
+        });
+        return { status: 200, body: { ok: true, teamPreferences: next } };
+      } catch (error) {
+        return { status: runtimeMutationErrorStatus(error), body: runtimeMutationErrorBody(error) };
+      }
+    },
+  });
 
   const server = createServer(async (req, res) => {
     try {
@@ -7744,191 +8069,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         }
         return json(res, 200, createAgentExecutionRootView(snapshot));
       }
-  if (req.method === 'GET' && url.pathname === '/api/team/definition') {
-    const name = url.searchParams.get('name') || '';
-    const loaded = loadTeamDefinition(name, workDir);
-    const raw = loaded?.definition ?? resolveTeamDefinition(name, workDir, session?.model ?? '');
-    // Subagent / workflow squads skip graph migration (no Task→Return topology).
-    const squadType = (raw as TeamDefinition | null)?.squadType || 'graph';
-    const definition = raw
-      ? (squadType === 'graph' ? ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph(raw)) : raw)
-      : null;
-    return json(res, 200, { definition, source: loaded?.source ?? null });
-  }
-  if (req.method === 'GET' && url.pathname === '/api/team/restore-default') {
-    const name = url.searchParams.get('name') || '';
-    if (!name) return json(res, 400, { error: 'name is required' });
-    const builtIn = getBuiltInTeamDefinition(name);
-    if (builtIn) {
-      return json(res, 200, {
-        definition: instantiateTeamDefinition(builtIn, session?.model ?? ''),
-        source: 'built-in',
-      });
-    }
-    const loaded = loadTeamDefinition(name, workDir);
-    if (!loaded) return json(res, 404, { error: `team not found: ${name}` });
-    if (loaded.source === 'built-in') {
-      return json(res, 200, {
-        definition: instantiateTeamDefinition(loaded.definition, session?.model ?? ''),
-        source: 'built-in',
-      });
-    }
-    try {
-      const raw = JSON.parse(readFileSync(loaded.filePath, 'utf-8')) as TeamDefinition;
-      const squadType = raw.squadType || 'graph';
-      const shaped = squadType === 'graph'
-        ? ensureConfiguredTeamGraph(canonicalizeTeamDefinition(raw))
-        : raw;
-      const definition = instantiateTeamDefinition(shaped, session?.model ?? '');
-      return json(res, 200, { definition, source: loaded.source });
-    } catch (error) {
-      return json(res, 400, { error: (error as Error).message });
-    }
-  }
-  if (req.method === 'POST' && url.pathname === '/api/team/save') {
-    try {
-      const body = await readJson(req);
-      let def = body.definition as TeamDefinition;
-      if (!def || typeof def.name !== 'string' || !def.name) {
-        return json(res, 400, { error: 'definition.name is required' });
-      }
-      // All squads persist as graph v3 JSON — validate before touching disk.
-      // Subagent / workflow squads skip graph validation (no Task→Return topology).
-      const squadType = (def.squadType || 'graph') as 'graph' | 'workflow' | 'agent' | 'subagent';
-      if (squadType === 'graph') {
-        const migrated = ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph(def));
-        const problems = validateTeamGraph(migrated);
-        if (problems.length) return json(res, 400, { error: problems.join('; '), problems });
-        def = migrated;
-      } else if (squadType === 'workflow') {
-        const problems = validateWorkflowSquad(def);
-        if (problems.length) return json(res, 400, { error: problems.join('; '), problems });
-        def = { ...def, squadType, mode: 'graph', version: 3, orchestration: 'graph' };
-      } else if (isSingleAgentSquadType(squadType)) {
-        def = { ...def, squadType: 'agent', mode: 'graph', version: 3, orchestration: 'graph' };
-      } else {
-        return json(res, 400, { error: `unsupported squadType: ${squadType}` });
-      }
-      // Save-to selector removed (user decision, 09 Aug 2026): new squads save
-      // personal (~/.hadamard/teams); an existing squad silently keeps its
-      // current location. The explicit target param stays supported; built-in
-      // sources resolve to personal, preserving the shadow semantics.
-      const existing = loadTeamDefinition(def.name, workDir, resolveGuiHomeDir());
-      const target = body.target === 'project' || body.target === 'personal'
-        ? body.target
-        : existing?.source === 'project' ? 'project' : 'personal';
-      const filePath = await saveTeamDefinition(def, {
-        projectDir: target === 'project' ? workDir : undefined,
-        homeDir: resolveGuiHomeDir(),
-        overwrite: true,
-      });
-      return json(res, 200, { ok: true, filePath, target });
-    } catch (error) {
-      return json(res, 400, { error: (error as Error).message });
-    }
-  }
-  if (req.method === 'POST' && url.pathname === '/api/team/scaffold') {
-    try {
-      const body = await readJson(req);
-      const name = typeof body.name === 'string' ? body.name.trim() : '';
-      if (!name) return json(res, 400, { error: 'name is required' });
-      const description = typeof body.description === 'string' ? body.description.trim() : undefined;
-      const template = (body.template === 'parallel' || body.template === 'review-loop' ? body.template : 'blank') as GraphTeamTemplate;
-      const definition = buildGraphTeamFromTemplate(name, template, description || undefined, {
-        parallel: isPlainRecord(body.parallel) ? body.parallel as never : undefined,
-        loop: isPlainRecord(body.loop) ? body.loop as never : undefined,
-      });
-      return json(res, 200, { definition });
-    } catch (error) {
-      return json(res, 400, { error: (error as Error).message });
-    }
-  }
-  if (req.method === 'POST' && url.pathname === '/api/team/apply-block') {
-    try {
-      const body = await readJson(req);
-      const def = body.definition as TeamDefinition;
-      if (!def || typeof def.name !== 'string') return json(res, 400, { error: 'definition is required' });
-      const block = body.block === 'loop' ? 'loop' : 'parallel';
-      const options = isPlainRecord(body.options) ? body.options : {};
-      if (block === 'parallel') {
-        const members = Array.isArray(options.members) ? options.members : [];
-        const parallelOpts = {
-          members: members as never,
-          join: options.join === 'any' ? 'any' as const : 'all' as const,
-          synthesizer: options.synthesizer !== false,
-          synthesizerId: typeof options.synthesizerId === 'string' ? options.synthesizerId : undefined,
-          returnMode: options.returnMode === 'payload' ? 'payload' as const : 'void' as const,
-        };
-        if (options.mode === 'nested' || options.saveAsNested === true) {
-          const nestedName = typeof options.nestedName === 'string' && options.nestedName.trim()
-            ? options.nestedName.trim()
-            : `${def.name}-parallel`;
-          const result = insertParallelAsNestedTeam(def, { ...parallelOpts, nestedName });
-          return json(res, 200, { definition: result.definition, nested: result.nested });
-        }
-        const definition = insertParallelBlock(def, parallelOpts);
-        return json(res, 200, { definition });
-      }
-      if (options.mode === 'nested' || options.saveAsNested === true) {
-        const nestedName = typeof options.nestedName === 'string' && options.nestedName.trim()
-          ? options.nestedName.trim()
-          : `${def.name}-review-loop`;
-        const result = insertLoopAsNestedTeam(def, {
-          executorId: typeof options.executorId === 'string' ? options.executorId : undefined,
-          reviewerId: typeof options.reviewerId === 'string' ? options.reviewerId : undefined,
-          maxRounds: typeof options.maxRounds === 'number' ? options.maxRounds : undefined,
-          returnMode: options.returnMode === 'payload' ? 'payload' : 'void',
-          nestedName,
-        });
-        return json(res, 200, { definition: result.definition, nested: result.nested });
-      }
-      const definition = insertLoopBlock(def, {
-        executorId: typeof options.executorId === 'string' ? options.executorId : undefined,
-        reviewerId: typeof options.reviewerId === 'string' ? options.reviewerId : undefined,
-        maxRounds: typeof options.maxRounds === 'number' ? options.maxRounds : undefined,
-        returnMode: options.returnMode === 'payload' ? 'payload' : 'void',
-      });
-      return json(res, 200, { definition });
-    } catch (error) {
-      return json(res, 400, { error: (error as Error).message });
-    }
-  }
-  const teamProposalMatch = url.pathname.match(/^\/api\/team\/proposals\/([^/]+)(?:\/(apply|reject))?$/);
-  if (teamProposalMatch) {
-    const proposalId = decodeURIComponent(teamProposalMatch[1]!);
-    const action = teamProposalMatch[2];
-    try {
-      const proposal = teamProposals.get(proposalId);
-      if (!proposal) return json(res, 404, { error: `Unknown Team proposal: ${proposalId}` });
-      if (req.method === 'GET' && !action) {
-        return json(res, 200, { proposal });
-      }
-      if (req.method === 'POST' && action === 'reject') {
-        return json(res, 200, { ok: true, proposal: teamProposals.reject(proposalId) });
-      }
-      if (req.method === 'POST' && action === 'apply') {
-        const body = await readJson(req).catch(() => ({})) as Record<string, unknown>;
-        const applied = await withRuntimeMutation(
-          () => teamProposals.apply(proposalId, managerHomeDir(), {
-            editorBaseDigest: typeof body.editorBaseDigest === 'string' ? body.editorBaseDigest : undefined,
-          }),
-        );
-        return json(res, 200, {
-          ok: true,
-          proposal: applied.proposal,
-          filePath: applied.filePath,
-          definition: applied.proposal.draft,
-          openCanvas: {
-            projectPath: applied.proposal.projectPath,
-            teamName: applied.proposal.teamName,
-          },
-        });
-      }
-      return json(res, 405, { error: 'Method not allowed' });
-    } catch (error) {
-      return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-    }
-  }
   // P3: generic Assistant confirmation cards (delete-with-references,
   // workflow upsert) staged by the global Assistant tools. Apply executes the
   // P1 transaction semantics (applyDeleteFallback + definition delete).
@@ -7986,95 +8126,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         });
       }
       return json(res, 405, { error: 'Method not allowed' });
-    } catch (error) {
-      return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-    }
-  }
-  if (req.method === 'POST' && url.pathname === '/api/team/validate') {
-    try {
-      const body = await readJson(req);
-      const def = body.definition as TeamDefinition;
-      if (!def) return json(res, 400, { error: 'definition is required' });
-      if (def.squadType === 'workflow') {
-        const problems = validateWorkflowSquad(def);
-        return json(res, 200, { ok: problems.length === 0, problems, definition: def });
-      }
-      if (isSingleAgentSquadType(def.squadType)) {
-        const problems = def.members?.length ? [] : ['Agent squad requires at least one member'];
-        return json(res, 200, { ok: problems.length === 0, problems, definition: def });
-      }
-      const migrated = ensureConfiguredTeamGraph(migrateTeamDefinitionToGraph(def));
-      const problems = validateTeamGraph(migrated);
-      return json(res, 200, { ok: problems.length === 0, problems, definition: migrated });
-    } catch (error) {
-      return json(res, 400, { error: (error as Error).message });
-    }
-  }
-  if (req.method === 'POST' && url.pathname === '/api/team/upgrade') {
-    // Migrate a legacy (v1) definition to graph orchestration (v2) — returns
-    // the migrated definition for editing; nothing is saved until /api/team/save.
-    try {
-      const body = await readJson(req);
-      const name = typeof body.name === 'string' ? body.name : '';
-      const definition = resolveTeamDefinition(name, workDir, session?.model ?? '');
-      if (!definition) return json(res, 404, { error: `team not found: ${name}` });
-      return json(res, 200, { definition: migrateTeamDefinitionToGraph(definition) });
-    } catch (error) {
-      return json(res, 400, { error: (error as Error).message });
-    }
-  }
-  if (req.method === 'POST' && url.pathname === '/api/team/delete') {
-    // P1: cascade-aware team delete (impact dialog → strategy). Built-ins stay
-    // immutable; the legacy `/team delete` slash command is unchanged.
-    try {
-      const body = await readJson(req);
-      const name = typeof body.name === 'string' ? body.name.trim() : '';
-      if (!name) return json(res, 400, { error: 'Missing team name' });
-      if (getBuiltInTeamDefinition(name)) {
-        return json(res, 400, { error: `cannot delete built-in team: ${name}` });
-      }
-      const strategy = parseDeleteStrategy(body.strategy);
-      const next = await withRuntimeMutation(async () => {
-        if (strategy.type !== 'leave') {
-          await applyDeleteFallback('team', name, strategy, await referenceOperationContext());
-        }
-        const removed = await deleteTeamDefinition(name, workDir, resolveGuiHomeDir());
-        if (!removed) throw new Error(`team not found: ${name}`);
-        if (activeTeamName === name) {
-          activeTeamTool = null;
-          activeTeamName = null;
-          await persistSessionRuntimeMetadata();
-        }
-        return state();
-      });
-      invalidateHeavyState();
-      return json(res, 200, next);
-    } catch (error) {
-      return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
-    }
-  }
-  if (req.method === 'POST' && url.pathname === '/api/team/preferences') {
-    // Persist preferences.team (autoInvoke / defaultAttached / confirmBeforeRun)
-    // into settings.json — the same block the TUI/REPL read.
-    try {
-      const body = await readJson(req);
-      const next = await withRuntimeMutation(async () => {
-        const store = await resolveHadamardSettingsStore({ configPath: options.configPath, homeDir: currentHomeInput() });
-        const raw = isPlainRecord(store.raw) ? structuredClone(store.raw) : {};
-        const preferences = {
-          autoInvoke: typeof body.autoInvoke === 'boolean' ? body.autoInvoke : teamPrefs.autoInvoke,
-          defaultAttached: typeof body.defaultAttached === 'string'
-            ? (body.defaultAttached.trim() || null)
-            : teamPrefs.defaultAttached,
-          confirmBeforeRun: typeof body.confirmBeforeRun === 'boolean' ? body.confirmBeforeRun : teamPrefs.confirmBeforeRun,
-        };
-        writeTeamPreferences(raw, preferences);
-        await persistHadamardSettingsStore(store.configPath, raw);
-        await loadJsonConfigFile(store.configPath);
-        teamPrefs = preferences;
-        return preferences;
-      });
-      return json(res, 200, { ok: true, teamPreferences: next });
     } catch (error) {
       return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
     }
@@ -9271,59 +9322,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             error: error instanceof Error ? error.message : String(error),
           });
         }
-      }
-      // P1 cascade operations: transactional rename, delete-with-fallback, and
-      // config-model re-point over the reference index (referenceOperations.ts).
-      // Function declarations (hoisted): earlier endpoints in this handler use them.
-      function parseDeleteStrategy(raw: unknown): DeleteFallbackStrategy {
-        if (!isPlainRecord(raw)) return { type: 'leave' };
-        if (raw.type === 'repoint' && typeof raw.target === 'string' && raw.target.trim()) {
-          return { type: 'repoint', target: raw.target.trim() };
-        }
-        if (raw.type === 'degrade-model') return { type: 'degrade-model' };
-        if (raw.type === 'remove-nodes') return { type: 'remove-nodes' };
-        return { type: 'leave' };
-      }
-      async function referenceOperationContext() {
-        const homeDir = resolveGuiHomeDir();
-        const store = await resolveHadamardSettingsStore({
-          configPath: options.configPath,
-          homeDir: currentHomeInput(),
-        }).catch(() => undefined);
-        return {
-          projectDir: workDir,
-          homeDir,
-          managerProjectPath: projectPrimaryPath,
-          teamPreferences: {
-            read: () => teamPrefs,
-            write: async (prefs: typeof teamPrefs) => {
-              const raw = isPlainRecord(store?.raw) ? structuredClone(store.raw) : {};
-              writeTeamPreferences(raw, prefs);
-              if (store) {
-                await persistHadamardSettingsStore(store.configPath, raw);
-                await loadJsonConfigFile(store.configPath);
-              }
-              teamPrefs = prefs;
-            },
-          },
-          issues: {
-            read: async () => {
-              const storage = await issueStorageFor(workDir, homeDir);
-              return listProjectIssues(workDir, homeDir, storage);
-            },
-            writeAgentConfig: async (id: string, agentConfig: string | null) => {
-              const storage = await issueStorageFor(workDir, homeDir);
-              await updateProjectIssue(workDir, homeDir, id, { agentConfig }, storage);
-            },
-          },
-          assistantConfig: {
-            read: () => readAssistantConfig(homeDir),
-            write: async (patch: { bridgeConfig?: string }) => {
-              const current = await readAssistantConfig(homeDir);
-              await writeAssistantConfig({ ...current, ...patch }, homeDir);
-            },
-          },
-        };
       }
       if (req.method === 'POST' && url.pathname === '/api/references/rename') {
         try {
