@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "files": {
     "goal/projectGoalStore.ts": { "maxLines": 1013, "reason": "Existing project-goal store debt." },
-    "gui/hadamardGui.ts": { "maxLines": 10707, "reason": "GUI composition root; feature controllers must not grow it." },
+    "gui/hadamardGui.ts": { "maxLines": 10650, "reason": "GUI composition root; feature HTTP controllers and services must absorb new behavior." },
     "gui/hadamardGuiAssets.ts": { "maxLines": 26345, "reason": "Byte-stable embedded GUI asset renderer." },
     "gui/transcript/clientBundle.ts": { "maxLines": 1127, "reason": "Byte-stable transcript client bundle." },
     "manager/assistantGlobalTools.ts": { "maxLines": 1149, "reason": "Compatibility factory; new domains belong in providers." },
