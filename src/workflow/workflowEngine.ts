@@ -1,4 +1,4 @@
-import type { HadamardAgentClient } from '../runtime/agentClient.js';
+import type { AgentRunner } from '../application/agentRunnerPort.js';
 import type { AgentEvent, AgentToolCallRecord, AgentToolDefinition } from '../types.js';
 import type {
   WorkflowDefinition,
@@ -23,7 +23,7 @@ function displayName(step: WorkflowDefinition['steps'][number]): string {
 }
 
 export class WorkflowEngine {
-  constructor(private readonly sdk: HadamardAgentClient) {}
+  constructor(private readonly sdk: AgentRunner) {}
 
   async run(
     definition: WorkflowDefinition,
