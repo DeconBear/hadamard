@@ -36,7 +36,6 @@ import type {
   ToolExecutionContext,
   ToolCallProgress,
 } from '../types.js';
-import { McpConnectionManager } from '../mcp/connectionManager.js';
 import { asError, deepClone, nowIso, signalAborted } from './helpers.js';
 import { withDeadline } from './deadline.js';
 import { resolveHadamardPostSamplingHooks, resolveHadamardStopHooks } from '../hooks/hadamardHooks.js';
@@ -62,67 +61,13 @@ import {
   extractTextFromContent,
   extractTextFromToolResultContent,
 } from './messageUtils.js';
+import type { ExecuteConversationOptions } from './conversationPorts.js';
+export type { ExecuteConversationOptions } from './conversationPorts.js';
 
 const MAX_CONCURRENT_TOOL_USES = 10;
 const TODO_REMINDER_INTERVAL = 10;
 const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3;
 const MAX_CONSECUTIVE_PERMISSION_DENIALS = 3;
-
-export interface ExecuteConversationOptions {
-  runId: string;
-  input: string | MessageParam['content'];
-  messages?: MessageParam[];
-  prefixedMessages?: MessageParam[];
-  sessionId?: string;
-  systemPrompt?: string;
-  tools?: AgentToolDefinition[];
-  mcpServers?: AgentMcpServerDefinition[];
-  model?: string;
-  maxTokens?: number;
-  temperature?: number;
-  topP?: number;
-  toolChoice?: AgentRunOptions['toolChoice'];
-  userId?: string;
-  metadata?: Record<string, unknown>;
-  effort?: AgentRunOptions['effort'];
-  signal?: AbortSignal;
-  permissionMode?: AgentRunOptions['permissionMode'];
-  permissions?: AgentRunOptions['permissions'];
-  classifier?: AgentRunOptions['classifier'];
-  approver?: AgentRunOptions['approver'];
-  canUseTool?: AgentRunOptions['canUseTool'];
-  hooks?: HadamardHooks;
-  drainQueuedInputs?: () => string[] | Promise<string[]>;
-  drainFollowUpInputs?: () => string[];
-  streaming: boolean;
-  emit?: (event: AgentEvent) => void;
-  /**
-   * Optional mid-run persistence hook. Called after each tool-result turn is
-   * appended so a crash / host kill mid-run still leaves a resumable session
-   * on disk (instead of only persisting when the whole run finishes).
-   */
-  onConversationCheckpoint?: (messages: MessageParam[]) => void | Promise<void>;
-  /** Append newly produced messages to the immutable raw transcript before compaction can remove them. */
-  onTranscriptMessages?: (messages: MessageParam[]) => void | Promise<void>;
-  /**
-   * When RestoreCheckpoint rewrites the durable transcript mid-turn, return the
-   * restored messages here so the in-memory ReAct loop adopts them and does not
-   * overwrite the restore via onConversationCheckpoint.
-   */
-  takePendingConversationRestore?: () => MessageParam[] | undefined;
-  skipRunStartedEvent?: boolean;
-  skipInitialInput?: boolean;
-  modelApi: ModelApi;
-  config: ResolvedRuntimeConfig;
-  mcpManager: McpConnectionManager;
-  /** Override the working directory for this execution (used by worktrees). */
-  sessionWorkDir?: string;
-  /** Called when EnterWorktree / ExitWorktree updates the active session cwd mid-turn. */
-  onSessionWorkDirChange?: (workDir: string) => void;
-  fileChangeJournal?: ToolExecutionContext['fileChangeJournal'];
-  sandboxExecutor?: ToolExecutionContext['sandboxExecutor'];
-  typedHookRunner?: HookRunner;
-}
 
 export async function executeConversation(
   options: ExecuteConversationOptions,
