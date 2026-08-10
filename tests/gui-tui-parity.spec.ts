@@ -38,6 +38,8 @@ function readTuiSources(root: string): string {
     readFileSync(join(root, 'src', 'tui', 'tuiPlanCommandHandler.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'tui', 'tuiSessionCommandHandler.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'tui', 'tuiWorkflowCommandHandler.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'tui', 'tuiWorktreeCommandHandler.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'tui', 'tuiBridgeCommandHandler.ts'), 'utf8'),
   ].join('\n');
 }
 
