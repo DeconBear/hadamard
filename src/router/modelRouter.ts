@@ -20,15 +20,12 @@ import { resolveHadamardHome } from '../config/hadamardHome.js';
 
 import type {
   AgentTargetRef,
-  HadamardRunEffort,
-  ModelApi,
   RouterDecision,
   RouterModelRef,
   RouterProfile,
   RouterRoute,
 } from '../types.js';
 import { listAgentProfiles } from '../config/agentProfiles.js';
-import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 import { buildRouteModelApi, resolveRouteApiKey } from './routeModelApi.js';
 export { buildRouteModelApi, type RoutedModel } from './routeModelApi.js';
 
@@ -120,41 +117,6 @@ export async function classifyRoute(
       ? `fallback:${profile.fallback.model}`
       : (profile.routes[0]?.role ?? profile.routes[0]?.name ?? profile.routes[0]?.model ?? 'default');
   return { target, label, classification: raw, matched: matched !== null, effort: matched?.effort };
-}
-
-/**
- * Classify and build the model client for the turn. Spread the result into run
- * options: `session.stream(text, { model, modelApi, ... })`.
- */
-export async function resolveRoutedRun(
-  profile: RouterProfile,
-  userInput: string,
-  signal?: AbortSignal,
-  options: { homeDir?: string; projectDir?: string } = {},
-): Promise<{ model: string; modelApi: ModelApi; label: string; decision: RouterDecision; effort?: HadamardRunEffort }> {
-  const decision = await classifyRoute(profile, userInput, signal);
-  // Unified reference model: prefer the typed target when the chosen route
-  // (or the fallback) carries one; legacy by-value fields fill any gaps.
-  const targetRef: AgentTargetRef | undefined = decision.matched || !profile.fallback
-    ? (decision.target as RouterRoute).target
-    : profile.fallbackTarget;
-  if (targetRef) {
-    if (targetRef.kind === 'team') {
-      throw new Error(`Router target "${targetRef.name}" is a team; team targets are not supported as router execution targets.`);
-    }
-    const resolved = resolveTargetRef(targetRef, { homeDir: options.homeDir, projectDir: options.projectDir });
-    const legacy = decision.target;
-    const routed = await buildRouteModelApi({
-      model: resolved.model ?? legacy.model,
-      provider: resolved.provider ?? legacy.provider,
-      baseURL: resolved.baseURL ?? legacy.baseURL,
-      apiKey: resolved.apiKey ?? legacy.apiKey,
-      maxTokens: legacy.maxTokens,
-    });
-    return { model: routed.model, modelApi: routed.modelApi, label: decision.label, decision, effort: decision.effort };
-  }
-  const routed = await buildRouteModelApi(decision.target);
-  return { model: routed.model, modelApi: routed.modelApi, label: decision.label, decision, effort: decision.effort };
 }
 
 // ── Persistence (.hadamard/routers + ~/.hadamard/routers) ──────────────

@@ -720,7 +720,6 @@ export type {
 // ── Model Router (a /model routing layer) ─────────────────────────────
 export {
   classifyRoute,
-  resolveRoutedRun,
   buildRouteModelApi,
   parseRouteSelection,
   loadRouterProfile,
@@ -729,6 +728,7 @@ export {
   deleteRouterProfile,
 } from './router/modelRouter.js';
 export type { LoadedRouterProfile, RoutedModel } from './router/modelRouter.js';
+export { resolveRoutedRun } from './router/routedRunResolver.js';
 
 // ── Bridge SDK ────────────────────────────────────────────────────────
 export {
