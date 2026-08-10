@@ -44,6 +44,7 @@ async function readGuiSources(): Promise<string> {
     readFile(new URL('src/gui/guiShellHttpController.ts', root), 'utf8'),
     readFile(new URL('src/gui/guiChatHttpController.ts', root), 'utf8'),
     readFile(new URL('src/gui/guiSettingsHttpController.ts', root), 'utf8'),
+    readFile(new URL('src/gui/guiTeamHttpController.ts', root), 'utf8'),
   ])).join('\n');
 }
 

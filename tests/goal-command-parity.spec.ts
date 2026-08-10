@@ -88,6 +88,7 @@ describe('Goal interactive surface parity', () => {
         readFile(path.resolve('src/gui/guiShellHttpController.ts'), 'utf8'),
         readFile(path.resolve('src/gui/guiChatHttpController.ts'), 'utf8'),
         readFile(path.resolve('src/gui/guiSettingsHttpController.ts'), 'utf8'),
+        readFile(path.resolve('src/gui/guiTeamHttpController.ts'), 'utf8'),
       ]).then(parts => parts.join('\n')),
     ]);
     expect(tui).toContain('sdk.goals.command(session, args)');
