@@ -1,5 +1,4 @@
 import { Buffer } from 'node:buffer';
-import { createHash } from 'node:crypto';
 import type { Dirent, Stats } from 'node:fs';
 import { createReadStream, realpath as realpathCallback } from 'node:fs';
 import { lstat, readdir, stat } from 'node:fs/promises';
@@ -25,6 +24,11 @@ import type {
   ExternalCliSessionSummary,
   ExternalCliToolMetadata,
 } from './externalCliSessionTypes.js';
+export {
+  externalCliSessionMatchesConfig,
+  namedExternalCliManagedProfileId,
+  type ExternalCliSessionConfigIdentity,
+} from './externalCliProfileBinding.js';
 export type {
   ExternalCliRuntime,
   ExternalCliSession,
@@ -68,12 +72,6 @@ export interface ExternalCliSessionOptions {
   /** Bounds for the transcript scan used by readExternalCliSession. */
   detailMaxBytes?: number;
   detailMaxMessages?: number;
-}
-
-export interface ExternalCliSessionConfigIdentity {
-  runtime: ExternalCliRuntime;
-  authSource?: 'native' | 'apiKey';
-  profileName?: string;
 }
 
 export interface CodewhaleNativeSessionCorrelationOptions {
@@ -161,72 +159,7 @@ const CODEWHALE_REDACTED_IDENTIFIER = /^<redacted:[0-9a-f]{16}>$/u;
 const MANAGED_PROFILE_ID_PATTERN = /^[0-9a-f]{64}$/u;
 const MAX_MANAGED_PROFILES_PER_RUNTIME = 256;
 const MAX_CRUSH_HISTORY_COMMAND_CONCURRENCY = 8;
-const ISOLATED_MANAGED_PROFILE_RUNTIMES = new Set<ExternalCliRuntime>([
-  'pi',
-  'codewhale',
-  'reasonix',
-  'crush',
-]);
-
 const summaryCache = new Map<string, SummaryCacheEntry>();
-
-export function namedExternalCliManagedProfileId(
-  runtime: ExternalCliRuntime,
-  profileName: string,
-): string {
-  const normalizedName = profileName.trim();
-  if (!normalizedName) throw new TypeError('External CLI managed profile name is required.');
-  return createHash('sha256')
-    .update(`${runtime}\0name:${normalizedName}`)
-    .digest('hex');
-}
-
-function sessionManagedProfileId(
-  summary: Pick<ExternalCliSessionSummary, 'runtime' | 'path'>,
-  options: Pick<ExternalCliSessionOptions, 'hadamardHomeDir' | 'homeDir'>,
-): string | undefined {
-  if (summary.runtime === 'crush') {
-    return parseCrushSessionReferenceDetails(summary.path)?.managedProfileId;
-  }
-  if (!ISOLATED_MANAGED_PROFILE_RUNTIMES.has(summary.runtime)) return undefined;
-  const runtimeRoot = path.resolve(
-    resolveManagedHadamardHome(options),
-    'external-cli-profiles',
-    summary.runtime,
-  );
-  const relative = path.relative(runtimeRoot, path.resolve(summary.path));
-  if (
-    !relative
-    || relative === '..'
-    || relative.startsWith(`..${path.sep}`)
-    || path.isAbsolute(relative)
-  ) {
-    return undefined;
-  }
-  const [profileId] = relative.split(path.sep);
-  return MANAGED_PROFILE_ID_PATTERN.test(profileId ?? '') ? profileId : undefined;
-}
-
-/**
- * Bind a discovered history entry to the same native-login or isolated-key
- * store used by a saved CLI config. Runtime + native session id alone is not
- * sufficient because different stores may legally reuse the same id.
- */
-export function externalCliSessionMatchesConfig(
-  summary: Pick<ExternalCliSessionSummary, 'runtime' | 'path'>,
-  config: ExternalCliSessionConfigIdentity,
-  options: Pick<ExternalCliSessionOptions, 'hadamardHomeDir' | 'homeDir'> = {},
-): boolean {
-  if (summary.runtime !== config.runtime) return false;
-  if (!ISOLATED_MANAGED_PROFILE_RUNTIMES.has(summary.runtime)) return true;
-  const actualProfileId = sessionManagedProfileId(summary, options);
-  if (config.authSource !== 'apiKey') return actualProfileId === undefined;
-  if (!config.profileName?.trim()) return false;
-  return actualProfileId === namedExternalCliManagedProfileId(
-    summary.runtime,
-    config.profileName,
-  );
-}
 
 /** Matches CodeWhale's official redacted_identifier_for_log correlation value. */
 export function codewhaleRedactedIdentifierForLog(identifier: string): string {
