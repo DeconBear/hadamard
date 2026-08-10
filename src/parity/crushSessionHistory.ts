@@ -6,7 +6,7 @@ import type {
   ExternalCliSessionMessage,
   ExternalCliSessionSummary,
   ExternalCliToolMetadata,
-} from './externalCliSessions.js';
+} from './externalCliSessionTypes.js';
 import {
   findExecutableOnPath,
   resolveExecutableInvocation,
