@@ -19,8 +19,8 @@ import type {
 } from '../types.js';
 import { AgentPool } from './agentPool.js';
 import type { EffectiveAgentRunOptions } from '../runtime/effectiveAgentRunOptions.js';
-import type { TeamAgentRunner } from '../application/teamAgentRunnerPort.js';
-import { getTeamAgentRunnerFactory } from '../application/teamAgentRunnerRegistry.js';
+import type { TeamAgentRunner, TeamAgentRunnerFactory } from '../application/teamAgentRunnerPort.js';
+import { resolveTeamAgentRunnerFactory } from '../application/teamAgentRunnerRegistry.js';
 import type { MemberIdentity } from './teamMemberIdentity.js';
 export { buildMemberIdentities, type MemberIdentity } from './teamMemberIdentity.js';
 export { TEAM_READ_ONLY_EXPERT_TOOL_NAMES } from './teamToolPolicy.js';
@@ -107,6 +107,8 @@ export interface RunMemberOptions {
   modelApi?: AgentRunOptions['modelApi'];
   /** Runtime-owned concurrency controller. Omit only for a standalone one-member call. */
   pool?: AgentPool;
+  /** Optional factory override for tests and custom composition roots. */
+  createRunner?: TeamAgentRunnerFactory;
   round: number;
   onEvent?: (event: TeamEvent) => void;
 }
@@ -160,7 +162,8 @@ export async function runMemberAgent(opts: RunMemberOptions): Promise<MemberRunR
   try {
     slot = await pool.acquire(timeoutMs);
     const effective = opts.effectiveAgentOptions;
-    sdk = await getTeamAgentRunnerFactory()({
+    const createRunner = opts.createRunner ?? await resolveTeamAgentRunnerFactory();
+    sdk = await createRunner({
       model: member.model,
       modelApi: opts.modelApi,
       provider: member.provider,
