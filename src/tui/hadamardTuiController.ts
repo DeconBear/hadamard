@@ -190,6 +190,7 @@ import {
 import { buildTuiSystemPrompt } from './tuiSystemPrompt.js';
 import { TuiInputController } from './tuiInputController.js';
 import { runTuiMemoryCommand } from './tuiMemoryCommandHandler.js';
+import { runTuiConfigurationCommand } from './tuiConfigurationCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -3536,6 +3537,33 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         appendStatic,
       });
       if (memoryCommandHandled) return;
+      const configurationCommandHandled = await runTuiConfigurationCommand(name, args, {
+        defaultModel: () => ({
+          model: sdk.config.model,
+          provider: sdk.config.provider,
+          baseURL: sdk.config.baseURL,
+        }),
+        sessionModel: () => session.model,
+        setSessionModel: model => session.setModel(model),
+        disableBridge,
+        activateBridgeConfig,
+        activeBridgeConfigName: () => activeBridgeConfig?.name,
+        bridgeModelLabel: () => bridgeModelLabel,
+        chooseModel,
+        configureModelSettings,
+        chooseRouter,
+        chooseEffort,
+        setEffort,
+        currentPermissionMode,
+        setPermissionContext: (mode, permissions) => session.setPermissionContext({
+          mode,
+          permissions,
+          approver,
+        }),
+        selectItem,
+        appendStatic,
+      });
+      if (configurationCommandHandled) return;
       switch (name) {
         case 'help': {
           const selected = await selectItem({
@@ -3574,131 +3602,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         case 'quit':
           await shutdown(0);
           return;
-        case 'model': {
-          if (!args) {
-            await chooseModel();
-            return;
-          }
-          if (args === 'config') {
-            await configureModelSettings();
-            return;
-          }
-          if (args === 'router' || args.startsWith('router ')) {
-            await chooseRouter(args.slice('router'.length).trim());
-            return;
-          }
-          if (args === 'custom' || args.startsWith('custom ')) {
-            const customModel = args.slice('custom'.length).trim();
-            if (!customModel) {
-              appendStatic([...formatErrorLine('usage: /model custom <model-id>'), '']);
-              return;
-            }
-            await disableBridge();
-            await session.setModel(customModel);
-            appendStatic([...formatInfoLine(`custom model: ${session.model}`), '']);
-            return;
-          }
-          const catalog = buildModelConfigurationCatalog(
-            { model: sdk.config.model, provider: sdk.config.provider, baseURL: sdk.config.baseURL },
-            readBridgeConfigs().configs,
-          );
-          // `/model <config>` or `/model <config> <model-id>` — match the longest
-          // known configuration name so model ids with spaces still work.
-          let config = findModelConfiguration(catalog, args);
-          let explicitModel: string | undefined;
-          if (!config) {
-            const tokens = args.split(/\s+/u).filter(Boolean);
-            for (let i = tokens.length - 1; i >= 1; i -= 1) {
-              const candidate = tokens.slice(0, i).join(' ');
-              const match = findModelConfiguration(catalog, candidate);
-              if (match) {
-                config = match;
-                explicitModel = tokens.slice(i).join(' ');
-                break;
-              }
-            }
-          }
-          if (!config) {
-            appendStatic([
-              ...formatErrorLine(`unknown model configuration: ${args}`),
-              ...formatInfoLine('Use /model to choose one, or /model custom <model-id>.'),
-              '',
-            ]);
-            return;
-          }
-          if (config.source === 'default') {
-            await disableBridge();
-            await session.setModel(explicitModel || sdk.config.model);
-            appendStatic([...formatInfoLine(`model configuration: default · ${session.model}`), '']);
-            return;
-          }
-          if (!config.config) return;
-          let selectedConfig = { ...config.config, model: config.model };
-          if (explicitModel) {
-            selectedConfig = { ...selectedConfig, model: explicitModel };
-          } else if (config.models.length > 1) {
-            const model = await selectItem({
-              title: config.name,
-              subtitle: 'Select a model from this configuration',
-              searchable: true,
-              items: config.models.map(item => ({
-                id: item.name,
-                label: item.name,
-                description: item.modality ?? 'text',
-              })),
-            });
-            if (!model) return;
-            selectedConfig = { ...selectedConfig, model };
-          }
-          await activateBridgeConfig(selectedConfig);
-          appendStatic([...formatInfoLine(`model configuration: ${activeBridgeConfig?.name ?? config.name} · ${bridgeModelLabel ?? session.model}`), '']);
-          return;
-        }
-        case 'effort':
-          if (!args) await chooseEffort();
-          else await setEffort(args.toLowerCase());
-          return;
-        case 'permissions': {
-          // Three presets, selectable or named directly:
-          //   read-only  → deny mutating tools (read / search / web only)
-          //   workspace  → acceptEdits (auto-accept edits in the workspace)
-          //   full       → bypassPermissions (no prompts)
-          const READONLY_DENY = ['Bash', 'Write', 'Edit', 'NotebookEdit', 'PowerShell'];
-          const presets: Record<string, { mode: HadamardPermissionMode; rules: HadamardPermissionRule[]; label: string }> = {
-            'read-only': {
-              mode: 'default',
-              rules: READONLY_DENY.map((t) => ({ toolName: t, behavior: 'deny', source: 'permissions-preset' })),
-              label: 'Read-only',
-            },
-            workspace: { mode: 'acceptEdits', rules: [], label: 'Workspace access' },
-            full: { mode: 'bypassPermissions', rules: [], label: 'Full access' },
-          };
-          let key = args.trim().toLowerCase().replace(/[ _]/g, '-');
-          if (!key) {
-            const choice = await selectItem({
-              title: 'Permission mode',
-              subtitle: `current: ${session.permissionContext.mode ?? permissionMode}`,
-              items: [
-                { id: 'read-only', label: 'Read-only', description: 'Read, search, and web only — deny Write/Edit/Bash/NotebookEdit/PowerShell' },
-                { id: 'workspace', label: 'Workspace access', description: 'Auto-accept edits in the workspace (acceptEdits)' },
-                { id: 'full', label: 'Full access', description: 'No prompts — run any tool (bypassPermissions)' },
-              ],
-            });
-            if (!choice) return;
-            key = choice;
-          }
-          const preset = presets[key];
-          if (!preset) {
-            appendStatic([...formatErrorLine(`unknown permission preset: ${key} (read-only | workspace | full)`), '']);
-            return;
-          }
-          await session.setPermissionContext({ mode: preset.mode, permissions: preset.rules, approver });
-          appendStatic([
-            ...formatInfoLine(`permissions: ${preset.label} — ${preset.mode}${preset.rules.length ? ` · ${preset.rules.length} deny rules` : ''}`),
-            '',
-          ]);
-          return;
-        }
         case 'plan': {
           // Plan mode (gap #6). The model can enter/exit via EnterPlanMode /
           // ExitPlanMode tools; /plan toggles the permission mode and lets the
