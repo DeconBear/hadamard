@@ -178,6 +178,7 @@
     "generate:icon": "node scripts/generate-gui-icon.mjs && npm run make:ico",
     "sync:hadamard-runtime": "node scripts/sync-hadamard-runtime-upstream.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "architecture:check": "node scripts/check-source-cycles.mjs src",
     "dist:win": "npm run prepare:xterm && npm run build && electron-builder --win --x64 && electron-builder --win --arm64",
     "dist:mac": "npm run prepare:xterm && npm run build && electron-builder --mac --x64 && electron-builder --mac --arm64",
     "dist:linux": "npm run prepare:xterm && npm run build && electron-builder --linux --x64",
