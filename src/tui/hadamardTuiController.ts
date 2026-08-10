@@ -186,6 +186,7 @@ import { runTuiTeamCommand } from './tuiTeamCommandHandler.js';
 import { runTuiIssueCommand } from './tuiIssueCommandHandler.js';
 import { runTuiAssistantCommand } from './tuiAssistantCommandHandler.js';
 import { runTuiManagerCommand } from './tuiManagerCommandHandler.js';
+import { runTuiWorkspaceCommand } from './tuiWorkspaceCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -4097,6 +4098,31 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         renderRichText: text => renderRichText(text, screen.width),
         appendStatic,
       })) return;
+      if (await runTuiWorkspaceCommand(name, args, {
+        readFile: file => fs.readFileSync(path.resolve(workDir, file), 'utf-8'),
+        gitDiff: () => {
+          try {
+            return execSync('git diff', {
+              cwd: workDir,
+              encoding: 'utf8',
+              maxBuffer: 1024 * 1024,
+              timeout: 15_000,
+            }).trim();
+          } catch {
+            return '';
+          }
+        },
+        exportConversation: file => {
+          const markdown = session.messages
+            .map(message => `## ${message.role === 'user' ? 'User' : message.role === 'assistant' ? 'Assistant' : message.role}\n\n${typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}`)
+            .join('\n\n---\n\n');
+          fs.writeFileSync(path.resolve(workDir, file), markdown, 'utf-8');
+        },
+        getSessionDiff: () => sdk.getSessionDiff(session.id),
+        applySessionDiff: () => sdk.applySessionDiff(session.id),
+        startRun,
+        appendStatic,
+      })) return;
       switch (name) {
         case 'context': {
           const contextArgs = args.trim();
@@ -4184,62 +4210,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           }
           lines.push('');
           appendStatic(lines);
-          return;
-        }
-        case 'batch': {
-          const file = args.trim();
-          if (!file) {
-            appendStatic([...formatErrorLine('usage: /batch <file> — runs each line as a separate turn'), '']);
-            return;
-          }
-          let prompts: string[];
-          try {
-            const content = fs.readFileSync(path.resolve(workDir, file), 'utf-8');
-            prompts = content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-          } catch (error) {
-            appendStatic([...formatErrorLine(`cannot read batch file: ${(error as Error).message}`), '']);
-            return;
-          }
-          if (!prompts.length) {
-            appendStatic([...formatInfoLine('batch file is empty'), '']);
-            return;
-          }
-          appendStatic([...formatInfoLine(`batch: ${prompts.length} prompt${prompts.length === 1 ? '' : 's'} from ${file}`), '']);
-          for (let i = 0; i < prompts.length; i++) {
-            appendStatic([`${A.dim}[${i + 1}/${prompts.length}]${A.reset} ${A.bold}>${A.reset} ${truncateToWidth(prompts[i]!, 60)}`, '']);
-            await startRun(prompts[i]!);
-          }
-          appendStatic([...formatInfoLine(`batch complete — ${prompts.length} prompt${prompts.length === 1 ? '' : 's'} done`), '']);
-          return;
-        }
-        case 'review': {
-          // Run a code-review prompt on the current git diff (gap #5 subset).
-          let diff = '';
-          try {
-            diff = execSync('git diff', { cwd: workDir, encoding: 'utf8', maxBuffer: 1024 * 1024, timeout: 15_000 }).trim();
-          } catch { /* no diff available */ }
-          if (!diff) {
-            appendStatic([...formatInfoLine('no uncommitted changes to review — working tree is clean'), '']);
-            return;
-          }
-          await startRun(
-            'Review this code change for correctness bugs, security issues, and simplification opportunities. ' +
-            'File-by-file, note any real problems with file_path:line_number. Skip trivial style nits.\n\n```diff\n' +
-            diff.slice(0, 80_000) + '\n```',
-          );
-          return;
-        }
-        case 'export': {
-          const file = args.trim() || `session-${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
-          const md = session.messages
-            .map((m) => `## ${m.role === 'user' ? 'User' : m.role === 'assistant' ? 'Assistant' : m.role}\n\n${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`)
-            .join('\n\n---\n\n');
-          try {
-            fs.writeFileSync(path.resolve(workDir, file), md, 'utf-8');
-            appendStatic([...formatInfoLine(`conversation exported to ${file}`), '']);
-          } catch (error) {
-            appendStatic([...formatErrorLine(`export failed: ${(error as Error).message}`), '']);
-          }
           return;
         }
         case 'skills':
@@ -4365,34 +4335,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           return;
         }
         // ── Project Manager ──────────────────────────────────────
-        case 'diff': {
-          const sub = args || 'show';
-          try {
-            const diff = await sdk.getSessionDiff(session.id);
-            if (sub === 'show') {
-              appendStatic([
-                `${A.bold}Session Diff${A.reset}`,
-                ...(diff.files.length
-                  ? diff.files.map(file => `  ${file.status} ${file.path} ${A.green}+${file.additions}${A.reset} ${A.red}-${file.deletions}${A.reset}`)
-                  : [`  ${A.dim}(no changes)${A.reset}`]),
-                '',
-              ]);
-              return;
-            }
-            if (sub === 'apply --confirm') {
-              const result = await sdk.applySessionDiff(session.id);
-              appendStatic([
-                ...(result.applied ? formatInfoLine(result.message) : formatErrorLine(result.message)),
-                '',
-              ]);
-              return;
-            }
-            appendStatic([...formatErrorLine('usage: /diff show | apply --confirm'), '']);
-          } catch (error) {
-            appendStatic([...formatErrorLine(error instanceof Error ? error.message : String(error)), '']);
-          }
-          return;
-        }
         default:
           appendStatic([...formatErrorLine(`unknown command: /${name} — type /help`), '']);
           return;
