@@ -395,8 +395,8 @@ describe('GUI Project Agent execution view', () => {
       source.indexOf("url.pathname === '/api/agent-executions'"),
     );
     const resumeRoute = source.slice(
-      source.indexOf("url.pathname === '/api/session/resume'"),
-      source.indexOf("url.pathname === '/api/permission'"),
+      source.indexOf('resumeSession: req =>'),
+      source.indexOf('resolvePermission:', source.indexOf('resumeSession: req =>')),
     );
 
     expect(source).toContain('let serverSessionResumeQueue: Promise<void> = Promise.resolve()');
