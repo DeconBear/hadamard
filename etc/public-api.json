@@ -45,7 +45,7 @@
       {
         "name": "AgentEvent",
         "kind": "type",
-        "signature": "export type AgentEvent = {\ntype: 'run.started';\nrunId: string;\nsessionId?: string;\nmodel: string;\ninput: string;\ntimestamp: string;\n} | {\ntype: 'request.started';\nrunId: string;\niteration: number;\nrequestTokenEstimate?: number;\nrequestByteLength?: number;\nlocalMicrocompact?: AgentRequestSummary['localMicrocompact'];\ntimestamp: string;\n} | {\ntype: 'request.prompt_cache';\nrunId: string;\niteration: number;\nprefixSignature: string;\nprefixChanged: boolean;\nbreakpoints: {\nsystem: boolean;\ntools: boolean;\nmessage: boolean;\n};\ntimestamp: string;\n} | {\ntype: 'response.text.delta';\nrunId: string;\niteration: number;\ndelta: string;\nsnapshot: string;\ntimestamp: string;\n} | {\ntype: 'response.thinking.delta';\nrunId: string;\niteration: number;\nindex: number;\ndelta: string;\nsnapshot: string;\nsignature?: string;\ntimestamp: string;\n} | {\ntype: 'response.tool_input.delta';\nrunId: string;\niteration: number;\nindex: number;\ntoolUseId?: string;\ntoolName?: string;\ndelta: string;\nsnapshot: string;\ntimestamp: string;\n} | {\ntype: 'response.content';\nrunId: string;\niteration: number;\ncontent: ContentBlock;\ntimestamp: string;\n} | {\ntype: 'response.message';\nrunId: string;\niteration: number;\nmessage: Message;\ntimestamp: string;\n} | {\ntype: 'tool.call';\nrunId: string;\niteration: number;\ncall: AgentToolCallEventPayload;\ntimestamp: string;\n} | {\ntype: 'tool.permission';\nrunId: string;\niteration: number;\ndecision: HadamardPermissionDecision;\ntimestamp: string;\n} | {\ntype: 'tool.result';\nrunId: string;\niteration: number;\nresult: AgentToolCallRecord;\ntimestamp: string;\n} | {\ntype: 'tool.progress';\nrunId: string;\niteration: number;\ntoolUseId: string;\ndata: ToolProgressData;\ntimestamp: string;\n} | {\ntype: 'session.compacted';\nrunId: string;\nsessionId: string;\ntrigger: HadamardCompactTrigger;\nresult: HadamardSessionCompactResult;\ntimestamp: string;\n} | {\ntype: 'checkpoint.created';\nrunId: string;\nsessionId: string;\ncheckpointId: string;\ntimestamp: string;\n} | {\ntype: 'checkpoint.restore.requested' | 'checkpoint.restore.completed' | 'checkpoint.restore.conflicted';\nrunId: string;\nsessionId: string;\ncheckpointId: string;\ntimestamp: string;\n} | {\ntype: 'sandbox.applied' | 'sandbox.degraded' | 'sandbox.violation';\nrunId: string;\nsessionId?: string;\ncapability: import('./sandbox/types.js').SandboxCapabilityReport;\nviolation?: import('./sandbox/types.js').SandboxViolation;\ntimestamp: string;\n} | {\ntype: 'hook.lifecycle';\nrunId: string;\nsessionId?: string;\nlifecycleEvent: import('./hooks/hookTypes.js').HadamardLifecycleEvent;\noutputs: import('./hooks/hookTypes.js').TypedHookOutput[];\ntimestamp: string;\n} | {\ntype: 'conversation.compacted';\nrunId: string;\niteration: number;\ntrigger?: 'auto' | 'reactive';\ntokenEstimateBefore: number;\ntokenEstimateAfter: number;\nmessagesSummarized: number;\npreservedMessages: number;\nclearedToolResults: number;\ntimestamp: string;\n} | {\ntype: 'model.fallback';\nrunId: string;\niteration: number;\nfromModel: string;\ntoModel: string;\nreason: string;\ntimestamp: string;\n} | {\ntype: 'request.interrupted';\nrunId: string;\niteration: number;\nretry: number;\nmaxRetries: number;\nreason: string;\ntimestamp: string;\n} | {\ntype: 'response.completed';\nrunId: string;\nresult: AgentRunResult;\ntimestamp: string;\n} | {\ntype: 'error';\nrunId: string;\nerror: {\nmessage: string;\ncode?: string;\nstack?: string;\n};\ntimestamp: string;\n} | {\ntype: 'agent.execution';\nrunId: string;\nrootExecutionId: string;\nevent: import('./runtime/agentExecution.js').AgentExecutionEvent;\nsnapshot: import('./runtime/agentExecution.js').AgentExecutionSnapshot;\ntimestamp: string;\n} | {\ntype: 'workflow.start';\nrunId: string;\nworkflowName: string;\nstepCount: number;\ntimestamp: string;\n} | {\ntype: 'step.start';\nrunId: string;\nworkflowName: string;\nstepId: string;\nstepName: string;\ntimestamp: string;\n} | {\ntype: 'step.done';\nrunId: string;\nworkflowName: string;\nstepId: string;\nstatus: 'completed' | 'failed' | 'skipped';\ndurationMs: number;\ntimestamp: string;\n} | {\ntype: 'workflow.done';\nrunId: string;\nworkflowName: string;\nstatus: 'completed' | 'partial' | 'failed';\ndurationMs: number;\ntimestamp: string;\nerrors?: Array<{\nstepId: string;\nerror: string;\n}>;\n} | {\ntype: 'workflow.script.start';\nrunId: string;\nworkflowName: string;\nphases: WorkflowMeta['phases'];\ntimestamp: string;\n} | {\ntype: 'workflow.phase.start';\nrunId: string;\nphase: string;\ntimestamp: string;\n} | {\ntype: 'workflow.agent.start';\nrunId: string;\nagentId: string;\nlabel?: string;\nphase?: string;\ncached: boolean;\ntimestamp: string;\n} | {\ntype: 'workflow.agent.done';\nrunId: string;\nagentId: string;\nphase?: string;\ncached: boolean;\ndurationMs: number;\ntokens?: {\ninput: number;\noutput: number;\n};\nerror?: string;\ntimestamp: string;\n} | {\ntype: 'workflow.log';\nrunId: string;\nmessage: string;\ntimestamp: string;\n} | {\ntype: 'workflow.script.done';\nrunId: string;\nworkflowName: string;\nstatus: 'completed' | 'failed' | 'stopped';\ndurationMs: number;\nagentCount: number;\ntotalTokens: number;\nerrors?: WorkflowRunState['errors'];\ntimestamp: string;\n};"
+        "signature": "export type AgentEvent = import('./events/codeActEvents.js').CodeActAgentEvent | {\ntype: 'run.started';\nrunId: string;\nsessionId?: string;\nmodel: string;\ninput: string;\ntimestamp: string;\n} | {\ntype: 'request.started';\nrunId: string;\niteration: number;\nrequestTokenEstimate?: number;\nrequestByteLength?: number;\nlocalMicrocompact?: AgentRequestSummary['localMicrocompact'];\ntimestamp: string;\n} | {\ntype: 'request.prompt_cache';\nrunId: string;\niteration: number;\nprefixSignature: string;\nprefixChanged: boolean;\nbreakpoints: {\nsystem: boolean;\ntools: boolean;\nmessage: boolean;\n};\ntimestamp: string;\n} | {\ntype: 'response.text.delta';\nrunId: string;\niteration: number;\ndelta: string;\nsnapshot: string;\ntimestamp: string;\n} | {\ntype: 'response.thinking.delta';\nrunId: string;\niteration: number;\nindex: number;\ndelta: string;\nsnapshot: string;\nsignature?: string;\ntimestamp: string;\n} | {\ntype: 'response.tool_input.delta';\nrunId: string;\niteration: number;\nindex: number;\ntoolUseId?: string;\ntoolName?: string;\ndelta: string;\nsnapshot: string;\ntimestamp: string;\n} | {\ntype: 'response.content';\nrunId: string;\niteration: number;\ncontent: ContentBlock;\ntimestamp: string;\n} | {\ntype: 'response.message';\nrunId: string;\niteration: number;\nmessage: Message;\ntimestamp: string;\n} | {\ntype: 'tool.call';\nrunId: string;\niteration: number;\ncall: AgentToolCallEventPayload;\ntimestamp: string;\n} | {\ntype: 'tool.permission';\nrunId: string;\niteration: number;\ndecision: HadamardPermissionDecision;\ntimestamp: string;\n} | {\ntype: 'tool.result';\nrunId: string;\niteration: number;\nresult: AgentToolCallRecord;\ntimestamp: string;\n} | {\ntype: 'tool.progress';\nrunId: string;\niteration: number;\ntoolUseId: string;\ndata: ToolProgressData;\ntimestamp: string;\n} | {\ntype: 'session.compacted';\nrunId: string;\nsessionId: string;\ntrigger: HadamardCompactTrigger;\nresult: HadamardSessionCompactResult;\ntimestamp: string;\n} | {\ntype: 'checkpoint.created';\nrunId: string;\nsessionId: string;\ncheckpointId: string;\ntimestamp: string;\n} | {\ntype: 'checkpoint.restore.requested' | 'checkpoint.restore.completed' | 'checkpoint.restore.conflicted';\nrunId: string;\nsessionId: string;\ncheckpointId: string;\ntimestamp: string;\n} | {\ntype: 'sandbox.applied' | 'sandbox.degraded' | 'sandbox.violation';\nrunId: string;\nsessionId?: string;\ncapability: import('./sandbox/types.js').SandboxCapabilityReport;\nviolation?: import('./sandbox/types.js').SandboxViolation;\ntimestamp: string;\n} | {\ntype: 'hook.lifecycle';\nrunId: string;\nsessionId?: string;\nlifecycleEvent: import('./hooks/hookTypes.js').HadamardLifecycleEvent;\noutputs: import('./hooks/hookTypes.js').TypedHookOutput[];\ntimestamp: string;\n} | {\ntype: 'conversation.compacted';\nrunId: string;\niteration: number;\ntrigger?: 'auto' | 'reactive';\ntokenEstimateBefore: number;\ntokenEstimateAfter: number;\nmessagesSummarized: number;\npreservedMessages: number;\nclearedToolResults: number;\ntimestamp: string;\n} | {\ntype: 'model.fallback';\nrunId: string;\niteration: number;\nfromModel: string;\ntoModel: string;\nreason: string;\ntimestamp: string;\n} | {\ntype: 'request.interrupted';\nrunId: string;\niteration: number;\nretry: number;\nmaxRetries: number;\nreason: string;\ntimestamp: string;\n} | {\ntype: 'response.completed';\nrunId: string;\nresult: AgentRunResult;\ntimestamp: string;\n} | {\ntype: 'error';\nrunId: string;\nerror: {\nmessage: string;\ncode?: string;\nstack?: string;\n};\ntimestamp: string;\n} | {\ntype: 'agent.execution';\nrunId: string;\nrootExecutionId: string;\nevent: import('./runtime/agentExecution.js').AgentExecutionEvent;\nsnapshot: import('./runtime/agentExecution.js').AgentExecutionSnapshot;\ntimestamp: string;\n} | {\ntype: 'workflow.start';\nrunId: string;\nworkflowName: string;\nstepCount: number;\ntimestamp: string;\n} | {\ntype: 'step.start';\nrunId: string;\nworkflowName: string;\nstepId: string;\nstepName: string;\ntimestamp: string;\n} | {\ntype: 'step.done';\nrunId: string;\nworkflowName: string;\nstepId: string;\nstatus: 'completed' | 'failed' | 'skipped';\ndurationMs: number;\ntimestamp: string;\n} | {\ntype: 'workflow.done';\nrunId: string;\nworkflowName: string;\nstatus: 'completed' | 'partial' | 'failed';\ndurationMs: number;\ntimestamp: string;\nerrors?: Array<{\nstepId: string;\nerror: string;\n}>;\n} | {\ntype: 'workflow.script.start';\nrunId: string;\nworkflowName: string;\nphases: WorkflowMeta['phases'];\ntimestamp: string;\n} | {\ntype: 'workflow.phase.start';\nrunId: string;\nphase: string;\ntimestamp: string;\n} | {\ntype: 'workflow.agent.start';\nrunId: string;\nagentId: string;\nlabel?: string;\nphase?: string;\ncached: boolean;\ntimestamp: string;\n} | {\ntype: 'workflow.agent.done';\nrunId: string;\nagentId: string;\nphase?: string;\ncached: boolean;\ndurationMs: number;\ntokens?: {\ninput: number;\noutput: number;\n};\nerror?: string;\ntimestamp: string;\n} | {\ntype: 'workflow.log';\nrunId: string;\nmessage: string;\ntimestamp: string;\n} | {\ntype: 'workflow.script.done';\nrunId: string;\nworkflowName: string;\nstatus: 'completed' | 'failed' | 'stopped';\ndurationMs: number;\nagentCount: number;\ntotalTokens: number;\nerrors?: WorkflowRunState['errors'];\ntimestamp: string;\n};"
       },
       {
         "name": "AgentExecutionActivity",
@@ -171,6 +171,11 @@
         "name": "AgentMode",
         "kind": "type",
         "signature": "export type AgentMode = typeof AGENT_MODES[number];"
+      },
+      {
+        "name": "AgentModePromptCapabilities",
+        "kind": "interface",
+        "signature": "export interface AgentModePromptCapabilities {\nhostCapabilities?: readonly string[];\n}"
       },
       {
         "name": "AgentNodeMode",
@@ -423,6 +428,11 @@
         "signature": "export declare function askTeamDefinition(definition: TeamDefinition, prompt: string, signal?: AbortSignal, opts?: TeamAskOptions): Promise<ModelTeamResult>;"
       },
       {
+        "name": "assertCodeActBackend",
+        "kind": "function",
+        "signature": "export declare function assertCodeActBackend(settings: ResolvedCodeActSettings, adapter: CodeActKernelAdapter): Promise<CodeActBackendStatus>;"
+      },
+      {
         "name": "assertPolicyPatchAllowed",
         "kind": "function",
         "signature": "export declare function assertPolicyPatchAllowed(resolved: ResolvedPolicy, patch: Record<string, unknown>): void;"
@@ -553,6 +563,11 @@
         "signature": "export interface BridgeProviderDetection {\nid: RuntimeProviderId;\ndisplayName: string;\npath?: string;\navailable: boolean;\nversion?: string;\n}"
       },
       {
+        "name": "buildAgentModePrompt",
+        "kind": "function",
+        "signature": "export declare function buildAgentModePrompt(policy: AgentExecutionPolicy, capabilities?: AgentModePromptCapabilities): string;"
+      },
+      {
         "name": "buildAssistantGlobalSystemPrompt",
         "kind": "function",
         "signature": "export declare function buildAssistantGlobalSystemPrompt(currentWorkDir: string): string;"
@@ -561,6 +576,16 @@
         "name": "buildAssistantTeamSystemPrompt",
         "kind": "function",
         "signature": "export declare function buildAssistantTeamSystemPrompt(scope: AssistantTeamToolScope): string;"
+      },
+      {
+        "name": "buildCodeActEnvironment",
+        "kind": "function",
+        "signature": "export declare function buildCodeActEnvironment(allowlist: readonly string[], source?: NodeJS.ProcessEnv): Record<string, string>;"
+      },
+      {
+        "name": "buildContainerKernelInvocation",
+        "kind": "function",
+        "signature": "export declare function buildContainerKernelInvocation(runtime: 'docker' | 'podman', adapter: ContainerKernelAdapterOptions, options: CodeActKernelStartOptions): KernelProcessInvocation;"
       },
       {
         "name": "buildDecomposeIssuePrompt",
@@ -693,6 +718,131 @@
         "signature": "export declare function cloneTeamDefinition(sourceName: string, newName: string, options?: {\nprojectDir?: string;\nhomeDir?: string;\noverwrite?: boolean;\n}): Promise<LoadedTeamDefinition>;"
       },
       {
+        "name": "CODE_CELL_TOOL_NAME",
+        "kind": "value",
+        "signature": "CODE_CELL_TOOL_NAME = \"CodeCell\""
+      },
+      {
+        "name": "CODEACT_PROTOCOL_VERSION",
+        "kind": "value",
+        "signature": "CODEACT_PROTOCOL_VERSION = 1"
+      },
+      {
+        "name": "CodeActArtifactRecorder",
+        "kind": "class",
+        "signature": "export declare class CodeActArtifactRecorder {\nrecord(workDir: string, record: CodeCellExecutionRecord): Promise<string>;\nputHostArtifact(workDir: string, sessionId: string, input: {\nname: string;\ncontent: string;\nmediaType: string;\n}): Promise<CodeActArtifactReference>;\n}"
+      },
+      {
+        "name": "CodeActArtifactReference",
+        "kind": "interface",
+        "signature": "export interface CodeActArtifactReference {\nid: string;\nname: string;\nmediaType: string;\npath?: string;\nsizeBytes?: number;\n}"
+      },
+      {
+        "name": "CodeActBackend",
+        "kind": "type",
+        "signature": "export type CodeActBackend = 'process' | 'container';"
+      },
+      {
+        "name": "CodeActBackendStatus",
+        "kind": "interface",
+        "signature": "export interface CodeActBackendStatus {\nbackend: CodeActBackend;\navailable: boolean;\nisolation: 'trusted-only' | 'strong';\ndetail: string;\n}"
+      },
+      {
+        "name": "CodeActConfigurationError",
+        "kind": "class",
+        "signature": "export declare class CodeActConfigurationError extends HadamardSdkError {\nconstructor(message: string, code: 'CODEACT_DISABLED' | 'CODEACT_BACKEND_UNAVAILABLE' | 'CODEACT_UNSAFE_BACKEND');\n}"
+      },
+      {
+        "name": "CodeActHostRpcDispatcher",
+        "kind": "class",
+        "signature": "export declare class CodeActHostRpcDispatcher {\nprivate readonly context;\nprivate readonly artifacts;\nprivate readonly sessionId;\nprivate readonly tools;\nconstructor(tools: readonly AgentToolDefinition[], context: ToolExecutionContext, artifacts: CodeActArtifactRecorder, sessionId: string);\nhandler(): CodeActHostRpcHandler;\ndispatch(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse>;\nprivate putArtifact;\nprivate callTool;\n}"
+      },
+      {
+        "name": "CodeActHostRpcHandler",
+        "kind": "type",
+        "signature": "export type CodeActHostRpcHandler = (request: CodeActHostRpcRequest) => Promise<CodeActHostRpcResponse>;"
+      },
+      {
+        "name": "CodeActHostRpcRequest",
+        "kind": "interface",
+        "signature": "export interface CodeActHostRpcRequest {\nid: string;\nmethod: string;\ninput: unknown;\n}"
+      },
+      {
+        "name": "CodeActHostRpcResponse",
+        "kind": "interface",
+        "signature": "export interface CodeActHostRpcResponse {\nid: string;\nok: boolean;\nresult?: unknown;\nerror?: string;\nartifact?: CodeActArtifactReference;\n}"
+      },
+      {
+        "name": "CodeActKernel",
+        "kind": "interface",
+        "signature": "export interface CodeActKernel {\nreadonly sessionId: string;\nreadonly generation: number;\nexecute(request: CodeCellExecutionRequest): Promise<CodeCellExecutionResult>;\ninterrupt(executionId: string): Promise<boolean>;\nstop(reason?: string): Promise<void>;\n}"
+      },
+      {
+        "name": "CodeActKernelAdapter",
+        "kind": "interface",
+        "signature": "export interface CodeActKernelAdapter {\nreadonly backend: CodeActBackend;\nreadonly isolation: 'trusted-only' | 'strong';\nselfCheck(): Promise<CodeActBackendStatus>;\nstart(options: CodeActKernelStartOptions): Promise<CodeActKernel>;\n}"
+      },
+      {
+        "name": "CodeActKernelPool",
+        "kind": "class",
+        "signature": "export declare class CodeActKernelPool {\nprivate readonly adapter;\nprivate readonly idleTimeoutMs;\nprivate readonly environment;\nprivate readonly maxOutputChars;\nprivate readonly onStopped?;\nprivate readonly entries;\nprivate readonly generations;\nprivate closed;\nconstructor(adapter: CodeActKernelAdapter, idleTimeoutMs: number, environment: Record<string, string>, maxOutputChars: number, onStopped?: ((sessionId: string, generation: number, reason: string) => void) | undefined);\nacquire(sessionId: string, workDir: string): Promise<KernelLease>;\ntouch(sessionId: string): void;\nstatus(sessionId: string): {\nrunning: boolean;\ngeneration?: number;\nworkDir?: string;\n};\ninterrupt(sessionId: string, executionId: string): Promise<boolean>;\ninvalidate(sessionId: string, reason: string): Promise<void>;\nclose(): Promise<void>;\nprivate armIdleTimer;\n}"
+      },
+      {
+        "name": "CodeActKernelStartOptions",
+        "kind": "interface",
+        "signature": "export interface CodeActKernelStartOptions {\nsessionId: string;\ngeneration: number;\nworkDir: string;\nenvironment: Record<string, string>;\nmaxOutputChars: number;\n}"
+      },
+      {
+        "name": "CodeActLanguage",
+        "kind": "type",
+        "signature": "export type CodeActLanguage = 'python';"
+      },
+      {
+        "name": "CodeActSecurityMode",
+        "kind": "type",
+        "signature": "export type CodeActSecurityMode = 'trusted' | 'enforce';"
+      },
+      {
+        "name": "CodeActService",
+        "kind": "class",
+        "signature": "export declare class CodeActService {\nreadonly settings: import(\"./types.js\").ResolvedCodeActSettings;\nprivate readonly adapter;\nprivate readonly artifacts;\nprivate readonly pool;\nprivate readonly activeContexts;\nprivate readonly onEvent?;\nconstructor(input: CodeActSettings, options?: CodeActServiceOptions);\nselfCheck(): Promise<CodeActBackendStatus>;\nexecute(input: {\nlanguage: CodeActLanguage;\ncode: string;\ntimeoutMs?: number;\ncontext: ToolExecutionContext;\nhostTools?: readonly AgentToolDefinition[];\n}): Promise<CodeCellExecutionRecord>;\nstatus(sessionId: string): ReturnType<CodeActKernelPool['status']>;\ninterrupt(sessionId: string, executionId: string): Promise<boolean>;\nrestart(sessionId: string): Promise<void>;\nstop(sessionId: string): Promise<void>;\nclose(): Promise<void>;\nprivate emitKernelEvent;\nprivate emit;\n}"
+      },
+      {
+        "name": "CodeActServiceOptions",
+        "kind": "interface",
+        "signature": "export interface CodeActServiceOptions {\nprocessAdapter?: CodeActKernelAdapter;\ncontainerAdapter?: CodeActKernelAdapter;\nartifacts?: CodeActArtifactRecorder;\nonEvent?: (event: AgentEvent) => void;\n}"
+      },
+      {
+        "name": "CodeActSettings",
+        "kind": "interface",
+        "signature": "export interface CodeActSettings {\nenabled: boolean;\nbackend?: CodeActBackend;\nsecurityMode?: CodeActSecurityMode;\npythonCommand?: string;\nidleTimeoutMs?: number;\nexecutionTimeoutMs?: number;\nmaxOutputChars?: number;\nenvironmentAllowlist?: string[];\ncontainerImage?: string;\ncontainerMemoryMb?: number;\ncontainerCpuLimit?: number;\n}"
+      },
+      {
+        "name": "CodeActToolOptions",
+        "kind": "interface",
+        "signature": "export interface CodeActToolOptions {\nservice: {\nexecute(input: {\nlanguage: CodeActLanguage;\ncode: string;\ntimeoutMs?: number;\ncontext: ToolExecutionContext;\nhostTools?: readonly AgentToolDefinition[];\n}): Promise<CodeCellExecutionRecord>;\n};\nhostTools?: readonly AgentToolDefinition[];\n}"
+      },
+      {
+        "name": "CodeCellExecutionRecord",
+        "kind": "interface",
+        "signature": "export interface CodeCellExecutionRecord extends CodeCellExecutionResult {\nsourceHash: string;\ncode: string;\nlanguage: CodeActLanguage;\nstartedAt: string;\ncompletedAt: string;\nrecordPath?: string;\n}"
+      },
+      {
+        "name": "CodeCellExecutionRequest",
+        "kind": "interface",
+        "signature": "export interface CodeCellExecutionRequest {\nexecutionId: string;\nsessionId: string;\nlanguage: CodeActLanguage;\ncode: string;\nworkDir: string;\ntimeoutMs: number;\nsignal?: AbortSignal;\nhostRpc?: CodeActHostRpcHandler;\nonDelta?: (stream: 'stdout' | 'stderr', delta: string) => void;\n}"
+      },
+      {
+        "name": "CodeCellExecutionResult",
+        "kind": "interface",
+        "signature": "export interface CodeCellExecutionResult {\nexecutionId: string;\nsessionId: string;\ngeneration: number;\nstatus: 'completed' | 'failed' | 'interrupted';\nstdout: string;\nstderr: string;\nresult?: CodeCellStructuredResult;\nerror?: string;\ndurationMs: number;\nresourceUsage?: Record<string, number>;\nartifacts: CodeActArtifactReference[];\nstateLost?: boolean;\n}"
+      },
+      {
+        "name": "CodeCellStructuredResult",
+        "kind": "interface",
+        "signature": "export interface CodeCellStructuredResult {\ntype: string;\nvalue?: unknown;\nrepr?: string;\n}"
+      },
+      {
         "name": "CodeDiagnostic",
         "kind": "interface",
         "signature": "export interface CodeDiagnostic {\nuri: string;\nmessage: string;\nseverity?: number;\nsource?: string;\ncode?: string | number;\nrange: CodeLocation;\n}"
@@ -736,6 +886,16 @@
         "name": "ConfigurationError",
         "kind": "class",
         "signature": "export declare class ConfigurationError extends HadamardSdkError {\nconstructor(message: string, options?: {\ncause?: unknown;\n});\n}"
+      },
+      {
+        "name": "ContainerKernelAdapter",
+        "kind": "class",
+        "signature": "export declare class ContainerKernelAdapter implements CodeActKernelAdapter {\nprivate readonly options;\nreadonly backend: \"container\";\nreadonly isolation: \"strong\";\nprivate readonly runtime;\nconstructor(options: ContainerKernelAdapterOptions);\nselfCheck(): Promise<CodeActBackendStatus>;\nstart(options: CodeActKernelStartOptions): Promise<CodeActKernel>;\n}"
+      },
+      {
+        "name": "ContainerKernelAdapterOptions",
+        "kind": "interface",
+        "signature": "export interface ContainerKernelAdapterOptions {\nruntime?: 'docker' | 'podman';\nimage: string;\nmemoryMb: number;\ncpuLimit: number;\n}"
       },
       {
         "name": "ContextRule",
@@ -801,6 +961,11 @@
         "name": "CreateChildAgentExecutionIdentityOptions",
         "kind": "interface",
         "signature": "export interface CreateChildAgentExecutionIdentityOptions {\nsessionId: string;\nparent: AgentExecutionIdentity;\nagentName: string;\nnickname?: string;\nrole?: string;\nmodel?: string;\ncwd: string;\n}"
+      },
+      {
+        "name": "createCodeCellTool",
+        "kind": "function",
+        "signature": "export declare function createCodeCellTool(options: CodeActToolOptions): AgentToolDefinition;"
       },
       {
         "name": "createCodeIntelligenceTools",
@@ -1223,6 +1388,11 @@
         "signature": "DEFAULT_MANAGER_CONFIG: ManagerConfig"
       },
       {
+        "name": "DEFAULT_MAX_PROTOCOL_LINE_BYTES",
+        "kind": "value",
+        "signature": "DEFAULT_MAX_PROTOCOL_LINE_BYTES = 1048576"
+      },
+      {
         "name": "DEFAULT_PROJECT_MEMORY_SETTINGS",
         "kind": "value",
         "signature": "DEFAULT_PROJECT_MEMORY_SETTINGS: ProjectMemorySettings"
@@ -1628,6 +1798,11 @@
         "signature": "export declare function encodeHadamardProjectPath(workDir: string): string;"
       },
       {
+        "name": "encodeKernelMessage",
+        "kind": "function",
+        "signature": "export declare function encodeKernelMessage(message: KernelOutboundMessage): string;"
+      },
+      {
         "name": "encodeZip",
         "kind": "function",
         "signature": "export declare function encodeZip(entries: readonly ZipEntry[]): Buffer;"
@@ -1956,6 +2131,11 @@
         "name": "filterHadamardMessagesForSessionMemory",
         "kind": "function",
         "signature": "export declare function filterHadamardMessagesForSessionMemory(messages: readonly MessageParam[]): MessageParam[];"
+      },
+      {
+        "name": "filterToolsForExecutionPolicy",
+        "kind": "function",
+        "signature": "export declare function filterToolsForExecutionPolicy(tools: readonly AgentToolDefinition[], policy: AgentExecutionPolicy): AgentToolDefinition[];"
       },
       {
         "name": "findAgentProfile",
@@ -3678,6 +3858,11 @@
         "signature": "export type HadamardWorkspaceKind = 'directory' | 'temp' | 'git-worktree';"
       },
       {
+        "name": "hashCodeCellSource",
+        "kind": "function",
+        "signature": "export declare function hashCodeCellSource(code: string): string;"
+      },
+      {
         "name": "hasWorktreeHooks",
         "kind": "function",
         "signature": "export declare function hasWorktreeHooks(hooks?: HadamardHooks): boolean;"
@@ -3881,6 +4066,36 @@
         "name": "isWorkflowsDisabled",
         "kind": "function",
         "signature": "export declare function isWorkflowsDisabled(): boolean;"
+      },
+      {
+        "name": "KernelInboundMessage",
+        "kind": "type",
+        "signature": "export type KernelInboundMessage = {\nv: 1;\ntype: 'ready';\npid: number;\n} | {\nv: 1;\ntype: 'stream';\nexecutionId: string;\nstream: 'stdout' | 'stderr';\ndelta: string;\n} | {\nv: 1;\ntype: 'host_rpc';\nexecutionId: string;\nrequest: CodeActHostRpcRequest;\n} | {\nv: 1;\ntype: 'result';\nexecutionId: string;\nok: boolean;\nresult?: CodeCellStructuredResult;\nerror?: string;\ndurationMs: number;\nresourceUsage?: Record<string, number>;\n};"
+      },
+      {
+        "name": "KernelLease",
+        "kind": "interface",
+        "signature": "export interface KernelLease {\nkernel: CodeActKernel;\nlifecycle: 'started' | 'restarted' | 'reused';\n}"
+      },
+      {
+        "name": "KernelLineDecoder",
+        "kind": "class",
+        "signature": "export declare class KernelLineDecoder {\nprivate readonly maxLineBytes;\nprivate pending;\nconstructor(maxLineBytes?: number);\npush(chunk: Buffer | string): KernelInboundMessage[];\n}"
+      },
+      {
+        "name": "KernelOutboundMessage",
+        "kind": "type",
+        "signature": "export type KernelOutboundMessage = {\nv: 1;\ntype: 'execute';\nexecutionId: string;\ncode: string;\n} | {\nv: 1;\ntype: 'host_rpc_result';\nexecutionId: string;\nresponse: unknown;\n} | {\nv: 1;\ntype: 'shutdown';\n};"
+      },
+      {
+        "name": "KernelProcessInvocation",
+        "kind": "interface",
+        "signature": "export interface KernelProcessInvocation {\ncommand: string;\nargs: string[];\ncwd: string;\nenv: Record<string, string>;\n}"
+      },
+      {
+        "name": "KernelProtocolError",
+        "kind": "class",
+        "signature": "export declare class KernelProtocolError extends HadamardSdkError {\nconstructor(message: string);\n}"
       },
       {
         "name": "LanguageServerCapability",
@@ -4498,6 +4713,11 @@
         "signature": "export declare function parseHadamardSessionMemoryRuntimeState(metadata?: Record<string, unknown>): HadamardSessionMemoryRuntimeState;"
       },
       {
+        "name": "parseKernelInboundMessage",
+        "kind": "function",
+        "signature": "export declare function parseKernelInboundMessage(line: string): KernelInboundMessage;"
+      },
+      {
         "name": "parsePluginPackageManifest",
         "kind": "function",
         "signature": "export declare function parsePluginPackageManifest(value: unknown): PluginPackageManifest;"
@@ -4661,6 +4881,11 @@
         "name": "probeManagedPlugin",
         "kind": "function",
         "signature": "export declare function probeManagedPlugin(raw: Record<string, unknown>, pluginId: ManagedPluginId, options: ManagedPluginHealthOptions): Promise<ManagedPluginHealth>;"
+      },
+      {
+        "name": "ProcessKernelAdapter",
+        "kind": "class",
+        "signature": "export declare class ProcessKernelAdapter implements CodeActKernelAdapter {\nprivate readonly pythonCommand;\nreadonly backend: \"process\";\nreadonly isolation: \"trusted-only\";\nconstructor(pythonCommand: string);\nselfCheck(): Promise<CodeActBackendStatus>;\nstart(options: CodeActKernelStartOptions): Promise<CodeActKernel>;\n}"
       },
       {
         "name": "productCapabilities",
@@ -4998,6 +5223,11 @@
         "signature": "export declare function resolveAgentProfileRun(name: string, homeDir?: string): Promise<ResolvedAgentProfileRun>;"
       },
       {
+        "name": "resolveCodeActSettings",
+        "kind": "function",
+        "signature": "export declare function resolveCodeActSettings(input: CodeActSettings): ResolvedCodeActSettings;"
+      },
+      {
         "name": "resolveContextRules",
         "kind": "function",
         "signature": "export declare function resolveContextRules(rules: ContextRule[], touchedPaths?: string[]): ResolvedContextRules;"
@@ -5006,6 +5236,11 @@
         "name": "ResolvedAgentProfileRun",
         "kind": "interface",
         "signature": "export interface ResolvedAgentProfileRun extends AgentProfileValidationResult {\nmodel: string;\nmodelApi?: ModelApi;\n}"
+      },
+      {
+        "name": "ResolvedCodeActSettings",
+        "kind": "interface",
+        "signature": "export interface ResolvedCodeActSettings {\nenabled: boolean;\nbackend: CodeActBackend;\nsecurityMode: CodeActSecurityMode;\npythonCommand: string;\nidleTimeoutMs: number;\nexecutionTimeoutMs: number;\nmaxOutputChars: number;\nenvironmentAllowlist: string[];\ncontainerImage: string;\ncontainerMemoryMb: number;\ncontainerCpuLimit: number;\n}"
       },
       {
         "name": "ResolvedContextRules",
@@ -5753,6 +5988,11 @@
         "signature": "export interface StageWorkflowUpsertInput {\nassistantSessionId: string;\nname: string;\nscript: string;\nscope: 'project' | 'personal';\nprojectPath?: string;\ndescription?: string;\nexplanation?: string;\n}"
       },
       {
+        "name": "startKernelProcess",
+        "kind": "function",
+        "signature": "export declare function startKernelProcess(options: CodeActKernelStartOptions, invocation: KernelProcessInvocation): Promise<CodeActKernel>;"
+      },
+      {
         "name": "StdioAppServerTransport",
         "kind": "class",
         "signature": "export declare class StdioAppServerTransport {\nprivate readonly server;\nprivate readonly input;\nprivate readonly output;\nconstructor(server: AppServer, input?: Readable, output?: Writable);\nstart(): Promise<void>;\nprivate write;\n}"
@@ -6055,7 +6295,7 @@
       {
         "name": "ToolExecutionContext",
         "kind": "interface",
-        "signature": "export interface ToolExecutionContext {\nsignal?: AbortSignal;\nrunId: string;\ntoolUseId?: string;\nsessionId?: string;\ncwd: string;\nmetadata: Record<string, unknown>;\nprompt: string;\niteration: number;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\nhooks?: HadamardHooks;\nmodelApi?: ModelApi;\nmodel?: string;\nprovider?: string;\neffort?: HadamardEffort;\nfileChangeJournal?: {\nrecord(change: {\nsessionId: string;\nturnId: string;\nfilePath: string;\nbefore: Buffer | null;\nafter: Buffer | null;\n}): Promise<unknown>;\n};\nsandboxExecutor?: {\nreadonly policy: import('./sandbox/types.js').SandboxPolicy;\nreadonly capability: import('./sandbox/types.js').SandboxCapabilityReport;\nexecute(request: import('./sandbox/types.js').SandboxExecutionRequest): Promise<import('./sandbox/types.js').SandboxExecutionResult>;\nassertPathAllowed(filePath: string, access: 'read' | 'write'): Promise<string>;\n};\n}"
+        "signature": "export interface ToolExecutionContext {\nsignal?: AbortSignal;\nrunId: string;\ntoolUseId?: string;\nsessionId?: string;\ncwd: string;\nmetadata: Record<string, unknown>;\nprompt: string;\niteration: number;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\nruntime?: {\ncanUseTool?: HadamardCanUseTool;\nemit?: (event: AgentEvent) => void;\n};\nhooks?: HadamardHooks;\nmodelApi?: ModelApi;\nmodel?: string;\nprovider?: string;\neffort?: HadamardEffort;\nfileChangeJournal?: {\nrecord(change: {\nsessionId: string;\nturnId: string;\nfilePath: string;\nbefore: Buffer | null;\nafter: Buffer | null;\n}): Promise<unknown>;\n};\nsandboxExecutor?: {\nreadonly policy: import('./sandbox/types.js').SandboxPolicy;\nreadonly capability: import('./sandbox/types.js').SandboxCapabilityReport;\nexecute(request: import('./sandbox/types.js').SandboxExecutionRequest): Promise<import('./sandbox/types.js').SandboxExecutionResult>;\nassertPathAllowed(filePath: string, access: 'read' | 'write'): Promise<string>;\n};\n}"
       },
       {
         "name": "ToolExecutionError",
@@ -8606,7 +8846,7 @@
       {
         "name": "AgentEvent",
         "kind": "type",
-        "signature": "export type AgentEvent = {\ntype: 'run.started';\nrunId: string;\nsessionId?: string;\nmodel: string;\ninput: string;\ntimestamp: string;\n} | {\ntype: 'request.started';\nrunId: string;\niteration: number;\nrequestTokenEstimate?: number;\nrequestByteLength?: number;\nlocalMicrocompact?: AgentRequestSummary['localMicrocompact'];\ntimestamp: string;\n} | {\ntype: 'request.prompt_cache';\nrunId: string;\niteration: number;\nprefixSignature: string;\nprefixChanged: boolean;\nbreakpoints: {\nsystem: boolean;\ntools: boolean;\nmessage: boolean;\n};\ntimestamp: string;\n} | {\ntype: 'response.text.delta';\nrunId: string;\niteration: number;\ndelta: string;\nsnapshot: string;\ntimestamp: string;\n} | {\ntype: 'response.thinking.delta';\nrunId: string;\niteration: number;\nindex: number;\ndelta: string;\nsnapshot: string;\nsignature?: string;\ntimestamp: string;\n} | {\ntype: 'response.tool_input.delta';\nrunId: string;\niteration: number;\nindex: number;\ntoolUseId?: string;\ntoolName?: string;\ndelta: string;\nsnapshot: string;\ntimestamp: string;\n} | {\ntype: 'response.content';\nrunId: string;\niteration: number;\ncontent: ContentBlock;\ntimestamp: string;\n} | {\ntype: 'response.message';\nrunId: string;\niteration: number;\nmessage: Message;\ntimestamp: string;\n} | {\ntype: 'tool.call';\nrunId: string;\niteration: number;\ncall: AgentToolCallEventPayload;\ntimestamp: string;\n} | {\ntype: 'tool.permission';\nrunId: string;\niteration: number;\ndecision: HadamardPermissionDecision;\ntimestamp: string;\n} | {\ntype: 'tool.result';\nrunId: string;\niteration: number;\nresult: AgentToolCallRecord;\ntimestamp: string;\n} | {\ntype: 'tool.progress';\nrunId: string;\niteration: number;\ntoolUseId: string;\ndata: ToolProgressData;\ntimestamp: string;\n} | {\ntype: 'session.compacted';\nrunId: string;\nsessionId: string;\ntrigger: HadamardCompactTrigger;\nresult: HadamardSessionCompactResult;\ntimestamp: string;\n} | {\ntype: 'checkpoint.created';\nrunId: string;\nsessionId: string;\ncheckpointId: string;\ntimestamp: string;\n} | {\ntype: 'checkpoint.restore.requested' | 'checkpoint.restore.completed' | 'checkpoint.restore.conflicted';\nrunId: string;\nsessionId: string;\ncheckpointId: string;\ntimestamp: string;\n} | {\ntype: 'sandbox.applied' | 'sandbox.degraded' | 'sandbox.violation';\nrunId: string;\nsessionId?: string;\ncapability: import('./sandbox/types.js').SandboxCapabilityReport;\nviolation?: import('./sandbox/types.js').SandboxViolation;\ntimestamp: string;\n} | {\ntype: 'hook.lifecycle';\nrunId: string;\nsessionId?: string;\nlifecycleEvent: import('./hooks/hookTypes.js').HadamardLifecycleEvent;\noutputs: import('./hooks/hookTypes.js').TypedHookOutput[];\ntimestamp: string;\n} | {\ntype: 'conversation.compacted';\nrunId: string;\niteration: number;\ntrigger?: 'auto' | 'reactive';\ntokenEstimateBefore: number;\ntokenEstimateAfter: number;\nmessagesSummarized: number;\npreservedMessages: number;\nclearedToolResults: number;\ntimestamp: string;\n} | {\ntype: 'model.fallback';\nrunId: string;\niteration: number;\nfromModel: string;\ntoModel: string;\nreason: string;\ntimestamp: string;\n} | {\ntype: 'request.interrupted';\nrunId: string;\niteration: number;\nretry: number;\nmaxRetries: number;\nreason: string;\ntimestamp: string;\n} | {\ntype: 'response.completed';\nrunId: string;\nresult: AgentRunResult;\ntimestamp: string;\n} | {\ntype: 'error';\nrunId: string;\nerror: {\nmessage: string;\ncode?: string;\nstack?: string;\n};\ntimestamp: string;\n} | {\ntype: 'agent.execution';\nrunId: string;\nrootExecutionId: string;\nevent: import('./runtime/agentExecution.js').AgentExecutionEvent;\nsnapshot: import('./runtime/agentExecution.js').AgentExecutionSnapshot;\ntimestamp: string;\n} | {\ntype: 'workflow.start';\nrunId: string;\nworkflowName: string;\nstepCount: number;\ntimestamp: string;\n} | {\ntype: 'step.start';\nrunId: string;\nworkflowName: string;\nstepId: string;\nstepName: string;\ntimestamp: string;\n} | {\ntype: 'step.done';\nrunId: string;\nworkflowName: string;\nstepId: string;\nstatus: 'completed' | 'failed' | 'skipped';\ndurationMs: number;\ntimestamp: string;\n} | {\ntype: 'workflow.done';\nrunId: string;\nworkflowName: string;\nstatus: 'completed' | 'partial' | 'failed';\ndurationMs: number;\ntimestamp: string;\nerrors?: Array<{\nstepId: string;\nerror: string;\n}>;\n} | {\ntype: 'workflow.script.start';\nrunId: string;\nworkflowName: string;\nphases: WorkflowMeta['phases'];\ntimestamp: string;\n} | {\ntype: 'workflow.phase.start';\nrunId: string;\nphase: string;\ntimestamp: string;\n} | {\ntype: 'workflow.agent.start';\nrunId: string;\nagentId: string;\nlabel?: string;\nphase?: string;\ncached: boolean;\ntimestamp: string;\n} | {\ntype: 'workflow.agent.done';\nrunId: string;\nagentId: string;\nphase?: string;\ncached: boolean;\ndurationMs: number;\ntokens?: {\ninput: number;\noutput: number;\n};\nerror?: string;\ntimestamp: string;\n} | {\ntype: 'workflow.log';\nrunId: string;\nmessage: string;\ntimestamp: string;\n} | {\ntype: 'workflow.script.done';\nrunId: string;\nworkflowName: string;\nstatus: 'completed' | 'failed' | 'stopped';\ndurationMs: number;\nagentCount: number;\ntotalTokens: number;\nerrors?: WorkflowRunState['errors'];\ntimestamp: string;\n};"
+        "signature": "export type AgentEvent = import('./events/codeActEvents.js').CodeActAgentEvent | {\ntype: 'run.started';\nrunId: string;\nsessionId?: string;\nmodel: string;\ninput: string;\ntimestamp: string;\n} | {\ntype: 'request.started';\nrunId: string;\niteration: number;\nrequestTokenEstimate?: number;\nrequestByteLength?: number;\nlocalMicrocompact?: AgentRequestSummary['localMicrocompact'];\ntimestamp: string;\n} | {\ntype: 'request.prompt_cache';\nrunId: string;\niteration: number;\nprefixSignature: string;\nprefixChanged: boolean;\nbreakpoints: {\nsystem: boolean;\ntools: boolean;\nmessage: boolean;\n};\ntimestamp: string;\n} | {\ntype: 'response.text.delta';\nrunId: string;\niteration: number;\ndelta: string;\nsnapshot: string;\ntimestamp: string;\n} | {\ntype: 'response.thinking.delta';\nrunId: string;\niteration: number;\nindex: number;\ndelta: string;\nsnapshot: string;\nsignature?: string;\ntimestamp: string;\n} | {\ntype: 'response.tool_input.delta';\nrunId: string;\niteration: number;\nindex: number;\ntoolUseId?: string;\ntoolName?: string;\ndelta: string;\nsnapshot: string;\ntimestamp: string;\n} | {\ntype: 'response.content';\nrunId: string;\niteration: number;\ncontent: ContentBlock;\ntimestamp: string;\n} | {\ntype: 'response.message';\nrunId: string;\niteration: number;\nmessage: Message;\ntimestamp: string;\n} | {\ntype: 'tool.call';\nrunId: string;\niteration: number;\ncall: AgentToolCallEventPayload;\ntimestamp: string;\n} | {\ntype: 'tool.permission';\nrunId: string;\niteration: number;\ndecision: HadamardPermissionDecision;\ntimestamp: string;\n} | {\ntype: 'tool.result';\nrunId: string;\niteration: number;\nresult: AgentToolCallRecord;\ntimestamp: string;\n} | {\ntype: 'tool.progress';\nrunId: string;\niteration: number;\ntoolUseId: string;\ndata: ToolProgressData;\ntimestamp: string;\n} | {\ntype: 'session.compacted';\nrunId: string;\nsessionId: string;\ntrigger: HadamardCompactTrigger;\nresult: HadamardSessionCompactResult;\ntimestamp: string;\n} | {\ntype: 'checkpoint.created';\nrunId: string;\nsessionId: string;\ncheckpointId: string;\ntimestamp: string;\n} | {\ntype: 'checkpoint.restore.requested' | 'checkpoint.restore.completed' | 'checkpoint.restore.conflicted';\nrunId: string;\nsessionId: string;\ncheckpointId: string;\ntimestamp: string;\n} | {\ntype: 'sandbox.applied' | 'sandbox.degraded' | 'sandbox.violation';\nrunId: string;\nsessionId?: string;\ncapability: import('./sandbox/types.js').SandboxCapabilityReport;\nviolation?: import('./sandbox/types.js').SandboxViolation;\ntimestamp: string;\n} | {\ntype: 'hook.lifecycle';\nrunId: string;\nsessionId?: string;\nlifecycleEvent: import('./hooks/hookTypes.js').HadamardLifecycleEvent;\noutputs: import('./hooks/hookTypes.js').TypedHookOutput[];\ntimestamp: string;\n} | {\ntype: 'conversation.compacted';\nrunId: string;\niteration: number;\ntrigger?: 'auto' | 'reactive';\ntokenEstimateBefore: number;\ntokenEstimateAfter: number;\nmessagesSummarized: number;\npreservedMessages: number;\nclearedToolResults: number;\ntimestamp: string;\n} | {\ntype: 'model.fallback';\nrunId: string;\niteration: number;\nfromModel: string;\ntoModel: string;\nreason: string;\ntimestamp: string;\n} | {\ntype: 'request.interrupted';\nrunId: string;\niteration: number;\nretry: number;\nmaxRetries: number;\nreason: string;\ntimestamp: string;\n} | {\ntype: 'response.completed';\nrunId: string;\nresult: AgentRunResult;\ntimestamp: string;\n} | {\ntype: 'error';\nrunId: string;\nerror: {\nmessage: string;\ncode?: string;\nstack?: string;\n};\ntimestamp: string;\n} | {\ntype: 'agent.execution';\nrunId: string;\nrootExecutionId: string;\nevent: import('./runtime/agentExecution.js').AgentExecutionEvent;\nsnapshot: import('./runtime/agentExecution.js').AgentExecutionSnapshot;\ntimestamp: string;\n} | {\ntype: 'workflow.start';\nrunId: string;\nworkflowName: string;\nstepCount: number;\ntimestamp: string;\n} | {\ntype: 'step.start';\nrunId: string;\nworkflowName: string;\nstepId: string;\nstepName: string;\ntimestamp: string;\n} | {\ntype: 'step.done';\nrunId: string;\nworkflowName: string;\nstepId: string;\nstatus: 'completed' | 'failed' | 'skipped';\ndurationMs: number;\ntimestamp: string;\n} | {\ntype: 'workflow.done';\nrunId: string;\nworkflowName: string;\nstatus: 'completed' | 'partial' | 'failed';\ndurationMs: number;\ntimestamp: string;\nerrors?: Array<{\nstepId: string;\nerror: string;\n}>;\n} | {\ntype: 'workflow.script.start';\nrunId: string;\nworkflowName: string;\nphases: WorkflowMeta['phases'];\ntimestamp: string;\n} | {\ntype: 'workflow.phase.start';\nrunId: string;\nphase: string;\ntimestamp: string;\n} | {\ntype: 'workflow.agent.start';\nrunId: string;\nagentId: string;\nlabel?: string;\nphase?: string;\ncached: boolean;\ntimestamp: string;\n} | {\ntype: 'workflow.agent.done';\nrunId: string;\nagentId: string;\nphase?: string;\ncached: boolean;\ndurationMs: number;\ntokens?: {\ninput: number;\noutput: number;\n};\nerror?: string;\ntimestamp: string;\n} | {\ntype: 'workflow.log';\nrunId: string;\nmessage: string;\ntimestamp: string;\n} | {\ntype: 'workflow.script.done';\nrunId: string;\nworkflowName: string;\nstatus: 'completed' | 'failed' | 'stopped';\ndurationMs: number;\nagentCount: number;\ntotalTokens: number;\nerrors?: WorkflowRunState['errors'];\ntimestamp: string;\n};"
       },
       {
         "name": "AgentExecutionActivity",
@@ -8732,6 +8972,11 @@
         "name": "AgentMode",
         "kind": "type",
         "signature": "export type AgentMode = typeof AGENT_MODES[number];"
+      },
+      {
+        "name": "AgentModePromptCapabilities",
+        "kind": "interface",
+        "signature": "export interface AgentModePromptCapabilities {\nhostCapabilities?: readonly string[];\n}"
       },
       {
         "name": "AgentNodeMode",
@@ -8994,6 +9239,11 @@
         "signature": "export declare function askTeamDefinition(definition: TeamDefinition, prompt: string, signal?: AbortSignal, opts?: TeamAskOptions): Promise<ModelTeamResult>;"
       },
       {
+        "name": "assertCodeActBackend",
+        "kind": "function",
+        "signature": "export declare function assertCodeActBackend(settings: ResolvedCodeActSettings, adapter: CodeActKernelAdapter): Promise<CodeActBackendStatus>;"
+      },
+      {
         "name": "assertPolicyPatchAllowed",
         "kind": "function",
         "signature": "export declare function assertPolicyPatchAllowed(resolved: ResolvedPolicy, patch: Record<string, unknown>): void;"
@@ -9124,6 +9374,11 @@
         "signature": "export interface BridgeProviderDetection {\nid: RuntimeProviderId;\ndisplayName: string;\npath?: string;\navailable: boolean;\nversion?: string;\n}"
       },
       {
+        "name": "buildAgentModePrompt",
+        "kind": "function",
+        "signature": "export declare function buildAgentModePrompt(policy: AgentExecutionPolicy, capabilities?: AgentModePromptCapabilities): string;"
+      },
+      {
         "name": "buildAssistantGlobalSystemPrompt",
         "kind": "function",
         "signature": "export declare function buildAssistantGlobalSystemPrompt(currentWorkDir: string): string;"
@@ -9132,6 +9387,16 @@
         "name": "buildAssistantTeamSystemPrompt",
         "kind": "function",
         "signature": "export declare function buildAssistantTeamSystemPrompt(scope: AssistantTeamToolScope): string;"
+      },
+      {
+        "name": "buildCodeActEnvironment",
+        "kind": "function",
+        "signature": "export declare function buildCodeActEnvironment(allowlist: readonly string[], source?: NodeJS.ProcessEnv): Record<string, string>;"
+      },
+      {
+        "name": "buildContainerKernelInvocation",
+        "kind": "function",
+        "signature": "export declare function buildContainerKernelInvocation(runtime: 'docker' | 'podman', adapter: ContainerKernelAdapterOptions, options: CodeActKernelStartOptions): KernelProcessInvocation;"
       },
       {
         "name": "buildDecomposeIssuePrompt",
@@ -9264,6 +9529,131 @@
         "signature": "export declare function cloneTeamDefinition(sourceName: string, newName: string, options?: {\nprojectDir?: string;\nhomeDir?: string;\noverwrite?: boolean;\n}): Promise<LoadedTeamDefinition>;"
       },
       {
+        "name": "CODE_CELL_TOOL_NAME",
+        "kind": "value",
+        "signature": "CODE_CELL_TOOL_NAME = \"CodeCell\""
+      },
+      {
+        "name": "CODEACT_PROTOCOL_VERSION",
+        "kind": "value",
+        "signature": "CODEACT_PROTOCOL_VERSION = 1"
+      },
+      {
+        "name": "CodeActArtifactRecorder",
+        "kind": "class",
+        "signature": "export declare class CodeActArtifactRecorder {\nrecord(workDir: string, record: CodeCellExecutionRecord): Promise<string>;\nputHostArtifact(workDir: string, sessionId: string, input: {\nname: string;\ncontent: string;\nmediaType: string;\n}): Promise<CodeActArtifactReference>;\n}"
+      },
+      {
+        "name": "CodeActArtifactReference",
+        "kind": "interface",
+        "signature": "export interface CodeActArtifactReference {\nid: string;\nname: string;\nmediaType: string;\npath?: string;\nsizeBytes?: number;\n}"
+      },
+      {
+        "name": "CodeActBackend",
+        "kind": "type",
+        "signature": "export type CodeActBackend = 'process' | 'container';"
+      },
+      {
+        "name": "CodeActBackendStatus",
+        "kind": "interface",
+        "signature": "export interface CodeActBackendStatus {\nbackend: CodeActBackend;\navailable: boolean;\nisolation: 'trusted-only' | 'strong';\ndetail: string;\n}"
+      },
+      {
+        "name": "CodeActConfigurationError",
+        "kind": "class",
+        "signature": "export declare class CodeActConfigurationError extends HadamardSdkError {\nconstructor(message: string, code: 'CODEACT_DISABLED' | 'CODEACT_BACKEND_UNAVAILABLE' | 'CODEACT_UNSAFE_BACKEND');\n}"
+      },
+      {
+        "name": "CodeActHostRpcDispatcher",
+        "kind": "class",
+        "signature": "export declare class CodeActHostRpcDispatcher {\nprivate readonly context;\nprivate readonly artifacts;\nprivate readonly sessionId;\nprivate readonly tools;\nconstructor(tools: readonly AgentToolDefinition[], context: ToolExecutionContext, artifacts: CodeActArtifactRecorder, sessionId: string);\nhandler(): CodeActHostRpcHandler;\ndispatch(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse>;\nprivate putArtifact;\nprivate callTool;\n}"
+      },
+      {
+        "name": "CodeActHostRpcHandler",
+        "kind": "type",
+        "signature": "export type CodeActHostRpcHandler = (request: CodeActHostRpcRequest) => Promise<CodeActHostRpcResponse>;"
+      },
+      {
+        "name": "CodeActHostRpcRequest",
+        "kind": "interface",
+        "signature": "export interface CodeActHostRpcRequest {\nid: string;\nmethod: string;\ninput: unknown;\n}"
+      },
+      {
+        "name": "CodeActHostRpcResponse",
+        "kind": "interface",
+        "signature": "export interface CodeActHostRpcResponse {\nid: string;\nok: boolean;\nresult?: unknown;\nerror?: string;\nartifact?: CodeActArtifactReference;\n}"
+      },
+      {
+        "name": "CodeActKernel",
+        "kind": "interface",
+        "signature": "export interface CodeActKernel {\nreadonly sessionId: string;\nreadonly generation: number;\nexecute(request: CodeCellExecutionRequest): Promise<CodeCellExecutionResult>;\ninterrupt(executionId: string): Promise<boolean>;\nstop(reason?: string): Promise<void>;\n}"
+      },
+      {
+        "name": "CodeActKernelAdapter",
+        "kind": "interface",
+        "signature": "export interface CodeActKernelAdapter {\nreadonly backend: CodeActBackend;\nreadonly isolation: 'trusted-only' | 'strong';\nselfCheck(): Promise<CodeActBackendStatus>;\nstart(options: CodeActKernelStartOptions): Promise<CodeActKernel>;\n}"
+      },
+      {
+        "name": "CodeActKernelPool",
+        "kind": "class",
+        "signature": "export declare class CodeActKernelPool {\nprivate readonly adapter;\nprivate readonly idleTimeoutMs;\nprivate readonly environment;\nprivate readonly maxOutputChars;\nprivate readonly onStopped?;\nprivate readonly entries;\nprivate readonly generations;\nprivate closed;\nconstructor(adapter: CodeActKernelAdapter, idleTimeoutMs: number, environment: Record<string, string>, maxOutputChars: number, onStopped?: ((sessionId: string, generation: number, reason: string) => void) | undefined);\nacquire(sessionId: string, workDir: string): Promise<KernelLease>;\ntouch(sessionId: string): void;\nstatus(sessionId: string): {\nrunning: boolean;\ngeneration?: number;\nworkDir?: string;\n};\ninterrupt(sessionId: string, executionId: string): Promise<boolean>;\ninvalidate(sessionId: string, reason: string): Promise<void>;\nclose(): Promise<void>;\nprivate armIdleTimer;\n}"
+      },
+      {
+        "name": "CodeActKernelStartOptions",
+        "kind": "interface",
+        "signature": "export interface CodeActKernelStartOptions {\nsessionId: string;\ngeneration: number;\nworkDir: string;\nenvironment: Record<string, string>;\nmaxOutputChars: number;\n}"
+      },
+      {
+        "name": "CodeActLanguage",
+        "kind": "type",
+        "signature": "export type CodeActLanguage = 'python';"
+      },
+      {
+        "name": "CodeActSecurityMode",
+        "kind": "type",
+        "signature": "export type CodeActSecurityMode = 'trusted' | 'enforce';"
+      },
+      {
+        "name": "CodeActService",
+        "kind": "class",
+        "signature": "export declare class CodeActService {\nreadonly settings: import(\"./types.js\").ResolvedCodeActSettings;\nprivate readonly adapter;\nprivate readonly artifacts;\nprivate readonly pool;\nprivate readonly activeContexts;\nprivate readonly onEvent?;\nconstructor(input: CodeActSettings, options?: CodeActServiceOptions);\nselfCheck(): Promise<CodeActBackendStatus>;\nexecute(input: {\nlanguage: CodeActLanguage;\ncode: string;\ntimeoutMs?: number;\ncontext: ToolExecutionContext;\nhostTools?: readonly AgentToolDefinition[];\n}): Promise<CodeCellExecutionRecord>;\nstatus(sessionId: string): ReturnType<CodeActKernelPool['status']>;\ninterrupt(sessionId: string, executionId: string): Promise<boolean>;\nrestart(sessionId: string): Promise<void>;\nstop(sessionId: string): Promise<void>;\nclose(): Promise<void>;\nprivate emitKernelEvent;\nprivate emit;\n}"
+      },
+      {
+        "name": "CodeActServiceOptions",
+        "kind": "interface",
+        "signature": "export interface CodeActServiceOptions {\nprocessAdapter?: CodeActKernelAdapter;\ncontainerAdapter?: CodeActKernelAdapter;\nartifacts?: CodeActArtifactRecorder;\nonEvent?: (event: AgentEvent) => void;\n}"
+      },
+      {
+        "name": "CodeActSettings",
+        "kind": "interface",
+        "signature": "export interface CodeActSettings {\nenabled: boolean;\nbackend?: CodeActBackend;\nsecurityMode?: CodeActSecurityMode;\npythonCommand?: string;\nidleTimeoutMs?: number;\nexecutionTimeoutMs?: number;\nmaxOutputChars?: number;\nenvironmentAllowlist?: string[];\ncontainerImage?: string;\ncontainerMemoryMb?: number;\ncontainerCpuLimit?: number;\n}"
+      },
+      {
+        "name": "CodeActToolOptions",
+        "kind": "interface",
+        "signature": "export interface CodeActToolOptions {\nservice: {\nexecute(input: {\nlanguage: CodeActLanguage;\ncode: string;\ntimeoutMs?: number;\ncontext: ToolExecutionContext;\nhostTools?: readonly AgentToolDefinition[];\n}): Promise<CodeCellExecutionRecord>;\n};\nhostTools?: readonly AgentToolDefinition[];\n}"
+      },
+      {
+        "name": "CodeCellExecutionRecord",
+        "kind": "interface",
+        "signature": "export interface CodeCellExecutionRecord extends CodeCellExecutionResult {\nsourceHash: string;\ncode: string;\nlanguage: CodeActLanguage;\nstartedAt: string;\ncompletedAt: string;\nrecordPath?: string;\n}"
+      },
+      {
+        "name": "CodeCellExecutionRequest",
+        "kind": "interface",
+        "signature": "export interface CodeCellExecutionRequest {\nexecutionId: string;\nsessionId: string;\nlanguage: CodeActLanguage;\ncode: string;\nworkDir: string;\ntimeoutMs: number;\nsignal?: AbortSignal;\nhostRpc?: CodeActHostRpcHandler;\nonDelta?: (stream: 'stdout' | 'stderr', delta: string) => void;\n}"
+      },
+      {
+        "name": "CodeCellExecutionResult",
+        "kind": "interface",
+        "signature": "export interface CodeCellExecutionResult {\nexecutionId: string;\nsessionId: string;\ngeneration: number;\nstatus: 'completed' | 'failed' | 'interrupted';\nstdout: string;\nstderr: string;\nresult?: CodeCellStructuredResult;\nerror?: string;\ndurationMs: number;\nresourceUsage?: Record<string, number>;\nartifacts: CodeActArtifactReference[];\nstateLost?: boolean;\n}"
+      },
+      {
+        "name": "CodeCellStructuredResult",
+        "kind": "interface",
+        "signature": "export interface CodeCellStructuredResult {\ntype: string;\nvalue?: unknown;\nrepr?: string;\n}"
+      },
+      {
         "name": "CodeDiagnostic",
         "kind": "interface",
         "signature": "export interface CodeDiagnostic {\nuri: string;\nmessage: string;\nseverity?: number;\nsource?: string;\ncode?: string | number;\nrange: CodeLocation;\n}"
@@ -9322,6 +9712,16 @@
         "name": "configureCompatDiagnostics",
         "kind": "function",
         "signature": "export declare function configureCompatDiagnostics(next: CompatDiagnosticsOptions): void;"
+      },
+      {
+        "name": "ContainerKernelAdapter",
+        "kind": "class",
+        "signature": "export declare class ContainerKernelAdapter implements CodeActKernelAdapter {\nprivate readonly options;\nreadonly backend: \"container\";\nreadonly isolation: \"strong\";\nprivate readonly runtime;\nconstructor(options: ContainerKernelAdapterOptions);\nselfCheck(): Promise<CodeActBackendStatus>;\nstart(options: CodeActKernelStartOptions): Promise<CodeActKernel>;\n}"
+      },
+      {
+        "name": "ContainerKernelAdapterOptions",
+        "kind": "interface",
+        "signature": "export interface ContainerKernelAdapterOptions {\nruntime?: 'docker' | 'podman';\nimage: string;\nmemoryMb: number;\ncpuLimit: number;\n}"
       },
       {
         "name": "ContextRule",
@@ -9387,6 +9787,11 @@
         "name": "CreateChildAgentExecutionIdentityOptions",
         "kind": "interface",
         "signature": "export interface CreateChildAgentExecutionIdentityOptions {\nsessionId: string;\nparent: AgentExecutionIdentity;\nagentName: string;\nnickname?: string;\nrole?: string;\nmodel?: string;\ncwd: string;\n}"
+      },
+      {
+        "name": "createCodeCellTool",
+        "kind": "function",
+        "signature": "export declare function createCodeCellTool(options: CodeActToolOptions): AgentToolDefinition;"
       },
       {
         "name": "createCodeIntelligenceTools",
@@ -9809,6 +10214,11 @@
         "signature": "DEFAULT_MANAGER_CONFIG: ManagerConfig"
       },
       {
+        "name": "DEFAULT_MAX_PROTOCOL_LINE_BYTES",
+        "kind": "value",
+        "signature": "DEFAULT_MAX_PROTOCOL_LINE_BYTES = 1048576"
+      },
+      {
         "name": "DEFAULT_PROJECT_MEMORY_SETTINGS",
         "kind": "value",
         "signature": "DEFAULT_PROJECT_MEMORY_SETTINGS: ProjectMemorySettings"
@@ -10214,6 +10624,11 @@
         "signature": "export declare function encodeHadamardProjectPath(workDir: string): string;"
       },
       {
+        "name": "encodeKernelMessage",
+        "kind": "function",
+        "signature": "export declare function encodeKernelMessage(message: KernelOutboundMessage): string;"
+      },
+      {
         "name": "encodeZip",
         "kind": "function",
         "signature": "export declare function encodeZip(entries: readonly ZipEntry[]): Buffer;"
@@ -10547,6 +10962,11 @@
         "name": "filterHadamardMessagesForSessionMemory",
         "kind": "function",
         "signature": "export declare function filterHadamardMessagesForSessionMemory(messages: readonly MessageParam[]): MessageParam[];"
+      },
+      {
+        "name": "filterToolsForExecutionPolicy",
+        "kind": "function",
+        "signature": "export declare function filterToolsForExecutionPolicy(tools: readonly AgentToolDefinition[], policy: AgentExecutionPolicy): AgentToolDefinition[];"
       },
       {
         "name": "findAgentProfile",
@@ -12274,6 +12694,11 @@
         "signature": "export type HadamardWorkspaceKind = 'directory' | 'temp' | 'git-worktree';"
       },
       {
+        "name": "hashCodeCellSource",
+        "kind": "function",
+        "signature": "export declare function hashCodeCellSource(code: string): string;"
+      },
+      {
         "name": "hasWorktreeHooks",
         "kind": "function",
         "signature": "export declare function hasWorktreeHooks(hooks?: HadamardHooks): boolean;"
@@ -12477,6 +12902,36 @@
         "name": "isWorkflowsDisabled",
         "kind": "function",
         "signature": "export declare function isWorkflowsDisabled(): boolean;"
+      },
+      {
+        "name": "KernelInboundMessage",
+        "kind": "type",
+        "signature": "export type KernelInboundMessage = {\nv: 1;\ntype: 'ready';\npid: number;\n} | {\nv: 1;\ntype: 'stream';\nexecutionId: string;\nstream: 'stdout' | 'stderr';\ndelta: string;\n} | {\nv: 1;\ntype: 'host_rpc';\nexecutionId: string;\nrequest: CodeActHostRpcRequest;\n} | {\nv: 1;\ntype: 'result';\nexecutionId: string;\nok: boolean;\nresult?: CodeCellStructuredResult;\nerror?: string;\ndurationMs: number;\nresourceUsage?: Record<string, number>;\n};"
+      },
+      {
+        "name": "KernelLease",
+        "kind": "interface",
+        "signature": "export interface KernelLease {\nkernel: CodeActKernel;\nlifecycle: 'started' | 'restarted' | 'reused';\n}"
+      },
+      {
+        "name": "KernelLineDecoder",
+        "kind": "class",
+        "signature": "export declare class KernelLineDecoder {\nprivate readonly maxLineBytes;\nprivate pending;\nconstructor(maxLineBytes?: number);\npush(chunk: Buffer | string): KernelInboundMessage[];\n}"
+      },
+      {
+        "name": "KernelOutboundMessage",
+        "kind": "type",
+        "signature": "export type KernelOutboundMessage = {\nv: 1;\ntype: 'execute';\nexecutionId: string;\ncode: string;\n} | {\nv: 1;\ntype: 'host_rpc_result';\nexecutionId: string;\nresponse: unknown;\n} | {\nv: 1;\ntype: 'shutdown';\n};"
+      },
+      {
+        "name": "KernelProcessInvocation",
+        "kind": "interface",
+        "signature": "export interface KernelProcessInvocation {\ncommand: string;\nargs: string[];\ncwd: string;\nenv: Record<string, string>;\n}"
+      },
+      {
+        "name": "KernelProtocolError",
+        "kind": "class",
+        "signature": "export declare class KernelProtocolError extends HadamardSdkError {\nconstructor(message: string);\n}"
       },
       {
         "name": "LanguageServerCapability",
@@ -13139,6 +13594,11 @@
         "signature": "export declare function parseHadamardSessionMemoryRuntimeState(metadata?: Record<string, unknown>): HadamardSessionMemoryRuntimeState;"
       },
       {
+        "name": "parseKernelInboundMessage",
+        "kind": "function",
+        "signature": "export declare function parseKernelInboundMessage(line: string): KernelInboundMessage;"
+      },
+      {
         "name": "parsePluginPackageManifest",
         "kind": "function",
         "signature": "export declare function parsePluginPackageManifest(value: unknown): PluginPackageManifest;"
@@ -13302,6 +13762,11 @@
         "name": "probeManagedPlugin",
         "kind": "function",
         "signature": "export declare function probeManagedPlugin(raw: Record<string, unknown>, pluginId: ManagedPluginId, options: ManagedPluginHealthOptions): Promise<ManagedPluginHealth>;"
+      },
+      {
+        "name": "ProcessKernelAdapter",
+        "kind": "class",
+        "signature": "export declare class ProcessKernelAdapter implements CodeActKernelAdapter {\nprivate readonly pythonCommand;\nreadonly backend: \"process\";\nreadonly isolation: \"trusted-only\";\nconstructor(pythonCommand: string);\nselfCheck(): Promise<CodeActBackendStatus>;\nstart(options: CodeActKernelStartOptions): Promise<CodeActKernel>;\n}"
       },
       {
         "name": "productCapabilities",
@@ -13649,6 +14114,11 @@
         "signature": "export declare function resolveAgentProfileRun(name: string, homeDir?: string): Promise<ResolvedAgentProfileRun>;"
       },
       {
+        "name": "resolveCodeActSettings",
+        "kind": "function",
+        "signature": "export declare function resolveCodeActSettings(input: CodeActSettings): ResolvedCodeActSettings;"
+      },
+      {
         "name": "resolveContextRules",
         "kind": "function",
         "signature": "export declare function resolveContextRules(rules: ContextRule[], touchedPaths?: string[]): ResolvedContextRules;"
@@ -13657,6 +14127,11 @@
         "name": "ResolvedAgentProfileRun",
         "kind": "interface",
         "signature": "export interface ResolvedAgentProfileRun extends AgentProfileValidationResult {\nmodel: string;\nmodelApi?: ModelApi;\n}"
+      },
+      {
+        "name": "ResolvedCodeActSettings",
+        "kind": "interface",
+        "signature": "export interface ResolvedCodeActSettings {\nenabled: boolean;\nbackend: CodeActBackend;\nsecurityMode: CodeActSecurityMode;\npythonCommand: string;\nidleTimeoutMs: number;\nexecutionTimeoutMs: number;\nmaxOutputChars: number;\nenvironmentAllowlist: string[];\ncontainerImage: string;\ncontainerMemoryMb: number;\ncontainerCpuLimit: number;\n}"
       },
       {
         "name": "ResolvedContextRules",
@@ -14434,6 +14909,11 @@
         "signature": "export interface StageWorkflowUpsertInput {\nassistantSessionId: string;\nname: string;\nscript: string;\nscope: 'project' | 'personal';\nprojectPath?: string;\ndescription?: string;\nexplanation?: string;\n}"
       },
       {
+        "name": "startKernelProcess",
+        "kind": "function",
+        "signature": "export declare function startKernelProcess(options: CodeActKernelStartOptions, invocation: KernelProcessInvocation): Promise<CodeActKernel>;"
+      },
+      {
         "name": "StdioAppServerTransport",
         "kind": "class",
         "signature": "export declare class StdioAppServerTransport {\nprivate readonly server;\nprivate readonly input;\nprivate readonly output;\nconstructor(server: AppServer, input?: Readable, output?: Writable);\nstart(): Promise<void>;\nprivate write;\n}"
@@ -14786,7 +15266,7 @@
       {
         "name": "ToolExecutionContext",
         "kind": "interface",
-        "signature": "export interface ToolExecutionContext {\nsignal?: AbortSignal;\nrunId: string;\ntoolUseId?: string;\nsessionId?: string;\ncwd: string;\nmetadata: Record<string, unknown>;\nprompt: string;\niteration: number;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\nhooks?: HadamardHooks;\nmodelApi?: ModelApi;\nmodel?: string;\nprovider?: string;\neffort?: HadamardEffort;\nfileChangeJournal?: {\nrecord(change: {\nsessionId: string;\nturnId: string;\nfilePath: string;\nbefore: Buffer | null;\nafter: Buffer | null;\n}): Promise<unknown>;\n};\nsandboxExecutor?: {\nreadonly policy: import('./sandbox/types.js').SandboxPolicy;\nreadonly capability: import('./sandbox/types.js').SandboxCapabilityReport;\nexecute(request: import('./sandbox/types.js').SandboxExecutionRequest): Promise<import('./sandbox/types.js').SandboxExecutionResult>;\nassertPathAllowed(filePath: string, access: 'read' | 'write'): Promise<string>;\n};\n}"
+        "signature": "export interface ToolExecutionContext {\nsignal?: AbortSignal;\nrunId: string;\ntoolUseId?: string;\nsessionId?: string;\ncwd: string;\nmetadata: Record<string, unknown>;\nprompt: string;\niteration: number;\npermissionMode?: HadamardPermissionMode;\npermissions?: HadamardPermissionRule[];\nclassifier?: HadamardToolClassifier;\napprover?: HadamardToolApprover;\nruntime?: {\ncanUseTool?: HadamardCanUseTool;\nemit?: (event: AgentEvent) => void;\n};\nhooks?: HadamardHooks;\nmodelApi?: ModelApi;\nmodel?: string;\nprovider?: string;\neffort?: HadamardEffort;\nfileChangeJournal?: {\nrecord(change: {\nsessionId: string;\nturnId: string;\nfilePath: string;\nbefore: Buffer | null;\nafter: Buffer | null;\n}): Promise<unknown>;\n};\nsandboxExecutor?: {\nreadonly policy: import('./sandbox/types.js').SandboxPolicy;\nreadonly capability: import('./sandbox/types.js').SandboxCapabilityReport;\nexecute(request: import('./sandbox/types.js').SandboxExecutionRequest): Promise<import('./sandbox/types.js').SandboxExecutionResult>;\nassertPathAllowed(filePath: string, access: 'read' | 'write'): Promise<string>;\n};\n}"
       },
       {
         "name": "ToolExecutionError",
