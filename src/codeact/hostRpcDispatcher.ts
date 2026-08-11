@@ -1,0 +1,178 @@
+import { randomUUID } from 'node:crypto';
+
+import { createLocalToolAdapter } from '../runtime/tools.js';
+import { decideHadamardToolPermission } from '../runtime/hadamardPermissions.js';
+import { markExplicitSafetyApproval } from '../runtime/safetyChecks.js';
+import type { AgentToolDefinition, ToolExecutionContext } from '../types.js';
+import { CodeActArtifactRecorder } from './codeActArtifacts.js';
+import type {
+  CodeActHostRpcHandler,
+  CodeActHostRpcRequest,
+  CodeActHostRpcResponse,
+} from './types.js';
+
+export class CodeActHostRpcDispatcher {
+  private readonly tools = new Map<string, AgentToolDefinition>();
+
+  constructor(
+    tools: readonly AgentToolDefinition[],
+    private readonly context: ToolExecutionContext,
+    private readonly artifacts: CodeActArtifactRecorder,
+    private readonly sessionId: string,
+  ) {
+    for (const tool of tools) {
+      this.tools.set(tool.name, tool);
+      for (const alias of tool.aliases ?? []) this.tools.set(alias, tool);
+    }
+  }
+
+  handler(): CodeActHostRpcHandler {
+    return request => this.dispatch(request);
+  }
+
+  async dispatch(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse> {
+    try {
+      if (request.method === 'artifact.put') return await this.putArtifact(request);
+      if (request.method === 'tool.call') return await this.callTool(request);
+      return { id: request.id, ok: false, error: `Host RPC method ${request.method} is not allowed.` };
+    } catch (error) {
+      return { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  private async putArtifact(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse> {
+    const input = asRecord(request.input);
+    const name = requiredString(input.name, 'artifact name');
+    const content = requiredString(input.content, 'artifact content', true);
+    const mediaType = typeof input.mediaType === 'string' && input.mediaType.trim()
+      ? input.mediaType.trim()
+      : 'text/plain';
+    const permission = await decideHadamardToolPermission({
+      mode: this.context.permissionMode ?? 'default',
+      rules: this.context.permissions ?? [],
+      classifier: this.context.classifier,
+      approver: this.context.approver,
+      canUseTool: this.context.runtime?.canUseTool,
+      adapter: { isDestructive: () => true },
+      runId: this.context.runId,
+      sessionId: this.context.sessionId,
+      workDir: this.context.cwd,
+      toolName: 'CodeActArtifact',
+      publicName: 'CodeActArtifact',
+      prompt: this.context.prompt,
+      toolInput: { name, mediaType, sizeChars: content.length },
+      iteration: this.context.iteration,
+    });
+    this.context.runtime?.emit?.({
+      type: 'tool.permission',
+      runId: this.context.runId,
+      iteration: this.context.iteration,
+      decision: permission,
+      timestamp: permission.timestamp,
+    });
+    if (permission.behavior === 'deny') {
+      return { id: request.id, ok: false, error: permission.reason };
+    }
+    const artifact = await this.artifacts.putHostArtifact(
+      this.context.cwd,
+      this.sessionId,
+      { name, content, mediaType },
+    );
+    return { id: request.id, ok: true, result: artifact, artifact };
+  }
+
+  private async callTool(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse> {
+    const envelope = asRecord(request.input);
+    const requestedName = requiredString(envelope.name, 'tool name');
+    const input = envelope.input ?? {};
+    const definition = this.tools.get(requestedName);
+    if (!definition) return { id: request.id, ok: false, error: `Host tool ${requestedName} is not available.` };
+    if (definition.name === 'CodeCell') {
+      return { id: request.id, ok: false, error: 'CodeCell cannot recursively invoke itself through Host RPC.' };
+    }
+    const adapter = createLocalToolAdapter(definition, definition.name, definition.name);
+    const toolUseId = `codeact-host-${randomUUID()}`;
+    const startedAt = new Date().toISOString();
+    this.context.runtime?.emit?.({
+      type: 'tool.call',
+      runId: this.context.runId,
+      iteration: this.context.iteration,
+      call: {
+        id: toolUseId,
+        name: definition.name,
+        publicName: definition.name,
+        provider: 'local',
+        input,
+        startedAt,
+      },
+      timestamp: startedAt,
+    });
+    const permission = await decideHadamardToolPermission({
+      mode: this.context.permissionMode ?? 'default',
+      rules: this.context.permissions ?? [],
+      classifier: this.context.classifier,
+      approver: this.context.approver,
+      canUseTool: this.context.runtime?.canUseTool,
+      adapter,
+      runId: this.context.runId,
+      sessionId: this.context.sessionId,
+      workDir: this.context.cwd,
+      toolName: definition.name,
+      publicName: definition.name,
+      prompt: this.context.prompt,
+      toolInput: input,
+      iteration: this.context.iteration,
+    });
+    this.context.runtime?.emit?.({
+      type: 'tool.permission',
+      runId: this.context.runId,
+      iteration: this.context.iteration,
+      decision: permission,
+      timestamp: permission.timestamp,
+    });
+    if (permission.behavior === 'deny') {
+      return { id: request.id, ok: false, error: permission.reason };
+    }
+    const executionInput = permission.updatedInput ?? input;
+    const nestedContext = markExplicitSafetyApproval(
+      { ...this.context, toolUseId },
+      permission.source === 'approver',
+    );
+    const execution = await adapter.execute(executionInput, nestedContext);
+    const completedAt = new Date().toISOString();
+    this.context.runtime?.emit?.({
+      type: 'tool.result',
+      runId: this.context.runId,
+      iteration: this.context.iteration,
+      result: {
+        id: toolUseId,
+        name: definition.name,
+        publicName: definition.name,
+        provider: 'local',
+        input: executionInput,
+        startedAt,
+        outputText: execution.text,
+        output: execution.rawOutput,
+        isError: execution.isError ?? false,
+        completedAt,
+        durationMs: Math.max(Date.parse(completedAt) - Date.parse(startedAt), 0),
+      },
+      timestamp: completedAt,
+    });
+    return { id: request.id, ok: true, result: execution.rawOutput ?? execution.text };
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Host RPC input must be an object.');
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredString(value: unknown, label: string, allowEmpty = false): string {
+  if (typeof value !== 'string' || (!allowEmpty && !value.trim())) {
+    throw new Error(`${label} must be a ${allowEmpty ? '' : 'non-empty '}string.`);
+  }
+  return value;
+}

@@ -13,7 +13,6 @@ import type {
 import type { z } from 'zod';
 import type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
 export type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
-
 export interface LoadedJsonConfigData {
   path: string;
   exists: boolean;
@@ -38,6 +37,7 @@ export interface ToolExecutionContext {
   permissions?: HadamardPermissionRule[];
   classifier?: HadamardToolClassifier;
   approver?: HadamardToolApprover;
+  runtime?: { canUseTool?: HadamardCanUseTool; emit?: (event: AgentEvent) => void };
   hooks?: HadamardHooks;
   modelApi?: ModelApi;
   model?: string;
@@ -1537,7 +1537,7 @@ export interface WaitForHadamardBackgroundTaskOptions {
   signal?: AbortSignal;
 }
 
-export type AgentEvent =
+export type AgentEvent = import('./events/codeActEvents.js').CodeActAgentEvent
   | {
       type: 'run.started';
       runId: string;
