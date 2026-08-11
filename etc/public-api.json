@@ -1778,6 +1778,31 @@
         "signature": "export declare class DeviceIdentityStore {\nprivate readonly directory;\nprivate readonly file;\nconstructor(directory: string);\nloadOrCreate(name?: string): Promise<DeviceIdentityCredentials>;\npublicIdentity(name?: string): Promise<DeviceIdentity>;\nprivate create;\n}"
       },
       {
+        "name": "DeviceLinkArtifactManifest",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkArtifactManifest {\nschemaVersion: 1;\ntransferId: string;\nname: string;\nmediaType: string;\nsize: number;\nsha256: string;\nchunkSize: number;\ntotalChunks: number;\ncreatedAt: string;\n}"
+      },
+      {
+        "name": "DeviceLinkArtifactStatus",
+        "kind": "type",
+        "signature": "export type DeviceLinkArtifactStatus = 'receiving' | 'verified' | 'quarantined' | 'committed';"
+      },
+      {
+        "name": "DeviceLinkArtifactTransferOptions",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkArtifactTransferOptions {\nrootDirectory: string;\nworkspaceRoot?: string;\nmaxTransferBytes?: number;\nmaxDeviceQuotaBytes?: number;\nmaxChunkBytes?: number;\n}"
+      },
+      {
+        "name": "DeviceLinkArtifactTransferService",
+        "kind": "class",
+        "signature": "export declare class DeviceLinkArtifactTransferService {\nprivate readonly options;\nprivate readonly maxTransferBytes;\nprivate readonly maxDeviceQuotaBytes;\nprivate readonly maxChunkBytes;\nprivate readonly locks;\nconstructor(options: DeviceLinkArtifactTransferOptions);\nbegin(deviceId: string, manifestInput: DeviceLinkArtifactManifest): Promise<DeviceLinkArtifactTransferState>;\nreceiveChunk(deviceId: string, transferId: string, index: number, content: Uint8Array, expectedSha256: string): Promise<DeviceLinkArtifactTransferState>;\nstatus(deviceId: string, transferId: string): Promise<DeviceLinkArtifactTransferState>;\nmissingChunks(deviceId: string, transferId: string): Promise<number[]>;\nfinalize(deviceId: string, transferId: string): Promise<DeviceLinkArtifactTransferState>;\nlistInbox(deviceId: string): Promise<DeviceLinkArtifactTransferState[]>;\ncommit(deviceId: string, transferId: string, targetRelativePath: string, confirm: boolean): Promise<DeviceLinkArtifactTransferState>;\nreadVerifiedChunk(deviceId: string, transferId: string, index: number): Promise<Buffer>;\nstageOutgoing(deviceId: string, sourceRelativePath: string, options?: {\nname?: string;\nmediaType?: string;\nchunkSize?: number;\n}): Promise<DeviceLinkArtifactTransferState>;\nlistOutbox(deviceId: string): Promise<DeviceLinkArtifactTransferState[]>;\nreadOutgoingChunk(deviceId: string, transferId: string, index: number): Promise<Buffer>;\nacknowledgeOutgoing(deviceId: string, transferId: string, confirm: boolean): Promise<void>;\nprivate validateManifest;\nprivate readState;\nprivate listStates;\nprivate readOutboxState;\nprivate deviceUsage;\nprivate transferDirectory;\nprivate chunkPath;\nprivate artifactPath;\nprivate readChunkFromArtifact;\nprivate writeState;\nprivate key;\nprivate withLock;\n}"
+      },
+      {
+        "name": "DeviceLinkArtifactTransferState",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkArtifactTransferState {\ndeviceId: string;\nmanifest: DeviceLinkArtifactManifest;\nstatus: DeviceLinkArtifactStatus;\nreceivedChunks: number[];\nupdatedAt: string;\nreason?: string;\ncommittedPath?: string;\n}"
+      },
+      {
         "name": "DeviceLinkAuditRecord",
         "kind": "interface",
         "signature": "export interface DeviceLinkAuditRecord {\nauditId: string;\ntimestamp: string;\ndeviceId?: string;\nremoteAddress?: string;\nrequestId: string;\nmethod: string;\noutcome: 'allowed' | 'denied' | 'error';\nreason?: string;\nrequestSha256: string;\n}"
@@ -1810,12 +1835,12 @@
       {
         "name": "DeviceLinkService",
         "kind": "class",
-        "signature": "export declare class DeviceLinkService {\nprivate readonly options;\nprivate readonly identity;\nprivate wss?;\nprivate readonly discovery;\nprivate readonly pairing;\nprivate readonly registry;\nprivate readonly audit;\nprivate readonly storage;\nprivate readonly ownsStorage;\nprivate readonly limits;\nprivate diagnostics;\nprivate constructor();\nstatic open(options: DeviceLinkServiceOptions): Promise<DeviceLinkService>;\nstart(options?: StartDeviceLinkOptions): Promise<DeviceLinkDiagnostics>;\nstop(): Promise<void>;\nclose(): Promise<void>;\nsnapshot(): Promise<DeviceLinkSnapshot>;\nbeginPairing(options?: Partial<BeginPairingOptions>): Promise<{\noffer: PairingOffer;\nuri: string;\nqrDataUrl: string;\n}>;\ncompletePairing(completion: PairingCompletion): Promise<PairingResult>;\nupdateScopes(deviceId: string, scopes: DeviceLinkScope[]): Promise<PairedDevice>;\nrevoke(deviceId: string): Promise<PairedDevice>;\ndiscover(timeoutMs?: number): Promise<DiscoveredDevice[]>;\nlistAudit(limit?: number): Promise<import(\"./types.js\").DeviceLinkAuditRecord[]>;\nprivate refreshDiagnostics;\n}"
+        "signature": "export declare class DeviceLinkService {\nprivate readonly options;\nprivate readonly identity;\nprivate wss?;\nprivate readonly discovery;\nprivate readonly pairing;\nprivate readonly registry;\nprivate readonly audit;\nprivate readonly storage;\nprivate readonly ownsStorage;\nprivate readonly limits;\nprivate readonly artifacts;\nprivate diagnostics;\nprivate constructor();\nstatic open(options: DeviceLinkServiceOptions): Promise<DeviceLinkService>;\nstart(options?: StartDeviceLinkOptions): Promise<DeviceLinkDiagnostics>;\nstop(): Promise<void>;\nclose(): Promise<void>;\nsnapshot(): Promise<DeviceLinkSnapshot>;\nbeginPairing(options?: Partial<BeginPairingOptions>): Promise<{\noffer: PairingOffer;\nuri: string;\nqrDataUrl: string;\n}>;\ncompletePairing(completion: PairingCompletion): Promise<PairingResult>;\nupdateScopes(deviceId: string, scopes: DeviceLinkScope[]): Promise<PairedDevice>;\nrevoke(deviceId: string): Promise<PairedDevice>;\ndiscover(timeoutMs?: number): Promise<DiscoveredDevice[]>;\nlistAudit(limit?: number): Promise<import(\"./types.js\").DeviceLinkAuditRecord[]>;\nstageOutgoingArtifact(deviceId: string, sourceRelativePath: string, options?: {\nname?: string;\nmediaType?: string;\nchunkSize?: number;\n}): Promise<import(\"./artifactTransferService.js\").DeviceLinkArtifactTransferState>;\nlistOutgoingArtifacts(deviceId: string): Promise<import(\"./artifactTransferService.js\").DeviceLinkArtifactTransferState[]>;\nprivate refreshDiagnostics;\n}"
       },
       {
         "name": "DeviceLinkServiceOptions",
         "kind": "interface",
-        "signature": "export interface DeviceLinkServiceOptions {\nrootDirectory: string;\nappServer: AppServer;\nsdk: HadamardAgentClient;\ndeviceName?: string;\nlimits?: DeviceLinkServerLimits;\ndiscovery?: DeviceDiscoveryPort;\nstorage?: DurableStorageV2;\n}"
+        "signature": "export interface DeviceLinkServiceOptions {\nrootDirectory: string;\nappServer: AppServer;\nsdk: HadamardAgentClient;\ndeviceName?: string;\nlimits?: DeviceLinkServerLimits;\ndiscovery?: DeviceDiscoveryPort;\nstorage?: DurableStorageV2;\nworkspaceRoot?: string;\n}"
       },
       {
         "name": "DeviceLinkSnapshot",
@@ -5378,6 +5403,16 @@
         "signature": "export declare function reduceAgentExecutionEvent(current: AgentExecutionSnapshot | undefined, event: AgentExecutionEvent): AgentExecutionSnapshot;"
       },
       {
+        "name": "RelaySignalingClient",
+        "kind": "class",
+        "signature": "export declare class RelaySignalingClient implements WebRtcSignalingPort {\nprivate readonly options;\nprivate socket?;\nprivate readonly signalListeners;\nprivate readonly opaqueListeners;\nconstructor(options: RelaySignalingClientOptions);\nconnect(): Promise<void>;\nsend(frame: WebRtcSignalFrame): void;\nsendOpaque(frame: OpaqueRelayEnvelope): void;\nsubscribe(listener: (frame: WebRtcSignalFrame) => void): () => void;\nonOpaque(listener: (frame: OpaqueRelayEnvelope) => void): () => void;\nclose(): void;\nprivate sendFrame;\nprivate receive;\n}"
+      },
+      {
+        "name": "RelaySignalingClientOptions",
+        "kind": "interface",
+        "signature": "export interface RelaySignalingClientOptions {\nurl: string;\ndeviceId: string;\nroomId: string;\nexpires: number;\ntoken: string;\nconnectTimeoutMs?: number;\n}"
+      },
+      {
         "name": "REMOTE_PROTOCOL_VERSION",
         "kind": "value",
         "signature": "REMOTE_PROTOCOL_VERSION: 1"
@@ -6218,6 +6253,26 @@
         "signature": "export declare class SqliteDesignArtifactRepository implements DesignArtifactRepository {\nprivate readonly filename;\nprivate readonly tenantId;\nconstructor(filename: string, tenantId?: string);\nprivate use;\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
       },
       {
+        "name": "SshProcessFactory",
+        "kind": "type",
+        "signature": "export type SshProcessFactory = (command: string, args: string[]) => SshProcessPort;"
+      },
+      {
+        "name": "SshProcessPort",
+        "kind": "interface",
+        "signature": "export interface SshProcessPort {\nreadonly stderr: NodeJS.ReadableStream;\nreadonly exitCode: number | null;\nonce(event: 'exit' | 'error', listener: (...args: unknown[]) => void): this;\nkill(signal?: NodeJS.Signals): boolean;\n}"
+      },
+      {
+        "name": "SshTunnelOptions",
+        "kind": "interface",
+        "signature": "export interface SshTunnelOptions {\nhost: string;\nuser: string;\nremotePort: number;\nlocalPort?: number;\nidentityFile?: string;\nknownHostsFile?: string;\nconnectTimeoutMs?: number;\n}"
+      },
+      {
+        "name": "SshTunnelTransport",
+        "kind": "class",
+        "signature": "export declare class SshTunnelTransport {\nprivate readonly options;\nprivate readonly processFactory;\nprivate process?;\nprivate localPort?;\nconstructor(options: SshTunnelOptions, processFactory?: SshProcessFactory);\nstart(): Promise<{\nurl: string;\nlocalPort: number;\n}>;\nstop(): void;\n}"
+      },
+      {
         "name": "StageDeleteProposalInput",
         "kind": "interface",
         "signature": "export interface StageDeleteProposalInput {\nassistantSessionId: string;\nkind: ReferenceDefinitionKind;\nname: string;\nreferences: ReferenceEdge[];\nexplanation?: string;\n}"
@@ -6653,6 +6708,11 @@
         "signature": "export declare function validateDesignThemeTokens(input: Partial<DesignThemeTokens>, base?: DesignThemeTokens): DesignThemeTokens;"
       },
       {
+        "name": "validateIceServers",
+        "kind": "function",
+        "signature": "export declare function validateIceServers(servers: RTCIceServer[], requireRelay: boolean): void;"
+      },
+      {
         "name": "validateTeamGraph",
         "kind": "function",
         "signature": "export declare function validateTeamGraph(definition: TeamDefinition): string[];"
@@ -6681,6 +6741,36 @@
         "name": "WaitForHadamardBackgroundTaskOptions",
         "kind": "interface",
         "signature": "export interface WaitForHadamardBackgroundTaskOptions {\ntimeoutMs?: number;\npollIntervalMs?: number;\nsignal?: AbortSignal;\n}"
+      },
+      {
+        "name": "WebRtcDataTransportOptions",
+        "kind": "interface",
+        "signature": "export interface WebRtcDataTransportOptions {\nsignaling: WebRtcSignalingPort;\nrole: 'initiator' | 'responder';\niceServers?: RTCIceServer[];\nrequireRelay?: boolean;\nconnectTimeoutMs?: number;\nchannelLabel?: string;\npeerConnectionFactory?: (configuration: RTCConfiguration) => RTCPeerConnection;\n}"
+      },
+      {
+        "name": "WebRtcDeviceLinkTransport",
+        "kind": "class",
+        "signature": "export declare class WebRtcDeviceLinkTransport {\nprivate readonly options;\nprivate peer?;\nprivate channel?;\nprivate unsubscribe?;\nprivate readonly listeners;\nprivate diagnosticsValue?;\nconstructor(options: WebRtcDataTransportOptions);\nconnect(): Promise<void>;\nsend(data: string): void;\nonMessage(listener: (data: string) => void): () => void;\naddMediaStream(stream: MediaStream): void;\ndiagnostics(): WebRtcTransportDiagnostics;\nclose(): void;\nprivate attachChannel;\nprivate handleSignal;\nprivate captureDiagnostics;\nprivate failureMessage;\n}"
+      },
+      {
+        "name": "WebRtcSignalFrame",
+        "kind": "interface",
+        "signature": "export interface WebRtcSignalFrame {\ntype: 'signal';\ndescription?: RTCSessionDescriptionInit;\ncandidate?: RTCIceCandidateInit;\n}"
+      },
+      {
+        "name": "WebRtcSignalingPort",
+        "kind": "interface",
+        "signature": "export interface WebRtcSignalingPort {\nsend(frame: WebRtcSignalFrame): void | Promise<void>;\nsubscribe(listener: (frame: WebRtcSignalFrame) => void): () => void;\n}"
+      },
+      {
+        "name": "WebRtcTransportDiagnostics",
+        "kind": "interface",
+        "signature": "export interface WebRtcTransportDiagnostics {\nstate: RTCPeerConnectionState | 'new' | 'timed-out';\niceConnectionState: RTCIceConnectionState;\nsignalingState: RTCSignalingState;\nhasTurnServer: boolean;\nreason?: string;\n}"
+      },
+      {
+        "name": "WebRtcTransportError",
+        "kind": "class",
+        "signature": "export declare class WebRtcTransportError extends Error {\nreadonly diagnostics: WebRtcTransportDiagnostics;\nconstructor(message: string, diagnostics: WebRtcTransportDiagnostics);\n}"
       },
       {
         "name": "WebSocketAppServerTransport",
@@ -10864,6 +10954,31 @@
         "signature": "export declare class DeviceIdentityStore {\nprivate readonly directory;\nprivate readonly file;\nconstructor(directory: string);\nloadOrCreate(name?: string): Promise<DeviceIdentityCredentials>;\npublicIdentity(name?: string): Promise<DeviceIdentity>;\nprivate create;\n}"
       },
       {
+        "name": "DeviceLinkArtifactManifest",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkArtifactManifest {\nschemaVersion: 1;\ntransferId: string;\nname: string;\nmediaType: string;\nsize: number;\nsha256: string;\nchunkSize: number;\ntotalChunks: number;\ncreatedAt: string;\n}"
+      },
+      {
+        "name": "DeviceLinkArtifactStatus",
+        "kind": "type",
+        "signature": "export type DeviceLinkArtifactStatus = 'receiving' | 'verified' | 'quarantined' | 'committed';"
+      },
+      {
+        "name": "DeviceLinkArtifactTransferOptions",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkArtifactTransferOptions {\nrootDirectory: string;\nworkspaceRoot?: string;\nmaxTransferBytes?: number;\nmaxDeviceQuotaBytes?: number;\nmaxChunkBytes?: number;\n}"
+      },
+      {
+        "name": "DeviceLinkArtifactTransferService",
+        "kind": "class",
+        "signature": "export declare class DeviceLinkArtifactTransferService {\nprivate readonly options;\nprivate readonly maxTransferBytes;\nprivate readonly maxDeviceQuotaBytes;\nprivate readonly maxChunkBytes;\nprivate readonly locks;\nconstructor(options: DeviceLinkArtifactTransferOptions);\nbegin(deviceId: string, manifestInput: DeviceLinkArtifactManifest): Promise<DeviceLinkArtifactTransferState>;\nreceiveChunk(deviceId: string, transferId: string, index: number, content: Uint8Array, expectedSha256: string): Promise<DeviceLinkArtifactTransferState>;\nstatus(deviceId: string, transferId: string): Promise<DeviceLinkArtifactTransferState>;\nmissingChunks(deviceId: string, transferId: string): Promise<number[]>;\nfinalize(deviceId: string, transferId: string): Promise<DeviceLinkArtifactTransferState>;\nlistInbox(deviceId: string): Promise<DeviceLinkArtifactTransferState[]>;\ncommit(deviceId: string, transferId: string, targetRelativePath: string, confirm: boolean): Promise<DeviceLinkArtifactTransferState>;\nreadVerifiedChunk(deviceId: string, transferId: string, index: number): Promise<Buffer>;\nstageOutgoing(deviceId: string, sourceRelativePath: string, options?: {\nname?: string;\nmediaType?: string;\nchunkSize?: number;\n}): Promise<DeviceLinkArtifactTransferState>;\nlistOutbox(deviceId: string): Promise<DeviceLinkArtifactTransferState[]>;\nreadOutgoingChunk(deviceId: string, transferId: string, index: number): Promise<Buffer>;\nacknowledgeOutgoing(deviceId: string, transferId: string, confirm: boolean): Promise<void>;\nprivate validateManifest;\nprivate readState;\nprivate listStates;\nprivate readOutboxState;\nprivate deviceUsage;\nprivate transferDirectory;\nprivate chunkPath;\nprivate artifactPath;\nprivate readChunkFromArtifact;\nprivate writeState;\nprivate key;\nprivate withLock;\n}"
+      },
+      {
+        "name": "DeviceLinkArtifactTransferState",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkArtifactTransferState {\ndeviceId: string;\nmanifest: DeviceLinkArtifactManifest;\nstatus: DeviceLinkArtifactStatus;\nreceivedChunks: number[];\nupdatedAt: string;\nreason?: string;\ncommittedPath?: string;\n}"
+      },
+      {
         "name": "DeviceLinkAuditRecord",
         "kind": "interface",
         "signature": "export interface DeviceLinkAuditRecord {\nauditId: string;\ntimestamp: string;\ndeviceId?: string;\nremoteAddress?: string;\nrequestId: string;\nmethod: string;\noutcome: 'allowed' | 'denied' | 'error';\nreason?: string;\nrequestSha256: string;\n}"
@@ -10896,12 +11011,12 @@
       {
         "name": "DeviceLinkService",
         "kind": "class",
-        "signature": "export declare class DeviceLinkService {\nprivate readonly options;\nprivate readonly identity;\nprivate wss?;\nprivate readonly discovery;\nprivate readonly pairing;\nprivate readonly registry;\nprivate readonly audit;\nprivate readonly storage;\nprivate readonly ownsStorage;\nprivate readonly limits;\nprivate diagnostics;\nprivate constructor();\nstatic open(options: DeviceLinkServiceOptions): Promise<DeviceLinkService>;\nstart(options?: StartDeviceLinkOptions): Promise<DeviceLinkDiagnostics>;\nstop(): Promise<void>;\nclose(): Promise<void>;\nsnapshot(): Promise<DeviceLinkSnapshot>;\nbeginPairing(options?: Partial<BeginPairingOptions>): Promise<{\noffer: PairingOffer;\nuri: string;\nqrDataUrl: string;\n}>;\ncompletePairing(completion: PairingCompletion): Promise<PairingResult>;\nupdateScopes(deviceId: string, scopes: DeviceLinkScope[]): Promise<PairedDevice>;\nrevoke(deviceId: string): Promise<PairedDevice>;\ndiscover(timeoutMs?: number): Promise<DiscoveredDevice[]>;\nlistAudit(limit?: number): Promise<import(\"./types.js\").DeviceLinkAuditRecord[]>;\nprivate refreshDiagnostics;\n}"
+        "signature": "export declare class DeviceLinkService {\nprivate readonly options;\nprivate readonly identity;\nprivate wss?;\nprivate readonly discovery;\nprivate readonly pairing;\nprivate readonly registry;\nprivate readonly audit;\nprivate readonly storage;\nprivate readonly ownsStorage;\nprivate readonly limits;\nprivate readonly artifacts;\nprivate diagnostics;\nprivate constructor();\nstatic open(options: DeviceLinkServiceOptions): Promise<DeviceLinkService>;\nstart(options?: StartDeviceLinkOptions): Promise<DeviceLinkDiagnostics>;\nstop(): Promise<void>;\nclose(): Promise<void>;\nsnapshot(): Promise<DeviceLinkSnapshot>;\nbeginPairing(options?: Partial<BeginPairingOptions>): Promise<{\noffer: PairingOffer;\nuri: string;\nqrDataUrl: string;\n}>;\ncompletePairing(completion: PairingCompletion): Promise<PairingResult>;\nupdateScopes(deviceId: string, scopes: DeviceLinkScope[]): Promise<PairedDevice>;\nrevoke(deviceId: string): Promise<PairedDevice>;\ndiscover(timeoutMs?: number): Promise<DiscoveredDevice[]>;\nlistAudit(limit?: number): Promise<import(\"./types.js\").DeviceLinkAuditRecord[]>;\nstageOutgoingArtifact(deviceId: string, sourceRelativePath: string, options?: {\nname?: string;\nmediaType?: string;\nchunkSize?: number;\n}): Promise<import(\"./artifactTransferService.js\").DeviceLinkArtifactTransferState>;\nlistOutgoingArtifacts(deviceId: string): Promise<import(\"./artifactTransferService.js\").DeviceLinkArtifactTransferState[]>;\nprivate refreshDiagnostics;\n}"
       },
       {
         "name": "DeviceLinkServiceOptions",
         "kind": "interface",
-        "signature": "export interface DeviceLinkServiceOptions {\nrootDirectory: string;\nappServer: AppServer;\nsdk: HadamardAgentClient;\ndeviceName?: string;\nlimits?: DeviceLinkServerLimits;\ndiscovery?: DeviceDiscoveryPort;\nstorage?: DurableStorageV2;\n}"
+        "signature": "export interface DeviceLinkServiceOptions {\nrootDirectory: string;\nappServer: AppServer;\nsdk: HadamardAgentClient;\ndeviceName?: string;\nlimits?: DeviceLinkServerLimits;\ndiscovery?: DeviceDiscoveryPort;\nstorage?: DurableStorageV2;\nworkspaceRoot?: string;\n}"
       },
       {
         "name": "DeviceLinkSnapshot",
@@ -14529,6 +14644,16 @@
         "signature": "export declare function reduceAgentExecutionEvent(current: AgentExecutionSnapshot | undefined, event: AgentExecutionEvent): AgentExecutionSnapshot;"
       },
       {
+        "name": "RelaySignalingClient",
+        "kind": "class",
+        "signature": "export declare class RelaySignalingClient implements WebRtcSignalingPort {\nprivate readonly options;\nprivate socket?;\nprivate readonly signalListeners;\nprivate readonly opaqueListeners;\nconstructor(options: RelaySignalingClientOptions);\nconnect(): Promise<void>;\nsend(frame: WebRtcSignalFrame): void;\nsendOpaque(frame: OpaqueRelayEnvelope): void;\nsubscribe(listener: (frame: WebRtcSignalFrame) => void): () => void;\nonOpaque(listener: (frame: OpaqueRelayEnvelope) => void): () => void;\nclose(): void;\nprivate sendFrame;\nprivate receive;\n}"
+      },
+      {
+        "name": "RelaySignalingClientOptions",
+        "kind": "interface",
+        "signature": "export interface RelaySignalingClientOptions {\nurl: string;\ndeviceId: string;\nroomId: string;\nexpires: number;\ntoken: string;\nconnectTimeoutMs?: number;\n}"
+      },
+      {
         "name": "REMOTE_PROTOCOL_VERSION",
         "kind": "value",
         "signature": "REMOTE_PROTOCOL_VERSION: 1"
@@ -15399,6 +15524,26 @@
         "signature": "export declare class SqliteDesignArtifactRepository implements DesignArtifactRepository {\nprivate readonly filename;\nprivate readonly tenantId;\nconstructor(filename: string, tenantId?: string);\nprivate use;\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
       },
       {
+        "name": "SshProcessFactory",
+        "kind": "type",
+        "signature": "export type SshProcessFactory = (command: string, args: string[]) => SshProcessPort;"
+      },
+      {
+        "name": "SshProcessPort",
+        "kind": "interface",
+        "signature": "export interface SshProcessPort {\nreadonly stderr: NodeJS.ReadableStream;\nreadonly exitCode: number | null;\nonce(event: 'exit' | 'error', listener: (...args: unknown[]) => void): this;\nkill(signal?: NodeJS.Signals): boolean;\n}"
+      },
+      {
+        "name": "SshTunnelOptions",
+        "kind": "interface",
+        "signature": "export interface SshTunnelOptions {\nhost: string;\nuser: string;\nremotePort: number;\nlocalPort?: number;\nidentityFile?: string;\nknownHostsFile?: string;\nconnectTimeoutMs?: number;\n}"
+      },
+      {
+        "name": "SshTunnelTransport",
+        "kind": "class",
+        "signature": "export declare class SshTunnelTransport {\nprivate readonly options;\nprivate readonly processFactory;\nprivate process?;\nprivate localPort?;\nconstructor(options: SshTunnelOptions, processFactory?: SshProcessFactory);\nstart(): Promise<{\nurl: string;\nlocalPort: number;\n}>;\nstop(): void;\n}"
+      },
+      {
         "name": "StageDeleteProposalInput",
         "kind": "interface",
         "signature": "export interface StageDeleteProposalInput {\nassistantSessionId: string;\nkind: ReferenceDefinitionKind;\nname: string;\nreferences: ReferenceEdge[];\nexplanation?: string;\n}"
@@ -15884,6 +16029,11 @@
         "signature": "export declare function validateDesignThemeTokens(input: Partial<DesignThemeTokens>, base?: DesignThemeTokens): DesignThemeTokens;"
       },
       {
+        "name": "validateIceServers",
+        "kind": "function",
+        "signature": "export declare function validateIceServers(servers: RTCIceServer[], requireRelay: boolean): void;"
+      },
+      {
         "name": "validateTeamGraph",
         "kind": "function",
         "signature": "export declare function validateTeamGraph(definition: TeamDefinition): string[];"
@@ -15912,6 +16062,36 @@
         "name": "WaitForHadamardBackgroundTaskOptions",
         "kind": "interface",
         "signature": "export interface WaitForHadamardBackgroundTaskOptions {\ntimeoutMs?: number;\npollIntervalMs?: number;\nsignal?: AbortSignal;\n}"
+      },
+      {
+        "name": "WebRtcDataTransportOptions",
+        "kind": "interface",
+        "signature": "export interface WebRtcDataTransportOptions {\nsignaling: WebRtcSignalingPort;\nrole: 'initiator' | 'responder';\niceServers?: RTCIceServer[];\nrequireRelay?: boolean;\nconnectTimeoutMs?: number;\nchannelLabel?: string;\npeerConnectionFactory?: (configuration: RTCConfiguration) => RTCPeerConnection;\n}"
+      },
+      {
+        "name": "WebRtcDeviceLinkTransport",
+        "kind": "class",
+        "signature": "export declare class WebRtcDeviceLinkTransport {\nprivate readonly options;\nprivate peer?;\nprivate channel?;\nprivate unsubscribe?;\nprivate readonly listeners;\nprivate diagnosticsValue?;\nconstructor(options: WebRtcDataTransportOptions);\nconnect(): Promise<void>;\nsend(data: string): void;\nonMessage(listener: (data: string) => void): () => void;\naddMediaStream(stream: MediaStream): void;\ndiagnostics(): WebRtcTransportDiagnostics;\nclose(): void;\nprivate attachChannel;\nprivate handleSignal;\nprivate captureDiagnostics;\nprivate failureMessage;\n}"
+      },
+      {
+        "name": "WebRtcSignalFrame",
+        "kind": "interface",
+        "signature": "export interface WebRtcSignalFrame {\ntype: 'signal';\ndescription?: RTCSessionDescriptionInit;\ncandidate?: RTCIceCandidateInit;\n}"
+      },
+      {
+        "name": "WebRtcSignalingPort",
+        "kind": "interface",
+        "signature": "export interface WebRtcSignalingPort {\nsend(frame: WebRtcSignalFrame): void | Promise<void>;\nsubscribe(listener: (frame: WebRtcSignalFrame) => void): () => void;\n}"
+      },
+      {
+        "name": "WebRtcTransportDiagnostics",
+        "kind": "interface",
+        "signature": "export interface WebRtcTransportDiagnostics {\nstate: RTCPeerConnectionState | 'new' | 'timed-out';\niceConnectionState: RTCIceConnectionState;\nsignalingState: RTCSignalingState;\nhasTurnServer: boolean;\nreason?: string;\n}"
+      },
+      {
+        "name": "WebRtcTransportError",
+        "kind": "class",
+        "signature": "export declare class WebRtcTransportError extends Error {\nreadonly diagnostics: WebRtcTransportDiagnostics;\nconstructor(message: string, diagnostics: WebRtcTransportDiagnostics);\n}"
       },
       {
         "name": "WebSocketAppServerTransport",
@@ -16172,6 +16352,43 @@
         "name": "ZipEntry",
         "kind": "interface",
         "signature": "export interface ZipEntry {\nname: string;\ndata: Buffer;\n}"
+      }
+    ],
+    "./relay": [
+      {
+        "name": "createRelayToken",
+        "kind": "function",
+        "signature": "export declare function createRelayToken(authSecret: string, input: {\ndeviceId: string;\nroomId: string;\nexpires: number;\n}): string;"
+      },
+      {
+        "name": "HadamardRelayAddress",
+        "kind": "interface",
+        "signature": "export interface HadamardRelayAddress {\nhost: string;\nport: number;\nurl: string;\n}"
+      },
+      {
+        "name": "HadamardRelayServer",
+        "kind": "class",
+        "signature": "export declare class HadamardRelayServer {\nprivate readonly options;\nprivate httpServer?;\nprivate sockets?;\nprivate address?;\nprivate readonly rooms;\nconstructor(options: HadamardRelayServerOptions);\nstart(): Promise<HadamardRelayAddress>;\nstop(): Promise<void>;\nsnapshot(): {\nlistening: boolean;\naddress: {\nhost: string;\nport: number;\nurl: string;\n} | undefined;\nrooms: number;\nconnections: number;\n};\nprivate receive;\nprivate broadcast;\nprivate send;\nprivate remove;\n}"
+      },
+      {
+        "name": "HadamardRelayServerOptions",
+        "kind": "interface",
+        "signature": "export interface HadamardRelayServerOptions {\nauthSecret: string;\nhost?: string;\nport?: number;\nallowPublic?: boolean;\nmaxConnections?: number;\nmaxFrameBytes?: number;\nmaxPeersPerRoom?: number;\n}"
+      },
+      {
+        "name": "OpaqueRelayCodec",
+        "kind": "class",
+        "signature": "export declare class OpaqueRelayCodec {\nprivate readonly key;\nprivate readonly roomId;\nprivate sendSequence;\nprivate receiveSequence;\nconstructor(key: Uint8Array, roomId: string);\nseal(value: unknown): OpaqueRelayEnvelope;\nopen(envelope: OpaqueRelayEnvelope): unknown;\n}"
+      },
+      {
+        "name": "OpaqueRelayEnvelope",
+        "kind": "interface",
+        "signature": "export interface OpaqueRelayEnvelope {\ntype: 'opaque';\nid: string;\nsequence: number;\nnonce: string;\nciphertext: string;\n}"
+      },
+      {
+        "name": "verifyRelayToken",
+        "kind": "function",
+        "signature": "export declare function verifyRelayToken(authSecret: string, input: {\ndeviceId: string;\nroomId: string;\nexpires: number;\ntoken: string;\n}): boolean;"
       }
     ]
   }
