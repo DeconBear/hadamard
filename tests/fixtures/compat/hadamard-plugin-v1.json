@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "legacy-review-tools",
+  "name": "Legacy Review Tools",
+  "version": "1.0.0",
+  "entry": "dist/index.js",
+  "capabilities": ["tools"]
+}
