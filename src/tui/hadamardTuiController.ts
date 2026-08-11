@@ -57,6 +57,9 @@ import {
   resolveRoutedRun,
   transitionProjectIssue,
 } from '../index.js';
+import { AppServer } from '../app-server/appServer.js';
+import { DeviceLinkCommandService } from '../device-link/commandService.js';
+import { DeviceLinkService } from '../device-link/deviceLinkService.js';
 import { adaptBridgeRun } from '../parity/bridgeEventAdapter.js';
 import { ExternalCliRuntimeManager } from '../parity/externalCliRuntimeManager.js';
 import {
@@ -192,6 +195,7 @@ import { runTuiManagerCommand } from './tuiManagerCommandHandler.js';
 import { runTuiWorkspaceCommand } from './tuiWorkspaceCommandHandler.js';
 import { runTuiContextCommand } from './tuiContextCommandHandler.js';
 import { runTuiCatalogCommand } from './tuiCatalogCommandHandler.js';
+import { runTuiDeviceLinkCommand } from './tuiDeviceLinkCommandHandler.js';
 import {
   buildTuiPermissionDialog,
   buildTuiPromptBar,
@@ -368,6 +372,15 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           model: options.model,
           permissionMode,
         });
+  let deviceLinkService: DeviceLinkService | null = null;
+  async function getDeviceLinkService(): Promise<DeviceLinkService> {
+    deviceLinkService ??= await DeviceLinkService.open({
+      rootDirectory: path.join(sdk.config.homeDir, 'device-link'),
+      appServer: new AppServer(sdk),
+      sdk,
+    });
+    return deviceLinkService;
+  }
   // Run SessionStart hooks (fire-and-forget, from settings.json hooks.SessionStart[]).
   runSessionStartHooks(() => readSessionStartHooks(getLoadedJsonConfig()?.raw), sdk.config.workDir);
 
@@ -877,6 +890,10 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     } catch (error) {
       await nextSdk.close().catch(() => undefined);
       throw error;
+    }
+    if (deviceLinkService) {
+      await deviceLinkService.close().catch(() => undefined);
+      deviceLinkService = null;
     }
     await previousSdk.close().catch(() => undefined);
   }
@@ -4300,6 +4317,12 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         },
         appendStatic,
       })) return;
+      if (await runTuiDeviceLinkCommand(name, args, {
+        execute: async commandArgs => new DeviceLinkCommandService(
+          await getDeviceLinkService(),
+        ).execute(commandArgs),
+        appendStatic,
+      })) return;
       if (await runTuiCatalogCommand(name, args, {
         showSkills,
         showAgents,
@@ -4499,6 +4522,13 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           'Check E2B/Playwright resources manually before assuming billing has stopped.\n',
         );
       }
+    }
+    if (deviceLinkService) {
+      await deviceLinkService.close().catch(error => {
+        exitCode = 1;
+        process.stderr.write(`[hadamard-tui] ERROR: Device Link cleanup failed: ${errorMessage(error)}\n`);
+      });
+      deviceLinkService = null;
     }
     const cleanupResults = await Promise.allSettled([
       sdk.close(),

@@ -372,6 +372,7 @@ import {
   workspaceWorkPaths,
 } from './workspaceRegistry.js';
 import { GuiHttpRouter, json, readJson, text } from './guiHttpRouter.js';
+import { GuiDeviceLinkHttpController } from './guiDeviceLinkHttpController.js';
 import { registerGuiShellHttpController } from './guiShellHttpController.js';
 import { registerGuiChatHttpController } from './guiChatHttpController.js';
 import { rejectMismatchedGuiSession } from './guiSessionHttpGuard.js';
@@ -2219,6 +2220,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     // provider secrets; a real session replaces it after reloadSdk succeeds.
     session = await createCredentiallessSession();
   }
+  const deviceLinkController = new GuiDeviceLinkHttpController({
+    rootDirectory: path.join(resolveGuiHomeDir(), 'device-link'),
+    deviceName: os.hostname(),
+  });
+  await deviceLinkController.setSdk(sdk);
 
   const listGuiSessions = (): Promise<SessionSummary[]> =>
     sdk ? sdk.sessions.list() : credentiallessSessionStore.list();
@@ -2540,6 +2546,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       await nextSdk.close().catch(() => undefined);
       throw error;
     }
+    await deviceLinkController.setSdk(nextSdk);
     if (previousSdk) await previousSdk.close().catch(() => undefined);
     await resetManagerAndAssistantSessions();
   }
@@ -5246,6 +5253,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             detail: plugin.path,
           })),
         }];
+      }
+      case 'devices': {
+        const supported = ['status', 'start', 'stop', 'pair', 'scopes', 'revoke', 'discover', 'audit'];
+        const command = args.split(/\s/u, 1)[0]?.toLowerCase() || 'status';
+        if (!supported.includes(command)) {
+          return [{ type: 'error', message: `unknown Device Link command: ${command}` }];
+        }
+        try {
+          const result = await deviceLinkController.command(args || 'status');
+          return [{
+            type: 'command.result',
+            title: 'Devices',
+            text: [result.message, ...(result.lines ?? [])].join('\n'),
+          }];
+        } catch (error) {
+          return [{ type: 'error', message: error instanceof Error ? error.message : String(error) }];
+        }
       }
       case 'plugin': {
         try {
@@ -8865,6 +8889,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       return json(res, 400, { error: (error as Error).message });
     }
   }
+  if (await deviceLinkController.handle(req, res, url)) return;
   if (req.method === 'PUT' && url.pathname === '/api/session-agent-mode') {
     if (!session) return json(res, 503, { error: 'Hadamard SDK is not configured.' });
     try {
@@ -10353,6 +10378,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         }
       }
     }
+    await deviceLinkController.close();
     if (sdk) await sdk.close().catch(() => undefined);
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
