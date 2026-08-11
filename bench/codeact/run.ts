@@ -6,12 +6,7 @@ import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 
 import {
-  CodeActService,
-  buildAgentModePrompt,
   createAgentSdk,
-  createCodeCellTool,
-  filterToolsForExecutionPolicy,
-  resolveAgentExecutionPolicy,
   tool,
   type AgentEvent,
   type AgentMode,
@@ -19,6 +14,7 @@ import {
   type ModelRequest,
   type ModelStreamHandle,
 } from '../../src/index.js';
+import { writeProjectSettings } from '../../src/config/projectSettings.js';
 import type { Message, MessageStreamEvent } from '../../src/provider/types.js';
 
 interface BenchmarkCase {
@@ -57,19 +53,14 @@ async function main(): Promise<void> {
   const cases = JSON.parse(await readFile(new URL('./cases.json', import.meta.url), 'utf8')) as BenchmarkCase[];
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'hadamard-codeact-bench-'));
   const artifactOutputDirectory = path.join(path.dirname(outputPath), 'codeact-benchmark-artifacts');
-  const service = new CodeActService({
-    enabled: true,
-    pythonCommand: process.platform === 'win32' ? 'python' : 'python3',
-    executionTimeoutMs: 10_000,
-  });
   try {
     const results = [];
     for (const benchmarkCase of cases) {
       const codeact = await runPlane(
-        benchmarkCase, benchmarkCase.agentMode, workspace, service, artifactOutputDirectory,
+        benchmarkCase, benchmarkCase.agentMode, workspace, artifactOutputDirectory,
       );
       const react = await runPlane(
-        benchmarkCase, 'react', workspace, service, artifactOutputDirectory,
+        benchmarkCase, 'react', workspace, artifactOutputDirectory,
       );
       results.push({ caseId: benchmarkCase.id, domain: benchmarkCase.domain, codeact, react });
     }
@@ -86,7 +77,6 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ status: report.status, cases: results.length, outputPath }));
     if (report.status !== 'passed') process.exitCode = 1;
   } finally {
-    await service.close();
     await rm(workspace, { recursive: true, force: true });
   }
 }
@@ -95,19 +85,21 @@ async function runPlane(
   benchmarkCase: BenchmarkCase,
   mode: AgentMode,
   workspace: string,
-  service: CodeActService,
   artifactOutputDirectory: string,
 ): Promise<PlaneResult> {
   const sessionDirectory = await mkdtemp(path.join(os.tmpdir(), `hadamard-${mode}-sessions-`));
+  const homeDir = await mkdtemp(path.join(os.tmpdir(), `hadamard-${mode}-home-`));
   const calculator = createCaseTool(benchmarkCase);
-  const codeCell = createCodeCellTool({ service });
-  const policy = resolveAgentExecutionPolicy({
-    agentMode: mode,
-    ordinaryTools: [calculator.name],
-    codeActEnabled: true,
+  await writeProjectSettings(workspace, homeDir, {
+    codeAct: {
+      enabled: true,
+      backend: 'process',
+      securityMode: 'trusted',
+      pythonCommand: process.platform === 'win32' ? 'python' : 'python3',
+      executionTimeoutMs: 10_000,
+    },
   });
-  const tools = filterToolsForExecutionPolicy([calculator, codeCell], policy);
-  const selectedTool = mode === 'react' ? calculator.name : codeCell.name;
+  const selectedTool = mode === 'react' ? calculator.name : 'CodeCell';
   const selectedInput = mode === 'react'
     ? { caseId: benchmarkCase.id }
     : { language: 'python', code: benchmarkCase.python };
@@ -116,6 +108,7 @@ async function runPlane(
     model: 'codeact-benchmark-model',
     modelApi,
     workDir: workspace,
+    homeDir,
     sessionDirectory,
     permissionMode: 'bypassPermissions',
   });
@@ -123,8 +116,9 @@ async function runPlane(
   const started = performance.now();
   try {
     const stream = sdk.stream(benchmarkCase.prompt, {
-      tools,
-      systemPrompt: buildAgentModePrompt(policy, { hostCapabilities: [] }),
+      agentMode: mode,
+      inheritDefaultTools: false,
+      tools: [calculator],
     });
     for await (const event of stream) events.push(event);
     const result = await stream.result;
@@ -162,6 +156,7 @@ async function runPlane(
   } finally {
     await sdk.close();
     await rm(sessionDirectory, { recursive: true, force: true });
+    await rm(homeDir, { recursive: true, force: true });
   }
 }
 
