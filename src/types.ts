@@ -292,6 +292,15 @@ export interface LocalMcpServerDefinition {
   prefix?: string;
 }
 
+export interface McpContentProvenance {
+  trust: 'untrusted';
+  pluginId: string;
+  packageVersion: string;
+  source: string;
+  commit?: string;
+  integrity: string;
+}
+
 export interface StdioMcpServerDefinition {
   kind: 'stdio';
   name: string;
@@ -301,6 +310,7 @@ export interface StdioMcpServerDefinition {
   cwd?: string;
   prefix?: string;
   stderr?: 'inherit' | 'ignore' | 'pipe';
+  contentProvenance?: McpContentProvenance;
 }
 
 export interface StreamableHttpMcpServerDefinition {
@@ -310,6 +320,7 @@ export interface StreamableHttpMcpServerDefinition {
   headers?: Record<string, string>;
   sessionId?: string;
   prefix?: string;
+  contentProvenance?: McpContentProvenance;
 }
 
 export type AgentMcpServerDefinition =

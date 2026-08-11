@@ -63,6 +63,9 @@ import {
   serializeHadamardSessionMemoryRuntimeState,
 } from '../memory/hadamardSessionMemoryState.js';
 import { McpConnectionManager } from '../mcp/connectionManager.js';
+import { PluginLoader } from '../plugins/pluginLoader.js';
+import { PluginPackageStore } from '../plugins/pluginPackageStore.js';
+import { PluginTrustStore } from '../plugins/pluginTrustStore.js';
 import { RunAbortedError } from '../errors.js';
 import { AgentExecutionStore } from '../storage/agentExecutionStore.js';
 import { BackgroundTaskStore } from '../storage/backgroundTaskStore.js';
@@ -173,6 +176,7 @@ import { resolveAgentExecutionPolicy } from './agentExecutionPolicy.js';
 import {
   HadamardSkillsApi,
   getDefaultHadamardBundledSkills,
+  loadHadamardSkillDefinitionFile,
   loadHadamardSkillDefinitions,
   resolveHadamardSkillPrompt,
   skillPathsMatch,
@@ -1119,16 +1123,30 @@ export class HadamardAgentClient {
           externalSkills: options.externalSkills,
         })).definitions
       : [];
+    const pluginPackageRoot = path.join(config.homeDir, 'plugin-packages');
+    const pluginBundles = await new PluginLoader(
+      new PluginPackageStore(path.join(pluginPackageRoot, 'packages')),
+      new PluginTrustStore(path.join(pluginPackageRoot, 'trust.json')),
+    ).loadEnabledBundles();
     const externalSkillCatalogEnabled = Boolean(options.externalSkills);
     const loadedSkills = await loadHadamardSkillDefinitions({
       homeDir: config.homeDir,
       workDir: config.workDir,
-      skillDirectories: options.skillDirectories,
+      skillDirectories: [
+        ...(options.skillDirectories ?? []),
+        ...pluginBundles.flatMap(bundle => bundle.skillDirectories),
+      ],
       disableDefaultSkills: externalSkillCatalogEnabled ? true : options.disableDefaultSkills,
       loadDefaultSkillDirectories: externalSkillCatalogEnabled
         ? false
         : options.loadDefaultSkillDirectories,
     });
+    loadedSkills.push(...await Promise.all(pluginBundles.flatMap(bundle => bundle.directSkills)
+      .map(registration => loadHadamardSkillDefinitionFile({
+        ...registration,
+        source: 'project',
+        loadedFrom: 'skills',
+      }))));
     const hadamardCatalogSkills = externalSkills.filter(definition =>
       definition.metadata?.__hadamardExternalSkillProvider === 'hadamard');
     const reusedRuntimeSkills = externalSkills.filter(definition =>
@@ -1157,7 +1175,10 @@ export class HadamardAgentClient {
       options.agents ?? [],
     );
     const defaultTools = [...(options.tools ?? [])];
-    const defaultMcpServers = [...(options.mcpServers ?? [])];
+    const defaultMcpServers = [
+      ...(options.mcpServers ?? []),
+      ...pluginBundles.flatMap(bundle => bundle.mcpServers),
+    ];
     if (options.computerUse) {
       const computerUseOptions: CreateHadamardComputerUseOptions =
         typeof options.computerUse === 'object' ? options.computerUse : {};

@@ -51,6 +51,7 @@ export async function discoverHadamardPlugins(options: {
 async function readPlugin(root: string): Promise<HadamardPluginCatalogEntry | undefined> {
   const manifestPaths = [
     path.join(root, '.hadamard-plugin', 'plugin.json'),
+    path.join(root, '.codex-plugin', 'plugin.json'),
     path.join(root, 'plugin.json'),
   ];
   for (const manifestPath of manifestPaths) {
@@ -62,7 +63,7 @@ async function readPlugin(root: string): Promise<HadamardPluginCatalogEntry | un
         path: root,
         description: typeof parsed.description === 'string' ? parsed.description : undefined,
         version: typeof parsed.version === 'string' ? parsed.version : undefined,
-        capabilities: await detectCapabilities(root),
+        capabilities: await detectCapabilities(root, parsed),
       };
     } catch {
       // Try the next supported manifest location.
@@ -71,7 +72,7 @@ async function readPlugin(root: string): Promise<HadamardPluginCatalogEntry | un
   return undefined;
 }
 
-async function detectCapabilities(root: string): Promise<string[]> {
+async function detectCapabilities(root: string, manifest: Record<string, unknown>): Promise<string[]> {
   const candidates = [
     ['skills', path.join(root, 'skills')],
     ['agents', path.join(root, 'agents')],
@@ -79,10 +80,12 @@ async function detectCapabilities(root: string): Promise<string[]> {
     ['hooks', path.join(root, 'hooks')],
   ] as const;
   const capabilities: string[] = [];
+  if (typeof manifest.skills === 'string') capabilities.push('skills');
+  if (typeof manifest.mcpServers === 'string') capabilities.push('mcp');
   for (const [name, candidate] of candidates) {
     try {
       await stat(candidate);
-      capabilities.push(name);
+      if (!capabilities.includes(name)) capabilities.push(name);
     } catch {
       // Optional capability is absent.
     }

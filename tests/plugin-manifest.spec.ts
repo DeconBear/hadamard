@@ -31,4 +31,32 @@ describe('plugin package manifest', () => {
     ));
     expect(parsePluginPackageManifest(fixture)).toEqual(fixture);
   });
+
+  it('normalizes Codex-style Skill+MCP bundles without requiring a JavaScript entry', () => {
+    expect(parsePluginPackageManifest({
+      name: 'qwen-mm-plugins-core',
+      version: '1.0.0',
+      description: 'Multimodal tools',
+      skills: './skill',
+      mcpServers: './.mcp.json',
+    }, {
+      integrity: 'sha256-YWJj',
+      source: {
+        kind: 'git',
+        location: 'https://github.com/QwenLM/Qwen-MM-Plugins',
+        commit: '8d6ea5a1f658260743307c52c2024ec87599fa48',
+      },
+    })).toMatchObject({
+      packageType: 'skill-mcp-bundle',
+      id: 'qwen-mm-plugins-core',
+      skills: 'skill',
+      mcpServers: '.mcp.json',
+      capabilities: ['skills', 'mcp', 'process', 'network', 'filesystem.read', 'filesystem.write'],
+    });
+    expect(() => parsePluginPackageManifest({
+      name: 'escape',
+      version: '1.0.0',
+      skills: '../outside',
+    })).toThrow('stay inside');
+  });
 });
