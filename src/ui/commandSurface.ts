@@ -299,7 +299,7 @@ const COMMAND_USAGES: Record<string, string> = {
   bridge: '/bridge [run|background|runs|stop|status|history|resume|switch|model|config|setup|off|help]',
   diff: '/diff [show|apply --confirm]',
   context: '/context [settings [agents|claude|both]]',
-  devices: '/devices [status|start [host] [port] [--advertise <ip>]|stop|pair [scope,...]|scopes <device-id> <scope,...>|revoke <device-id> --confirm|discover|audit]',
+  devices: '/devices [status|start [host] [port] [--advertise <ip>]|stop|pair [scope,...]|scopes <device-id> <scope,...>|revoke <device-id> --confirm|send <device-id> <workspace-relative-path>|outbox <device-id>|discover|audit]',
 };
 
 export function interactiveCommandUsage(command: string): string {

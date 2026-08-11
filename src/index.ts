@@ -55,6 +55,15 @@ export {
   createSignedDeviceLinkRequest,
 } from './device-link/authorization.js';
 export {
+  DeviceLinkArtifactTransferService,
+} from './device-link/artifactTransferService.js';
+export type {
+  DeviceLinkArtifactManifest,
+  DeviceLinkArtifactStatus,
+  DeviceLinkArtifactTransferOptions,
+  DeviceLinkArtifactTransferState,
+} from './device-link/artifactTransferService.js';
+export {
   DeviceLinkService,
 } from './device-link/deviceLinkService.js';
 export type {

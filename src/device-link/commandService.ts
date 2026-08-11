@@ -6,7 +6,7 @@ export interface DeviceLinkCommandResult {
   lines?: string[];
 }
 
-const USAGE = '/devices [status|start [host] [port] [--advertise <ip>]|stop|pair [scope,...]|scopes <device-id> <scope,...>|revoke <device-id> --confirm|discover|audit]';
+const USAGE = '/devices [status|start [host] [port] [--advertise <ip>]|stop|pair [scope,...]|scopes <device-id> <scope,...>|revoke <device-id> --confirm|send <device-id> <workspace-relative-path>|outbox <device-id>|discover|audit]';
 
 function parseScopes(value: string | undefined, fallback: DeviceLinkScope[] = []): DeviceLinkScope[] {
   if (!value?.trim()) return fallback;
@@ -84,6 +84,24 @@ export class DeviceLinkCommandService {
       return {
         message: `Discovered ${devices.length} Device Link endpoint(s).`,
         lines: devices.map(device => `${device.name} ${device.host}:${device.port} ${device.deviceId} ${device.certificateFingerprint}`),
+      };
+    }
+    if (command === 'send') {
+      const [deviceId, sourceRelativePath, ...rest] = args;
+      if (!deviceId || !sourceRelativePath || rest.length) throw new Error(USAGE);
+      const transfer = await this.service.stageOutgoingArtifact(deviceId, sourceRelativePath);
+      return {
+        message: `Staged ${transfer.manifest.name} (${transfer.manifest.size} bytes) for ${deviceId}.`,
+        lines: [`transfer=${transfer.manifest.transferId} sha256=${transfer.manifest.sha256}`],
+      };
+    }
+    if (command === 'outbox') {
+      const [deviceId, ...rest] = args;
+      if (!deviceId || rest.length) throw new Error(USAGE);
+      const transfers = await this.service.listOutgoingArtifacts(deviceId);
+      return {
+        message: `${transfers.length} outgoing artifact(s) for ${deviceId}.`,
+        lines: transfers.map(transfer => `${transfer.manifest.transferId} ${transfer.manifest.name} ${transfer.manifest.size} bytes`),
       };
     }
     if (command === 'audit') {
