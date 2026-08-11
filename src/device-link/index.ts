@@ -12,4 +12,5 @@ export * from './pairing.js';
 export * from './runtimeSessionMirror.js';
 export * from './sessionReplica.js';
 export * from './types.js';
+export * from './transports/index.js';
 export * from './wssServer.js';

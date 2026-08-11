@@ -86,6 +86,7 @@ export {
   DEVICE_LINK_SCOPES,
   DEVICE_LINK_SERVICE_TYPE,
 } from './device-link/types.js';
+export * from './device-link/transports/index.js';
 export type {
   DeviceIdentity,
   DeviceIdentityCredentials,

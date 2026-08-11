@@ -92,7 +92,8 @@
     "hadamard-tui": "./bin/hadamard-tui.js",
     "hadamard-gui": "./bin/hadamard-gui.js",
     "hadamard-app-server": "./bin/hadamard-app-server.js",
-    "hadamard-link-runtime": "./bin/hadamard-link-runtime.js"
+    "hadamard-link-runtime": "./bin/hadamard-link-runtime.js",
+    "hadamard-relay": "./bin/hadamard-relay.js"
   },
   "exports": {
     ".": {
@@ -150,6 +151,10 @@
     "./compat": {
       "types": "./dist/src/compat/index.d.ts",
       "default": "./dist/src/compat/index.js"
+    },
+    "./relay": {
+      "types": "./dist/src/relay/index.d.ts",
+      "default": "./dist/src/relay/index.js"
     }
   },
   "files": [

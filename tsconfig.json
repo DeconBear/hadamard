@@ -17,7 +17,8 @@
       "actoviq-agent-sdk/workflow": ["./src/workflow-v2/index.ts"],
       "actoviq-agent-sdk/profiles": ["./src/profiles/index.ts"],
       "actoviq-agent-sdk/node": ["./src/node/index.ts"],
-      "actoviq-agent-sdk/compat": ["./src/compat/index.ts"]
+      "actoviq-agent-sdk/compat": ["./src/compat/index.ts"],
+      "actoviq-agent-sdk/relay": ["./src/relay/index.ts"]
     },
     "lib": ["ES2023", "DOM"],
     "strict": true,
