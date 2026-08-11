@@ -117,6 +117,30 @@ describe('TuiInputController', () => {
     expect(harness.editor.text).toBe('');
   });
 
+  it('toggles multiple selections with Space and confirms both choices with Enter', () => {
+    const resolve = vi.fn();
+    const harness = createHarness({
+      selection: {
+        title: 'Execution mode',
+        items: [{ id: 'react', label: 'ReAct' }, { id: 'codeact', label: 'CodeAct' }],
+        selected: 0,
+        query: '',
+        searchable: false,
+        multiple: true,
+        checkedIds: new Set<string>(),
+        resolve,
+      },
+    });
+
+    harness.controller.handleKey(' ', { name: 'space', sequence: ' ' });
+    harness.controller.handleKey(undefined, { name: 'down' });
+    harness.controller.handleKey(' ', { name: 'space', sequence: ' ' });
+    harness.controller.handleKey(undefined, { name: 'return' });
+
+    expect(resolve).toHaveBeenCalledWith(['react', 'codeact']);
+    expect(harness.selection()).toBeNull();
+  });
+
   it('submits text-input dialogs and supports Ctrl+C interruption/exit', () => {
     const inputEditor = new InputEditor();
     inputEditor.insert('secret');

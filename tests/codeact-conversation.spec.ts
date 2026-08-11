@@ -5,12 +5,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
-  CodeActService,
   createAgentSdk,
-  createCodeCellTool,
   type ModelApi,
   type ModelRequest,
 } from '../src/index.js';
+import { writeProjectSettings } from '../src/config/projectSettings.js';
 import type { Message } from '../src/provider/types.js';
 
 const tempDirs: string[] = [];
@@ -61,25 +60,29 @@ describe('CodeAct in the Hadamard outer loop', () => {
   it('keeps tool-use/result history paired and artifacts large cell output at write time', async () => {
     const workDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-codeact-loop-'));
     const sessionDirectory = await mkdtemp(path.join(os.tmpdir(), 'hadamard-codeact-sessions-'));
-    tempDirs.push(workDir, sessionDirectory);
+    const homeDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-codeact-home-'));
+    tempDirs.push(workDir, sessionDirectory, homeDir);
     const modelApi = new CodeActModel();
-    const service = new CodeActService({
-      enabled: true,
-      pythonCommand: process.platform === 'win32' ? 'python' : 'python3',
-      executionTimeoutMs: 5_000,
+    await writeProjectSettings(workDir, homeDir, {
+      codeAct: {
+        enabled: true,
+        backend: 'process',
+        securityMode: 'trusted',
+        pythonCommand: process.platform === 'win32' ? 'python' : 'python3',
+        executionTimeoutMs: 5_000,
+      },
     });
     const sdk = await createAgentSdk({
       model: 'test-model',
       modelApi,
       workDir,
+      homeDir,
       sessionDirectory,
       permissionMode: 'bypassPermissions',
       compact: { toolResultArtifactMaxChars: 1_000 },
     });
     try {
-      const result = await sdk.run('Calculate and verify.', {
-        tools: [createCodeCellTool({ service })],
-      });
+      const result = await sdk.run('Calculate and verify.', { agentMode: 'codeact' });
       expect(result.text).toContain('42');
       expect(modelApi.calls).toHaveLength(2);
       const serialized = JSON.stringify(result.messages);
@@ -88,7 +91,6 @@ describe('CodeAct in the Hadamard outer loop', () => {
       expect(result.toolCalls[0]?.name).toBe('CodeCell');
     } finally {
       await sdk.close();
-      await service.close();
     }
   });
 });

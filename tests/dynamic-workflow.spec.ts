@@ -197,6 +197,33 @@ describe('agent() primitive', () => {
     expect(cachedCalls.length).toBeGreaterThan(0);
   });
 
+  it('includes agentMode in the deterministic cache key', async () => {
+    let callCount = 0;
+    const sdk = {
+      createSession: async () => ({
+        id: `s-${callCount}`,
+        send: async () => ({
+          text: `result-${++callCount}`,
+          message: { content: [{ type: 'text', text: `result-${callCount}` }] },
+          usage: { input_tokens: 10, output_tokens: 5 },
+          toolCalls: [],
+        }),
+      }),
+      getTool: () => undefined,
+    };
+    const runtime = new WorkflowScriptRuntime({ sdk: sdk as any, trust: 'trusted' });
+    const script = [
+      'export const meta = { name: "mode-cache", description: "test" };',
+      'await agent("same prompt", { agentMode: "react" });',
+      'await agent("same prompt", { agentMode: "codeact" });',
+      'await agent("same prompt", { agentMode: "react" });',
+    ].join('\n');
+
+    const output = await runtime.execute(script);
+    expect(callCount).toBe(2);
+    expect(output.state.agentCalls.map(call => call.cached)).toEqual([false, false, true]);
+  });
+
   it('respects budget limits', async () => {
     const sdk = createMockSdk();
     const runtime = new WorkflowScriptRuntime({

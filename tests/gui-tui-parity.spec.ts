@@ -81,6 +81,7 @@ describe('TUI and GUI parity', () => {
       'export',
       'model',
       'effort',
+      'mode',
       'permissions',
       'plan',
       'rewind',
@@ -331,6 +332,15 @@ describe('TUI and GUI parity', () => {
     expect(html).not.toContain('id="settingsWorkModeCoding"');
     expect(js).toContain('projectSettingsPanel');
     expect(js).toContain('mountProjectSettingsPanel');
+    expect(html).toContain('id="composerAgentMode"');
+    expect(html).toContain('id="agentProfileMode"');
+    expect(js).toContain('id="projectAgentMode"');
+    expect(js).toContain('id="projectCodeActEnabled"');
+    expect(js).toContain("['inherit', 'react', 'codeact', 'hybrid', 'single']");
+    expect(js).toContain('Single mode supports at most one ordinary tool.');
+    expect(js).toContain('setToolChecklistDisabled');
+    expect(js).toContain("api('/api/session-agent-mode'");
+    expect(readFileSync(new URL('../src/gui/hadamardGui.ts', import.meta.url), 'utf8')).toContain("Agent profiles support only 'react', 'codeact', or 'hybrid'");
     expect(html).toContain('id="settingsShortcutsList"');
     expect(html).not.toContain('Remapping is not supported yet.');
     expect(html).toContain('id="settingsHooksList"');

@@ -49,6 +49,7 @@ export {
   resolveEffectiveAgentRunOptions,
 } from './runtime/effectiveAgentRunOptions.js';
 export * from './runtime/agentExecutionPolicy.js';
+export * from './runtime/agentModeService.js';
 export * from './design/index.js';
 export * from './codeact/index.js';
 export type {

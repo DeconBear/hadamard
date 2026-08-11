@@ -7,6 +7,7 @@ import type {
   WorkflowRunResult,
   WorkflowStepDefinition,
 } from './types.js';
+import type { AgentNodeMode } from '../runtime/agentExecutionPolicy.js';
 
 interface StepOptions {
   dependsOn?: string[];
@@ -18,6 +19,7 @@ interface StepOptions {
   systemPrompt?: string;
   /** 'react' (default) = full tool-using loop; 'single' = one-shot answer, no tools. */
   mode?: 'react' | 'single';
+  agentMode?: AgentNodeMode | 'inherit';
 }
 
 export class WorkflowBuilder {
@@ -60,6 +62,7 @@ export class WorkflowBuilder {
       model: opts?.model,
       systemPrompt: opts?.systemPrompt,
       mode: opts?.mode,
+      agentMode: opts?.agentMode,
       dependsOn: opts?.dependsOn ?? [],
     });
     return this;

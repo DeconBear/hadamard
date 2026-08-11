@@ -2,9 +2,11 @@ import type {
   HadamardPermissionMode,
   HadamardRunEffort,
 } from '../types.js';
+import type { AgentMode } from './agentExecutionPolicy.js';
 
 /** Fields shared by saved Agents and loaded `.md` agent definitions. */
 export interface AgentRunConfigurationSource {
+  agentMode?: AgentMode;
   systemPrompt?: string;
   systemPromptAppend?: string;
   promptMode?: 'extend' | 'replace';
@@ -33,6 +35,7 @@ export interface ResolveEffectiveAgentRunOptionsInput {
 }
 
 export interface EffectiveAgentRunOptions {
+  agentMode?: AgentMode;
   systemPrompt?: string;
   permissionMode?: HadamardPermissionMode;
   effort?: HadamardRunEffort;
@@ -61,6 +64,7 @@ export function resolveEffectiveAgentRunOptions(
     ? cleanPrompt(instructions)
     : joinPromptParts(input.systemPrompt, instructions);
   return {
+    ...(source?.agentMode ? { agentMode: source.agentMode } : {}),
     ...(systemPrompt ? { systemPrompt } : {}),
     ...(
       input.permissionModeOverride

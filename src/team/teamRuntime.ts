@@ -19,6 +19,7 @@ import type {
 } from '../types.js';
 import { AgentPool } from './agentPool.js';
 import type { EffectiveAgentRunOptions } from '../runtime/effectiveAgentRunOptions.js';
+import type { AgentNodeMode } from '../runtime/agentExecutionPolicy.js';
 import type { TeamAgentRunner, TeamAgentRunnerFactory } from '../application/teamAgentRunnerPort.js';
 import { resolveTeamAgentRunnerFactory } from '../application/teamAgentRunnerRegistry.js';
 import type { MemberIdentity } from './teamMemberIdentity.js';
@@ -105,6 +106,8 @@ export interface RunMemberOptions {
   effectiveAgentOptions?: EffectiveAgentRunOptions;
   workspaceAccess?: 'workspace' | 'full';
   modelApi?: AgentRunOptions['modelApi'];
+  /** Node override; otherwise the referenced Agent/member/project mode is inherited. */
+  agentMode?: AgentNodeMode | 'inherit';
   /** Runtime-owned concurrency controller. Omit only for a standalone one-member call. */
   pool?: AgentPool;
   /** Optional factory override for tests and custom composition roots. */
@@ -182,6 +185,8 @@ export async function runMemberAgent(opts: RunMemberOptions): Promise<MemberRunR
     });
     const stream = sdk.stream(task, {
       signal: memberSignal(signal, timeoutMs),
+      agentMode: opts.agentMode ?? effective?.agentMode ?? member.agentMode ?? 'inherit',
+      ...(opts.agentMode === 'single' ? { inheritDefaultTools: false } : {}),
       ...(effective?.permissionMode ? { permissionMode: effective.permissionMode } : {}),
       ...(effective?.effort ? { effort: effective.effort } : {}),
       ...(typeof effective?.maxTokens === 'number' ? { maxTokens: effective.maxTokens } : {}),

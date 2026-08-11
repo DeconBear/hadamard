@@ -18,6 +18,7 @@ import {
   type OrchestrateGraphOptions,
   type OrchestrateGraphResult,
 } from './teamGraphShared.js';
+import { migrateLegacyGraphAgentMode } from '../runtime/agentExecutionPolicy.js';
 
 export function graphNodeKind(node: TeamGraphNode): 'task' | 'agent' | 'return' {
   return node.kind ?? 'agent';
@@ -130,6 +131,14 @@ export function validateTeamGraphV3(definition: TeamDefinition): string[] {
       // Empty string = "use session model" placeholder (built-in presets).
       if (model !== '' && !model?.trim()) {
         errors.push(`agent node "${ref}" requires a model`);
+      }
+      try {
+        const mode = migrateLegacyGraphAgentMode(node);
+        if (mode === 'single' && (node.allowedTools?.length ?? 0) > 1) {
+          errors.push(`agent node "${ref}" in Single mode accepts at most one tool`);
+        }
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
       }
     }
     if (graphNodeKind(node) === 'return' && !node.returnMode) {
@@ -311,6 +320,15 @@ export function migrateTeamDefinitionToV3(definition: TeamDefinition): TeamDefin
   const base = definition.orchestration === 'graph' || definition.mode === 'graph'
     ? structuredClone(definition)
     : migrateTeamDefinitionToV2(definition);
+
+  base.nodes = (base.nodes ?? []).map(node => {
+    if (graphNodeKind(node) !== 'agent' || node.agentMode) return node;
+    const migratedMode = migrateLegacyGraphAgentMode(node);
+    if (!migratedMode) return node;
+    const next = { ...node, agentMode: migratedMode };
+    if (next.type !== 'team') delete next.type;
+    return next;
+  });
 
   if (isTeamGraphV3(base) && base.nodes?.some((n) => n.kind === 'task')) {
     return sanitizeV3GraphTopology({ ...base, version: 3 });
