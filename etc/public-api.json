@@ -613,9 +613,14 @@
         "signature": "export declare function buildSystemPrompt(params: {\nworkDir: string;\nmodel: string;\nisGitRepo: boolean;\ndate: string;\nplatform: string;\ntoolPrompts: string[];\n}): string;"
       },
       {
-        "name": "buildUpdateProgressPrompt",
+        "name": "buildUpdateDesignPrompt",
         "kind": "function",
-        "signature": "export declare function buildUpdateProgressPrompt(context: ManagerUpdateContext): string;"
+        "signature": "export declare function buildUpdateDesignPrompt(context: ManagerUpdateContext): string;"
+      },
+      {
+        "name": "buildUpdateProgressPrompt",
+        "kind": "value",
+        "signature": "buildUpdateProgressPrompt: typeof buildUpdateDesignPrompt"
       },
       {
         "name": "BUILT_IN_TEAM_DEFINITIONS",
@@ -806,6 +811,11 @@
         "name": "createConfigTool",
         "kind": "function",
         "signature": "export declare function createConfigTool(): AgentToolDefinition;"
+      },
+      {
+        "name": "createDefaultDesignTemplateRegistry",
+        "kind": "function",
+        "signature": "export declare function createDefaultDesignTemplateRegistry(): DesignTemplateRegistry;"
       },
       {
         "name": "createDefaultHadamardComputerUseExecutor",
@@ -1183,6 +1193,11 @@
         "signature": "DEFAULT_ASSISTANT_CONFIG: AssistantGlobalConfig"
       },
       {
+        "name": "DEFAULT_DESIGN_FRONTMATTER",
+        "kind": "value",
+        "signature": "DEFAULT_DESIGN_FRONTMATTER: Readonly<DesignFrontmatter>"
+      },
+      {
         "name": "DEFAULT_MANAGER_CONFIG",
         "kind": "value",
         "signature": "DEFAULT_MANAGER_CONFIG: ManagerConfig"
@@ -1271,6 +1286,91 @@
         "name": "deleteWorkflow",
         "kind": "function",
         "signature": "export declare function deleteWorkflow(name: string, projectDir?: string, homeDir?: string): Promise<boolean>;"
+      },
+      {
+        "name": "DESIGN_FILE_NAME",
+        "kind": "value",
+        "signature": "DESIGN_FILE_NAME = \"DESIGN.md\""
+      },
+      {
+        "name": "DesignDocumentService",
+        "kind": "class",
+        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\ncontent: string;\nrevision: string;\nstate: import(\"./designMigration.js\").DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\nrender(content: string): import(\"./designRenderService.js\").DesignRenderResult;\nmigrate(action: DesignMigrationAction): Promise<import(\"./designDocumentStore.js\").DesignDocumentSnapshot>;\n}"
+      },
+      {
+        "name": "DesignDocumentSnapshot",
+        "kind": "interface",
+        "signature": "export interface DesignDocumentSnapshot extends DesignMigrationInspection {\ncontent: string;\nrevision: string;\n}"
+      },
+      {
+        "name": "DesignDocumentStore",
+        "kind": "class",
+        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly homeDir: string;\nprivate readonly workspacePath;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\nmirror?: boolean;\n}): Promise<string>;\nmigrate(action: DesignMigrationAction, now?: Date): Promise<DesignDocumentSnapshot>;\n}"
+      },
+      {
+        "name": "DesignFrontmatter",
+        "kind": "interface",
+        "signature": "export interface DesignFrontmatter {\nhadamardDesignVersion: typeof HADAMARD_DESIGN_VERSION;\ntemplate: string;\ntemplateVersion: number;\ntheme: string;\nupdatedAt: string;\n}"
+      },
+      {
+        "name": "DesignHtmlExport",
+        "kind": "interface",
+        "signature": "export interface DesignHtmlExport {\nmediaType: 'text/html';\nfileName: 'DESIGN.html';\nbytes: Buffer;\nchecksum: string;\n}"
+      },
+      {
+        "name": "DesignImportExportService",
+        "kind": "class",
+        "signature": "export declare class DesignImportExportService {\nprivate readonly renderer;\nconstructor(renderer?: DesignRenderService);\nexportHtml(source: string): DesignHtmlExport;\npreview(bytes: Buffer, fileName: string): DesignImportPreview;\n}"
+      },
+      {
+        "name": "DesignImportKind",
+        "kind": "type",
+        "signature": "export type DesignImportKind = 'markdown' | 'hadamard-html' | 'reference-html' | 'reference-pdf';"
+      },
+      {
+        "name": "DesignImportPreview",
+        "kind": "interface",
+        "signature": "export interface DesignImportPreview {\nkind: DesignImportKind;\neditable: boolean;\nmarkdown?: string;\nchecksum: string;\nwarnings: string[];\n}"
+      },
+      {
+        "name": "DesignMigrationAction",
+        "kind": "type",
+        "signature": "export type DesignMigrationAction = 'migrate-legacy' | 'keep-design' | 'replace-with-legacy' | 'merge-history';"
+      },
+      {
+        "name": "DesignMigrationInspection",
+        "kind": "interface",
+        "signature": "export interface DesignMigrationInspection {\nstate: DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}"
+      },
+      {
+        "name": "DesignMigrationState",
+        "kind": "type",
+        "signature": "export type DesignMigrationState = 'empty' | 'design' | 'legacy-progress' | 'conflict';"
+      },
+      {
+        "name": "DesignRenderResult",
+        "kind": "interface",
+        "signature": "export interface DesignRenderResult {\nhtml: string;\nbodyHtml: string;\nchecksum: string;\nmetadata: DesignFrontmatter;\n}"
+      },
+      {
+        "name": "DesignRenderService",
+        "kind": "class",
+        "signature": "export declare class DesignRenderService {\nrender(source: string): DesignRenderResult;\n}"
+      },
+      {
+        "name": "DesignTemplate",
+        "kind": "interface",
+        "signature": "export interface DesignTemplate {\nid: string;\nversion: number;\nname: string;\nsections: readonly DesignTemplateSection[];\n}"
+      },
+      {
+        "name": "DesignTemplateRegistry",
+        "kind": "class",
+        "signature": "export declare class DesignTemplateRegistry {\nprivate readonly templates;\nconstructor(templates?: readonly DesignTemplate[]);\nregister(template: DesignTemplate): void;\nget(id: string): DesignTemplate | undefined;\nlist(): DesignTemplate[];\ncreateMarkdown(id: string): string;\n}"
+      },
+      {
+        "name": "DesignTemplateSection",
+        "kind": "interface",
+        "signature": "export interface DesignTemplateSection {\nid: string;\ntitle: string;\nprompt: string;\nrequired?: boolean;\n}"
       },
       {
         "name": "detectBridgeProviders",
@@ -1720,7 +1820,7 @@
       {
         "name": "formatManagerUpdatePreview",
         "kind": "function",
-        "signature": "export declare function formatManagerUpdatePreview(plan: ProjectPlan, progress: string | null): string;"
+        "signature": "export declare function formatManagerUpdatePreview(plan: ProjectPlan, design: string | null): string;"
       },
       {
         "name": "formatTeamGraphEdgeLabel",
@@ -2206,6 +2306,11 @@
         "name": "HADAMARD_COMPUTER_USE_WORKFLOW_ACTIONS",
         "kind": "value",
         "signature": "HADAMARD_COMPUTER_USE_WORKFLOW_ACTIONS: readonly [\n\"open_url\",\n\"focus_window\",\n\"type_text\",\n\"keypress\",\n\"read_clipboard\",\n\"write_clipboard\",\n\"take_screenshot\",\n\"wait\"\n]"
+      },
+      {
+        "name": "HADAMARD_DESIGN_VERSION",
+        "kind": "value",
+        "signature": "HADAMARD_DESIGN_VERSION: 1"
       },
       {
         "name": "HADAMARD_EXECUTION_ID_KEY",
@@ -3408,6 +3513,11 @@
         "signature": "export declare class InMemoryTaskStore implements ScheduledTaskStore {\nprivate readonly tasks;\nsave(task: ScheduledTaskRecord): Promise<void>;\nload(id: string): Promise<ScheduledTaskRecord | undefined>;\nlist(): Promise<ScheduledTaskRecord[]>;\ndelete(id: string): Promise<void>;\n}"
       },
       {
+        "name": "inspectDesignMigration",
+        "kind": "function",
+        "signature": "export declare function inspectDesignMigration(projectStoreDirectory: string): Promise<DesignMigrationInspection>;"
+      },
+      {
         "name": "InstalledPluginPackage",
         "kind": "interface",
         "signature": "export interface InstalledPluginPackage {\nmanifest: PluginPackageManifest;\npackagePath: string;\nenabled: boolean;\npinnedVersion?: string;\n}"
@@ -3530,7 +3640,7 @@
       {
         "name": "IssueDecomposeContext",
         "kind": "interface",
-        "signature": "export interface IssueDecomposeContext {\ncurrentPlanJson?: string;\ncurrentProgress?: string;\n}"
+        "signature": "export interface IssueDecomposeContext {\ncurrentPlanJson?: string;\ncurrentDesign?: string;\ncurrentProgress?: string;\n}"
       },
       {
         "name": "IssuePriority",
@@ -3581,6 +3691,11 @@
         "name": "LanguageServerRegistry",
         "kind": "class",
         "signature": "export declare class LanguageServerRegistry {\nprivate readonly definitions;\nconstructor(definitions?: LanguageServerDefinition[]);\nlist(): LanguageServerDefinition[];\nforFile(filePath: string): LanguageServerDefinition | undefined;\ncapabilities(): Promise<LanguageServerCapability[]>;\n}"
+      },
+      {
+        "name": "LEGACY_PROGRESS_FILE_NAME",
+        "kind": "value",
+        "signature": "LEGACY_PROGRESS_FILE_NAME = \"PROGRESS.md\""
       },
       {
         "name": "linuxSandboxCapabilities",
@@ -3840,12 +3955,17 @@
       {
         "name": "ManagerConfig",
         "kind": "interface",
-        "signature": "export interface ManagerConfig {\nmodel?: string;\nbridgeConfig?: string;\nreadScope: ManagerReadScope;\nallowedReadPaths: string[];\nmirrorProgressToWorkspace: boolean;\npromptOverride?: string;\nactiveSessionId?: string;\n}"
+        "signature": "export interface ManagerConfig {\nmodel?: string;\nbridgeConfig?: string;\nreadScope: ManagerReadScope;\nallowedReadPaths: string[];\nmirrorDesignToWorkspace: boolean;\nmirrorProgressToWorkspace?: boolean;\npromptOverride?: string;\nactiveSessionId?: string;\n}"
       },
       {
         "name": "managerConfigPath",
         "kind": "function",
         "signature": "export declare function managerConfigPath(workDir: string, homeDir: string): string;"
+      },
+      {
+        "name": "managerDesignPath",
+        "kind": "function",
+        "signature": "export declare function managerDesignPath(workDir: string, homeDir: string): string;"
       },
       {
         "name": "managerPlanPath",
@@ -3854,8 +3974,8 @@
       },
       {
         "name": "managerProgressPath",
-        "kind": "function",
-        "signature": "export declare function managerProgressPath(workDir: string, homeDir: string): string;"
+        "kind": "value",
+        "signature": "managerProgressPath: typeof managerDesignPath"
       },
       {
         "name": "ManagerReadScope",
@@ -3865,7 +3985,7 @@
       {
         "name": "ManagerUpdateContext",
         "kind": "interface",
-        "signature": "export interface ManagerUpdateContext {\nconversationSummaries?: string;\ngitSummary?: string;\ngithubDigest?: string;\ncurrentPlanJson?: string;\ncurrentProgress?: string;\ncurrentIssuesJson?: string;\ninstruction?: string;\n}"
+        "signature": "export interface ManagerUpdateContext {\nconversationSummaries?: string;\ngitSummary?: string;\ngithubDigest?: string;\ncurrentPlanJson?: string;\ncurrentDesign?: string;\ncurrentProgress?: string;\ncurrentIssuesJson?: string;\ninstruction?: string;\n}"
       },
       {
         "name": "mapHadamardEnvToAnthropicEnv",
@@ -4136,6 +4256,16 @@
         "name": "parseCron",
         "kind": "function",
         "signature": "export declare function parseCron(expression: string): CronField[];"
+      },
+      {
+        "name": "ParsedDesignDocument",
+        "kind": "interface",
+        "signature": "export interface ParsedDesignDocument {\nfrontmatter: DesignFrontmatter;\nmarkdown: string;\nsource: string;\n}"
+      },
+      {
+        "name": "parseDesignDocument",
+        "kind": "function",
+        "signature": "export declare function parseDesignDocument(source: string): ParsedDesignDocument;"
       },
       {
         "name": "parseDurableMemoryExtractionOutput",
@@ -4463,6 +4593,11 @@
         "signature": "export declare function readAssistantConfig(homeDir?: string): Promise<AssistantGlobalConfig>;"
       },
       {
+        "name": "readDesignFile",
+        "kind": "function",
+        "signature": "export declare function readDesignFile(workDir: string, homeDir: string): Promise<string | null>;"
+      },
+      {
         "name": "readDurableMemoryPipelineStatus",
         "kind": "function",
         "signature": "export declare function readDurableMemoryPipelineStatus(paths: HadamardDreamPaths): Promise<{\nphase: 'idle' | 'extracting' | 'consolidating';\nleaseExpiresAt?: string;\nlastSuccessAt?: string;\nlastError?: string;\n}>;"
@@ -4519,8 +4654,8 @@
       },
       {
         "name": "readProgressFile",
-        "kind": "function",
-        "signature": "export declare function readProgressFile(workDir: string, homeDir: string): Promise<string | null>;"
+        "kind": "value",
+        "signature": "readProgressFile: typeof readDesignFile"
       },
       {
         "name": "readProjectMemorySettingsPatch",
@@ -5143,6 +5278,11 @@
         "signature": "export declare function serializeAgentExecutionIdentity(identity: AgentExecutionIdentity): Record<string, unknown>;"
       },
       {
+        "name": "serializeDesignDocument",
+        "kind": "function",
+        "signature": "export declare function serializeDesignDocument(markdown: string, metadata?: Partial<DesignFrontmatter>): string;"
+      },
+      {
         "name": "serializeHadamardSessionMemoryRuntimeState",
         "kind": "function",
         "signature": "export declare function serializeHadamardSessionMemoryRuntimeState(state: HadamardSessionMemoryRuntimeState): Record<string, unknown>;"
@@ -5356,6 +5496,11 @@
         "name": "shouldIncludeGitHubDigest",
         "kind": "function",
         "signature": "export declare function shouldIncludeGitHubDigest(instruction?: string): boolean;"
+      },
+      {
+        "name": "shouldMirrorDesignToWorkspace",
+        "kind": "function",
+        "signature": "export declare function shouldMirrorDesignToWorkspace(config: ManagerConfig): boolean;"
       },
       {
         "name": "skill",
@@ -5993,6 +6138,11 @@
         "signature": "export declare function writeAssistantConfig(config: AssistantGlobalConfig, homeDir?: string): Promise<void>;"
       },
       {
+        "name": "writeDesignFile",
+        "kind": "function",
+        "signature": "export declare function writeDesignFile(workDir: string, homeDir: string, content: string): Promise<string>;"
+      },
+      {
         "name": "writeEdgeBezierUi",
         "kind": "function",
         "signature": "export declare function writeEdgeBezierUi(edge: TeamGraphEdge, p1: GraphPoint, p2: GraphPoint, c1: GraphPoint, c2: GraphPoint): void;"
@@ -6029,8 +6179,8 @@
       },
       {
         "name": "writeProgressFile",
-        "kind": "function",
-        "signature": "export declare function writeProgressFile(workDir: string, homeDir: string, content: string): Promise<string>;"
+        "kind": "value",
+        "signature": "writeProgressFile: typeof writeDesignFile"
       },
       {
         "name": "writeProjectPlanFile",
@@ -8789,9 +8939,14 @@
         "signature": "export declare function buildSystemPrompt(params: {\nworkDir: string;\nmodel: string;\nisGitRepo: boolean;\ndate: string;\nplatform: string;\ntoolPrompts: string[];\n}): string;"
       },
       {
-        "name": "buildUpdateProgressPrompt",
+        "name": "buildUpdateDesignPrompt",
         "kind": "function",
-        "signature": "export declare function buildUpdateProgressPrompt(context: ManagerUpdateContext): string;"
+        "signature": "export declare function buildUpdateDesignPrompt(context: ManagerUpdateContext): string;"
+      },
+      {
+        "name": "buildUpdateProgressPrompt",
+        "kind": "value",
+        "signature": "buildUpdateProgressPrompt: typeof buildUpdateDesignPrompt"
       },
       {
         "name": "BUILT_IN_TEAM_DEFINITIONS",
@@ -8997,6 +9152,11 @@
         "name": "createConfigTool",
         "kind": "function",
         "signature": "export declare function createConfigTool(): AgentToolDefinition;"
+      },
+      {
+        "name": "createDefaultDesignTemplateRegistry",
+        "kind": "function",
+        "signature": "export declare function createDefaultDesignTemplateRegistry(): DesignTemplateRegistry;"
       },
       {
         "name": "createDefaultHadamardComputerUseExecutor",
@@ -9374,6 +9534,11 @@
         "signature": "DEFAULT_ASSISTANT_CONFIG: AssistantGlobalConfig"
       },
       {
+        "name": "DEFAULT_DESIGN_FRONTMATTER",
+        "kind": "value",
+        "signature": "DEFAULT_DESIGN_FRONTMATTER: Readonly<DesignFrontmatter>"
+      },
+      {
         "name": "DEFAULT_MANAGER_CONFIG",
         "kind": "value",
         "signature": "DEFAULT_MANAGER_CONFIG: ManagerConfig"
@@ -9462,6 +9627,91 @@
         "name": "deleteWorkflow",
         "kind": "function",
         "signature": "export declare function deleteWorkflow(name: string, projectDir?: string, homeDir?: string): Promise<boolean>;"
+      },
+      {
+        "name": "DESIGN_FILE_NAME",
+        "kind": "value",
+        "signature": "DESIGN_FILE_NAME = \"DESIGN.md\""
+      },
+      {
+        "name": "DesignDocumentService",
+        "kind": "class",
+        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\ncontent: string;\nrevision: string;\nstate: import(\"./designMigration.js\").DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\nrender(content: string): import(\"./designRenderService.js\").DesignRenderResult;\nmigrate(action: DesignMigrationAction): Promise<import(\"./designDocumentStore.js\").DesignDocumentSnapshot>;\n}"
+      },
+      {
+        "name": "DesignDocumentSnapshot",
+        "kind": "interface",
+        "signature": "export interface DesignDocumentSnapshot extends DesignMigrationInspection {\ncontent: string;\nrevision: string;\n}"
+      },
+      {
+        "name": "DesignDocumentStore",
+        "kind": "class",
+        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly homeDir: string;\nprivate readonly workspacePath;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\nmirror?: boolean;\n}): Promise<string>;\nmigrate(action: DesignMigrationAction, now?: Date): Promise<DesignDocumentSnapshot>;\n}"
+      },
+      {
+        "name": "DesignFrontmatter",
+        "kind": "interface",
+        "signature": "export interface DesignFrontmatter {\nhadamardDesignVersion: typeof HADAMARD_DESIGN_VERSION;\ntemplate: string;\ntemplateVersion: number;\ntheme: string;\nupdatedAt: string;\n}"
+      },
+      {
+        "name": "DesignHtmlExport",
+        "kind": "interface",
+        "signature": "export interface DesignHtmlExport {\nmediaType: 'text/html';\nfileName: 'DESIGN.html';\nbytes: Buffer;\nchecksum: string;\n}"
+      },
+      {
+        "name": "DesignImportExportService",
+        "kind": "class",
+        "signature": "export declare class DesignImportExportService {\nprivate readonly renderer;\nconstructor(renderer?: DesignRenderService);\nexportHtml(source: string): DesignHtmlExport;\npreview(bytes: Buffer, fileName: string): DesignImportPreview;\n}"
+      },
+      {
+        "name": "DesignImportKind",
+        "kind": "type",
+        "signature": "export type DesignImportKind = 'markdown' | 'hadamard-html' | 'reference-html' | 'reference-pdf';"
+      },
+      {
+        "name": "DesignImportPreview",
+        "kind": "interface",
+        "signature": "export interface DesignImportPreview {\nkind: DesignImportKind;\neditable: boolean;\nmarkdown?: string;\nchecksum: string;\nwarnings: string[];\n}"
+      },
+      {
+        "name": "DesignMigrationAction",
+        "kind": "type",
+        "signature": "export type DesignMigrationAction = 'migrate-legacy' | 'keep-design' | 'replace-with-legacy' | 'merge-history';"
+      },
+      {
+        "name": "DesignMigrationInspection",
+        "kind": "interface",
+        "signature": "export interface DesignMigrationInspection {\nstate: DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}"
+      },
+      {
+        "name": "DesignMigrationState",
+        "kind": "type",
+        "signature": "export type DesignMigrationState = 'empty' | 'design' | 'legacy-progress' | 'conflict';"
+      },
+      {
+        "name": "DesignRenderResult",
+        "kind": "interface",
+        "signature": "export interface DesignRenderResult {\nhtml: string;\nbodyHtml: string;\nchecksum: string;\nmetadata: DesignFrontmatter;\n}"
+      },
+      {
+        "name": "DesignRenderService",
+        "kind": "class",
+        "signature": "export declare class DesignRenderService {\nrender(source: string): DesignRenderResult;\n}"
+      },
+      {
+        "name": "DesignTemplate",
+        "kind": "interface",
+        "signature": "export interface DesignTemplate {\nid: string;\nversion: number;\nname: string;\nsections: readonly DesignTemplateSection[];\n}"
+      },
+      {
+        "name": "DesignTemplateRegistry",
+        "kind": "class",
+        "signature": "export declare class DesignTemplateRegistry {\nprivate readonly templates;\nconstructor(templates?: readonly DesignTemplate[]);\nregister(template: DesignTemplate): void;\nget(id: string): DesignTemplate | undefined;\nlist(): DesignTemplate[];\ncreateMarkdown(id: string): string;\n}"
+      },
+      {
+        "name": "DesignTemplateSection",
+        "kind": "interface",
+        "signature": "export interface DesignTemplateSection {\nid: string;\ntitle: string;\nprompt: string;\nrequired?: boolean;\n}"
       },
       {
         "name": "detectBridgeProviders",
@@ -9916,7 +10166,7 @@
       {
         "name": "formatManagerUpdatePreview",
         "kind": "function",
-        "signature": "export declare function formatManagerUpdatePreview(plan: ProjectPlan, progress: string | null): string;"
+        "signature": "export declare function formatManagerUpdatePreview(plan: ProjectPlan, design: string | null): string;"
       },
       {
         "name": "formatTeamGraphEdgeLabel",
@@ -10407,6 +10657,11 @@
         "name": "HADAMARD_COMPUTER_USE_WORKFLOW_ACTIONS",
         "kind": "value",
         "signature": "HADAMARD_COMPUTER_USE_WORKFLOW_ACTIONS: readonly [\n\"open_url\",\n\"focus_window\",\n\"type_text\",\n\"keypress\",\n\"read_clipboard\",\n\"write_clipboard\",\n\"take_screenshot\",\n\"wait\"\n]"
+      },
+      {
+        "name": "HADAMARD_DESIGN_VERSION",
+        "kind": "value",
+        "signature": "HADAMARD_DESIGN_VERSION: 1"
       },
       {
         "name": "HADAMARD_EXECUTION_ID_KEY",
@@ -11609,6 +11864,11 @@
         "signature": "export declare class InMemoryTaskStore implements ScheduledTaskStore {\nprivate readonly tasks;\nsave(task: ScheduledTaskRecord): Promise<void>;\nload(id: string): Promise<ScheduledTaskRecord | undefined>;\nlist(): Promise<ScheduledTaskRecord[]>;\ndelete(id: string): Promise<void>;\n}"
       },
       {
+        "name": "inspectDesignMigration",
+        "kind": "function",
+        "signature": "export declare function inspectDesignMigration(projectStoreDirectory: string): Promise<DesignMigrationInspection>;"
+      },
+      {
         "name": "InstalledPluginPackage",
         "kind": "interface",
         "signature": "export interface InstalledPluginPackage {\nmanifest: PluginPackageManifest;\npackagePath: string;\nenabled: boolean;\npinnedVersion?: string;\n}"
@@ -11731,7 +11991,7 @@
       {
         "name": "IssueDecomposeContext",
         "kind": "interface",
-        "signature": "export interface IssueDecomposeContext {\ncurrentPlanJson?: string;\ncurrentProgress?: string;\n}"
+        "signature": "export interface IssueDecomposeContext {\ncurrentPlanJson?: string;\ncurrentDesign?: string;\ncurrentProgress?: string;\n}"
       },
       {
         "name": "IssuePriority",
@@ -11782,6 +12042,11 @@
         "name": "LanguageServerRegistry",
         "kind": "class",
         "signature": "export declare class LanguageServerRegistry {\nprivate readonly definitions;\nconstructor(definitions?: LanguageServerDefinition[]);\nlist(): LanguageServerDefinition[];\nforFile(filePath: string): LanguageServerDefinition | undefined;\ncapabilities(): Promise<LanguageServerCapability[]>;\n}"
+      },
+      {
+        "name": "LEGACY_PROGRESS_FILE_NAME",
+        "kind": "value",
+        "signature": "LEGACY_PROGRESS_FILE_NAME = \"PROGRESS.md\""
       },
       {
         "name": "LegacyAgentEventAdapterOptions",
@@ -12081,12 +12346,17 @@
       {
         "name": "ManagerConfig",
         "kind": "interface",
-        "signature": "export interface ManagerConfig {\nmodel?: string;\nbridgeConfig?: string;\nreadScope: ManagerReadScope;\nallowedReadPaths: string[];\nmirrorProgressToWorkspace: boolean;\npromptOverride?: string;\nactiveSessionId?: string;\n}"
+        "signature": "export interface ManagerConfig {\nmodel?: string;\nbridgeConfig?: string;\nreadScope: ManagerReadScope;\nallowedReadPaths: string[];\nmirrorDesignToWorkspace: boolean;\nmirrorProgressToWorkspace?: boolean;\npromptOverride?: string;\nactiveSessionId?: string;\n}"
       },
       {
         "name": "managerConfigPath",
         "kind": "function",
         "signature": "export declare function managerConfigPath(workDir: string, homeDir: string): string;"
+      },
+      {
+        "name": "managerDesignPath",
+        "kind": "function",
+        "signature": "export declare function managerDesignPath(workDir: string, homeDir: string): string;"
       },
       {
         "name": "managerPlanPath",
@@ -12095,8 +12365,8 @@
       },
       {
         "name": "managerProgressPath",
-        "kind": "function",
-        "signature": "export declare function managerProgressPath(workDir: string, homeDir: string): string;"
+        "kind": "value",
+        "signature": "managerProgressPath: typeof managerDesignPath"
       },
       {
         "name": "ManagerReadScope",
@@ -12106,7 +12376,7 @@
       {
         "name": "ManagerUpdateContext",
         "kind": "interface",
-        "signature": "export interface ManagerUpdateContext {\nconversationSummaries?: string;\ngitSummary?: string;\ngithubDigest?: string;\ncurrentPlanJson?: string;\ncurrentProgress?: string;\ncurrentIssuesJson?: string;\ninstruction?: string;\n}"
+        "signature": "export interface ManagerUpdateContext {\nconversationSummaries?: string;\ngitSummary?: string;\ngithubDigest?: string;\ncurrentPlanJson?: string;\ncurrentDesign?: string;\ncurrentProgress?: string;\ncurrentIssuesJson?: string;\ninstruction?: string;\n}"
       },
       {
         "name": "mapHadamardEnvToAnthropicEnv",
@@ -12382,6 +12652,16 @@
         "name": "parseCron",
         "kind": "function",
         "signature": "export declare function parseCron(expression: string): CronField[];"
+      },
+      {
+        "name": "ParsedDesignDocument",
+        "kind": "interface",
+        "signature": "export interface ParsedDesignDocument {\nfrontmatter: DesignFrontmatter;\nmarkdown: string;\nsource: string;\n}"
+      },
+      {
+        "name": "parseDesignDocument",
+        "kind": "function",
+        "signature": "export declare function parseDesignDocument(source: string): ParsedDesignDocument;"
       },
       {
         "name": "parseDurableMemoryExtractionOutput",
@@ -12709,6 +12989,11 @@
         "signature": "export declare function readAssistantConfig(homeDir?: string): Promise<AssistantGlobalConfig>;"
       },
       {
+        "name": "readDesignFile",
+        "kind": "function",
+        "signature": "export declare function readDesignFile(workDir: string, homeDir: string): Promise<string | null>;"
+      },
+      {
         "name": "readDurableMemoryPipelineStatus",
         "kind": "function",
         "signature": "export declare function readDurableMemoryPipelineStatus(paths: HadamardDreamPaths): Promise<{\nphase: 'idle' | 'extracting' | 'consolidating';\nleaseExpiresAt?: string;\nlastSuccessAt?: string;\nlastError?: string;\n}>;"
@@ -12765,8 +13050,8 @@
       },
       {
         "name": "readProgressFile",
-        "kind": "function",
-        "signature": "export declare function readProgressFile(workDir: string, homeDir: string): Promise<string | null>;"
+        "kind": "value",
+        "signature": "readProgressFile: typeof readDesignFile"
       },
       {
         "name": "readProjectMemorySettingsPatch",
@@ -13419,6 +13704,11 @@
         "signature": "export declare function serializeAgentExecutionIdentity(identity: AgentExecutionIdentity): Record<string, unknown>;"
       },
       {
+        "name": "serializeDesignDocument",
+        "kind": "function",
+        "signature": "export declare function serializeDesignDocument(markdown: string, metadata?: Partial<DesignFrontmatter>): string;"
+      },
+      {
         "name": "serializeHadamardSessionMemoryRuntimeState",
         "kind": "function",
         "signature": "export declare function serializeHadamardSessionMemoryRuntimeState(state: HadamardSessionMemoryRuntimeState): Record<string, unknown>;"
@@ -13642,6 +13932,11 @@
         "name": "shouldIncludeGitHubDigest",
         "kind": "function",
         "signature": "export declare function shouldIncludeGitHubDigest(instruction?: string): boolean;"
+      },
+      {
+        "name": "shouldMirrorDesignToWorkspace",
+        "kind": "function",
+        "signature": "export declare function shouldMirrorDesignToWorkspace(config: ManagerConfig): boolean;"
       },
       {
         "name": "skill",
@@ -14329,6 +14624,11 @@
         "signature": "export declare function writeAssistantConfig(config: AssistantGlobalConfig, homeDir?: string): Promise<void>;"
       },
       {
+        "name": "writeDesignFile",
+        "kind": "function",
+        "signature": "export declare function writeDesignFile(workDir: string, homeDir: string, content: string): Promise<string>;"
+      },
+      {
         "name": "writeEdgeBezierUi",
         "kind": "function",
         "signature": "export declare function writeEdgeBezierUi(edge: TeamGraphEdge, p1: GraphPoint, p2: GraphPoint, c1: GraphPoint, c2: GraphPoint): void;"
@@ -14365,8 +14665,8 @@
       },
       {
         "name": "writeProgressFile",
-        "kind": "function",
-        "signature": "export declare function writeProgressFile(workDir: string, homeDir: string, content: string): Promise<string>;"
+        "kind": "value",
+        "signature": "writeProgressFile: typeof writeDesignFile"
       },
       {
         "name": "writeProjectPlanFile",

@@ -112,7 +112,7 @@ import {
   createManagerTools,
   buildDecomposeIssuePrompt,
   buildManagerSystemPrompt,
-  buildUpdateProgressPrompt,
+  buildUpdateDesignPrompt,
   formatManagerUpdatePreview,
   resolveGitHubDigestForUpdate,
   readManagerConfig,
@@ -129,9 +129,8 @@ import {
   isAssistantScope,
   readProjectPlanFile,
   writeProjectPlanFile,
-  readProgressFile,
-  writeProgressFile,
-  managerProgressPath,
+  readDesignFile,
+  managerDesignPath,
   ISSUE_PRIORITIES,
   ISSUE_STATUSES,
   addIssueComment,
@@ -374,6 +373,8 @@ import { registerGuiSettingsHttpController } from './guiSettingsHttpController.j
 import { registerGuiTeamHttpController } from './guiTeamHttpController.js';
 import { registerGuiAgentHttpController } from './guiAgentHttpController.js';
 import { registerGuiReferenceHttpController } from './guiReferenceHttpController.js';
+import { registerGuiDesignHttpController } from './guiDesignHttpController.js';
+import { DesignDocumentService } from '../design/designDocumentService.js';
 import {
   createGuiReferenceHttpService,
   type GuiReferenceSnapshot,
@@ -3844,7 +3845,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   }
 
   /**
-   * Run one Assistant turn. Project scope: progress update or governance chat.
+   * Run one Assistant turn. Project scope: Design update or governance chat.
    * Global scope: cross-project / settings chat (update mode is rejected).
    */
   async function runManagerTurn(opts: {
@@ -3884,7 +3885,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const scope = opts.scope;
 
     if (scope === 'global' && opts.mode === 'update') {
-      throw new Error('Update progress is only available in Project scope.');
+      throw new Error('Update Design is only available in Project scope.');
     }
 
     let prompt: string;
@@ -3965,16 +3966,16 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       if (opts.mode === 'update') {
         const { gitSummary, conversationSummaries, sessionSummaries } = await collectManagerHostContext();
         const plan = await readProjectPlanFile(projectPrimaryPath, homeDir);
-        const progress = await readProgressFile(projectPrimaryPath, homeDir);
+        const design = await readDesignFile(projectPrimaryPath, homeDir);
         const issues = await listProjectIssues(projectPrimaryPath, homeDir, managerIssueStorage);
         const githubDigest = await resolveGitHubDigestForUpdate(workDir, opts.instruction);
-        prompt = buildUpdateProgressPrompt({
+        prompt = buildUpdateDesignPrompt({
           instruction: opts.instruction,
           gitSummary,
           conversationSummaries,
           githubDigest,
           currentPlanJson: JSON.stringify(plan, null, 2),
-          currentProgress: progress ?? undefined,
+          currentDesign: design ?? undefined,
           currentIssuesJson: JSON.stringify(issues.map(issue => ({
             key: `ISS-${issue.number}`,
             title: issue.title,
@@ -4128,14 +4129,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         const failure = workflowEvents.find(event => event.type === 'error');
         if (failure) throw new Error(String(failure.message ?? 'workflow failed'));
       } else if (task.kind === 'manager') {
-        // Scheduled Manager progress update (plan M2). `input` is an optional
+        // Scheduled Manager Design update. `input` is an optional
         // instruction; the run streams into the collected events.
         const text = await runManagerTurn({
           mode: 'update',
           instruction: task.input?.trim() || undefined,
           send: (event) => { events.push(event); },
         });
-        events.push({ type: 'command.result', title: 'Manager · progress updated', text });
+        events.push({ type: 'command.result', title: 'Manager · Design updated', text });
       } else {
         if (!task.prompt) throw new Error('Scheduled prompt task is missing prompt');
         events.push(...await runAutomationPrompt(task));
@@ -5661,13 +5662,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         if (!args || args === 'status') {
           const cfg = await readManagerConfig(projectPrimaryPath, homeDir);
           const plan = await readProjectPlanFile(projectPrimaryPath, homeDir);
-          const progress = await readProgressFile(projectPrimaryPath, homeDir);
+          const design = await readDesignFile(projectPrimaryPath, homeDir);
           const lines = [
             `model: ${cfg.model ?? `${session.model} (session default)`}`,
             `readScope: ${cfg.readScope}`,
-            `mirror to workspace: ${cfg.mirrorProgressToWorkspace ? 'on' : 'off'}`,
+            `mirror to workspace: ${cfg.mirrorDesignToWorkspace ? 'on' : 'off'}`,
             `plan.json: ${plan.milestones.length} milestones · ${plan.today.length} today · ${plan.upcoming.length} upcoming`,
-            `PROGRESS.md: ${progress ? `${progress.length} chars · ${managerProgressPath(projectPrimaryPath, homeDir)}` : '(none yet — /manager update)'}`,
+            `DESIGN.md: ${design ? `${design.length} chars · ${managerDesignPath(projectPrimaryPath, homeDir)}` : '(none yet — /manager update)'}`,
           ];
           return [{ type: 'command.result', title: 'Manager', text: lines.join('\n') }];
         }
@@ -6422,10 +6423,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
 
       send({ type: 'status', message: `manager - decomposing ISS-${issue.number}` });
       const plan = await readProjectPlanFile(targetPath, homeDir);
-      const progress = await readProgressFile(targetPath, homeDir);
+      const design = await readDesignFile(targetPath, homeDir);
       const briefPrompt = buildDecomposeIssuePrompt(issue, {
         currentPlanJson: JSON.stringify(plan, null, 2),
-        currentProgress: progress ?? undefined,
+        currentDesign: design ?? undefined,
       });
       const brief = await runManagerTurn({ mode: 'chat', text: briefPrompt, send });
       const title = `ISS-${issue.number} ${issue.title}`.slice(0, 120);
@@ -6742,7 +6743,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         }
         send({
           type: 'command.result',
-          title: isUpdate ? 'Manager · progress updated' : 'Manager',
+          title: isUpdate ? 'Manager · Design updated' : 'Manager',
           text: result,
           runId: undefined,
         });
@@ -7375,6 +7376,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   terminalCapable = await ptyAvailable();
   const httpRouter = new GuiHttpRouter();
   registerGuiShellHttpController(httpRouter, authToken);
+  registerGuiDesignHttpController(httpRouter, {
+    createService: () => new DesignDocumentService(projectPrimaryPath, resolveGuiHomeDir(), workDir),
+  });
   registerGuiChatHttpController(httpRouter, {
     runtimeMutationInProgress: () => runtimeMutationInProgress,
     send: streamRun,
@@ -8501,11 +8505,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         currentProjectPath: workDir,
         config: cfg,
         plan: { milestones: 0, today: 0, upcoming: 0 },
-        progressChars: 0,
-        progressPreview: null,
+        designChars: 0,
+        designPreview: null,
         updatePreview: null,
-        progressPath: null,
-        progressUpdatedAt: null,
+        designPath: null,
+        designUpdatedAt: null,
         running,
         transcript,
         assistantSessions: assistantSessions.items,
@@ -8517,10 +8521,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }
     const cfg = await readManagerConfig(projectPrimaryPath, homeDir);
     const plan = await readProjectPlanFile(projectPrimaryPath, homeDir);
-    const progress = await readProgressFile(projectPrimaryPath, homeDir);
-    const progressPath = managerProgressPath(projectPrimaryPath, homeDir);
-    let progressUpdatedAt: string | null = null;
-    try { progressUpdatedAt = (await stat(progressPath)).mtime.toISOString(); } catch { /* none yet */ }
+    const design = await readDesignFile(projectPrimaryPath, homeDir);
+    const designPath = managerDesignPath(projectPrimaryPath, homeDir);
+    let designUpdatedAt: string | null = null;
+    try { designUpdatedAt = (await stat(designPath)).mtime.toISOString(); } catch { /* none yet */ }
     return json(res, 200, {
       scope: 'project',
       canUseProjectScope: true,
@@ -8528,11 +8532,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       activeWorkPath: workDir,
       config: cfg,
       plan: { milestones: plan.milestones.length, today: plan.today.length, upcoming: plan.upcoming.length },
-      progressChars: progress?.length ?? 0,
-      progressPreview: progress ? progress.slice(0, 2000) : null,
-      updatePreview: formatManagerUpdatePreview(plan, progress),
-      progressPath,
-      progressUpdatedAt,
+      designChars: design?.length ?? 0,
+      designPreview: design ? design.slice(0, 2000) : null,
+      updatePreview: formatManagerUpdatePreview(plan, design),
+      designPath,
+      designUpdatedAt,
       running,
       transcript,
       assistantSessions: assistantSessions.items,
@@ -8574,9 +8578,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           allowedReadPaths: Array.isArray(body.allowedReadPaths)
             ? body.allowedReadPaths.filter((p: unknown): p is string => typeof p === 'string' && p.trim().length > 0)
             : current.allowedReadPaths,
-          mirrorProgressToWorkspace: typeof body.mirrorProgressToWorkspace === 'boolean'
-            ? body.mirrorProgressToWorkspace
-            : current.mirrorProgressToWorkspace,
+          mirrorDesignToWorkspace: typeof body.mirrorDesignToWorkspace === 'boolean'
+            ? body.mirrorDesignToWorkspace
+            : typeof body.mirrorProgressToWorkspace === 'boolean'
+              ? body.mirrorProgressToWorkspace
+              : current.mirrorDesignToWorkspace,
         };
         await writeManagerConfig(projectPrimaryPath, homeDir, config);
         return config;
@@ -8946,21 +8952,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       return json(res, 400, { error: (error as Error).message });
     }
   }
-  if (req.method === 'GET' && url.pathname === '/api/project-doc') {
-    const hd = resolveGuiHomeDir();
-    const content = (await readProgressFile(projectPrimaryPath, hd)) ?? '';
-    return json(res, 200, { content, path: managerProgressPath(projectPrimaryPath, hd) });
-  }
   if (req.method === 'POST' && url.pathname === '/api/project-doc') {
-    try {
-      const body = await readJson(req);
-      const content = typeof body.content === 'string' ? body.content : '';
-      const hd = resolveGuiHomeDir();
-      const savedPath = await writeProgressFile(projectPrimaryPath, hd, content);
-      return json(res, 200, { ok: true, path: savedPath });
-    } catch (error) {
-      return json(res, 400, { error: (error as Error).message });
-    }
+    return json(res, 410, { error: 'Use POST /api/design/patch.' });
   }
   if (req.method === 'GET' && url.pathname === '/api/project-memory-doc') {
     if (!sdk) return json(res, 503, { error: 'Hadamard SDK is not configured.' });

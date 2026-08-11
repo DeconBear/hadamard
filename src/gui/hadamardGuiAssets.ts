@@ -32,6 +32,7 @@ import {
   GUI_SESSION_CENTER_OPEN_CLIENT_SCRIPT,
   GUI_SESSION_CREATE_CLIENT_SCRIPT,
 } from './guiSessionClientScript.js';
+import { GUI_DESIGN_CLIENT_SCRIPT } from './guiDesignClientScript.js';
 
 function guiIcon(name: string): string {
   const icons: Record<string, string> = {
@@ -511,7 +512,7 @@ export function createHadamardGuiHtml(): string {
           <span id="managerHeaderTitle" class="manager-widget-topic">Assistant</span>
         </div>
         <div class="manager-widget-controls">
-          <button type="button" id="managerUpdateQuick" class="manager-ctrl-btn" title="Update progress">${guiIcon('refresh')}</button>
+          <button type="button" id="managerUpdateQuick" class="manager-ctrl-btn" title="Update Design">${guiIcon('refresh')}</button>
           <button type="button" id="managerSettingsQuick" class="manager-ctrl-btn" title="Settings">${guiIcon('gear')}</button>
           <button type="button" id="managerExpandBtn" class="manager-ctrl-btn" title="Expand">${guiIcon('maximize')}</button>
           <button type="button" id="managerCloseBtn" class="manager-ctrl-btn" title="Close">${guiIcon('close')}</button>
@@ -551,7 +552,7 @@ export function createHadamardGuiHtml(): string {
             <textarea id="managerCfgPaths" rows="3" placeholder="D:\\docs\\project-notes"></textarea>
           </label>
           <label class="manager-cfg-check" id="managerCfgMirrorRow">
-            <input type="checkbox" id="managerCfgMirror"> Mirror PROGRESS.md into workspace (.hadamard/PROGRESS.md)
+            <input type="checkbox" id="managerCfgMirror"> Mirror DESIGN.md into workspace (.hadamard/DESIGN.md)
           </label>
           <div class="manager-actions">
             <button type="submit" class="pill-btn primary">Save</button>
@@ -571,7 +572,7 @@ export function createHadamardGuiHtml(): string {
           </div>
         </div>
         <div class="manager-quick-actions">
-          <button type="button" id="managerUpdateBtn" class="manager-quick-btn primary">Update progress</button>
+          <button type="button" id="managerUpdateBtn" class="manager-quick-btn primary">Update Design</button>
           <button type="button" id="managerSchedulesLink" class="manager-quick-btn">Schedules</button>
         </div>
       </footer>
@@ -1545,13 +1546,15 @@ body[data-theme="dark"] {
 .project-settings-textarea { width: 100%; box-sizing: border-box; min-height: 160px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg-surface); color: var(--text-1); font: 12.5px/1.45 var(--font-mono); resize: vertical; }
 .project-doc-panel { min-height: 0; display: flex; flex-direction: column; background: var(--bg-surface); border-right: 1px solid var(--border); overflow: hidden; }
 .detail-main .project-doc-panel { flex: 1; border-right: 0; }
-.project-doc-toolbar { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
+.project-doc-toolbar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
 .project-doc-subtabs { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 0 16px 8px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
+.project-doc-migration { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 16px; color: var(--text-2); background: color-mix(in srgb, var(--warning) 10%, var(--bg-surface)); border-bottom: 1px solid var(--border); font-size: 12px; }
+.project-doc-migration span { flex: 1; }
 .project-doc-subtab { min-height: 28px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer; }
 .project-doc-subtab.active { border-color: var(--border); background: var(--bg-surface-2); color: var(--text-1); font-weight: 600; }
 .project-doc-plan-select { min-height: 28px; min-width: 220px; max-width: 360px; border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; background: var(--bg-surface); color: var(--text-1); font-size: 12px; }
 .project-doc-toolbar h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-2); }
-.project-doc-actions { display: flex; align-items: center; gap: 10px; }
+.project-doc-actions { flex: 1 1 640px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .project-doc-edit-btn { min-height: 28px; padding: 0 10px; font-size: 12px; }
 .project-doc-status { font-size: 11px; color: var(--text-2); }
 .project-doc-status.dirty { color: var(--brand); }
@@ -2217,7 +2220,7 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
   padding: 2px 2px 8px;
 }
 .manager-transcript:empty::before {
-  content: 'Ask about progress, priorities, or milestones — or click Update progress.';
+  content: 'Ask about design, priorities, or milestones — or click Update Design.';
   color: var(--text-2);
   font-size: 12.5px;
   line-height: 1.55;
@@ -5045,6 +5048,9 @@ const state = {
   projectDocSubTab: 'design',
   projectDocPlanPath: null,
   projectDocRaw: '',
+  projectDocRevision: null,
+  projectDocMigrationState: 'empty',
+  projectDocTemplates: [],
   projectDocEditing: false,
   projectDocDirty: false,
   projectDocSaveTimer: null,
@@ -9547,13 +9553,17 @@ function projectDocEmptyMessage(subTab) {
 function projectDocApiEndpoint(subTab) {
   if (subTab === 'memory') return '/api/project-memory-doc';
   if (subTab === 'plans') return '/api/project-plan';
-  return '/api/project-doc';
+  return '/api/design';
 }
 function updateProjectDocChrome() {
   const title = el('projectDocTitle');
   if (title) title.textContent = projectDocSubTabLabel(state.projectDocSubTab);
   const planSelect = el('projectDocPlanSelect');
   if (planSelect) planSelect.classList.toggle('hidden', state.projectDocSubTab !== 'plans');
+  for (const id of ['projectDocTemplateSelect', 'projectDocThemeSelect', 'projectDocImportBtn', 'projectDocExportBtn', 'projectDocShareBtn']) {
+    const control = el(id);
+    if (control) control.classList.toggle('hidden', state.projectDocSubTab !== 'design');
+  }
   const empty = el('projectDocEmpty');
   if (empty) empty.textContent = projectDocEmptyMessage(state.projectDocSubTab);
   document.querySelectorAll('.project-doc-subtab').forEach((btn) => {
@@ -9620,7 +9630,10 @@ function renderProjectDocPreview(content) {
   view.classList.remove('hidden');
   view.dataset.raw = state.projectDocRaw;
   renderMarkdownInto(view, state.projectDocRaw);
+  if (state.projectDocSubTab === 'design') void renderDesignPreviewServer(state.projectDocRaw);
 }
+
+${GUI_DESIGN_CLIENT_SCRIPT}
 function setProjectDocMode(editing) {
   state.projectDocEditing = editing;
   const view = el('projectDocView');
@@ -9695,17 +9708,24 @@ async function saveProjectDocNow() {
   const subTab = state.projectDocSubTab || 'design';
   setProjectDocStatus('Saving…', 'dirty');
   try {
-    const endpoint = projectDocApiEndpoint(subTab);
+    const endpoint = subTab === 'design' ? '/api/design/patch' : projectDocApiEndpoint(subTab);
     const body = subTab === 'plans'
       ? { path: state.projectDocPlanPath, content }
-      : { content };
+      : subTab === 'design'
+        ? { content, expectedRevision: state.projectDocRevision }
+        : { content };
     const res = await api(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setProjectDocStatus(data.error || 'Save failed', 'error');
       return;
     }
+    const data = await res.json().catch(() => ({}));
     state.projectDocRaw = content;
+    if (subTab === 'design' && data.document) {
+      state.projectDocRevision = data.document.revision || null;
+      state.projectDocMigrationState = data.document.state || 'design';
+    }
     state.projectDocDirty = false;
     if (!state.projectDocEditing) renderProjectDocPreview(content);
     setProjectDocStatus('', '');
@@ -10019,6 +10039,7 @@ async function mountProjectDoc(force) {
   setProjectDocStatus('Loading…', '');
   state.projectDocEditing = false;
   let content = '';
+  let designData = null;
   try {
     if (subTab === 'plans') {
       const plansRes = await api('/api/project-plans');
@@ -10039,6 +10060,7 @@ async function mountProjectDoc(force) {
       if (res.ok) {
         const data = await res.json();
         content = typeof data.content === 'string' ? data.content : '';
+        if (subTab === 'design') designData = data;
       }
     }
   } catch { /* show empty doc */ }
@@ -10046,6 +10068,7 @@ async function mountProjectDoc(force) {
   state.projectDocDirty = false;
   view.dataset.loaded = loadKey;
   state.projectDocEditing = false;
+  if (designData) applyDesignDocumentState(designData);
   updateProjectDocChrome();
   renderProjectDocPreview(content);
   const src = el('projectDocSource');
@@ -12418,45 +12441,7 @@ function renderProjectDetail() {
   docTitle.textContent = 'Design';
   const docActions = document.createElement('div');
   docActions.className = 'project-doc-actions';
-  const statusWrap = document.createElement('div');
-  statusWrap.className = 'project-doc-status-wrap';
-  const statusLabel = document.createElement('label');
-  statusLabel.htmlFor = 'projectStatusSelect';
-  statusLabel.textContent = '状态';
-  const statusSelect = document.createElement('select');
-  statusSelect.id = 'projectStatusSelect';
-  statusSelect.className = 'project-status-select';
-  statusSelect.setAttribute('aria-label', 'Project status');
-  const currentStatus = projectStatusOf(state.snapshot?.projects?.find((p) => p.active) || { status: 'not_started' });
-  for (const value of PROJECT_STATUSES) {
-    const opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = PROJECT_STATUS_LABELS[value];
-    if (value === currentStatus) opt.selected = true;
-    statusSelect.appendChild(opt);
-  }
-  statusSelect.addEventListener('change', () => { void saveProjectStatus(statusSelect.value); });
-  statusWrap.append(statusLabel, statusSelect);
-  const planSelect = document.createElement('select');
-  planSelect.id = 'projectDocPlanSelect';
-  planSelect.className = 'project-doc-plan-select hidden';
-  planSelect.setAttribute('aria-label', 'Plan file');
-  planSelect.addEventListener('change', () => {
-    if (state.projectDocDirty) void saveProjectDocNow();
-    state.projectDocPlanPath = planSelect.value || null;
-    state.projectDocLoadedFor = null;
-    void mountProjectDoc(true);
-  });
-  const editBtn = document.createElement('button');
-  editBtn.type = 'button';
-  editBtn.id = 'projectDocEditBtn';
-  editBtn.className = 'pill-btn project-doc-edit-btn';
-  editBtn.textContent = 'Edit';
-  editBtn.addEventListener('click', () => toggleProjectDocEdit());
-  const docStatus = document.createElement('span');
-  docStatus.id = 'projectDocStatus';
-  docStatus.className = 'project-doc-status';
-  docActions.append(statusWrap, planSelect, editBtn, docStatus);
+  docActions.append(...createProjectDocumentActions());
   docToolbar.append(docTitle, docActions);
   const docSubtabs = document.createElement('div');
   docSubtabs.className = 'project-doc-subtabs';
@@ -12473,6 +12458,9 @@ function renderProjectDetail() {
     btn.addEventListener('click', () => setProjectDocSubTab(tab[0]));
     docSubtabs.appendChild(btn);
   }
+  const migration = document.createElement('div');
+  migration.id = 'projectDocMigration';
+  migration.className = 'project-doc-migration hidden';
   const docScroll = document.createElement('div');
   docScroll.id = 'projectDocScroll';
   docScroll.className = 'project-doc-scroll';
@@ -12502,7 +12490,7 @@ function renderProjectDetail() {
   });
   docEditor.append(docView, docEmpty, docSource);
   docScroll.appendChild(docEditor);
-  docPanel.append(docToolbar, docSubtabs, docScroll);
+  docPanel.append(docToolbar, docSubtabs, migration, docScroll);
   const issuesPanel = document.createElement('section');
   issuesPanel.id = 'projectIssuesPanel';
   issuesPanel.className = 'project-issues-panel' + (state.projectDetailTab === 'issues' ? '' : ' hidden');
@@ -24878,9 +24866,9 @@ async function refreshManagerState(forceHydrate = false) {
           ? 'focus ' + String(data.currentProjectPath).split(/[/\\\\]/).filter(Boolean).pop()
           : 'global';
       } else {
-        meta.textContent = data.progressUpdatedAt
-          ? 'updated ' + formatRelativeTime(data.progressUpdatedAt)
-          : 'no progress doc yet';
+        meta.textContent = data.designUpdatedAt
+          ? 'updated ' + formatRelativeTime(data.designUpdatedAt)
+          : 'no Design document yet';
       }
     }
     const line = el('managerStatusLine');
@@ -24901,7 +24889,7 @@ async function refreshManagerState(forceHydrate = false) {
           'model: ' + modelLabel + ' (read-only)',
           'readScope: ' + (cfg.readScope || 'workspace-only'),
         ];
-        if (cfg.mirrorProgressToWorkspace) parts.push('mirror: on');
+        if (cfg.mirrorDesignToWorkspace) parts.push('mirror: on');
         if (data.schedules && data.schedules.length) parts.push(data.schedules.length + ' schedule' + (data.schedules.length === 1 ? '' : 's'));
         line.textContent = parts.join('  ·  ');
       }
@@ -25149,7 +25137,7 @@ function openManagerConfigForm() {
     mountManagerConfigModelPicker(cfg.bridgeConfig || '', cfg.model || '');
     if (el('managerCfgScope')) el('managerCfgScope').value = cfg.readScope || 'workspace-only';
     if (el('managerCfgPaths')) el('managerCfgPaths').value = (cfg.allowedReadPaths || []).join('\\n');
-    if (el('managerCfgMirror')) el('managerCfgMirror').checked = !!cfg.mirrorProgressToWorkspace;
+    if (el('managerCfgMirror')) el('managerCfgMirror').checked = !!cfg.mirrorDesignToWorkspace;
     applyAssistantScopeUi();
     form.classList.remove('hidden');
   })();
@@ -25223,11 +25211,11 @@ function wireManagerPanel() {
       const res = await api('/api/manager/state?scope=project');
       if (res.ok) {
         const data = await res.json();
-        const preview = data.updatePreview || 'Update progress documents from recent activity?';
-        if (!window.confirm('Update progress?\\n\\n' + preview + '\\n\\nProceed?')) return;
+        const preview = data.updatePreview || 'Update Design and plan documents from recent activity?';
+        if (!window.confirm('Update Design?\\n\\n' + preview + '\\n\\nProceed?')) return;
       }
     } catch { /* proceed without preview */ }
-    managerAddMsg('user', 'Update progress');
+    managerAddMsg('user', 'Update Design');
     managerStream('/api/manager/update', {});
   });
   el('managerSchedulesLink')?.addEventListener('click', () => {
@@ -25252,7 +25240,7 @@ function wireManagerPanel() {
             ...selectedManagerCfg(),
             readScope: el('managerCfgScope')?.value || 'workspace-only',
             allowedReadPaths: (el('managerCfgPaths')?.value || '').split('\\n').map((p) => p.trim()).filter(Boolean),
-            mirrorProgressToWorkspace: !!el('managerCfgMirror')?.checked,
+            mirrorDesignToWorkspace: !!el('managerCfgMirror')?.checked,
           }),
       });
       if (res.ok) {
