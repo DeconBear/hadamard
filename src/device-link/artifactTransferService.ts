@@ -246,6 +246,8 @@ export class DeviceLinkArtifactTransferService {
   ): Promise<DeviceLinkArtifactTransferState> {
     const workspaceRoot = this.options.workspaceRoot;
     if (!workspaceRoot) throw new Error('No Device Link workspace root is configured.');
+    const outboxLock = `outbox:${assertSafeStorageSegment('deviceId', deviceId)}`;
+    return this.withLock(outboxLock, async () => {
     const root = path.resolve(workspaceRoot);
     const source = path.resolve(root, sourceRelativePath);
     const relative = path.relative(root, source);
@@ -296,6 +298,7 @@ export class DeviceLinkArtifactTransferService {
       await rm(directory, { recursive: true, force: true }).catch(() => undefined);
       throw error;
     }
+    });
   }
 
   async listOutbox(deviceId: string): Promise<DeviceLinkArtifactTransferState[]> {

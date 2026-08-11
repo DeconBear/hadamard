@@ -17,6 +17,28 @@ afterEach(async () => {
 });
 
 describe('Device Link artifact transfer', () => {
+  it('serializes concurrent outbox quota reservations per device', async () => {
+    const root = await tempRoot();
+    const workspace = path.join(root, 'workspace');
+    await mkdir(workspace, { recursive: true });
+    await writeFile(path.join(workspace, 'left.bin'), Buffer.alloc(8, 1));
+    await writeFile(path.join(workspace, 'right.bin'), Buffer.alloc(8, 2));
+    const service = new DeviceLinkArtifactTransferService({
+      rootDirectory: path.join(root, 'transfers'),
+      workspaceRoot: workspace,
+      maxDeviceQuotaBytes: 12,
+    });
+
+    const outcomes = await Promise.allSettled([
+      service.stageOutgoing('phone', 'left.bin'),
+      service.stageOutgoing('phone', 'right.bin'),
+    ]);
+
+    expect(outcomes.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.filter(result => result.status === 'rejected')).toHaveLength(1);
+    expect(await service.listOutbox('phone')).toHaveLength(1);
+  });
+
   it('accepts out-of-order and duplicate chunks, resumes, verifies, and commits explicitly', async () => {
     const root = await tempRoot();
     const workspace = path.join(root, 'workspace');

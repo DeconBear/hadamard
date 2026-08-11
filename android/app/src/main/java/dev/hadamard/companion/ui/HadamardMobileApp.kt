@@ -1,8 +1,14 @@
 package dev.hadamard.companion.ui
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree
+import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +34,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -44,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +60,7 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import dev.hadamard.companion.model.MessageRole
 import dev.hadamard.companion.model.SessionRecord
+import dev.hadamard.companion.devicelink.InboxStatus
 
 private val Forest = Color(0xFF173F35)
 private val Gold = Color(0xFFF4C95D)
@@ -63,6 +72,13 @@ private val Muted = Color(0xFF60716B)
 @Composable
 fun HadamardMobileApp(viewModel: HadamardViewModel) {
   val state by viewModel.state.collectAsState()
+  val context = LocalContext.current
+  val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    if (granted) viewModel.startVoiceNote() else viewModel.setStatus("Microphone permission was denied")
+  }
+  val systemAudioPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+    viewModel.startSystemAudio(result.resultCode, result.data)
+  }
   BackHandler(enabled = state.screen != MobileScreen.HOME) {
     viewModel.navigate(MobileScreen.HOME)
   }
@@ -102,8 +118,16 @@ fun HadamardMobileApp(viewModel: HadamardViewModel) {
         state.status?.let { StatusStrip(it) }
         when (state.screen) {
           MobileScreen.HOME -> HomeScreen(state, viewModel)
-          MobileScreen.PHONE -> PhoneScreen(state, viewModel)
+          MobileScreen.PHONE -> PhoneScreen(state, viewModel) {
+            if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+              viewModel.startVoiceNote()
+            } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+          }
           MobileScreen.COMPUTERS -> ComputersScreen(state, viewModel)
+          MobileScreen.TRANSFERS -> TransfersScreen(state, viewModel) {
+            val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            systemAudioPermission.launch(manager.createScreenCaptureIntent())
+          }
           MobileScreen.SETTINGS -> SettingsScreen(state, viewModel)
         }
       }
@@ -168,6 +192,15 @@ private fun HomeScreen(state: MobileUiState, viewModel: HadamardViewModel) {
       ) { viewModel.navigate(MobileScreen.COMPUTERS) }
     }
     item {
+      EntryCard(
+        eyebrow = "ARTIFACTS & AUDIO",
+        title = "Transfers",
+        description = "${state.inbox.count { it.status == InboxStatus.VERIFIED }} verified inbox items · ${state.artifacts.size} local artifacts",
+        action = "Open transfers",
+        testTag = "open-transfers",
+      ) { viewModel.navigate(MobileScreen.TRANSFERS) }
+    }
+    item {
       OutlinedButton(
         onClick = { viewModel.navigate(MobileScreen.SETTINGS) },
         modifier = Modifier.fillMaxWidth().testTag("open-settings"),
@@ -185,7 +218,7 @@ private fun HomeScreen(state: MobileUiState, viewModel: HadamardViewModel) {
 }
 
 @Composable
-private fun PhoneScreen(state: MobileUiState, viewModel: HadamardViewModel) {
+private fun PhoneScreen(state: MobileUiState, viewModel: HadamardViewModel, requestVoiceRecording: () -> Unit) {
   var prompt by remember { mutableStateOf("") }
   Column(
     Modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("phone-screen"),
@@ -234,6 +267,21 @@ private fun PhoneScreen(state: MobileUiState, viewModel: HadamardViewModel) {
         }
       }
     } else {
+      Surface(
+        color = if (state.audioCapture.status == dev.hadamard.companion.media.AudioCaptureStatus.RECORDING) Color(0xFFFFE4DE) else Color.White,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().testTag("voice-note-controls"),
+      ) {
+        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+          Text(state.audioCapture.visibleLabel, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+          if (state.audioCapture.kind == dev.hadamard.companion.media.AudioCaptureKind.VOICE_NOTE) {
+            OutlinedButton(onClick = viewModel::cancelVoiceNote) { Text("Discard") }
+            Button(onClick = viewModel::stopVoiceNote, modifier = Modifier.testTag("stop-voice-note")) { Text("Stop") }
+          } else {
+            OutlinedButton(onClick = requestVoiceRecording, modifier = Modifier.testTag("record-voice-note")) { Text("Voice note") }
+          }
+        }
+      }
       OutlinedTextField(
         value = prompt,
         onValueChange = { prompt = it },
@@ -245,6 +293,85 @@ private fun PhoneScreen(state: MobileUiState, viewModel: HadamardViewModel) {
         if (state.isRunning) OutlinedButton(onClick = viewModel::cancelRun) { Text("Stop") }
         else Button(onClick = { val value = prompt; prompt = ""; viewModel.send(value) }, enabled = prompt.isNotBlank()) { Text("Run") }
       }
+    }
+  }
+}
+
+@Composable
+private fun TransfersScreen(state: MobileUiState, viewModel: HadamardViewModel, requestSystemAudio: () -> Unit) {
+  var sendDeviceId by remember { mutableStateOf(state.pairedComputers.firstOrNull()?.deviceId.orEmpty()) }
+  val documentPicker = rememberLauncherForActivityResult(OpenDocument()) { uri ->
+    if (uri != null && sendDeviceId.isNotBlank()) viewModel.uploadToComputer(sendDeviceId, uri)
+  }
+  LazyColumn(
+    Modifier.fillMaxSize().padding(horizontal = 18.dp).testTag("transfers-screen"),
+    verticalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    item {
+      Text("Verified inbox", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+      Text("Downloads remain app-private until you explicitly commit them to the selected workspace.", color = Muted)
+    }
+    if (state.inbox.isEmpty()) item { Text("Inbox is empty.", color = Muted) }
+    items(state.inbox) { item ->
+      Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(item.manifest.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(item.status.name, style = MaterialTheme.typography.labelSmall, color = Forest)
+          }
+          Text("${item.manifest.size} bytes · ${item.manifest.sha256.take(14)}…", color = Muted, style = MaterialTheme.typography.bodySmall)
+          if (item.status == InboxStatus.VERIFIED) {
+            Button(
+              onClick = { viewModel.commitInbox(item) },
+              modifier = Modifier.testTag("commit-inbox-${item.manifest.transferId}"),
+            ) { Text("Confirm workspace commit") }
+          }
+        }
+      }
+    }
+    item { HorizontalDivider(); SectionLabel("PAIRED COMPUTER OUTBOX") }
+    items(state.pairedComputers) { computer ->
+      Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(computer.name, fontWeight = FontWeight.Bold)
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { viewModel.refreshRemoteOutbox(computer.deviceId) }) { Text("Refresh files") }
+            Button(onClick = { sendDeviceId = computer.deviceId; documentPicker.launch(arrayOf("*/*")) }) { Text("Send document") }
+          }
+          state.remoteOutbox[computer.deviceId].orEmpty().forEach { manifest ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+              Text(manifest.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+              OutlinedButton(onClick = { viewModel.downloadFromComputer(computer.deviceId, manifest) }) { Text("To inbox") }
+            }
+          }
+        }
+      }
+    }
+    item { HorizontalDivider(); SectionLabel("AUDIO CAPTURE") }
+    item {
+      Surface(color = Color.White, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(state.audioCapture.visibleLabel, fontWeight = FontWeight.SemiBold)
+          Text("System playback is Android-only, opt-in, and always requires a fresh MediaProjection approval. Source apps may block capture.", color = Muted)
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Enable system audio")
+            Switch(checked = state.systemAudioEnabled, onCheckedChange = viewModel::setSystemAudioEnabled, modifier = Modifier.testTag("system-audio-flag"))
+          }
+          if (state.audioCapture.kind == dev.hadamard.companion.media.AudioCaptureKind.SYSTEM_PLAYBACK) {
+            Button(onClick = viewModel::stopSystemAudio, modifier = Modifier.testTag("stop-system-audio")) { Text("Stop system audio") }
+          } else {
+            OutlinedButton(
+              onClick = requestSystemAudio,
+              enabled = state.systemAudioEnabled,
+              modifier = Modifier.testTag("start-system-audio"),
+            ) { Text("Request capture permission") }
+          }
+        }
+      }
+    }
+    item { SectionLabel("LOCAL ARTIFACTS") }
+    items(state.artifacts) { artifact ->
+      CompactCard(artifact.displayName, "${artifact.mediaType} · ${artifact.size} bytes · ${artifact.sha256.take(14)}…")
     }
   }
 }
@@ -458,5 +585,6 @@ private fun screenTitle(screen: MobileScreen) = when (screen) {
   MobileScreen.HOME -> "Mobile companion"
   MobileScreen.PHONE -> "This Phone"
   MobileScreen.COMPUTERS -> "Paired Computer"
+  MobileScreen.TRANSFERS -> "Transfers & audio"
   MobileScreen.SETTINGS -> "Local settings"
 }
