@@ -828,6 +828,11 @@
         "signature": "export declare function createDefaultHadamardSessionMemoryRuntimeState(): HadamardSessionMemoryRuntimeState;"
       },
       {
+        "name": "createDesignConfiguration",
+        "kind": "function",
+        "signature": "export declare function createDesignConfiguration(templateId?: string, themeId?: string): DesignConfiguration;"
+      },
+      {
         "name": "CreateE2bComputerUseOptions",
         "kind": "interface",
         "signature": "export interface CreateE2bComputerUseOptions extends E2bDesktopCreateOptions {\nprefix?: string;\nsandboxFactory?: (options: E2bDesktopCreateOptions) => Promise<E2bDesktopSandboxLike>;\nmoduleLoader?: () => Promise<E2bDesktopModule>;\n}"
@@ -845,7 +850,7 @@
       {
         "name": "createExaSearchTool",
         "kind": "function",
-        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"news\" | \"github\" | \"company\" | \"research paper\" | \"pdf\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
+        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"pdf\" | \"news\" | \"github\" | \"company\" | \"research paper\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
       },
       {
         "name": "createExitWorktreeTool",
@@ -1178,6 +1183,11 @@
         "signature": "export declare function decodeDreamProfileValue(value: string): DreamExecutionProfileRef | undefined;"
       },
       {
+        "name": "decodeZip",
+        "kind": "function",
+        "signature": "export declare function decodeZip(bytes: Buffer, limits?: Partial<ZipDecodeLimits>): Map<string, Buffer>;"
+      },
+      {
         "name": "DEFAULT_AGENT_RUN_STREAM_BUFFER_CAPACITY",
         "kind": "value",
         "signature": "DEFAULT_AGENT_RUN_STREAM_BUFFER_CAPACITY = 256"
@@ -1196,6 +1206,16 @@
         "name": "DEFAULT_DESIGN_FRONTMATTER",
         "kind": "value",
         "signature": "DEFAULT_DESIGN_FRONTMATTER: Readonly<DesignFrontmatter>"
+      },
+      {
+        "name": "DEFAULT_DESIGN_TEMPLATES",
+        "kind": "value",
+        "signature": "DEFAULT_DESIGN_TEMPLATES: readonly DesignTemplate[]"
+      },
+      {
+        "name": "DEFAULT_DESIGN_THEMES",
+        "kind": "value",
+        "signature": "DEFAULT_DESIGN_THEMES: readonly DesignTheme[]"
       },
       {
         "name": "DEFAULT_MANAGER_CONFIG",
@@ -1293,9 +1313,39 @@
         "signature": "DESIGN_FILE_NAME = \"DESIGN.md\""
       },
       {
+        "name": "DesignArtifact",
+        "kind": "interface",
+        "signature": "export interface DesignArtifact {\nid: string;\nmediaType: string;\nbytes: Buffer;\nchecksum: string;\nmetadata: JsonObject;\n}"
+      },
+      {
+        "name": "DesignArtifactRepository",
+        "kind": "interface",
+        "signature": "export interface DesignArtifactRepository {\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
+      },
+      {
+        "name": "DesignAssetDescriptor",
+        "kind": "interface",
+        "signature": "export interface DesignAssetDescriptor {\npath: string;\nmediaType: string;\nsha256: string;\nsize: number;\n}"
+      },
+      {
+        "name": "DesignConfiguration",
+        "kind": "interface",
+        "signature": "export interface DesignConfiguration {\nversion: 1;\ndocumentId: string;\noriginDocumentId?: string;\nprovenance?: JsonObject;\ntemplate: {\nid: string;\nversion: number;\n};\ntheme: {\nid: string;\ntokens: DesignThemeTokens;\n};\nsections: {\norder: string[];\nhidden: string[];\n};\nassets: DesignAssetDescriptor[];\n}"
+      },
+      {
+        "name": "DesignConfigurationStore",
+        "kind": "class",
+        "signature": "export declare class DesignConfigurationStore {\nprivate readonly directory;\nconstructor(directory: string);\npath(): string;\nload(templateId?: string, themeId?: string): Promise<DesignConfiguration>;\nsave(configuration: DesignConfiguration): Promise<void>;\nensure(templateId?: string, themeId?: string): Promise<DesignConfiguration>;\n}"
+      },
+      {
         "name": "DesignDocumentService",
         "kind": "class",
-        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\ncontent: string;\nrevision: string;\nstate: import(\"./designMigration.js\").DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\nrender(content: string): import(\"./designRenderService.js\").DesignRenderResult;\nmigrate(action: DesignMigrationAction): Promise<import(\"./designDocumentStore.js\").DesignDocumentSnapshot>;\n}"
+        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly shares: DesignShareService;\nreadonly engineeringProfiles: EngineeringProfileService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: import(\"./designMigration.js\").DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\nmigrate(action: DesignMigrationAction): Promise<import(\"./designDocumentStore.js\").DesignDocumentSnapshot>;\n}"
+      },
+      {
+        "name": "DesignDocumentServiceOptions",
+        "kind": "interface",
+        "signature": "export interface DesignDocumentServiceOptions {\ngeneratorVersion?: string;\nartifacts?: DesignArtifactRepository;\n}"
       },
       {
         "name": "DesignDocumentSnapshot",
@@ -1315,22 +1365,37 @@
       {
         "name": "DesignHtmlExport",
         "kind": "interface",
-        "signature": "export interface DesignHtmlExport {\nmediaType: 'text/html';\nfileName: 'DESIGN.html';\nbytes: Buffer;\nchecksum: string;\n}"
+        "signature": "export interface DesignHtmlExport {\nmediaType: 'text/html';\nfileName: 'DESIGN.html';\nbytes: Buffer;\nchecksum: string;\nmanifest: DesignPackageManifest;\n}"
+      },
+      {
+        "name": "DesignImportAction",
+        "kind": "type",
+        "signature": "export type DesignImportAction = 'new-copy' | 'replace-current' | 'merge-sections';"
+      },
+      {
+        "name": "DesignImportCommitResult",
+        "kind": "interface",
+        "signature": "export interface DesignImportCommitResult {\naction: DesignImportAction;\ndesignPath: string;\nconfigurationPath: string;\nconfiguration: DesignConfiguration;\n}"
+      },
+      {
+        "name": "DesignImportCommitService",
+        "kind": "class",
+        "signature": "export declare class DesignImportCommitService {\nprivate readonly documents;\nprivate readonly configurations;\nprivate readonly artifacts?;\nconstructor(documents: DesignDocumentStore, configurations: DesignConfigurationStore, artifacts?: DesignArtifactRepository | undefined);\ncommit(preview: DesignImportPreview, action: DesignImportAction, expectedRevision: string): Promise<DesignImportCommitResult>;\n}"
       },
       {
         "name": "DesignImportExportService",
         "kind": "class",
-        "signature": "export declare class DesignImportExportService {\nprivate readonly renderer;\nconstructor(renderer?: DesignRenderService);\nexportHtml(source: string): DesignHtmlExport;\npreview(bytes: Buffer, fileName: string): DesignImportPreview;\n}"
+        "signature": "export declare class DesignImportExportService {\nprivate readonly renderer;\nreadonly packages: DesignPackageService;\nreadonly pdf: DesignPdfExporter;\nconstructor(renderer?: DesignRenderService, generatorVersion?: string, pdf?: DesignPdfExporter);\nexportPackage(document: DesignTransferDocument, now?: Date): DesignPackageExport;\nexportHtml(source: string | DesignTransferDocument, now?: Date): DesignHtmlExport;\nexportPdf(document: DesignTransferDocument, options?: DesignPdfExportOptions): DesignPdfExport;\npreview(bytes: Buffer, fileName: string): DesignImportPreview;\n}"
       },
       {
         "name": "DesignImportKind",
         "kind": "type",
-        "signature": "export type DesignImportKind = 'markdown' | 'hadamard-html' | 'reference-html' | 'reference-pdf';"
+        "signature": "export type DesignImportKind = 'markdown' | 'hadamard-package' | 'hadamard-html' | 'reference-html' | 'reference-pdf';"
       },
       {
         "name": "DesignImportPreview",
         "kind": "interface",
-        "signature": "export interface DesignImportPreview {\nkind: DesignImportKind;\neditable: boolean;\nmarkdown?: string;\nchecksum: string;\nwarnings: string[];\n}"
+        "signature": "export interface DesignImportPreview {\nkind: DesignImportKind;\neditable: boolean;\nmarkdown?: string;\nconfiguration?: DesignConfiguration;\nmanifest?: DesignPackageManifest;\nchecksum: string;\nwarnings: string[];\nassets?: DesignPackageAsset[];\n}"
       },
       {
         "name": "DesignMigrationAction",
@@ -1348,29 +1413,109 @@
         "signature": "export type DesignMigrationState = 'empty' | 'design' | 'legacy-progress' | 'conflict';"
       },
       {
+        "name": "DesignPackageAsset",
+        "kind": "interface",
+        "signature": "export interface DesignPackageAsset {\npath: string;\nmediaType: string;\nbytes: Buffer;\n}"
+      },
+      {
+        "name": "DesignPackageExport",
+        "kind": "interface",
+        "signature": "export interface DesignPackageExport {\nfileName: 'DESIGN.hadamard-design.zip';\nmediaType: 'application/vnd.hadamard.design+zip';\nbytes: Buffer;\nchecksum: string;\nmanifest: DesignPackageManifest;\n}"
+      },
+      {
+        "name": "DesignPackageManifest",
+        "kind": "interface",
+        "signature": "export interface DesignPackageManifest {\nschemaVersion: 1;\ndocumentId: string;\noriginDocumentId?: string;\ntemplate: {\nid: string;\nversion: number;\n};\nexportedAt: string;\ngenerator: {\nname: 'Hadamard';\nversion: string;\n};\nresources: DesignPackageResource[];\nprovenance: JsonObject;\n}"
+      },
+      {
+        "name": "DesignPackagePreview",
+        "kind": "interface",
+        "signature": "export interface DesignPackagePreview {\nkind: 'hadamard-package';\neditable: true;\nmarkdown: string;\nconfiguration: DesignConfiguration;\nmanifest: DesignPackageManifest;\nchecksum: string;\nwarnings: string[];\nassets: DesignPackageAsset[];\n}"
+      },
+      {
+        "name": "DesignPackageResource",
+        "kind": "interface",
+        "signature": "export interface DesignPackageResource {\npath: string;\nmediaType: string;\nsize: number;\nsha256: string;\n}"
+      },
+      {
+        "name": "DesignPackageService",
+        "kind": "class",
+        "signature": "export declare class DesignPackageService {\nprivate readonly generatorVersion;\nconstructor(generatorVersion: string);\nexport(markdown: string, configuration: DesignConfiguration, assets?: readonly DesignPackageAsset[], now?: Date): DesignPackageExport;\npreview(bytes: Buffer): DesignPackagePreview;\n}"
+      },
+      {
+        "name": "DesignPdfExport",
+        "kind": "interface",
+        "signature": "export interface DesignPdfExport {\nfileName: 'DESIGN.pdf';\nmediaType: 'application/pdf';\nbytes: Buffer;\nchecksum: string;\nmetadata: {\ntitle: string;\nauthor: string;\ndocumentId: string;\ntemplate: string;\nexportedAt: string;\nsourceUrl?: string;\n};\n}"
+      },
+      {
+        "name": "DesignPdfExporter",
+        "kind": "class",
+        "signature": "export declare class DesignPdfExporter {\nexport(markdown: string, configuration: DesignConfiguration, options?: DesignPdfExportOptions): DesignPdfExport;\n}"
+      },
+      {
+        "name": "DesignPdfExportOptions",
+        "kind": "interface",
+        "signature": "export interface DesignPdfExportOptions {\ntitle?: string;\nauthor?: string;\nsourceUrl?: string;\nexportedAt?: Date;\n}"
+      },
+      {
         "name": "DesignRenderResult",
         "kind": "interface",
-        "signature": "export interface DesignRenderResult {\nhtml: string;\nbodyHtml: string;\nchecksum: string;\nmetadata: DesignFrontmatter;\n}"
+        "signature": "export interface DesignRenderResult {\nhtml: string;\nbodyHtml: string;\nchecksum: string;\nmetadata: DesignFrontmatter;\ntheme: DesignThemeTokens;\n}"
+      },
+      {
+        "name": "DesignRenderSections",
+        "kind": "interface",
+        "signature": "export interface DesignRenderSections {\norder: readonly string[];\nhidden: readonly string[];\n}"
       },
       {
         "name": "DesignRenderService",
         "kind": "class",
-        "signature": "export declare class DesignRenderService {\nrender(source: string): DesignRenderResult;\n}"
+        "signature": "export declare class DesignRenderService {\nrender(source: string, overrides?: Partial<DesignThemeTokens>, sections?: DesignRenderSections): DesignRenderResult;\n}"
+      },
+      {
+        "name": "DesignShareFormat",
+        "kind": "type",
+        "signature": "export type DesignShareFormat = 'html' | 'pdf' | 'package';"
+      },
+      {
+        "name": "DesignShareService",
+        "kind": "class",
+        "signature": "export declare class DesignShareService {\nprivate readonly ledgerPath;\nprivate readonly artifacts;\nprivate readonly transfers;\nconstructor(ledgerPath: string, artifacts: DesignArtifactRepository, transfers: DesignImportExportService);\nprivate load;\nprivate save;\ncreate(document: DesignTransferDocument, revision: string, expiresInHours?: number, now?: Date, sourceBaseUrl?: string): Promise<{\ntoken: string;\nsnapshot: Omit<DesignShareSnapshot, 'tokenHash'>;\n}>;\nresolve(token: string, now?: Date): Promise<Omit<DesignShareSnapshot, 'tokenHash'>>;\ndownload(token: string, format: DesignShareFormat, now?: Date): Promise<{\nsnapshot: Omit<DesignShareSnapshot, \"tokenHash\">;\nreference: {\nid: string;\nchecksum: string;\nmediaType: string;\nfileName: string;\n};\nbytes: Buffer<ArrayBufferLike>;\n}>;\nrevoke(token: string, now?: Date): Promise<void>;\n}"
+      },
+      {
+        "name": "DesignShareSnapshot",
+        "kind": "interface",
+        "signature": "export interface DesignShareSnapshot {\nsnapshotId: string;\ndocumentId: string;\nrevision: string;\nexportedAt: string;\nexpiresAt: string;\nrevokedAt?: string;\ntokenHash: string;\npermission: 'design.snapshot.read';\nartifacts: Record<DesignShareFormat, {\nid: string;\nchecksum: string;\nmediaType: string;\nfileName: string;\n}>;\n}"
       },
       {
         "name": "DesignTemplate",
         "kind": "interface",
-        "signature": "export interface DesignTemplate {\nid: string;\nversion: number;\nname: string;\nsections: readonly DesignTemplateSection[];\n}"
+        "signature": "export interface DesignTemplate {\nid: string;\nversion: number;\nname: string;\ndescription: string;\nengineeringProfileId: string;\nsections: readonly DesignTemplateSection[];\n}"
       },
       {
         "name": "DesignTemplateRegistry",
         "kind": "class",
-        "signature": "export declare class DesignTemplateRegistry {\nprivate readonly templates;\nconstructor(templates?: readonly DesignTemplate[]);\nregister(template: DesignTemplate): void;\nget(id: string): DesignTemplate | undefined;\nlist(): DesignTemplate[];\ncreateMarkdown(id: string): string;\n}"
+        "signature": "export declare class DesignTemplateRegistry {\nprivate readonly templates;\nconstructor(templates?: readonly DesignTemplate[]);\nregister(candidate: DesignTemplate): void;\nget(id: string): DesignTemplate | undefined;\nlist(): DesignTemplate[];\ncreateMarkdown(id: string): string;\n}"
       },
       {
         "name": "DesignTemplateSection",
         "kind": "interface",
-        "signature": "export interface DesignTemplateSection {\nid: string;\ntitle: string;\nprompt: string;\nrequired?: boolean;\n}"
+        "signature": "export interface DesignTemplateSection {\nid: string;\ntitle: string;\nprompt: string;\nrequired?: boolean;\nrepeatable?: boolean;\n}"
+      },
+      {
+        "name": "DesignTheme",
+        "kind": "interface",
+        "signature": "export interface DesignTheme {\nid: string;\nname: string;\ntokens: Readonly<DesignThemeTokens>;\n}"
+      },
+      {
+        "name": "DesignThemeTokens",
+        "kind": "interface",
+        "signature": "export interface DesignThemeTokens {\naccentColor: string;\nbackgroundColor: string;\ntextColor: string;\nmutedColor: string;\nfontFamily: string;\ncodeFontFamily: string;\npageWidth: number;\ncover: boolean;\nlogoDataUrl?: string;\nheader?: string;\nfooter?: string;\ncodeTheme: 'light' | 'dark';\n}"
+      },
+      {
+        "name": "DesignTransferDocument",
+        "kind": "interface",
+        "signature": "export interface DesignTransferDocument {\nmarkdown: string;\nconfiguration: DesignConfiguration;\nassets?: DesignPackageAsset[];\n}"
       },
       {
         "name": "detectBridgeProviders",
@@ -1481,6 +1626,61 @@
         "name": "encodeHadamardProjectPath",
         "kind": "function",
         "signature": "export declare function encodeHadamardProjectPath(workDir: string): string;"
+      },
+      {
+        "name": "encodeZip",
+        "kind": "function",
+        "signature": "export declare function encodeZip(entries: readonly ZipEntry[]): Buffer;"
+      },
+      {
+        "name": "ENGINEERING_PROFILES",
+        "kind": "value",
+        "signature": "ENGINEERING_PROFILES: readonly EngineeringProfile[]"
+      },
+      {
+        "name": "EngineeringConstraint",
+        "kind": "interface",
+        "signature": "export interface EngineeringConstraint {\nid: string;\ntitle: string;\ndesignStatement: string;\nagentInstruction: string;\npolicyRules: PolicyRule[];\nvalidators: EngineeringValidatorDefinition[];\n}"
+      },
+      {
+        "name": "EngineeringConstraintDrift",
+        "kind": "interface",
+        "signature": "export interface EngineeringConstraintDrift {\nid: string;\ndesign: boolean;\nagents: boolean;\npolicy: boolean;\nvalidators: boolean;\n}"
+      },
+      {
+        "name": "EngineeringProfile",
+        "kind": "interface",
+        "signature": "export interface EngineeringProfile {\nid: string;\nname: string;\nconstraints: readonly EngineeringConstraint[];\n}"
+      },
+      {
+        "name": "EngineeringProfileDiff",
+        "kind": "interface",
+        "signature": "export interface EngineeringProfileDiff {\ntarget: EngineeringProfileTarget;\npath: string;\nbefore: string;\nafter: string;\nbeforeChecksum: string;\nchanged: boolean;\n}"
+      },
+      {
+        "name": "EngineeringProfileDriftReport",
+        "kind": "interface",
+        "signature": "export interface EngineeringProfileDriftReport {\nprofileId: string;\nconstraints: EngineeringConstraintDrift[];\nexpressedNotExecuted: string[];\nexecutedNotDesigned: string[];\n}"
+      },
+      {
+        "name": "EngineeringProfileProposal",
+        "kind": "interface",
+        "signature": "export interface EngineeringProfileProposal {\nproposalId: string;\nprofile: EngineeringProfile;\nsourceConstraintIds: string[];\ndiffs: Record<EngineeringProfileTarget, EngineeringProfileDiff>;\n}"
+      },
+      {
+        "name": "EngineeringProfileService",
+        "kind": "class",
+        "signature": "export declare class EngineeringProfileService {\nprivate readonly documents;\nprivate readonly agentsPath;\nprivate readonly policyPath;\nprivate readonly validatorsPath;\nconstructor(workspacePath: string, documents: DesignDocumentStore);\npropose(profileId: string): Promise<EngineeringProfileProposal>;\naudit(profileId: string): Promise<EngineeringProfileDriftReport>;\napply(proposal: EngineeringProfileProposal, targets: readonly EngineeringProfileTarget[], confirmed: boolean): Promise<EngineeringProfileTarget[]>;\n}"
+      },
+      {
+        "name": "EngineeringProfileTarget",
+        "kind": "type",
+        "signature": "export type EngineeringProfileTarget = 'design' | 'agents' | 'policy' | 'validators';"
+      },
+      {
+        "name": "EngineeringValidatorDefinition",
+        "kind": "interface",
+        "signature": "export interface EngineeringValidatorDefinition {\nid: string;\ncommand: string;\ndescription: string;\nsourceConstraintIds: string[];\n}"
       },
       {
         "name": "ensureConfiguredTeamGraph",
@@ -1876,6 +2076,11 @@
         "name": "getDefaultHadamardSettingsPath",
         "kind": "function",
         "signature": "export declare function getDefaultHadamardSettingsPath(homeDir?: string): string;"
+      },
+      {
+        "name": "getEngineeringProfile",
+        "kind": "function",
+        "signature": "export declare function getEngineeringProfile(id: string): EngineeringProfile;"
       },
       {
         "name": "getHadamardAgentTemplate",
@@ -4053,6 +4258,11 @@
         "signature": "export declare class MemoryProposalService {\nprivate readonly storageRoot;\nprivate readonly allowedRoots;\nconstructor(storageRoot: string, allowedRoots: string[]);\npropose(input: {\ntargetPath: string;\ncontent: string;\nexplanation: string;\nprovenance: MemoryProposal['provenance'];\n}): Promise<MemoryProposal>;\nlist(status?: MemoryProposal['status']): Promise<MemoryProposal[]>;\napply(proposalId: string): Promise<MemoryProposal>;\nreject(proposalId: string): Promise<MemoryProposal>;\nprivate get;\nprivate write;\nprivate safeTarget;\n}"
       },
       {
+        "name": "mergeDesignSections",
+        "kind": "function",
+        "signature": "export declare function mergeDesignSections(current: string, imported: string): string;"
+      },
+      {
         "name": "mergeHadamardHooks",
         "kind": "function",
         "signature": "export declare function mergeHadamardHooks(base: HadamardHooks | undefined, extra: HadamardHooks | undefined): HadamardHooks | undefined;"
@@ -4176,6 +4386,11 @@
         "name": "normalizeCleanBridgeError",
         "kind": "function",
         "signature": "export declare function normalizeCleanBridgeError(error: unknown): Error;"
+      },
+      {
+        "name": "normalizeDesignConfiguration",
+        "kind": "function",
+        "signature": "export declare function normalizeDesignConfiguration(value: unknown): DesignConfiguration;"
       },
       {
         "name": "normalizeGoal",
@@ -4796,6 +5011,11 @@
         "name": "ResolvedContextRules",
         "kind": "interface",
         "signature": "export interface ResolvedContextRules {\nrules: ContextRule[];\nprompt: string;\n}"
+      },
+      {
+        "name": "resolveDesignTheme",
+        "kind": "function",
+        "signature": "export declare function resolveDesignTheme(id: string, overrides?: Partial<DesignThemeTokens>): DesignTheme;"
       },
       {
         "name": "ResolvedPolicy",
@@ -5513,6 +5733,11 @@
         "signature": "SKILL_TOOL_NAME = \"Skill\""
       },
       {
+        "name": "SqliteDesignArtifactRepository",
+        "kind": "class",
+        "signature": "export declare class SqliteDesignArtifactRepository implements DesignArtifactRepository {\nprivate readonly filename;\nprivate readonly tenantId;\nconstructor(filename: string, tenantId?: string);\nprivate use;\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
+      },
+      {
         "name": "StageDeleteProposalInput",
         "kind": "interface",
         "signature": "export interface StageDeleteProposalInput {\nassistantSessionId: string;\nkind: ReferenceDefinitionKind;\nname: string;\nreferences: ReferenceEdge[];\nexplanation?: string;\n}"
@@ -5541,6 +5766,11 @@
         "name": "StdioMcpServerDefinition",
         "kind": "interface",
         "signature": "export interface StdioMcpServerDefinition {\nkind: 'stdio';\nname: string;\ncommand: string;\nargs?: string[];\nenv?: Record<string, string>;\ncwd?: string;\nprefix?: string;\nstderr?: 'inherit' | 'ignore' | 'pipe';\n}"
+      },
+      {
+        "name": "StorageV2DesignArtifactRepository",
+        "kind": "class",
+        "signature": "export declare class StorageV2DesignArtifactRepository implements DesignArtifactRepository {\nprivate readonly store;\nprivate readonly tenantId;\nconstructor(store: ArtifactStore, tenantId: string);\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
       },
       {
         "name": "StoredApproval",
@@ -5928,6 +6158,11 @@
         "signature": "export declare function validateAgentProfile(profile: AgentProfile, homeDir?: string): AgentProfileValidationResult;"
       },
       {
+        "name": "validateDesignThemeTokens",
+        "kind": "function",
+        "signature": "export declare function validateDesignThemeTokens(input: Partial<DesignThemeTokens>, base?: DesignThemeTokens): DesignThemeTokens;"
+      },
+      {
         "name": "validateTeamGraph",
         "kind": "function",
         "signature": "export declare function validateTeamGraph(definition: TeamDefinition): string[];"
@@ -6196,6 +6431,16 @@
         "name": "writeTeamPreferences",
         "kind": "function",
         "signature": "export declare function writeTeamPreferences(raw: Record<string, unknown>, prefs: TeamPreferences): Record<string, unknown>;"
+      },
+      {
+        "name": "ZipDecodeLimits",
+        "kind": "interface",
+        "signature": "export interface ZipDecodeLimits {\nmaxEntries: number;\nmaxEntryBytes: number;\nmaxTotalBytes: number;\nmaxCompressionRatio: number;\n}"
+      },
+      {
+        "name": "ZipEntry",
+        "kind": "interface",
+        "signature": "export interface ZipEntry {\nname: string;\ndata: Buffer;\n}"
       }
     ],
     "./core": [
@@ -9169,6 +9414,11 @@
         "signature": "export declare function createDefaultHadamardSessionMemoryRuntimeState(): HadamardSessionMemoryRuntimeState;"
       },
       {
+        "name": "createDesignConfiguration",
+        "kind": "function",
+        "signature": "export declare function createDesignConfiguration(templateId?: string, themeId?: string): DesignConfiguration;"
+      },
+      {
         "name": "CreateE2bComputerUseOptions",
         "kind": "interface",
         "signature": "export interface CreateE2bComputerUseOptions extends E2bDesktopCreateOptions {\nprefix?: string;\nsandboxFactory?: (options: E2bDesktopCreateOptions) => Promise<E2bDesktopSandboxLike>;\nmoduleLoader?: () => Promise<E2bDesktopModule>;\n}"
@@ -9186,7 +9436,7 @@
       {
         "name": "createExaSearchTool",
         "kind": "function",
-        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"news\" | \"github\" | \"company\" | \"research paper\" | \"pdf\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
+        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"pdf\" | \"news\" | \"github\" | \"company\" | \"research paper\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
       },
       {
         "name": "createExitWorktreeTool",
@@ -9519,6 +9769,11 @@
         "signature": "export declare function decodeDreamProfileValue(value: string): DreamExecutionProfileRef | undefined;"
       },
       {
+        "name": "decodeZip",
+        "kind": "function",
+        "signature": "export declare function decodeZip(bytes: Buffer, limits?: Partial<ZipDecodeLimits>): Map<string, Buffer>;"
+      },
+      {
         "name": "DEFAULT_AGENT_RUN_STREAM_BUFFER_CAPACITY",
         "kind": "value",
         "signature": "DEFAULT_AGENT_RUN_STREAM_BUFFER_CAPACITY = 256"
@@ -9537,6 +9792,16 @@
         "name": "DEFAULT_DESIGN_FRONTMATTER",
         "kind": "value",
         "signature": "DEFAULT_DESIGN_FRONTMATTER: Readonly<DesignFrontmatter>"
+      },
+      {
+        "name": "DEFAULT_DESIGN_TEMPLATES",
+        "kind": "value",
+        "signature": "DEFAULT_DESIGN_TEMPLATES: readonly DesignTemplate[]"
+      },
+      {
+        "name": "DEFAULT_DESIGN_THEMES",
+        "kind": "value",
+        "signature": "DEFAULT_DESIGN_THEMES: readonly DesignTheme[]"
       },
       {
         "name": "DEFAULT_MANAGER_CONFIG",
@@ -9634,9 +9899,39 @@
         "signature": "DESIGN_FILE_NAME = \"DESIGN.md\""
       },
       {
+        "name": "DesignArtifact",
+        "kind": "interface",
+        "signature": "export interface DesignArtifact {\nid: string;\nmediaType: string;\nbytes: Buffer;\nchecksum: string;\nmetadata: JsonObject;\n}"
+      },
+      {
+        "name": "DesignArtifactRepository",
+        "kind": "interface",
+        "signature": "export interface DesignArtifactRepository {\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
+      },
+      {
+        "name": "DesignAssetDescriptor",
+        "kind": "interface",
+        "signature": "export interface DesignAssetDescriptor {\npath: string;\nmediaType: string;\nsha256: string;\nsize: number;\n}"
+      },
+      {
+        "name": "DesignConfiguration",
+        "kind": "interface",
+        "signature": "export interface DesignConfiguration {\nversion: 1;\ndocumentId: string;\noriginDocumentId?: string;\nprovenance?: JsonObject;\ntemplate: {\nid: string;\nversion: number;\n};\ntheme: {\nid: string;\ntokens: DesignThemeTokens;\n};\nsections: {\norder: string[];\nhidden: string[];\n};\nassets: DesignAssetDescriptor[];\n}"
+      },
+      {
+        "name": "DesignConfigurationStore",
+        "kind": "class",
+        "signature": "export declare class DesignConfigurationStore {\nprivate readonly directory;\nconstructor(directory: string);\npath(): string;\nload(templateId?: string, themeId?: string): Promise<DesignConfiguration>;\nsave(configuration: DesignConfiguration): Promise<void>;\nensure(templateId?: string, themeId?: string): Promise<DesignConfiguration>;\n}"
+      },
+      {
         "name": "DesignDocumentService",
         "kind": "class",
-        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\ncontent: string;\nrevision: string;\nstate: import(\"./designMigration.js\").DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\nrender(content: string): import(\"./designRenderService.js\").DesignRenderResult;\nmigrate(action: DesignMigrationAction): Promise<import(\"./designDocumentStore.js\").DesignDocumentSnapshot>;\n}"
+        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly shares: DesignShareService;\nreadonly engineeringProfiles: EngineeringProfileService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: import(\"./designMigration.js\").DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\nmigrate(action: DesignMigrationAction): Promise<import(\"./designDocumentStore.js\").DesignDocumentSnapshot>;\n}"
+      },
+      {
+        "name": "DesignDocumentServiceOptions",
+        "kind": "interface",
+        "signature": "export interface DesignDocumentServiceOptions {\ngeneratorVersion?: string;\nartifacts?: DesignArtifactRepository;\n}"
       },
       {
         "name": "DesignDocumentSnapshot",
@@ -9656,22 +9951,37 @@
       {
         "name": "DesignHtmlExport",
         "kind": "interface",
-        "signature": "export interface DesignHtmlExport {\nmediaType: 'text/html';\nfileName: 'DESIGN.html';\nbytes: Buffer;\nchecksum: string;\n}"
+        "signature": "export interface DesignHtmlExport {\nmediaType: 'text/html';\nfileName: 'DESIGN.html';\nbytes: Buffer;\nchecksum: string;\nmanifest: DesignPackageManifest;\n}"
+      },
+      {
+        "name": "DesignImportAction",
+        "kind": "type",
+        "signature": "export type DesignImportAction = 'new-copy' | 'replace-current' | 'merge-sections';"
+      },
+      {
+        "name": "DesignImportCommitResult",
+        "kind": "interface",
+        "signature": "export interface DesignImportCommitResult {\naction: DesignImportAction;\ndesignPath: string;\nconfigurationPath: string;\nconfiguration: DesignConfiguration;\n}"
+      },
+      {
+        "name": "DesignImportCommitService",
+        "kind": "class",
+        "signature": "export declare class DesignImportCommitService {\nprivate readonly documents;\nprivate readonly configurations;\nprivate readonly artifacts?;\nconstructor(documents: DesignDocumentStore, configurations: DesignConfigurationStore, artifacts?: DesignArtifactRepository | undefined);\ncommit(preview: DesignImportPreview, action: DesignImportAction, expectedRevision: string): Promise<DesignImportCommitResult>;\n}"
       },
       {
         "name": "DesignImportExportService",
         "kind": "class",
-        "signature": "export declare class DesignImportExportService {\nprivate readonly renderer;\nconstructor(renderer?: DesignRenderService);\nexportHtml(source: string): DesignHtmlExport;\npreview(bytes: Buffer, fileName: string): DesignImportPreview;\n}"
+        "signature": "export declare class DesignImportExportService {\nprivate readonly renderer;\nreadonly packages: DesignPackageService;\nreadonly pdf: DesignPdfExporter;\nconstructor(renderer?: DesignRenderService, generatorVersion?: string, pdf?: DesignPdfExporter);\nexportPackage(document: DesignTransferDocument, now?: Date): DesignPackageExport;\nexportHtml(source: string | DesignTransferDocument, now?: Date): DesignHtmlExport;\nexportPdf(document: DesignTransferDocument, options?: DesignPdfExportOptions): DesignPdfExport;\npreview(bytes: Buffer, fileName: string): DesignImportPreview;\n}"
       },
       {
         "name": "DesignImportKind",
         "kind": "type",
-        "signature": "export type DesignImportKind = 'markdown' | 'hadamard-html' | 'reference-html' | 'reference-pdf';"
+        "signature": "export type DesignImportKind = 'markdown' | 'hadamard-package' | 'hadamard-html' | 'reference-html' | 'reference-pdf';"
       },
       {
         "name": "DesignImportPreview",
         "kind": "interface",
-        "signature": "export interface DesignImportPreview {\nkind: DesignImportKind;\neditable: boolean;\nmarkdown?: string;\nchecksum: string;\nwarnings: string[];\n}"
+        "signature": "export interface DesignImportPreview {\nkind: DesignImportKind;\neditable: boolean;\nmarkdown?: string;\nconfiguration?: DesignConfiguration;\nmanifest?: DesignPackageManifest;\nchecksum: string;\nwarnings: string[];\nassets?: DesignPackageAsset[];\n}"
       },
       {
         "name": "DesignMigrationAction",
@@ -9689,29 +9999,109 @@
         "signature": "export type DesignMigrationState = 'empty' | 'design' | 'legacy-progress' | 'conflict';"
       },
       {
+        "name": "DesignPackageAsset",
+        "kind": "interface",
+        "signature": "export interface DesignPackageAsset {\npath: string;\nmediaType: string;\nbytes: Buffer;\n}"
+      },
+      {
+        "name": "DesignPackageExport",
+        "kind": "interface",
+        "signature": "export interface DesignPackageExport {\nfileName: 'DESIGN.hadamard-design.zip';\nmediaType: 'application/vnd.hadamard.design+zip';\nbytes: Buffer;\nchecksum: string;\nmanifest: DesignPackageManifest;\n}"
+      },
+      {
+        "name": "DesignPackageManifest",
+        "kind": "interface",
+        "signature": "export interface DesignPackageManifest {\nschemaVersion: 1;\ndocumentId: string;\noriginDocumentId?: string;\ntemplate: {\nid: string;\nversion: number;\n};\nexportedAt: string;\ngenerator: {\nname: 'Hadamard';\nversion: string;\n};\nresources: DesignPackageResource[];\nprovenance: JsonObject;\n}"
+      },
+      {
+        "name": "DesignPackagePreview",
+        "kind": "interface",
+        "signature": "export interface DesignPackagePreview {\nkind: 'hadamard-package';\neditable: true;\nmarkdown: string;\nconfiguration: DesignConfiguration;\nmanifest: DesignPackageManifest;\nchecksum: string;\nwarnings: string[];\nassets: DesignPackageAsset[];\n}"
+      },
+      {
+        "name": "DesignPackageResource",
+        "kind": "interface",
+        "signature": "export interface DesignPackageResource {\npath: string;\nmediaType: string;\nsize: number;\nsha256: string;\n}"
+      },
+      {
+        "name": "DesignPackageService",
+        "kind": "class",
+        "signature": "export declare class DesignPackageService {\nprivate readonly generatorVersion;\nconstructor(generatorVersion: string);\nexport(markdown: string, configuration: DesignConfiguration, assets?: readonly DesignPackageAsset[], now?: Date): DesignPackageExport;\npreview(bytes: Buffer): DesignPackagePreview;\n}"
+      },
+      {
+        "name": "DesignPdfExport",
+        "kind": "interface",
+        "signature": "export interface DesignPdfExport {\nfileName: 'DESIGN.pdf';\nmediaType: 'application/pdf';\nbytes: Buffer;\nchecksum: string;\nmetadata: {\ntitle: string;\nauthor: string;\ndocumentId: string;\ntemplate: string;\nexportedAt: string;\nsourceUrl?: string;\n};\n}"
+      },
+      {
+        "name": "DesignPdfExporter",
+        "kind": "class",
+        "signature": "export declare class DesignPdfExporter {\nexport(markdown: string, configuration: DesignConfiguration, options?: DesignPdfExportOptions): DesignPdfExport;\n}"
+      },
+      {
+        "name": "DesignPdfExportOptions",
+        "kind": "interface",
+        "signature": "export interface DesignPdfExportOptions {\ntitle?: string;\nauthor?: string;\nsourceUrl?: string;\nexportedAt?: Date;\n}"
+      },
+      {
         "name": "DesignRenderResult",
         "kind": "interface",
-        "signature": "export interface DesignRenderResult {\nhtml: string;\nbodyHtml: string;\nchecksum: string;\nmetadata: DesignFrontmatter;\n}"
+        "signature": "export interface DesignRenderResult {\nhtml: string;\nbodyHtml: string;\nchecksum: string;\nmetadata: DesignFrontmatter;\ntheme: DesignThemeTokens;\n}"
+      },
+      {
+        "name": "DesignRenderSections",
+        "kind": "interface",
+        "signature": "export interface DesignRenderSections {\norder: readonly string[];\nhidden: readonly string[];\n}"
       },
       {
         "name": "DesignRenderService",
         "kind": "class",
-        "signature": "export declare class DesignRenderService {\nrender(source: string): DesignRenderResult;\n}"
+        "signature": "export declare class DesignRenderService {\nrender(source: string, overrides?: Partial<DesignThemeTokens>, sections?: DesignRenderSections): DesignRenderResult;\n}"
+      },
+      {
+        "name": "DesignShareFormat",
+        "kind": "type",
+        "signature": "export type DesignShareFormat = 'html' | 'pdf' | 'package';"
+      },
+      {
+        "name": "DesignShareService",
+        "kind": "class",
+        "signature": "export declare class DesignShareService {\nprivate readonly ledgerPath;\nprivate readonly artifacts;\nprivate readonly transfers;\nconstructor(ledgerPath: string, artifacts: DesignArtifactRepository, transfers: DesignImportExportService);\nprivate load;\nprivate save;\ncreate(document: DesignTransferDocument, revision: string, expiresInHours?: number, now?: Date, sourceBaseUrl?: string): Promise<{\ntoken: string;\nsnapshot: Omit<DesignShareSnapshot, 'tokenHash'>;\n}>;\nresolve(token: string, now?: Date): Promise<Omit<DesignShareSnapshot, 'tokenHash'>>;\ndownload(token: string, format: DesignShareFormat, now?: Date): Promise<{\nsnapshot: Omit<DesignShareSnapshot, \"tokenHash\">;\nreference: {\nid: string;\nchecksum: string;\nmediaType: string;\nfileName: string;\n};\nbytes: Buffer<ArrayBufferLike>;\n}>;\nrevoke(token: string, now?: Date): Promise<void>;\n}"
+      },
+      {
+        "name": "DesignShareSnapshot",
+        "kind": "interface",
+        "signature": "export interface DesignShareSnapshot {\nsnapshotId: string;\ndocumentId: string;\nrevision: string;\nexportedAt: string;\nexpiresAt: string;\nrevokedAt?: string;\ntokenHash: string;\npermission: 'design.snapshot.read';\nartifacts: Record<DesignShareFormat, {\nid: string;\nchecksum: string;\nmediaType: string;\nfileName: string;\n}>;\n}"
       },
       {
         "name": "DesignTemplate",
         "kind": "interface",
-        "signature": "export interface DesignTemplate {\nid: string;\nversion: number;\nname: string;\nsections: readonly DesignTemplateSection[];\n}"
+        "signature": "export interface DesignTemplate {\nid: string;\nversion: number;\nname: string;\ndescription: string;\nengineeringProfileId: string;\nsections: readonly DesignTemplateSection[];\n}"
       },
       {
         "name": "DesignTemplateRegistry",
         "kind": "class",
-        "signature": "export declare class DesignTemplateRegistry {\nprivate readonly templates;\nconstructor(templates?: readonly DesignTemplate[]);\nregister(template: DesignTemplate): void;\nget(id: string): DesignTemplate | undefined;\nlist(): DesignTemplate[];\ncreateMarkdown(id: string): string;\n}"
+        "signature": "export declare class DesignTemplateRegistry {\nprivate readonly templates;\nconstructor(templates?: readonly DesignTemplate[]);\nregister(candidate: DesignTemplate): void;\nget(id: string): DesignTemplate | undefined;\nlist(): DesignTemplate[];\ncreateMarkdown(id: string): string;\n}"
       },
       {
         "name": "DesignTemplateSection",
         "kind": "interface",
-        "signature": "export interface DesignTemplateSection {\nid: string;\ntitle: string;\nprompt: string;\nrequired?: boolean;\n}"
+        "signature": "export interface DesignTemplateSection {\nid: string;\ntitle: string;\nprompt: string;\nrequired?: boolean;\nrepeatable?: boolean;\n}"
+      },
+      {
+        "name": "DesignTheme",
+        "kind": "interface",
+        "signature": "export interface DesignTheme {\nid: string;\nname: string;\ntokens: Readonly<DesignThemeTokens>;\n}"
+      },
+      {
+        "name": "DesignThemeTokens",
+        "kind": "interface",
+        "signature": "export interface DesignThemeTokens {\naccentColor: string;\nbackgroundColor: string;\ntextColor: string;\nmutedColor: string;\nfontFamily: string;\ncodeFontFamily: string;\npageWidth: number;\ncover: boolean;\nlogoDataUrl?: string;\nheader?: string;\nfooter?: string;\ncodeTheme: 'light' | 'dark';\n}"
+      },
+      {
+        "name": "DesignTransferDocument",
+        "kind": "interface",
+        "signature": "export interface DesignTransferDocument {\nmarkdown: string;\nconfiguration: DesignConfiguration;\nassets?: DesignPackageAsset[];\n}"
       },
       {
         "name": "detectBridgeProviders",
@@ -9822,6 +10212,61 @@
         "name": "encodeHadamardProjectPath",
         "kind": "function",
         "signature": "export declare function encodeHadamardProjectPath(workDir: string): string;"
+      },
+      {
+        "name": "encodeZip",
+        "kind": "function",
+        "signature": "export declare function encodeZip(entries: readonly ZipEntry[]): Buffer;"
+      },
+      {
+        "name": "ENGINEERING_PROFILES",
+        "kind": "value",
+        "signature": "ENGINEERING_PROFILES: readonly EngineeringProfile[]"
+      },
+      {
+        "name": "EngineeringConstraint",
+        "kind": "interface",
+        "signature": "export interface EngineeringConstraint {\nid: string;\ntitle: string;\ndesignStatement: string;\nagentInstruction: string;\npolicyRules: PolicyRule[];\nvalidators: EngineeringValidatorDefinition[];\n}"
+      },
+      {
+        "name": "EngineeringConstraintDrift",
+        "kind": "interface",
+        "signature": "export interface EngineeringConstraintDrift {\nid: string;\ndesign: boolean;\nagents: boolean;\npolicy: boolean;\nvalidators: boolean;\n}"
+      },
+      {
+        "name": "EngineeringProfile",
+        "kind": "interface",
+        "signature": "export interface EngineeringProfile {\nid: string;\nname: string;\nconstraints: readonly EngineeringConstraint[];\n}"
+      },
+      {
+        "name": "EngineeringProfileDiff",
+        "kind": "interface",
+        "signature": "export interface EngineeringProfileDiff {\ntarget: EngineeringProfileTarget;\npath: string;\nbefore: string;\nafter: string;\nbeforeChecksum: string;\nchanged: boolean;\n}"
+      },
+      {
+        "name": "EngineeringProfileDriftReport",
+        "kind": "interface",
+        "signature": "export interface EngineeringProfileDriftReport {\nprofileId: string;\nconstraints: EngineeringConstraintDrift[];\nexpressedNotExecuted: string[];\nexecutedNotDesigned: string[];\n}"
+      },
+      {
+        "name": "EngineeringProfileProposal",
+        "kind": "interface",
+        "signature": "export interface EngineeringProfileProposal {\nproposalId: string;\nprofile: EngineeringProfile;\nsourceConstraintIds: string[];\ndiffs: Record<EngineeringProfileTarget, EngineeringProfileDiff>;\n}"
+      },
+      {
+        "name": "EngineeringProfileService",
+        "kind": "class",
+        "signature": "export declare class EngineeringProfileService {\nprivate readonly documents;\nprivate readonly agentsPath;\nprivate readonly policyPath;\nprivate readonly validatorsPath;\nconstructor(workspacePath: string, documents: DesignDocumentStore);\npropose(profileId: string): Promise<EngineeringProfileProposal>;\naudit(profileId: string): Promise<EngineeringProfileDriftReport>;\napply(proposal: EngineeringProfileProposal, targets: readonly EngineeringProfileTarget[], confirmed: boolean): Promise<EngineeringProfileTarget[]>;\n}"
+      },
+      {
+        "name": "EngineeringProfileTarget",
+        "kind": "type",
+        "signature": "export type EngineeringProfileTarget = 'design' | 'agents' | 'policy' | 'validators';"
+      },
+      {
+        "name": "EngineeringValidatorDefinition",
+        "kind": "interface",
+        "signature": "export interface EngineeringValidatorDefinition {\nid: string;\ncommand: string;\ndescription: string;\nsourceConstraintIds: string[];\n}"
       },
       {
         "name": "ensureConfiguredTeamGraph",
@@ -10227,6 +10672,11 @@
         "name": "getDefaultHadamardSettingsPath",
         "kind": "function",
         "signature": "export declare function getDefaultHadamardSettingsPath(homeDir?: string): string;"
+      },
+      {
+        "name": "getEngineeringProfile",
+        "kind": "function",
+        "signature": "export declare function getEngineeringProfile(id: string): EngineeringProfile;"
       },
       {
         "name": "getHadamardAgentTemplate",
@@ -12444,6 +12894,11 @@
         "signature": "export declare class MemoryProposalService {\nprivate readonly storageRoot;\nprivate readonly allowedRoots;\nconstructor(storageRoot: string, allowedRoots: string[]);\npropose(input: {\ntargetPath: string;\ncontent: string;\nexplanation: string;\nprovenance: MemoryProposal['provenance'];\n}): Promise<MemoryProposal>;\nlist(status?: MemoryProposal['status']): Promise<MemoryProposal[]>;\napply(proposalId: string): Promise<MemoryProposal>;\nreject(proposalId: string): Promise<MemoryProposal>;\nprivate get;\nprivate write;\nprivate safeTarget;\n}"
       },
       {
+        "name": "mergeDesignSections",
+        "kind": "function",
+        "signature": "export declare function mergeDesignSections(current: string, imported: string): string;"
+      },
+      {
         "name": "mergeHadamardHooks",
         "kind": "function",
         "signature": "export declare function mergeHadamardHooks(base: HadamardHooks | undefined, extra: HadamardHooks | undefined): HadamardHooks | undefined;"
@@ -12572,6 +13027,11 @@
         "name": "normalizeCleanBridgeError",
         "kind": "function",
         "signature": "export declare function normalizeCleanBridgeError(error: unknown): Error;"
+      },
+      {
+        "name": "normalizeDesignConfiguration",
+        "kind": "function",
+        "signature": "export declare function normalizeDesignConfiguration(value: unknown): DesignConfiguration;"
       },
       {
         "name": "normalizeGoal",
@@ -13202,6 +13662,11 @@
         "name": "ResolvedContextRules",
         "kind": "interface",
         "signature": "export interface ResolvedContextRules {\nrules: ContextRule[];\nprompt: string;\n}"
+      },
+      {
+        "name": "resolveDesignTheme",
+        "kind": "function",
+        "signature": "export declare function resolveDesignTheme(id: string, overrides?: Partial<DesignThemeTokens>): DesignTheme;"
       },
       {
         "name": "ResolvedPolicy",
@@ -13949,6 +14414,11 @@
         "signature": "SKILL_TOOL_NAME = \"Skill\""
       },
       {
+        "name": "SqliteDesignArtifactRepository",
+        "kind": "class",
+        "signature": "export declare class SqliteDesignArtifactRepository implements DesignArtifactRepository {\nprivate readonly filename;\nprivate readonly tenantId;\nconstructor(filename: string, tenantId?: string);\nprivate use;\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
+      },
+      {
         "name": "StageDeleteProposalInput",
         "kind": "interface",
         "signature": "export interface StageDeleteProposalInput {\nassistantSessionId: string;\nkind: ReferenceDefinitionKind;\nname: string;\nreferences: ReferenceEdge[];\nexplanation?: string;\n}"
@@ -13977,6 +14447,11 @@
         "name": "StdioMcpServerDefinition",
         "kind": "interface",
         "signature": "export interface StdioMcpServerDefinition {\nkind: 'stdio';\nname: string;\ncommand: string;\nargs?: string[];\nenv?: Record<string, string>;\ncwd?: string;\nprefix?: string;\nstderr?: 'inherit' | 'ignore' | 'pipe';\n}"
+      },
+      {
+        "name": "StorageV2DesignArtifactRepository",
+        "kind": "class",
+        "signature": "export declare class StorageV2DesignArtifactRepository implements DesignArtifactRepository {\nprivate readonly store;\nprivate readonly tenantId;\nconstructor(store: ArtifactStore, tenantId: string);\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
       },
       {
         "name": "StoredApproval",
@@ -14414,6 +14889,11 @@
         "signature": "export declare function validateAgentProfile(profile: AgentProfile, homeDir?: string): AgentProfileValidationResult;"
       },
       {
+        "name": "validateDesignThemeTokens",
+        "kind": "function",
+        "signature": "export declare function validateDesignThemeTokens(input: Partial<DesignThemeTokens>, base?: DesignThemeTokens): DesignThemeTokens;"
+      },
+      {
         "name": "validateTeamGraph",
         "kind": "function",
         "signature": "export declare function validateTeamGraph(definition: TeamDefinition): string[];"
@@ -14682,6 +15162,16 @@
         "name": "writeTeamPreferences",
         "kind": "function",
         "signature": "export declare function writeTeamPreferences(raw: Record<string, unknown>, prefs: TeamPreferences): Record<string, unknown>;"
+      },
+      {
+        "name": "ZipDecodeLimits",
+        "kind": "interface",
+        "signature": "export interface ZipDecodeLimits {\nmaxEntries: number;\nmaxEntryBytes: number;\nmaxTotalBytes: number;\nmaxCompressionRatio: number;\n}"
+      },
+      {
+        "name": "ZipEntry",
+        "kind": "interface",
+        "signature": "export interface ZipEntry {\nname: string;\ndata: Buffer;\n}"
       }
     ]
   }
