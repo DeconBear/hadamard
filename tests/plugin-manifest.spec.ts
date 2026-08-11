@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { describe, expect, it } from 'vitest';
 
 import { parsePluginPackageManifest } from '../src/index.js';
@@ -20,5 +22,13 @@ describe('plugin package manifest', () => {
       entry: '../outside.js',
       capabilities: [],
     })).toThrow('stay inside');
+  });
+
+  it('continues to read the v1 manifest fixture unchanged', async () => {
+    const fixture = JSON.parse(await readFile(
+      new URL('./fixtures/compat/hadamard-plugin-v1.json', import.meta.url),
+      'utf8',
+    ));
+    expect(parsePluginPackageManifest(fixture)).toEqual(fixture);
   });
 });
