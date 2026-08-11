@@ -52,4 +52,29 @@ describe('PluginTrustStore', () => {
       capabilities: ['tools'],
     })).resolves.toBe(false);
   });
+
+  it('binds bundle trust to the exact source commit', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-plugin-trust-'));
+    dirs.push(dir);
+    const trust = new PluginTrustStore(path.join(dir, 'trust.json'));
+    const source = {
+      kind: 'git' as const,
+      location: 'https://example.test/plugin',
+      commit: '0123456789abcdef0123456789abcdef01234567',
+    };
+    await trust.trust({
+      pluginId: 'bundle',
+      version: '1.0.0',
+      integrity: 'sha256-one',
+      capabilities: ['mcp'],
+      source,
+    });
+    await expect(trust.isTrusted({
+      pluginId: 'bundle',
+      version: '1.0.0',
+      integrity: 'sha256-one',
+      capabilities: ['mcp'],
+      source: { ...source, commit: 'fedcba9876543210fedcba9876543210fedcba98' },
+    })).resolves.toBe(false);
+  });
 });

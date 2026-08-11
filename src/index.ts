@@ -228,6 +228,7 @@ export {
 export { createGitHubPlugin } from './plugins/githubPlugin.js';
 export { createKimiWebBridgePlugin } from './plugins/kimiWebBridgePlugin.js';
 export * from './plugins/packageManifest.js';
+export * from './plugins/pluginBundleLoader.js';
 export * from './plugins/pluginPackageStore.js';
 export * from './plugins/pluginResolver.js';
 export * from './plugins/pluginLoader.js';

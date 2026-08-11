@@ -2,12 +2,14 @@ import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { writeJsonAtomic } from '../storage/atomicJsonWrite.js';
+import type { PluginPackageSource } from './packageManifest.js';
 
 export interface PluginTrustGrant {
   pluginId: string;
   version: string;
   integrity?: string;
   capabilities: string[];
+  source?: PluginPackageSource;
   trustedAt: string;
 }
 
@@ -40,6 +42,7 @@ export class PluginTrustStore {
     if (!grant.integrity || !input.integrity || grant.integrity !== input.integrity) {
       return false;
     }
+    if (JSON.stringify(grant.source) !== JSON.stringify(input.source)) return false;
     return input.capabilities.every(capability => grant.capabilities.includes(capability));
   }
 

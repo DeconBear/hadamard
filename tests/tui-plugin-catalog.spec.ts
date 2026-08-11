@@ -29,15 +29,33 @@ describe('Clean plugin catalog', () => {
         description: 'Release workflow extensions',
       }),
     );
+    const qwenDir = path.join(workDir, '.hadamard', 'plugins', 'qwen-mm-plugins-core');
+    await mkdir(path.join(qwenDir, '.codex-plugin'), { recursive: true });
+    await mkdir(path.join(qwenDir, 'skill'), { recursive: true });
+    await writeFile(path.join(qwenDir, '.mcp.json'), JSON.stringify({ mcpServers: {} }));
+    await writeFile(
+      path.join(qwenDir, '.codex-plugin', 'plugin.json'),
+      JSON.stringify({
+        name: 'qwen-mm-plugins-core',
+        version: '1.0.0',
+        skills: './skill',
+        mcpServers: './.mcp.json',
+      }),
+    );
 
     const plugins = await discoverHadamardPlugins({ homeDir, workDir });
 
-    expect(plugins).toEqual([
+    expect(plugins).toEqual(expect.arrayContaining([
       expect.objectContaining({
         name: 'release-tools',
         version: '1.0.0',
         capabilities: ['skills'],
       }),
-    ]);
+      expect.objectContaining({
+        name: 'qwen-mm-plugins-core',
+        version: '1.0.0',
+        capabilities: ['skills', 'mcp'],
+      }),
+    ]));
   });
 });
