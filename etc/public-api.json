@@ -8,6 +8,16 @@
         "signature": "export declare function addIssueComment(workDir: string, homeDir: string, idOrNumber: string | number, input: {\nbody: string;\nkind?: IssueCommentKind;\nactor?: IssueActor;\n}, mode?: IssueStorageMode): Promise<ProjectIssue | undefined>;"
       },
       {
+        "name": "AGENT_MODES",
+        "kind": "value",
+        "signature": "AGENT_MODES: readonly [\n\"react\",\n\"codeact\",\n\"hybrid\"\n]"
+      },
+      {
+        "name": "AGENT_NODE_MODES",
+        "kind": "value",
+        "signature": "AGENT_NODE_MODES: readonly [\n\"react\",\n\"codeact\",\n\"hybrid\",\n\"single\"\n]"
+      },
+      {
         "name": "AgentActivityEvent",
         "kind": "interface",
         "signature": "export interface AgentActivityEvent extends AgentExecutionEventBase {\ntype: 'activity';\nexecutionId: string;\nsessionId?: string;\nactivity: AgentExecutionActivity | null;\n}"
@@ -103,6 +113,21 @@
         "signature": "export type AgentExecutionPlanStepStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';"
       },
       {
+        "name": "AgentExecutionPolicy",
+        "kind": "interface",
+        "signature": "export interface AgentExecutionPolicy {\nactionSpace: 'json-tools' | 'code-cell' | 'hybrid' | 'none';\nturnPolicy: 'iterative' | 'single';\nordinaryTools: string[];\nmaxOrdinaryToolCalls?: number;\n}"
+      },
+      {
+        "name": "AgentExecutionPolicyError",
+        "kind": "class",
+        "signature": "export declare class AgentExecutionPolicyError extends HadamardSdkError {\nconstructor(message: string, code: AgentExecutionPolicyErrorCode);\n}"
+      },
+      {
+        "name": "AgentExecutionPolicyErrorCode",
+        "kind": "type",
+        "signature": "export type AgentExecutionPolicyErrorCode = 'CODEACT_DISABLED' | 'INVALID_AGENT_MODE' | 'SINGLE_TOOL_LIMIT';"
+      },
+      {
         "name": "AgentExecutionSnapshot",
         "kind": "interface",
         "signature": "export interface AgentExecutionSnapshot {\nversion: 1;\nrootExecutionId: string;\nnodes: AgentExecutionNode[];\nedges: AgentExecutionEdge[];\nevents: AgentExecutionEvent[];\nseenEventIds: string[];\ncreatedAt: string;\nupdatedAt: string;\n}"
@@ -141,6 +166,16 @@
         "name": "AgentMcpServerDefinition",
         "kind": "type",
         "signature": "export type AgentMcpServerDefinition = LocalMcpServerDefinition | StdioMcpServerDefinition | StreamableHttpMcpServerDefinition;"
+      },
+      {
+        "name": "AgentMode",
+        "kind": "type",
+        "signature": "export type AgentMode = typeof AGENT_MODES[number];"
+      },
+      {
+        "name": "AgentNodeMode",
+        "kind": "type",
+        "signature": "export type AgentNodeMode = typeof AGENT_NODE_MODES[number];"
       },
       {
         "name": "AgentPlanUpdatedEvent",
@@ -3383,6 +3418,16 @@
         "signature": "export declare function instantiateTeamDefinition(definition: TeamDefinition, model: string): TeamDefinition;"
       },
       {
+        "name": "isAgentMode",
+        "kind": "function",
+        "signature": "export declare function isAgentMode(value: unknown): value is AgentMode;"
+      },
+      {
+        "name": "isAgentNodeMode",
+        "kind": "function",
+        "signature": "export declare function isAgentNodeMode(value: unknown): value is AgentNodeMode;"
+      },
+      {
         "name": "isAssistantScope",
         "kind": "function",
         "signature": "export declare function isAssistantScope(value: unknown): value is AssistantScope;"
@@ -3928,6 +3973,11 @@
         "signature": "export declare function migrateLegacyActoviqHomeIfNeeded(osHomeDir?: string): Promise<HadamardHomeMigrationSummary | undefined>;"
       },
       {
+        "name": "migrateLegacyGraphAgentMode",
+        "kind": "function",
+        "signature": "export declare function migrateLegacyGraphAgentMode(input: {\nagentMode?: unknown;\ntype?: unknown;\n}): AgentNodeMode | undefined;"
+      },
+      {
         "name": "migrateLegacyHadamardProjectSessions",
         "kind": "function",
         "signature": "export declare function migrateLegacyHadamardProjectSessions(options: {\nhomeDir: string;\nworkDir: string;\ntargetDirectory: string;\n}): Promise<number>;"
@@ -3936,6 +3986,11 @@
         "name": "migrateLegacyProjectActoviqDirIfNeeded",
         "kind": "function",
         "signature": "export declare function migrateLegacyProjectActoviqDirIfNeeded(workDir: string): Promise<{\nsourceRoot: string;\ntargetRoot: string;\n} | undefined>;"
+      },
+      {
+        "name": "migrateLegacyWorkflowAgentMode",
+        "kind": "function",
+        "signature": "export declare function migrateLegacyWorkflowAgentMode(input: {\nagentMode?: unknown;\nmode?: unknown;\n}): AgentNodeMode | undefined;"
       },
       {
         "name": "migrateTeamDefinitionToGraph",
@@ -4061,6 +4116,16 @@
         "name": "ParallelOptions",
         "kind": "interface",
         "signature": "export interface ParallelOptions {\nmaxConcurrency?: number;\nfailFast?: boolean;\nsignal?: AbortSignal;\n}"
+      },
+      {
+        "name": "parseAgentMode",
+        "kind": "function",
+        "signature": "export declare function parseAgentMode(value: unknown, label?: string): AgentMode;"
+      },
+      {
+        "name": "parseAgentNodeMode",
+        "kind": "function",
+        "signature": "export declare function parseAgentNodeMode(value: unknown, label?: string): AgentNodeMode;"
       },
       {
         "name": "parseAppServerRequest",
@@ -4566,6 +4631,16 @@
         "name": "ResolveAgentExecutionIdentityOptions",
         "kind": "interface",
         "signature": "export interface ResolveAgentExecutionIdentityOptions {\nrunId: string;\nsession?: Pick<StoredSession, 'id' | 'kind' | 'parentSessionId' | 'metadata'>;\nmetadata?: Record<string, unknown>;\nmodel?: string;\ncwd: string;\nruntime?: string;\n}"
+      },
+      {
+        "name": "resolveAgentExecutionPolicy",
+        "kind": "function",
+        "signature": "export declare function resolveAgentExecutionPolicy(options: ResolveAgentExecutionPolicyOptions): AgentExecutionPolicy;"
+      },
+      {
+        "name": "ResolveAgentExecutionPolicyOptions",
+        "kind": "interface",
+        "signature": "export interface ResolveAgentExecutionPolicyOptions {\nnodeMode?: AgentNodeMode | 'inherit';\nagentMode?: AgentMode;\nsessionMode?: AgentMode;\nprojectMode?: AgentMode;\nordinaryTools?: readonly string[];\ncodeActEnabled: boolean;\n}"
       },
       {
         "name": "resolveAgentProfileRun",
@@ -8099,6 +8174,16 @@
         "signature": "export declare function addIssueComment(workDir: string, homeDir: string, idOrNumber: string | number, input: {\nbody: string;\nkind?: IssueCommentKind;\nactor?: IssueActor;\n}, mode?: IssueStorageMode): Promise<ProjectIssue | undefined>;"
       },
       {
+        "name": "AGENT_MODES",
+        "kind": "value",
+        "signature": "AGENT_MODES: readonly [\n\"react\",\n\"codeact\",\n\"hybrid\"\n]"
+      },
+      {
+        "name": "AGENT_NODE_MODES",
+        "kind": "value",
+        "signature": "AGENT_NODE_MODES: readonly [\n\"react\",\n\"codeact\",\n\"hybrid\",\n\"single\"\n]"
+      },
+      {
         "name": "AgentActivityEvent",
         "kind": "interface",
         "signature": "export interface AgentActivityEvent extends AgentExecutionEventBase {\ntype: 'activity';\nexecutionId: string;\nsessionId?: string;\nactivity: AgentExecutionActivity | null;\n}"
@@ -8194,6 +8279,21 @@
         "signature": "export type AgentExecutionPlanStepStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';"
       },
       {
+        "name": "AgentExecutionPolicy",
+        "kind": "interface",
+        "signature": "export interface AgentExecutionPolicy {\nactionSpace: 'json-tools' | 'code-cell' | 'hybrid' | 'none';\nturnPolicy: 'iterative' | 'single';\nordinaryTools: string[];\nmaxOrdinaryToolCalls?: number;\n}"
+      },
+      {
+        "name": "AgentExecutionPolicyError",
+        "kind": "class",
+        "signature": "export declare class AgentExecutionPolicyError extends HadamardSdkError {\nconstructor(message: string, code: AgentExecutionPolicyErrorCode);\n}"
+      },
+      {
+        "name": "AgentExecutionPolicyErrorCode",
+        "kind": "type",
+        "signature": "export type AgentExecutionPolicyErrorCode = 'CODEACT_DISABLED' | 'INVALID_AGENT_MODE' | 'SINGLE_TOOL_LIMIT';"
+      },
+      {
         "name": "AgentExecutionSnapshot",
         "kind": "interface",
         "signature": "export interface AgentExecutionSnapshot {\nversion: 1;\nrootExecutionId: string;\nnodes: AgentExecutionNode[];\nedges: AgentExecutionEdge[];\nevents: AgentExecutionEvent[];\nseenEventIds: string[];\ncreatedAt: string;\nupdatedAt: string;\n}"
@@ -8232,6 +8332,16 @@
         "name": "AgentMcpServerDefinition",
         "kind": "type",
         "signature": "export type AgentMcpServerDefinition = LocalMcpServerDefinition | StdioMcpServerDefinition | StreamableHttpMcpServerDefinition;"
+      },
+      {
+        "name": "AgentMode",
+        "kind": "type",
+        "signature": "export type AgentMode = typeof AGENT_MODES[number];"
+      },
+      {
+        "name": "AgentNodeMode",
+        "kind": "type",
+        "signature": "export type AgentNodeMode = typeof AGENT_NODE_MODES[number];"
       },
       {
         "name": "AgentPlanUpdatedEvent",
@@ -11509,6 +11619,16 @@
         "signature": "export declare function instantiateTeamDefinition(definition: TeamDefinition, model: string): TeamDefinition;"
       },
       {
+        "name": "isAgentMode",
+        "kind": "function",
+        "signature": "export declare function isAgentMode(value: unknown): value is AgentMode;"
+      },
+      {
+        "name": "isAgentNodeMode",
+        "kind": "function",
+        "signature": "export declare function isAgentNodeMode(value: unknown): value is AgentNodeMode;"
+      },
+      {
         "name": "isAssistantScope",
         "kind": "function",
         "signature": "export declare function isAssistantScope(value: unknown): value is AssistantScope;"
@@ -12094,6 +12214,11 @@
         "signature": "export declare function migrateLegacyActoviqHomeIfNeeded(osHomeDir?: string): Promise<HadamardHomeMigrationSummary | undefined>;"
       },
       {
+        "name": "migrateLegacyGraphAgentMode",
+        "kind": "function",
+        "signature": "export declare function migrateLegacyGraphAgentMode(input: {\nagentMode?: unknown;\ntype?: unknown;\n}): AgentNodeMode | undefined;"
+      },
+      {
         "name": "migrateLegacyHadamardProjectSessions",
         "kind": "function",
         "signature": "export declare function migrateLegacyHadamardProjectSessions(options: {\nhomeDir: string;\nworkDir: string;\ntargetDirectory: string;\n}): Promise<number>;"
@@ -12102,6 +12227,11 @@
         "name": "migrateLegacyProjectActoviqDirIfNeeded",
         "kind": "function",
         "signature": "export declare function migrateLegacyProjectActoviqDirIfNeeded(workDir: string): Promise<{\nsourceRoot: string;\ntargetRoot: string;\n} | undefined>;"
+      },
+      {
+        "name": "migrateLegacyWorkflowAgentMode",
+        "kind": "function",
+        "signature": "export declare function migrateLegacyWorkflowAgentMode(input: {\nagentMode?: unknown;\nmode?: unknown;\n}): AgentNodeMode | undefined;"
       },
       {
         "name": "migrateTeamDefinitionToGraph",
@@ -12232,6 +12362,16 @@
         "name": "ParallelOptions",
         "kind": "interface",
         "signature": "export interface ParallelOptions {\nmaxConcurrency?: number;\nfailFast?: boolean;\nsignal?: AbortSignal;\n}"
+      },
+      {
+        "name": "parseAgentMode",
+        "kind": "function",
+        "signature": "export declare function parseAgentMode(value: unknown, label?: string): AgentMode;"
+      },
+      {
+        "name": "parseAgentNodeMode",
+        "kind": "function",
+        "signature": "export declare function parseAgentNodeMode(value: unknown, label?: string): AgentNodeMode;"
       },
       {
         "name": "parseAppServerRequest",
@@ -12747,6 +12887,16 @@
         "name": "ResolveAgentExecutionIdentityOptions",
         "kind": "interface",
         "signature": "export interface ResolveAgentExecutionIdentityOptions {\nrunId: string;\nsession?: Pick<StoredSession, 'id' | 'kind' | 'parentSessionId' | 'metadata'>;\nmetadata?: Record<string, unknown>;\nmodel?: string;\ncwd: string;\nruntime?: string;\n}"
+      },
+      {
+        "name": "resolveAgentExecutionPolicy",
+        "kind": "function",
+        "signature": "export declare function resolveAgentExecutionPolicy(options: ResolveAgentExecutionPolicyOptions): AgentExecutionPolicy;"
+      },
+      {
+        "name": "ResolveAgentExecutionPolicyOptions",
+        "kind": "interface",
+        "signature": "export interface ResolveAgentExecutionPolicyOptions {\nnodeMode?: AgentNodeMode | 'inherit';\nagentMode?: AgentMode;\nsessionMode?: AgentMode;\nprojectMode?: AgentMode;\nordinaryTools?: readonly string[];\ncodeActEnabled: boolean;\n}"
       },
       {
         "name": "resolveAgentProfileRun",

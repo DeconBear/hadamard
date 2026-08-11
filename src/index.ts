@@ -48,6 +48,7 @@ export type {
 export {
   resolveEffectiveAgentRunOptions,
 } from './runtime/effectiveAgentRunOptions.js';
+export * from './runtime/agentExecutionPolicy.js';
 export type {
   AgentRunConfigurationSource,
   EffectiveAgentRunOptions,

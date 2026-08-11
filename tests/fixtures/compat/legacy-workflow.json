@@ -1,0 +1,7 @@
+{
+  "id": "legacy-step",
+  "description": "Legacy workflow step",
+  "prompt": "Summarize the input",
+  "mode": "single",
+  "dependsOn": []
+}
