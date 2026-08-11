@@ -12,7 +12,24 @@ import path from 'node:path';
 
 import { createId } from '../runtime/helpers.js';
 import { writeJsonAtomic } from '../storage/atomicJsonWrite.js';
-import { parsePluginPackageManifest, type PluginPackageManifest } from './packageManifest.js';
+import {
+  isSkillMcpBundleManifest,
+  parsePluginPackageManifest,
+  type PluginPackageManifest,
+  type PluginPackageSource,
+} from './packageManifest.js';
+
+const INSTALL_RECEIPT = '.hadamard-install.json';
+
+interface PluginInstallReceipt {
+  schemaVersion: 1;
+  integrity: string;
+  source: PluginPackageSource;
+}
+
+export interface InstallPluginPackageOptions {
+  source?: PluginPackageSource;
+}
 
 export interface InstalledPluginPackage {
   manifest: PluginPackageManifest;
@@ -26,29 +43,29 @@ export class PluginPackageStore {
 
   constructor(private readonly rootDirectory: string) {}
 
-  async install(sourceDirectory: string): Promise<InstalledPluginPackage> {
+  async install(
+    sourceDirectory: string,
+    options: InstallPluginPackageOptions = {},
+  ): Promise<InstalledPluginPackage> {
     return this.serial(async () => {
-      await assertRegularPackageTree(sourceDirectory);
-      const manifest = parsePluginPackageManifest(JSON.parse(
-        await readFile(path.join(sourceDirectory, 'hadamard-plugin.json'), 'utf8'),
-      ));
-      const entry = await readFile(path.resolve(sourceDirectory, manifest.entry));
-      if (manifest.integrity) {
-        const actual = `sha256-${createHash('sha256').update(entry).digest('base64')}`;
-        if (actual !== manifest.integrity) throw new Error('Plugin package integrity mismatch.');
-      }
+      const sourcePath = path.resolve(sourceDirectory);
+      await assertRegularPackageTree(sourcePath);
+      const sourceManifest = await readSourceManifest(sourcePath);
+      const manifest = isSkillMcpBundleManifest(sourceManifest)
+        ? parsePluginPackageManifest(await readBundleManifest(sourcePath), {
+            integrity: await packageTreeIntegrity(sourcePath),
+            source: options.source ?? { kind: 'local', location: sourcePath },
+          })
+        : sourceManifest;
+      await verifyManifestContent(sourcePath, manifest);
+
       const target = this.packagePath(manifest.id, manifest.version);
       const existing = await this.readInstalled(target);
       if (existing) {
         if (existing.id !== manifest.id || existing.version !== manifest.version) {
           throw new Error('Installed plugin package identity mismatch.');
         }
-        const installedEntry = await readFile(path.resolve(target, existing.entry));
-        const sourceHash = createHash('sha256').update(entry).digest('hex');
-        const installedHash = createHash('sha256').update(installedEntry).digest('hex');
-        if (sourceHash !== installedHash) {
-          // Same version id but different bits — refuse to silently reuse a
-          // tampered or stale install directory.
+        if (!(await packageBitsMatch(sourcePath, target, manifest, existing))) {
           await rm(target, { recursive: true, force: true });
         }
       }
@@ -56,7 +73,14 @@ export class PluginPackageStore {
         await mkdir(path.dirname(target), { recursive: true });
         const staging = `${target}.install-${createId()}`;
         try {
-          await cp(sourceDirectory, staging, { recursive: true, dereference: false });
+          await cp(sourcePath, staging, { recursive: true, dereference: false });
+          if (isSkillMcpBundleManifest(manifest)) {
+            await writeJsonAtomic(path.join(staging, INSTALL_RECEIPT), {
+              schemaVersion: 1,
+              integrity: manifest.integrity!,
+              source: manifest.source!,
+            } satisfies PluginInstallReceipt);
+          }
           await rename(staging, target);
         } catch (error) {
           await rm(staging, { recursive: true, force: true });
@@ -87,9 +111,8 @@ export class PluginPackageStore {
       for (const version of await directoryNames(path.join(this.rootDirectory, id))) {
         const packagePath = this.packagePath(id, version);
         try {
-          const manifest = parsePluginPackageManifest(JSON.parse(
-            await readFile(path.join(packagePath, 'hadamard-plugin.json'), 'utf8'),
-          ));
+          const manifest = await this.readInstalled(packagePath);
+          if (!manifest) continue;
           packages.push({
             manifest,
             packagePath,
@@ -115,7 +138,11 @@ export class PluginPackageStore {
   async pin(pluginId: string, version?: string): Promise<void> {
     await this.serial(async () => {
       const state = await this.readState();
-      state[pluginId] = { ...state[pluginId], enabled: state[pluginId]?.enabled ?? false, pinnedVersion: version };
+      state[pluginId] = {
+        ...state[pluginId],
+        enabled: state[pluginId]?.enabled ?? false,
+        pinnedVersion: version,
+      };
       await this.writeState(state);
     });
   }
@@ -126,11 +153,17 @@ export class PluginPackageStore {
         recursive: true,
         force: true,
       });
+      if (!version || (await directoryNames(this.pluginRoot(pluginId))).length === 0) {
+        const state = await this.readState();
+        delete state[pluginId];
+        await this.writeState(state);
+      }
     });
   }
 
   private packagePath(pluginId: string, version: string): string {
-    if (!/^[a-z0-9][a-z0-9._-]*$/u.test(pluginId) || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
+    if (!/^[a-z0-9][a-z0-9._-]*$/u.test(pluginId)
+      || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
       throw new Error('Unsafe plugin package path.');
     }
     return path.join(this.rootDirectory, pluginId, version);
@@ -145,9 +178,19 @@ export class PluginPackageStore {
 
   private async readInstalled(target: string): Promise<PluginPackageManifest | undefined> {
     try {
-      return parsePluginPackageManifest(JSON.parse(
-        await readFile(path.join(target, 'hadamard-plugin.json'), 'utf8'),
-      ));
+      const sourceManifest = await readSourceManifest(target);
+      if (!isSkillMcpBundleManifest(sourceManifest)) return sourceManifest;
+      const receipt = JSON.parse(
+        await readFile(path.join(target, INSTALL_RECEIPT), 'utf8'),
+      ) as PluginInstallReceipt;
+      if (receipt.schemaVersion !== 1 || typeof receipt.integrity !== 'string') {
+        throw new Error('Skill+MCP bundle install receipt is invalid.');
+      }
+      const actualIntegrity = await packageTreeIntegrity(target);
+      if (actualIntegrity !== receipt.integrity) {
+        throw new Error('Skill+MCP bundle package integrity mismatch.');
+      }
+      return parsePluginPackageManifest(await readBundleManifest(target), receipt);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
       throw error;
@@ -181,6 +224,85 @@ export class PluginPackageStore {
   }
 }
 
+async function readSourceManifest(root: string): Promise<PluginPackageManifest> {
+  try {
+    return parsePluginPackageManifest(JSON.parse(
+      await readFile(path.join(root, 'hadamard-plugin.json'), 'utf8'),
+    ));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  return parsePluginPackageManifest(await readBundleManifest(root));
+}
+
+async function readBundleManifest(root: string): Promise<unknown> {
+  return JSON.parse(await readFile(path.join(root, '.codex-plugin', 'plugin.json'), 'utf8'));
+}
+
+async function verifyManifestContent(root: string, manifest: PluginPackageManifest): Promise<void> {
+  if (isSkillMcpBundleManifest(manifest)) {
+    for (const relative of [manifest.skills, manifest.mcpServers].filter(Boolean) as string[]) {
+      const candidate = resolveInside(root, relative);
+      await lstat(candidate);
+    }
+    return;
+  }
+  const entry = await readFile(resolveInside(root, manifest.entry));
+  if (manifest.integrity) {
+    const actual = `sha256-${createHash('sha256').update(entry).digest('base64')}`;
+    if (actual !== manifest.integrity) throw new Error('Plugin package integrity mismatch.');
+  }
+}
+
+async function packageBitsMatch(
+  source: string,
+  target: string,
+  incoming: PluginPackageManifest,
+  installed: PluginPackageManifest,
+): Promise<boolean> {
+  if (isSkillMcpBundleManifest(incoming) && isSkillMcpBundleManifest(installed)) {
+    return incoming.integrity === installed.integrity;
+  }
+  if (isSkillMcpBundleManifest(incoming) || isSkillMcpBundleManifest(installed)) return false;
+  const sourceEntry = await readFile(resolveInside(source, incoming.entry));
+  const installedEntry = await readFile(resolveInside(target, installed.entry));
+  return createHash('sha256').update(sourceEntry).digest('hex')
+    === createHash('sha256').update(installedEntry).digest('hex');
+}
+
+function resolveInside(root: string, relative: string): string {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(resolvedRoot, relative);
+  if (resolved !== resolvedRoot && !resolved.startsWith(`${resolvedRoot}${path.sep}`)) {
+    throw new Error('Plugin resource escapes the package root.');
+  }
+  return resolved;
+}
+
+async function packageTreeIntegrity(root: string): Promise<string> {
+  const hash = createHash('sha256');
+  for (const file of await regularFiles(root)) {
+    const relative = path.relative(root, file).replace(/\\/gu, '/');
+    hash.update(relative);
+    hash.update('\0');
+    hash.update(await readFile(file));
+    hash.update('\0');
+  }
+  return `sha256-${hash.digest('base64')}`;
+}
+
+async function regularFiles(root: string): Promise<string[]> {
+  const results: string[] = [];
+  for (const entry of (await readdir(root, { withFileTypes: true }))
+    .sort((left, right) => left.name.localeCompare(right.name))) {
+    if (entry.name === INSTALL_RECEIPT) continue;
+    const candidate = path.join(root, entry.name);
+    if (entry.isDirectory()) results.push(...await regularFiles(candidate));
+    else if (entry.isFile()) results.push(candidate);
+  }
+  return results;
+}
+
 async function directoryNames(root: string, excluded?: string): Promise<string[]> {
   try {
     return (await readdir(root, { withFileTypes: true }))
@@ -203,10 +325,7 @@ async function assertRegularPackageTree(root: string): Promise<void> {
     if (entry.isSymbolicLink()) {
       throw new Error(`Plugin packages cannot contain symbolic links: ${entry.name}`);
     }
-    if (entry.isDirectory()) {
-      await assertRegularPackageTree(candidate);
-    } else if (!entry.isFile()) {
-      throw new Error(`Plugin packages cannot contain special files: ${entry.name}`);
-    }
+    if (entry.isDirectory()) await assertRegularPackageTree(candidate);
+    else if (!entry.isFile()) throw new Error(`Plugin packages cannot contain special files: ${entry.name}`);
   }
 }

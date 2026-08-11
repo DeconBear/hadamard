@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { resolveHadamardHome } from '../src/config/hadamardHome.js';
 import { startHadamardGuiServer } from '../src/gui/hadamardGui.js';
+import { PluginPackageManager } from '../src/plugins/pluginManager.js';
 
 const tempDirs: string[] = [];
 
@@ -124,6 +125,76 @@ describe('GUI Customize plugins API', () => {
         secretConfigured: true,
       });
       expect(retained.text).not.toContain(secret);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('shows exact bundle trust details and manages activation without exposing values', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-gui-plugin-bundle-'));
+    tempDirs.push(root);
+    const homeDir = path.join(root, 'home');
+    const workDir = path.join(root, 'work');
+    const dataRoot = resolveHadamardHome(homeDir);
+    const source = path.join(root, 'bundle');
+    await mkdir(path.join(source, '.codex-plugin'), { recursive: true });
+    await mkdir(path.join(source, 'skill'), { recursive: true });
+    await writeFile(path.join(source, '.codex-plugin', 'plugin.json'), JSON.stringify({
+      name: 'review-bundle',
+      version: '1.0.0',
+      skills: './skill',
+    }));
+    await writeFile(path.join(source, 'skill', 'SKILL.md'), [
+      '---',
+      'name: review-bundle',
+      'description: Review bundle.',
+      '---',
+      'Review files.',
+    ].join('\n'));
+    const manager = new PluginPackageManager(path.join(dataRoot, 'plugin-packages'));
+    await manager.packages.install(source, {
+      source: {
+        kind: 'git',
+        location: 'https://example.test/review-bundle',
+        commit: '0123456789abcdef0123456789abcdef01234567',
+      },
+    });
+    const server = await startHadamardGuiServer({
+      workDir,
+      homeDir,
+      host: '127.0.0.1',
+      port: 46000 + Math.floor(Math.random() * 8000),
+    });
+
+    type Snapshot = { packages: Array<{ id: string; trusted: boolean; enabled: boolean; commit?: string }> };
+    try {
+      const initial = await api<Snapshot>(server, '/api/customize/plugins');
+      expect(initial.body.packages).toEqual([
+        expect.objectContaining({
+          id: 'review-bundle',
+          trusted: false,
+          enabled: false,
+          commit: '0123456789abcdef0123456789abcdef01234567',
+        }),
+      ]);
+      const trusted = await api<Snapshot>(server, '/api/customize/plugins', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'trust', packageId: 'review-bundle' }),
+      });
+      expect(trusted.body.packages[0]).toMatchObject({ trusted: true, enabled: false });
+      const enabled = await api<Snapshot>(server, '/api/customize/plugins', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'enable', packageId: 'review-bundle' }),
+      });
+      expect(enabled.body.packages[0]).toMatchObject({ trusted: true, enabled: true });
+      const removed = await api<Snapshot>(server, '/api/customize/plugins', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'remove', packageId: 'review-bundle' }),
+      });
+      expect(removed.body.packages).toEqual([]);
     } finally {
       await server.close();
     }

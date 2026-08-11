@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "files": {
     "goal/projectGoalStore.ts": { "maxLines": 1013, "reason": "Existing project-goal store debt." },
-    "gui/hadamardGui.ts": { "maxLines": 10682, "reason": "GUI composition root; Phase 4 adds shared Agent-mode/project-capability endpoint wiring while domain behavior remains in services." },
-    "gui/hadamardGuiAssets.ts": { "maxLines": 26495, "reason": "Byte-stable embedded GUI asset renderer; Phase 4 adds mode selectors and preserves existing tool controls." },
+    "gui/hadamardGui.ts": { "maxLines": 10706, "reason": "GUI composition root; Phase 5 delegates bundle inspection and trust behavior to PluginPackageManager and only wires API mutations/runtime reload." },
+    "gui/hadamardGuiAssets.ts": { "maxLines": 26574, "reason": "Byte-stable embedded GUI asset renderer; Phase 5 adds a declarative package trust card while package logic remains in plugin services." },
     "gui/transcript/clientBundle.ts": { "maxLines": 1127, "reason": "Byte-stable transcript client bundle." },
     "manager/assistantGlobalTools.ts": { "maxLines": 1149, "reason": "Compatibility factory; new domains belong in providers." },
     "parity/bridgeProviders.ts": { "maxLines": 1400, "reason": "Existing compatibility adapter debt." },
@@ -11,13 +11,13 @@
     "parity/hadamardBridgeSdk.ts": { "maxLines": 2898, "reason": "Bridge SDK compatibility composition root." },
     "parity/hadamardCleanBridgeCompatSdk.ts": { "maxLines": 1876, "reason": "Clean bridge compatibility composition root." },
     "runtime-v2/agentRuntime.ts": { "maxLines": 1745, "reason": "Runtime v2 facade; collaborators must absorb new behavior." },
-    "runtime/agentClient.ts": { "maxLines": 5466, "reason": "Public SDK compatibility facade and composition root; Phase 4 centrally applies Agent execution policy and owns persistent CodeAct service lifecycle." },
+    "runtime/agentClient.ts": { "maxLines": 5487, "reason": "Public SDK compatibility facade and composition root; Phase 5 composes trusted bundle Skill/MCP registrations while loading and security remain in plugin collaborators." },
     "runtime/conversationEngine.ts": { "maxLines": 958, "reason": "Turn coordinator facade; single-tool execution and policies live in collaborators." },
     "runtime/externalSkillCatalog.ts": { "maxLines": 1249, "reason": "Existing external skill catalog debt." },
     "runtime/hadamardCompact.ts": { "maxLines": 1340, "reason": "Existing compact engine debt." },
     "storage-v2/sqliteStorage.ts": { "maxLines": 1232, "reason": "SQLite infrastructure adapter with segregated public stores." },
-    "tui/hadamardTuiController.ts": { "maxLines": 4528, "reason": "TUI composition/state root; Phase 4 adds the shared dual-checkbox mode dialog and session-mode wiring." },
-    "types.ts": { "maxLines": 3358, "reason": "Public compatibility type barrel; Phase 4 adds versioned Agent and node execution-mode fields." }
+    "tui/hadamardTuiController.ts": { "maxLines": 4569, "reason": "TUI composition/state root; Phase 5 renders PluginPackageManager trust snapshots and delegates all mutations to that service." },
+    "types.ts": { "maxLines": 3369, "reason": "Public compatibility type barrel; Phase 5 adds MCP content provenance shared by stdio and HTTP bundle servers." }
   },
   "interfaces": {
     "config/agentProfiles.ts#SelectableAgent": { "maxMembers": 28, "reason": "Compatibility DTO extended with the reusable Agent execution mode." },

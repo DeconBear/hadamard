@@ -3498,6 +3498,11 @@
         "signature": "export interface HadamardPermissionRule {\ntoolName: string;\nbehavior: HadamardPermissionBehavior;\nmatcher?: string;\nsource?: string;\n}"
       },
       {
+        "name": "HadamardPluginV1Manifest",
+        "kind": "interface",
+        "signature": "export interface HadamardPluginV1Manifest {\nschemaVersion: 1;\nid: string;\nname: string;\nversion: string;\ndescription?: string;\npublisher?: string;\nsignature?: string;\nentry: string;\nintegrity?: string;\ncapabilities: string[];\npermissions?: string[];\nhadamard?: string;\n}"
+      },
+      {
         "name": "HadamardPostRunHook",
         "kind": "type",
         "signature": "export type HadamardPostRunHook = ((context: HadamardPostRunHookContext) => Promise<HadamardPostRunHookResult | void> | HadamardPostRunHookResult | void);"
@@ -3923,9 +3928,19 @@
         "signature": "export declare function inspectDesignMigration(projectStoreDirectory: string): Promise<DesignMigrationInspection>;"
       },
       {
+        "name": "inspectSkillMcpBundle",
+        "kind": "function",
+        "signature": "export declare function inspectSkillMcpBundle(packagePath: string, manifest: SkillMcpBundleManifest): Promise<PluginBundleTrustSummary>;"
+      },
+      {
         "name": "InstalledPluginPackage",
         "kind": "interface",
         "signature": "export interface InstalledPluginPackage {\nmanifest: PluginPackageManifest;\npackagePath: string;\nenabled: boolean;\npinnedVersion?: string;\n}"
+      },
+      {
+        "name": "InstallPluginPackageOptions",
+        "kind": "interface",
+        "signature": "export interface InstallPluginPackageOptions {\nsource?: PluginPackageSource;\n}"
       },
       {
         "name": "instantiateTeamDefinition",
@@ -4011,6 +4026,11 @@
         "name": "isProjectWorkMode",
         "kind": "function",
         "signature": "export declare function isProjectWorkMode(value: unknown): value is ProjectWorkMode;"
+      },
+      {
+        "name": "isSkillMcpBundleManifest",
+        "kind": "function",
+        "signature": "export declare function isSkillMcpBundleManifest(manifest: PluginPackageManifest): manifest is SkillMcpBundleManifest;"
       },
       {
         "name": "ISSUE_PRIORITIES",
@@ -4228,6 +4248,11 @@
         "signature": "export interface LoadedRouterProfile {\nname: string;\nprofile: RouterProfile;\nsource: 'project' | 'personal';\nfilePath: string;\n}"
       },
       {
+        "name": "LoadedSkillMcpBundle",
+        "kind": "interface",
+        "signature": "export interface LoadedSkillMcpBundle {\nkind: 'skill-mcp-bundle';\npluginId: string;\nversion: string;\npackagePath: string;\nskillDirectories: string[];\nskillRoots: string[];\ndirectSkills: Array<{\nname: string;\nskillFile: string;\nskillRoot: string;\n}>;\nmcpServers: AgentMcpServerDefinition[];\ntrust: PluginBundleTrustSummary;\n}"
+      },
+      {
         "name": "LoadedTeamDefinition",
         "kind": "interface",
         "signature": "export interface LoadedTeamDefinition {\nname: string;\ndefinition: TeamDefinition;\nsource: 'project' | 'personal' | 'built-in';\nfilePath: string;\n}"
@@ -4271,6 +4296,11 @@
         "name": "loadRouterProfile",
         "kind": "function",
         "signature": "export declare function loadRouterProfile(name: string, projectDir?: string, homeDir?: string): LoadedRouterProfile | null;"
+      },
+      {
+        "name": "loadSkillMcpBundle",
+        "kind": "function",
+        "signature": "export declare function loadSkillMcpBundle(packagePath: string, manifest: SkillMcpBundleManifest): Promise<LoadedSkillMcpBundle>;"
       },
       {
         "name": "loadTeamDefinition",
@@ -4456,6 +4486,11 @@
         "name": "McpConnectionManager",
         "kind": "class",
         "signature": "export declare class McpConnectionManager {\nprivate readonly clientInfo;\nprivate readonly connections;\nprivate readonly pendingConnections;\nprivate readonly requestTimeoutMs;\nprivate readonly catalogTtlMs;\nprivate readonly clientFactory;\nconstructor(clientInfo: {\nname: string;\nversion: string;\n}, options?: McpConnectionManagerOptions);\nresolveToolAdapters(localTools?: AgentToolDefinition[], servers?: AgentMcpServerDefinition[], options?: ResolveMcpToolsOptions): Promise<ResolvedToolAdapter[]>;\ncloseAll(): Promise<void>;\nprivate getConnection;\nprivate connect;\nprivate listTools;\nprivate requestOptions;\nprivate evictSupersededConnections;\nprivate invalidateConnection;\nprivate callExternalTool;\n}"
+      },
+      {
+        "name": "McpContentProvenance",
+        "kind": "interface",
+        "signature": "export interface McpContentProvenance {\ntrust: 'untrusted';\npluginId: string;\npackageVersion: string;\nsource: string;\ncommit?: string;\nintegrity: string;\n}"
       },
       {
         "name": "MEDIA_GEN_PLUGIN_IDS",
@@ -4735,7 +4770,12 @@
       {
         "name": "parsePluginPackageManifest",
         "kind": "function",
-        "signature": "export declare function parsePluginPackageManifest(value: unknown): PluginPackageManifest;"
+        "signature": "export declare function parsePluginPackageManifest(value: unknown, options?: ParsePluginPackageManifestOptions): PluginPackageManifest;"
+      },
+      {
+        "name": "ParsePluginPackageManifestOptions",
+        "kind": "interface",
+        "signature": "export interface ParsePluginPackageManifestOptions {\nintegrity?: string;\nsource?: PluginPackageSource;\n}"
       },
       {
         "name": "parseRemoteWorkerMessage",
@@ -4793,29 +4833,49 @@
         "signature": "export interface PlanGoalItemInput {\nid?: string;\nrole?: GoalWorkItemRole;\npriority?: GoalWorkItemPriority;\ntaskClass?: GoalWorkItemClass;\nactionKind?: string;\ntext: string;\ndependsOn?: string[];\nsuccessorOf?: string;\nresumeWhen?: string;\nroleScopes?: string[];\nexcludedAgentIds?: string[];\n}"
       },
       {
+        "name": "PluginBundleLaunchSummary",
+        "kind": "interface",
+        "signature": "export interface PluginBundleLaunchSummary {\nserver: string;\nstartupCommand: string;\nenvironmentVariables: string[];\n}"
+      },
+      {
+        "name": "PluginBundleTrustSummary",
+        "kind": "interface",
+        "signature": "export interface PluginBundleTrustSummary {\npackageType: 'skill-mcp-bundle';\nsource: string;\ncommit?: string;\nlaunches: PluginBundleLaunchSummary[];\ncapabilities: string[];\nnetwork: boolean;\nfileAccess: Array<'read' | 'write'>;\n}"
+      },
+      {
         "name": "PluginLoader",
         "kind": "class",
-        "signature": "export declare class PluginLoader {\nprivate readonly store;\nprivate readonly trust;\nconstructor(store: PluginPackageStore, trust: PluginTrustStore);\nload(pluginId: string): Promise<unknown>;\n}"
+        "signature": "export declare class PluginLoader {\nprivate readonly store;\nprivate readonly trust;\nconstructor(store: PluginPackageStore, trust: PluginTrustStore);\nload(pluginId: string): Promise<unknown>;\nloadEnabledBundles(): Promise<LoadedSkillMcpBundle[]>;\n}"
       },
       {
         "name": "PluginManagerResult",
         "kind": "interface",
-        "signature": "export interface PluginManagerResult {\nmessage: string;\nitems?: Array<{\nlabel: string;\ndescription?: string;\n}>;\n}"
+        "signature": "export interface PluginManagerResult {\nmessage: string;\nitems?: Array<{\nlabel: string;\ndescription?: string;\n}>;\nruntimeChanged?: boolean;\n}"
       },
       {
         "name": "PluginPackageManager",
         "kind": "class",
-        "signature": "export declare class PluginPackageManager {\nprivate readonly registryUrl?;\nprivate readonly policy?;\nreadonly packages: PluginPackageStore;\nreadonly trust: PluginTrustStore;\nconstructor(rootDirectory: string, registryUrl?: string | undefined, policy?: ResolvedPolicy | undefined);\nexecute(input: string): Promise<PluginManagerResult>;\nprivate assertRegistryAllowed;\nprivate assertManifestAllowed;\n}"
+        "signature": "export declare class PluginPackageManager {\nprivate readonly registryUrl?;\nprivate readonly policy?;\nreadonly packages: PluginPackageStore;\nreadonly trust: PluginTrustStore;\nconstructor(rootDirectory: string, registryUrl?: string | undefined, policy?: ResolvedPolicy | undefined);\nsnapshot(): Promise<PluginPackageSnapshot[]>;\nexecute(input: string): Promise<PluginManagerResult>;\nprivate describeTrust;\nprivate assertRegistryAllowed;\nprivate assertManifestAllowed;\n}"
       },
       {
         "name": "PluginPackageManifest",
+        "kind": "type",
+        "signature": "export type PluginPackageManifest = HadamardPluginV1Manifest | SkillMcpBundleManifest;"
+      },
+      {
+        "name": "PluginPackageSnapshot",
         "kind": "interface",
-        "signature": "export interface PluginPackageManifest {\nschemaVersion: 1;\nid: string;\nname: string;\nversion: string;\ndescription?: string;\npublisher?: string;\nsignature?: string;\nentry: string;\nintegrity?: string;\ncapabilities: string[];\npermissions?: string[];\nhadamard?: string;\n}"
+        "signature": "export interface PluginPackageSnapshot {\nid: string;\nname: string;\nversion: string;\npackageType: 'hadamard-v1' | 'skill-mcp-bundle';\nenabled: boolean;\ntrusted: boolean;\ncapabilities: string[];\nsource: string;\ncommit?: string;\nstartupCommands: string[];\nenvironmentVariables: string[];\nnetwork: boolean;\nfileAccess: string[];\n}"
+      },
+      {
+        "name": "PluginPackageSource",
+        "kind": "interface",
+        "signature": "export interface PluginPackageSource {\nkind: 'git' | 'local';\nlocation: string;\ncommit?: string;\n}"
       },
       {
         "name": "PluginPackageStore",
         "kind": "class",
-        "signature": "export declare class PluginPackageStore {\nprivate readonly rootDirectory;\nprivate queue;\nconstructor(rootDirectory: string);\ninstall(sourceDirectory: string): Promise<InstalledPluginPackage>;\nlist(pluginId?: string): Promise<InstalledPluginPackage[]>;\nsetEnabled(pluginId: string, enabled: boolean): Promise<void>;\npin(pluginId: string, version?: string): Promise<void>;\nremove(pluginId: string, version?: string): Promise<void>;\nprivate packagePath;\nprivate pluginRoot;\nprivate readInstalled;\nprivate readState;\nprivate writeState;\nprivate serial;\n}"
+        "signature": "export declare class PluginPackageStore {\nprivate readonly rootDirectory;\nprivate queue;\nconstructor(rootDirectory: string);\ninstall(sourceDirectory: string, options?: InstallPluginPackageOptions): Promise<InstalledPluginPackage>;\nlist(pluginId?: string): Promise<InstalledPluginPackage[]>;\nsetEnabled(pluginId: string, enabled: boolean): Promise<void>;\npin(pluginId: string, version?: string): Promise<void>;\nremove(pluginId: string, version?: string): Promise<void>;\nprivate packagePath;\nprivate pluginRoot;\nprivate readInstalled;\nprivate readState;\nprivate writeState;\nprivate serial;\n}"
       },
       {
         "name": "PluginRegistryClient",
@@ -4830,7 +4890,7 @@
       {
         "name": "PluginTrustGrant",
         "kind": "interface",
-        "signature": "export interface PluginTrustGrant {\npluginId: string;\nversion: string;\nintegrity?: string;\ncapabilities: string[];\ntrustedAt: string;\n}"
+        "signature": "export interface PluginTrustGrant {\npluginId: string;\nversion: string;\nintegrity?: string;\ncapabilities: string[];\nsource?: PluginPackageSource;\ntrustedAt: string;\n}"
       },
       {
         "name": "PluginTrustStore",
@@ -5998,6 +6058,11 @@
         "signature": "SKILL_TOOL_NAME = \"Skill\""
       },
       {
+        "name": "SkillMcpBundleManifest",
+        "kind": "interface",
+        "signature": "export interface SkillMcpBundleManifest {\nschemaVersion: 1;\npackageType: 'skill-mcp-bundle';\nid: string;\nname: string;\nversion: string;\ndescription?: string;\nskills?: string;\nmcpServers?: string;\nintegrity?: string;\ncapabilities: string[];\nsource?: PluginPackageSource;\n}"
+      },
+      {
         "name": "SqliteDesignArtifactRepository",
         "kind": "class",
         "signature": "export declare class SqliteDesignArtifactRepository implements DesignArtifactRepository {\nprivate readonly filename;\nprivate readonly tenantId;\nconstructor(filename: string, tenantId?: string);\nprivate use;\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
@@ -6035,7 +6100,7 @@
       {
         "name": "StdioMcpServerDefinition",
         "kind": "interface",
-        "signature": "export interface StdioMcpServerDefinition {\nkind: 'stdio';\nname: string;\ncommand: string;\nargs?: string[];\nenv?: Record<string, string>;\ncwd?: string;\nprefix?: string;\nstderr?: 'inherit' | 'ignore' | 'pipe';\n}"
+        "signature": "export interface StdioMcpServerDefinition {\nkind: 'stdio';\nname: string;\ncommand: string;\nargs?: string[];\nenv?: Record<string, string>;\ncwd?: string;\nprefix?: string;\nstderr?: 'inherit' | 'ignore' | 'pipe';\ncontentProvenance?: McpContentProvenance;\n}"
       },
       {
         "name": "StorageV2DesignArtifactRepository",
@@ -6075,7 +6140,7 @@
       {
         "name": "StreamableHttpMcpServerDefinition",
         "kind": "interface",
-        "signature": "export interface StreamableHttpMcpServerDefinition {\nkind: 'streamable_http';\nname: string;\nurl: string | URL;\nheaders?: Record<string, string>;\nsessionId?: string;\nprefix?: string;\n}"
+        "signature": "export interface StreamableHttpMcpServerDefinition {\nkind: 'streamable_http';\nname: string;\nurl: string | URL;\nheaders?: Record<string, string>;\nsessionId?: string;\nprefix?: string;\ncontentProvenance?: McpContentProvenance;\n}"
       },
       {
         "name": "summarizeHadamardAgentDefinition",
@@ -12364,6 +12429,11 @@
         "signature": "export interface HadamardPermissionRule {\ntoolName: string;\nbehavior: HadamardPermissionBehavior;\nmatcher?: string;\nsource?: string;\n}"
       },
       {
+        "name": "HadamardPluginV1Manifest",
+        "kind": "interface",
+        "signature": "export interface HadamardPluginV1Manifest {\nschemaVersion: 1;\nid: string;\nname: string;\nversion: string;\ndescription?: string;\npublisher?: string;\nsignature?: string;\nentry: string;\nintegrity?: string;\ncapabilities: string[];\npermissions?: string[];\nhadamard?: string;\n}"
+      },
+      {
         "name": "HadamardPostRunHook",
         "kind": "type",
         "signature": "export type HadamardPostRunHook = ((context: HadamardPostRunHookContext) => Promise<HadamardPostRunHookResult | void> | HadamardPostRunHookResult | void);"
@@ -12789,9 +12859,19 @@
         "signature": "export declare function inspectDesignMigration(projectStoreDirectory: string): Promise<DesignMigrationInspection>;"
       },
       {
+        "name": "inspectSkillMcpBundle",
+        "kind": "function",
+        "signature": "export declare function inspectSkillMcpBundle(packagePath: string, manifest: SkillMcpBundleManifest): Promise<PluginBundleTrustSummary>;"
+      },
+      {
         "name": "InstalledPluginPackage",
         "kind": "interface",
         "signature": "export interface InstalledPluginPackage {\nmanifest: PluginPackageManifest;\npackagePath: string;\nenabled: boolean;\npinnedVersion?: string;\n}"
+      },
+      {
+        "name": "InstallPluginPackageOptions",
+        "kind": "interface",
+        "signature": "export interface InstallPluginPackageOptions {\nsource?: PluginPackageSource;\n}"
       },
       {
         "name": "instantiateTeamDefinition",
@@ -12877,6 +12957,11 @@
         "name": "isProjectWorkMode",
         "kind": "function",
         "signature": "export declare function isProjectWorkMode(value: unknown): value is ProjectWorkMode;"
+      },
+      {
+        "name": "isSkillMcpBundleManifest",
+        "kind": "function",
+        "signature": "export declare function isSkillMcpBundleManifest(manifest: PluginPackageManifest): manifest is SkillMcpBundleManifest;"
       },
       {
         "name": "ISSUE_PRIORITIES",
@@ -13134,6 +13219,11 @@
         "signature": "export interface LoadedRouterProfile {\nname: string;\nprofile: RouterProfile;\nsource: 'project' | 'personal';\nfilePath: string;\n}"
       },
       {
+        "name": "LoadedSkillMcpBundle",
+        "kind": "interface",
+        "signature": "export interface LoadedSkillMcpBundle {\nkind: 'skill-mcp-bundle';\npluginId: string;\nversion: string;\npackagePath: string;\nskillDirectories: string[];\nskillRoots: string[];\ndirectSkills: Array<{\nname: string;\nskillFile: string;\nskillRoot: string;\n}>;\nmcpServers: AgentMcpServerDefinition[];\ntrust: PluginBundleTrustSummary;\n}"
+      },
+      {
         "name": "LoadedTeamDefinition",
         "kind": "interface",
         "signature": "export interface LoadedTeamDefinition {\nname: string;\ndefinition: TeamDefinition;\nsource: 'project' | 'personal' | 'built-in';\nfilePath: string;\n}"
@@ -13177,6 +13267,11 @@
         "name": "loadRouterProfile",
         "kind": "function",
         "signature": "export declare function loadRouterProfile(name: string, projectDir?: string, homeDir?: string): LoadedRouterProfile | null;"
+      },
+      {
+        "name": "loadSkillMcpBundle",
+        "kind": "function",
+        "signature": "export declare function loadSkillMcpBundle(packagePath: string, manifest: SkillMcpBundleManifest): Promise<LoadedSkillMcpBundle>;"
       },
       {
         "name": "loadTeamDefinition",
@@ -13362,6 +13457,11 @@
         "name": "McpConnectionManager",
         "kind": "class",
         "signature": "export declare class McpConnectionManager {\nprivate readonly clientInfo;\nprivate readonly connections;\nprivate readonly pendingConnections;\nprivate readonly requestTimeoutMs;\nprivate readonly catalogTtlMs;\nprivate readonly clientFactory;\nconstructor(clientInfo: {\nname: string;\nversion: string;\n}, options?: McpConnectionManagerOptions);\nresolveToolAdapters(localTools?: AgentToolDefinition[], servers?: AgentMcpServerDefinition[], options?: ResolveMcpToolsOptions): Promise<ResolvedToolAdapter[]>;\ncloseAll(): Promise<void>;\nprivate getConnection;\nprivate connect;\nprivate listTools;\nprivate requestOptions;\nprivate evictSupersededConnections;\nprivate invalidateConnection;\nprivate callExternalTool;\n}"
+      },
+      {
+        "name": "McpContentProvenance",
+        "kind": "interface",
+        "signature": "export interface McpContentProvenance {\ntrust: 'untrusted';\npluginId: string;\npackageVersion: string;\nsource: string;\ncommit?: string;\nintegrity: string;\n}"
       },
       {
         "name": "MEDIA_GEN_PLUGIN_IDS",
@@ -13646,7 +13746,12 @@
       {
         "name": "parsePluginPackageManifest",
         "kind": "function",
-        "signature": "export declare function parsePluginPackageManifest(value: unknown): PluginPackageManifest;"
+        "signature": "export declare function parsePluginPackageManifest(value: unknown, options?: ParsePluginPackageManifestOptions): PluginPackageManifest;"
+      },
+      {
+        "name": "ParsePluginPackageManifestOptions",
+        "kind": "interface",
+        "signature": "export interface ParsePluginPackageManifestOptions {\nintegrity?: string;\nsource?: PluginPackageSource;\n}"
       },
       {
         "name": "parseRemoteWorkerMessage",
@@ -13704,29 +13809,49 @@
         "signature": "export interface PlanGoalItemInput {\nid?: string;\nrole?: GoalWorkItemRole;\npriority?: GoalWorkItemPriority;\ntaskClass?: GoalWorkItemClass;\nactionKind?: string;\ntext: string;\ndependsOn?: string[];\nsuccessorOf?: string;\nresumeWhen?: string;\nroleScopes?: string[];\nexcludedAgentIds?: string[];\n}"
       },
       {
+        "name": "PluginBundleLaunchSummary",
+        "kind": "interface",
+        "signature": "export interface PluginBundleLaunchSummary {\nserver: string;\nstartupCommand: string;\nenvironmentVariables: string[];\n}"
+      },
+      {
+        "name": "PluginBundleTrustSummary",
+        "kind": "interface",
+        "signature": "export interface PluginBundleTrustSummary {\npackageType: 'skill-mcp-bundle';\nsource: string;\ncommit?: string;\nlaunches: PluginBundleLaunchSummary[];\ncapabilities: string[];\nnetwork: boolean;\nfileAccess: Array<'read' | 'write'>;\n}"
+      },
+      {
         "name": "PluginLoader",
         "kind": "class",
-        "signature": "export declare class PluginLoader {\nprivate readonly store;\nprivate readonly trust;\nconstructor(store: PluginPackageStore, trust: PluginTrustStore);\nload(pluginId: string): Promise<unknown>;\n}"
+        "signature": "export declare class PluginLoader {\nprivate readonly store;\nprivate readonly trust;\nconstructor(store: PluginPackageStore, trust: PluginTrustStore);\nload(pluginId: string): Promise<unknown>;\nloadEnabledBundles(): Promise<LoadedSkillMcpBundle[]>;\n}"
       },
       {
         "name": "PluginManagerResult",
         "kind": "interface",
-        "signature": "export interface PluginManagerResult {\nmessage: string;\nitems?: Array<{\nlabel: string;\ndescription?: string;\n}>;\n}"
+        "signature": "export interface PluginManagerResult {\nmessage: string;\nitems?: Array<{\nlabel: string;\ndescription?: string;\n}>;\nruntimeChanged?: boolean;\n}"
       },
       {
         "name": "PluginPackageManager",
         "kind": "class",
-        "signature": "export declare class PluginPackageManager {\nprivate readonly registryUrl?;\nprivate readonly policy?;\nreadonly packages: PluginPackageStore;\nreadonly trust: PluginTrustStore;\nconstructor(rootDirectory: string, registryUrl?: string | undefined, policy?: ResolvedPolicy | undefined);\nexecute(input: string): Promise<PluginManagerResult>;\nprivate assertRegistryAllowed;\nprivate assertManifestAllowed;\n}"
+        "signature": "export declare class PluginPackageManager {\nprivate readonly registryUrl?;\nprivate readonly policy?;\nreadonly packages: PluginPackageStore;\nreadonly trust: PluginTrustStore;\nconstructor(rootDirectory: string, registryUrl?: string | undefined, policy?: ResolvedPolicy | undefined);\nsnapshot(): Promise<PluginPackageSnapshot[]>;\nexecute(input: string): Promise<PluginManagerResult>;\nprivate describeTrust;\nprivate assertRegistryAllowed;\nprivate assertManifestAllowed;\n}"
       },
       {
         "name": "PluginPackageManifest",
+        "kind": "type",
+        "signature": "export type PluginPackageManifest = HadamardPluginV1Manifest | SkillMcpBundleManifest;"
+      },
+      {
+        "name": "PluginPackageSnapshot",
         "kind": "interface",
-        "signature": "export interface PluginPackageManifest {\nschemaVersion: 1;\nid: string;\nname: string;\nversion: string;\ndescription?: string;\npublisher?: string;\nsignature?: string;\nentry: string;\nintegrity?: string;\ncapabilities: string[];\npermissions?: string[];\nhadamard?: string;\n}"
+        "signature": "export interface PluginPackageSnapshot {\nid: string;\nname: string;\nversion: string;\npackageType: 'hadamard-v1' | 'skill-mcp-bundle';\nenabled: boolean;\ntrusted: boolean;\ncapabilities: string[];\nsource: string;\ncommit?: string;\nstartupCommands: string[];\nenvironmentVariables: string[];\nnetwork: boolean;\nfileAccess: string[];\n}"
+      },
+      {
+        "name": "PluginPackageSource",
+        "kind": "interface",
+        "signature": "export interface PluginPackageSource {\nkind: 'git' | 'local';\nlocation: string;\ncommit?: string;\n}"
       },
       {
         "name": "PluginPackageStore",
         "kind": "class",
-        "signature": "export declare class PluginPackageStore {\nprivate readonly rootDirectory;\nprivate queue;\nconstructor(rootDirectory: string);\ninstall(sourceDirectory: string): Promise<InstalledPluginPackage>;\nlist(pluginId?: string): Promise<InstalledPluginPackage[]>;\nsetEnabled(pluginId: string, enabled: boolean): Promise<void>;\npin(pluginId: string, version?: string): Promise<void>;\nremove(pluginId: string, version?: string): Promise<void>;\nprivate packagePath;\nprivate pluginRoot;\nprivate readInstalled;\nprivate readState;\nprivate writeState;\nprivate serial;\n}"
+        "signature": "export declare class PluginPackageStore {\nprivate readonly rootDirectory;\nprivate queue;\nconstructor(rootDirectory: string);\ninstall(sourceDirectory: string, options?: InstallPluginPackageOptions): Promise<InstalledPluginPackage>;\nlist(pluginId?: string): Promise<InstalledPluginPackage[]>;\nsetEnabled(pluginId: string, enabled: boolean): Promise<void>;\npin(pluginId: string, version?: string): Promise<void>;\nremove(pluginId: string, version?: string): Promise<void>;\nprivate packagePath;\nprivate pluginRoot;\nprivate readInstalled;\nprivate readState;\nprivate writeState;\nprivate serial;\n}"
       },
       {
         "name": "PluginRegistryClient",
@@ -13741,7 +13866,7 @@
       {
         "name": "PluginTrustGrant",
         "kind": "interface",
-        "signature": "export interface PluginTrustGrant {\npluginId: string;\nversion: string;\nintegrity?: string;\ncapabilities: string[];\ntrustedAt: string;\n}"
+        "signature": "export interface PluginTrustGrant {\npluginId: string;\nversion: string;\nintegrity?: string;\ncapabilities: string[];\nsource?: PluginPackageSource;\ntrustedAt: string;\n}"
       },
       {
         "name": "PluginTrustStore",
@@ -14949,6 +15074,11 @@
         "signature": "SKILL_TOOL_NAME = \"Skill\""
       },
       {
+        "name": "SkillMcpBundleManifest",
+        "kind": "interface",
+        "signature": "export interface SkillMcpBundleManifest {\nschemaVersion: 1;\npackageType: 'skill-mcp-bundle';\nid: string;\nname: string;\nversion: string;\ndescription?: string;\nskills?: string;\nmcpServers?: string;\nintegrity?: string;\ncapabilities: string[];\nsource?: PluginPackageSource;\n}"
+      },
+      {
         "name": "SqliteDesignArtifactRepository",
         "kind": "class",
         "signature": "export declare class SqliteDesignArtifactRepository implements DesignArtifactRepository {\nprivate readonly filename;\nprivate readonly tenantId;\nconstructor(filename: string, tenantId?: string);\nprivate use;\nputImmutable(mediaType: string, bytes: Buffer, metadata: JsonObject): Promise<DesignArtifact>;\nget(id: string): Promise<DesignArtifact | undefined>;\n}"
@@ -14986,7 +15116,7 @@
       {
         "name": "StdioMcpServerDefinition",
         "kind": "interface",
-        "signature": "export interface StdioMcpServerDefinition {\nkind: 'stdio';\nname: string;\ncommand: string;\nargs?: string[];\nenv?: Record<string, string>;\ncwd?: string;\nprefix?: string;\nstderr?: 'inherit' | 'ignore' | 'pipe';\n}"
+        "signature": "export interface StdioMcpServerDefinition {\nkind: 'stdio';\nname: string;\ncommand: string;\nargs?: string[];\nenv?: Record<string, string>;\ncwd?: string;\nprefix?: string;\nstderr?: 'inherit' | 'ignore' | 'pipe';\ncontentProvenance?: McpContentProvenance;\n}"
       },
       {
         "name": "StorageV2DesignArtifactRepository",
@@ -15026,7 +15156,7 @@
       {
         "name": "StreamableHttpMcpServerDefinition",
         "kind": "interface",
-        "signature": "export interface StreamableHttpMcpServerDefinition {\nkind: 'streamable_http';\nname: string;\nurl: string | URL;\nheaders?: Record<string, string>;\nsessionId?: string;\nprefix?: string;\n}"
+        "signature": "export interface StreamableHttpMcpServerDefinition {\nkind: 'streamable_http';\nname: string;\nurl: string | URL;\nheaders?: Record<string, string>;\nsessionId?: string;\nprefix?: string;\ncontentProvenance?: McpContentProvenance;\n}"
       },
       {
         "name": "summarizeHadamardAgentDefinition",

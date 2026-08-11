@@ -303,6 +303,7 @@ import {
 } from '../plugins/managedPluginCatalog.js';
 import { probeManagedPlugin } from '../plugins/managedPluginHealth.js';
 import { createManagedPluginRuntime } from '../plugins/managedPluginRuntime.js';
+import { PluginPackageManager } from '../plugins/pluginManager.js';
 import { readPackageVersion } from '../cli/version.js';
 import {
   createUnsupportedAppUpdateController,
@@ -2659,8 +2660,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const health = Object.fromEntries(managedPluginHealthCache) as Partial<
       Record<ManagedPluginId, ManagedPluginHealth>
     >;
+    const packageManager = new PluginPackageManager(
+      path.join(store.homeDir, 'plugin-packages'),
+      process.env.HADAMARD_PLUGIN_REGISTRY,
+      sdk?.config.effectivePolicy,
+    );
     return {
       ...readManagedPluginCatalog(store.raw, { health }),
+      packages: await packageManager.snapshot(),
       localPlugins: await discoverHadamardPlugins({
         workDir,
         homeDir: store.homeDir,
@@ -2670,6 +2677,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   }
 
   async function updateManagedPlugin(body: Record<string, unknown>) {
+    if (typeof body.packageId === 'string') {
+      const packageId = body.packageId.trim();
+      const action = typeof body.action === 'string' ? body.action : '';
+      if (!/^[a-z0-9][a-z0-9._-]*$/u.test(packageId)
+        || !['trust', 'enable', 'disable', 'remove'].includes(action)) {
+        throw new Error('Unknown plugin package action.');
+      }
+      const manager = new PluginPackageManager(
+        path.join(resolveGuiHomeDir(), 'plugin-packages'),
+        process.env.HADAMARD_PLUGIN_REGISTRY,
+        sdk?.config.effectivePolicy,
+      );
+      const result = await manager.execute(`${action} ${packageId}`);
+      if (result.runtimeChanged && sdk && !needsCredentials) await reloadSdk();
+      invalidateHeavyState();
+      return managedPluginCatalogSnapshot();
+    }
     const id = managedPluginId(body.id);
     const action = typeof body.action === 'string' ? body.action : '';
     const store = await resolveHadamardSettingsStore({
@@ -5225,13 +5249,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       }
       case 'plugin': {
         try {
-          const { PluginPackageManager } = await import('../plugins/pluginManager.js');
           const manager = new PluginPackageManager(
             path.join(resolveGuiHomeDir(), 'plugin-packages'),
             process.env.HADAMARD_PLUGIN_REGISTRY,
             sdk?.config.effectivePolicy,
           );
           const result = await manager.execute(args || 'list');
+          if (result.runtimeChanged && sdk && !needsCredentials) await reloadSdk();
           return [{
             type: 'command.result',
             title: 'Plugin packages',
