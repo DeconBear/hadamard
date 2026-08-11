@@ -6,13 +6,19 @@ import java.security.SecureRandom
 import java.time.Instant
 import java.util.UUID
 
+fun interface DeviceLinkRpc {
+  suspend fun request(deviceId: String, method: String, params: JSONObject): JSONObject
+}
+
 class DeviceLinkClient(
   private val identityManager: DeviceIdentityManager,
   private val computerStore: PairedComputerStore,
-) {
-  suspend fun request(deviceId: String, method: String, params: JSONObject = JSONObject()): JSONObject {
+) : DeviceLinkRpc {
+  override suspend fun request(deviceId: String, method: String, params: JSONObject): JSONObject {
     return requestStreaming(deviceId, method, params) {}
   }
+
+  suspend fun request(deviceId: String, method: String): JSONObject = request(deviceId, method, JSONObject())
 
   suspend fun requestStreaming(
     deviceId: String,

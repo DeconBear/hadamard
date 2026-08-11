@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import dev.hadamard.companion.model.AgentCheckpoint
+import dev.hadamard.companion.model.ArtifactRecord
 import dev.hadamard.companion.model.MessageRole
 import dev.hadamard.companion.model.SessionMessage
 import dev.hadamard.companion.model.SessionOrigin
@@ -48,6 +49,7 @@ class MobileDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
       )""",
     )
     database.execSQL("CREATE INDEX messages_by_session ON messages(session_id, sequence)")
+    createArtifactsTable(database)
   }
 
   override fun onConfigure(database: SQLiteDatabase) {
@@ -55,7 +57,25 @@ class MobileDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     database.enableWriteAheadLogging()
   }
 
-  override fun onUpgrade(database: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+  override fun onUpgrade(database: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+    if (oldVersion < 2) createArtifactsTable(database)
+  }
+
+  private fun createArtifactsTable(database: SQLiteDatabase) {
+    database.execSQL(
+      """CREATE TABLE IF NOT EXISTS artifacts(
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        display_name TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        local_path TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )""",
+    )
+    database.execSQL("CREATE INDEX IF NOT EXISTS artifacts_by_session ON artifacts(session_id, created_at)")
+  }
 
   fun upsertSession(session: SessionRecord) {
     writableDatabase.insertWithOnConflict(
@@ -237,6 +257,51 @@ class MobileDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     writableDatabase.delete("checkpoints", "session_id = ?", arrayOf(sessionId))
   }
 
+  fun upsertArtifact(artifact: ArtifactRecord) {
+    writableDatabase.insertWithOnConflict(
+      "artifacts",
+      null,
+      ContentValues().apply {
+        put("id", artifact.id)
+        put("session_id", artifact.sessionId)
+        put("display_name", artifact.displayName)
+        put("media_type", artifact.mediaType)
+        put("size", artifact.size)
+        put("sha256", artifact.sha256)
+        put("local_path", artifact.localPath)
+        put("created_at", artifact.createdAt)
+      },
+      SQLiteDatabase.CONFLICT_REPLACE,
+    )
+  }
+
+  fun listArtifacts(sessionId: String? = null): List<ArtifactRecord> = readableDatabase.query(
+    "artifacts",
+    null,
+    sessionId?.let { "session_id = ?" },
+    sessionId?.let { arrayOf(it) },
+    null,
+    null,
+    "created_at DESC",
+  ).use { cursor ->
+    buildList {
+      while (cursor.moveToNext()) {
+        add(
+          ArtifactRecord(
+            id = cursor.getString(cursor.getColumnIndexOrThrow("id")),
+            sessionId = cursor.stringOrNull("session_id"),
+            displayName = cursor.getString(cursor.getColumnIndexOrThrow("display_name")),
+            mediaType = cursor.getString(cursor.getColumnIndexOrThrow("media_type")),
+            size = cursor.getLong(cursor.getColumnIndexOrThrow("size")),
+            sha256 = cursor.getString(cursor.getColumnIndexOrThrow("sha256")),
+            localPath = cursor.getString(cursor.getColumnIndexOrThrow("local_path")),
+            createdAt = cursor.getLong(cursor.getColumnIndexOrThrow("created_at")),
+          ),
+        )
+      }
+    }
+  }
+
   private fun isReadOnly(sessionId: String): Boolean = readableDatabase.rawQuery(
     "SELECT read_only FROM sessions WHERE id = ?",
     arrayOf(sessionId),
@@ -258,6 +323,6 @@ class MobileDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
   companion object {
     private const val DATABASE_NAME = "hadamard-mobile.db"
-    private const val VERSION = 1
+    private const val VERSION = 2
   }
 }
