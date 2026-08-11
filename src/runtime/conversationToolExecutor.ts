@@ -8,6 +8,7 @@ import type {
   HadamardEffort,
   HadamardPermissionDecision,
   ResolvedToolAdapter,
+  ToolExecutionContext,
   ToolCallProgress,
 } from '../types.js';
 import { withDeadline } from './deadline.js';
@@ -144,7 +145,7 @@ export async function executeConversationToolUse(
     const executionInput = permissionDecision.updatedInput !== undefined
       ? permissionDecision.updatedInput
       : toolUse.input;
-    const executionContext = {
+    const executionContext: ToolExecutionContext = {
       signal: undefined as AbortSignal | undefined,
       runId: options.runId,
       toolUseId: toolUse.id,
@@ -157,6 +158,7 @@ export async function executeConversationToolUse(
       permissions: options.permissions,
       classifier: options.classifier,
       approver: options.approver,
+      runtime: { canUseTool: options.canUseTool, emit: options.emit },
       hooks: options.hooks,
       modelApi: options.modelApi,
       model,

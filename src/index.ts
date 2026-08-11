@@ -50,6 +50,7 @@ export {
 } from './runtime/effectiveAgentRunOptions.js';
 export * from './runtime/agentExecutionPolicy.js';
 export * from './design/index.js';
+export * from './codeact/index.js';
 export type {
   AgentRunConfigurationSource,
   EffectiveAgentRunOptions,
