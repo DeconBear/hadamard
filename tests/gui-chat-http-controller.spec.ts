@@ -7,6 +7,7 @@ import {
   type GuiChatHttpControllerPort,
 } from '../src/gui/guiChatHttpController.js';
 import { GuiHttpRouter } from '../src/gui/guiHttpRouter.js';
+import { rejectMismatchedGuiSession } from '../src/gui/guiSessionHttpGuard.js';
 
 function request(method: string, body?: unknown): IncomingMessage {
   return {
@@ -60,10 +61,24 @@ async function invoke(
 }
 
 describe('GUI chat HTTP controller', () => {
+  it('rejects sends addressed to a conversation that is no longer active', () => {
+    const stale = response();
+    expect(rejectMismatchedGuiSession(stale, 'old-session', 'active-session')).toBe(true);
+    expect(stale.status).toBe(409);
+    expect(stale.body).toEqual({
+      error: 'Conversation switched. Refresh and try again.',
+      activeSessionId: 'active-session',
+    });
+
+    const current = response();
+    expect(rejectMismatchedGuiSession(current, 'active-session', 'active-session')).toBe(false);
+    expect(current.status).toBeUndefined();
+  });
+
   it('validates and dispatches normal and issue chat requests', async () => {
     const port = createPort();
-    await invoke(port, 'POST', '/api/send', { text: 'hello', clientRequestId: 'client:1' });
-    expect(port.send).toHaveBeenCalledWith('hello', expect.anything(), 'client:1');
+    await invoke(port, 'POST', '/api/send', { text: 'hello', clientRequestId: 'client:1', sessionId: 'sess-a' });
+    expect(port.send).toHaveBeenCalledWith('hello', expect.anything(), 'client:1', 'sess-a');
 
     await invoke(port, 'POST', '/api/send', { text: '/issues start #7 reviewer' });
     expect(port.sendIssue).toHaveBeenCalledWith('#7', 'reviewer', expect.anything());
