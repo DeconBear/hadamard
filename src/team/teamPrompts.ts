@@ -3,6 +3,11 @@
  */
 import type { TeamMember } from '../types.js';
 
+type TeamPromptMember = Pick<
+  TeamMember,
+  'model' | 'responsibility' | 'dependsOn' | 'reviews' | 'toolScope' | 'runtime' | 'systemPrompt'
+>;
+
 /** Prepended to every graph agent node at runtime (see modelTeam.runGraphMode). */
 export const TEAM_GRAPH_MEMBER_FRAMING = [
   'You are an agent node in a collaboration graph of specialist agents.',
@@ -15,7 +20,7 @@ export const TEAM_GRAPH_MEMBER_FRAMING = [
 ].join(' ');
 
 /** Assignment block derived from member metadata (responsibility, scope, workspace, etc.). */
-export function buildMemberAssignmentPrompt(member: TeamMember): string {
+export function buildMemberAssignmentPrompt(member: TeamPromptMember): string {
   const lines: string[] = [];
   if (member.responsibility) lines.push(`Responsibility: ${member.responsibility}`);
   if (member.dependsOn?.length) lines.push(`Coordinate after: ${member.dependsOn.join(', ')}`);
@@ -26,13 +31,13 @@ export function buildMemberAssignmentPrompt(member: TeamMember): string {
 }
 
 /** Full system prompt sent to a graph agent member (framing + assignment + specialist prompt). */
-export function buildMemberSystemPrompt(base: string, member: TeamMember): string {
+export function buildMemberSystemPrompt(base: string, member: TeamPromptMember): string {
   return [base, buildMemberAssignmentPrompt(member), member.systemPrompt].filter(Boolean).join('\n\n');
 }
 
 /** Default graph-agent system prompt (framing + node fields + stored specialist prompt). */
 export function resolveGraphNodeSystemPrompt(
-  node: TeamMember,
+  node: TeamPromptMember,
   options?: { framing?: string; reviewerContext?: string },
 ): string {
   const framing = options?.framing ?? TEAM_GRAPH_MEMBER_FRAMING;

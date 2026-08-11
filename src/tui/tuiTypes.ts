@@ -25,7 +25,9 @@ export interface SelectionDialogState {
   selected: number;
   query: string;
   searchable: boolean;
-  resolve: (itemId: string | undefined) => void;
+  multiple?: boolean;
+  checkedIds?: Set<string>;
+  resolve: (itemId: string | string[] | undefined) => void;
 }
 
 export interface TextInputDialogState {

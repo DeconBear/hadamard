@@ -7,6 +7,7 @@ import type {
   WorkflowStepResult,
 } from './types.js';
 import { createId } from '../runtime/helpers.js';
+import { migrateLegacyWorkflowAgentMode } from '../runtime/agentExecutionPolicy.js';
 
 const isoNow = () => new Date().toISOString();
 
@@ -194,7 +195,9 @@ export class WorkflowEngine {
           ?.map((t) => (typeof t === 'string' ? this.sdk.getTool(t) : t))
           .filter((t): t is AgentToolDefinition => t !== undefined);
 
-        const isSingleMode = step.mode === 'single';
+        const agentMode = migrateLegacyWorkflowAgentMode(step);
+        const selectedTools = resolvedTools ?? [];
+        const selectedToolNames = step.allowedTools ?? selectedTools.map(tool => tool.name);
 
         // Per-step timeout
         const stepSignal = step.timeoutMs
@@ -208,11 +211,17 @@ export class WorkflowEngine {
         const result = await session.send(prompt, {
           systemPrompt: step.systemPrompt ?? definition.systemPrompt,
           model: step.model ?? definition.model ?? undefined,
-          tools: resolvedTools,
+          tools: selectedTools,
           mcpServers: step.mcpServers,
           signal: stepSignal,
           permissions: toolPermissions.length > 0 ? toolPermissions : undefined,
-          toolChoice: isSingleMode ? { type: 'none' as const } : undefined,
+          agentMode,
+          ...(agentMode === 'single'
+            ? {
+                inheritDefaultTools: false,
+                allowedTools: selectedToolNames,
+              }
+            : {}),
         });
 
         const stepResult: WorkflowStepResult = {

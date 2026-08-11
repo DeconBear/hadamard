@@ -53,6 +53,7 @@ const PROFILE_FRONTMATTER_ORDER = [
   'description',
   'bridgeConfig',
   'model',
+  'agentMode',
   'effort',
   'permissionMode',
   'promptMode',
@@ -182,6 +183,7 @@ function profileToMarkdownFields(
     description: profile.description,
     bridgeConfig: profile.bridgeConfig,
     model: profile.model,
+    agentMode: profile.agentMode,
     effort: profile.effort,
     permissionMode: profile.permissionMode,
     promptMode: profile.promptMode ?? 'extend',
@@ -209,6 +211,7 @@ export function agentDefinitionToProfile(definition: HadamardAgentDefinition): A
     name: definition.name,
     bridgeConfig,
     model,
+    ...(definition.agentMode ? { agentMode: definition.agentMode } : {}),
     ...(definition.description ? { description: definition.description } : {}),
     ...(definition.systemPrompt?.trim() ? { systemPromptAppend: definition.systemPrompt.trim() } : {}),
     ...(definition.promptMode ? { promptMode: definition.promptMode } : {}),
@@ -248,6 +251,7 @@ const VALID_DEFINITION_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
  * profile-owned default (subagent/promptMode) or leave the file untouched.
  */
 export interface AgentDefinitionExtraFields {
+  agentMode?: import('../runtime/agentExecutionPolicy.js').AgentMode;
   promptMode?: 'extend' | 'replace';
   subagent?: boolean;
   allowedAgents?: string[];
@@ -275,6 +279,7 @@ function formatExtras(
 ): Record<string, string | number | boolean | string[] | undefined> {
   if (!extras) return {};
   return {
+    agentMode: extras.agentMode,
     promptMode: extras.promptMode,
     subagent: extras.subagent,
     allowedAgents: extras.allowedAgents?.length ? extras.allowedAgents : undefined,
@@ -309,6 +314,7 @@ function formatDelegationExtras(
 ): Record<string, string | number | boolean | string[] | undefined> {
   const full = formatExtras(extras);
   return {
+    agentMode: full.agentMode,
     promptMode: full.promptMode,
     subagent: full.subagent,
     allowedAgents: full.allowedAgents,
@@ -477,6 +483,9 @@ function normalizeMigrationProfile(raw: unknown): AgentProfile | null {
     name,
     bridgeConfig,
     model,
+    agentMode: record.agentMode === 'codeact' || record.agentMode === 'hybrid'
+      ? record.agentMode
+      : record.agentMode === 'react' ? 'react' : undefined,
     description: stringOr(record.description),
     systemPromptAppend: stringOr(record.systemPromptAppend),
     promptMode: record.promptMode === 'replace' ? 'replace' : record.promptMode === 'extend' ? 'extend' : undefined,

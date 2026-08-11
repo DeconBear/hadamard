@@ -77,6 +77,7 @@ export function summarizeHadamardAgentDefinition(
     name: definition.name,
     description: definition.description,
     model: definition.model,
+    agentMode: definition.agentMode ?? 'react',
     bridgeConfig: definition.bridgeConfig,
     subagent: definition.subagent,
     effort: definition.effort,

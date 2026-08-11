@@ -94,6 +94,12 @@ import type {
 import { isRecord } from '../runtime/helpers.js';
 import { getLoadedJsonConfig } from '../config/loadJsonConfigFile.js';
 import {
+  agentModeFromChecks,
+  agentModeToChecks,
+  readSessionAgentMode,
+  sessionAgentModePatch,
+} from '../runtime/agentModeService.js';
+import {
   buildModelConfigurationCatalog,
   findModelConfiguration,
   isModelCredentialConfigured,
@@ -785,6 +791,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     if (stored === 'auto') return 'auto';
     return isHadamardEffort(stored) ? stored : sdk.config.effort;
   };
+  const currentAgentMode = () => readSessionAgentMode(session.metadata, projectSettings.agentMode);
 
   function isHadamardEffort(value: unknown): value is HadamardEffort {
     return typeof value === 'string' && EFFORT_LEVELS.includes(value as HadamardEffort);
@@ -807,7 +814,29 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         selected: 0,
         query: '',
         searchable: options.searchable !== false,
-        resolve,
+        resolve: value => resolve(typeof value === 'string' ? value : undefined),
+      };
+      renderDynamic();
+    });
+  }
+
+  function selectItems(options: {
+    title: string;
+    subtitle?: string;
+    items: TuiSelectionItem[];
+    checkedIds: string[];
+  }): Promise<string[] | undefined> {
+    return new Promise(resolve => {
+      selectionDialog = {
+        title: options.title,
+        subtitle: options.subtitle,
+        items: options.items,
+        selected: 0,
+        query: '',
+        searchable: false,
+        multiple: true,
+        checkedIds: new Set(options.checkedIds),
+        resolve: value => resolve(Array.isArray(value) ? value : undefined),
       };
       renderDynamic();
     });
@@ -1128,7 +1157,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const teamLabel = activeTeamName
       ? `team:${activeTeamName}${teamPrefs.autoInvoke ? '' : ' (manual)'}`
       : 'team:none';
-    const left = `${modelLabel} · ${permissionLabel()} · effort:${currentEffort() ?? 'auto'} · ${teamLabel}${bridgeTag}${goalContextLine()} · `;
+    const left = `${modelLabel} · ${permissionLabel()} · mode:${currentAgentMode()} · effort:${currentEffort() ?? 'auto'} · ${teamLabel}${bridgeTag}${goalContextLine()} · `;
     return `${A.dim}  ${left}${A.reset}${ctxColor}ctx ${pct}% (${usedK})${A.reset}`;
   }
 
@@ -1474,6 +1503,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           effort: currentEffort(),
           approver,
           classifier: preToolUseHookClassifier,
+          agentMode: currentAgentMode(),
           model: activeBridgeModelApi.model,
           modelApi: activeBridgeModelApi.modelApi,
           ...(activeTeamTool && teamPrefs.autoInvoke ? { tools: [...tools, activeTeamTool] } : {}),
@@ -1495,6 +1525,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           effort: routed?.effort ?? currentEffort(),
           approver,
           classifier: preToolUseHookClassifier,
+          agentMode: currentAgentMode(),
           ...(routed
             ? { model: routed.model, modelApi: routed.modelApi }
             : selectedConfigModel ? { model: selectedConfigModel } : {}),
@@ -3104,6 +3135,38 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     appendStatic([...formatInfoLine(`effort set to: ${currentEffort() ?? 'auto'}`), '']);
   }
 
+  async function chooseAgentMode(): Promise<void> {
+    const current = currentAgentMode();
+    const checks = agentModeToChecks(current);
+    const selected = await selectItems({
+      title: 'Agent execution mode',
+      subtitle: `Current: ${current} · Space toggles · Enter confirms`,
+      checkedIds: [checks.react ? 'react' : '', checks.codeact ? 'codeact' : ''].filter(Boolean),
+      items: [
+        { id: 'react', label: 'ReAct', description: 'ordinary JSON tools and iterative observation' },
+        { id: 'codeact', label: 'CodeAct', description: 'persistent Python CodeCell execution' },
+      ],
+    });
+    if (!selected) return;
+    try {
+      const mode = agentModeFromChecks({
+        react: selected.includes('react'),
+        codeact: selected.includes('codeact'),
+      });
+      if ((mode === 'codeact' || mode === 'hybrid') && !projectSettings.codeAct.enabled) {
+        appendStatic([
+          ...formatErrorLine('CodeAct is disabled for this project. Enable it in Project Settings first.'),
+          '',
+        ]);
+        return;
+      }
+      await session.mergeMetadata(sessionAgentModePatch(mode));
+      appendStatic([...formatInfoLine(`agent mode set to: ${mode}`), '']);
+    } catch (error) {
+      appendStatic([...formatErrorLine((error as Error).message), '']);
+    }
+  }
+
   // ── /goal: project-scoped goal managed by the shared GoalService ─────
   // The service is the single authority over goal lifecycle (see plan/13
   // P0.2); the TUI only reads and steers it (create/clear/pause/resume).
@@ -3545,6 +3608,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         chooseRouter,
         chooseEffort,
         setEffort,
+        chooseAgentMode,
         currentPermissionMode,
         setPermissionContext: (mode, permissions) => session.setPermissionContext({
           mode,

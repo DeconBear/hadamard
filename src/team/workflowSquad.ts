@@ -15,6 +15,7 @@ import {
   resolveEffectiveAgentRunOptions,
   type EffectiveAgentRunOptions,
 } from '../runtime/effectiveAgentRunOptions.js';
+import { migrateLegacyWorkflowAgentMode } from '../runtime/agentExecutionPolicy.js';
 import { validateWorkflowSquad } from './workflowSquadValidation.js';
 export { validateWorkflowSquad } from './workflowSquadValidation.js';
 
@@ -209,10 +210,12 @@ export async function runWorkflowSquad(
         effectiveAgentOptions.maxToolIterations = node.maxIterations;
       }
     }
+    const nodeAgentMode = migrateLegacyWorkflowAgentMode(node);
     const effectiveAllowedTools = effectiveAgentOptions?.allowedTools ?? node.allowedTools;
     const tools = effectiveAllowedTools?.length
       ? await buildGraphNodeTools({ id: node.id, allowedTools: effectiveAllowedTools }, workDir)
       : [];
+    if (nodeAgentMode === 'single' && tools.length > 1) tools.splice(1);
     const systemPrompt = effectiveAgentOptions?.systemPrompt ?? node.systemPrompt ?? '';
     const run = await (dependencies.runMember ?? runMemberAgent)({
       identity: { id: node.id, model: member.model, role: node.label || node.type },
@@ -232,6 +235,7 @@ export async function runWorkflowSquad(
       effectiveAgentOptions,
       workspaceAccess: node.workspaceAccess,
       modelApi: targetInheritsModel ? options.modelApi : undefined,
+      agentMode: nodeAgentMode ?? effectiveAgentOptions?.agentMode,
       pool,
       round: 1,
       onEvent,
@@ -327,6 +331,7 @@ export async function runSingleAgentSquad(
     effectiveAgentOptions,
     workspaceAccess: member.workspaceAccess,
     modelApi: targetInheritsModel ? opts?.modelApi : undefined,
+    agentMode: effectiveAgentOptions?.agentMode ?? member.agentMode,
     pool,
     round: 1,
     onEvent,

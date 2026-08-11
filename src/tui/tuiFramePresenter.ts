@@ -134,7 +134,10 @@ export function buildTuiSelectionDialog(
     for (let index = start; index < Math.min(start + visibleRows, filtered.length); index += 1) {
       const item = filtered[index]!;
       const description = item.description ? ` · ${item.description}` : '';
-      const label = truncateToWidth(`${item.label}${description}`, Math.max(width - 8, 8));
+      const check = dialog.multiple
+        ? `${dialog.checkedIds?.has(item.id) ? '[x]' : '[ ]'} `
+        : '';
+      const label = truncateToWidth(`${check}${item.label}${description}`, Math.max(width - 8, 8));
       lines.push(boxRow(
         index === selected ? `${A.inverse} ${label} ${A.reset}` : `  ${label}`,
         A.cyan,
@@ -143,7 +146,7 @@ export function buildTuiSelectionDialog(
     }
   }
   lines.push(boxBottom(A.cyan, width));
-  lines.push(`${A.dim}  ↑↓ select · enter confirm · esc cancel${dialog.searchable ? ' · type to filter' : ''}${A.reset}`);
+  lines.push(`${A.dim}  ↑↓ select${dialog.multiple ? ' · space toggle' : ''} · enter confirm · esc cancel${dialog.searchable ? ' · type to filter' : ''}${A.reset}`);
   return { lines, selected };
 }
 
