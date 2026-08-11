@@ -2222,7 +2222,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   }
   const deviceLinkController = new GuiDeviceLinkHttpController({
     rootDirectory: path.join(resolveGuiHomeDir(), 'device-link'),
-    deviceName: os.hostname(),
+    deviceName: os.hostname(), workspaceRoot: workDir,
   });
   await deviceLinkController.setSdk(sdk);
 
@@ -5255,7 +5255,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         }];
       }
       case 'devices': {
-        const supported = ['status', 'start', 'stop', 'pair', 'scopes', 'revoke', 'discover', 'audit'];
+        const supported = ['status', 'start', 'stop', 'pair', 'scopes', 'revoke', 'send', 'outbox', 'discover', 'audit'];
         const command = args.split(/\s/u, 1)[0]?.toLowerCase() || 'status';
         if (!supported.includes(command)) {
           return [{ type: 'error', message: `unknown Device Link command: ${command}` }];

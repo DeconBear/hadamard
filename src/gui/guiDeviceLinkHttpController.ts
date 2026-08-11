@@ -14,6 +14,7 @@ import { json, readJson } from './guiHttpRouter.js';
 export interface GuiDeviceLinkHttpControllerOptions {
   rootDirectory: string;
   deviceName?: string;
+  workspaceRoot?: string;
 }
 
 export class GuiDeviceLinkHttpController {
@@ -104,6 +105,27 @@ export class GuiDeviceLinkHttpController {
         json(res, 200, { records: await (await this.getService()).listAudit(200) });
         return true;
       }
+      if (req.method === 'POST' && url.pathname === '/api/devices/transfers/outbox') {
+        const body = await readJson(req);
+        json(res, 200, {
+          transfer: await (await this.getService()).stageOutgoingArtifact(
+            requiredString(body, 'deviceId'),
+            requiredString(body, 'sourceRelativePath'),
+            {
+              name: optionalString(body, 'name'),
+              mediaType: optionalString(body, 'mediaType'),
+              chunkSize: optionalInteger(body, 'chunkSize'),
+            },
+          ),
+        });
+        return true;
+      }
+      if (req.method === 'GET' && url.pathname === '/api/devices/transfers/outbox') {
+        const deviceId = url.searchParams.get('deviceId')?.trim();
+        if (!deviceId) throw new Error('deviceId is required.');
+        json(res, 200, { transfers: await (await this.getService()).listOutgoingArtifacts(deviceId) });
+        return true;
+      }
       json(res, 404, { error: 'Device Link endpoint not found.' });
     } catch (error) {
       json(res, 400, { error: error instanceof Error ? error.message : String(error) });
@@ -118,6 +140,7 @@ export class GuiDeviceLinkHttpController {
       appServer: new AppServer(this.sdk),
       sdk: this.sdk,
       deviceName: this.options.deviceName ?? os.hostname(),
+      workspaceRoot: this.options.workspaceRoot,
     });
     return this.service;
   }

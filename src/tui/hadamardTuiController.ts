@@ -378,6 +378,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       rootDirectory: path.join(sdk.config.homeDir, 'device-link'),
       appServer: new AppServer(sdk),
       sdk,
+      workspaceRoot: sdk.config.workDir,
     });
     return deviceLinkService;
   }

@@ -12,7 +12,7 @@ export async function runTuiDeviceLinkCommand(
   port: TuiDeviceLinkCommandPort,
 ): Promise<boolean> {
   if (name !== 'devices') return false;
-  const supported = ['status', 'start', 'stop', 'pair', 'scopes', 'revoke', 'discover', 'audit'] as const;
+  const supported = ['status', 'start', 'stop', 'pair', 'scopes', 'revoke', 'send', 'outbox', 'discover', 'audit'] as const;
   const command = args.trim().split(/\s/u, 1)[0]?.toLowerCase() || 'status';
   if (!supported.includes(command as typeof supported[number])) {
     port.appendStatic([...formatErrorLine(`unknown Device Link command: ${command}`), '']);
