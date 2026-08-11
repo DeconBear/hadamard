@@ -1,4 +1,5 @@
 import type { TeamDefinition, WorkflowNode } from '../types.js';
+import { migrateLegacyWorkflowAgentMode } from '../runtime/agentExecutionPolicy.js';
 
 const MAX_WORKFLOW_NODES = 128;
 const MAX_WORKFLOW_DEPTH = 32;
@@ -27,6 +28,16 @@ export function validateWorkflowSquad(
       problems.push(`Workflow node "${id || '(unnamed)'}" requires a children array`);
     }
     const type = String(node.type);
+    if (type === 'agent') {
+      try {
+        const mode = migrateLegacyWorkflowAgentMode(node);
+        if (mode === 'single' && (node.allowedTools?.length ?? 0) > 1) {
+          problems.push(`Workflow node "${id}" in Single mode accepts at most one tool`);
+        }
+      } catch (error) {
+        problems.push(error instanceof Error ? error.message : String(error));
+      }
+    }
     if (type === 'agent' && children.length > 1) {
       problems.push(`Agent node "${id}" may have at most one continuation`);
     } else if (type === 'branch') {

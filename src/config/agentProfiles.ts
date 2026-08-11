@@ -33,6 +33,7 @@ import {
   resolveHadamardModelReference,
 } from './modelTiers.js';
 import type { AgentProfile } from './agentProfileTypes.js';
+import { isAgentMode, parseAgentMode } from '../runtime/agentExecutionPolicy.js';
 export type { AgentProfile } from './agentProfileTypes.js';
 
 export interface PersistedAgentProfiles {
@@ -121,6 +122,9 @@ function normalizeAgentProfile(raw: unknown): AgentProfile | null {
   const model = typeof raw.model === 'string' ? raw.model.trim() : '';
   if (!name || !bridgeConfig || !model) return null;
   const profile: AgentProfile = { name, bridgeConfig, model };
+  if (raw.agentMode !== undefined) {
+    profile.agentMode = parseAgentMode(raw.agentMode, 'Agent profile agentMode');
+  }
   if (typeof raw.description === 'string' && raw.description.trim()) {
     profile.description = raw.description.trim();
   }
@@ -166,6 +170,9 @@ function assertValidAgentProfile(profile: AgentProfile): void {
   }
   if (!profile.model.trim()) {
     throw new Error('Missing model');
+  }
+  if (profile.agentMode !== undefined && !isAgentMode(profile.agentMode)) {
+    throw new Error('Agent mode must be react, codeact, or hybrid. Single is only valid on Workflow/Graph nodes.');
   }
 }
 
@@ -342,6 +349,7 @@ export interface SelectableAgent {
   name: string;
   bridgeConfig: string;
   model: string;
+  agentMode?: import('../runtime/agentExecutionPolicy.js').AgentMode;
   /** Runtime metadata inherited from the matching bridge config, when available. */
   runtime?: BridgeRuntime;
   execution?: BridgeExecutionMode;
@@ -463,6 +471,7 @@ export function listSelectableAgents(homeDir?: string): SelectableAgent[] {
       model: profile.model,
       ...selectableAgentMetadata(configsByName.get(profile.bridgeConfig), profile.model),
       source: 'profile',
+      ...(profile.agentMode ? { agentMode: profile.agentMode } : {}),
       ...(profile.description ? { description: profile.description } : {}),
       ...(profile.permissionMode ? { permissionMode: profile.permissionMode } : {}),
       ...(profile.systemPromptAppend ? { systemPromptAppend: profile.systemPromptAppend } : {}),

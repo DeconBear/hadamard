@@ -49,6 +49,56 @@ function createMockSdk() {
 }
 
 describe('WorkflowEngine', () => {
+  it('migrates legacy node modes and bounds Single to one selected ordinary tool', async () => {
+    const sdk = createMockSdk();
+    const engine = new WorkflowEngine(sdk as never);
+    const readTool = { name: 'Read', description: 'Read', inputSchema: {}, run: vi.fn() };
+    (sdk as typeof sdk & { getTool: (name: string) => typeof readTool | undefined }).getTool =
+      (name: string) => name === 'Read' ? readTool : undefined;
+
+    await engine.run({
+      name: 'single-workflow',
+      description: 'Single mode compatibility',
+      steps: [{
+        id: 'bounded',
+        description: 'Bounded',
+        prompt: 'Inspect once',
+        dependsOn: [],
+        mode: 'single',
+        tools: ['Read'],
+      }],
+    }, {}, { workDir: '/tmp/test' });
+
+    expect(sdk.mockSend).toHaveBeenCalledWith('Inspect once', expect.objectContaining({
+      agentMode: 'single',
+      inheritDefaultTools: false,
+      allowedTools: ['Read'],
+      tools: [readTool],
+    }));
+  });
+
+  it('prefers a new node agentMode override over the legacy workflow mode', async () => {
+    const sdk = createMockSdk();
+    const engine = new WorkflowEngine(sdk as never);
+
+    await engine.run({
+      name: 'hybrid-workflow',
+      description: 'Hybrid mode precedence',
+      steps: [{
+        id: 'worker',
+        description: 'Worker',
+        prompt: 'Work',
+        dependsOn: [],
+        mode: 'single',
+        agentMode: 'hybrid',
+      }],
+    }, {}, { workDir: '/tmp/test' });
+
+    expect(sdk.mockSend).toHaveBeenCalledWith('Work', expect.objectContaining({
+      agentMode: 'hybrid',
+    }));
+  });
+
   it('runs a single-step workflow', async () => {
     const sdk = createMockSdk();
     const engine = new WorkflowEngine(sdk as never);

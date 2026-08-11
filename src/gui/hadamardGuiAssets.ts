@@ -282,6 +282,11 @@ export function createHadamardGuiHtml(): string {
                     <span class="composer-meta-icon" id="composerMetaRuntimeIcon">${guiIcon('model')}</span>
                     <span class="composer-meta-label" id="composerMetaRuntimeLabel">Hadamard SDK</span>
                   </button>
+                  <select class="composer-meta-chip" id="composerAgentMode" title="Agent execution mode" aria-label="Agent execution mode">
+                    <option value="react">ReAct</option>
+                    <option value="codeact">CodeAct</option>
+                    <option value="hybrid">Hybrid</option>
+                  </select>
                   <button type="button" class="composer-meta-chip composer-meta-branch" id="composerMetaBranch" title="Git branch">
                     <span class="composer-meta-icon">${guiIcon('gitBranch')}</span>
                     <span class="composer-meta-label" id="composerMetaBranchLabel">—</span>
@@ -416,6 +421,11 @@ export function createHadamardGuiHtml(): string {
         <div id="agentProfileModelPicker" class="agent-profile-model-picker" role="group" aria-label="Configuration / model"></div>
       </div>
       <label class="dialog-field">Description<input id="agentProfileDescription" autocomplete="off" placeholder="Optional — generated from the prompt when left blank"></label>
+      <label class="dialog-field">Agent mode<select id="agentProfileMode">
+        <option value="react">ReAct</option>
+        <option value="codeact">CodeAct</option>
+        <option value="hybrid">Hybrid</option>
+      </select></label>
       <p class="muted" id="agentProfileInheritHint">Pick a Configuration and model from Settings → Models, or <strong>Inherit session model</strong> to follow the session's main model (inherit agents are not listed in the composer model picker). Runtime is taken from the selected configuration — not configured here.</p>
       <label class="dialog-field">Prompt mode<select id="agentProfilePromptMode">
         <option value="extend">Extend — built-in prompt + body appended</option>
@@ -7559,7 +7569,7 @@ function updateConversationSummary() {
     || snap.bridgeState?.activeModelLabel
     || snap.session?.model
     || 'default';
-  el('workspace').textContent = (snap.workDir || '') + ' - ' + model + ' - ' + snap.permissionMode + ' - effort:' + snap.effort + ' - team:' + (snap.activeTeamName || 'none');
+  el('workspace').textContent = (snap.workDir || '') + ' - ' + model + ' - ' + snap.permissionMode + ' - mode:' + (snap.agentMode || 'react') + ' - effort:' + snap.effort + ' - team:' + (snap.activeTeamName || 'none');
 }
 function renderComposerMeta() {
   const snap = state.snapshot || {};
@@ -7572,6 +7582,14 @@ function renderComposerMeta() {
   const runtimeChip = el('composerMetaRuntime');
   const runtimeLabel = el('composerMetaRuntimeLabel');
   const runtimeIcon = el('composerMetaRuntimeIcon');
+  const modeSelect = el('composerAgentMode');
+  if (modeSelect) {
+    modeSelect.value = snap.agentMode || 'react';
+    modeSelect.disabled = Boolean(state.running || snap.running);
+    modeSelect.title = snap.codeActEnabled
+      ? 'Agent execution mode for this Session'
+      : 'CodeAct is disabled in Project Settings';
+  }
   const bridge = snap.bridgeState || {};
   const config = bridge.activeConfig || null;
   const activeAgentName = snap.activeAgent?.name || '';
@@ -9807,6 +9825,12 @@ function collectProjectSettingsBody() {
   }
   return {
     workMode,
+    agentMode: el('projectAgentMode')?.value || 'react',
+    codeAct: {
+      enabled: Boolean(el('projectCodeActEnabled')?.checked),
+      backend: el('projectCodeActBackend')?.value === 'container' ? 'container' : 'process',
+      securityMode: el('projectCodeActSecurity')?.value === 'enforce' ? 'enforce' : 'trusted',
+    },
     customPrompt: el('projectCustomPrompt')?.value || '',
     projectRules: el('projectRulesPrompt')?.value || '',
     context: {
@@ -9931,7 +9955,7 @@ function wireProjectSettingsPanel() {
   panel.addEventListener('change', (event) => {
     const target = event.target;
     if (!target || !target.id) return;
-    if (target.id === 'projectWorkModeCoding' || target.id === 'projectWorkModeDaily' || target.id === 'projectInstructionMode' || target.id.startsWith('projectCompact') || target.id.startsWith('projectDurableMemory') || target.id === 'projectAutoDream' || target.id === 'projectDreamProfile' || target.id === 'projectDreamEffort' || target.id === 'projectDailyDreamTime') {
+    if (target.id === 'projectWorkModeCoding' || target.id === 'projectWorkModeDaily' || target.id === 'projectAgentMode' || target.id.startsWith('projectCodeAct') || target.id === 'projectInstructionMode' || target.id.startsWith('projectCompact') || target.id.startsWith('projectDurableMemory') || target.id === 'projectAutoDream' || target.id === 'projectDreamProfile' || target.id === 'projectDreamEffort' || target.id === 'projectDailyDreamTime') {
       scheduleProjectSettingsSave();
     }
   });
@@ -9975,6 +9999,10 @@ async function mountProjectSettingsPanel(force) {
     const daily = el('projectWorkModeDaily');
     if (coding) coding.checked = settings.workMode !== 'daily';
     if (daily) daily.checked = settings.workMode === 'daily';
+    if (el('projectAgentMode')) el('projectAgentMode').value = settings.agentMode || 'react';
+    if (el('projectCodeActEnabled')) el('projectCodeActEnabled').checked = settings.codeAct?.enabled === true;
+    if (el('projectCodeActBackend')) el('projectCodeActBackend').value = settings.codeAct?.backend === 'container' ? 'container' : 'process';
+    if (el('projectCodeActSecurity')) el('projectCodeActSecurity').value = settings.codeAct?.securityMode === 'enforce' ? 'enforce' : 'trusted';
     if (el('projectCustomPrompt')) el('projectCustomPrompt').value = settings.customPrompt || '';
     if (el('projectRulesPrompt')) el('projectRulesPrompt').value = settings.projectRules || '';
     if (el('projectInstructionMode')) el('projectInstructionMode').value = settings.context?.instructionMode || 'agents';
@@ -12543,6 +12571,14 @@ function renderProjectDetail() {
     + '<label class="mode-card"><input type="radio" name="projectWorkMode" value="coding" id="projectWorkModeCoding"><span><strong>For coding</strong><small>More technical replies and controls</small></span></label>'
     + '<label class="mode-card"><input type="radio" name="projectWorkMode" value="daily" id="projectWorkModeDaily"><span><strong>For daily work</strong><small>Same power, less technical detail</small></span></label>'
     + '</div>'
+    + '</div>'
+    + '<div class="settings-group">'
+    + '<h2>Agent execution</h2>'
+    + '<p class="muted">The project default applies when a Session or saved Agent does not override it. CodeAct is off by default.</p>'
+    + '<label class="settings-row"><span><strong>Project default mode</strong><small>ReAct uses ordinary tools; Hybrid exposes ordinary tools and CodeCell.</small></span><select id="projectAgentMode"><option value="react">ReAct</option><option value="codeact">CodeAct</option><option value="hybrid">Hybrid</option></select></label>'
+    + '<label class="settings-row"><span><strong>Enable CodeAct</strong><small>Allows persistent Python CodeCell execution for this project.</small></span><input type="checkbox" id="projectCodeActEnabled"></label>'
+    + '<label class="settings-row"><span><strong>CodeAct backend</strong><small>Process is trusted-only; Container provides stronger isolation.</small></span><select id="projectCodeActBackend"><option value="process">Process (trusted only)</option><option value="container">Container</option></select></label>'
+    + '<label class="settings-row"><span><strong>Security mode</strong><small>Enforce fails closed unless strong container isolation is available.</small></span><select id="projectCodeActSecurity"><option value="trusted">Trusted</option><option value="enforce">Enforce isolation</option></select></label>'
     + '</div>'
     + '<div class="settings-group">'
     + '<h2>Custom prompt</h2>'
@@ -17554,9 +17590,31 @@ function promptTeamRun(name) {
 const TEAM_CORE_TOOLS = ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash', 'TavilySearch', 'WebFetch', 'Task', 'TodoWrite', 'AskUserQuestion'];
 const TEAM_READ_ONLY_EXPERT_TOOLS = ['Read', 'Glob', 'Grep', 'WebFetch', 'TavilySearch'];
 function effectiveNodeAllowedTools(node) {
-  return (node.allowedTools && node.allowedTools.length)
+  return Array.isArray(node.allowedTools)
     ? node.allowedTools
     : TEAM_READ_ONLY_EXPERT_TOOLS.slice();
+}
+function executionModeOfNode(node) {
+  if (node?.agentMode) return node.agentMode;
+  if (node?.type === 'single') return 'single';
+  if (node?.type === 'react') return 'react';
+  return 'inherit';
+}
+function applyExecutionModeToNode(node, mode) {
+  node.agentMode = mode === 'inherit' ? undefined : mode;
+  if (node.type !== 'team') delete node.type;
+}
+function setToolChecklistDisabled(field, disabled, hint) {
+  if (!field) return field;
+  field.querySelectorAll('input, button').forEach((control) => { control.disabled = disabled; });
+  field.classList.toggle('disabled', disabled);
+  if (disabled && hint) {
+    const message = document.createElement('p');
+    message.className = 'te-hint';
+    message.textContent = hint;
+    field.appendChild(message);
+  }
+  return field;
 }
 const TEAM_RUNTIME_OPTIONS = ['', 'hadamard', 'claude', 'bridge', 'codex'];
 function teamBridgeConfigOptions() {
@@ -18331,9 +18389,15 @@ function renderTeamNodeEditorPanel(node, def) {
     },
   })));
   const nestedExecutor = node.targetRef?.kind === 'team' || node.type === 'team';
-  if (!nestedExecutor) host.appendChild(teSelect('Agent type', node.type || 'react', ['react', 'single'], (v) => {
-    node.type = v === 'react' ? undefined : v;
-    if (v !== 'team') node.teamRef = undefined;
+  const executionMode = executionModeOfNode(node);
+  if (!nestedExecutor) host.appendChild(teSelect('Agent mode', executionMode, ['inherit', 'react', 'codeact', 'hybrid', 'single'], (v) => {
+    if (v === 'single' && effectiveNodeAllowedTools(node).length > 1) {
+      window.alert('Select at most one ordinary tool before switching this node to Single mode.');
+      renderTeamNodeEditorPanel(node, def);
+      return;
+    }
+    applyExecutionModeToNode(node, v);
+    node.teamRef = undefined;
     setTeamSavedStatus(false);
     renderTeamNodeEditorPanel(node, def);
     renderTeamGraph(def, def.name);
@@ -18343,11 +18407,16 @@ function renderTeamNodeEditorPanel(node, def) {
     teamHint.className = 'te-hint';
     teamHint.textContent = 'The selected Graph or Workflow owns its models, prompts, tools, and iteration limits. Its answer becomes this node output.';
     host.appendChild(teamHint);
-  } else if (node.type === 'single') {
+  } else if (executionMode === 'single') {
     const singleHint = document.createElement('p');
     singleHint.className = 'te-hint';
-    singleHint.textContent = 'type=single: one LLM call, no tools — the agent answers directly from its specialist prompt.';
+    singleHint.textContent = 'Single performs one model turn and may use zero or one selected ordinary tool.';
     host.appendChild(singleHint);
+  } else if (executionMode === 'codeact') {
+    const codeActHint = document.createElement('p');
+    codeActHint.className = 'te-hint';
+    codeActHint.textContent = 'CodeAct uses the code-cell tool. Ordinary tool selections are preserved for switching modes, but are not active.';
+    host.appendChild(codeActHint);
   }
   if (!nestedExecutor) host.appendChild(teSelect('Workspace access', node.workspaceAccess || 'workspace', ['workspace', 'full'], (v) => {
     node.workspaceAccess = v;
@@ -18384,16 +18453,28 @@ function renderTeamNodeEditorPanel(node, def) {
     node.maxRounds = parseTeamInfinityField(v);
     setTeamSavedStatus(false);
   }));
-  if (!nestedExecutor) host.appendChild(teToolChecklist('Allowed tools', effectiveNodeAllowedTools(node), (next) => {
+  if (!nestedExecutor) {
+  const toolChecklist = teToolChecklist('Allowed tools', effectiveNodeAllowedTools(node), (next) => {
     const prev = effectiveNodeAllowedTools(node);
+    if (executionMode === 'single' && next.length > 1 && next.length >= prev.length) {
+      window.alert('Single mode supports at most one ordinary tool.');
+      renderTeamNodeEditorPanel(node, def);
+      return;
+    }
     const added = next.filter((t) => RISKY_NODE_TOOLS.includes(t) && !prev.includes(t));
     if (added.length && !window.confirm('Grant ' + added.join(' + ') + ' to "' + graphRefOf(node) + '"?')) {
       renderTeamNodeEditorPanel(node, def);
       return;
     }
-    node.allowedTools = next.length ? next : TEAM_READ_ONLY_EXPERT_TOOLS.slice();
+    node.allowedTools = next;
     renderTeamGraph(def, def.name);
-  }));
+  });
+  host.appendChild(setToolChecklistDisabled(
+    toolChecklist,
+    executionMode === 'codeact',
+    'Preserved while CodeAct is selected; CodeAct runs only through the code-cell tool.',
+  ));
+  }
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'te-btn danger';
@@ -19264,7 +19345,7 @@ function graphNodeEl(node, def, isPrimary, opts) {
     model.className = 'gn-model';
     let meta = node.model || 'inherits model';
     if (node.runtime) meta += ' · ' + node.runtime;
-    else if (node.type === 'single') meta += ' · single';
+    else if (executionModeOfNode(node) !== 'inherit') meta += ' · ' + executionModeOfNode(node);
     else if (node.type === 'team') meta += ' · team:' + (node.teamRef || '?');
     model.textContent = meta;
     card.append(head, model);
@@ -19322,7 +19403,7 @@ function graphNodeEl(node, def, isPrimary, opts) {
   const model = document.createElement('div');
   model.className = 'gn-model';
   model.textContent = node.model || 'inherits model';
-  if (node.type === 'single') model.textContent += ' · single';
+  if (executionModeOfNode(node) !== 'inherit') model.textContent += ' · ' + executionModeOfNode(node);
   else if (node.type === 'team') model.textContent += ' · team:' + (node.teamRef || '?');
   const tools = document.createElement('div');
   tools.className = 'gn-tools';
@@ -19689,6 +19770,28 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
         true,
         false,
       ));
+      const executionMode = executionModeOfNode(draft);
+      if (!nestedExecutor) typeFields.appendChild(teSelect('Agent mode', executionMode, ['inherit', 'react', 'codeact', 'hybrid', 'single'], (v) => {
+        if (v === 'single' && (draft.allowedTools?.length ?? 0) > 1) {
+          window.alert('Select at most one ordinary tool before switching this node to Single mode.');
+          renderTypeFields();
+          return;
+        }
+        applyExecutionModeToNode(draft, v);
+        renderTypeFields();
+      }));
+      if (!nestedExecutor && executionMode === 'single') {
+        const hint = document.createElement('p');
+        hint.className = 'te-hint';
+        hint.textContent = 'Single performs one model turn and may use zero or one selected ordinary tool.';
+        typeFields.appendChild(hint);
+      }
+      if (!nestedExecutor && executionMode === 'codeact') {
+        const hint = document.createElement('p');
+        hint.className = 'te-hint';
+        hint.textContent = 'CodeAct uses the code-cell tool. Ordinary tool selections remain saved for other modes.';
+        typeFields.appendChild(hint);
+      }
       if (!nestedExecutor) typeFields.appendChild(teSelect('Workspace access', draft.workspaceAccess || 'workspace', ['workspace', 'full'], (v) => {
         draft.workspaceAccess = v === 'full' ? 'full' : undefined;
       }));
@@ -19701,15 +19804,27 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
         draft.maxIterations = parseTeamInfinityField(v);
       }, false));
       }
-      if (!nestedExecutor) typeFields.appendChild(teToolChecklist('Allowed tools', Array.isArray(draft.allowedTools) && draft.allowedTools.length ? draft.allowedTools : [], (next) => {
+      if (!nestedExecutor) {
+      const toolChecklist = teToolChecklist('Allowed tools', Array.isArray(draft.allowedTools) && draft.allowedTools.length ? draft.allowedTools : [], (next) => {
         const prev = Array.isArray(draft.allowedTools) ? draft.allowedTools : [];
+        if (executionMode === 'single' && next.length > 1 && next.length >= prev.length) {
+          window.alert('Single mode supports at most one ordinary tool.');
+          renderTypeFields();
+          return;
+        }
         const added = next.filter((t) => RISKY_NODE_TOOLS.includes(t) && !prev.includes(t));
         if (added.length && !window.confirm('Grant ' + added.join(' + ') + ' to "' + (draft.label || draft.id || 'node') + '"?')) {
           renderTypeFields();
           return;
         }
         draft.allowedTools = next.length ? next : undefined;
-      }));
+      });
+      typeFields.appendChild(setToolChecklistDisabled(
+        toolChecklist,
+        executionMode === 'codeact',
+        'Preserved while CodeAct is selected; CodeAct runs only through the code-cell tool.',
+      ));
+      }
     } else if (nodeType === 'branch') {
       typeFields.appendChild(teHintField(
         'Condition (substring)',
@@ -19747,6 +19862,7 @@ function openWfNodeDialog(node, def, isNew, onCreate) {
       delete draft.maxIterations;
       delete draft.workspaceAccess;
       delete draft.targetRef;
+      delete draft.agentMode;
     }
     delete draft.teamRef; // workflow nodes carry team targets via targetRef only
     if (nodeType !== 'branch') delete draft.condition;
@@ -22791,6 +22907,39 @@ function selectedAgentProfileTools() {
   return checked.length >= TEAM_CORE_TOOLS.length ? null : checked;
 }
 
+async function setComposerAgentMode(mode) {
+  const select = el('composerAgentMode');
+  if (select) select.disabled = true;
+  try {
+    const res = await api('/api/session-agent-mode', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentMode: mode }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not change Agent mode');
+    if (state.snapshot) state.snapshot.agentMode = data.agentMode;
+    renderComposerMeta();
+    updateConversationSummary();
+  } catch (error) {
+    if (select) select.value = state.snapshot?.agentMode || 'react';
+    addMessage('error', error.message || String(error));
+  } finally {
+    if (select) select.disabled = Boolean(state.running || state.snapshot?.running);
+  }
+}
+
+function updateAgentProfileModeControls() {
+  const codeActOnly = el('agentProfileMode')?.value === 'codeact';
+  const host = el('agentProfileTools');
+  if (!host) return;
+  host.classList.toggle('disabled', codeActOnly);
+  host.querySelectorAll('input, button').forEach(control => { control.disabled = codeActOnly; });
+  host.title = codeActOnly
+    ? 'Ordinary tool selections are preserved but not exposed in CodeAct mode.'
+    : '';
+}
+
 let editingAgentProfileSource = null;
 /** Set when the editor was opened from a legacy single-agent squad (convert-on-save). */
 let editingAgentSquadName = null;
@@ -22822,6 +22971,7 @@ async function openAgentProfileEditor(profile, definition, sourceSquad) {
   // P1: names are editable — saving under a new name runs the rename transaction.
   el('agentProfileName').disabled = false;
   setField('agentProfileDescription', profile?.description || fmStr('description'));
+  setField('agentProfileMode', profile?.agentMode || fmStr('agentMode') || 'react');
   setField('agentProfilePermission', profile?.permissionMode || fmStr('permissionMode'));
   setField('agentProfileEffort', profile?.effort || fmStr('effort'));
   const fmNum = (key) => (fmStr(key) && Number.isFinite(Number(fmStr(key))) ? fmStr(key) : '');
@@ -22853,6 +23003,7 @@ async function openAgentProfileEditor(profile, definition, sourceSquad) {
     ? profile.subagent
     : fmStr('subagent') !== 'false';
   renderAgentProfileTools(profile?.allowedTools || (fmStr('tools') ? fmStr('tools').split(',').map(s => s.trim()).filter(Boolean) : undefined));
+  updateAgentProfileModeControls();
   el('agentProfileCfgStatus').textContent = editingAgentProfileName ? 'Editing "' + editingAgentProfileName + '".' : '';
   // Embedded in the Agents panel right pane (09 Aug 2026): switch there,
   // hide the graph/editor panes, and show the panel with a Used-by action.
@@ -22914,6 +23065,7 @@ async function saveAgentProfileViaApi() {
     description: el('agentProfileDescription').value.trim(),
     bridgeConfig: inherit ? '' : selectedAgentProfileConfig(),
     model: inherit ? '' : model,
+    agentMode: el('agentProfileMode').value || 'react',
     permissionMode: el('agentProfilePermission').value,
     effort: el('agentProfileEffort').value,
     maxTokens: el('agentProfileMaxTokens').value.trim(),
@@ -24931,6 +25083,7 @@ function currentAgentEditorDraft() {
     description: el('agentProfileDescription').value.trim(),
     bridgeConfig: inherit ? '' : selectedAgentProfileConfig(),
     model: inherit ? '' : selectedAgentProfileModel(),
+    agentMode: el('agentProfileMode').value || 'react',
     permissionMode: el('agentProfilePermission').value,
     effort: el('agentProfileEffort').value,
     maxTokens: el('agentProfileMaxTokens').value.trim(),
@@ -26011,6 +26164,7 @@ el('bridgeCfgReset').addEventListener('click', () => { closeBridgeEditor(); });
 el('agentProfileNew')?.addEventListener('click', () => { openAgentProfileEditor(null); });
 el('agentProfileCfgSave').addEventListener('click', () => { saveAgentProfileViaApi().catch(console.error); });
 el('agentProfileCfgReset').addEventListener('click', () => { closeAgentProfileEditor(); });
+el('agentProfileMode')?.addEventListener('change', updateAgentProfileModeControls);
 el('agentProfileDeleteBtn')?.addEventListener('click', () => {
   if (!editingAgentProfileName) return;
   // Opened from a legacy squad (not yet converted): delete the squad itself.
@@ -26203,6 +26357,9 @@ el('permissionPickerBtn').addEventListener('click', (event) => { event.stopPropa
 el('permissionPickerMenu').addEventListener('click', (event) => event.stopPropagation());
 el('modelPickerBtn').addEventListener('click', (event) => { event.stopPropagation(); toggleModelPicker(); });
 el('composerMetaRuntime').addEventListener('click', (event) => { event.stopPropagation(); toggleModelPicker(); });
+el('composerAgentMode')?.addEventListener('change', (event) => {
+  void setComposerAgentMode(event.target.value);
+});
 el('modelPickerSearch').addEventListener('input', (event) => {
   state.pickerQuery = event.target.value || '';
   state.pickerActiveIndex = 0;

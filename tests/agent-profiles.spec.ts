@@ -74,6 +74,31 @@ describe('agentProfiles', () => {
     expect(md).toContain('name: reviewer');
   });
 
+  it('round-trips reusable Agent modes and rejects Agent-level Single', async () => {
+    const home = await tempRoot('hadamard-agent-profile-mode-');
+    addBridgeConfig({
+      name: 'sdk-default',
+      runtime: 'hadamard',
+      provider: 'anthropic',
+      model: 'claude-sonnet',
+    }, home);
+
+    upsertAgentProfile({
+      name: 'hybrid-worker',
+      bridgeConfig: 'sdk-default',
+      model: 'claude-sonnet',
+      agentMode: 'hybrid',
+    }, home);
+    expect(findAgentProfile('hybrid-worker', home)?.agentMode).toBe('hybrid');
+
+    expect(() => upsertAgentProfile({
+      name: 'invalid-single',
+      bridgeConfig: 'sdk-default',
+      model: 'claude-sonnet',
+      agentMode: 'single',
+    } as never, home)).toThrow(/agentMode.*react.*codeact.*hybrid/i);
+  });
+
   it('rejects profiles whose bridge config is missing', async () => {
     const home = await tempRoot('hadamard-agent-profiles-missing-');
 

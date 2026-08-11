@@ -405,6 +405,10 @@ class HostBridge {
         tools: allTools.length > 0 ? allTools : undefined,
         signal: this.signal,
         permissionMode: 'acceptEdits',
+        agentMode: opts.agentMode,
+        ...(opts.agentMode === 'single'
+          ? { inheritDefaultTools: false, allowedTools: allTools.map(tool => tool.name) }
+          : {}),
       });
 
       finalTokens = (execResult.usage?.input_tokens != null && execResult.usage?.output_tokens != null)
@@ -428,6 +432,10 @@ class HostBridge {
                 tools: allTools.length > 0 ? allTools : undefined,
                 signal: this.signal,
                 permissionMode: 'acceptEdits',
+                agentMode: opts.agentMode,
+                ...(opts.agentMode === 'single'
+                  ? { inheritDefaultTools: false, allowedTools: allTools.map(tool => tool.name) }
+                  : {}),
               },
             );
             const retryTokens = (execResult.usage?.input_tokens != null && execResult.usage?.output_tokens != null)

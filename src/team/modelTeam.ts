@@ -35,6 +35,7 @@ import {
   resolveEffectiveAgentRunOptions,
   type EffectiveAgentRunOptions,
 } from '../runtime/effectiveAgentRunOptions.js';
+import { migrateLegacyGraphAgentMode } from '../runtime/agentExecutionPolicy.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Helpers
@@ -222,6 +223,7 @@ async function runGraphMode(
     onEvent,
     runNode: async (node, identity, task, ctx) => {
       const nodeType = node.type ?? 'react';
+      const nodeAgentMode = migrateLegacyGraphAgentMode(node);
       const base = { id: identity.id, model: identity.model, role: identity.role };
 
       // Nested Graph/Workflow executor. A typed targetRef is authoritative even
@@ -303,8 +305,9 @@ async function runGraphMode(
           return { report: `[${msg}]`, ok: false, error: msg };
         }
       }
-      const member = {
-        ...node,
+      const { agentMode: _nodeMode, ...nodeMemberFields } = node;
+      const member: TeamMember = {
+        ...nodeMemberFields,
         ...targetOverrides,
         model: targetOverrides.model ?? node.model ?? executionOptions.model ?? identity.model,
       };
@@ -323,14 +326,12 @@ async function runGraphMode(
         }
       }
       const systemPrompt = effectiveAgentOptions?.systemPrompt ?? baseSystemPrompt;
-      // single: one LLM call, no tools. react: full ReAct loop.
-      const tools = nodeType === 'single'
-        ? []
-        : await buildGraphNodeTools({
-            ...node,
-            allowedTools: effectiveAgentOptions?.allowedTools ?? node.allowedTools,
-          }, cwd);
-      if (nodeType !== 'single' && ctx.commTargets.length > 0) {
+      const tools = await buildGraphNodeTools({
+        ...node,
+        allowedTools: effectiveAgentOptions?.allowedTools ?? node.allowedTools,
+      }, cwd);
+      if (nodeAgentMode === 'single' && tools.length > 1) tools.splice(1);
+      if (nodeAgentMode !== 'single' && ctx.commTargets.length > 0) {
         tools.push(await createNotifyTeammateTool(ctx));
       }
       const run = await runMemberAgent({
@@ -340,7 +341,7 @@ async function runGraphMode(
         systemPrompt,
         cwd,
         tools,
-        maxIterations: nodeType === 'single' ? 1 : resolveMemberMaxIterations(node),
+        maxIterations: nodeAgentMode === 'single' ? 1 : resolveMemberMaxIterations(node),
         timeoutMs: node.timeoutMs ?? effectiveAgentOptions?.timeoutMs ?? squadTimeoutMs,
         signal,
         permissionMode: executionOptions.permissionMode,
@@ -353,6 +354,7 @@ async function runGraphMode(
         modelApi: targetAgentSource && !targetOverrides.model
           ? executionOptions.modelApi
           : undefined,
+        agentMode: nodeAgentMode ?? effectiveAgentOptions?.agentMode ?? node.agentMode,
         pool,
         round: 1,
         onEvent,

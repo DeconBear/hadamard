@@ -59,7 +59,7 @@ describe('GUI agent profile API', () => {
       const created = await api<{
         ok: boolean;
         warnings: string[];
-        state: { agentProfiles: Array<{ name: string; model: string; bridgeConfig: string }> };
+        state: { agentProfiles: Array<{ name: string; model: string; bridgeConfig: string; agentMode?: string }> };
       }>(server, 'api/agent-profiles', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -67,6 +67,7 @@ describe('GUI agent profile API', () => {
           name: 'reviewer',
           bridgeConfig: 'sdk-default',
           model: 'claude-sonnet',
+          agentMode: 'hybrid',
           permissionMode: 'acceptEdits',
           effort: 'max',
           maxTokens: 12000,
@@ -81,6 +82,7 @@ describe('GUI agent profile API', () => {
         name: 'reviewer',
         bridgeConfig: 'sdk-default',
         model: 'claude-sonnet',
+        agentMode: 'hybrid',
         effort: 'max',
         maxTokens: 12000,
         temperature: 0.4,
@@ -98,6 +100,19 @@ describe('GUI agent profile API', () => {
       });
       expect(rejected.status).toBe(400);
       expect(rejected.body.error).toContain('Bridge config not found');
+
+      const singleRejected = await api<{ error: string }>(server, 'api/agent-profiles', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'single-agent',
+          bridgeConfig: 'sdk-default',
+          model: 'claude-sonnet',
+          agentMode: 'single',
+        }),
+      });
+      expect(singleRejected.status).toBe(400);
+      expect(singleRejected.body.error).toMatch(/Single.*node-only/i);
 
       const deleted = await api<{ agentProfiles: unknown[] }>(server, 'api/agent-profiles/delete', {
         method: 'POST',

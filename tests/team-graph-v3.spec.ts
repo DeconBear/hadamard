@@ -102,6 +102,22 @@ describe('isTeamGraphV3 / validateTeamGraphV3', () => {
     });
     expect(validateTeamGraphV3(def).some((e) => e.includes('must not target Task'))).toBe(true);
   });
+
+  it('accepts node-only execution modes and enforces the Single tool limit', () => {
+    const hybrid = v3Def({
+      nodes: [
+        { kind: 'task', id: 'task' },
+        agent('a', { agentMode: 'hybrid', allowedTools: ['Read', 'Grep'] }),
+        { kind: 'return', id: 'return-void', returnMode: 'void' },
+      ],
+    });
+    expect(validateTeamGraphV3(hybrid)).toEqual([]);
+
+    const invalidSingle = structuredClone(hybrid);
+    const node = invalidSingle.nodes?.find((candidate) => candidate.id === 'a');
+    if (node) node.agentMode = 'single';
+    expect(validateTeamGraphV3(invalidSingle).some((error) => /Single mode.*at most one tool/i.test(error))).toBe(true);
+  });
 });
 
 describe('migrateTeamDefinitionToV3', () => {
@@ -146,6 +162,20 @@ describe('migrateTeamDefinitionToV3', () => {
     const again = migrateTeamDefinitionToGraph(base);
     expect(again.nodes?.length).toBe(base.nodes?.length);
     expect(again.version).toBe(3);
+  });
+
+  it('migrates legacy graph node type into agentMode without retaining type', () => {
+    const legacy = v3Def({
+      nodes: [
+        { kind: 'task', id: 'task' },
+        agent('a', { type: 'single' }),
+        { kind: 'return', id: 'return-void', returnMode: 'void' },
+      ],
+    });
+    const migrated = migrateTeamDefinitionToV3(legacy);
+    const node = migrated.nodes?.find((candidate) => candidate.id === 'a');
+    expect(node?.agentMode).toBe('single');
+    expect(node?.type).toBeUndefined();
   });
 });
 

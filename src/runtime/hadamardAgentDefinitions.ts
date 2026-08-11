@@ -6,6 +6,7 @@ import type {
   HadamardPermissionMode,
   HadamardRunEffort,
 } from '../types.js';
+import { parseAgentMode } from './agentExecutionPolicy.js';
 
 interface AgentDefinitionDirectory {
   path: string;
@@ -112,12 +113,16 @@ function createAgentDefinition(input: {
   const maxIterations = parsePositiveInteger(input.frontmatter.maxIterations);
   const promptMode = parseEnum(input.frontmatter.promptMode, ['extend', 'replace']);
   const workspaceAccess = parseEnum(input.frontmatter.workspaceAccess, ['workspace', 'full']);
+  const agentMode = input.frontmatter.agentMode === undefined
+    ? undefined
+    : parseAgentMode(input.frontmatter.agentMode, 'Agent definition agentMode');
 
   return {
     name,
     description,
     systemPrompt: input.body.trim(),
     model: cleanString(input.frontmatter.model),
+    agentMode,
     bridgeConfig: cleanString(input.frontmatter.bridgeConfig),
     // External-CLI delegation runtime (09 Aug 2026); blank/'hadamard' = SDK path.
     runtime: (value => (value && value !== 'hadamard' ? value : undefined))(

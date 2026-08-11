@@ -3,6 +3,11 @@ import path from 'node:path';
 
 import { getHadamardProjectSessionDirectory } from './projectSessionDirectory.js';
 import type { HadamardRunEffort } from '../contracts/runtimeOptions.js';
+import type { CodeActSettings } from '../codeact/types.js';
+import {
+  isAgentMode,
+  type AgentMode,
+} from '../runtime/agentExecutionPolicy.js';
 import type {
   DreamExecutionProfileRef,
   ProjectMemorySettings,
@@ -27,6 +32,10 @@ export function isDreamEffort(value: unknown): value is HadamardRunEffort {
 
 export type ProjectSettings = {
   workMode: ProjectWorkMode;
+  /** Default execution mode for new/main conversations in this project. */
+  agentMode: AgentMode;
+  /** Project-scoped CodeAct capability and backend configuration. */
+  codeAct: CodeActSettings;
   customPrompt: string;
   projectRules: string;
   context: ProjectContextSettings;
@@ -51,6 +60,8 @@ export const DEFAULT_PROJECT_MEMORY_SETTINGS: ProjectMemorySettings = {
 
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   workMode: 'coding',
+  agentMode: 'react',
+  codeAct: { enabled: false, backend: 'process', securityMode: 'trusted' },
   customPrompt: '',
   projectRules: '',
   context: { instructionMode: 'agents' },
@@ -197,6 +208,8 @@ export function normalizeProjectSettings(raw: unknown): ProjectSettings {
     workMode: isProjectWorkMode(raw.workMode)
       ? raw.workMode
       : DEFAULT_PROJECT_SETTINGS.workMode,
+    agentMode: isAgentMode(raw.agentMode) ? raw.agentMode : DEFAULT_PROJECT_SETTINGS.agentMode,
+    codeAct: normalizeCodeActSettings(raw.codeAct),
     customPrompt: typeof raw.customPrompt === 'string' ? raw.customPrompt : '',
     projectRules: typeof raw.projectRules === 'string' ? raw.projectRules : '',
     context: {
@@ -290,6 +303,10 @@ export async function writeProjectSettings(
   }
   const next: ProjectSettings = {
     workMode: isProjectWorkMode(patch.workMode) ? patch.workMode : current.workMode,
+    agentMode: isAgentMode(patch.agentMode) ? patch.agentMode : current.agentMode,
+    codeAct: patch.codeAct === undefined
+      ? current.codeAct
+      : normalizeCodeActSettings({ ...current.codeAct, ...patch.codeAct }),
     customPrompt: typeof patch.customPrompt === 'string' ? patch.customPrompt : current.customPrompt,
     projectRules: typeof patch.projectRules === 'string' ? patch.projectRules : current.projectRules,
     context: {
@@ -304,6 +321,37 @@ export async function writeProjectSettings(
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
   return next;
+}
+
+function normalizeCodeActSettings(value: unknown): CodeActSettings {
+  const input = isRecord(value) ? value : {};
+  const backend = input.backend === 'container' ? 'container' : 'process';
+  const securityMode = input.securityMode === 'enforce' ? 'enforce' : 'trusted';
+  const optionalPositiveNumber = (field: string): number | undefined => {
+    const candidate = input[field];
+    return typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0
+      ? candidate
+      : undefined;
+  };
+  return {
+    enabled: input.enabled === true,
+    backend,
+    securityMode,
+    ...(typeof input.pythonCommand === 'string' && input.pythonCommand.trim()
+      ? { pythonCommand: input.pythonCommand.trim() }
+      : {}),
+    ...(optionalPositiveNumber('idleTimeoutMs') ? { idleTimeoutMs: optionalPositiveNumber('idleTimeoutMs') } : {}),
+    ...(optionalPositiveNumber('executionTimeoutMs') ? { executionTimeoutMs: optionalPositiveNumber('executionTimeoutMs') } : {}),
+    ...(optionalPositiveNumber('maxOutputChars') ? { maxOutputChars: optionalPositiveNumber('maxOutputChars') } : {}),
+    ...(Array.isArray(input.environmentAllowlist)
+      ? { environmentAllowlist: input.environmentAllowlist.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) }
+      : {}),
+    ...(typeof input.containerImage === 'string' && input.containerImage.trim()
+      ? { containerImage: input.containerImage.trim() }
+      : {}),
+    ...(optionalPositiveNumber('containerMemoryMb') ? { containerMemoryMb: optionalPositiveNumber('containerMemoryMb') } : {}),
+    ...(optionalPositiveNumber('containerCpuLimit') ? { containerCpuLimit: optionalPositiveNumber('containerCpuLimit') } : {}),
+  };
 }
 
 export function appendProjectSettingsToPrompt(

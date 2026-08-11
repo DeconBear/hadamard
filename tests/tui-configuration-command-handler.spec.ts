@@ -23,6 +23,7 @@ function createPort(): TuiConfigurationCommandPort & { output: string[][] } {
     chooseRouter: vi.fn(async () => undefined),
     chooseEffort: vi.fn(async () => undefined),
     setEffort: vi.fn(async () => undefined),
+    chooseAgentMode: vi.fn(async () => undefined),
     currentPermissionMode: () => 'default',
     setPermissionContext: vi.fn(async () => undefined),
     selectItem: vi.fn(async () => undefined),
@@ -58,6 +59,12 @@ describe('runTuiConfigurationCommand', () => {
       ]),
     );
     expect(port.output.flat().map(stripAnsi).join('\n')).toContain('permissions: Read-only');
+  });
+
+  it('opens the shared ReAct and CodeAct mode selector', async () => {
+    const port = createPort();
+    expect(await runTuiConfigurationCommand('mode', '', port)).toBe(true);
+    expect(port.chooseAgentMode).toHaveBeenCalledTimes(1);
   });
 
   it('returns false for commands outside configuration', async () => {

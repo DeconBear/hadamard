@@ -64,7 +64,8 @@ export function parseAgentNodeMode(value: unknown, label = 'agentMode'): AgentNo
 export function migrateLegacyWorkflowAgentMode(input: {
   agentMode?: unknown;
   mode?: unknown;
-}): AgentNodeMode | undefined {
+}): AgentNodeMode | 'inherit' | undefined {
+  if (input.agentMode === 'inherit') return 'inherit';
   if (input.agentMode !== undefined) return parseAgentNodeMode(input.agentMode);
   if (input.mode === undefined) return undefined;
   if (input.mode === 'react' || input.mode === 'single') return input.mode;
@@ -77,7 +78,8 @@ export function migrateLegacyWorkflowAgentMode(input: {
 export function migrateLegacyGraphAgentMode(input: {
   agentMode?: unknown;
   type?: unknown;
-}): AgentNodeMode | undefined {
+}): AgentNodeMode | 'inherit' | undefined {
+  if (input.agentMode === 'inherit') return 'inherit';
   if (input.agentMode !== undefined) return parseAgentNodeMode(input.agentMode);
   if (input.type === undefined || input.type === 'team') return undefined;
   if (input.type === 'react' || input.type === 'single') return input.type;

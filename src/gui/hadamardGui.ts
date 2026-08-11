@@ -349,6 +349,11 @@ import {
   type ProjectSettings,
 } from '../config/projectSettings.js';
 import {
+  readSessionAgentMode,
+  sessionAgentModePatch,
+} from '../runtime/agentModeService.js';
+import { isAgentMode } from '../runtime/agentExecutionPolicy.js';
+import {
   createPromptTemplate,
   deletePromptTemplate,
   listPromptTemplates,
@@ -2807,6 +2812,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     if (stored === 'auto') return 'auto';
     return isEffort(stored) ? stored : sdk?.config.effort;
   };
+  const currentAgentMode = () => readSessionAgentMode(session?.metadata, projectSettings.agentMode);
   const currentEffectiveAgentRunOptions = () => {
     const agent = activeAgentSelectionName
       ? findSelectableAgent(activeAgentSelectionName, resolveGuiHomeDir())
@@ -2816,6 +2822,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         systemPrompt,
         permissionMode: currentPermissionMode(),
         effort: currentEffort(),
+        agentMode: currentAgentMode(),
       };
     }
     const effective = resolveEffectiveAgentRunOptions(agent, {
@@ -2831,6 +2838,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }
     return {
       systemPrompt: effective.systemPrompt,
+      agentMode: effective.agentMode ?? currentAgentMode(),
       permissionMode: effective.permissionMode,
       effort: effective.effort,
       ...(typeof effective.maxTokens === 'number' ? { maxTokens: effective.maxTokens } : {}),
@@ -3085,6 +3093,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       session: sessionView(session),
       permissionMode: currentPermissionMode(),
       effort: currentEffort() ?? 'auto',
+      agentMode: currentAgentMode(),
+      codeActEnabled: projectSettings.codeAct.enabled,
       activeTeamName,
       teamPreferences: teamPrefs,
       activeRouterName: activeRouter?.name ?? null,
@@ -4983,6 +4993,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           return [{ type: 'notice', message: `effort set to: ${value}` }];
         });
       }
+      case 'mode': return [{ type: 'command.result', title: 'Agent mode', text: `current: ${currentAgentMode()}. Use the Agent mode selector in the composer to change it.` }];
       case 'permissions':
         return args
           ? runtimeMutationCommand(() => setPermissionPreset(args.toLowerCase().replace(/[ _]/g, '-')))
@@ -7902,6 +7913,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           bridgeConfig: typeof body.bridgeConfig === 'string' ? body.bridgeConfig.trim() : '',
           model: typeof body.model === 'string' ? body.model.trim() : '',
         };
+        if (body.agentMode === 'react' || body.agentMode === 'codeact' || body.agentMode === 'hybrid') {
+          profile.agentMode = body.agentMode;
+        } else if (body.agentMode !== undefined) {
+          throw new Error("Agent profiles support only 'react', 'codeact', or 'hybrid'; Single is node-only.");
+        }
         if (typeof body.description === 'string' && body.description.trim()) {
           profile.description = body.description.trim();
         }
@@ -7958,6 +7974,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           ? 'project'
           : existingDefinition?.source === 'project' ? 'project' : 'personal';
         const extras: AgentDefinitionExtraFields = {};
+        extras.agentMode = profile.agentMode;
         if (body.promptMode === 'extend' || body.promptMode === 'replace') extras.promptMode = body.promptMode;
         if (typeof body.subagent === 'boolean') extras.subagent = body.subagent;
         extras.permissionMode = profile.permissionMode;
@@ -8805,6 +8822,12 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         workMode: body.workMode === 'coding' || body.workMode === 'daily' ? body.workMode : undefined,
         customPrompt: typeof body.customPrompt === 'string' ? body.customPrompt : undefined,
         projectRules: typeof body.projectRules === 'string' ? body.projectRules : undefined,
+        agentMode: body.agentMode === 'react' || body.agentMode === 'codeact' || body.agentMode === 'hybrid'
+          ? body.agentMode
+          : undefined,
+        codeAct: body.codeAct && typeof body.codeAct === 'object'
+          ? body.codeAct as ProjectSettings['codeAct']
+          : undefined,
         context: body.context && typeof body.context === 'object'
           ? { instructionMode: (body.context as Record<string, unknown>).instructionMode as ProjectSettings['context']['instructionMode'] }
           : undefined,
@@ -8814,6 +8837,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir());
       invalidateHeavyState();
       return json(res, 200, { ok: true, path: workDir, settings: saved });
+    } catch (error) {
+      return json(res, 400, { error: (error as Error).message });
+    }
+  }
+  if (req.method === 'PUT' && url.pathname === '/api/session-agent-mode') {
+    if (!session) return json(res, 503, { error: 'Hadamard SDK is not configured.' });
+    try {
+      const body = await readJson(req);
+      if (!isAgentMode(body.agentMode)) {
+        return json(res, 400, { error: 'agentMode must be react, codeact, or hybrid.' });
+      }
+      if ((body.agentMode === 'codeact' || body.agentMode === 'hybrid') && !projectSettings.codeAct.enabled) {
+        return json(res, 409, { error: 'CodeAct is disabled for this project. Enable it in Project Settings first.' });
+      }
+      await session.mergeMetadata(sessionAgentModePatch(body.agentMode));
+      invalidateHeavyState();
+      return json(res, 200, { ok: true, agentMode: body.agentMode });
     } catch (error) {
       return json(res, 400, { error: (error as Error).message });
     }

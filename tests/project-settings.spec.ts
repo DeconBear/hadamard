@@ -52,6 +52,38 @@ describe('projectSettings', () => {
     });
   });
 
+  it('defaults CodeAct off and persists the project execution mode and backend settings', async () => {
+    homeDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-home-'));
+    workDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-work-'));
+
+    await expect(readProjectSettings(workDir, homeDir)).resolves.toMatchObject({
+      agentMode: 'react',
+      codeAct: { enabled: false, backend: 'process', securityMode: 'trusted' },
+    });
+
+    const saved = await writeProjectSettings(workDir, homeDir, {
+      agentMode: 'hybrid',
+      codeAct: {
+        enabled: true,
+        backend: 'container',
+        securityMode: 'enforce',
+        executionTimeoutMs: 12_000,
+        idleTimeoutMs: 45_000,
+      },
+    });
+
+    expect(saved).toMatchObject({
+      agentMode: 'hybrid',
+      codeAct: {
+        enabled: true,
+        backend: 'container',
+        securityMode: 'enforce',
+        executionTimeoutMs: 12_000,
+        idleTimeoutMs: 45_000,
+      },
+    });
+  });
+
   it('defaults project instructions to AGENTS.md and persists compatibility modes', async () => {
     homeDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-home-'));
     workDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-work-'));
