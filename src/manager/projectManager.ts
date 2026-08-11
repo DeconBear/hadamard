@@ -1,16 +1,16 @@
 /**
  * Project Manager — a per-project governance agent (Hadamard SDK).
  *
- * The Manager maintains the project's progress documents and answers
+ * The Manager maintains the project's design and planning documents and answers
  * direction/priority questions. Hard constraints (enforced here, not by
  * prompt):
  *
  *   - Tools: Read/Glob/Grep (scoped by `readScope`) + WebFetch + PlanWrite +
- *     ProgressWrite. No Write/Edit/Bash/shell, no Team tools, no Task.
- *   - Writes: only `plan.json` and `PROGRESS.md` inside the project store
+ *     DesignWrite. No Write/Edit/Bash/shell, no Team tools, no Task.
+ *   - Writes: only `plan.json` and `DESIGN.md` inside the project store
  *     (`~/.hadamard/projects/<hash>/`), via the two dedicated tools whose
- *     target paths are hard-coded. Optional opt-in mirror of PROGRESS.md to
- *     `<workDir>/.hadamard/PROGRESS.md`.
+ *     target paths are hard-coded. Optional opt-in mirror of DESIGN.md to
+ *     `<workDir>/.hadamard/DESIGN.md`.
  *   - Read scope: `workspace-only` (default) | `workspace+docs` |
  *     `explicit-allowlist` | `full-access` — enforced by wrapping the read
  *     tools' execute (`full-access` skips path checks; writes stay limited).
@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { tool } from '../runtime/tools.js';
 import { getHadamardProjectSessionDirectory } from '../config/projectSessionDirectory.js';
 import { isRecord } from '../runtime/helpers.js';
+import { DesignDocumentStore } from '../design/designDocumentStore.js';
 import type { AgentToolDefinition } from '../types.js';
 import {
   addIssueComment,
@@ -38,7 +39,7 @@ import {
   type ProjectIssue,
 } from '../issues/issueStore.js';
 
-// ── Progress documents ────────────────────────────────────────────
+// ── Project documents ─────────────────────────────────────────────
 
 export interface ProjectPlanMilestone {
   title: string;
@@ -59,9 +60,12 @@ export function managerPlanPath(workDir: string, homeDir: string): string {
   return path.join(getHadamardProjectSessionDirectory(workDir, homeDir), 'plan.json');
 }
 
-export function managerProgressPath(workDir: string, homeDir: string): string {
-  return path.join(getHadamardProjectSessionDirectory(workDir, homeDir), 'PROGRESS.md');
+export function managerDesignPath(workDir: string, homeDir: string): string {
+  return path.join(getHadamardProjectSessionDirectory(workDir, homeDir), 'DESIGN.md');
 }
+
+/** @deprecated Use managerDesignPath. Kept for one compatibility release. */
+export const managerProgressPath = managerDesignPath;
 
 export async function readProjectPlanFile(workDir: string, homeDir: string): Promise<ProjectPlan> {
   try {
@@ -83,20 +87,19 @@ export async function writeProjectPlanFile(workDir: string, homeDir: string, pla
   await writeFile(filePath, JSON.stringify(plan, null, 2), 'utf8');
 }
 
-export async function readProgressFile(workDir: string, homeDir: string): Promise<string | null> {
-  try {
-    return await readFile(managerProgressPath(workDir, homeDir), 'utf8');
-  } catch {
-    return null;
-  }
+export async function readDesignFile(workDir: string, homeDir: string): Promise<string | null> {
+  const snapshot = await new DesignDocumentStore(workDir, homeDir).inspect();
+  return snapshot.state === 'empty' ? null : snapshot.content;
 }
 
-export async function writeProgressFile(workDir: string, homeDir: string, content: string): Promise<string> {
-  const filePath = managerProgressPath(workDir, homeDir);
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content, 'utf8');
-  return filePath;
+export async function writeDesignFile(workDir: string, homeDir: string, content: string): Promise<string> {
+  return new DesignDocumentStore(workDir, homeDir).write(content);
 }
+
+/** @deprecated Reads the canonical Design document, including legacy migration preview content. */
+export const readProgressFile = readDesignFile;
+/** @deprecated Writes DESIGN.md. It never creates or updates PROGRESS.md. */
+export const writeProgressFile = writeDesignFile;
 
 // ── Manager configuration (manager.json) ─────────────────────────
 
@@ -133,8 +136,10 @@ export interface ManagerConfig {
   readScope: ManagerReadScope;
   /** Extra readable paths for `workspace+docs` / `explicit-allowlist`. */
   allowedReadPaths: string[];
-  /** Opt-in mirror of PROGRESS.md to `<workDir>/.hadamard/PROGRESS.md`. */
-  mirrorProgressToWorkspace: boolean;
+  /** Opt-in service-managed mirror of DESIGN.md to `<workDir>/.hadamard/DESIGN.md`. */
+  mirrorDesignToWorkspace: boolean;
+  /** @deprecated Read for one compatibility release; writes use mirrorDesignToWorkspace. */
+  mirrorProgressToWorkspace?: boolean;
   /** Optional extra instructions appended to the manager system prompt. */
   promptOverride?: string;
   /** Selected Project Manager conversation. Optional for pre-upgrade configs. */
@@ -144,8 +149,12 @@ export interface ManagerConfig {
 export const DEFAULT_MANAGER_CONFIG: ManagerConfig = {
   readScope: 'workspace-only',
   allowedReadPaths: [],
-  mirrorProgressToWorkspace: false,
+  mirrorDesignToWorkspace: false,
 };
+
+export function shouldMirrorDesignToWorkspace(config: ManagerConfig): boolean {
+  return config.mirrorDesignToWorkspace || config.mirrorProgressToWorkspace === true;
+}
 
 export function managerConfigPath(workDir: string, homeDir: string): string {
   return path.join(getHadamardProjectSessionDirectory(workDir, homeDir), 'manager.json');
@@ -167,7 +176,7 @@ export async function readManagerConfig(workDir: string, homeDir: string): Promi
       allowedReadPaths: Array.isArray(raw.allowedReadPaths)
         ? raw.allowedReadPaths.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
         : [],
-      mirrorProgressToWorkspace: raw.mirrorProgressToWorkspace === true,
+      mirrorDesignToWorkspace: raw.mirrorDesignToWorkspace === true || raw.mirrorProgressToWorkspace === true,
       promptOverride:
         typeof raw.promptOverride === 'string' && raw.promptOverride.trim() ? raw.promptOverride : undefined,
       activeSessionId: typeof raw.activeSessionId === 'string' && raw.activeSessionId.trim()
@@ -285,7 +294,7 @@ function summarizeManagerIssue(issue: ProjectIssue): Record<string, unknown> {
 /**
  * The Manager's entire tool surface. By construction there is no Write, Edit,
  * Bash, shell, Team, or Task tool here — the only mutations possible are the
- * two progress documents, at hard-coded paths.
+ * two project documents, at hard-coded paths.
  */
 export async function createManagerTools(options: CreateManagerToolsOptions): Promise<AgentToolDefinition[]> {
   const { workDir, homeDir } = options;
@@ -335,29 +344,26 @@ export async function createManagerTools(options: CreateManagerToolsOptions): Pr
     },
   );
 
-  const progressWrite = tool(
+  const designWrite = tool(
     {
-      name: 'ProgressWrite',
+      name: 'DesignWrite',
       description:
-        'Replace PROGRESS.md — the human-readable progress document (summary, risks, decisions, changelog). ' +
+        'Replace DESIGN.md — the human-readable project design document (goals, scope, architecture, risks, decisions, validation, and current status). ' +
         'This is the ONLY way to update it. Read the current content first and carry forward sections that are still accurate.',
       inputSchema: z.strictObject({
-        content: z.string().describe('The full new PROGRESS.md markdown content'),
+        content: z.string().describe('The full new DESIGN.md markdown content'),
       }),
       isReadOnly: () => false,
       serialize: (output: { path: string; mirrored?: string }) =>
-        `Progress written to ${output.path}${output.mirrored ? ` (mirrored to ${output.mirrored})` : ''}`,
+        `Design written to ${output.path}${output.mirrored ? ` (mirrored to ${output.mirrored})` : ''}`,
     },
     async (input) => {
-      const filePath = managerProgressPath(projectPath, homeDir);
-      await mkdir(path.dirname(filePath), { recursive: true });
-      await writeFile(filePath, input.content, 'utf8');
+      const store = new DesignDocumentStore(projectPath, homeDir, workDir);
+      const mirror = shouldMirrorDesignToWorkspace(config);
+      const filePath = await store.write(input.content, { mirror });
       let mirrored: string | undefined;
-      if (config.mirrorProgressToWorkspace) {
-        const mirrorPath = path.join(workDir, '.hadamard', 'PROGRESS.md');
-        await mkdir(path.dirname(mirrorPath), { recursive: true });
-        await writeFile(mirrorPath, input.content, 'utf8');
-        mirrored = mirrorPath;
+      if (mirror) {
+        mirrored = path.join(workDir, '.hadamard', 'DESIGN.md');
       }
       return { path: filePath, mirrored };
     },
@@ -509,7 +515,7 @@ export async function createManagerTools(options: CreateManagerToolsOptions): Pr
     },
   );
 
-  return [...readTools, ...webTools, planWrite, progressWrite, issueList, issueGet, issueCreate, issueUpdate, issueComment];
+  return [...readTools, ...webTools, planWrite, designWrite, issueList, issueGet, issueCreate, issueUpdate, issueComment];
 }
 
 // ── Prompts ───────────────────────────────────────────────────────
@@ -518,21 +524,21 @@ export function buildManagerSystemPrompt(workDir: string, config?: ManagerConfig
   const base = [
     'You are the project Manager for the workspace at ' + workDir + '.',
     '',
-    'Your job: maintain the project progress documents, summarize risks and blockers, and respond to direction / priority / milestone adjustments from the user.',
+    'Your job: maintain the project design and planning documents, summarize risks and blockers, and respond to direction / priority / milestone adjustments from the user.',
     '',
     'Hard rules:',
     '- You NEVER modify project source code. You have no Write/Edit/Bash tools; do not attempt workarounds.',
-    '- The ONLY documents you maintain are the structured plan (via the PlanWrite tool) and PROGRESS.md (via the ProgressWrite tool).',
+    '- The ONLY documents you maintain are the structured plan (via the PlanWrite tool) and DESIGN.md (via the DesignWrite tool).',
     '- You also maintain the project issue board using IssueList, IssueGet, IssueCreate, IssueUpdate, and IssueComment.',
     '- Create issues with clear acceptance criteria. Keep issue titles actionable and status changes evidence-based.',
     '- Never move an issue to in_progress with IssueUpdate. That status is owned by deterministic dispatch after a worker session starts successfully.',
     '- Use in_review only when worker evidence says the issue is ready for review; move in_review to done only after evidence supports completion.',
     '- Use Read/Glob/Grep to inspect the project and WebFetch for reference material. Cite file paths in your findings.',
     ...(config?.readScope === 'full-access'
-      ? ['- Read scope is full-access: you may read any path on this machine. You still cannot write outside plan/PROGRESS.']
+      ? ['- Read scope is full-access: you may read any path on this machine. You still cannot write outside plan/DESIGN.']
       : []),
     '- Before updating a document, read its current state and preserve everything still accurate.',
-    '- Keep PROGRESS.md human-readable: a short status summary, milestones, risks/blockers, notable decisions, and a dated changelog section.',
+    '- Keep DESIGN.md human-readable: goals, scope, architecture, milestones, risks/blockers, notable decisions, validation, and a dated changelog section.',
     '- You do not run teams or delegate to other agents. If multi-perspective research would help, recommend the user run `/team ask` in the main conversation instead.',
     '- Be concise and concrete. Prefer verifiable statements over speculation.',
   ].join('\n');
@@ -549,7 +555,9 @@ export interface ManagerUpdateContext {
   githubDigest?: string;
   /** Current plan.json content (JSON string), if any. */
   currentPlanJson?: string;
-  /** Current PROGRESS.md content, if any. */
+  /** Current DESIGN.md content, if any. */
+  currentDesign?: string;
+  /** @deprecated Use currentDesign. */
   currentProgress?: string;
   /** Current project issue board as JSON, if any. */
   currentIssuesJson?: string;
@@ -559,6 +567,8 @@ export interface ManagerUpdateContext {
 
 export interface IssueDecomposeContext {
   currentPlanJson?: string;
+  currentDesign?: string;
+  /** @deprecated Use currentDesign. */
   currentProgress?: string;
 }
 
@@ -587,22 +597,23 @@ export function buildDecomposeIssuePrompt(issue: ProjectIssue, context: IssueDec
     }, null, 2),
   ];
   if (context.currentPlanJson) parts.push('', 'Current plan.json:', context.currentPlanJson);
-  if (context.currentProgress) parts.push('', 'Current PROGRESS.md:', context.currentProgress);
+  const currentDesign = context.currentDesign ?? context.currentProgress;
+  if (currentDesign) parts.push('', 'Current DESIGN.md:', currentDesign);
   return parts.join('\n');
 }
 
 /** Human-readable snapshot shown before an Update progress run (plan M3 diff preview). */
-export function formatManagerUpdatePreview(plan: ProjectPlan, progress: string | null): string {
+export function formatManagerUpdatePreview(plan: ProjectPlan, design: string | null): string {
   const lines = [
     `plan.json — ${plan.milestones.length} milestones, ${plan.today.length} today, ${plan.upcoming.length} upcoming`,
-    `PROGRESS.md — ${progress ? `${progress.length} chars` : '(none yet — will be created)'}`,
+    `DESIGN.md — ${design ? `${design.length} chars` : '(none yet — will be created)'}`,
   ];
   if (plan.milestones.length) {
     lines.push('Milestones: ' + plan.milestones.map((m) => `${m.title}${m.status ? ` (${m.status})` : ''}`).slice(0, 6).join('; '));
   }
-  if (progress?.trim()) {
-    const head = progress.trim().slice(0, 500);
-    lines.push('', 'PROGRESS preview:', head + (progress.length > 500 ? '…' : ''));
+  if (design?.trim()) {
+    const head = design.trim().slice(0, 500);
+    lines.push('', 'DESIGN preview:', head + (design.length > 500 ? '…' : ''));
   }
   return lines.join('\n');
 }
@@ -682,12 +693,12 @@ export async function resolveGitHubDigestForUpdate(
 }
 
 /** Build the "Update progress" run prompt from host-collected context. */
-export function buildUpdateProgressPrompt(context: ManagerUpdateContext): string {
+export function buildUpdateDesignPrompt(context: ManagerUpdateContext): string {
   const parts: string[] = [
-    'Update the project progress documents based on the context below.',
+    'Update the project design and planning documents based on the context below.',
     '',
     '1. Update the structured plan with PlanWrite: reconcile milestones/today/upcoming with what actually happened.',
-    '2. Update PROGRESS.md with ProgressWrite: refresh the status summary, note risks/blockers, and append a dated changelog entry for this update.',
+    '2. Update DESIGN.md with DesignWrite: preserve project intent and architecture, refresh status and risks, and append a dated changelog entry.',
     '3. Reconcile the issue board with IssueGet/IssueUpdate/IssueComment using linked-session evidence. Move in_review to done only when completion is supported; otherwise record what remains.',
     'Keep both faithful to the evidence; do not invent progress.',
   ];
@@ -702,8 +713,10 @@ export function buildUpdateProgressPrompt(context: ManagerUpdateContext): string
   }
   parts.push(
     '',
-    '--- Current PROGRESS.md ---',
-    context.currentProgress?.trim() ? context.currentProgress : '(none yet — create it)',
+    '--- Current DESIGN.md ---',
+    (context.currentDesign ?? context.currentProgress)?.trim()
+      ? (context.currentDesign ?? context.currentProgress)!
+      : '(none yet — create it)',
   );
   if (context.conversationSummaries?.trim()) {
     parts.push('', '--- Recent conversations (collected by the host) ---', context.conversationSummaries.trim());
@@ -716,3 +729,6 @@ export function buildUpdateProgressPrompt(context: ManagerUpdateContext): string
   }
   return parts.join('\n');
 }
+
+/** @deprecated Use buildUpdateDesignPrompt. */
+export const buildUpdateProgressPrompt = buildUpdateDesignPrompt;
