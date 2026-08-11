@@ -10,7 +10,7 @@ import { isIssueStorageMode, listProjectIssues, type IssueStorageMode } from '..
 import { isRecord } from '../runtime/helpers.js';
 import { tool } from '../runtime/tools.js';
 import type { AgentToolDefinition } from '../types.js';
-import { readProgressFile, readProjectPlanFile } from './projectManager.js';
+import { readDesignFile, readProjectPlanFile } from './projectManager.js';
 
 export interface AssistantProjectBrief {
   name: string;
@@ -152,17 +152,17 @@ export function createAssistantProjectTools(
   const overview = tool(
     {
       name: 'GetProjectOverview',
-      description: 'Get a compact overview for one registered project (note, status, plan/progress summaries, issues).',
+      description: 'Get a compact overview for one registered project (note, status, plan/Design summaries, issues).',
       inputSchema: z.strictObject({ projectPath: z.string().describe('Absolute workspace path from ListProjects') }),
       isReadOnly: () => true,
     },
     async input => {
       const projectPath = await assertKnown(input.projectPath);
-      const [note, meta, plan, progress] = await Promise.all([
+      const [note, meta, plan, design] = await Promise.all([
         readWorkspaceNote(projectPath, context.homeDir),
         readProjectMeta(projectPath, context.homeDir),
         readProjectPlanFile(projectPath, context.homeDir),
-        readProgressFile(projectPath, context.homeDir),
+        readDesignFile(projectPath, context.homeDir),
       ]);
       const storage: IssueStorageMode = isIssueStorageMode(meta.issueStorage) ? meta.issueStorage : 'home';
       const issues = await listProjectIssues(projectPath, context.homeDir, storage).catch(() => []);
@@ -177,8 +177,8 @@ export function createAssistantProjectTools(
           upcoming: plan.upcoming.length,
           milestoneTitles: plan.milestones.slice(0, 8).map(item => item.title),
         },
-        progressChars: progress?.length ?? 0,
-        progressPreview: progress ? progress.slice(0, 1200) : null,
+        designChars: design?.length ?? 0,
+        designPreview: design ? design.slice(0, 1200) : null,
         issueCounts: {
           total: issues.length,
           open: issues.filter(issue => issue.status !== 'done' && issue.status !== 'cancelled').length,
@@ -193,14 +193,16 @@ export function createAssistantProjectTools(
   const document = tool(
     {
       name: 'GetProjectDocument',
-      description: 'Read full plan.json, PROGRESS.md, or project note for a registered project.',
-      inputSchema: z.strictObject({ projectPath: z.string(), kind: z.enum(['plan', 'progress', 'note']) }),
+      description: 'Read full plan.json, DESIGN.md, or project note for a registered project.',
+      inputSchema: z.strictObject({ projectPath: z.string(), kind: z.enum(['plan', 'design', 'progress', 'note']) }),
       isReadOnly: () => true,
     },
     async input => {
       const projectPath = await assertKnown(input.projectPath);
       if (input.kind === 'plan') return { kind: 'plan', content: await readProjectPlanFile(projectPath, context.homeDir) };
-      if (input.kind === 'progress') return { kind: 'progress', content: await readProgressFile(projectPath, context.homeDir) };
+      if (input.kind === 'design' || input.kind === 'progress') {
+        return { kind: 'design', content: await readDesignFile(projectPath, context.homeDir) };
+      }
       return { kind: 'note', content: await readWorkspaceNote(projectPath, context.homeDir) };
     },
   );

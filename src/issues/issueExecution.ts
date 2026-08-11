@@ -17,7 +17,7 @@ import {
   buildManagerSystemPrompt,
   createManagerTools,
   readManagerConfig,
-  readProgressFile,
+  readDesignFile,
   readProjectPlanFile,
 } from '../manager/projectManager.js';
 import {
@@ -122,13 +122,13 @@ export async function executeProjectIssue(
     config: managerConfig,
     issueStorageMode: options.storageMode,
   });
-  const [plan, progress] = await Promise.all([
+  const [plan, design] = await Promise.all([
     readProjectPlanFile(options.workDir, options.homeDir),
-    readProgressFile(options.workDir, options.homeDir),
+    readDesignFile(options.workDir, options.homeDir),
   ]);
   const briefPrompt = buildDecomposeIssuePrompt(issue, {
     currentPlanJson: JSON.stringify(plan, null, 2),
-    currentProgress: progress ?? undefined,
+    currentDesign: design ?? undefined,
   });
   const managerRunOptions = {
     systemPrompt: buildManagerSystemPrompt(options.workDir, managerConfig),

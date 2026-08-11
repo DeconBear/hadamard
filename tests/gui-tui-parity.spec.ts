@@ -519,7 +519,12 @@ describe('TUI and GUI parity', () => {
     expect(css).toContain('.conv-issue-pill');
     expect(js).toContain('conv-sidebar-row');
     expect(js).toContain('renderConvSidebarDetail');
-    expect(js).toContain('/api/project-doc');
+    expect(js).toContain('/api/design');
+    expect(js).toContain('/api/design/patch');
+    expect(js).toContain('projectDocTemplateSelect');
+    expect(js).toContain('projectDocImportBtn');
+    expect(js).toContain('projectDocExportBtn');
+    expect(js).toContain('projectDocShareBtn');
     expect(css).toContain('.project-doc-panel');
     expect(css).toContain('.conv-sidebar-detail');
     expect(js).toContain('sessionConfigDisplay');
