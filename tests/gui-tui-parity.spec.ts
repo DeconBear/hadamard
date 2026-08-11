@@ -53,6 +53,7 @@ function readTuiSources(root: string): string {
     readFileSync(join(root, 'src', 'tui', 'tuiWorkspaceCommandHandler.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'tui', 'tuiContextCommandHandler.ts'), 'utf8'),
     readFileSync(join(root, 'src', 'tui', 'tuiCatalogCommandHandler.ts'), 'utf8'),
+    readFileSync(join(root, 'src', 'tui', 'tuiDeviceLinkCommandHandler.ts'), 'utf8'),
   ].join('\n');
 }
 
@@ -70,6 +71,7 @@ describe('TUI and GUI parity', () => {
       'memory',
       'rules',
       'context',
+      'devices',
       'cost',
       'usage',
       'doctor',

@@ -1,5 +1,9 @@
 import type { AppServer } from '../appServer.js';
-import { APP_SERVER_PROTOCOL_VERSION, parseAppServerRequest } from '../protocol.js';
+import {
+  APP_SERVER_PROTOCOL_VERSION,
+  type AppServerProtocolVersion,
+  parseAppServerRequest,
+} from '../protocol.js';
 
 export interface AppServerWebSocket {
   send(data: string): void;
@@ -23,6 +27,7 @@ export class WebSocketAppServerTransport {
 
   private async receive(socket: AppServerWebSocket, data: unknown): Promise<void> {
     let requestId = '';
+    let requestVersion: AppServerProtocolVersion = APP_SERVER_PROTOCOL_VERSION;
     try {
       const text = typeof data === 'string'
         ? data
@@ -31,14 +36,16 @@ export class WebSocketAppServerTransport {
           : String(data);
       const parsed = JSON.parse(text) as { id?: unknown };
       if (typeof parsed.id === 'string') requestId = parsed.id;
+      const request = parseAppServerRequest(JSON.parse(text));
+      requestVersion = request.version;
       const response = await this.server.handle(
-        parseAppServerRequest(JSON.parse(text)),
+        request,
         notification => socket.send(JSON.stringify(notification)),
       );
       socket.send(JSON.stringify(response));
     } catch (error) {
       socket.send(JSON.stringify({
-        version: APP_SERVER_PROTOCOL_VERSION,
+        version: requestVersion,
         id: requestId,
         error: {
           code: 'INVALID_REQUEST',

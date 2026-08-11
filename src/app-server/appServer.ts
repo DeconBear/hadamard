@@ -2,7 +2,13 @@ import type { HadamardAgentClient } from '../runtime/agentClient.js';
 import type { AgentSession } from '../runtime/agentSession.js';
 import { GoalService } from '../goal/goalService.js';
 import type { StoredApproval } from '../policy/approvalPolicy.js';
-import { APP_SERVER_PROTOCOL_VERSION, type AppServerNotification, type AppServerRequest, type AppServerResponse } from './protocol.js';
+import {
+  APP_SERVER_PROTOCOL_VERSIONS,
+  type AppServerNotification,
+  type AppServerProtocolVersion,
+  type AppServerRequest,
+  type AppServerResponse,
+} from './protocol.js';
 
 export type AppServerEmit = (notification: AppServerNotification) => void;
 
@@ -16,13 +22,13 @@ export class AppServer {
   async handle(request: AppServerRequest, emit?: AppServerEmit): Promise<AppServerResponse> {
     try {
       return {
-        version: APP_SERVER_PROTOCOL_VERSION,
+        version: request.version,
         id: request.id,
-        result: await this.dispatch(request.method, request.params ?? {}, emit),
+        result: await this.dispatch(request.version, request.method, request.params ?? {}, emit),
       };
     } catch (error) {
       return {
-        version: APP_SERVER_PROTOCOL_VERSION,
+        version: request.version,
         id: request.id,
         error: {
           code: 'APP_SERVER_ERROR',
@@ -33,13 +39,15 @@ export class AppServer {
   }
 
   private async dispatch(
+    version: AppServerProtocolVersion,
     method: string,
     params: Record<string, unknown>,
     emit?: AppServerEmit,
   ): Promise<unknown> {
     if (method === 'initialize') {
       return {
-        protocolVersion: APP_SERVER_PROTOCOL_VERSION,
+        protocolVersion: version,
+        supportedProtocolVersions: APP_SERVER_PROTOCOL_VERSIONS,
         capabilities: APP_SERVER_CAPABILITIES,
       };
     }
@@ -72,7 +80,7 @@ export class AppServer {
         // ordering stays behind session/event notifications on stdio/WS.
         for await (const event of stream) {
           emit({
-            version: APP_SERVER_PROTOCOL_VERSION,
+            version,
             type: 'event',
             method: 'session/event',
             params: { sessionId, event },

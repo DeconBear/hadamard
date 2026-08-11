@@ -51,6 +51,48 @@ export {
 export * from './runtime/agentExecutionPolicy.js';
 export * from './runtime/agentModeService.js';
 export * from './design/index.js';
+export {
+  createSignedDeviceLinkRequest,
+} from './device-link/authorization.js';
+export {
+  DeviceLinkService,
+} from './device-link/deviceLinkService.js';
+export type {
+  DeviceLinkServiceOptions,
+  DeviceLinkSnapshot,
+  StartDeviceLinkOptions,
+} from './device-link/deviceLinkService.js';
+export {
+  DeviceIdentityStore,
+  normalizeFingerprint,
+  withoutSecrets,
+} from './device-link/identity.js';
+export {
+  createPairingCompletion,
+  pairingUri,
+  verifyPairingOffer,
+} from './device-link/pairing.js';
+export {
+  DEFAULT_DEVICE_LINK_LIMITS,
+  DEVICE_LINK_SCOPES,
+  DEVICE_LINK_SERVICE_TYPE,
+} from './device-link/types.js';
+export type {
+  DeviceIdentity,
+  DeviceIdentityCredentials,
+  DeviceLinkAuditRecord,
+  DeviceLinkConnectionContext,
+  DeviceLinkDiagnostics,
+  DeviceLinkRequestAuth,
+  DeviceLinkScope,
+  DeviceLinkServerLimits,
+  DiscoveredDevice,
+  PairedDevice,
+  PairingCompletion,
+  PairingOffer,
+  PairingResult,
+  SignedDeviceLinkRequest,
+} from './device-link/types.js';
 export * from './codeact/index.js';
 export type {
   AgentRunConfigurationSource,
