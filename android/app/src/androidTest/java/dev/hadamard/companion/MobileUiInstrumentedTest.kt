@@ -4,7 +4,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.Espresso.pressBack
 import org.junit.Rule
@@ -33,9 +35,23 @@ class MobileUiInstrumentedTest {
     compose.onNodeWithTag("transcript").assertIsDisplayed()
     pressBack()
     compose.onNodeWithTag("home-screen").assertIsDisplayed()
+    compose.onNodeWithTag("home-screen").performScrollToNode(hasTestTag("open-settings"))
     compose.onNodeWithTag("open-settings").performClick()
     compose.onNodeWithText("This configuration belongs to the phone. It is never copied from or back to a computer.").assertIsDisplayed()
     compose.onNodeWithTag("select-saf-workspace").assertIsDisplayed()
     compose.onNodeWithText("The Agent can access only the selected document tree. Absolute paths and ungranted folders remain unavailable.").assertIsDisplayed()
+  }
+
+  @Test
+  fun transfersExposeInboxConfirmationAndVisibleAudioControls() {
+    compose.onNodeWithTag("open-transfers-action").performClick()
+    compose.onNodeWithTag("transfers-screen").assertIsDisplayed()
+    compose.onNodeWithText("Downloads remain app-private until you explicitly commit them to the selected workspace.").assertIsDisplayed()
+    compose.onNodeWithText("Enable system audio").assertIsDisplayed()
+    compose.onNodeWithTag("system-audio-flag").assertIsDisplayed()
+    pressBack()
+    compose.onNodeWithTag("open-phone-action").performClick()
+    compose.onNodeWithTag("voice-note-controls").assertIsDisplayed()
+    compose.onNodeWithTag("record-voice-note").assertIsDisplayed()
   }
 }

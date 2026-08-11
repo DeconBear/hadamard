@@ -2,6 +2,8 @@ package dev.hadamard.companion.ui
 
 import android.app.Application
 import android.content.Intent
+import android.app.Activity
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,11 +17,15 @@ import dev.hadamard.companion.capability.MobileToolContext
 import dev.hadamard.companion.capability.MobileToolDefinition
 import dev.hadamard.companion.devicelink.DeviceIdentityManager
 import dev.hadamard.companion.devicelink.DeviceLinkClient
+import dev.hadamard.companion.devicelink.ArtifactManifest
+import dev.hadamard.companion.devicelink.ArtifactTransferClient
 import dev.hadamard.companion.devicelink.DiscoveredComputer
 import dev.hadamard.companion.devicelink.NsdDeviceDiscovery
 import dev.hadamard.companion.devicelink.PairedComputer
 import dev.hadamard.companion.devicelink.PairedComputerStore
 import dev.hadamard.companion.devicelink.PairingClient
+import dev.hadamard.companion.devicelink.MobileInboxItem
+import dev.hadamard.companion.devicelink.MobileInboxStore
 import dev.hadamard.companion.devicelink.RemoteSessionCache
 import dev.hadamard.companion.devicelink.RemoteSessionParser
 import dev.hadamard.companion.devicelink.RemoteSessionSummary
@@ -27,6 +33,8 @@ import dev.hadamard.companion.document.MarkdownTools
 import dev.hadamard.companion.document.OcrService
 import dev.hadamard.companion.document.PdfTools
 import dev.hadamard.companion.model.OfflineCapabilities
+import dev.hadamard.companion.model.ArtifactRecord
+import dev.hadamard.companion.model.MessageRole
 import dev.hadamard.companion.model.ProviderConfiguration
 import dev.hadamard.companion.model.SessionMessage
 import dev.hadamard.companion.model.SessionRecord
@@ -36,6 +44,15 @@ import dev.hadamard.companion.workspace.AppPrivateWorkspace
 import dev.hadamard.companion.workspace.SafWorkspace
 import dev.hadamard.companion.workspace.WorkspacePort
 import dev.hadamard.companion.workspace.WorkspaceTools
+import dev.hadamard.companion.data.readWithOverflowByte
+import dev.hadamard.companion.media.AudioCaptureState
+import dev.hadamard.companion.media.AudioCaptureKind
+import dev.hadamard.companion.media.AudioCaptureStatus
+import dev.hadamard.companion.media.OpenAiTranscriptionClient
+import dev.hadamard.companion.media.PcmFileSink
+import dev.hadamard.companion.media.SystemAudioFeatureFlag
+import dev.hadamard.companion.media.SystemPlaybackCapture
+import dev.hadamard.companion.media.VoiceNoteRecorder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,8 +62,9 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.UUID
+import java.io.File
 
-enum class MobileScreen { HOME, PHONE, COMPUTERS, SETTINGS }
+enum class MobileScreen { HOME, PHONE, COMPUTERS, TRANSFERS, SETTINGS }
 
 data class PermissionRequest(
   val tool: MobileToolDefinition,
@@ -62,10 +80,15 @@ data class MobileUiState(
   val pairedComputers: List<PairedComputer> = emptyList(),
   val discoveredComputers: List<DiscoveredComputer> = emptyList(),
   val remoteSessions: Map<String, List<RemoteSessionSummary>> = emptyMap(),
+  val remoteOutbox: Map<String, List<ArtifactManifest>> = emptyMap(),
+  val inbox: List<MobileInboxItem> = emptyList(),
+  val artifacts: List<ArtifactRecord> = emptyList(),
   val provider: ProviderConfiguration? = null,
   val workspaceLabel: String = "App-private workspace",
   val offlineCapabilities: OfflineCapabilities = OfflineCapabilities(),
   val isRunning: Boolean = false,
+  val audioCapture: AudioCaptureState = AudioCaptureState(),
+  val systemAudioEnabled: Boolean = false,
   val status: String? = null,
   val permissionRequest: PermissionRequest? = null,
 )
@@ -77,10 +100,17 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
   private val computerStore = PairedComputerStore(application)
   private val identityManager = DeviceIdentityManager(application, app.credentialVault)
   private val deviceClient = DeviceLinkClient(identityManager, computerStore)
+  private val inboxStore = MobileInboxStore(application)
+  private val transferClient = ArtifactTransferClient(deviceClient, inboxStore)
   private val remoteCache = RemoteSessionCache(app.database, deviceClient)
   private val pairingClient = PairingClient(identityManager, computerStore)
   private val discovery = NsdDeviceDiscovery(application)
   private val permissionBroker = InteractivePermissionBroker()
+  private val voiceRecorder = VoiceNoteRecorder(application)
+  private val systemAudioFlag = SystemAudioFeatureFlag(application)
+  private val systemAudioCapture = SystemPlaybackCapture(systemAudioFlag)
+  private var systemAudioSink: PcmFileSink? = null
+  private var systemAudioProjection: android.media.projection.MediaProjection? = null
   private var runningJob: Job? = null
   private var discoveryJob: Job? = null
 
@@ -90,6 +120,9 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       pairedComputers = computerStore.list(),
       provider = providerStore.enabled(),
       workspaceLabel = if (workspace is SafWorkspace) "User-selected document tree" else "App-private workspace",
+      inbox = inboxStore.list(),
+      artifacts = app.database.listArtifacts(),
+      systemAudioEnabled = systemAudioFlag.enabled(),
     ),
   )
   val state: StateFlow<MobileUiState> = _state.asStateFlow()
@@ -278,6 +311,165 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       .onFailure { setStatus(it.message ?: "Session copy failed") }
   }
 
+  fun refreshRemoteOutbox(deviceId: String) {
+    viewModelScope.launch {
+      _state.update { it.copy(status = "Checking computer outbox") }
+      runCatching { transferClient.remoteOutbox(deviceId) }
+        .onSuccess { items -> _state.update { it.copy(remoteOutbox = it.remoteOutbox + (deviceId to items), status = "${items.size} files available") } }
+        .onFailure { setStatus(it.message ?: "Could not load computer outbox") }
+    }
+  }
+
+  fun downloadFromComputer(deviceId: String, manifest: ArtifactManifest) {
+    viewModelScope.launch {
+      _state.update { it.copy(status = "Downloading into verified phone inbox") }
+      runCatching { transferClient.download(deviceId, manifest) }
+        .onSuccess { _state.update { it.copy(inbox = inboxStore.list(), status = "Verified in inbox; workspace is unchanged") } }
+        .onFailure { setStatus(it.message ?: "File download failed") }
+    }
+  }
+
+  fun commitInbox(item: MobileInboxItem) {
+    viewModelScope.launch {
+      runCatching { transferClient.commitAndAcknowledge(item, workspace, confirm = true) }
+        .onSuccess { document -> _state.update { it.copy(inbox = inboxStore.list(), status = "Committed ${document.displayName} to the selected workspace") } }
+        .onFailure { setStatus(it.message ?: "Inbox commit failed") }
+    }
+  }
+
+  fun uploadToComputer(deviceId: String, uri: Uri) {
+    viewModelScope.launch {
+      _state.update { it.copy(status = "Uploading with resumable chunks") }
+      runCatching {
+        require(uri.scheme == "content") { "Only a user-selected document can be sent" }
+        val resolver = getApplication<Application>().contentResolver
+        val bytes = resolver.openInputStream(uri)?.use { it.readWithOverflowByte((32 * 1_048_576)) }
+          ?: error("Selected document is unavailable")
+        require(bytes.size <= 32 * 1_048_576) { "Selected document exceeds 32 MiB" }
+        val name = queryDisplayName(uri) ?: "mobile-${System.currentTimeMillis()}.bin"
+        transferClient.upload(deviceId, name, resolver.getType(uri) ?: "application/octet-stream", bytes)
+      }.onSuccess { setStatus("Uploaded ${it.name}; desktop must confirm before workspace commit") }
+        .onFailure { setStatus(it.message ?: "File upload failed") }
+    }
+  }
+
+  fun startVoiceNote() {
+    runCatching { voiceRecorder.start() }
+      .onSuccess { capture -> _state.update { it.copy(audioCapture = capture, status = capture.visibleLabel) } }
+      .onFailure { setStatus(it.message ?: "Could not start microphone") }
+  }
+
+  fun stopVoiceNote() {
+    viewModelScope.launch {
+      runCatching {
+        val file = voiceRecorder.stop()
+        val sessionId = _state.value.selectedSessionId?.takeIf { app.database.session(it)?.readOnly == false }
+        val audio = app.artifactStore.put(file.name, "audio/mp4", file.readBytes(), sessionId)
+        app.database.upsertArtifact(audio)
+        sessionId?.let { appendArtifactReference(it, "Voice note", audio) }
+        val provider = providerStore.enabled()
+        val transcriptionError = provider?.let {
+          runCatching {
+            val text = OpenAiTranscriptionClient(it, app.credentialVault).transcribe(file)
+            val transcript = app.artifactStore.put(
+              "${file.nameWithoutExtension}.transcript.md",
+              "text/markdown",
+              text.toByteArray(),
+              sessionId,
+            )
+            app.database.upsertArtifact(transcript)
+            sessionId?.let { id -> appendArtifactReference(id, "Voice transcript: ${text.take(240)}", transcript) }
+          }.exceptionOrNull()
+        }
+        file.delete()
+        audio to transcriptionError
+      }.onSuccess { (_, transcriptionError) ->
+        _state.update {
+          it.copy(
+            audioCapture = AudioCaptureState(),
+            artifacts = app.database.listArtifacts(),
+            transcript = it.selectedSessionId?.let(app.database::messages).orEmpty(),
+            status = when {
+              transcriptionError != null -> "Voice note saved; transcription failed: ${transcriptionError.message}"
+              providerStore.enabled() == null -> "Voice note saved; configure a provider to transcribe"
+              else -> "Voice note and transcript saved"
+            },
+          )
+        }
+      }.onFailure { error ->
+        _state.update { it.copy(audioCapture = AudioCaptureState(), status = error.message ?: "Voice note failed") }
+      }
+    }
+  }
+
+  fun cancelVoiceNote() {
+    voiceRecorder.cancel()
+    _state.update { it.copy(audioCapture = AudioCaptureState(), status = "Voice note discarded; microphone stopped") }
+  }
+
+  fun enforceAudioPermission(granted: Boolean) {
+    if (granted || _state.value.audioCapture.status == AudioCaptureStatus.IDLE) return
+    when (_state.value.audioCapture.kind) {
+      AudioCaptureKind.VOICE_NOTE -> voiceRecorder.cancel()
+      AudioCaptureKind.SYSTEM_PLAYBACK -> {
+        systemAudioCapture.stop()
+        systemAudioProjection?.stop()
+        systemAudioProjection = null
+        systemAudioSink?.close()?.delete()
+        systemAudioSink = null
+      }
+      else -> Unit
+    }
+    _state.update { it.copy(audioCapture = AudioCaptureState(), status = "Audio permission was revoked; capture stopped immediately") }
+  }
+
+  fun setSystemAudioEnabled(enabled: Boolean) {
+    if (!enabled) stopSystemAudio()
+    systemAudioFlag.setEnabled(enabled)
+    _state.update { it.copy(systemAudioEnabled = enabled, status = if (enabled) "System audio capture enabled; MediaProjection approval is still required" else "System audio capture disabled") }
+  }
+
+  fun startSystemAudio(resultCode: Int, data: Intent?) {
+    if (resultCode != Activity.RESULT_OK || data == null) return setStatus("System audio permission was not granted")
+    runCatching {
+      require(systemAudioFlag.enabled()) { "Enable system audio capture first" }
+      val manager = getApplication<Application>().getSystemService(MediaProjectionManager::class.java)
+      val projection = manager.getMediaProjection(resultCode, data)
+      val target = File(getApplication<Application>().filesDir, "system-audio-${UUID.randomUUID()}.pcm")
+      val sink = PcmFileSink(target)
+      try {
+        systemAudioCapture.start(projection, sink::accept)
+      } catch (error: Throwable) {
+        sink.close().delete()
+        projection.stop()
+        throw error
+      }
+      systemAudioProjection = projection
+      systemAudioSink = sink
+      _state.update {
+        it.copy(
+          audioCapture = AudioCaptureState(AudioCaptureKind.SYSTEM_PLAYBACK, AudioCaptureStatus.RECORDING, System.currentTimeMillis(), "Capturing system playback · tap Stop"),
+          status = "System playback capture is visible and active",
+        )
+      }
+    }.onFailure { setStatus(it.message ?: "System playback capture failed") }
+  }
+
+  fun stopSystemAudio() {
+    systemAudioCapture.stop()
+    systemAudioProjection?.stop()
+    systemAudioProjection = null
+    val file = systemAudioSink?.close()
+    systemAudioSink = null
+    if (file != null && file.length() > 0) {
+      val sessionId = _state.value.selectedSessionId?.takeIf { app.database.session(it)?.readOnly == false }
+      val artifact = app.artifactStore.put(file.name, "audio/L16", file.readBytes(), sessionId)
+      app.database.upsertArtifact(artifact)
+      file.delete()
+    } else file?.delete()
+    _state.update { it.copy(audioCapture = AudioCaptureState(), artifacts = app.database.listArtifacts(), status = "System audio capture stopped") }
+  }
+
   fun setStatus(message: String) {
     _state.update { it.copy(status = message) }
   }
@@ -289,6 +481,34 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       application.getSharedPreferences(WORKSPACE_PREFERENCES, 0).edit().remove(WORKSPACE_URI).apply()
       AppPrivateWorkspace(application)
     } else AppPrivateWorkspace(application)
+  }
+
+  private fun queryDisplayName(uri: Uri): String? {
+    return getApplication<Application>().contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+      ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+  }
+
+  private fun appendArtifactReference(sessionId: String, label: String, artifact: ArtifactRecord) {
+    app.database.appendMessage(
+      SessionMessage(
+        sessionId,
+        app.database.nextSequence(sessionId),
+        MessageRole.USER,
+        "$label\nartifact:${artifact.id}\nsha256:${artifact.sha256}",
+        null,
+        System.currentTimeMillis(),
+      ),
+    )
+  }
+
+  override fun onCleared() {
+    voiceRecorder.cancel()
+    systemAudioCapture.stop()
+    systemAudioProjection?.stop()
+    systemAudioSink?.close()?.delete()
+    systemAudioProjection = null
+    systemAudioSink = null
+    super.onCleared()
   }
 
   companion object {
