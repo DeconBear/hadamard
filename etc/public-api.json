@@ -358,9 +358,19 @@
         "signature": "export declare function analyzeHadamardBridgeEvents(events: Iterable<HadamardBridgeJsonEvent>): HadamardBridgeEventAnalysis;"
       },
       {
+        "name": "APP_SERVER_LEGACY_PROTOCOL_VERSION",
+        "kind": "value",
+        "signature": "APP_SERVER_LEGACY_PROTOCOL_VERSION: 1"
+      },
+      {
         "name": "APP_SERVER_PROTOCOL_VERSION",
         "kind": "value",
-        "signature": "APP_SERVER_PROTOCOL_VERSION: 1"
+        "signature": "APP_SERVER_PROTOCOL_VERSION: 2"
+      },
+      {
+        "name": "APP_SERVER_PROTOCOL_VERSIONS",
+        "kind": "value",
+        "signature": "APP_SERVER_PROTOCOL_VERSIONS: readonly [\n1,\n2\n]"
       },
       {
         "name": "appendProjectSettingsToPrompt",
@@ -410,17 +420,32 @@
       {
         "name": "AppServerNotification",
         "kind": "interface",
-        "signature": "export interface AppServerNotification {\nversion: 1;\ntype: 'event';\nmethod: string;\nparams: Record<string, unknown>;\n}"
+        "signature": "export interface AppServerNotification {\nversion: AppServerProtocolVersion;\ntype: 'event';\nmethod: string;\nparams: Record<string, unknown>;\n}"
+      },
+      {
+        "name": "AppServerProtocolVersion",
+        "kind": "type",
+        "signature": "export type AppServerProtocolVersion = typeof APP_SERVER_PROTOCOL_VERSIONS[number];"
       },
       {
         "name": "AppServerRequest",
+        "kind": "type",
+        "signature": "export type AppServerRequest = AppServerRequestV1 | AppServerRequestV2;"
+      },
+      {
+        "name": "AppServerRequestV1",
         "kind": "interface",
-        "signature": "export interface AppServerRequest {\nversion: 1;\nid: string;\nmethod: string;\nparams?: Record<string, unknown>;\n}"
+        "signature": "export interface AppServerRequestV1 extends AppServerRequestBase {\nversion: 1;\n}"
+      },
+      {
+        "name": "AppServerRequestV2",
+        "kind": "interface",
+        "signature": "export interface AppServerRequestV2 extends AppServerRequestBase {\nversion: 2;\nauth?: Record<string, unknown>;\n}"
       },
       {
         "name": "AppServerResponse",
         "kind": "interface",
-        "signature": "export interface AppServerResponse {\nversion: 1;\nid: string;\nresult?: unknown;\nerror?: {\ncode: string;\nmessage: string;\n};\n}"
+        "signature": "export interface AppServerResponse {\nversion: AppServerProtocolVersion;\nid: string;\nresult?: unknown;\nerror?: {\ncode: string;\nmessage: string;\n};\n}"
       },
       {
         "name": "AppServerWebSocket",
@@ -1253,6 +1278,11 @@
         "signature": "export declare function createOpenaiModelApi(config: ResolvedRuntimeConfig): ModelApi;"
       },
       {
+        "name": "createPairingCompletion",
+        "kind": "function",
+        "signature": "export declare function createPairingCompletion(offer: PairingOffer, device: DeviceIdentityCredentials, requestedScopes: DeviceLinkScope[]): PairingCompletion;"
+      },
+      {
         "name": "createPowerShellTool",
         "kind": "function",
         "signature": "export declare function createPowerShellTool(): AgentToolDefinition;"
@@ -1266,6 +1296,11 @@
         "name": "createPromptHookHandler",
         "kind": "function",
         "signature": "export declare function createPromptHookHandler(evaluate: PromptHookEvaluator): HookHandlerAdapter;"
+      },
+      {
+        "name": "createSignedDeviceLinkRequest",
+        "kind": "function",
+        "signature": "export declare function createSignedDeviceLinkRequest(request: Omit<AppServerRequestV2, 'auth'>, identity: DeviceIdentityCredentials, sequence: number, issuedAt?: string): SignedDeviceLinkRequest;"
       },
       {
         "name": "createSkillTool",
@@ -1396,6 +1431,11 @@
         "name": "DEFAULT_DESIGN_THEMES",
         "kind": "value",
         "signature": "DEFAULT_DESIGN_THEMES: readonly DesignTheme[]"
+      },
+      {
+        "name": "DEFAULT_DEVICE_LINK_LIMITS",
+        "kind": "value",
+        "signature": "DEFAULT_DEVICE_LINK_LIMITS: DeviceLinkServerLimits"
       },
       {
         "name": "DEFAULT_MANAGER_CONFIG",
@@ -1713,6 +1753,76 @@
         "signature": "export declare function detectRuntimeLocalConfig(runtime: string, homeDir?: string, configPaths?: RuntimeLocalConfigPaths): RuntimeLocalConfig | null;"
       },
       {
+        "name": "DEVICE_LINK_SCOPES",
+        "kind": "value",
+        "signature": "DEVICE_LINK_SCOPES: readonly [\n\"session:browse\",\n\"session:send\",\n\"approval:respond\",\n\"file:transfer\",\n\"microphone\",\n\"audio:live\"\n]"
+      },
+      {
+        "name": "DEVICE_LINK_SERVICE_TYPE",
+        "kind": "value",
+        "signature": "DEVICE_LINK_SERVICE_TYPE: \"_hadamard._tcp.local\""
+      },
+      {
+        "name": "DeviceIdentity",
+        "kind": "interface",
+        "signature": "export interface DeviceIdentity {\ndeviceId: string;\nname: string;\npublicKeyPem: string;\ncertificateFingerprint: string;\ncreatedAt: string;\n}"
+      },
+      {
+        "name": "DeviceIdentityCredentials",
+        "kind": "interface",
+        "signature": "export interface DeviceIdentityCredentials extends DeviceIdentity {\nprivateKeyPem: string;\ntlsPrivateKeyPem: string;\ntlsCertificatePem: string;\n}"
+      },
+      {
+        "name": "DeviceIdentityStore",
+        "kind": "class",
+        "signature": "export declare class DeviceIdentityStore {\nprivate readonly directory;\nprivate readonly file;\nconstructor(directory: string);\nloadOrCreate(name?: string): Promise<DeviceIdentityCredentials>;\npublicIdentity(name?: string): Promise<DeviceIdentity>;\nprivate create;\n}"
+      },
+      {
+        "name": "DeviceLinkAuditRecord",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkAuditRecord {\nauditId: string;\ntimestamp: string;\ndeviceId?: string;\nremoteAddress?: string;\nrequestId: string;\nmethod: string;\noutcome: 'allowed' | 'denied' | 'error';\nreason?: string;\nrequestSha256: string;\n}"
+      },
+      {
+        "name": "DeviceLinkConnectionContext",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkConnectionContext {\ncertificateFingerprint?: string;\npeerUnlocked: boolean;\nremoteAddress?: string;\n}"
+      },
+      {
+        "name": "DeviceLinkDiagnostics",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkDiagnostics {\nstate: 'stopped' | 'starting' | 'listening' | 'error';\nurl?: string;\nbindAddress?: string;\nport?: number;\ndiscovery: 'stopped' | 'advertising' | 'error';\npairedDevices: number;\nlastError?: string;\n}"
+      },
+      {
+        "name": "DeviceLinkRequestAuth",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkRequestAuth {\n[key: string]: unknown;\ndeviceId: string;\nsequence: number;\nnonce: string;\nissuedAt: string;\nsignature: string;\n}"
+      },
+      {
+        "name": "DeviceLinkScope",
+        "kind": "type",
+        "signature": "export type DeviceLinkScope = typeof DEVICE_LINK_SCOPES[number];"
+      },
+      {
+        "name": "DeviceLinkServerLimits",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkServerLimits {\nmaxClockSkewMs: number;\nmaxRequestsPerMinute: number;\nmaxRequestBytes: number;\n}"
+      },
+      {
+        "name": "DeviceLinkService",
+        "kind": "class",
+        "signature": "export declare class DeviceLinkService {\nprivate readonly options;\nprivate readonly identity;\nprivate wss?;\nprivate readonly discovery;\nprivate readonly pairing;\nprivate readonly registry;\nprivate readonly audit;\nprivate readonly storage;\nprivate readonly ownsStorage;\nprivate readonly limits;\nprivate diagnostics;\nprivate constructor();\nstatic open(options: DeviceLinkServiceOptions): Promise<DeviceLinkService>;\nstart(options?: StartDeviceLinkOptions): Promise<DeviceLinkDiagnostics>;\nstop(): Promise<void>;\nclose(): Promise<void>;\nsnapshot(): Promise<DeviceLinkSnapshot>;\nbeginPairing(options?: Partial<BeginPairingOptions>): Promise<{\noffer: PairingOffer;\nuri: string;\nqrDataUrl: string;\n}>;\ncompletePairing(completion: PairingCompletion): Promise<PairingResult>;\nupdateScopes(deviceId: string, scopes: DeviceLinkScope[]): Promise<PairedDevice>;\nrevoke(deviceId: string): Promise<PairedDevice>;\ndiscover(timeoutMs?: number): Promise<DiscoveredDevice[]>;\nlistAudit(limit?: number): Promise<import(\"./types.js\").DeviceLinkAuditRecord[]>;\nprivate refreshDiagnostics;\n}"
+      },
+      {
+        "name": "DeviceLinkServiceOptions",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkServiceOptions {\nrootDirectory: string;\nappServer: AppServer;\nsdk: HadamardAgentClient;\ndeviceName?: string;\nlimits?: DeviceLinkServerLimits;\ndiscovery?: DeviceDiscoveryPort;\nstorage?: DurableStorageV2;\n}"
+      },
+      {
+        "name": "DeviceLinkSnapshot",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkSnapshot {\nidentity: ReturnType<typeof withoutSecrets>;\ndiagnostics: DeviceLinkDiagnostics;\ndevices: PairedDevice[];\n}"
+      },
+      {
         "name": "DiffApplyResult",
         "kind": "interface",
         "signature": "export interface DiffApplyResult {\napplied: boolean;\nconflict: boolean;\nmessage: string;\n}"
@@ -1736,6 +1846,11 @@
         "name": "DiscoveredAgentRuntime",
         "kind": "interface",
         "signature": "export interface DiscoveredAgentRuntime {\nid: string;\nlabel: string;\nruntime: BridgeRuntime;\nprovider: InProcessProvider | null;\nstatus: AgentRuntimeStatus;\ninstalled: boolean;\nconfigured: boolean;\ncommand?: string;\ncommandPath?: string;\nversion?: string;\nversionError?: string;\nconfigNames: string[];\nreuseHint: string;\ndescription: string;\n}"
+      },
+      {
+        "name": "DiscoveredDevice",
+        "kind": "interface",
+        "signature": "export interface DiscoveredDevice {\ndeviceId: string;\nname: string;\nhost: string;\nport: number;\ncertificateFingerprint: string;\nprotocolVersion: 2;\nlastSeenAt: string;\n}"
       },
       {
         "name": "discoverHadamardSkillCatalog",
@@ -4658,6 +4773,11 @@
         "signature": "export declare function normalizeDesignConfiguration(value: unknown): DesignConfiguration;"
       },
       {
+        "name": "normalizeFingerprint",
+        "kind": "function",
+        "signature": "export declare function normalizeFingerprint(value: string): string;"
+      },
+      {
         "name": "normalizeGoal",
         "kind": "function",
         "signature": "export declare function normalizeGoal(raw: unknown, now: string): Goal | null;"
@@ -4706,6 +4826,31 @@
         "name": "orchestrateGraphV3",
         "kind": "function",
         "signature": "export declare function orchestrateGraphV3(opts: OrchestrateGraphOptions): Promise<OrchestrateGraphResult>;"
+      },
+      {
+        "name": "PairedDevice",
+        "kind": "interface",
+        "signature": "export interface PairedDevice {\ndeviceId: string;\nname: string;\npublicKeyPem: string;\ncertificateFingerprint: string;\nscopes: DeviceLinkScope[];\npairedAt: string;\nupdatedAt: string;\nlastSeenAt?: string;\nrevokedAt?: string;\nlastSequence: number;\nrecentNonces: Array<{\ndigest: string;\nexpiresAt: string;\n}>;\n}"
+      },
+      {
+        "name": "PairingCompletion",
+        "kind": "interface",
+        "signature": "export interface PairingCompletion {\nchallengeId: string;\nchallengeProof: string;\nconfirmationCode: string;\ndeviceId: string;\ndeviceName: string;\npublicKeyPem: string;\ncertificateFingerprint: string;\nrequestedScopes: DeviceLinkScope[];\nsignature: string;\n}"
+      },
+      {
+        "name": "PairingOffer",
+        "kind": "interface",
+        "signature": "export interface PairingOffer {\nschemaVersion: 1;\ndeviceId: string;\ndeviceName: string;\naddress: string;\nport: number;\nprotocolVersion: 2;\nchallengeId: string;\nchallengeSecret: string;\nconfirmationCode: string;\nidentityPublicKeyPem: string;\ncertificateFingerprint: string;\nofferedScopes: DeviceLinkScope[];\nexpiresAt: string;\nsignature: string;\n}"
+      },
+      {
+        "name": "PairingResult",
+        "kind": "interface",
+        "signature": "export interface PairingResult {\ndevice: PairedDevice;\nserverSignature: string;\n}"
+      },
+      {
+        "name": "pairingUri",
+        "kind": "function",
+        "signature": "export declare function pairingUri(offer: PairingOffer): string;"
       },
       {
         "name": "parallel",
@@ -6048,6 +6193,11 @@
         "signature": "export declare function shouldMirrorDesignToWorkspace(config: ManagerConfig): boolean;"
       },
       {
+        "name": "SignedDeviceLinkRequest",
+        "kind": "interface",
+        "signature": "export interface SignedDeviceLinkRequest extends AppServerRequestV2 {\nauth: DeviceLinkRequestAuth;\n}"
+      },
+      {
         "name": "skill",
         "kind": "function",
         "signature": "export declare function skill(definition: HadamardSkillDefinition): HadamardSkillDefinition;"
@@ -6081,6 +6231,11 @@
         "name": "StageWorkflowUpsertInput",
         "kind": "interface",
         "signature": "export interface StageWorkflowUpsertInput {\nassistantSessionId: string;\nname: string;\nscript: string;\nscope: 'project' | 'personal';\nprojectPath?: string;\ndescription?: string;\nexplanation?: string;\n}"
+      },
+      {
+        "name": "StartDeviceLinkOptions",
+        "kind": "interface",
+        "signature": "export interface StartDeviceLinkOptions {\nhost?: string;\nport?: number;\nallowPublic?: boolean;\nadvertise?: boolean;\nadvertiseAddress?: string;\nnetworkInterface?: string;\n}"
       },
       {
         "name": "startKernelProcess",
@@ -6513,6 +6668,11 @@
         "signature": "export type ValidationResult = {\nresult: true;\n} | {\nresult: false;\nmessage: string;\nerrorCode?: number;\n};"
       },
       {
+        "name": "verifyPairingOffer",
+        "kind": "function",
+        "signature": "export declare function verifyPairingOffer(offer: PairingOffer): boolean;"
+      },
+      {
         "name": "VIDEO_GEN_PROMPT_GUIDANCE",
         "kind": "value",
         "signature": "VIDEO_GEN_PROMPT_GUIDANCE = \"PROMPT REWRITE (required):\\nThe `prompt` argument must be a professional video-generation prompt \\u2014 NOT a verbatim short user utterance (unless the user already supplied a complete professional prompt).\\n\\nt2v formula (Qwen/Wan skill): Entity + Scene + Motion + Aesthetic control + Stylization.\\nWeak prompts often miss aesthetics and camera moves \\u2014 always enrich those dimensions.\\ni2v (when `imagePath` is set): focus on Motion + Camera Movement (+ Sound); the image defines entity/scene/style.\\n\\nCamera dictionary: camera pushes in / pulls out / moves left / orbiting / fixed camera; speed: slowly / quickly / gently.\\nMulti-shot narrative (longer clips): overall theme line, then:\\n Shot 1 [0\\u2013Xs]: shot size, camera, lighting, action, dialogue, sound\\n Shot 2 [X\\u2013Ys]: ...\\nOptional sound (when the model supports audio): Voice / SFX / BGM descriptions.\\nOptional `negativePrompt` default: \\\"low quality, blurry, distorted, watermark, static, frozen, jittery, inconsistent lighting, flickering\\\".\\nOptional `userIntent`: audit only \\u2014 not sent to the API.\\nDashScope/HappyHorse `promptExtend`: true for short prompts or multi-shot that needs vendor rewrite; false for fully specified advanced prompts.\""
@@ -6531,6 +6691,11 @@
         "name": "windowsSandboxCapabilities",
         "kind": "function",
         "signature": "export declare function windowsSandboxCapabilities(): SandboxCapabilityReport;"
+      },
+      {
+        "name": "withoutSecrets",
+        "kind": "function",
+        "signature": "export declare function withoutSecrets(credentials: DeviceIdentityCredentials): DeviceIdentity;"
       },
       {
         "name": "WorkflowAgentCallRecord",
@@ -9264,9 +9429,19 @@
         "signature": "export declare function analyzeHadamardBridgeEvents(events: Iterable<HadamardBridgeJsonEvent>): HadamardBridgeEventAnalysis;"
       },
       {
+        "name": "APP_SERVER_LEGACY_PROTOCOL_VERSION",
+        "kind": "value",
+        "signature": "APP_SERVER_LEGACY_PROTOCOL_VERSION: 1"
+      },
+      {
         "name": "APP_SERVER_PROTOCOL_VERSION",
         "kind": "value",
-        "signature": "APP_SERVER_PROTOCOL_VERSION: 1"
+        "signature": "APP_SERVER_PROTOCOL_VERSION: 2"
+      },
+      {
+        "name": "APP_SERVER_PROTOCOL_VERSIONS",
+        "kind": "value",
+        "signature": "APP_SERVER_PROTOCOL_VERSIONS: readonly [\n1,\n2\n]"
       },
       {
         "name": "appendProjectSettingsToPrompt",
@@ -9316,17 +9491,32 @@
       {
         "name": "AppServerNotification",
         "kind": "interface",
-        "signature": "export interface AppServerNotification {\nversion: 1;\ntype: 'event';\nmethod: string;\nparams: Record<string, unknown>;\n}"
+        "signature": "export interface AppServerNotification {\nversion: AppServerProtocolVersion;\ntype: 'event';\nmethod: string;\nparams: Record<string, unknown>;\n}"
+      },
+      {
+        "name": "AppServerProtocolVersion",
+        "kind": "type",
+        "signature": "export type AppServerProtocolVersion = typeof APP_SERVER_PROTOCOL_VERSIONS[number];"
       },
       {
         "name": "AppServerRequest",
+        "kind": "type",
+        "signature": "export type AppServerRequest = AppServerRequestV1 | AppServerRequestV2;"
+      },
+      {
+        "name": "AppServerRequestV1",
         "kind": "interface",
-        "signature": "export interface AppServerRequest {\nversion: 1;\nid: string;\nmethod: string;\nparams?: Record<string, unknown>;\n}"
+        "signature": "export interface AppServerRequestV1 extends AppServerRequestBase {\nversion: 1;\n}"
+      },
+      {
+        "name": "AppServerRequestV2",
+        "kind": "interface",
+        "signature": "export interface AppServerRequestV2 extends AppServerRequestBase {\nversion: 2;\nauth?: Record<string, unknown>;\n}"
       },
       {
         "name": "AppServerResponse",
         "kind": "interface",
-        "signature": "export interface AppServerResponse {\nversion: 1;\nid: string;\nresult?: unknown;\nerror?: {\ncode: string;\nmessage: string;\n};\n}"
+        "signature": "export interface AppServerResponse {\nversion: AppServerProtocolVersion;\nid: string;\nresult?: unknown;\nerror?: {\ncode: string;\nmessage: string;\n};\n}"
       },
       {
         "name": "AppServerWebSocket",
@@ -10174,6 +10364,11 @@
         "signature": "export declare function createOpenaiModelApi(config: ResolvedRuntimeConfig): ModelApi;"
       },
       {
+        "name": "createPairingCompletion",
+        "kind": "function",
+        "signature": "export declare function createPairingCompletion(offer: PairingOffer, device: DeviceIdentityCredentials, requestedScopes: DeviceLinkScope[]): PairingCompletion;"
+      },
+      {
         "name": "createPowerShellTool",
         "kind": "function",
         "signature": "export declare function createPowerShellTool(): AgentToolDefinition;"
@@ -10187,6 +10382,11 @@
         "name": "createPromptHookHandler",
         "kind": "function",
         "signature": "export declare function createPromptHookHandler(evaluate: PromptHookEvaluator): HookHandlerAdapter;"
+      },
+      {
+        "name": "createSignedDeviceLinkRequest",
+        "kind": "function",
+        "signature": "export declare function createSignedDeviceLinkRequest(request: Omit<AppServerRequestV2, 'auth'>, identity: DeviceIdentityCredentials, sequence: number, issuedAt?: string): SignedDeviceLinkRequest;"
       },
       {
         "name": "createSkillTool",
@@ -10317,6 +10517,11 @@
         "name": "DEFAULT_DESIGN_THEMES",
         "kind": "value",
         "signature": "DEFAULT_DESIGN_THEMES: readonly DesignTheme[]"
+      },
+      {
+        "name": "DEFAULT_DEVICE_LINK_LIMITS",
+        "kind": "value",
+        "signature": "DEFAULT_DEVICE_LINK_LIMITS: DeviceLinkServerLimits"
       },
       {
         "name": "DEFAULT_MANAGER_CONFIG",
@@ -10634,6 +10839,76 @@
         "signature": "export declare function detectRuntimeLocalConfig(runtime: string, homeDir?: string, configPaths?: RuntimeLocalConfigPaths): RuntimeLocalConfig | null;"
       },
       {
+        "name": "DEVICE_LINK_SCOPES",
+        "kind": "value",
+        "signature": "DEVICE_LINK_SCOPES: readonly [\n\"session:browse\",\n\"session:send\",\n\"approval:respond\",\n\"file:transfer\",\n\"microphone\",\n\"audio:live\"\n]"
+      },
+      {
+        "name": "DEVICE_LINK_SERVICE_TYPE",
+        "kind": "value",
+        "signature": "DEVICE_LINK_SERVICE_TYPE: \"_hadamard._tcp.local\""
+      },
+      {
+        "name": "DeviceIdentity",
+        "kind": "interface",
+        "signature": "export interface DeviceIdentity {\ndeviceId: string;\nname: string;\npublicKeyPem: string;\ncertificateFingerprint: string;\ncreatedAt: string;\n}"
+      },
+      {
+        "name": "DeviceIdentityCredentials",
+        "kind": "interface",
+        "signature": "export interface DeviceIdentityCredentials extends DeviceIdentity {\nprivateKeyPem: string;\ntlsPrivateKeyPem: string;\ntlsCertificatePem: string;\n}"
+      },
+      {
+        "name": "DeviceIdentityStore",
+        "kind": "class",
+        "signature": "export declare class DeviceIdentityStore {\nprivate readonly directory;\nprivate readonly file;\nconstructor(directory: string);\nloadOrCreate(name?: string): Promise<DeviceIdentityCredentials>;\npublicIdentity(name?: string): Promise<DeviceIdentity>;\nprivate create;\n}"
+      },
+      {
+        "name": "DeviceLinkAuditRecord",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkAuditRecord {\nauditId: string;\ntimestamp: string;\ndeviceId?: string;\nremoteAddress?: string;\nrequestId: string;\nmethod: string;\noutcome: 'allowed' | 'denied' | 'error';\nreason?: string;\nrequestSha256: string;\n}"
+      },
+      {
+        "name": "DeviceLinkConnectionContext",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkConnectionContext {\ncertificateFingerprint?: string;\npeerUnlocked: boolean;\nremoteAddress?: string;\n}"
+      },
+      {
+        "name": "DeviceLinkDiagnostics",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkDiagnostics {\nstate: 'stopped' | 'starting' | 'listening' | 'error';\nurl?: string;\nbindAddress?: string;\nport?: number;\ndiscovery: 'stopped' | 'advertising' | 'error';\npairedDevices: number;\nlastError?: string;\n}"
+      },
+      {
+        "name": "DeviceLinkRequestAuth",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkRequestAuth {\n[key: string]: unknown;\ndeviceId: string;\nsequence: number;\nnonce: string;\nissuedAt: string;\nsignature: string;\n}"
+      },
+      {
+        "name": "DeviceLinkScope",
+        "kind": "type",
+        "signature": "export type DeviceLinkScope = typeof DEVICE_LINK_SCOPES[number];"
+      },
+      {
+        "name": "DeviceLinkServerLimits",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkServerLimits {\nmaxClockSkewMs: number;\nmaxRequestsPerMinute: number;\nmaxRequestBytes: number;\n}"
+      },
+      {
+        "name": "DeviceLinkService",
+        "kind": "class",
+        "signature": "export declare class DeviceLinkService {\nprivate readonly options;\nprivate readonly identity;\nprivate wss?;\nprivate readonly discovery;\nprivate readonly pairing;\nprivate readonly registry;\nprivate readonly audit;\nprivate readonly storage;\nprivate readonly ownsStorage;\nprivate readonly limits;\nprivate diagnostics;\nprivate constructor();\nstatic open(options: DeviceLinkServiceOptions): Promise<DeviceLinkService>;\nstart(options?: StartDeviceLinkOptions): Promise<DeviceLinkDiagnostics>;\nstop(): Promise<void>;\nclose(): Promise<void>;\nsnapshot(): Promise<DeviceLinkSnapshot>;\nbeginPairing(options?: Partial<BeginPairingOptions>): Promise<{\noffer: PairingOffer;\nuri: string;\nqrDataUrl: string;\n}>;\ncompletePairing(completion: PairingCompletion): Promise<PairingResult>;\nupdateScopes(deviceId: string, scopes: DeviceLinkScope[]): Promise<PairedDevice>;\nrevoke(deviceId: string): Promise<PairedDevice>;\ndiscover(timeoutMs?: number): Promise<DiscoveredDevice[]>;\nlistAudit(limit?: number): Promise<import(\"./types.js\").DeviceLinkAuditRecord[]>;\nprivate refreshDiagnostics;\n}"
+      },
+      {
+        "name": "DeviceLinkServiceOptions",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkServiceOptions {\nrootDirectory: string;\nappServer: AppServer;\nsdk: HadamardAgentClient;\ndeviceName?: string;\nlimits?: DeviceLinkServerLimits;\ndiscovery?: DeviceDiscoveryPort;\nstorage?: DurableStorageV2;\n}"
+      },
+      {
+        "name": "DeviceLinkSnapshot",
+        "kind": "interface",
+        "signature": "export interface DeviceLinkSnapshot {\nidentity: ReturnType<typeof withoutSecrets>;\ndiagnostics: DeviceLinkDiagnostics;\ndevices: PairedDevice[];\n}"
+      },
+      {
         "name": "DiffApplyResult",
         "kind": "interface",
         "signature": "export interface DiffApplyResult {\napplied: boolean;\nconflict: boolean;\nmessage: string;\n}"
@@ -10657,6 +10932,11 @@
         "name": "DiscoveredAgentRuntime",
         "kind": "interface",
         "signature": "export interface DiscoveredAgentRuntime {\nid: string;\nlabel: string;\nruntime: BridgeRuntime;\nprovider: InProcessProvider | null;\nstatus: AgentRuntimeStatus;\ninstalled: boolean;\nconfigured: boolean;\ncommand?: string;\ncommandPath?: string;\nversion?: string;\nversionError?: string;\nconfigNames: string[];\nreuseHint: string;\ndescription: string;\n}"
+      },
+      {
+        "name": "DiscoveredDevice",
+        "kind": "interface",
+        "signature": "export interface DiscoveredDevice {\ndeviceId: string;\nname: string;\nhost: string;\nport: number;\ncertificateFingerprint: string;\nprotocolVersion: 2;\nlastSeenAt: string;\n}"
       },
       {
         "name": "discoverHadamardSkillCatalog",
@@ -13634,6 +13914,11 @@
         "signature": "export declare function normalizeDesignConfiguration(value: unknown): DesignConfiguration;"
       },
       {
+        "name": "normalizeFingerprint",
+        "kind": "function",
+        "signature": "export declare function normalizeFingerprint(value: string): string;"
+      },
+      {
         "name": "normalizeGoal",
         "kind": "function",
         "signature": "export declare function normalizeGoal(raw: unknown, now: string): Goal | null;"
@@ -13682,6 +13967,31 @@
         "name": "orchestrateGraphV3",
         "kind": "function",
         "signature": "export declare function orchestrateGraphV3(opts: OrchestrateGraphOptions): Promise<OrchestrateGraphResult>;"
+      },
+      {
+        "name": "PairedDevice",
+        "kind": "interface",
+        "signature": "export interface PairedDevice {\ndeviceId: string;\nname: string;\npublicKeyPem: string;\ncertificateFingerprint: string;\nscopes: DeviceLinkScope[];\npairedAt: string;\nupdatedAt: string;\nlastSeenAt?: string;\nrevokedAt?: string;\nlastSequence: number;\nrecentNonces: Array<{\ndigest: string;\nexpiresAt: string;\n}>;\n}"
+      },
+      {
+        "name": "PairingCompletion",
+        "kind": "interface",
+        "signature": "export interface PairingCompletion {\nchallengeId: string;\nchallengeProof: string;\nconfirmationCode: string;\ndeviceId: string;\ndeviceName: string;\npublicKeyPem: string;\ncertificateFingerprint: string;\nrequestedScopes: DeviceLinkScope[];\nsignature: string;\n}"
+      },
+      {
+        "name": "PairingOffer",
+        "kind": "interface",
+        "signature": "export interface PairingOffer {\nschemaVersion: 1;\ndeviceId: string;\ndeviceName: string;\naddress: string;\nport: number;\nprotocolVersion: 2;\nchallengeId: string;\nchallengeSecret: string;\nconfirmationCode: string;\nidentityPublicKeyPem: string;\ncertificateFingerprint: string;\nofferedScopes: DeviceLinkScope[];\nexpiresAt: string;\nsignature: string;\n}"
+      },
+      {
+        "name": "PairingResult",
+        "kind": "interface",
+        "signature": "export interface PairingResult {\ndevice: PairedDevice;\nserverSignature: string;\n}"
+      },
+      {
+        "name": "pairingUri",
+        "kind": "function",
+        "signature": "export declare function pairingUri(offer: PairingOffer): string;"
       },
       {
         "name": "parallel",
@@ -15064,6 +15374,11 @@
         "signature": "export declare function shouldMirrorDesignToWorkspace(config: ManagerConfig): boolean;"
       },
       {
+        "name": "SignedDeviceLinkRequest",
+        "kind": "interface",
+        "signature": "export interface SignedDeviceLinkRequest extends AppServerRequestV2 {\nauth: DeviceLinkRequestAuth;\n}"
+      },
+      {
         "name": "skill",
         "kind": "function",
         "signature": "export declare function skill(definition: HadamardSkillDefinition): HadamardSkillDefinition;"
@@ -15097,6 +15412,11 @@
         "name": "StageWorkflowUpsertInput",
         "kind": "interface",
         "signature": "export interface StageWorkflowUpsertInput {\nassistantSessionId: string;\nname: string;\nscript: string;\nscope: 'project' | 'personal';\nprojectPath?: string;\ndescription?: string;\nexplanation?: string;\n}"
+      },
+      {
+        "name": "StartDeviceLinkOptions",
+        "kind": "interface",
+        "signature": "export interface StartDeviceLinkOptions {\nhost?: string;\nport?: number;\nallowPublic?: boolean;\nadvertise?: boolean;\nadvertiseAddress?: string;\nnetworkInterface?: string;\n}"
       },
       {
         "name": "startKernelProcess",
@@ -15579,6 +15899,11 @@
         "signature": "export type ValidationResult = {\nresult: true;\n} | {\nresult: false;\nmessage: string;\nerrorCode?: number;\n};"
       },
       {
+        "name": "verifyPairingOffer",
+        "kind": "function",
+        "signature": "export declare function verifyPairingOffer(offer: PairingOffer): boolean;"
+      },
+      {
         "name": "VIDEO_GEN_PROMPT_GUIDANCE",
         "kind": "value",
         "signature": "VIDEO_GEN_PROMPT_GUIDANCE = \"PROMPT REWRITE (required):\\nThe `prompt` argument must be a professional video-generation prompt \\u2014 NOT a verbatim short user utterance (unless the user already supplied a complete professional prompt).\\n\\nt2v formula (Qwen/Wan skill): Entity + Scene + Motion + Aesthetic control + Stylization.\\nWeak prompts often miss aesthetics and camera moves \\u2014 always enrich those dimensions.\\ni2v (when `imagePath` is set): focus on Motion + Camera Movement (+ Sound); the image defines entity/scene/style.\\n\\nCamera dictionary: camera pushes in / pulls out / moves left / orbiting / fixed camera; speed: slowly / quickly / gently.\\nMulti-shot narrative (longer clips): overall theme line, then:\\n Shot 1 [0\\u2013Xs]: shot size, camera, lighting, action, dialogue, sound\\n Shot 2 [X\\u2013Ys]: ...\\nOptional sound (when the model supports audio): Voice / SFX / BGM descriptions.\\nOptional `negativePrompt` default: \\\"low quality, blurry, distorted, watermark, static, frozen, jittery, inconsistent lighting, flickering\\\".\\nOptional `userIntent`: audit only \\u2014 not sent to the API.\\nDashScope/HappyHorse `promptExtend`: true for short prompts or multi-shot that needs vendor rewrite; false for fully specified advanced prompts.\""
@@ -15597,6 +15922,11 @@
         "name": "windowsSandboxCapabilities",
         "kind": "function",
         "signature": "export declare function windowsSandboxCapabilities(): SandboxCapabilityReport;"
+      },
+      {
+        "name": "withoutSecrets",
+        "kind": "function",
+        "signature": "export declare function withoutSecrets(credentials: DeviceIdentityCredentials): DeviceIdentity;"
       },
       {
         "name": "WorkflowAgentCallRecord",
