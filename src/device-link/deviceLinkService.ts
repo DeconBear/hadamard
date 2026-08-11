@@ -5,6 +5,7 @@ import type { AppServer } from '../app-server/appServer.js';
 import type { HadamardAgentClient } from '../runtime/agentClient.js';
 import { SqliteStorageV2, type DurableStorageV2 } from '../storage-v2/index.js';
 import { DeviceLinkAuditStore } from './auditStore.js';
+import { DeviceLinkArtifactTransferService } from './artifactTransferService.js';
 import { DeviceLinkAuthorizationService } from './authorization.js';
 import { PairedDeviceRegistry } from './deviceRegistry.js';
 import { DeviceLinkGateway } from './gateway.js';
@@ -35,6 +36,7 @@ export interface DeviceLinkServiceOptions {
   limits?: DeviceLinkServerLimits;
   discovery?: DeviceDiscoveryPort;
   storage?: DurableStorageV2;
+  workspaceRoot?: string;
 }
 
 export interface StartDeviceLinkOptions {
@@ -61,6 +63,7 @@ export class DeviceLinkService {
   private readonly storage: DurableStorageV2;
   private readonly ownsStorage: boolean;
   private readonly limits: DeviceLinkServerLimits;
+  private readonly artifacts: DeviceLinkArtifactTransferService;
   private diagnostics: DeviceLinkDiagnostics = {
     state: 'stopped',
     discovery: 'stopped',
@@ -75,6 +78,10 @@ export class DeviceLinkService {
     this.storage = storage;
     this.ownsStorage = options.storage === undefined;
     this.limits = options.limits ?? DEFAULT_DEVICE_LINK_LIMITS;
+    this.artifacts = new DeviceLinkArtifactTransferService({
+      rootDirectory: path.join(options.rootDirectory, 'transfers'),
+      workspaceRoot: options.workspaceRoot,
+    });
     this.registry = new PairedDeviceRegistry(path.join(options.rootDirectory, 'paired-devices.json'));
     this.audit = new DeviceLinkAuditStore(path.join(options.rootDirectory, 'audit.jsonl'));
     this.pairing = new DevicePairingService(identity, this.registry);
@@ -115,6 +122,7 @@ export class DeviceLinkService {
         authorization,
         limits: this.limits,
         sessions,
+        artifacts: this.artifacts,
       });
       this.wss = new DeviceLinkWssServer({
         gateway,
@@ -221,6 +229,18 @@ export class DeviceLinkService {
 
   listAudit(limit?: number) {
     return this.audit.list(limit);
+  }
+
+  stageOutgoingArtifact(
+    deviceId: string,
+    sourceRelativePath: string,
+    options?: { name?: string; mediaType?: string; chunkSize?: number },
+  ) {
+    return this.artifacts.stageOutgoing(deviceId, sourceRelativePath, options);
+  }
+
+  listOutgoingArtifacts(deviceId: string) {
+    return this.artifacts.listOutbox(deviceId);
   }
 
   private async refreshDiagnostics(): Promise<DeviceLinkDiagnostics> {

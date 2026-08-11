@@ -1,5 +1,6 @@
 export * from './auditStore.js';
 export * from './authorization.js';
+export * from './artifactTransferService.js';
 export * from './commandService.js';
 export * from './crypto.js';
 export * from './deviceLinkService.js';
