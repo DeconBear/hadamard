@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   createManagerTools,
   buildManagerSystemPrompt,
-  buildUpdateProgressPrompt,
+  buildUpdateDesignPrompt,
   formatManagerUpdatePreview,
   shouldIncludeGitHubDigest,
   parseGitHubRepoFromRemote,
@@ -15,9 +15,9 @@ import {
   writeManagerConfig,
   readProjectPlanFile,
   writeProjectPlanFile,
-  readProgressFile,
+  readDesignFile,
   managerPlanPath,
-  managerProgressPath,
+  managerDesignPath,
   resolveManagerReadRoots,
   DEFAULT_MANAGER_CONFIG,
 } from '../src/manager/projectManager.js';
@@ -45,7 +45,7 @@ async function tools(config = DEFAULT_MANAGER_CONFIG): Promise<AgentToolDefiniti
 }
 
 describe('Manager tool surface (plan §4.2 hard constraints)', () => {
-  it('exposes only the restricted read + progress-write tools', async () => {
+  it('exposes only the restricted read + Design-write tools', async () => {
     const names = (await tools()).map((t) => t.name).sort();
     expect(names).toEqual([
       'Glob',
@@ -56,7 +56,7 @@ describe('Manager tool surface (plan §4.2 hard constraints)', () => {
       'IssueList',
       'IssueUpdate',
       'PlanWrite',
-      'ProgressWrite',
+      'DesignWrite',
       'Read',
       'WebFetch',
     ].sort());
@@ -131,14 +131,14 @@ describe('Manager read scope enforcement', () => {
     }
   });
 
-  it('the project store (plan/PROGRESS home) is always readable', () => {
+  it('the project store (plan/DESIGN home) is always readable', () => {
     const roots = resolveManagerReadRoots(workDir, homeDir, DEFAULT_MANAGER_CONFIG);
     const planDir = path.dirname(managerPlanPath(workDir, homeDir));
     expect(roots.some((r) => planDir.startsWith(r))).toBe(true);
   });
 });
 
-describe('Manager progress documents (plan §4.4)', () => {
+describe('Manager Design documents', () => {
   it('PlanWrite writes plan.json in the project store, not the workspace', async () => {
     const planWrite = (await tools()).find((t) => t.name === 'PlanWrite')!;
     await (planWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)(
@@ -153,36 +153,37 @@ describe('Manager progress documents (plan §4.4)', () => {
     expect(fs.existsSync(path.join(workDir, 'plan.json'))).toBe(false);
   });
 
-  it('ProgressWrite writes PROGRESS.md in the project store by default (no workspace mirror)', async () => {
-    const progressWrite = (await tools()).find((t) => t.name === 'ProgressWrite')!;
-    await (progressWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)(
-      { content: '# Progress\n\nAll good.' },
+  it('DesignWrite writes DESIGN.md in the project store by default (no workspace mirror)', async () => {
+    const designWrite = (await tools()).find((t) => t.name === 'DesignWrite')!;
+    await (designWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)(
+      { content: '# Design\n\nAll good.' },
       {},
     );
-    expect(await readProgressFile(workDir, homeDir)).toContain('All good.');
-    expect(fs.existsSync(path.join(workDir, '.hadamard', 'PROGRESS.md'))).toBe(false);
+    expect(await readDesignFile(workDir, homeDir)).toContain('All good.');
+    expect(fs.existsSync(path.join(workDir, '.hadamard', 'DESIGN.md'))).toBe(false);
+    expect(fs.existsSync(managerDesignPath(workDir, homeDir))).toBe(true);
   });
 
-  it('ProgressWrite mirrors to the workspace only when opted in', async () => {
-    const cfg = { ...DEFAULT_MANAGER_CONFIG, mirrorProgressToWorkspace: true };
-    const progressWrite = (await tools(cfg)).find((t) => t.name === 'ProgressWrite')!;
-    await (progressWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)(
+  it('DesignWrite mirrors to the workspace only when opted in', async () => {
+    const cfg = { ...DEFAULT_MANAGER_CONFIG, mirrorDesignToWorkspace: true };
+    const designWrite = (await tools(cfg)).find((t) => t.name === 'DesignWrite')!;
+    await (designWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)(
       { content: '# Mirrored' },
       {},
     );
-    expect(fs.readFileSync(path.join(workDir, '.hadamard', 'PROGRESS.md'), 'utf8')).toContain('Mirrored');
+    expect(fs.readFileSync(path.join(workDir, '.hadamard', 'DESIGN.md'), 'utf8')).toContain('Mirrored');
   });
 
   it('the default config never writes any workspace file', async () => {
     const before = fs.readdirSync(workDir);
     const all = await tools();
     const planWrite = all.find((t) => t.name === 'PlanWrite')!;
-    const progressWrite = all.find((t) => t.name === 'ProgressWrite')!;
+    const designWrite = all.find((t) => t.name === 'DesignWrite')!;
     await (planWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)(
       { milestones: [], today: [], upcoming: [] },
       {},
     );
-    await (progressWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)({ content: 'x' }, {});
+    await (designWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)({ content: 'x' }, {});
     expect(fs.readdirSync(workDir)).toEqual(before);
   });
 });
@@ -193,7 +194,7 @@ describe('Manager config (manager.json)', () => {
       model: 'claude-x',
       readScope: 'workspace+docs',
       allowedReadPaths: ['/docs'],
-      mirrorProgressToWorkspace: true,
+      mirrorDesignToWorkspace: true,
       promptOverride: 'Track the v2 launch.',
       activeSessionId: 'manager-session-2',
     });
@@ -201,7 +202,7 @@ describe('Manager config (manager.json)', () => {
     expect(cfg.model).toBe('claude-x');
     expect(cfg.readScope).toBe('workspace+docs');
     expect(cfg.allowedReadPaths).toEqual(['/docs']);
-    expect(cfg.mirrorProgressToWorkspace).toBe(true);
+    expect(cfg.mirrorDesignToWorkspace).toBe(true);
     expect(cfg.promptOverride).toBe('Track the v2 launch.');
     expect(cfg.activeSessionId).toBe('manager-session-2');
   });
@@ -209,7 +210,7 @@ describe('Manager config (manager.json)', () => {
   it('falls back to safe defaults for missing/invalid config', async () => {
     const cfg = await readManagerConfig(workDir, homeDir);
     expect(cfg.readScope).toBe('workspace-only');
-    expect(cfg.mirrorProgressToWorkspace).toBe(false);
+    expect(cfg.mirrorDesignToWorkspace).toBe(false);
   });
 });
 
@@ -218,7 +219,7 @@ describe('Manager prompts', () => {
     const prompt = buildManagerSystemPrompt(workDir);
     expect(prompt).toContain('NEVER modify project source code');
     expect(prompt).toContain('PlanWrite');
-    expect(prompt).toContain('ProgressWrite');
+    expect(prompt).toContain('DesignWrite');
     expect(prompt).toContain('You do not run teams');
   });
 
@@ -228,14 +229,14 @@ describe('Manager prompts', () => {
   });
 
   it('update prompt embeds host-collected context sections', () => {
-    const prompt = buildUpdateProgressPrompt({
+    const prompt = buildUpdateDesignPrompt({
       instruction: 'mark milestone 2 blocked',
       gitSummary: 'branch: main',
       conversationSummaries: '- [2026-07-05] Fix login (3 msgs)',
       githubDigest: 'Open PRs (1 shown):\n#42 Fix auth',
       currentPlanJson: '{"milestones":[]}',
       currentIssuesJson: '[{"key":"ISS-1","status":"in_review","linkedSessions":[{"id":"worker-1"}]}]',
-      currentProgress: '# Progress',
+      currentDesign: '# Design',
     });
     expect(prompt).toContain('mark milestone 2 blocked');
     expect(prompt).toContain('branch: main');
@@ -244,10 +245,10 @@ describe('Manager prompts', () => {
     expect(prompt).toContain('--- Current plan.json ---');
     expect(prompt).toContain('--- Current issues.json summary ---');
     expect(prompt).toContain('linked-session evidence');
-    expect(prompt).toContain('--- Current PROGRESS.md ---');
+    expect(prompt).toContain('--- Current DESIGN.md ---');
   });
 
-  it('formatManagerUpdatePreview summarizes plan and progress', async () => {
+  it('formatManagerUpdatePreview summarizes plan and Design', async () => {
     await writeProjectPlanFile(workDir, homeDir, {
       milestones: [{ title: 'M1', status: 'done' }],
       today: ['task a'],
@@ -255,10 +256,10 @@ describe('Manager prompts', () => {
     });
     const preview = formatManagerUpdatePreview(
       await readProjectPlanFile(workDir, homeDir),
-      '# Progress\nHello',
+      '# Design\nHello',
     );
     expect(preview).toContain('1 milestones');
-    expect(preview).toContain('PROGRESS.md');
+    expect(preview).toContain('DESIGN.md');
     expect(preview).toContain('M1 (done)');
   });
 

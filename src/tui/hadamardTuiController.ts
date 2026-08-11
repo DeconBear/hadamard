@@ -33,14 +33,14 @@ import {
   readAssistantConfig,
   writeAssistantConfig,
   buildManagerSystemPrompt,
-  buildUpdateProgressPrompt,
+  buildUpdateDesignPrompt,
   formatManagerUpdatePreview,
   resolveGitHubDigestForUpdate,
   readManagerConfig,
   writeManagerConfig,
   readProjectPlanFile,
-  readProgressFile,
-  managerProgressPath,
+  readDesignFile,
+  managerDesignPath,
   createProjectIssue,
   executeProjectIssue,
   isIssueStorageMode,
@@ -3968,15 +3968,15 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           status: async () => {
             const config = await readManagerConfig(sdk.config.workDir, sdk.config.homeDir);
             const plan = await readProjectPlanFile(sdk.config.workDir, sdk.config.homeDir);
-            const progress = await readProgressFile(sdk.config.workDir, sdk.config.homeDir);
+            const design = await readDesignFile(sdk.config.workDir, sdk.config.homeDir);
             return {
               model: config.model ?? `${session.model} (session default)`,
               readScope: config.readScope,
-              mirrorProgressToWorkspace: config.mirrorProgressToWorkspace,
+              mirrorDesignToWorkspace: config.mirrorDesignToWorkspace,
               milestones: plan.milestones.length,
               today: plan.today.length,
               upcoming: plan.upcoming.length,
-              progressChars: progress ? progress.length : null,
+              designChars: design ? design.length : null,
             };
           },
           config: () => readManagerConfig(sdk.config.workDir, sdk.config.homeDir),
@@ -3990,7 +3990,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
               }
               config.readScope = value;
             } else if (key === 'mirror') {
-              config.mirrorProgressToWorkspace = value === 'on' || value === 'true';
+              config.mirrorDesignToWorkspace = value === 'on' || value === 'true';
             } else if (key === 'allow') {
               config.allowedReadPaths = value ? value.split(',').map(item => item.trim()).filter(Boolean) : [];
             } else {
@@ -4039,19 +4039,19 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
                 .map((s) => `- [${s.updatedAt.slice(0, 10)}] ${s.title} (${s.messageCount} msgs): ${s.preview}`)
                 .join('\n');
               const plan = await readProjectPlanFile(sdk.config.workDir, sdk.config.homeDir);
-              const progress = await readProgressFile(sdk.config.workDir, sdk.config.homeDir);
-              onNotice(formatManagerUpdatePreview(plan, progress).split('\n').slice(0, 2).join(' · '));
+              const design = await readDesignFile(sdk.config.workDir, sdk.config.homeDir);
+              onNotice(formatManagerUpdatePreview(plan, design).split('\n').slice(0, 2).join(' · '));
               const githubDigest = await resolveGitHubDigestForUpdate(
                 sdk.config.workDir,
                 instruction || undefined,
               );
-              prompt = buildUpdateProgressPrompt({
+              prompt = buildUpdateDesignPrompt({
                 instruction: instruction || undefined,
                 gitSummary,
                 conversationSummaries,
                 githubDigest,
                 currentPlanJson: JSON.stringify(plan, null, 2),
-                currentProgress: progress ?? undefined,
+                currentDesign: design ?? undefined,
               });
             }
             try {
@@ -4078,7 +4078,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
               text: result.text,
               proposals,
               ...(kind === 'update'
-                ? { progressPath: managerProgressPath(sdk.config.workDir, sdk.config.homeDir) }
+                ? { designPath: managerDesignPath(sdk.config.workDir, sdk.config.homeDir) }
                 : {}),
             };
           },

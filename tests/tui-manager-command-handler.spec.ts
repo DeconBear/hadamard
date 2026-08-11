@@ -22,11 +22,11 @@ function createPort(): TuiManagerCommandPort & { output: string[][] } {
       status: vi.fn(async () => ({
         model: 'test-model (session default)',
         readScope: 'workspace-only',
-        mirrorProgressToWorkspace: false,
+        mirrorDesignToWorkspace: false,
         milestones: 2,
         today: 1,
         upcoming: 3,
-        progressChars: null,
+        designChars: null,
       })),
       config: vi.fn(async () => ({ readScope: 'workspace-only' })),
       setConfig: vi.fn(async key => key === 'bad'
@@ -39,7 +39,7 @@ function createPort(): TuiManagerCommandPort & { output: string[][] } {
         return {
           text: 'manager answer',
           proposals: [],
-          progressPath: 'E:/project/PROGRESS.md',
+          designPath: 'E:/project/DESIGN.md',
         };
       }),
       proposalDiff: vi.fn(() => []),
@@ -66,7 +66,7 @@ describe('runTuiManagerCommand', () => {
     await runTuiManagerCommand('manager', 'status', port);
     expect(output(port)).toContain('model: test-model (session default)');
     expect(output(port)).toContain('plan.json: 2 milestones · 1 today · 3 upcoming');
-    expect(output(port)).toContain('PROGRESS.md: (none yet — /manager update)');
+    expect(output(port)).toContain('DESIGN.md: (none yet — /manager update)');
   });
 
   it('lists, creates, and resumes manager sessions', async () => {
@@ -94,7 +94,7 @@ describe('runTuiManagerCommand', () => {
     expect(output(error)).toContain('invalid key');
   });
 
-  it('runs chat and update turns with unchanged tool and progress output', async () => {
+  it('runs chat and update turns with unchanged tool and Design output', async () => {
     const chat = createPort();
     await runTuiManagerCommand('manager', 'chat inspect status', chat);
     expect(chat.manager.run).toHaveBeenCalledWith(
@@ -109,8 +109,8 @@ describe('runTuiManagerCommand', () => {
 
     const update = createPort();
     await runTuiManagerCommand('manager', 'update refresh', update);
-    expect(output(update)).toContain('Manager: updating progress documents…');
-    expect(output(update)).toContain('progress updated · E:/project/PROGRESS.md');
+    expect(output(update)).toContain('Manager: updating Design and plan documents…');
+    expect(output(update)).toContain('Design updated · E:/project/DESIGN.md');
   });
 
   it('preserves required chat/team prompts and unknown usage', async () => {

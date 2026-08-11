@@ -130,6 +130,6 @@ describe('Project Manager issue tools', () => {
     expect(workerPrompt).toContain('Reviewer signs off on the final result.');
     expect(workerPrompt).toContain('IssueReport with status="in_review"');
     expect(workerPrompt).toContain('Current plan.json');
-    expect(workerPrompt).toContain('Current PROGRESS.md');
+    expect(workerPrompt).toContain('Current DESIGN.md');
   });
 });

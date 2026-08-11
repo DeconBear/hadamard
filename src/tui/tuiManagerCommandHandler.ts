@@ -6,11 +6,11 @@ import { formatErrorLine, formatInfoLine } from './transcript.js';
 export interface TuiManagerStatus {
   model: string;
   readScope: string;
-  mirrorProgressToWorkspace: boolean;
+  mirrorDesignToWorkspace: boolean;
   milestones: number;
   today: number;
   upcoming: number;
-  progressChars: number | null;
+  designChars: number | null;
 }
 
 export interface TuiManagerServicePort {
@@ -29,7 +29,7 @@ export interface TuiManagerServicePort {
   ): Promise<{
     text?: string;
     proposals: TeamGraphProposal[];
-    progressPath?: string;
+    designPath?: string;
   }>;
   proposalDiff(proposal: TeamGraphProposal): string[];
   applyProposal(id: string): Promise<{ teamName: string; filePath: string }>;
@@ -85,9 +85,9 @@ export async function runTuiManagerCommand(
       `${A.bold}Manager${A.reset}`,
       `${A.dim}model: ${status.model}${A.reset}`,
       `${A.dim}readScope: ${status.readScope}${A.reset}`,
-      `${A.dim}mirror to workspace: ${status.mirrorProgressToWorkspace ? 'on' : 'off'}${A.reset}`,
+      `${A.dim}mirror to workspace: ${status.mirrorDesignToWorkspace ? 'on' : 'off'}${A.reset}`,
       `${A.dim}plan.json: ${status.milestones} milestones · ${status.today} today · ${status.upcoming} upcoming${A.reset}`,
-      `${A.dim}PROGRESS.md: ${status.progressChars === null ? '(none yet — /manager update)' : `${status.progressChars} chars`}${A.reset}`,
+      `${A.dim}DESIGN.md: ${status.designChars === null ? '(none yet — /manager update)' : `${status.designChars} chars`}${A.reset}`,
       '',
     ]);
     return true;
@@ -144,7 +144,7 @@ export async function runTuiManagerCommand(
     return true;
   }
   if (kind === 'update') {
-    port.appendStatic([...formatInfoLine('Manager: updating progress documents…'), '']);
+    port.appendStatic([...formatInfoLine('Manager: updating Design and plan documents…'), '']);
   }
 
   try {
@@ -186,8 +186,8 @@ export async function runTuiManagerCommand(
         port.appendStatic([...formatInfoLine('Team proposal rejected; no file was written.'), '']);
       }
     }
-    if (kind === 'update' && result.progressPath) {
-      port.appendStatic([...formatInfoLine(`progress updated · ${result.progressPath}`), '']);
+    if (kind === 'update' && result.designPath) {
+      port.appendStatic([...formatInfoLine(`Design updated · ${result.designPath}`), '']);
     }
   } catch (error) {
     port.appendStatic([...formatErrorLine(`manager error: ${errorMessage(error)}`), '']);
