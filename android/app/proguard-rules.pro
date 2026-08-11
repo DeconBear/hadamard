@@ -1,0 +1,3 @@
+-keep class com.tom_roush.pdfbox.** { *; }
+-dontwarn com.tom_roush.pdfbox.**
+-dontwarn sun.security.x509.X509Key
