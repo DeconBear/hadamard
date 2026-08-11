@@ -122,6 +122,7 @@ export function createHadamardGuiHtml(): string {
         <button id="navTeam" class="nav-btn region-nav" data-region="team" aria-label="Agents" title="Agents"><span class="nav-icon">${guiIcon('team')}</span><span>Agents</span></button>
         <button id="navAutomation" class="nav-btn region-nav" data-region="automation" aria-label="Automation" title="Automation"><span class="nav-icon">${guiIcon('automation')}</span><span>Automation</span></button>
         <button id="navPlugins" class="nav-btn region-nav" data-region="plugins" aria-label="Customize" title="Customize"><span class="nav-icon">${guiIcon('plug')}</span><span>Customize</span></button>
+        <button id="navDevices" class="nav-btn region-nav" data-region="devices" aria-label="Devices" title="Devices"><span class="nav-icon">${guiIcon('computer')}</span><span>Devices</span></button>
       </nav>
       <section class="sidebar-recents" id="sidebarRecents" aria-label="Pinned and recent">
         <div class="sidebar-recents-block" id="sidebarPinnedBlock">
@@ -506,6 +507,18 @@ export function createHadamardGuiHtml(): string {
         </div>
       </header>
       <div class="region-body" id="regionPluginsBody"></div>
+    </section>
+    <section class="region hidden" data-region="devices" id="regionDevices" aria-label="Devices">
+      <header class="region-header">
+        <div class="region-titles">
+          <h1>Devices</h1>
+          <p>Private, authenticated links between this computer and your phone</p>
+        </div>
+        <div class="region-actions">
+          <button type="button" id="devicesRefreshBtn" class="pill-btn">Refresh</button>
+        </div>
+      </header>
+      <div class="region-body devices-region-body" id="regionDevicesBody"></div>
     </section>
     <aside class="context-rail hidden" id="contextRail" aria-label="Context panel"></aside>
     <div id="railToast" class="rail-toast hidden" role="status" aria-live="polite"></div>
@@ -1450,6 +1463,29 @@ body[data-theme="dark"] {
   .plugin-detail-hero > .plugin-market-action { grid-column: 1 / -1; justify-self: stretch; }
 }
 .region-empty { margin: 24px auto; color: var(--text-2); font-size: 14px; }
+.devices-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+.device-card { display: grid; gap: 10px; min-width: 0; padding: 15px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); box-shadow: var(--shadow-sm); }
+.device-card-wide { grid-column: 1 / -1; }
+.device-card h2 { margin: 0; font-size: 14px; color: var(--text-1); }
+.device-card-head, .device-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.device-status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px; background: var(--surface-muted); color: var(--text-2); font-size: 11px; }
+.device-status.online { background: color-mix(in srgb, var(--success, #16845b) 14%, transparent); color: var(--success, #16845b); }
+.device-fields { display: grid; gap: 8px; }
+.device-fields label { display: grid; gap: 4px; color: var(--text-2); font-size: 11px; }
+.device-fields label.device-scope { display: flex; }
+.device-fields input[type="text"], .device-fields input[type="number"] { min-width: 0; width: 100%; }
+.device-scopes { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.device-scope { display: inline-flex; gap: 5px; align-items: center; color: var(--text-2); font-size: 11px; }
+.device-meta { display: grid; grid-template-columns: minmax(80px, auto) minmax(0, 1fr); gap: 5px 10px; margin: 0; font-size: 11px; }
+.device-meta dt { color: var(--text-2); }
+.device-meta dd { margin: 0; color: var(--text-1); overflow-wrap: anywhere; font-family: var(--mono); }
+.device-pairing { display: grid; grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); gap: 16px; align-items: center; }
+.device-pairing > * { min-width: 0; }
+.device-pairing img { width: 100%; max-width: 210px; aspect-ratio: 1; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.device-pairing code { display: block; max-width: 100%; max-height: 4.5em; overflow: auto; overflow-wrap: anywhere; word-break: break-all; }
+.device-pairing-code { font: 700 26px/1 var(--mono); letter-spacing: .16em; color: var(--text-1); }
+.device-error { color: var(--danger, #dc2626); font-size: 12px; }
+@media (max-width: 720px) { .device-pairing { grid-template-columns: 1fr; } }
 /* --- Project overview (plan/UI_PLAN §4.1): workspace card wall. --- */
 .project-overview { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-surface); }
 .project-overview > .region-header { background: linear-gradient(180deg, var(--bg-surface) 0%, var(--surface-muted) 100%); border-bottom: 1px solid var(--border); box-shadow: 0 1px 0 rgba(255,255,255,.6); }
@@ -5043,7 +5079,7 @@ const state = {
   detailSidebarWidth: 300,
   gitSelected: null,
   gitTreeExpanded: {},
-  // App shell: which of the 4 primary regions (Project/Team/Automation/Customize)
+  // App shell: which of the 5 primary regions (Project/Team/Automation/Customize/Devices)
   // is visible. Project = the existing chat workbench (default).
   activeRegion: 'project',
   // Within the Project region: 'overview' (workspace card wall) or
@@ -5137,6 +5173,10 @@ const state = {
   skillCatalogData: null,
   skillCatalogQuery: '',
   skillCatalogExpanded: {},
+  // Device Link region: local listener, pairing, discovery, and permissions.
+  devicesData: null,
+  devicePairing: null,
+  deviceDiscoveries: [],
   preferences: { theme: 'system', density: 'comfortable', enterToSend: true, autoScroll: true, developerTools: false, showBranchInComposer: true, showProviderConfigsInComposer: true, showAgentProfilesInComposer: true, showRouterProfilesInComposer: true, useDefaultModelAsFallback: true, showBuiltInSubagents: false, windowsTerminalShell: 'powershell', shortcuts: {} }
 };
 const DEFAULT_SHORTCUTS = {
@@ -14129,6 +14169,11 @@ async function submitText(text) {
   // Client-side slash navigation — open the matching GUI surface instead of
   // only echoing a chat result (parity with /automation).
   const trimmed = text.trim();
+  if (trimmed === '/devices') {
+    await switchRegion('devices');
+    addMessage('command.result', '/devices · opened paired-device settings.');
+    return;
+  }
   if (trimmed === '/automation' || trimmed === '/automation list') {
     await switchRegion('automation');
     addMessage('command.result', '/automation · opened Automation tasks.');
@@ -14389,8 +14434,227 @@ async function switchRegion(name) {
   }
   if (name === 'automation') await renderAutomationRegion();
   else if (name === 'plugins') await renderPluginsRegion(state.pluginsView || 'plugins');
+  else if (name === 'devices') await renderDevicesRegion();
   else if (name === 'team') await renderTeamRegion();
 }
+
+const DEVICE_LINK_SCOPE_LABELS = {
+  'session:browse': 'Browse sessions',
+  'session:send': 'Send messages',
+  'approval:respond': 'Respond to approvals',
+  'file:transfer': 'Transfer files',
+  microphone: 'Share microphone',
+  'audio:live': 'Live audio'
+};
+
+function deviceNode(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function deviceCard(title, wide) {
+  const card = deviceNode('section', 'device-card' + (wide ? ' device-card-wide' : ''));
+  card.appendChild(deviceNode('h2', '', title));
+  return card;
+}
+
+function appendDeviceMeta(card, values) {
+  const list = deviceNode('dl', 'device-meta');
+  values.forEach(function (entry) {
+    list.append(deviceNode('dt', '', entry[0]), deviceNode('dd', '', entry[1] || '—'));
+  });
+  card.appendChild(list);
+}
+
+function deviceScopePicker(selected, idPrefix) {
+  const wrap = deviceNode('div', 'device-scopes');
+  Object.keys(DEVICE_LINK_SCOPE_LABELS).forEach(function (scope) {
+    const label = deviceNode('label', 'device-scope');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.dataset.deviceScope = scope;
+    input.id = idPrefix + '-' + scope.replace(/[^a-z]/g, '-');
+    input.checked = selected.indexOf(scope) !== -1;
+    label.append(input, document.createTextNode(DEVICE_LINK_SCOPE_LABELS[scope]));
+    wrap.appendChild(label);
+  });
+  return wrap;
+}
+
+function selectedDeviceScopes(container) {
+  return Array.from(container.querySelectorAll('input[data-device-scope]:checked')).map(function (input) {
+    return input.dataset.deviceScope;
+  });
+}
+
+async function deviceApi(path, options) {
+  const init = Object.assign({}, options || {});
+  if (init.body && typeof init.body !== 'string') {
+    init.headers = Object.assign({}, init.headers || {}, { 'content-type': 'application/json' });
+    init.body = JSON.stringify(init.body);
+  }
+  const response = await api(path, init);
+  const payload = await response.json().catch(function () { return {}; });
+  if (!response.ok) throw new Error(payload.error || ('Device Link request failed (' + response.status + ').'));
+  return payload;
+}
+
+function deviceAction(label, className, action) {
+  const button = deviceNode('button', className || 'secondary-btn', label);
+  button.type = 'button';
+  button.addEventListener('click', async function () {
+    button.disabled = true;
+    try { await action(); } catch (error) { state.devicesData = { available: true, error: error.message || String(error) }; await renderDevicesRegion(false); }
+    finally { button.disabled = false; }
+  });
+  return button;
+}
+
+async function renderDevicesRegion(reload) {
+  const body = el('regionDevicesBody');
+  if (!body) return;
+  if (reload !== false) {
+    body.replaceChildren(deviceNode('p', 'region-empty', 'Loading Device Link…'));
+    try { state.devicesData = await deviceApi('/api/devices'); }
+    catch (error) { state.devicesData = { available: true, error: error.message || String(error) }; }
+  }
+  const data = state.devicesData || {};
+  body.textContent = '';
+  if (data.available === false) {
+    body.appendChild(deviceNode('p', 'region-empty', data.reason || 'Device Link is unavailable.'));
+    return;
+  }
+  const grid = deviceNode('div', 'devices-grid');
+  if (data.error) grid.appendChild(deviceNode('p', 'device-error device-card-wide', data.error));
+  const diagnostics = data.diagnostics || { state: 'stopped', discovery: 'stopped', pairedDevices: 0 };
+
+  const identityCard = deviceCard('This computer');
+  appendDeviceMeta(identityCard, [
+    ['Name', data.identity?.name],
+    ['Device ID', data.identity?.deviceId],
+    ['TLS fingerprint', data.identity?.certificateFingerprint]
+  ]);
+  grid.appendChild(identityCard);
+
+  const serverCard = deviceCard('Connection service');
+  const serverHead = deviceNode('div', 'device-card-head');
+  const status = deviceNode('span', 'device-status' + (diagnostics.state === 'listening' ? ' online' : ''), diagnostics.state || 'stopped');
+  serverHead.append(deviceNode('span', 'muted', diagnostics.discovery === 'advertising' ? 'Visible on the local network' : 'Local discovery off'), status);
+  serverCard.appendChild(serverHead);
+  const fields = deviceNode('div', 'device-fields');
+  const hostLabel = deviceNode('label', '', 'Bind address');
+  const host = document.createElement('input');
+  host.type = 'text'; host.value = diagnostics.bindAddress || '127.0.0.1'; host.placeholder = '127.0.0.1 or a private LAN IP';
+  hostLabel.appendChild(host);
+  const portLabel = deviceNode('label', '', 'Port (0 chooses a free port)');
+  const port = document.createElement('input');
+  port.type = 'number'; port.min = '0'; port.max = '65535'; port.value = diagnostics.port || 0;
+  portLabel.appendChild(port);
+  const advertiseLabel = deviceNode('label', 'device-scope');
+  const advertise = document.createElement('input'); advertise.type = 'checkbox';
+  advertiseLabel.append(advertise, document.createTextNode('Advertise with mDNS on this LAN'));
+  const advertiseAddressLabel = deviceNode('label', '', 'Advertised IP address');
+  const advertiseAddress = document.createElement('input'); advertiseAddress.type = 'text'; advertiseAddress.placeholder = '192.168.1.20';
+  advertiseAddressLabel.appendChild(advertiseAddress);
+  fields.append(hostLabel, portLabel, advertiseLabel, advertiseAddressLabel);
+  serverCard.appendChild(fields);
+  const serverActions = deviceNode('div', 'device-actions');
+  if (diagnostics.state === 'listening') {
+    serverActions.appendChild(deviceAction('Stop service', 'secondary-btn', async function () {
+      await deviceApi('/api/devices/stop', { method: 'POST' });
+      state.devicePairing = null;
+      await renderDevicesRegion();
+    }));
+  } else {
+    serverActions.appendChild(deviceAction('Start service', 'primary', async function () {
+      await deviceApi('/api/devices/start', { method: 'POST', body: {
+        host: host.value.trim() || undefined,
+        port: Number(port.value || 0),
+        advertise: advertise.checked,
+        advertiseAddress: advertiseAddress.value.trim() || undefined
+      } });
+      await renderDevicesRegion();
+    }));
+  }
+  if (diagnostics.url) serverActions.prepend(deviceNode('code', 'muted', diagnostics.url));
+  serverCard.appendChild(serverActions);
+  if (diagnostics.lastError) serverCard.appendChild(deviceNode('p', 'device-error', diagnostics.lastError));
+  grid.appendChild(serverCard);
+
+  const pairingCard = deviceCard('Pair a phone', true);
+  pairingCard.appendChild(deviceNode('p', 'muted', 'Start the service, select the minimum permissions needed, then scan this one-time QR code on the phone. Confirm the six-digit code on both devices.'));
+  const pairingScopes = deviceScopePicker(['session:browse'], 'pair');
+  pairingCard.appendChild(pairingScopes);
+  pairingCard.appendChild(deviceAction('Create one-time pairing QR', 'primary', async function () {
+    state.devicePairing = await deviceApi('/api/devices/pairing', { method: 'POST', body: { scopes: selectedDeviceScopes(pairingScopes) } });
+    await renderDevicesRegion(false);
+  }));
+  if (state.devicePairing) {
+    const pair = deviceNode('div', 'device-pairing');
+    const image = document.createElement('img'); image.src = state.devicePairing.qrDataUrl; image.alt = 'Device Link pairing QR code';
+    const detail = deviceNode('div', 'device-fields');
+    detail.append(
+      deviceNode('span', 'muted', 'Confirmation code'),
+      deviceNode('strong', 'device-pairing-code', state.devicePairing.offer?.confirmationCode || ''),
+      deviceNode('span', 'muted', 'Expires ' + new Date(state.devicePairing.offer?.expiresAt || 0).toLocaleString()),
+      deviceNode('code', 'muted', state.devicePairing.uri || '')
+    );
+    pair.append(image, detail);
+    pairingCard.appendChild(pair);
+  }
+  grid.appendChild(pairingCard);
+
+  const devices = Array.isArray(data.devices) ? data.devices : [];
+  const pairedCard = deviceCard('Paired devices', true);
+  if (!devices.length) pairedCard.appendChild(deviceNode('p', 'muted', 'No phones have been paired yet.'));
+  devices.forEach(function (device, index) {
+    const card = deviceCard(device.name || 'Unnamed device');
+    appendDeviceMeta(card, [
+      ['Device ID', device.deviceId],
+      ['TLS fingerprint', device.certificateFingerprint],
+      ['Paired', device.pairedAt ? new Date(device.pairedAt).toLocaleString() : '—'],
+      ['Last seen', device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : 'Never'],
+      ['State', device.revokedAt ? 'Revoked' : 'Trusted']
+    ]);
+    const picker = deviceScopePicker(device.scopes || [], 'paired-' + index);
+    card.appendChild(picker);
+    if (!device.revokedAt) {
+      const actions = deviceNode('div', 'device-actions');
+      actions.append(
+        deviceAction('Save permissions', 'secondary-btn', async function () {
+          await deviceApi('/api/devices/scopes', { method: 'POST', body: { deviceId: device.deviceId, scopes: selectedDeviceScopes(picker) } });
+          await renderDevicesRegion();
+        }),
+        deviceAction('Revoke', 'secondary-btn', async function () {
+          if (!window.confirm('Revoke trust for ' + (device.name || device.deviceId) + '?')) return;
+          await deviceApi('/api/devices/revoke', { method: 'POST', body: { deviceId: device.deviceId } });
+          await renderDevicesRegion();
+        })
+      );
+      card.appendChild(actions);
+    }
+    pairedCard.appendChild(card);
+  });
+  grid.appendChild(pairedCard);
+
+  const discoveryCard = deviceCard('Nearby computers', true);
+  discoveryCard.appendChild(deviceAction('Scan local network', 'secondary-btn', async function () {
+    const result = await deviceApi('/api/devices/discover?timeoutMs=1200');
+    state.deviceDiscoveries = result.devices || [];
+    await renderDevicesRegion(false);
+  }));
+  if (!state.deviceDiscoveries.length) discoveryCard.appendChild(deviceNode('p', 'muted', 'No discovery scan results. Direct IP pairing remains available.'));
+  state.deviceDiscoveries.forEach(function (device) {
+    appendDeviceMeta(discoveryCard, [
+      ['Name', device.name], ['Address', device.host + ':' + device.port], ['Device ID', device.deviceId], ['TLS fingerprint', device.certificateFingerprint]
+    ]);
+  });
+  grid.appendChild(discoveryCard);
+  body.appendChild(grid);
+}
+
 async function renderAutomationRegion() {
   await loadState();
   const body = el('regionAutomationBody');
@@ -26075,6 +26339,7 @@ el('automationRefreshBtn').addEventListener('click', () => { renderAutomationReg
 el('pluginsRefreshBtn').addEventListener('click', () => { renderPluginsRegion(state.pluginsView || 'plugins').catch(console.error); });
 el('pluginsViewPluginsBtn').addEventListener('click', () => { renderPluginsRegion('plugins').catch(console.error); });
 el('pluginsViewSkillsBtn').addEventListener('click', () => { renderPluginsRegion('skills').catch(console.error); });
+el('devicesRefreshBtn').addEventListener('click', () => { renderDevicesRegion().catch(console.error); });
 el('teamNewSquadBtn').addEventListener('click', () => { openNewSquadDialog(); });
 el('teamRunSquadBtn').addEventListener('click', () => { runSelectedSquad().catch(console.error); });
 el('teamEditToggleBtn').addEventListener('click', () => { openTeamSquadEditor(); });

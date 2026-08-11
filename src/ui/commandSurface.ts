@@ -6,6 +6,7 @@ export const HADAMARD_INTERACTIVE_COMMANDS: Record<string, string> = {
   memory: 'Show memory/compact state',
   rules: 'Manage user, project, and path-scoped context rules',
   context: 'Show context usage and configure project instruction files',
+  devices: 'Pair phones and manage Device Link connections',
   cost: 'Show running token + spend totals',
   usage: 'Alias for /cost',
   doctor: 'Run configuration diagnostics',
@@ -152,6 +153,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
   rules: ['list', 'add', 'remove', 'enable', 'disable'],
   memory: ['status', 'list', 'show', 'proposals', 'apply', 'reject'],
   context: ['settings'],
+  devices: ['status', 'start', 'stop', 'pair', 'scopes', 'revoke', 'discover', 'audit'],
 };
 
 /** Description-column text for sub-commands, keyed by `${head} ${sub}`. */
@@ -258,6 +260,14 @@ export const SUBCOMMAND_DESCRIPTIONS: Record<string, string> = {
   'memory apply': 'Apply a proposal after explicit --confirm',
   'memory reject': 'Reject a proposal without changing memory',
   'context settings': 'Choose AGENTS.md, CLAUDE.md compatibility, or both for this project',
+  'devices status': 'Show listener, identity, and paired-device state',
+  'devices start': 'Start the authenticated WSS listener',
+  'devices stop': 'Stop Device Link and local discovery',
+  'devices pair': 'Create a one-time pairing URI and confirmation code',
+  'devices scopes': 'Replace the permissions granted to a paired device',
+  'devices revoke': 'Revoke a paired device after explicit confirmation',
+  'devices discover': 'Discover Device Link computers on the local network',
+  'devices audit': 'Show recent Device Link authorization decisions',
 };
 
 const COMMAND_USAGES: Record<string, string> = {
@@ -289,6 +299,7 @@ const COMMAND_USAGES: Record<string, string> = {
   bridge: '/bridge [run|background|runs|stop|status|history|resume|switch|model|config|setup|off|help]',
   diff: '/diff [show|apply --confirm]',
   context: '/context [settings [agents|claude|both]]',
+  devices: '/devices [status|start [host] [port] [--advertise <ip>]|stop|pair [scope,...]|scopes <device-id> <scope,...>|revoke <device-id> --confirm|discover|audit]',
 };
 
 export function interactiveCommandUsage(command: string): string {

@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 
 import type { AppServer } from '../appServer.js';
-import { parseAppServerRequest } from '../protocol.js';
+import { APP_SERVER_LEGACY_PROTOCOL_VERSION, parseAppServerRequest } from '../protocol.js';
 
 export class StdioAppServerTransport {
   constructor(
@@ -23,7 +23,7 @@ export class StdioAppServerTransport {
         this.write(response);
       } catch (error) {
         this.write({
-          version: 1,
+          version: APP_SERVER_LEGACY_PROTOCOL_VERSION,
           id: '',
           error: {
             code: 'INVALID_REQUEST',

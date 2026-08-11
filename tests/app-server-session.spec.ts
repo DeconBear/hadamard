@@ -18,6 +18,7 @@ describe('AppServer sessions', () => {
     const initialized = await server.handle(request('initialize'));
     expect(initialized.result).toMatchObject({
       protocolVersion: 1,
+      supportedProtocolVersions: [1, 2],
       capabilities: expect.arrayContaining(['sessions', 'checkpoints', 'goals']),
     });
     await expect(server.handle(request('session/list'))).resolves.toMatchObject({

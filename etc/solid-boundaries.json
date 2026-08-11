@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "files": {
     "goal/projectGoalStore.ts": { "maxLines": 1013, "reason": "Existing project-goal store debt." },
-    "gui/hadamardGui.ts": { "maxLines": 10706, "reason": "GUI composition root; Phase 5 delegates bundle inspection and trust behavior to PluginPackageManager and only wires API mutations/runtime reload." },
-    "gui/hadamardGuiAssets.ts": { "maxLines": 26574, "reason": "Byte-stable embedded GUI asset renderer; Phase 5 adds a declarative package trust card while package logic remains in plugin services." },
+    "gui/hadamardGui.ts": { "maxLines": 10732, "reason": "GUI composition root; Phase 6 delegates Device Link routing, validation, command execution, and lifecycle to GuiDeviceLinkHttpController and only wires SDK replacement, slash routing, and shutdown." },
+    "gui/hadamardGuiAssets.ts": { "maxLines": 26839, "reason": "Byte-stable embedded GUI asset renderer; Phase 6 adds the declarative Devices region and navigation while identity, pairing, authorization, storage, and transport logic remain in device-link services." },
     "gui/transcript/clientBundle.ts": { "maxLines": 1127, "reason": "Byte-stable transcript client bundle." },
     "manager/assistantGlobalTools.ts": { "maxLines": 1149, "reason": "Compatibility factory; new domains belong in providers." },
     "parity/bridgeProviders.ts": { "maxLines": 1400, "reason": "Existing compatibility adapter debt." },
@@ -16,7 +16,7 @@
     "runtime/externalSkillCatalog.ts": { "maxLines": 1249, "reason": "Existing external skill catalog debt." },
     "runtime/hadamardCompact.ts": { "maxLines": 1340, "reason": "Existing compact engine debt." },
     "storage-v2/sqliteStorage.ts": { "maxLines": 1232, "reason": "SQLite infrastructure adapter with segregated public stores." },
-    "tui/hadamardTuiController.ts": { "maxLines": 4569, "reason": "TUI composition/state root; Phase 5 renders PluginPackageManager trust snapshots and delegates all mutations to that service." },
+    "tui/hadamardTuiController.ts": { "maxLines": 4606, "reason": "TUI composition/state root; Phase 6 owns Device Link lifecycle wiring while command parsing and mutations are delegated to DeviceLinkCommandService." },
     "types.ts": { "maxLines": 3369, "reason": "Public compatibility type barrel; Phase 5 adds MCP content provenance shared by stdio and HTTP bundle servers." }
   },
   "interfaces": {

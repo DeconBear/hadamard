@@ -247,6 +247,10 @@
     "electron-updater": "^6.8.9",
     "glob": "^13.0.0",
     "lodash-es": "^4.17.23",
+    "multicast-dns": "^7.2.5",
+    "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0",
+    "ws": "^8.21.3",
     "zod": "^4.1.12"
   },
   "optionalDependencies": {
@@ -262,7 +266,10 @@
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.161",
     "@types/lodash-es": "^4.17.12",
+    "@types/multicast-dns": "^7.2.4",
     "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.2",
     "electron-builder": "^26.0.0",
     "rcedit": "^4.0.1",

@@ -33,6 +33,7 @@ async function readTuiSources(): Promise<string> {
     readFile(new URL('src/tui/tuiWorkspaceCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiContextCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiCatalogCommandHandler.ts', root), 'utf8'),
+    readFile(new URL('src/tui/tuiDeviceLinkCommandHandler.ts', root), 'utf8'),
   ])).join('\n');
 }
 
@@ -46,6 +47,7 @@ async function readGuiSources(): Promise<string> {
     readFile(new URL('src/gui/guiSettingsHttpController.ts', root), 'utf8'),
     readFile(new URL('src/gui/guiTeamHttpController.ts', root), 'utf8'),
     readFile(new URL('src/gui/guiAgentHttpController.ts', root), 'utf8'),
+    readFile(new URL('src/gui/guiDeviceLinkHttpController.ts', root), 'utf8'),
   ])).join('\n');
 }
 
