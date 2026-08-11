@@ -21,7 +21,14 @@ import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
 import { getHadamardProjectSessionDirectory } from '../config/projectSessionDirectory.js';
 import { resolveHadamardModelReference } from '../config/modelTiers.js';
 import { agentProfileRunOverrides, resolveAgentProfileRun } from '../config/agentProfiles.js';
-import type { DreamExecutionProfileRef } from '../config/projectSettings.js';
+import { readProjectSettings, type DreamExecutionProfileRef } from '../config/projectSettings.js';
+import { CodeActService } from '../codeact/codeActService.js';
+import { createCodeCellTool, CODE_CELL_TOOL_NAME } from '../codeact/codeCellTool.js';
+import {
+  buildAgentModePrompt,
+  filterToolsForExecutionPolicy,
+} from '../codeact/codeActPrompt.js';
+import type { CodeActSettings } from '../codeact/types.js';
 import { findBridgeConfig } from '../parity/bridgeConfigs.js';
 import { buildRouteModelApi } from '../router/modelRouter.js';
 import { recordCompatUsage } from '../compat/diagnostics.js';
@@ -162,6 +169,7 @@ import { migrateAgentProfilesToMarkdown } from '../config/agentDefinitionMigrati
 import { resolveTargetRef } from '../manager/resolveTargetRef.js';
 import { isExternalAgentRuntime, runExternalAgentOnce } from './externalAgentRunner.js';
 import { resolveEffectiveAgentRunOptions } from './effectiveAgentRunOptions.js';
+import { resolveAgentExecutionPolicy } from './agentExecutionPolicy.js';
 import {
   HadamardSkillsApi,
   getDefaultHadamardBundledSkills,
@@ -725,6 +733,8 @@ export class HadamardAgentClient {
     Array<{ taskId: string; text: string }>
   >();
   private readonly durableMemoryUsageSessions = new Set<string>();
+  /** Persistent CodeAct services keyed by normalized project backend settings. */
+  private readonly codeActServices = new Map<string, CodeActService>();
   private readonly sessionRuntimeOverrides = new Map<string, SessionRuntimeOverrides>();
   private readonly backgroundTaskManager: HadamardBackgroundTaskManager;
   private readonly defaultPermissionMode?: CreateAgentSdkOptions['permissionMode'];
@@ -1616,6 +1626,14 @@ export class HadamardAgentClient {
     } catch (error) {
       errors.push(error);
     }
+    for (const service of this.codeActServices.values()) {
+      try {
+        await service.close();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    this.codeActServices.clear();
     try {
       await this.goals.close();
     } catch (error) {
@@ -2774,7 +2792,9 @@ export class HadamardAgentClient {
       : [];
     const mergedTools = filterAgentTools(
       mergeUniqueByName(
-      options.__hadamardUseDefaultTools === false ? [] : this.defaultTools,
+      options.__hadamardUseDefaultTools === false || options.inheritDefaultTools === false
+        ? []
+        : this.defaultTools,
       options.tools ?? [],
       ),
       options.__hadamardAllowedTools ?? options.allowedTools,
@@ -2809,6 +2829,31 @@ export class HadamardAgentClient {
       );
     }
 
+    const projectSettings = await readProjectSettings(workDir, this.config.homeDir);
+    const requestedMode = options.agentMode === 'inherit' ? undefined : options.agentMode;
+    let ordinaryTools = goalTools.filter(toolDefinition => toolDefinition.name !== CODE_CELL_TOOL_NAME);
+    if (requestedMode === 'single') {
+      const selectedSingleTools = new Set(
+        options.allowedTools ?? (options.tools ?? []).map(toolDefinition => toolDefinition.name),
+      );
+      ordinaryTools = ordinaryTools.filter(toolDefinition => selectedSingleTools.has(toolDefinition.name));
+    }
+    const executionPolicy = resolveAgentExecutionPolicy({
+      nodeMode: requestedMode,
+      projectMode: projectSettings.agentMode,
+      ordinaryTools: ordinaryTools.map(toolDefinition => toolDefinition.name),
+      codeActEnabled: projectSettings.codeAct.enabled,
+    });
+    if (executionPolicy.actionSpace === 'code-cell' || executionPolicy.actionSpace === 'hybrid') {
+      const codeActService = this.resolveCodeActService(projectSettings.codeAct);
+      goalTools = filterToolsForExecutionPolicy(
+        [...ordinaryTools, createCodeCellTool({ service: codeActService, hostTools: ordinaryTools })],
+        executionPolicy,
+      );
+    } else {
+      goalTools = filterToolsForExecutionPolicy(ordinaryTools, executionPolicy);
+    }
+
     // Collect tool prompts for system prompt assembly
     const toolPromptParts = await collectToolPrompts(goalTools, {
       workDir,
@@ -2820,12 +2865,18 @@ export class HadamardAgentClient {
       [
         ...(augmentations?.systemPromptParts ?? []),
         ...(goalPromptPart ? [goalPromptPart] : []),
+        buildAgentModePrompt(executionPolicy, {
+          hostCapabilities: executionPolicy.actionSpace === 'hybrid'
+            ? ordinaryTools.map(toolDefinition => toolDefinition.name)
+            : [],
+        }),
         ...toolPromptParts,
       ],
     );
 
-    const runMaxToolIterations =
-      options.__hadamardMaxToolIterations ?? options.maxToolIterations;
+    const runMaxToolIterations = executionPolicy.turnPolicy === 'single'
+      ? 1
+      : options.__hadamardMaxToolIterations ?? options.maxToolIterations;
     const runtimeConfig =
       runMaxToolIterations || workDir !== this.config.workDir
         ? {
@@ -5311,6 +5362,9 @@ export class HadamardAgentClient {
       : options.signal;
     return {
       ...options,
+      agentMode: options.agentMode && options.agentMode !== 'inherit'
+        ? options.agentMode
+        : definition.agentMode ?? options.agentMode,
       systemPrompt: effective.systemPrompt,
       model: options.model ?? definition.model,
       effort: effective.effort,
@@ -5344,6 +5398,15 @@ export class HadamardAgentClient {
       __hadamardWorkDir: options.workDir ?? definition.cwd,
       __hadamardInitialPrompt: definition.initialPrompt,
     };
+  }
+
+  private resolveCodeActService(settings: CodeActSettings): CodeActService {
+    const key = JSON.stringify(settings, Object.keys(settings).sort());
+    const existing = this.codeActServices.get(key);
+    if (existing) return existing;
+    const service = new CodeActService(settings);
+    this.codeActServices.set(key, service);
+    return service;
   }
 
   private mergeSkillRunOptions(

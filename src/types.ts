@@ -12,6 +12,7 @@ import type {
 } from './provider/types.js';
 import type { z } from 'zod';
 import type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
+import type { AgentMode, AgentNodeMode } from './runtime/agentExecutionPolicy.js';
 export type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
 export interface LoadedJsonConfigData {
   path: string;
@@ -516,6 +517,8 @@ export interface HadamardAgentDefinition {
   description: string;
   systemPrompt?: string;
   model?: string;
+  /** Reusable Agent execution mode. Single is intentionally node-only. */
+  agentMode?: AgentMode;
   /** Referenced provider/bridge config name (unified store, S1a) — the definition runs on this config's own model client instead of inheriting the session's. */
   bridgeConfig?: string;
   /**
@@ -569,6 +572,7 @@ export interface HadamardAgentDefinitionSummary {
   name: string;
   description: string;
   model?: string;
+  agentMode: AgentMode;
   /** Present when the definition pins a provider config (unified store). */
   bridgeConfig?: string;
   /** False = main-chat-only agent (not delegatable via the Agent/Task tool). */
@@ -1005,6 +1009,10 @@ export interface AgentRunOptions {
   tools?: AgentToolDefinition[];
   mcpServers?: AgentMcpServerDefinition[];
   model?: string;
+  /** Per-run/node execution mode. Single is intended for Workflow/Graph nodes. */
+  agentMode?: AgentNodeMode | 'inherit';
+  /** Disable the SDK default tool catalog for bounded node executions. */
+  inheritDefaultTools?: boolean;
   /** Override the model client for this run — used by the /model router for cross-provider routing. */
   modelApi?: CreateAgentSdkOptions['modelApi'];
   maxTokens?: number;
@@ -2720,6 +2728,8 @@ export interface WorkflowAgentOptions {
   isolation?: 'worktree';
   agentType?: string;
   tools?: string[];
+  /** Dynamic workflow nodes support all four node modes. */
+  agentMode?: AgentNodeMode | 'inherit';
 }
 
 export interface WorkflowBudget {
@@ -2873,6 +2883,8 @@ export interface WorkflowNode {
   condition?: string;
   runtime?: string;
   model?: string;
+  /** Agent-node execution mode; omit/inherit to use the referenced Agent/project default. */
+  agentMode?: AgentNodeMode | 'inherit';
   /** Agent nodes: specialist system prompt (separate from the task `prompt`). */
   systemPrompt?: string;
   /** Agent nodes: core-tool whitelist. Absent → no tools (legacy workflow behavior). */
@@ -2896,6 +2908,8 @@ export interface WorkflowNode {
 
 export interface TeamMember {
   model: string;
+  /** Reusable team members use Agent modes; Single remains graph/workflow-node-only. */
+  agentMode?: AgentMode;
   provider?: 'anthropic' | 'openai';
   baseURL?: string;
   apiKey?: string;
@@ -2966,9 +2980,11 @@ export type TeamGraphReturnMode = 'void' | 'payload';
  * v3: `kind: 'task'` (exactly one per graph) dispatches `run.prompt`; `kind:
  * 'return'` (exactly one Caller Exit) terminates the run. Absent `kind` → `agent` (v2 compat).
  */
-export interface TeamGraphNode extends Omit<TeamMember, 'model'> {
+export interface TeamGraphNode extends Omit<TeamMember, 'model' | 'agentMode'> {
   /** Agent nodes require a model; task/return ports omit it. */
   model?: string;
+  /** Canonical execution mode for agent nodes. */
+  agentMode?: AgentNodeMode | 'inherit';
   /** v3 node kind. Default `agent`. */
   kind?: TeamGraphNodeKind;
   /**

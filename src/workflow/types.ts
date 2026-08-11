@@ -1,4 +1,5 @@
 import type { AgentEvent, AgentMcpServerDefinition, AgentToolDefinition } from '../types.js';
+import type { AgentNodeMode } from '../runtime/agentExecutionPolicy.js';
 
 export interface WorkflowStepDefinition {
   id: string;
@@ -14,8 +15,10 @@ export interface WorkflowStepDefinition {
   skillDirectories?: string[];
   model?: string | null;
   systemPrompt?: string;
-  /** Run mode: 'react' (default, full tool-using loop) or 'single' (one-shot answer, no tools). */
+  /** @deprecated Use agentMode. */
   mode?: 'react' | 'single';
+  /** Node execution mode. Single permits zero or one selected ordinary tool. */
+  agentMode?: AgentNodeMode | 'inherit';
   dependsOn: string[];
   retries?: number;
   timeoutMs?: number;

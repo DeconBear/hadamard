@@ -112,7 +112,7 @@ export class TuiInputController {
     this.options.view.render();
   }
 
-  private finishSelection(value: string | undefined): void {
+  private finishSelection(value: string | string[] | undefined): void {
     const active = this.options.dialogs.selection();
     if (!active) return;
     this.options.dialogs.setSelection(null);
@@ -133,8 +133,19 @@ export class TuiInputController {
       dialog.selected = Math.max(dialog.selected - 8, 0);
     } else if (name === 'pagedown') {
       dialog.selected = Math.max(Math.min(dialog.selected + 8, filtered.length - 1), 0);
+    } else if (name === 'space' || key.sequence === ' ') {
+      if (dialog.multiple) {
+        const id = filtered[dialog.selected]?.id;
+        if (id) {
+          dialog.checkedIds ??= new Set<string>();
+          if (dialog.checkedIds.has(id)) dialog.checkedIds.delete(id);
+          else dialog.checkedIds.add(id);
+        }
+      }
     } else if (name === 'return' || name === 'enter') {
-      this.finishSelection(filtered[dialog.selected]?.id);
+      this.finishSelection(dialog.multiple
+        ? [...(dialog.checkedIds ?? [])]
+        : filtered[dialog.selected]?.id);
       return;
     } else if (name === 'escape' || (name === 'c' && key.ctrl)) {
       this.finishSelection(undefined);
