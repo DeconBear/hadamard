@@ -3482,9 +3482,16 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       homeDir: store.homeDir,
       configuredDirs,
     });
+    const { PluginPackageManager } = await import('../plugins/pluginManager.js');
+    const packageManager = new PluginPackageManager(
+      path.join(sdk.config.homeDir, 'plugin-packages'),
+      process.env.HADAMARD_PLUGIN_REGISTRY,
+      sdk.config.effectivePolicy,
+    );
+    const packages = await packageManager.snapshot();
     const selected = await selectItem({
       title: 'Plugins',
-      subtitle: 'Built-in managed integrations and local plugin manifests',
+      subtitle: 'Built-in integrations, trusted packages, and local manifests',
       items: [
         ...managed.map(plugin => ({
           id: `managed:${plugin.id}`,
@@ -3497,6 +3504,12 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           label: plugin.name,
           description: [plugin.version, plugin.capabilities.join(', ')].filter(Boolean).join(' · '),
           detail: `${plugin.description ?? ''} ${plugin.path}`,
+        })),
+        ...packages.map(plugin => ({
+          id: `package:${plugin.id}`,
+          label: `${plugin.name} ${plugin.version}`,
+          description: `${plugin.packageType} · ${!plugin.trusted ? 'review required' : plugin.enabled ? 'enabled' : 'disabled'}`,
+          detail: `${plugin.commit ?? 'local/unverified'} · ${plugin.capabilities.join(', ')}`,
         })),
       ],
     });
@@ -3540,6 +3553,36 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           ...formatInfoLine('Use GUI Customize for provider URLs, API keys, browser profiles, and health checks.'),
           '',
         ]);
+      }
+      return;
+    }
+    if (selected?.startsWith('package:')) {
+      const id = selected.slice('package:'.length);
+      const plugin = packages.find(item => item.id === id);
+      if (!plugin) return;
+      appendStatic([
+        `${A.cyan}${plugin.name}${A.reset} ${plugin.version}`,
+        `${A.dim}source: ${plugin.source}${plugin.commit ? ` @ ${plugin.commit}` : ''}${A.reset}`,
+        `${A.dim}startup: ${plugin.startupCommands.join(' | ') || 'none'}${A.reset}`,
+        `${A.dim}environment: ${plugin.environmentVariables.join(', ') || 'none declared'}${A.reset}`,
+        `${A.dim}network: ${plugin.network ? 'requested' : 'not requested'} · files: ${plugin.fileAccess.join(' + ') || 'none'}${A.reset}`,
+        `${A.dim}capabilities: ${plugin.capabilities.join(', ') || 'none'}${A.reset}`,
+        '',
+      ]);
+      const action = await selectItem({
+        title: `${plugin.name} trust and activation`,
+        subtitle: 'Trust is bound to exact version, integrity, and capabilities',
+        searchable: false,
+        items: [
+          ...(!plugin.trusted ? [{ id: 'trust', label: 'Trust exact version', description: 'Approve the displayed startup and capability set' }] : []),
+          ...(plugin.trusted ? [{ id: plugin.enabled ? 'disable' : 'enable', label: plugin.enabled ? 'Disable' : 'Enable', description: 'Reload the SDK after changing activation' }] : []),
+          { id: 'remove', label: 'Remove package', description: 'Uninstall package and revoke trust' },
+        ],
+      });
+      if (action) {
+        const result = await packageManager.execute(`${action} ${plugin.id}`);
+        if (result.runtimeChanged) await withSpinner('reloading plugin packages', reloadCleanSdk);
+        appendStatic([...formatInfoLine(result.message), '']);
       }
       return;
     }
@@ -4293,7 +4336,9 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             process.env.HADAMARD_PLUGIN_REGISTRY,
             sdk.config.effectivePolicy,
           );
-          return manager.execute(commandArgs);
+          const result = await manager.execute(commandArgs);
+          if (result.runtimeChanged) await reloadCleanSdk();
+          return result;
         },
         rulesCommand: async commandArgs => {
           const { RuleCommandService } = await import('../context/ruleCommandService.js');

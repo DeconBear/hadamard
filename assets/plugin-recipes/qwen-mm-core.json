@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "qwen-mm-plugins-core",
+  "name": "Qwen-MM-Plugins Core",
+  "enabled": false,
+  "source": {
+    "repository": "https://github.com/QwenLM/Qwen-MM-Plugins",
+    "commit": "8d6ea5a1f658260743307c52c2024ec87599fa48",
+    "subdirectory": "src/capabilities/core"
+  },
+  "manifest": ".codex-plugin/plugin.json",
+  "install": {
+    "checkout": "git clone https://github.com/QwenLM/Qwen-MM-Plugins && git -C Qwen-MM-Plugins checkout 8d6ea5a1f658260743307c52c2024ec87599fa48",
+    "hadamard": "/plugin install Qwen-MM-Plugins/src/capabilities/core --source=https://github.com/QwenLM/Qwen-MM-Plugins --commit=8d6ea5a1f658260743307c52c2024ec87599fa48"
+  },
+  "notes": [
+    "Installation is disabled by default and never runs these commands automatically.",
+    "Hadamard rewrites the upstream uvx git @main reference to the trusted source commit before starting MCP.",
+    "Review startup, environment, network, and file capabilities with /plugin inspect qwen-mm-plugins-core before trust and enable."
+  ]
+}

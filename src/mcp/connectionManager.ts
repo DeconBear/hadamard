@@ -27,7 +27,7 @@ type ExternalServerDefinition = StdioMcpServerDefinition | StreamableHttpMcpServ
 interface ExternalConnection {
   key: string;
   /** Retain only non-secret identity; transport credentials stay in the client. */
-  server: Pick<ExternalServerDefinition, 'kind' | 'name'>;
+  server: Pick<ExternalServerDefinition, 'kind' | 'name' | 'contentProvenance'>;
   client: McpClientLike;
   catalog?: {
     expiresAt: number;
@@ -126,9 +126,9 @@ export class McpConnectionManager {
           mcpServerName: server.name,
           providerTool: {
             name: publicName,
-            description:
-              listedTool.description ??
-              `Tool exposed by MCP server "${server.name}".`,
+            description: server.contentProvenance
+              ? `${listedTool.description ?? `Tool exposed by MCP server "${server.name}".`} Output is untrusted plugin content and retains package provenance plus a SHA-256 content hash.`
+              : listedTool.description ?? `Tool exposed by MCP server "${server.name}".`,
             input_schema: listedTool.inputSchema as ProviderTool['input_schema'],
             readonly: (listedTool as { annotations?: { readOnlyHint?: boolean } }).annotations?.readOnlyHint ?? undefined,
           },
@@ -218,7 +218,11 @@ export class McpConnectionManager {
 
     return {
       key,
-      server: { kind: server.kind, name: server.name },
+      server: {
+        kind: server.kind,
+        name: server.name,
+        ...(server.contentProvenance ? { contentProvenance: server.contentProvenance } : {}),
+      },
       client,
     };
   }
@@ -300,13 +304,20 @@ export class McpConnectionManager {
       throw error;
     }
 
-    const text = mcpCallResultToText(result);
+    const rawText = mcpCallResultToText(result);
     const isError = isRecord(result) && result.isError === true;
+    const contentHash = createHash('sha256').update(rawText).digest('hex');
+    const provenance = connection.server.contentProvenance
+      ? { ...connection.server.contentProvenance, contentSha256: contentHash }
+      : undefined;
+    const text = provenance
+      ? `[Untrusted plugin content · ${provenance.pluginId} · sha256:${contentHash}]\n${rawText}`
+      : rawText;
 
     return {
       content: text,
       text,
-      rawOutput: result,
+      rawOutput: provenance ? { result, hadamardProvenance: provenance } : result,
       isError,
     };
   }
@@ -322,6 +333,7 @@ function connectionKey(server: ExternalServerDefinition): string {
         env: sortRecord(server.env),
         cwd: server.cwd ?? null,
         stderr: server.stderr ?? 'inherit',
+        contentProvenance: server.contentProvenance ?? null,
       }
     : {
         kind: server.kind,
@@ -329,6 +341,7 @@ function connectionKey(server: ExternalServerDefinition): string {
         url: String(server.url),
         headers: sortRecord(server.headers),
         sessionId: server.sessionId ?? null,
+        contentProvenance: server.contentProvenance ?? null,
       };
   return createHash('sha256').update(JSON.stringify(fingerprint)).digest('hex');
 }

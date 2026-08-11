@@ -1427,6 +1427,11 @@ body[data-theme="dark"] {
 .plugin-local-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; }
 .plugin-local-row strong { font-size: 12.5px; color: var(--text-1); }
 .plugin-local-row small { display: block; color: var(--text-2); margin-top: 2px; }
+.plugin-package-card { display: block; }
+.plugin-package-card > summary { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; cursor: pointer; list-style: none; }
+.plugin-package-card > summary::-webkit-details-marker { display: none; }
+.plugin-package-facts { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.plugin-package-facts p { margin: 4px 0; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 #regionPluginsBody.is-updating { pointer-events: none; opacity: .72; }
 @media (prefers-color-scheme: dark) {
   .rl-chip.success { color: #8fd2aa; border-color: #315c44; background: #193326; }
@@ -15743,7 +15748,7 @@ async function renderManagedPluginCatalog(bodyId, useCached) {
   const summary = document.createElement('span');
   summary.className = 'plugin-catalog-summary';
   const ready = data.summary?.ready || 0;
-  summary.textContent = ready + ' ready · ' + (data.plugins || []).length + ' built in';
+  summary.textContent = ready + ' ready · ' + (data.plugins || []).length + ' built in · ' + (data.packages || []).length + ' packages';
   const search = document.createElement('input');
   search.type = 'search';
   search.className = 'skill-catalog-search';
@@ -15823,6 +15828,80 @@ async function renderManagedPluginCatalog(bodyId, useCached) {
       empty.className = 'region-empty';
       empty.textContent = 'No plugins match your search.';
       catalog.appendChild(empty);
+    }
+    const packages = (data.packages || []).filter(plugin =>
+      !query || [plugin.name, plugin.id, plugin.source, plugin.commit, plugin.packageType]
+        .some(value => String(value || '').toLowerCase().includes(query)));
+    if (packages.length) {
+      const packageSection = document.createElement('section');
+      packageSection.className = 'plugin-section';
+      const packageHead = document.createElement('div');
+      packageHead.className = 'plugin-section-heading';
+      const packageTitle = document.createElement('h2');
+      packageTitle.textContent = 'Trusted packages';
+      const packageHelp = document.createElement('span');
+      packageHelp.textContent = 'Review exact provenance and capabilities before activation';
+      packageHead.append(packageTitle, packageHelp);
+      const packageList = document.createElement('div');
+      packageList.className = 'plugin-local-list';
+      for (const plugin of packages) {
+        const card = document.createElement('details');
+        card.className = 'plugin-local-row plugin-package-card';
+        const heading = document.createElement('summary');
+        const copy = document.createElement('div');
+        const name = document.createElement('strong');
+        name.textContent = plugin.name + ' ' + plugin.version;
+        const source = document.createElement('small');
+        source.textContent = plugin.packageType + ' · ' + (plugin.commit || 'local/unverified') + ' · ' + plugin.source;
+        copy.append(name, source);
+        const stateChip = document.createElement('span');
+        stateChip.className = 'rl-chip';
+        stateChip.textContent = !plugin.trusted ? 'Review required' : plugin.enabled ? 'Enabled' : 'Disabled';
+        heading.append(copy, stateChip);
+        const facts = document.createElement('div');
+        facts.className = 'plugin-package-facts';
+        const factRows = [
+          ['Startup', (plugin.startupCommands || []).join('\\n') || 'No process'],
+          ['Environment', (plugin.environmentVariables || []).join(', ') || 'None declared'],
+          ['Network', plugin.network ? 'Requested' : 'Not requested'],
+          ['Files', (plugin.fileAccess || []).join(' + ') || 'None requested'],
+          ['Capabilities', (plugin.capabilities || []).join(', ') || 'None'],
+        ];
+        for (const [label, value] of factRows) {
+          const row = document.createElement('p');
+          const strong = document.createElement('strong');
+          strong.textContent = label + ': ';
+          row.append(strong, document.createTextNode(value));
+          facts.appendChild(row);
+        }
+        const actions = document.createElement('div');
+        actions.className = 'plugin-detail-actions';
+        const primary = document.createElement('button');
+        primary.type = 'button';
+        primary.className = 'plugin-market-action';
+        primary.textContent = !plugin.trusted ? 'Trust exact version' : plugin.enabled ? 'Disable' : 'Enable';
+        primary.addEventListener('click', event => {
+          event.preventDefault();
+          mutateManagedPlugin({
+            action: !plugin.trusted ? 'trust' : plugin.enabled ? 'disable' : 'enable',
+            packageId: plugin.id,
+          }, false);
+        });
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'rl-btn';
+        remove.textContent = 'Remove';
+        remove.addEventListener('click', event => {
+          event.preventDefault();
+          mutateManagedPlugin({ action: 'remove', packageId: plugin.id }, false);
+        });
+        actions.append(primary, remove);
+        facts.appendChild(actions);
+        card.append(heading, facts);
+        packageList.appendChild(card);
+      }
+      packageSection.append(packageHead, packageList);
+      catalog.appendChild(packageSection);
     }
     const locals = (data.localPlugins || []).filter(plugin =>
       !query || [plugin.name, plugin.description, plugin.path]
