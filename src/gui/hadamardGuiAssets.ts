@@ -28,6 +28,10 @@ import { PROJECT_STATUSES, PROJECT_STATUS_LABELS } from './projectMeta.js';
 import { renderMarkdown } from './guiMarkdown.js';
 import { detectEditorLanguage, highlightCode } from './guiSyntaxHighlight.js';
 import { getTranscriptClientScript, getTranscriptStyles } from './transcript/index.js';
+import {
+  GUI_SESSION_CENTER_OPEN_CLIENT_SCRIPT,
+  GUI_SESSION_CREATE_CLIENT_SCRIPT,
+} from './guiSessionClientScript.js';
 
 function guiIcon(name: string): string {
   const icons: Record<string, string> = {
@@ -460,7 +464,7 @@ export function createHadamardGuiHtml(): string {
         <button type="button" id="agentProfileCfgReset" class="secondary-btn">Cancel</button>
         <button type="button" id="agentProfileCfgSave" class="primary">Save profile</button>
       </div>
-    
+
             </form>
           </div>
         </div>
@@ -8629,6 +8633,7 @@ function resumeSession(id) {
   sessionResumeQueue = pending.catch(() => undefined);
   return pending;
 }
+${GUI_SESSION_CREATE_CLIENT_SCRIPT}
 function setDetailConversationDrawer(open) {
   const sidebar = el('projectDetailSidebar');
   const toggle = el('detailConversationsBtn');
@@ -8757,21 +8762,6 @@ async function submitWorkspace(event) {
   const ok = await switchProject(projectPath);
   el('workspaceStatus').textContent = ok ? '' : (state.lastProjectOpenError || 'Could not open this workspace.');
   if (ok) closeWorkspaceDialog();
-}
-async function createNewSession() {
-  if (state.sessionResumePending) {
-    flashStatus('Wait for the conversation switch to finish.');
-    return;
-  }
-  stashCurrentSessionCache();
-  await api('/api/session/new', { method: 'POST' });
-  transcript.textContent = '';
-  state.toolNodes.clear();
-  state.currentAssistant = null;
-  state.lastHydratedMessages = [];
-  await loadState();
-  state.activeSessionId = state.snapshot?.session?.id || null;
-  switchProjectView('conversation');
 }
 // --- Project overview (plan/UI_PLAN §4.1): workspace card wall. ---
 const PROJECT_ACCENTS = ['#52525b', '#8250df', '#1a7f37', '#bf8700', '#cf222e', '#71717a'];
@@ -9194,28 +9184,7 @@ async function sessionCenterAction(action, item, extra) {
   if (!res.ok) throw new Error(payload.error || ('HTTP ' + res.status));
   return payload;
 }
-async function openSessionCenterItem(item) {
-  try {
-    const payload = await sessionCenterAction('open', item);
-    await loadState();
-    if (item.type === 'agent') {
-      switchProjectView('detail');
-      setProjectDetailTab('agents');
-      return;
-    }
-    if (item.type === 'assistant-global' || item.type === 'assistant-project') {
-      if (item.type === 'assistant-project') switchProjectView('detail');
-      setAssistantScope(item.type === 'assistant-global' ? 'global' : 'project', { refresh: false, force: true });
-      setManagerUiMode('compact');
-      await refreshManagerState(true);
-      return;
-    }
-    if (payload.state) state.snapshot = payload.state;
-    switchProjectView('conversation');
-  } catch (error) {
-    flashStatus('Open failed: ' + (error.message || error));
-  }
-}
+${GUI_SESSION_CENTER_OPEN_CLIENT_SCRIPT}
 function sessionCenterButton(label, handler, opts) {
   const button = document.createElement('button');
   button.type = 'button';
@@ -21748,10 +21717,16 @@ async function sendText(text) {
     const res = await api('/api/send', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text, clientRequestId }),
+      body: JSON.stringify({ text, clientRequestId, sessionId }),
     });
     if (!res.ok || !res.body) {
-      addMessage('error', await res.text());
+      const message = await res.text();
+      if (res.status === 409) {
+        flashStatus(message || 'Conversation switched. Refresh and try again.');
+        void loadState();
+      } else {
+        addMessage('error', message);
+      }
       state.running = false;
       setRunStatus(readyLabel());
       return;
@@ -25912,12 +25887,29 @@ el('sessionCenterBack').addEventListener('click', () => switchProjectView('overv
 el('sessionCenterNew').addEventListener('click', async () => {
   const projectPath = el('sessionCenterProject')?.value || state.snapshot?.workDir;
   if (!projectPath) return;
+  if (state.running) {
+    flashStatus('Stop the current foreground run before starting a new conversation.');
+    return;
+  }
+  if (state.sessionResumePending) {
+    flashStatus('A conversation switch is already in progress.');
+    return;
+  }
+  const requestSequence = ++sessionResumeSequence;
+  setSessionResumePending(true);
   try {
-    await sessionCenterAction('create', null, { type: 'user', projectPath });
-    await loadState();
-    switchProjectView('conversation');
+    const payload = await sessionCenterAction('create', null, { type: 'user', projectPath });
+    if (requestSequence !== sessionResumeSequence) return;
+    if (!payload?.state?.session?.id) {
+      flashStatus('New chat did not return an active conversation.');
+      return;
+    }
+    delete state.transcriptCache[payload.state.session.id];
+    await activateResumedSession(payload.state, requestSequence);
   } catch (error) {
     flashStatus('New chat failed: ' + (error.message || error));
+  } finally {
+    if (requestSequence === sessionResumeSequence) setSessionResumePending(false);
   }
 });
 for (const id of ['sessionCenterProject', 'sessionCenterType', 'sessionCenterStatus', 'sessionCenterArchived']) {

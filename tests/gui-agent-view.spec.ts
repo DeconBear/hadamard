@@ -290,7 +290,7 @@ describe('GUI Project Agent execution view', () => {
     expect(js).toContain("api('/api/rail-live')");
     expect(js).toContain("'/api/run/events?runId='");
     expect(js).toContain('if (event.sequence <= state.activeRunSequence) return;');
-    expect(js).toContain('body: JSON.stringify({ text, clientRequestId })');
+    expect(js).toContain('body: JSON.stringify({ text, clientRequestId, sessionId })');
     expect(js).toContain('async function initializeGui()');
     expect(js).toContain('await recoverDisconnectedRun(sessionId, true');
     expect(js).toContain("T.applyEvent({ type: 'response.retry' })");
@@ -336,6 +336,34 @@ describe('GUI Project Agent execution view', () => {
       js.indexOf('function handleEvent(event)'),
     );
     expect(send).toContain('if (state.sessionResumePending)');
+  });
+
+  it('serializes new-conversation creation like resume before enabling sends', () => {
+    const js = createHadamardGuiClientScript();
+    const create = js.slice(
+      js.indexOf('async function performCreateSession(requestSequence)'),
+      js.indexOf('function createNewSession()'),
+    );
+    const entry = js.slice(
+      js.indexOf('function createNewSession()'),
+      js.indexOf('function setDetailConversationDrawer', js.indexOf('function createNewSession()')),
+    );
+    const send = js.slice(
+      js.indexOf('async function sendText(text)'),
+      js.indexOf('function handleEvent(event)'),
+    );
+
+    expect(entry).toContain('if (state.running)');
+    expect(entry).toContain('if (state.sessionResumePending)');
+    expect(entry).toContain('.then(() => performCreateSession(requestSequence))');
+    expect(create).toContain("api('/api/session/new'");
+    expect(create).toContain('delete state.transcriptCache[nextSessionId]');
+    expect(create.indexOf('const snapshot = await res.json()')).toBeLessThan(
+      create.indexOf('await activateResumedSession(snapshot, requestSequence)'),
+    );
+    expect(create).toContain("api('/api/session/active')");
+    expect(send).toContain('sessionId');
+    expect(send).toContain('res.status === 409');
   });
 
   it('forces the transcript to the bottom after the conversation view becomes visible', () => {
