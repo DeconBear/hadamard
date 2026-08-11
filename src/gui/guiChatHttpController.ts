@@ -7,7 +7,12 @@ export type GuiPermissionDecision = 'allow' | 'always' | 'always-user' | 'deny';
 
 export interface GuiChatHttpControllerPort {
   runtimeMutationInProgress(): boolean;
-  send(input: string, res: ServerResponse, clientRequestId?: string): Promise<void>;
+  send(
+    input: string,
+    res: ServerResponse,
+    clientRequestId?: string,
+    expectedSessionId?: string,
+  ): Promise<void>;
   sendIssue(id: string, agentConfig: string | undefined, res: ServerResponse): Promise<void>;
   submitPendingInput(input: string, mode: GuiPendingInputMode): {
     active: boolean;
@@ -41,13 +46,16 @@ export function registerGuiChatHttpController(
       && CLIENT_REQUEST_ID.test(body.clientRequestId)
       ? body.clientRequestId
       : undefined;
+    const expectedSessionId = typeof body.sessionId === 'string' && body.sessionId.trim()
+      ? body.sessionId.trim()
+      : undefined;
     if (!input) return json(res, 400, { error: 'Missing text' });
     const issueStart = input.match(/^\/issues\s+start\s+(\S+)(?:\s+(\S+))?\s*$/iu);
     if (issueStart) {
       await port.sendIssue(issueStart[1]!, issueStart[2], res);
       return;
     }
-    await port.send(input, res, clientRequestId);
+    await port.send(input, res, clientRequestId, expectedSessionId);
   });
 
   router.route('POST', '/api/session/input', async (req, res) => {

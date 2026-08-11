@@ -109,5 +109,3 @@ export function buildTodoReminderText(todos: ReturnType<typeof getHadamardTodoSn
     '</system-reminder>',
   ].join('\n');
 }
-
-

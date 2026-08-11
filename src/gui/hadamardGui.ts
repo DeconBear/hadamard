@@ -369,6 +369,7 @@ import {
 import { GuiHttpRouter, json, readJson, text } from './guiHttpRouter.js';
 import { registerGuiShellHttpController } from './guiShellHttpController.js';
 import { registerGuiChatHttpController } from './guiChatHttpController.js';
+import { rejectMismatchedGuiSession } from './guiSessionHttpGuard.js';
 import { registerGuiSettingsHttpController } from './guiSettingsHttpController.js';
 import { registerGuiTeamHttpController } from './guiTeamHttpController.js';
 import { registerGuiAgentHttpController } from './guiAgentHttpController.js';
@@ -6617,7 +6618,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }
   }
 
-  async function streamRun(input: string, res: ServerResponse, clientRequestId?: string): Promise<void> {
+  async function streamRun(input: string, res: ServerResponse, clientRequestId?: string, expectedSessionId?: string): Promise<void> {
+    if (rejectMismatchedGuiSession(res, expectedSessionId, session.id)) return;
     let nextEventSequence = 0;
     const replayEvents: Array<GuiRunEvent & { sequence: number }> = [];
     const send = (event: GuiRunEvent) => {
@@ -7389,13 +7391,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       else session.followUp(input);
       return { active: true, pendingInputCount: session.pendingInputCount };
     },
-    createSession: async () => {
-      await withRuntimeMutation(async () => {
-        session = await createGuiSession({ model: options.model, permissionMode });
-        await restoreSessionRuntimeSelection();
-      });
+    createSession: () => withRuntimeMutation(() => enqueueServerSessionResume(async () => {
+      session = await createGuiSession({ model: options.model, permissionMode });
+      await restoreSessionRuntimeSelection();
       return state();
-    },
+    })),
     resumeSession: req => withRuntimeMutation(() => enqueueServerSessionResume(async () => {
       const body = await readJson(req);
       const id = typeof body.id === 'string' ? body.id : '';
@@ -9915,7 +9915,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           if (!['create', 'open', 'rename', 'pin', 'archive', 'restore', 'delete'].includes(action)) {
             return json(res, 400, { error: 'Unknown Session Center action.' });
           }
-          const result = await withRuntimeMutation(async () => {
+          const result = await withRuntimeMutation(() => enqueueServerSessionResume(async () => {
             const catalog = await createSessionCenterCatalog();
             const item = await catalog.action({
               action: action as import('../storage/sessionCatalog.js').SessionCatalogAction,
@@ -9971,7 +9971,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             }
             invalidateHeavyState();
             return { ok: true, item, state: shouldOpen ? await state() : undefined };
-          });
+          }));
           return json(res, 200, result);
         } catch (error) {
           return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
