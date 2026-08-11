@@ -228,4 +228,3 @@ export function isAnthropicAPI(baseURL?: string): boolean {
     return true;
   }
 }
-
