@@ -286,7 +286,7 @@ export async function resolveRuntimeConfig(
     modelTiers,
     maxTokens: options.maxTokens ?? 32000,
     temperature: options.temperature,
-    runTimeoutMs: resolvePositiveTimeout(options.runTimeoutMs, 15 * 60_000, 'runTimeoutMs'),
+    runTimeoutMs: resolveOptionalPositiveTimeout(options.runTimeoutMs, 'runTimeoutMs'),
     toolTimeoutMs: resolvePositiveTimeout(options.toolTimeoutMs, 2 * 60_000, 'toolTimeoutMs'),
     hookTimeoutMs: resolvePositiveTimeout(options.hookTimeoutMs, 30_000, 'hookTimeoutMs'),
     mcpTimeoutMs: resolvePositiveTimeout(options.mcpTimeoutMs, 2 * 60_000, 'mcpTimeoutMs'),
@@ -397,4 +397,15 @@ function resolvePositiveTimeout(
     throw new ConfigurationError(`${name} must be a positive safe integer.`);
   }
   return resolved;
+}
+
+function resolveOptionalPositiveTimeout(
+  value: number | undefined,
+  name: string,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new ConfigurationError(`${name} must be a positive safe integer.`);
+  }
+  return value;
 }

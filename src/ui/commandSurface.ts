@@ -46,6 +46,14 @@ export const HADAMARD_INTERACTIVE_COMMANDS: Record<string, string> = {
   exit: 'Quit',
 };
 
+/** Commands intentionally owned by terminal interaction rather than GUI surfaces. */
+export const TUI_ONLY_INTERACTIVE_COMMANDS = new Set(['resume', 'exit']);
+
+export const HADAMARD_GUI_INTERACTIVE_COMMANDS: Record<string, string> = Object.fromEntries(
+  Object.entries(HADAMARD_INTERACTIVE_COMMANDS)
+    .filter(([name]) => !TUI_ONLY_INTERACTIVE_COMMANDS.has(name)),
+);
+
 export type InteractiveCommandRunPolicy = 'during-run' | 'idle-only';
 
 /**

@@ -28,6 +28,8 @@ import {
   buildAssistantTeamSystemPrompt,
   TeamProposalStore,
   SessionCatalog,
+  discoverProjectSessions,
+  getHadamardProjectSessionDirectory,
   createAssistantGlobalTools,
   buildAssistantGlobalSystemPrompt,
   readAssistantConfig,
@@ -208,6 +210,12 @@ import {
   tuiTextInputDialogCursorPosition,
 } from './tuiFramePresenter.js';
 import { onboardTuiCredentials } from './tuiOnboarding.js';
+import { nextTuiContextTokenEstimate } from './tuiContextUsage.js';
+import {
+  buildTuiResumeCandidates,
+  resolveTuiResumeReference,
+  type TuiResumeCandidate,
+} from './tuiSessionResume.js';
 import {
   closeManagedPluginsForExit,
   tuiErrorMessage as errorMessage,
@@ -255,7 +263,7 @@ function maskKey(key: string): string {
 // First-run onboarding: guides the user through creating the Hadamard settings file
 // when no credential is found. Uses plain readline (no TTY required beyond stdin).
 export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<void> {
-  const workDir = path.resolve(options.workDir ?? process.cwd());
+  let workDir = path.resolve(options.workDir ?? process.cwd());
   const permissionMode: HadamardPermissionMode = options.permissionMode ?? 'bypassPermissions';
 
   try {
@@ -270,8 +278,13 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
   const hadamardHomeDir = resolveHadamardHome();
   const workspaceRegistry = await readWorkspaceRegistry(hadamardHomeDir);
-  const registeredProject = findWorkspaceProject(workspaceRegistry, workDir);
-  const projectWorkPaths = registeredProject ? workspaceWorkPaths(registeredProject) : [workDir];
+  let registeredProject = findWorkspaceProject(workspaceRegistry, workDir);
+  let projectPrimaryPath = registeredProject?.path ?? workDir;
+  let projectWorkPaths = registeredProject ? workspaceWorkPaths(registeredProject) : [workDir];
+  let activeSessionDirectory = getHadamardProjectSessionDirectory(
+    projectPrimaryPath,
+    hadamardHomeDir,
+  );
   let projectSettings = await readProjectSettings(workDir, hadamardHomeDir);
   let systemPrompt = buildTuiSystemPrompt(workDir, projectSettings, hadamardHomeDir, projectWorkPaths);
 
@@ -306,6 +319,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     });
     return createAgentSdk({
       workDir,
+      sessionDirectory: activeSessionDirectory,
       tools,
       permissionMode,
       externalSkills: externalSkillPreferencesToRuntimeOptions(externalSkillPreferences),
@@ -659,7 +673,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const registered = await readWorkspaceRegistry(sdk.config.homeDir);
     return new SessionCatalog({
       homeDir: sdk.config.homeDir,
-      projectPaths: [sdk.config.workDir, ...registered.map(item => item.path)],
+      projectPaths: [projectPrimaryPath, ...registered.map(item => item.path)],
     });
   }
   function managerProposalDiffForTui(
@@ -766,10 +780,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   } | undefined): void {
     const inT = usage?.input_tokens ?? 0;
     const outT = usage?.output_tokens ?? 0;
-    const reportedContextTokens = inT
-      + (usage?.cache_creation_input_tokens ?? 0)
-      + (usage?.cache_read_input_tokens ?? 0);
-    if (reportedContextTokens > 0) lastTokenEstimate = reportedContextTokens;
     totalInputTokens += inT;
     totalOutputTokens += outT;
     const cost = estimateCost(model, inT, outT);
@@ -1165,7 +1175,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   /** Always-visible mode + live context-usage line (usage shown as % of the window). */
   function buildModeLine(): string {
     const used = lastTokenEstimate ?? 0;
-    const window = sdk.config.compact?.contextWindowTokens ?? 200_000;
+    const window = sdk.config.compact.contextWindowTokens ?? 200_000;
     const pct = window > 0 ? Math.min(100, Math.round((used / window) * 100)) : 0;
     const usedK = used >= 1000 ? `${(used / 1000).toFixed(used >= 100_000 ? 0 : 1)}k` : `${used}`;
     const ctxColor = pct >= 90 ? A.red : pct >= 70 ? A.yellow : A.dim;
@@ -1636,9 +1646,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         requestStartedAt = Date.now();
         providerActivitySeen = false;
         statusNote = 'waiting for model 0s';
-        lastTokenEstimate = typeof data.requestTokenEstimate === 'number'
-          ? data.requestTokenEstimate
-          : undefined;
+        lastTokenEstimate = nextTuiContextTokenEstimate(lastTokenEstimate, event);
         renderDynamic();
         return;
       case 'text.delta': {
@@ -1763,6 +1771,10 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         return;
       }
       case 'compaction.completed':
+        if (typeof data.tokenEstimateAfter === 'number') {
+          lastTokenEstimate = nextTuiContextTokenEstimate(lastTokenEstimate, event);
+          renderDynamic();
+        }
         appendStatic(formatCompactNotice(
           typeof data.trigger === 'string' ? data.trigger : 'auto',
           typeof data.tokenEstimateBefore === 'number' ? data.tokenEstimateBefore : undefined,
@@ -1786,64 +1798,145 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
   // ── Slash commands ─────────────────────────────────────────────────
 
+  async function resumeCandidates(
+    options: { includeAgents?: boolean } = {},
+  ): Promise<TuiResumeCandidate[]> {
+    const [discovered, local] = await Promise.all([
+      discoverProjectSessions(sdk.config.homeDir, { cacheTtlMs: 0 }),
+      sdk.sessions.list(),
+    ]);
+    return buildTuiResumeCandidates(discovered, local, {
+      localProjectPath: projectPrimaryPath,
+      localSessionDirectory: sdk.config.sessionDirectory,
+      currentSessionId: session.id,
+      includeAgents: options.includeAgents,
+    });
+  }
+
+  async function activateResumeCandidate(target: TuiResumeCandidate): Promise<void> {
+    const targetDirectory = path.resolve(target.sessionDirectory);
+    const currentDirectory = path.resolve(sdk.config.sessionDirectory);
+    const normalizeRuntimePath = (value: string) => {
+      const resolved = path.resolve(value).normalize('NFC');
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    if (
+      normalizeRuntimePath(targetDirectory) === normalizeRuntimePath(currentDirectory)
+      && normalizeRuntimePath(target.projectPath) === normalizeRuntimePath(workDir)
+    ) {
+      session = await sdk.resumeSession(target.summary.id);
+      await restoreSessionRuntimeSelection();
+      return;
+    }
+
+    const previous = {
+      workDir,
+      registeredProject,
+      projectPrimaryPath,
+      projectWorkPaths,
+      activeSessionDirectory,
+      projectSettings,
+      systemPrompt,
+    };
+    const registry = await readWorkspaceRegistry(hadamardHomeDir);
+    workDir = path.resolve(target.projectPath);
+    registeredProject = findWorkspaceProject(registry, workDir);
+    projectPrimaryPath = registeredProject?.path ?? workDir;
+    projectWorkPaths = registeredProject ? workspaceWorkPaths(registeredProject) : [workDir];
+    activeSessionDirectory = targetDirectory;
+    projectSettings = await readProjectSettings(workDir, hadamardHomeDir);
+    systemPrompt = buildTuiSystemPrompt(workDir, projectSettings, hadamardHomeDir, projectWorkPaths);
+
+    const previousSdk = sdk;
+    let nextSdk: Awaited<ReturnType<typeof createAgentSdk>> | undefined;
+    try {
+      nextSdk = await createCleanSdk();
+      const nextSession = await nextSdk.resumeSession(target.summary.id);
+      const nextToolMetadata = await nextSdk.listToolMetadata();
+      sdk = nextSdk;
+      session = nextSession;
+      toolMetadata = nextToolMetadata;
+      managerTuiSession = null;
+      workspaceFiles = null;
+      await restoreSessionRuntimeSelection();
+    } catch (error) {
+      await nextSdk?.close().catch(() => undefined);
+      ({
+        workDir,
+        registeredProject,
+        projectPrimaryPath,
+        projectWorkPaths,
+        activeSessionDirectory,
+        projectSettings,
+        systemPrompt,
+      } = previous);
+      await rebuildInteractiveTools();
+      throw error;
+    }
+    if (deviceLinkService) {
+      await deviceLinkService.close().catch(() => undefined);
+      deviceLinkService = null;
+    }
+    await previousSdk.close().catch(() => undefined);
+  }
+
   async function resumeSession(
-    sessionId: string,
+    reference: string,
     options: { allowAgent?: boolean } = {},
   ): Promise<boolean> {
-    const listed = await sdk.sessions.list();
-    const target = listed.find(item => item.id === sessionId);
-    if (!target) {
+    let candidate: TuiResumeCandidate;
+    try {
+      candidate = resolveTuiResumeReference(
+        await resumeCandidates({ includeAgents: options.allowAgent }),
+        reference,
+      );
+    } catch (error) {
       appendStatic([
-        ...formatErrorLine(
-          `No persisted conversation exists for '${sessionId}'. The execution record may outlive its session.`,
-        ),
+        ...formatErrorLine(errorMessage(error)),
         '',
       ]);
       return false;
     }
-    if (target?.kind === 'manager') {
-      appendStatic([...formatErrorLine('Manager sessions live in the Project Manager panel only.'), '']);
-      return false;
-    }
-    if (target.kind === 'agent' && !options.allowAgent) {
-      appendStatic([
-        ...formatErrorLine('Agent conversations open from /agents runs, /agents show, or /agents open.'),
-        '',
-      ]);
-      return false;
-    }
-    session = await sdk.resumeSession(sessionId);
-    await restoreSessionRuntimeSelection();
+    await activateResumeCandidate(candidate);
     appendStatic([
       ...formatInfoLine(`resumed: ${session.id} · ${session.title} · ${session.model}`),
+      ...formatInfoLine(`workspace: ${workDir}`),
       '',
     ]);
     return true;
   }
 
   async function chooseSessionToResume(): Promise<void> {
-    const sessions = (await sdk.sessions.list()).filter(
-      item => item.id !== session.id && isTuiChatSession(item),
-    );
-    if (sessions.length === 0) {
-      appendStatic([...formatInfoLine('no other project sessions to resume'), '']);
+    const candidates = (await resumeCandidates()).filter(item => isTuiChatSession(item.summary));
+    if (candidates.length === 0) {
+      appendStatic([...formatInfoLine('no other Sessions to resume'), '']);
       return;
     }
+    const byKey = new Map(candidates.map(item => [item.key, item]));
     const selected = await selectItem({
-      title: 'Resume a project session',
-      subtitle: sdk.config.sessionDirectory,
-      items: sessions.map(item => ({
-        id: item.id,
-        label: item.title,
+      title: 'Resume a Session',
+      subtitle: 'Search all persisted Hadamard workspaces',
+      items: candidates.map(item => ({
+        id: item.key,
+        label: item.summary.title,
         description: [
-          item.model,
-          item.status,
-          new Date(item.lastRunAt ?? item.updatedAt).toLocaleString(),
+          path.basename(item.projectPath),
+          item.summary.model,
+          item.summary.status,
+          new Date(item.summary.lastRunAt ?? item.summary.updatedAt).toLocaleString(),
         ].join(' · '),
-        detail: item.preview,
+        detail: `${item.projectPath}\n${item.summary.preview}`,
       })),
     });
-    if (selected) await resumeSession(selected);
+    const target = selected ? byKey.get(selected) : undefined;
+    if (target) {
+      await activateResumeCandidate(target);
+      appendStatic([
+        ...formatInfoLine(`resumed: ${session.id} · ${session.title} · ${session.model}`),
+        ...formatInfoLine(`workspace: ${workDir}`),
+        '',
+      ]);
+    }
   }
 
   async function configureContextSettings(requestedMode = ''): Promise<void> {
