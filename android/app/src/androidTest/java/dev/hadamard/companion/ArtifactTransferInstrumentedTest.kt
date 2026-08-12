@@ -115,6 +115,47 @@ class ArtifactTransferInstrumentedTest {
     flag.setEnabled(false)
   }
 
+  @Test
+  fun commitAndAcknowledgeKeepsVerifiedUntilDesktopAckSucceeds() = runBlocking {
+    val bytes = "ack-ordering".toByteArray()
+    val manifest = manifest(bytes, 64)
+    val store = MobileInboxStore(temporary("ack-order"))
+    store.begin("desktop-5", manifest)
+    repeat(manifest.totalChunks) { accept(store, "desktop-5", manifest, bytes, it) }
+    store.finalize("desktop-5", manifest.transferId)
+    val workspace = MemoryWorkspace()
+    val failing = ArtifactTransferClient(
+      DeviceLinkRpc { _, method, _ ->
+        require(method == "artifact/outbox/ack")
+        error("network dropped before ack")
+      },
+      store,
+    )
+    val failure = runCatching {
+      failing.commitAndAcknowledge(store.read("desktop-5", manifest.transferId)!!, workspace, true)
+    }
+    assertTrue(failure.isFailure)
+    val staged = store.read("desktop-5", manifest.transferId)!!
+    assertEquals(InboxStatus.VERIFIED, staged.status)
+    assertEquals(workspace.files.single().first.documentId, staged.workspaceDocumentId)
+    assertArrayEquals(bytes, workspace.files.single().second)
+
+    var ackCalls = 0
+    val recovering = ArtifactTransferClient(
+      DeviceLinkRpc { _, method, _ ->
+        require(method == "artifact/outbox/ack")
+        ackCalls += 1
+        JSONObject().put("acknowledged", true)
+      },
+      store,
+    )
+    val document = recovering.commitAndAcknowledge(staged, workspace, true)
+    assertEquals(1, ackCalls)
+    assertEquals(InboxStatus.COMMITTED, store.read("desktop-5", manifest.transferId)!!.status)
+    assertEquals(staged.workspaceDocumentId, document.documentId)
+    assertEquals(1, workspace.files.size)
+  }
+
   private fun accept(store: MobileInboxStore, deviceId: String, manifest: ArtifactManifest, bytes: ByteArray, index: Int) {
     val start = index * manifest.chunkSize
     val chunk = bytes.copyOfRange(start, minOf(start + manifest.chunkSize, bytes.size))

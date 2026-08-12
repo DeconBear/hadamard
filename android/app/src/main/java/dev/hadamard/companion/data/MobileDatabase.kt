@@ -179,13 +179,11 @@ class MobileDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     writableDatabase.beginTransaction()
     try {
       upsertSession(session)
+      // Replace the full transcript so a shorter/edited remote snapshot cannot leave
+      // orphaned higher-sequence rows from a previous cache import.
+      writableDatabase.delete("messages", "session_id = ?", arrayOf(session.id))
       messages.forEach {
-        writableDatabase.insertWithOnConflict(
-          "messages",
-          null,
-          messageValues(it),
-          SQLiteDatabase.CONFLICT_IGNORE,
-        )
+        writableDatabase.insertOrThrow("messages", null, messageValues(it))
       }
       writableDatabase.setTransactionSuccessful()
     } finally {

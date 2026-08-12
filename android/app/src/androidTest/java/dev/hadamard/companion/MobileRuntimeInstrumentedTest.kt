@@ -99,6 +99,31 @@ class MobileRuntimeInstrumentedTest {
     assertEquals(origin, database.session(target.id)!!.origin)
   }
 
+  @Test
+  fun importMessagesReplacesPreviousTranscript() {
+    val database = MobileDatabase(context)
+    val origin = SessionOrigin("device-remote", "source", 1)
+    val cache = localSession().copy(id = "cache-replace", readOnly = true, origin = origin)
+    database.importMessages(
+      cache,
+      listOf(
+        SessionMessage(cache.id, 1, MessageRole.USER, "old-1", null, 1),
+        SessionMessage(cache.id, 2, MessageRole.ASSISTANT, "old-2", null, 2),
+        SessionMessage(cache.id, 3, MessageRole.USER, "old-3", null, 3),
+      ),
+    )
+    database.importMessages(
+      cache.copy(revision = 2, origin = origin.copy(revision = 2)),
+      listOf(
+        SessionMessage(cache.id, 1, MessageRole.USER, "new-1", null, 10),
+        SessionMessage(cache.id, 2, MessageRole.ASSISTANT, "edited-2", null, 11),
+      ),
+    )
+    val messages = database.messages(cache.id)
+    assertEquals(2, messages.size)
+    assertEquals(listOf("new-1", "edited-2"), messages.map { it.content })
+  }
+
   private fun localSession(): SessionRecord {
     val now = System.currentTimeMillis()
     return SessionRecord(UUID.randomUUID().toString(), "test", now, now, 0)
