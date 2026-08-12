@@ -22,7 +22,6 @@ function createPort(): TuiManagerCommandPort & { output: string[][] } {
       status: vi.fn(async () => ({
         model: 'test-model (session default)',
         readScope: 'workspace-only',
-        mirrorDesignToWorkspace: false,
         milestones: 2,
         today: 1,
         upcoming: 3,

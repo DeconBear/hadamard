@@ -153,38 +153,15 @@ describe('Manager Design documents', () => {
     expect(fs.existsSync(path.join(workDir, 'plan.json'))).toBe(false);
   });
 
-  it('DesignWrite writes DESIGN.md in the project store by default (no workspace mirror)', async () => {
+  it('DesignWrite writes the canonical workspace Design markdown entry', async () => {
     const designWrite = (await tools()).find((t) => t.name === 'DesignWrite')!;
     await (designWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)(
       { content: '# Design\n\nAll good.' },
       {},
     );
     expect(await readDesignFile(workDir, homeDir)).toContain('All good.');
-    expect(fs.existsSync(path.join(workDir, '.hadamard', 'DESIGN.md'))).toBe(false);
+    expect(managerDesignPath(workDir, homeDir)).toBe(path.join(workDir, '.hadamard', 'design', 'design.md'));
     expect(fs.existsSync(managerDesignPath(workDir, homeDir))).toBe(true);
-  });
-
-  it('DesignWrite mirrors to the workspace only when opted in', async () => {
-    const cfg = { ...DEFAULT_MANAGER_CONFIG, mirrorDesignToWorkspace: true };
-    const designWrite = (await tools(cfg)).find((t) => t.name === 'DesignWrite')!;
-    await (designWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)(
-      { content: '# Mirrored' },
-      {},
-    );
-    expect(fs.readFileSync(path.join(workDir, '.hadamard', 'DESIGN.md'), 'utf8')).toContain('Mirrored');
-  });
-
-  it('the default config never writes any workspace file', async () => {
-    const before = fs.readdirSync(workDir);
-    const all = await tools();
-    const planWrite = all.find((t) => t.name === 'PlanWrite')!;
-    const designWrite = all.find((t) => t.name === 'DesignWrite')!;
-    await (planWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)(
-      { milestones: [], today: [], upcoming: [] },
-      {},
-    );
-    await (designWrite.execute as (i: unknown, c: unknown) => Promise<unknown>)({ content: 'x' }, {});
-    expect(fs.readdirSync(workDir)).toEqual(before);
   });
 });
 
@@ -194,7 +171,6 @@ describe('Manager config (manager.json)', () => {
       model: 'claude-x',
       readScope: 'workspace+docs',
       allowedReadPaths: ['/docs'],
-      mirrorDesignToWorkspace: true,
       promptOverride: 'Track the v2 launch.',
       activeSessionId: 'manager-session-2',
     });
@@ -202,7 +178,6 @@ describe('Manager config (manager.json)', () => {
     expect(cfg.model).toBe('claude-x');
     expect(cfg.readScope).toBe('workspace+docs');
     expect(cfg.allowedReadPaths).toEqual(['/docs']);
-    expect(cfg.mirrorDesignToWorkspace).toBe(true);
     expect(cfg.promptOverride).toBe('Track the v2 launch.');
     expect(cfg.activeSessionId).toBe('manager-session-2');
   });
@@ -210,7 +185,6 @@ describe('Manager config (manager.json)', () => {
   it('falls back to safe defaults for missing/invalid config', async () => {
     const cfg = await readManagerConfig(workDir, homeDir);
     expect(cfg.readScope).toBe('workspace-only');
-    expect(cfg.mirrorDesignToWorkspace).toBe(false);
   });
 });
 

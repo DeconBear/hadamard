@@ -5725,7 +5725,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           const lines = [
             `model: ${cfg.model ?? `${session.model} (session default)`}`,
             `readScope: ${cfg.readScope}`,
-            `mirror to workspace: ${cfg.mirrorDesignToWorkspace ? 'on' : 'off'}`,
             `plan.json: ${plan.milestones.length} milestones · ${plan.today.length} today · ${plan.upcoming.length} upcoming`,
             `DESIGN.md: ${design ? `${design.length} chars · ${managerDesignPath(projectPrimaryPath, homeDir)}` : '(none yet — /manager update)'}`,
           ];
@@ -7436,7 +7435,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   const httpRouter = new GuiHttpRouter();
   registerGuiShellHttpController(httpRouter, authToken);
   registerGuiDesignHttpController(httpRouter, {
-    createService: () => new DesignDocumentService(projectPrimaryPath, resolveGuiHomeDir(), projectPrimaryPath),
+    createService: () => new DesignDocumentService(projectPrimaryPath, resolveGuiHomeDir()),
     openFolder: openPathInSystem,
   });
   registerGuiChatHttpController(httpRouter, {
@@ -8644,11 +8643,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           allowedReadPaths: Array.isArray(body.allowedReadPaths)
             ? body.allowedReadPaths.filter((p: unknown): p is string => typeof p === 'string' && p.trim().length > 0)
             : current.allowedReadPaths,
-          mirrorDesignToWorkspace: typeof body.mirrorDesignToWorkspace === 'boolean'
-            ? body.mirrorDesignToWorkspace
-            : typeof body.mirrorProgressToWorkspace === 'boolean'
-              ? body.mirrorProgressToWorkspace
-              : current.mirrorDesignToWorkspace,
         };
         await writeManagerConfig(projectPrimaryPath, homeDir, config);
         return config;
