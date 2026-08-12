@@ -261,9 +261,9 @@ describe('GUI Customize skills API', () => {
       const unresolved = await api<Snapshot>(server, '/api/customize/skills');
       const variants = unresolved.body.catalog.skills.filter(skill => skill.name === 'shared-review');
       expect(variants).toHaveLength(2);
-      expect(unresolved.body.skippedConflicts).toContainEqual(expect.objectContaining({ name: 'shared-review' }));
-      expect(unresolved.body.activeSkillIds).not.toContain(variants[0]!.id);
-      expect(unresolved.body.activeSkillIds).not.toContain(variants[1]!.id);
+      const claude = variants.find(skill => skill.sourceId === 'claude-code:project')!;
+      expect(unresolved.body.skippedConflicts).not.toContainEqual(expect.objectContaining({ name: 'shared-review' }));
+      expect(unresolved.body.activeSkillIds).toContain(claude.id);
 
       const chosen = variants.find(skill => skill.sourceId === 'codex:project')!;
       const preferred = await api<Snapshot>(server, '/api/customize/skills', {
@@ -282,7 +282,8 @@ describe('GUI Customize skills API', () => {
       });
       expect(cleared.status).toBe(200);
       expect(cleared.body.preferences.preferredSkillIds).not.toHaveProperty('shared-review');
-      expect(cleared.body.skippedConflicts).toContainEqual(expect.objectContaining({ name: 'shared-review' }));
+      expect(cleared.body.skippedConflicts).not.toContainEqual(expect.objectContaining({ name: 'shared-review' }));
+      expect(cleared.body.activeSkillIds).toContain(claude.id);
       expect(cleared.body.activeSkillIds).not.toContain(chosen.id);
       expect(await readFile(codexFile, 'utf8')).toBe(codexText);
       expect(await readFile(claudeFile, 'utf8')).toBe(claudeText);
