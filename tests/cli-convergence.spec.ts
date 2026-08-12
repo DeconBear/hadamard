@@ -62,7 +62,7 @@ function commandCase(
   const lines = source.slice(handlerStart).split(/\r?\n/u);
   const start = lines.findIndex(line => line.trimStart().startsWith(`case '${command}'`));
   if (start < 0) {
-    const guardedHandler = lines.findIndex(line => line.includes(`name !== '${command}'`));
+    const guardedHandler = lines.findIndex(line => line.includes(`name !== '${command}'`) || line.includes(`name === '${command}'`));
     expect(guardedHandler, `/${command} handler exists`).toBeGreaterThanOrEqual(0);
     return lines.slice(guardedHandler).join('\n');
   }
