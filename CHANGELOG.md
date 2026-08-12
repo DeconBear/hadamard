@@ -6,6 +6,30 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.16 - 2026-08-13
+
+### Features
+
+- Add Android companion, Device Link runtime, resumable artifacts, and self-hosted relay transports
+- Rebuild the project document workspace and share workbench tools across TUI and GUI
+- Add Hadamard CodeAct execution and trusted Skill MCP bundles
+- Prefer Claude Code when reused skill names conflict across runtimes
+
+### Fixes
+
+- Keep Device Link inbox commits and remote session cache consistent
+- Isolate GUI conversation switches from in-flight chat runs
+- Unify long-running sessions across TUI and GUI
+- Launch Windows GUI without a terminal window
+- Prevent project toolbar overlap in windowed layouts
+
+### Refactors
+
+- Extract TUI/GUI controllers and conversation runtime ports behind SOLID boundaries
+- Make CodeAct mode-driven and remove legacy design compatibility
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.15...v0.4.16
+
 ## v0.4.15 - 2026-08-10
 
 ### Fixes
