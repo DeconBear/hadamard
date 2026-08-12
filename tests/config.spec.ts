@@ -95,6 +95,24 @@ describe('config loading', () => {
     expect(config.sessionDirectory).toBe(
       getHadamardProjectSessionDirectory('E:/demo', homeDir),
     );
+    expect(config.runTimeoutMs).toBeUndefined();
+  });
+
+  it('keeps explicit whole-run deadlines opt-in', async () => {
+    const homeDir = await createTempHome();
+    const config = await resolveRuntimeConfig({
+      homeDir,
+      model: 'demo-model',
+      authToken: 'test-token',
+      runTimeoutMs: 900_000,
+    });
+    expect(config.runTimeoutMs).toBe(900_000);
+    await expect(resolveRuntimeConfig({
+      homeDir,
+      model: 'demo-model',
+      authToken: 'test-token',
+      runTimeoutMs: 0,
+    })).rejects.toThrow(/runTimeoutMs/u);
   });
 
   it('uses a stable readable and collision-safe project key for default session isolation', async () => {

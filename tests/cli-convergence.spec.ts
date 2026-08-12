@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   HADAMARD_INTERACTIVE_COMMANDS,
+  HADAMARD_GUI_INTERACTIVE_COMMANDS,
   SUBCOMMANDS,
 } from '../src/ui/commandSurface.js';
 
@@ -100,7 +101,7 @@ describe('interactive CLI convergence', () => {
       command,
       commandCase(tui, 'async function runSlashCommand(raw: string)', '        ', command),
     ]));
-    const guiCases = new Map(Object.keys(HADAMARD_INTERACTIVE_COMMANDS).map(command => [
+    const guiCases = new Map(Object.keys(HADAMARD_GUI_INTERACTIVE_COMMANDS).map(command => [
       command,
       commandCase(gui, 'async function runSlashCommand(raw: string)', '      ', command),
     ]));
@@ -112,6 +113,8 @@ describe('interactive CLI convergence', () => {
       ['assistant:chat', `input.startsWith('/assistant chat ')`],
       ['assistant:team', `input.startsWith('/assistant team ')`],
     ]);
+    expect(gui).toContain("case 'resume':");
+    expect(gui).toContain('/resume is TUI-only');
     for (const [command, subcommands] of Object.entries(SUBCOMMANDS)) {
       const tuiCase = tuiCases.get(command)!;
       const guiCase = guiCases.get(command)!;

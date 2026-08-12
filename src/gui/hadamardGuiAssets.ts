@@ -133,6 +133,10 @@ export function createHadamardGuiHtml(): string {
           <h2 class="sidebar-recents-heading">Recent</h2>
           <div id="sidebarRecentList" class="sidebar-recents-list"></div>
         </div>
+        <div class="sidebar-recents-block" id="sidebarSessionsBlock">
+          <h2 class="sidebar-recents-heading">Sessions</h2>
+          <div id="sidebarSessionsList" class="sidebar-recents-list"></div>
+        </div>
       </section>
       <div class="sidebar-footer">
         <button id="settingsBtn" class="nav-btn" aria-label="Settings" title="Settings"><span class="nav-icon">${guiIcon('gear')}</span><span>Settings</span></button>
@@ -7276,7 +7280,15 @@ function renderSettingsCommandPanels() {
   ]);
   renderSettingsCardList('settingsSessionsList', snapshot.sessions || [], (root, item) => {
     addSettingsCard(root, item.title || item.id, describeParts([item.model, item.status, (item.messageCount || 0) + ' messages']), item.id, [
-      { label: item.id === session.id ? 'Current' : 'Resume', disabled: item.id === session.id, handler: () => runSettingsCommand('/resume ' + item.id, 'Resuming chat...') },
+      { label: item.id === session.id ? 'Current' : 'Open', disabled: item.id === session.id, handler: async () => {
+        el('settingsStatus').textContent = 'Opening chat...';
+        await resumeSession(item.id);
+        if (!el('settingsModal').classList.contains('hidden')) {
+          await loadState();
+          renderSettingsCommandPanels();
+          el('settingsStatus').textContent = 'Opened';
+        }
+      } },
     ]);
   });
 }
@@ -7400,9 +7412,12 @@ function renderSidebarRecents() {
   const pinnedRoot = el('sidebarPinnedList');
   const recentRoot = el('sidebarRecentList');
   const pinnedBlock = el('sidebarPinnedBlock');
+  const sessionsRoot = el('sidebarSessionsList');
+  const sessionsBlock = el('sidebarSessionsBlock');
   if (!pinnedRoot || !recentRoot) return;
   pinnedRoot.textContent = '';
   recentRoot.textContent = '';
+  if (sessionsRoot) sessionsRoot.textContent = '';
   const { pinned, recent } = sidebarRecentsProjects();
   if (pinnedBlock) pinnedBlock.classList.toggle('hidden', pinned.length === 0);
   if (pinned.length === 0) {
@@ -7417,6 +7432,25 @@ function renderSidebarRecents() {
     recentRoot.appendChild(empty);
   } else {
     for (const project of recent) appendSidebarProjectGroup(recentRoot, project);
+  }
+  const unregistered = state.snapshot?.unregisteredSessions || [];
+  if (sessionsBlock) sessionsBlock.classList.toggle('hidden', unregistered.length === 0);
+  if (sessionsRoot) {
+    for (const item of unregistered) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'sr-session-row';
+      row.title = item.projectPath || item.title;
+      const title = document.createElement('span');
+      title.className = 'sr-session-title';
+      title.textContent = item.brief || item.title || item.id;
+      const time = document.createElement('span');
+      time.className = 'sr-session-time';
+      time.textContent = item.updatedAt ? formatRelativeTimeShort(item.updatedAt) : '';
+      row.append(title, time);
+      row.addEventListener('click', () => void openSidebarSession(item.projectPath, item.id));
+      sessionsRoot.appendChild(row);
+    }
   }
 }
 async function setProjectPinned(projectPath, pinned) {
@@ -7454,7 +7488,7 @@ async function openSidebarProject(projectPath) {
 async function openSidebarSession(projectPath, sessionId) {
   if (!sessionId) return;
   if (!sameWorkspacePath(state.snapshot?.workDir || '', projectPath || '') && projectPath) {
-    const ok = await switchProject(projectPath, 'conversation');
+    const ok = await switchProject(projectPath, 'conversation', false);
     if (!ok) return;
   }
   await switchRegion('project');
@@ -9110,7 +9144,7 @@ function loadSessionIndicatorState() {
     if (Array.isArray(saved)) state.sessionUnread = new Set(saved.filter(id => typeof id === 'string' && id));
   } catch { state.sessionUnread = new Set(); }
 }
-async function switchProject(projectPath, view = 'conversation') {
+async function switchProject(projectPath, view = 'conversation', remember = true) {
   if (!projectPath) return false;
   if (state.sessionResumePending) {
     flashStatus('Wait for the conversation switch to finish.');
@@ -9146,7 +9180,7 @@ async function switchProject(projectPath, view = 'conversation') {
   state.lastProjectOpenError = null;
   managerTranscriptHydrated = false;
   resetManagerClientState('');
-  const res = await api('/api/project/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: projectPath }) });
+  const res = await api('/api/project/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: projectPath, remember }) });
   const raw = await res.text();
   let payload = {};
   try { payload = raw ? JSON.parse(raw) : {}; } catch { payload = { error: raw }; }

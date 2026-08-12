@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   HADAMARD_INTERACTIVE_COMMANDS,
+  HADAMARD_GUI_INTERACTIVE_COMMANDS,
   SUBCOMMANDS,
   SUBCOMMAND_DESCRIPTIONS,
   canRunInteractiveCommand,
@@ -12,6 +13,11 @@ import {
 } from '../src/ui/commandSurface.js';
 
 describe('filterInteractiveCommands', () => {
+  it('keeps TUI-only Session controls out of the GUI command registry', () => {
+    expect(HADAMARD_INTERACTIVE_COMMANDS.resume).toBeDefined();
+    expect(HADAMARD_GUI_INTERACTIVE_COMMANDS.resume).toBeUndefined();
+    expect(HADAMARD_GUI_INTERACTIVE_COMMANDS.exit).toBeUndefined();
+  });
   it('returns nothing without a leading slash', () => {
     expect(filterInteractiveCommands('hello')).toEqual([]);
     expect(filterInteractiveCommands('bridge run')).toEqual([]);
