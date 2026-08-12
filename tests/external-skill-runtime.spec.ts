@@ -250,7 +250,7 @@ describe('external skill runtime loading', () => {
     }
   });
 
-  it('fails closed on conflicts and only loads trusted project or preferred variants', async () => {
+  it('fails closed on conflicts unless a unique Claude Code variant can win', async () => {
     const root = await createTempDir('hadamard-external-conflict-');
     const osHomeDir = path.join(root, 'home');
     const workDir = path.join(root, 'workspace');
@@ -264,11 +264,10 @@ describe('external skill runtime loading', () => {
       workDir,
       externalSkills: { osHomeDir, env: {} },
     });
-    expect(unresolved.definitions.map(skill => skill.name)).not.toContain('shared');
+    expect(unresolved.definitions.find(skill => skill.name === 'shared')?.description)
+      .toBe('Claude variant');
     expect(unresolved.definitions.map(skill => skill.name)).not.toContain('project-only');
-    expect(unresolved.skippedConflicts).toEqual([
-      expect.objectContaining({ name: 'shared', skillIds: expect.any(Array) }),
-    ]);
+    expect(unresolved.skippedConflicts).toEqual([]);
 
     const preferred = unresolved.catalog.skills.find(skill =>
       skill.name === 'shared' && skill.description === 'Codex variant',
@@ -289,6 +288,29 @@ describe('external skill runtime loading', () => {
     expect(resolved.definitions.find(skill => skill.name === 'project-only')).toMatchObject({
       source: 'project',
       metadata: expect.objectContaining({ __hadamardExternalSkillSourceId: 'codex:project' }),
+    });
+  });
+
+  it('prefers the Claude Code copy when the same skill also exists in cc-switch', async () => {
+    const root = await createTempDir('hadamard-external-claude-priority-');
+    const osHomeDir = path.join(root, 'home');
+    const workDir = path.join(root, 'workspace');
+    const hadamardHomeDir = path.join(root, 'hadamard');
+    await writeSkill(path.join(osHomeDir, '.claude', 'skills'), 'ocr-parser', 'ocr-parser', 'Claude OCR');
+    await writeSkill(path.join(osHomeDir, '.cc-switch', 'skills'), 'ocr-parser', 'ocr-parser', 'cc-switch OCR');
+
+    const result = await loadHadamardExternalSkillDefinitions({
+      hadamardHomeDir,
+      workDir,
+      externalSkills: { osHomeDir, env: {} },
+    });
+    expect(result.skippedConflicts).toEqual([]);
+    expect(result.definitions.find(skill => skill.name === 'ocr-parser')).toMatchObject({
+      description: 'Claude OCR',
+      metadata: expect.objectContaining({
+        __hadamardExternalSkillProvider: 'claude-code',
+        __hadamardExternalSkillSourceId: 'claude-code:user',
+      }),
     });
   });
 
