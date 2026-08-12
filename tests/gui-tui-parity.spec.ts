@@ -337,7 +337,8 @@ describe('TUI and GUI parity', () => {
     expect(html).toContain('id="composerAgentMode"');
     expect(html).toContain('id="agentProfileMode"');
     expect(js).toContain('id="projectAgentMode"');
-    expect(js).toContain('id="projectCodeActEnabled"');
+    expect(js).toContain('Default agent mode for new sessions');
+    expect(js).not.toContain('id="projectCodeActEnabled"');
     expect(js).toContain("['inherit', 'react', 'codeact', 'hybrid', 'single']");
     expect(js).toContain('Single mode supports at most one ordinary tool.');
     expect(js).toContain('setToolChecklistDisabled');
