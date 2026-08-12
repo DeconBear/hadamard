@@ -311,7 +311,7 @@ import {
 } from '../update/appUpdateService.js';
 import { discoverHadamardPlugins } from '../tui/pluginCatalog.js';
 import {
-  HADAMARD_INTERACTIVE_COMMANDS,
+  HADAMARD_GUI_INTERACTIVE_COMMANDS,
   interactiveCommandUsage,
   parseTeamAskArguments,
 } from '../ui/commandSurface.js';
@@ -414,6 +414,7 @@ import type {
 } from '../types.js';
 import { AgentSession } from '../runtime/agentSession.js';
 import { SessionStore } from '../storage/sessionStore.js';
+import { discoverProjectSessions } from '../storage/sessionDiscovery.js';
 import { AgentExecutionStore } from '../storage/agentExecutionStore.js';
 import { BackgroundTaskStore } from '../storage/backgroundTaskStore.js';
 import { assertSafeStorageSegment } from '../storage/pathSafety.js';
@@ -1297,6 +1298,36 @@ type SidebarRecentSession = {
   brief?: string;
   updatedAt: string;
 };
+
+type SidebarUnregisteredSession = SidebarRecentSession & {
+  projectPath: string;
+};
+
+async function listUnregisteredGuiSessions(
+  homeDir: string,
+  registeredProjectPaths: readonly string[],
+  limit = 12,
+): Promise<SidebarUnregisteredSession[]> {
+  const registeredKeys = new Set(registeredProjectPaths.map(normalizeFsPath));
+  const candidates: SidebarUnregisteredSession[] = [];
+  for (const item of await discoverProjectSessions(homeDir)) {
+    const summary = item.summary;
+    if (
+      summary.messageCount === 0
+      || summary.kind === 'manager'
+      || summary.kind === 'agent'
+      || registeredKeys.has(normalizeFsPath(item.projectPath))
+    ) continue;
+    candidates.push({
+      id: summary.id,
+      title: summary.title || summary.id,
+      ...(summary.brief ? { brief: summary.brief } : {}),
+      updatedAt: summary.updatedAt || '',
+      projectPath: item.projectPath,
+    });
+  }
+  return candidates.slice(0, Math.max(0, limit));
+}
 
 async function projectSessionOverview(
   workDir: string,
@@ -2766,7 +2797,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     };
   }
 
-  async function switchProject(nextWorkDir: string): Promise<Record<string, unknown>> {
+  async function switchProject(
+    nextWorkDir: string,
+    switchOptions: { remember?: boolean } = {},
+  ): Promise<Record<string, unknown>> {
     if (foregroundRun()) {
       throw new Error('Cannot switch projects while a run is active. Stop the run, then open the workspace again.');
     }
@@ -2847,8 +2881,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }).catch(() => undefined))?.homeDir
       ?? resolveGuiHomeDir();
     invalidateHeavyState();
-    // Persist before returning state so Projects includes the opened folder.
-    await rememberWorkspace(workDir, storeHome).catch(() => undefined);
+    // Opening an unregistered Session must not silently turn its workspace into
+    // a Project. Explicit project opens keep the existing remember behavior.
+    if (switchOptions.remember !== false) {
+      await rememberWorkspace(workDir, storeHome).catch(() => undefined);
+    }
     void Promise.all([
       resyncAutomationScheduler().catch(() => undefined),
       syncRailReminders().catch(() => undefined),
@@ -3109,8 +3146,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         heavyStateCache = heavy;
       }
     }
-    const [allSessions, workflows, teams, routers, skills, agents, agentDefinitions, runtimeDiscovery, scheduledTasks] = await Promise.all([
+    const registeredProjectPaths = heavy.projects.flatMap(project => project.workPaths);
+    const [allSessions, unregisteredSessions, workflows, teams, routers, skills, agents, agentDefinitions, runtimeDiscovery, scheduledTasks] = await Promise.all([
       listGuiSessions(),
+      listUnregisteredGuiSessions(homeDir, registeredProjectPaths),
       Promise.resolve(listWorkflows(workDir)),
       Promise.resolve(listTeamDefinitions(workDir)),
       Promise.resolve(listRouterProfiles(workDir)),
@@ -3149,13 +3188,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       teamPreferences: teamPrefs,
       activeRouterName: activeRouter?.name ?? null,
       routedModelLabel,
-      commands: HADAMARD_INTERACTIVE_COMMANDS,
-      commandUsages: Object.fromEntries(Object.keys(HADAMARD_INTERACTIVE_COMMANDS).map(name => [name, commandUsage(name)])),
+      commands: HADAMARD_GUI_INTERACTIVE_COMMANDS,
+      commandUsages: Object.fromEntries(Object.keys(HADAMARD_GUI_INTERACTIVE_COMMANDS).map(name => [name, commandUsage(name)])),
       tools: toolMetadata,
       projects: heavy.projects,
       projectPlan: await readProjectPlan(projectPrimaryPath, homeDir),
       issueSummary: activeProject?.issueCounts ?? { total: 0, open: 0, review: 0, closed: 0 },
       sessions,
+      unregisteredSessions,
       archivedSessions,
       workflows,
       scheduledTasks,
@@ -4973,7 +5013,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         return [{
           type: 'command.result',
           title: 'Commands',
-          items: Object.entries(HADAMARD_INTERACTIVE_COMMANDS).map(([command, description]) => ({
+          items: Object.entries(HADAMARD_GUI_INTERACTIVE_COMMANDS).map(([command, description]) => ({
             label: `/${command}`,
             description,
             detail: commandUsage(command),
@@ -5085,17 +5125,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         }];
       }
       case 'resume': {
-        if (!args) return runSlashCommand('/sessions');
-        const listed = await listGuiSessions();
-        const target = listed.find(item => item.id === args);
-        if (target?.kind === 'manager') {
-          return [{ type: 'error', message: 'Manager sessions live in the Project Manager panel only.' }];
-        }
-        return runtimeMutationCommand(async () => {
-          session = await resumeGuiSession(args, { model: options.model, permissionMode: options.permissionMode });
-          await restoreSessionRuntimeSelection();
-          return [{ type: 'notice', message: `resumed session: ${session.id}` }, { type: 'state' }];
-        });
+        return [{ type: 'error', message: '/resume is TUI-only. Use the GUI Sessions list to switch conversations.' }];
       }
       case 'tools':
         return [{
@@ -10038,7 +10068,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         const nextWorkDir = typeof body.path === 'string' ? body.path.trim() : '';
         if (!nextWorkDir) return json(res, 400, { error: 'Missing project path' });
         try {
-          return json(res, 200, await withRuntimeMutation(() => switchProject(nextWorkDir)));
+          return json(res, 200, await withRuntimeMutation(() => switchProject(nextWorkDir, {
+            remember: body.remember !== false,
+          })));
         } catch (error) {
           return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));
         }

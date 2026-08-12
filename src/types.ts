@@ -393,8 +393,8 @@ export interface ResolvedRuntimeConfig {
   modelTiers: HadamardModelTierConfig;
   maxTokens: number;
   temperature?: number;
-  /** Whole-run wall-clock deadline, including model/tool iterations. */
-  runTimeoutMs: number;
+  /** Optional whole-run wall-clock deadline, including model/tool iterations. Unset means unlimited. */
+  runTimeoutMs?: number;
   /** Local and MCP tool deadline. */
   toolTimeoutMs: number;
   /** Individual hook deadline. */
@@ -1902,6 +1902,8 @@ export interface SessionSummary {
   brief?: string;
   messageCount: number;
   runCount: number;
+  /** Working directory persisted with the Session. */
+  workDir?: string;
   /** True when the session file lives in the project archive/ directory. */
   archived?: boolean;
   /** User pin used by Session Center sorting. */
