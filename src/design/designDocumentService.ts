@@ -4,6 +4,7 @@ import { getHadamardProjectSessionDirectory } from '../config/projectSessionDire
 import { type DesignArtifactRepository, SqliteDesignArtifactRepository } from './designArtifactRepository.js';
 import { DesignConfigurationStore, type DesignConfiguration } from './designConfiguration.js';
 import { DesignDocumentStore } from './designDocumentStore.js';
+import { DesignWorkspaceBundleService } from './designWorkspaceBundle.js';
 import { DesignImportCommitService, type DesignImportAction } from './designImportCommitService.js';
 import { DesignImportExportService, type DesignImportPreview, type DesignTransferDocument } from './designImportExportService.js';
 import { DesignRenderService } from './designRenderService.js';
@@ -34,6 +35,7 @@ export class DesignDocumentService {
   readonly artifacts: DesignArtifactRepository;
   readonly imports: DesignImportCommitService;
   readonly engineeringProfiles: EngineeringProfileService;
+  readonly workspaceBundles: DesignWorkspaceBundleService;
 
   constructor(
     projectPath: string,
@@ -49,6 +51,7 @@ export class DesignDocumentService {
     );
     this.imports = new DesignImportCommitService(this.store, this.configurations, this.artifacts);
     this.engineeringProfiles = new EngineeringProfileService(projectPath, this.store);
+    this.workspaceBundles = new DesignWorkspaceBundleService(this.store.workspace, this.templates, options.generatorVersion);
   }
 
   async configuration(): Promise<DesignConfiguration> {

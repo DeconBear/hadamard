@@ -85,6 +85,21 @@ describe('loadProjectContext', () => {
     expect(result.text.indexOf('CHILD RULE')).toBeGreaterThan(result.text.indexOf('ROOT RULE'));
   });
 
+  it('bounds nested AGENTS.md resolution to the registered work path', async () => {
+    const outside = await makeTempDir('hadamard-context-parent-');
+    const hadamardHomeDir = await makeTempDir('hadamard-context-home-');
+    const root = path.join(outside, 'project');
+    const child = path.join(root, 'packages', 'web');
+    await mkdir(child, { recursive: true });
+    await writeFile(path.join(outside, 'AGENTS.md'), 'OUTSIDE RULE\n');
+    await writeFile(path.join(root, 'AGENTS.md'), 'ROOT RULE\n');
+    await writeFile(path.join(child, 'AGENTS.md'), 'CHILD RULE\n');
+    const result = loadProjectContext(child, { hadamardHomeDir, projectWorkPaths: [root] });
+    expect(result.text).toContain('ROOT RULE');
+    expect(result.text).toContain('CHILD RULE');
+    expect(result.text).not.toContain('OUTSIDE RULE');
+  });
+
   it('loads global rules only from the Hadamard AGENTS.md', async () => {
     const dir = await makeTempDir('ctx-global-project-');
     const hadamardHomeDir = await makeTempDir('ctx-global-home-');

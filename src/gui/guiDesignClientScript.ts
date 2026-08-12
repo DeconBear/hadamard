@@ -73,6 +73,34 @@ async function importDesignFile(file) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Import failed');
+    if (data.kind === 'hadamard-workspace-bundle' && Array.isArray(data.changes)) {
+      const modal = modalShell('Import Design bundle');
+      const hint = document.createElement('p'); hint.className = 'muted';
+      hint.textContent = 'Review every file before writing to .hadamard/design. Files not included in the bundle are preserved.';
+      const list = document.createElement('div'); list.className = 'design-change-list';
+      for (const change of data.changes) {
+        const row = document.createElement('div'); row.className = 'design-change-row'; row.dataset.action = change.action;
+        const action = document.createElement('span'); action.className = 'design-change-action'; action.textContent = change.action;
+        const name = document.createElement('code'); name.textContent = change.path;
+        row.append(action, name); list.appendChild(row);
+      }
+      const actions = document.createElement('div'); actions.className = 'modal-actions';
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'secondary-btn'; cancel.textContent = 'Cancel'; cancel.addEventListener('click', modal.close);
+      const apply = document.createElement('button'); apply.type = 'button'; apply.className = 'primary-btn'; apply.textContent = 'Import bundle';
+      apply.addEventListener('click', async () => {
+        apply.disabled = true;
+        const commit = await api('/api/design/import/commit', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ fileName: file.name, contentBase64, expectedChanges: data.changes, confirmed: true }),
+        });
+        const committed = await commit.json().catch(() => ({}));
+        if (!commit.ok) { apply.disabled = false; return setProjectDocStatus(committed.error || 'Import commit failed', 'error'); }
+        modal.close(); state.projectDocLoadedFor = null; await mountProjectDoc(true);
+        setProjectDocStatus('Design bundle imported', '');
+      });
+      actions.append(cancel, apply); modal.content.append(hint, list); modal.panel.appendChild(actions);
+      return;
+    }
     if (!data.editable || typeof data.markdown !== 'string') {
       if (!confirm((data.warnings || ['Read-only reference']).join(' ') + '\n\nAttach this immutable reference to the Design project?')) return;
       const attach = await api('/api/design/import/reference', {
@@ -101,18 +129,6 @@ async function importDesignFile(file) {
     await mountProjectDoc(true);
     setProjectDocStatus('Imported as ' + action, '');
   } catch (error) { setProjectDocStatus(error.message || 'Import failed', 'error'); }
-}
-function appendMissingTemplateSections(templateId) {
-  const selected = (state.projectDocTemplates || []).find(item => item.id === templateId);
-  if (!selected || !Array.isArray(selected.sections)) return;
-  let source = getProjectDocContent();
-  const missing = selected.sections.filter(section => !new RegExp('^##\\s+' + section.title.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&') + '\\s*$', 'mi').test(source));
-  if (missing.length && confirm('Add ' + missing.length + ' missing scaffold sections from ' + selected.name + '?')) {
-    source = source.trimEnd() + '\n\n' + missing.map(section => '<!-- hadamard-section:' + section.id + ' -->\n## ' + section.title + '\n\n<!-- ' + section.prompt + ' -->\n').join('\n');
-    state.projectDocRaw = source;
-    const editor = el('projectDocSource'); if (editor) editor.value = source;
-  }
-  updateDesignFrontmatter('template', templateId);
 }
 function modalShell(title) {
   const overlay = document.createElement('div'); overlay.className = 'modal'; overlay.classList.remove('hidden');
@@ -229,20 +245,74 @@ function openDesignExportDialog() {
   modal.content.appendChild(actions);
   modal.overlay.addEventListener('click', event => { if (event.target === modal.overlay) modal.close(); });
 }
-function openDesignTemplateCenter() {
+async function openDesignTemplateCenter() {
   const modal = modalShell('Design templates');
+  modal.panel.classList.add('design-template-center');
+  const toolbar = document.createElement('div'); toolbar.className = 'design-template-toolbar';
+  const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Search templates'; search.setAttribute('aria-label', 'Search Design templates');
+  const category = document.createElement('select'); category.setAttribute('aria-label', 'Template category');
+  const all = document.createElement('option'); all.value = ''; all.textContent = 'All categories'; category.appendChild(all);
+  const categories = [...new Set((state.projectDocTemplates || []).map(item => item.category).filter(Boolean))];
+  for (const value of categories) { const option = document.createElement('option'); option.value = value; option.textContent = value; category.appendChild(option); }
+  toolbar.append(search, category);
+  const layout = document.createElement('div'); layout.className = 'design-template-layout';
   const grid = document.createElement('div'); grid.className = 'design-template-grid';
-  for (const template of state.projectDocTemplates || []) {
+  const preview = document.createElement('section'); preview.className = 'design-template-detail';
+  const previewFrame = document.createElement('iframe'); previewFrame.className = 'design-template-frame'; previewFrame.setAttribute('sandbox', ''); previewFrame.title = 'Template preview';
+  const previewMeta = document.createElement('div'); previewMeta.className = 'design-template-meta';
+  preview.append(previewFrame, previewMeta);
+  let activeId = '';
+  async function selectTemplate(template) {
+    activeId = template.id;
+    grid.querySelectorAll('.design-template-card').forEach(card => card.classList.toggle('active', card.dataset.id === activeId));
+    previewMeta.textContent = 'Loading preview...';
+    const response = await api('/api/design/template/preview?id=' + encodeURIComponent(template.id));
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { previewMeta.textContent = data.error || 'Preview failed'; return; }
+    previewFrame.srcdoc = data.html || '';
+    previewMeta.textContent = '';
+    const heading = document.createElement('div'); heading.innerHTML = '<strong></strong><span></span>';
+    heading.querySelector('strong').textContent = data.template.name;
+    heading.querySelector('span').textContent = data.template.description;
+    const changes = document.createElement('div'); changes.className = 'design-change-list compact';
+    for (const change of data.changes || []) {
+      const row = document.createElement('div'); row.className = 'design-change-row'; row.dataset.action = change.action;
+      row.innerHTML = '<span class="design-change-action"></span><code></code>';
+      row.querySelector('.design-change-action').textContent = change.action;
+      row.querySelector('code').textContent = change.path;
+      changes.appendChild(row);
+    }
+    const use = document.createElement('button'); use.type = 'button'; use.className = 'primary-btn'; use.textContent = 'Use template';
+    use.addEventListener('click', async () => {
+      use.disabled = true;
+      const applied = await api('/api/design/template/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: template.id, expectedChanges: data.changes, confirmed: true }) });
+      const result = await applied.json().catch(() => ({}));
+      if (!applied.ok) { use.disabled = false; return setProjectDocStatus(result.error || 'Template apply failed', 'error'); }
+      modal.close(); state.projectDocLoadedFor = null; state.designEntryMode = 'markdown'; await mountProjectDoc(true);
+      setProjectDocStatus('Template applied: ' + template.name, '');
+    });
+    previewMeta.append(heading, changes, use);
+  }
+  function renderCards() {
+    const query = search.value.trim().toLowerCase(); const selectedCategory = category.value;
+    grid.textContent = '';
+    const visible = (state.projectDocTemplates || []).filter(template => (!selectedCategory || template.category === selectedCategory)
+      && (!query || (template.name + ' ' + template.description + ' ' + template.category).toLowerCase().includes(query)));
+    for (const template of visible) {
     const card = document.createElement('button'); card.type = 'button'; card.className = 'design-template-card';
-    const preview = document.createElement('div'); preview.className = 'design-template-preview';
-    preview.textContent = (template.sections || []).slice(0, 5).map(section => section.title).join('\n');
+    card.dataset.id = template.id;
+    const image = document.createElement('img'); image.className = 'design-template-thumbnail'; image.src = template.thumbnail; image.alt = '';
     const title = document.createElement('strong'); title.textContent = template.name;
     const description = document.createElement('span'); description.textContent = template.description || '';
-    card.append(preview, title, description);
-    card.addEventListener('click', () => { modal.close(); appendMissingTemplateSections(template.id); });
+    const tags = document.createElement('small'); tags.textContent = template.category + ' · ' + (template.entries || []).join(' + ');
+    card.append(image, title, description, tags);
+    card.addEventListener('click', () => { void selectTemplate(template); });
     grid.appendChild(card);
+    }
+    if (visible.length && !visible.some(item => item.id === activeId)) void selectTemplate(visible[0]);
   }
-  modal.content.appendChild(grid);
+  search.addEventListener('input', renderCards); category.addEventListener('change', renderCards);
+  layout.append(grid, preview); modal.content.append(toolbar, layout); renderCards();
   modal.overlay.addEventListener('click', event => { if (event.target === modal.overlay) modal.close(); });
 }
 async function refreshDesignEntry() {

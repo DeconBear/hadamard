@@ -95,6 +95,29 @@ export interface LoadProjectContextOptions {
   projectInstructionMode?: ProjectInstructionMode;
   hadamardHomeDir?: string;
   userHomeDir?: string;
+  /** Registered primary and additional work paths that bound project instructions. */
+  projectWorkPaths?: string[];
+}
+
+function isInside(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+/** Resolve AGENTS.md scope exactly as the RULES manager does: root first, nearest directory last. */
+export function resolveProjectAgentsPaths(workDir: string, projectWorkPaths: readonly string[]): string[] {
+  const target = path.resolve(workDir);
+  const containingRoots = projectWorkPaths.map(candidate => path.resolve(candidate)).filter(root => isInside(root, target));
+  if (containingRoots.length === 0) return [];
+  const root = containingRoots.sort((left, right) => right.length - left.length)[0]!;
+  const directories: string[] = [];
+  let directory = target;
+  while (isInside(root, directory)) {
+    directories.unshift(directory);
+    if (directory === root) break;
+    directory = path.dirname(directory);
+  }
+  return directories.map(directoryPath => path.join(directoryPath, 'AGENTS.md'));
 }
 
 /**
@@ -129,11 +152,14 @@ export function loadProjectContext(
     ancestors.unshift(dir);
     dir = path.dirname(dir);
   }
+  const boundedAgentFiles = options.projectWorkPaths
+    ? new Set(resolveProjectAgentsPaths(workDir, options.projectWorkPaths))
+    : undefined;
 
   for (const anc of ancestors) {
     // Project instruction formats are selected per workspace.
     const projectFiles = [
-      ...(includeAgents ? ['AGENTS.md'] : []),
+      ...(includeAgents && (!boundedAgentFiles || boundedAgentFiles.has(path.join(anc, 'AGENTS.md'))) ? ['AGENTS.md'] : []),
       ...(includeClaude ? ['CLAUDE.md', path.join('.claude', 'CLAUDE.md')] : []),
     ];
     for (const rel of projectFiles) {

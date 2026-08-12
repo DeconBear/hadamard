@@ -66,4 +66,16 @@ describe('DesignWorkspaceService', () => {
     await expect(service.readAsset('escape/secret.txt')).rejects.toThrow(/symlink/u);
     await expect(service.listAssets()).rejects.toThrow(/symlink/u);
   });
+
+  it('writes nested Design assets atomically and rejects symlinked parent directories', async () => {
+    const primary = await temporaryWorkspace('design-write-assets');
+    const outside = await temporaryWorkspace('design-write-outside');
+    const service = new DesignWorkspaceService(primary);
+    const written = await service.writeFile('styles/site.css', 'body { color: black; }\n');
+    expect(written.relativePath).toBe('styles/site.css');
+    expect(await service.readAsset('styles/site.css')).toEqual(Buffer.from('body { color: black; }\n'));
+
+    await symlink(outside, path.join(service.rootPath(), 'linked'), 'junction');
+    await expect(service.writeFile('linked/escape.css', 'unsafe')).rejects.toThrow(/symlink/u);
+  });
 });
