@@ -61,7 +61,10 @@ export const DEFAULT_PROJECT_MEMORY_SETTINGS: ProjectMemorySettings = {
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   workMode: 'coding',
   agentMode: 'react',
-  codeAct: { enabled: false, backend: 'process', securityMode: 'trusted' },
+  // CodeAct availability follows the selected session/Agent/node mode. The
+  // legacy enabled field remains true for backwards-compatible serialization;
+  // it is no longer a project-level opt-in switch.
+  codeAct: { enabled: true, backend: 'process', securityMode: 'trusted' },
   customPrompt: '',
   projectRules: '',
   context: { instructionMode: 'agents' },
@@ -334,7 +337,9 @@ function normalizeCodeActSettings(value: unknown): CodeActSettings {
       : undefined;
   };
   return {
-    enabled: input.enabled === true,
+    // Kept for older settings files and SDK callers. Project UI no longer
+    // exposes an enable switch: choosing CodeAct/Hybrid is the opt-in.
+    enabled: true,
     backend,
     securityMode,
     ...(typeof input.pythonCommand === 'string' && input.pythonCommand.trim()

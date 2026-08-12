@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -52,13 +52,13 @@ describe('projectSettings', () => {
     });
   });
 
-  it('defaults CodeAct off and persists the project execution mode and backend settings', async () => {
+  it('keeps CodeAct available and persists the project execution mode and backend settings', async () => {
     homeDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-home-'));
     workDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-work-'));
 
     await expect(readProjectSettings(workDir, homeDir)).resolves.toMatchObject({
       agentMode: 'react',
-      codeAct: { enabled: false, backend: 'process', securityMode: 'trusted' },
+      codeAct: { enabled: true, backend: 'process', securityMode: 'trusted' },
     });
 
     const saved = await writeProjectSettings(workDir, homeDir, {
@@ -81,6 +81,19 @@ describe('projectSettings', () => {
         executionTimeoutMs: 12_000,
         idleTimeoutMs: 45_000,
       },
+    });
+  });
+
+  it('normalizes legacy CodeAct opt-out values to the mode-driven behavior', async () => {
+    homeDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-home-'));
+    workDir = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ps-work-'));
+    await mkdir(path.dirname(projectSettingsPath(workDir, homeDir)), { recursive: true });
+    await writeFile(projectSettingsPath(workDir, homeDir), JSON.stringify({
+      codeAct: { enabled: false, backend: 'process', securityMode: 'trusted' },
+    }));
+
+    await expect(readProjectSettings(workDir, homeDir)).resolves.toMatchObject({
+      codeAct: { enabled: true },
     });
   });
 

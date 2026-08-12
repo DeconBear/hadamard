@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import {
-  AgentExecutionPolicyError,
   createAgentSdk,
   tool,
   type ModelApi,
@@ -97,8 +96,8 @@ describe('Agent mode runtime integration', () => {
     }
   });
 
-  it('fails before a model request or kernel startup when CodeAct is disabled', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-agent-mode-disabled-'));
+  it('allows CodeAct selection without a project-level enable switch', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-agent-mode-default-'));
     directories.push(root);
     const modelApi = new CaptureModel();
     const sdk = await createAgentSdk({
@@ -110,10 +109,11 @@ describe('Agent mode runtime integration', () => {
       permissionMode: 'bypassPermissions',
     });
     try {
-      await expect(sdk.run('must fail closed', { agentMode: 'codeact' })).rejects.toMatchObject({
-        code: 'CODEACT_DISABLED',
-      } satisfies Partial<AgentExecutionPolicyError>);
-      expect(modelApi.requests).toHaveLength(0);
+      await expect(sdk.run('select CodeAct', { agentMode: 'codeact' })).resolves.toMatchObject({
+        stopReason: 'end_turn',
+      });
+      expect(modelApi.requests).toHaveLength(1);
+      expect(modelApi.requests[0]?.tools?.map(item => item.name)).toEqual(['CodeCell']);
     } finally {
       await sdk.close();
     }
