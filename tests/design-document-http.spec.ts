@@ -133,19 +133,19 @@ describe('GUI Design document HTTP boundary', () => {
       });
       expect(reference.body.artifact).toMatchObject({ mediaType: 'application/pdf' });
 
-      const preview = await request<{ kind: string; editable: boolean }>(server, '/api/design/import/preview', {
+      const preview = await request<{ kind: string; editable: boolean; changes: unknown[] }>(server, '/api/design/import/preview', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ fileName: exported.package!.body.fileName, contentBase64: exported.package!.body.contentBase64 }),
       });
-      expect(preview.body).toMatchObject({ kind: 'hadamard-package', editable: true });
-      const committed = await request<{ document: { revision: string } }>(server, '/api/design/import/commit', {
+      expect(preview.body).toMatchObject({ kind: 'hadamard-workspace-bundle', editable: true });
+      const committed = await request<{ workspace: { entries: { markdown: { revision: string } } } }>(server, '/api/design/import/commit', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ fileName: exported.package!.body.fileName, contentBase64: exported.package!.body.contentBase64,
-          action: 'new-copy', expectedRevision: saved.body.entry.revision, confirmed: true }),
+          expectedChanges: preview.body.changes, confirmed: true }),
       });
       expect(committed.status).toBe(200);
 
-      expect(committed.body.document.revision).toBeTruthy();
+      expect(committed.body.workspace.entries.markdown.revision).toBeTruthy();
     } finally {
       await server.close();
     }
