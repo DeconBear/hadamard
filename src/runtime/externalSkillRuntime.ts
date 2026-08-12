@@ -41,8 +41,9 @@ interface EligibleExternalSkill {
 
 /**
  * Resolve native CLI skills into Hadamard definitions without writing to the
- * native runtime directories. Distinct-content name conflicts are fail-closed:
- * no variant loads unless the caller chooses a catalog id explicitly.
+ * native runtime directories. Distinct-content name conflicts prefer a unique
+ * Claude Code variant; otherwise they stay fail-closed until the caller picks
+ * a catalog id explicitly.
  */
 export async function loadHadamardExternalSkillDefinitions(options: {
   hadamardHomeDir: string;
@@ -111,12 +112,9 @@ export async function loadHadamardExternalSkillDefinitions(options: {
       selected.push(variants[0]!);
       continue;
     }
-    const preferredId = runtimeOptions.preferredSkillIds?.[name];
-    const preferred = preferredId
-      ? variants.find(candidate => candidate.entry.id === preferredId)
-      : undefined;
-    if (preferred) {
-      selected.push(preferred);
+    const winner = resolveConflictingSkill(variants, runtimeOptions.preferredSkillIds?.[name]);
+    if (winner) {
+      selected.push(winner);
       continue;
     }
     skippedConflicts.push({
@@ -174,6 +172,20 @@ export async function loadHadamardExternalSkillDefinitions(options: {
     skippedUntrustedSourceIds,
     loadErrors,
   };
+}
+
+function resolveConflictingSkill(
+  variants: EligibleExternalSkill[],
+  preferredId: string | undefined,
+): EligibleExternalSkill | undefined {
+  if (preferredId) {
+    const preferred = variants.find(candidate => candidate.entry.id === preferredId);
+    if (preferred) return preferred;
+  }
+  const claude = variants.filter(candidate => candidate.origin.provider === 'claude-code');
+  if (claude.length === 1) return claude[0];
+  const claudeUser = claude.filter(candidate => candidate.origin.scope === 'user');
+  return claudeUser.length === 1 ? claudeUser[0] : undefined;
 }
 
 function normalizeRuntimeOptions(
