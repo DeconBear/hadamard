@@ -78,6 +78,10 @@ describe('SessionStore', () => {
     expect(updated?.issueNumber).toBe(1);
     expect(updated?.issueKey).toBe('ISS-1');
     expect(updated?.agentProfile).toBe('Claude reviewer');
+    created.metadata.__hadamardWorkDir = path.resolve('E:/shared-workspace');
+    await store.save(created);
+    expect((await store.list()).find((item) => item.id === created.id)?.workDir)
+      .toBe(path.resolve('E:/shared-workspace'));
     expect(forked.title).toBe('Alpha Copy');
     expect(forked.runs).toHaveLength(0);
 

@@ -685,6 +685,11 @@ export {
   SessionCatalog,
   sessionCatalogLocatorKey,
 } from './storage/sessionCatalog.js';
+export {
+  discoverProjectSessions,
+  invalidateProjectSessionDiscovery,
+} from './storage/sessionDiscovery.js';
+export type { DiscoveredProjectSession } from './storage/sessionDiscovery.js';
 export type {
   SessionCatalogAction,
   SessionCatalogActionInput,

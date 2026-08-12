@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { TUI_SLASH_COMMANDS, filterSlashCommands } from '../src/tui/hadamardTui.js';
 import {
   HADAMARD_INTERACTIVE_COMMANDS,
+  HADAMARD_GUI_INTERACTIVE_COMMANDS,
   SUBCOMMANDS,
   filterInteractiveCommands,
 } from '../src/ui/commandSurface.js';
@@ -110,6 +111,12 @@ describe('TUI and GUI parity', () => {
       'bridge',
       'exit',
     ]);
+  });
+
+  it('keeps Session switching on GUI controls instead of the GUI slash menu', () => {
+    expect(HADAMARD_GUI_INTERACTIVE_COMMANDS).not.toHaveProperty('resume');
+    expect(HADAMARD_GUI_INTERACTIVE_COMMANDS).not.toHaveProperty('exit');
+    expect(createHadamardGuiHtml()).toContain('id="sessionCenterList"');
   });
 
   it('renders GUI shell controls for the interactive surface', () => {
@@ -492,7 +499,9 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('let sessionResumeQueue = Promise.resolve()');
     expect(js).toContain('function setSessionResumePending');
     expect(js).toContain('async function performResumeSession');
-    expect(js).toContain("api('/api/session/active')");
+    expect(js).toContain("api('/api/session/active'");
+    expect(html).toContain('id="sidebarSessionsBlock"');
+    expect(js).toContain('state.snapshot?.unregisteredSessions');
     expect(js).not.toContain('refreshSessionInBackground');
     expect(js).toContain('renderMarkdownInto');
     expect(js).toContain('updateStreamingToolInput');

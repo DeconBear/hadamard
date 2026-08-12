@@ -495,6 +495,7 @@ export class SessionStore {
     const agentNameRaw = session.metadata.__hadamardAgentName
       ?? session.metadata.__hadamardAgentDefinition;
     const agentPathRaw = session.metadata.__hadamardAgentPath;
+    const workDirRaw = session.metadata.__hadamardWorkDir;
     const issueNumber = typeof issueNumberRaw === 'number'
       ? issueNumberRaw
       : typeof issueNumberRaw === 'string' && Number.isFinite(Number(issueNumberRaw))
@@ -535,6 +536,9 @@ export class SessionStore {
       brief: truncateText(extractConversationBrief(session.messages), 100),
       messageCount: session.messages.length,
       runCount: session.runs.length,
+      ...(typeof workDirRaw === 'string' && workDirRaw.trim()
+        ? { workDir: workDirRaw.trim() }
+        : {}),
       ...(session.metadata.__hadamardPinned === true ? { pinned: true } : {}),
     };
   }

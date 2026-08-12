@@ -3,6 +3,22 @@ import { describe, expect, it } from 'vitest';
 import { withDeadline } from '../src/runtime/deadline.js';
 
 describe('withDeadline', () => {
+  it('allows an unlimited operation while preserving parent cancellation', async () => {
+    const controller = new AbortController();
+    await expect(withDeadline('unlimited work', undefined, controller.signal, async ({ signal, timeoutMs }) => {
+      expect(signal).toBe(controller.signal);
+      expect(timeoutMs).toBeUndefined();
+      return 'done';
+    })).resolves.toBe('done');
+
+    const ignored = new AbortController();
+    const pending = withDeadline('unlimited ignored work', undefined, ignored.signal, () =>
+      new Promise<never>(() => {})
+    );
+    ignored.abort('stop now');
+    await expect(pending).rejects.toMatchObject({ code: 'RUN_ABORTED' });
+  });
+
   it('resolves cooperative work and provides a live derived signal', async () => {
     await expect(withDeadline('fast work', 100, undefined, ({ signal }) => {
       expect(signal.aborted).toBe(false);
