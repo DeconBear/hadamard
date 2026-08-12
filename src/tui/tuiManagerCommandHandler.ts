@@ -6,7 +6,6 @@ import { formatErrorLine, formatInfoLine } from './transcript.js';
 export interface TuiManagerStatus {
   model: string;
   readScope: string;
-  mirrorDesignToWorkspace: boolean;
   milestones: number;
   today: number;
   upcoming: number;
@@ -85,7 +84,6 @@ export async function runTuiManagerCommand(
       `${A.bold}Manager${A.reset}`,
       `${A.dim}model: ${status.model}${A.reset}`,
       `${A.dim}readScope: ${status.readScope}${A.reset}`,
-      `${A.dim}mirror to workspace: ${status.mirrorDesignToWorkspace ? 'on' : 'off'}${A.reset}`,
       `${A.dim}plan.json: ${status.milestones} milestones · ${status.today} today · ${status.upcoming} upcoming${A.reset}`,
       `${A.dim}DESIGN.md: ${status.designChars === null ? '(none yet — /manager update)' : `${status.designChars} chars`}${A.reset}`,
       '',
@@ -96,7 +94,7 @@ export async function runTuiManagerCommand(
     const config = await port.manager.config();
     port.appendStatic([
       ...JSON.stringify(config, null, 2).split('\n').map(line => `${A.dim}${line}${A.reset}`),
-      `${A.dim}Set: /manager config set <model|bridgeConfig|readScope|mirror|allow> <value>${A.reset}`,
+      `${A.dim}Set: /manager config set <model|bridgeConfig|readScope|allow> <value>${A.reset}`,
       `${A.dim}The Manager always runs read-only regardless of model.${A.reset}`,
       '',
     ]);

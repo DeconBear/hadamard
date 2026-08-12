@@ -69,6 +69,7 @@ describe('TUI and GUI parity', () => {
       'init',
       'compact',
       'memory',
+      'document',
       'rules',
       'context',
       'devices',
@@ -533,11 +534,11 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('conv-sidebar-row');
     expect(js).toContain('renderConvSidebarDetail');
     expect(js).toContain('/api/design');
-    expect(js).toContain('/api/design/patch');
-    expect(js).toContain('projectDocTemplateSelect');
+    expect(js).toContain('/api/design/entry');
+    expect(js).toContain('projectDocumentSelect');
     expect(js).toContain('projectDocImportBtn');
     expect(js).toContain('projectDocExportBtn');
-    expect(js).toContain('projectDocShareBtn');
+    expect(js).not.toContain('projectDocShareBtn');
     expect(css).toContain('.project-doc-panel');
     expect(css).toContain('.conv-sidebar-detail');
     expect(js).toContain('sessionConfigDisplay');
@@ -800,7 +801,7 @@ describe('TUI and GUI parity', () => {
     }
   });
 
-  it('keeps manager config knobs (model/readScope/mirror) in the TUI and GUI (plan M0/M3)', () => {
+  it('keeps manager model and read-scope configuration in the TUI and GUI', () => {
     const root = join(import.meta.dirname, '..');
     const tui = readTuiSources(root);
     expect(tui).toContain("startsWith('config set ')");
@@ -811,7 +812,7 @@ describe('TUI and GUI parity', () => {
     const css = createHadamardGuiStyles();
     expect(html).toContain('id="managerConfigForm"');
     expect(html).toContain('id="managerCfgScope"');
-    expect(html).toContain('id="managerCfgMirror"');
+    expect(html).not.toContain('id="managerCfgMirror"');
     expect(html).toContain('id="managerCfgModelPicker"');
     expect(html).toContain('value="full-access"');
     expect(html).toContain('writes only plan/progress files');

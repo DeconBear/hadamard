@@ -9,7 +9,6 @@ export * from './designPackage.js';
 export * from './designPdfExporter.js';
 export * from './designRenderService.js';
 export * from './designSchema.js';
-export * from './designShareService.js';
 export * from './designTemplateRegistry.js';
 export * from './designTheme.js';
 export * from './engineeringProfileService.js';

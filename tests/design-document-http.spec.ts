@@ -45,16 +45,16 @@ describe('GUI Design document HTTP boundary', () => {
       expect(initial.status).toBe(200);
       expect(initial.body.state).toBe('empty');
 
-      const saved = await request<{ document: { content: string; revision: string } }>(server, '/api/design/patch', {
+      const saved = await request<{ entry: { content: string; revision: string } }>(server, '/api/design/entry', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content: '# Human Design\n', expectedRevision: initial.body.revision }),
+        body: JSON.stringify({ mode: 'markdown', content: '# Human Design\n', expectedRevision: initial.body.revision }),
       });
       expect(saved.status).toBe(200);
-      expect(saved.body.document.content).toBe('# Human Design\n');
+      expect(saved.body.entry.content).toBe('# Human Design\n');
 
-      const stale = await request<{ error: string }>(server, '/api/design/patch', {
+      const stale = await request<{ error: string }>(server, '/api/design/entry', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content: '# Stale\n', expectedRevision: initial.body.revision }),
+        body: JSON.stringify({ mode: 'markdown', content: '# Stale\n', expectedRevision: initial.body.revision }),
       });
       expect(stale.status).toBe(409);
       expect(stale.body.error).toMatch(/changed since/u);
@@ -96,7 +96,7 @@ describe('GUI Design document HTTP boundary', () => {
     }
   }, 30_000);
 
-  it('exports all formats, commits validated imports, and serves revocable immutable shares', async () => {
+  it('exports all formats and commits validated imports', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'design-http-transfer-'));
     temporaryDirectories.push(root);
     const workDir = path.join(root, 'work');
@@ -114,9 +114,9 @@ describe('GUI Design document HTTP boundary', () => {
     try {
       const initial = await request<{ revision: string; templates: unknown[] }>(server, '/api/design');
       expect(initial.body.templates).toHaveLength(8);
-      const saved = await request<{ document: { revision: string } }>(server, '/api/design/patch', {
+      const saved = await request<{ entry: { revision: string } }>(server, '/api/design/entry', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content: '# Transfer Design\n\n## Goal\n\nShip safely.\n', expectedRevision: initial.body.revision }),
+        body: JSON.stringify({ mode: 'markdown', content: '# Transfer Design\n\n## Goal\n\nShip safely.\n', expectedRevision: initial.body.revision }),
       });
       const exported: Record<string, { status: number; body: { contentBase64: string; mediaType: string; fileName: string } }> = {};
       for (const format of ['html', 'pdf', 'package']) {
@@ -141,26 +141,11 @@ describe('GUI Design document HTTP boundary', () => {
       const committed = await request<{ document: { revision: string } }>(server, '/api/design/import/commit', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ fileName: exported.package!.body.fileName, contentBase64: exported.package!.body.contentBase64,
-          action: 'new-copy', expectedRevision: saved.body.document.revision, confirmed: true }),
+          action: 'new-copy', expectedRevision: saved.body.entry.revision, confirmed: true }),
       });
       expect(committed.status).toBe(200);
 
-      const shared = await request<{ token: string; url: string; snapshot: { artifacts: Record<string, unknown> } }>(server, '/api/design/share', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ expectedRevision: committed.body.document.revision, expiresInHours: 24 }),
-      });
-      expect(Object.keys(shared.body.snapshot.artifacts).sort()).toEqual(['html', 'package', 'pdf']);
-      const page = await fetch(`${server.url.replace(/\/$/u, '')}${shared.body.url}`);
-      expect(page.status).toBe(200);
-      expect(await page.text()).toContain('immutable snapshot');
-      const packageDownload = await fetch(`${server.url.replace(/\/$/u, '')}${shared.body.url}/package`);
-      expect(Buffer.from(await packageDownload.arrayBuffer()).subarray(0, 2).toString('ascii')).toBe('PK');
-
-      expect((await request(server, '/api/design/share/revoke', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token: shared.body.token }),
-      })).status).toBe(200);
-      expect((await fetch(`${server.url.replace(/\/$/u, '')}${shared.body.url}`)).status).toBe(404);
+      expect(committed.body.document.revision).toBeTruthy();
     } finally {
       await server.close();
     }
