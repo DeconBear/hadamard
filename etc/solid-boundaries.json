@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "files": {
     "goal/projectGoalStore.ts": { "maxLines": 1013, "reason": "Existing project-goal store debt." },
-    "gui/hadamardGui.ts": { "maxLines": 10805, "reason": "GUI composition root; Document workspace routes are delegated to dedicated Design controllers except for registered-work-path RULES, project settings wiring, and the shared /document command result." },
-    "gui/hadamardGuiAssets.ts": { "maxLines": 27281, "reason": "Byte-stable embedded GUI renderer; reviewed increase adds the shared Project workbench state, Document command bar, rich Markdown controls, serialized saves, source toggle, stale-preview status, and RULES manager while Design preview, HTTP, and transfer logic remain delegated." },
+    "gui/hadamardGui.ts": { "maxLines": 10876, "reason": "GUI composition root; reviewed increase unifies persisted-session discovery with the TUI while Document workspace routes remain delegated to dedicated controllers." },
+    "gui/hadamardGuiAssets.ts": { "maxLines": 27472, "reason": "Byte-stable embedded GUI renderer; reviewed increase adds resilient conversation navigation and running/unread state plus container-responsive Project toolbars while domain logic remains delegated." },
     "gui/transcript/clientBundle.ts": { "maxLines": 1127, "reason": "Byte-stable transcript client bundle." },
     "manager/assistantGlobalTools.ts": { "maxLines": 1149, "reason": "Compatibility factory; new domains belong in providers." },
     "parity/bridgeProviders.ts": { "maxLines": 1400, "reason": "Existing compatibility adapter debt." },
@@ -16,8 +16,8 @@
     "runtime/externalSkillCatalog.ts": { "maxLines": 1249, "reason": "Existing external skill catalog debt." },
     "runtime/hadamardCompact.ts": { "maxLines": 1340, "reason": "Existing compact engine debt." },
     "storage-v2/sqliteStorage.ts": { "maxLines": 1232, "reason": "SQLite infrastructure adapter with segregated public stores." },
-    "tui/hadamardTuiController.ts": { "maxLines": 4650, "reason": "TUI composition/state root; reviewed increase adds the shared /document picker and editor launch while Design and RULES file behavior remains in domain services." },
-    "types.ts": { "maxLines": 3369, "reason": "Public compatibility type barrel; Phase 5 adds MCP content provenance shared by stdio and HTTP bundle servers." }
+    "tui/hadamardTuiController.ts": { "maxLines": 4743, "reason": "TUI composition/state root; reviewed increase unifies /resume with persisted project-session discovery while session catalog behavior remains in dedicated helpers." },
+    "types.ts": { "maxLines": 3371, "reason": "Public compatibility type barrel; reviewed increase makes runtime deadlines optional and carries the persisted session work directory shared by TUI and GUI." }
   },
   "interfaces": {
     "config/agentProfiles.ts#SelectableAgent": { "maxMembers": 28, "reason": "Compatibility DTO extended with the reusable Agent execution mode." },
@@ -41,7 +41,7 @@
     "types.ts#HadamardBackgroundTaskRecord": { "maxMembers": 38, "reason": "Persisted background-task schema." },
     "types.ts#HadamardTeammateRecord": { "maxMembers": 26, "reason": "Persisted teammate schema." },
     "types.ts#StoredSession": { "maxMembers": 23, "reason": "Persisted session schema." },
-    "types.ts#SessionSummary": { "maxMembers": 28, "reason": "Public session summary DTO." },
+    "types.ts#SessionSummary": { "maxMembers": 29, "reason": "Public session summary DTO extended with the persisted work directory needed by shared TUI/GUI discovery." },
     "types.ts#ScheduledAutomationTask": { "maxMembers": 22, "reason": "Persisted automation schema." },
     "types.ts#CreateHadamardBridgeSdkOptions": { "maxMembers": 41, "reason": "Bridge SDK compatibility options." },
     "ui/agentExecutionView.ts#AgentExecutionNodeView": { "maxMembers": 30, "reason": "Read-model DTO for the execution UI." },
