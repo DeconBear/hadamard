@@ -7,7 +7,6 @@ import { DesignDocumentStore } from './designDocumentStore.js';
 import { DesignImportCommitService, type DesignImportAction } from './designImportCommitService.js';
 import { DesignImportExportService, type DesignImportPreview, type DesignTransferDocument } from './designImportExportService.js';
 import { DesignRenderService } from './designRenderService.js';
-import { DesignShareService } from './designShareService.js';
 import { createDefaultDesignTemplateRegistry } from './designTemplateRegistry.js';
 import {
   DEFAULT_DESIGN_THEMES,
@@ -34,16 +33,14 @@ export class DesignDocumentService {
   readonly transfers: DesignImportExportService;
   readonly artifacts: DesignArtifactRepository;
   readonly imports: DesignImportCommitService;
-  readonly shares: DesignShareService;
   readonly engineeringProfiles: EngineeringProfileService;
 
   constructor(
     projectPath: string,
     homeDir: string,
-    workspacePath = projectPath,
     options: DesignDocumentServiceOptions = {},
   ) {
-    this.store = new DesignDocumentStore(projectPath, homeDir, workspacePath);
+    this.store = new DesignDocumentStore(projectPath);
     const stateDirectory = getHadamardProjectSessionDirectory(projectPath, homeDir);
     this.configurations = new DesignConfigurationStore(stateDirectory);
     this.transfers = new DesignImportExportService(this.renderer, options.generatorVersion);
@@ -51,10 +48,7 @@ export class DesignDocumentService {
       path.join(stateDirectory, 'design-artifacts-v2.sqlite'),
     );
     this.imports = new DesignImportCommitService(this.store, this.configurations, this.artifacts);
-    this.shares = new DesignShareService(
-      path.join(stateDirectory, 'design-shares.json'), this.artifacts, this.transfers,
-    );
-    this.engineeringProfiles = new EngineeringProfileService(workspacePath, this.store);
+    this.engineeringProfiles = new EngineeringProfileService(projectPath, this.store);
   }
 
   async configuration(): Promise<DesignConfiguration> {
@@ -85,8 +79,8 @@ export class DesignDocumentService {
     };
   }
 
-  async patch(content: string, expectedRevision?: string, mirror = false) {
-    const savedPath = await this.store.write(content, { expectedRevision, mirror });
+  async patch(content: string, expectedRevision?: string) {
+    const savedPath = await this.store.write(content, { expectedRevision });
     const parsed = parseDesignDocument(content);
     const configuration = await this.configurations.ensure(parsed.frontmatter.template, parsed.frontmatter.theme);
     if (configuration.template.id !== parsed.frontmatter.template

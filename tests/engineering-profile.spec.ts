@@ -11,7 +11,7 @@ describe('Engineering Profile proposal and confirmation', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-profile-'));
     const home = path.join(root, 'home');
     const work = path.join(root, 'work');
-    const store = new DesignDocumentStore(work, home);
+    const store = new DesignDocumentStore(work);
     await store.write('# System\n\nInitial design.\n');
     const service = new EngineeringProfileService(work, store);
 

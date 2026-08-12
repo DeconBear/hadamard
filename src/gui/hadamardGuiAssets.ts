@@ -575,9 +575,6 @@ export function createHadamardGuiHtml(): string {
           <label id="managerCfgPathsLabel">Allowed read paths (one per line)
             <textarea id="managerCfgPaths" rows="3" placeholder="D:\\docs\\project-notes"></textarea>
           </label>
-          <label class="manager-cfg-check" id="managerCfgMirrorRow">
-            <input type="checkbox" id="managerCfgMirror"> Mirror DESIGN.md into workspace (.hadamard/DESIGN.md)
-          </label>
           <div class="manager-actions">
             <button type="submit" class="pill-btn primary">Save</button>
             <button type="button" id="managerCfgCancel" class="pill-btn">Cancel</button>
@@ -14866,6 +14863,13 @@ async function deviceApi(path, options) {
     init.headers = Object.assign({}, init.headers || {}, { 'content-type': 'application/json' });
     init.body = JSON.stringify(init.body);
   }
+  if (trimmed === '/document') {
+    await switchRegion('project');
+    state.projectDetailTab = 'document';
+    switchProjectView('detail');
+    addMessage('command.result', '/document · opened Project Document.');
+    return;
+  }
   const response = await api(path, init);
   const payload = await response.json().catch(function () { return {}; });
   if (!response.ok) throw new Error(payload.error || ('Device Link request failed (' + response.status + ').'));
@@ -25152,7 +25156,6 @@ function applyAssistantScopeUi() {
   }
   el('managerCfgReadScopeRow')?.classList.toggle('hidden', isGlobal);
   el('managerCfgPathsLabel')?.classList.toggle('hidden', isGlobal);
-  el('managerCfgMirrorRow')?.classList.toggle('hidden', isGlobal);
   el('managerUpdateBtn')?.classList.toggle('hidden', isGlobal);
   el('managerUpdateQuick')?.classList.toggle('hidden', isGlobal);
   syncManagerCfgPathsVisibility();
@@ -25768,7 +25771,6 @@ async function refreshManagerState(forceHydrate = false) {
           'model: ' + modelLabel + ' (read-only)',
           'readScope: ' + (cfg.readScope || 'workspace-only'),
         ];
-        if (cfg.mirrorDesignToWorkspace) parts.push('mirror: on');
         if (data.schedules && data.schedules.length) parts.push(data.schedules.length + ' schedule' + (data.schedules.length === 1 ? '' : 's'));
         line.textContent = parts.join('  ·  ');
       }
@@ -26017,7 +26019,6 @@ function openManagerConfigForm() {
     mountManagerConfigModelPicker(cfg.bridgeConfig || '', cfg.model || '');
     if (el('managerCfgScope')) el('managerCfgScope').value = cfg.readScope || 'workspace-only';
     if (el('managerCfgPaths')) el('managerCfgPaths').value = (cfg.allowedReadPaths || []).join('\\n');
-    if (el('managerCfgMirror')) el('managerCfgMirror').checked = !!cfg.mirrorDesignToWorkspace;
     applyAssistantScopeUi();
     form.classList.remove('hidden');
   })();
@@ -26120,7 +26121,6 @@ function wireManagerPanel() {
             ...selectedManagerCfg(),
             readScope: el('managerCfgScope')?.value || 'workspace-only',
             allowedReadPaths: (el('managerCfgPaths')?.value || '').split('\\n').map((p) => p.trim()).filter(Boolean),
-            mirrorDesignToWorkspace: !!el('managerCfgMirror')?.checked,
           }),
       });
       if (res.ok) {

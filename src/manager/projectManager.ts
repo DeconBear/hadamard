@@ -7,10 +7,8 @@
  *
  *   - Tools: Read/Glob/Grep (scoped by `readScope`) + WebFetch + PlanWrite +
  *     DesignWrite. No Write/Edit/Bash/shell, no Team tools, no Task.
- *   - Writes: only `plan.json` and `DESIGN.md` inside the project store
- *     (`~/.hadamard/projects/<hash>/`), via the two dedicated tools whose
- *     target paths are hard-coded. Optional opt-in mirror of DESIGN.md to
- *     `<workDir>/.hadamard/DESIGN.md`.
+ *   - Writes: only `plan.json` in app state and `.hadamard/design/design.md`
+ *     in the primary workspace, via two dedicated hard-coded tools.
  *   - Read scope: `workspace-only` (default) | `workspace+docs` |
  *     `explicit-allowlist` | `full-access` — enforced by wrapping the read
  *     tools' execute (`full-access` skips path checks; writes stay limited).
@@ -25,7 +23,7 @@ import { z } from 'zod';
 import { tool } from '../runtime/tools.js';
 import { getHadamardProjectSessionDirectory } from '../config/projectSessionDirectory.js';
 import { isRecord } from '../runtime/helpers.js';
-import { DesignDocumentStore } from '../design/designDocumentStore.js';
+import { DesignWorkspaceService } from '../design/designWorkspaceService.js';
 import type { AgentToolDefinition } from '../types.js';
 import {
   addIssueComment,
@@ -61,11 +59,9 @@ export function managerPlanPath(workDir: string, homeDir: string): string {
 }
 
 export function managerDesignPath(workDir: string, homeDir: string): string {
-  return path.join(getHadamardProjectSessionDirectory(workDir, homeDir), 'DESIGN.md');
+  void homeDir;
+  return new DesignWorkspaceService(workDir).entryPath('markdown');
 }
-
-/** @deprecated Use managerDesignPath. Kept for one compatibility release. */
-export const managerProgressPath = managerDesignPath;
 
 export async function readProjectPlanFile(workDir: string, homeDir: string): Promise<ProjectPlan> {
   try {
@@ -88,18 +84,15 @@ export async function writeProjectPlanFile(workDir: string, homeDir: string, pla
 }
 
 export async function readDesignFile(workDir: string, homeDir: string): Promise<string | null> {
-  const snapshot = await new DesignDocumentStore(workDir, homeDir).inspect();
-  return snapshot.state === 'empty' ? null : snapshot.content;
+  void homeDir;
+  const entry = await new DesignWorkspaceService(workDir).readEntry('markdown');
+  return entry.exists ? entry.content : null;
 }
 
 export async function writeDesignFile(workDir: string, homeDir: string, content: string): Promise<string> {
-  return new DesignDocumentStore(workDir, homeDir).write(content);
+  void homeDir;
+  return (await new DesignWorkspaceService(workDir).writeMarkdown(content)).path;
 }
-
-/** @deprecated Reads the canonical Design document, including legacy migration preview content. */
-export const readProgressFile = readDesignFile;
-/** Writes DESIGN.md in the project store. */
-export const writeProgressFile = writeDesignFile;
 
 // ── Manager configuration (manager.json) ─────────────────────────
 
@@ -136,10 +129,6 @@ export interface ManagerConfig {
   readScope: ManagerReadScope;
   /** Extra readable paths for `workspace+docs` / `explicit-allowlist`. */
   allowedReadPaths: string[];
-  /** Opt-in service-managed mirror of DESIGN.md to `<workDir>/.hadamard/DESIGN.md`. */
-  mirrorDesignToWorkspace: boolean;
-  /** @deprecated Read for one compatibility release; writes use mirrorDesignToWorkspace. */
-  mirrorProgressToWorkspace?: boolean;
   /** Optional extra instructions appended to the manager system prompt. */
   promptOverride?: string;
   /** Selected Project Manager conversation. Optional for pre-upgrade configs. */
@@ -149,12 +138,7 @@ export interface ManagerConfig {
 export const DEFAULT_MANAGER_CONFIG: ManagerConfig = {
   readScope: 'workspace-only',
   allowedReadPaths: [],
-  mirrorDesignToWorkspace: false,
 };
-
-export function shouldMirrorDesignToWorkspace(config: ManagerConfig): boolean {
-  return config.mirrorDesignToWorkspace || config.mirrorProgressToWorkspace === true;
-}
 
 export function managerConfigPath(workDir: string, homeDir: string): string {
   return path.join(getHadamardProjectSessionDirectory(workDir, homeDir), 'manager.json');
@@ -176,7 +160,6 @@ export async function readManagerConfig(workDir: string, homeDir: string): Promi
       allowedReadPaths: Array.isArray(raw.allowedReadPaths)
         ? raw.allowedReadPaths.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
         : [],
-      mirrorDesignToWorkspace: raw.mirrorDesignToWorkspace === true || raw.mirrorProgressToWorkspace === true,
       promptOverride:
         typeof raw.promptOverride === 'string' && raw.promptOverride.trim() ? raw.promptOverride : undefined,
       activeSessionId: typeof raw.activeSessionId === 'string' && raw.activeSessionId.trim()
@@ -354,18 +337,10 @@ export async function createManagerTools(options: CreateManagerToolsOptions): Pr
         content: z.string().describe('The full new DESIGN.md markdown content'),
       }),
       isReadOnly: () => false,
-      serialize: (output: { path: string; mirrored?: string }) =>
-        `Design written to ${output.path}${output.mirrored ? ` (mirrored to ${output.mirrored})` : ''}`,
+      serialize: (output: { path: string }) => `Design written to ${output.path}`,
     },
     async (input) => {
-      const store = new DesignDocumentStore(projectPath, homeDir, workDir);
-      const mirror = shouldMirrorDesignToWorkspace(config);
-      const filePath = await store.write(input.content, { mirror });
-      let mirrored: string | undefined;
-      if (mirror) {
-        mirrored = path.join(workDir, '.hadamard', 'DESIGN.md');
-      }
-      return { path: filePath, mirrored };
+      return { path: await writeDesignFile(projectPath, homeDir, input.content) };
     },
   );
 

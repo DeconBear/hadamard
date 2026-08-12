@@ -2,10 +2,8 @@ import {
   type DesignEntryMode,
   DesignDocumentService,
   type DesignImportAction,
-  type DesignShareFormat,
   type EngineeringProfileTarget,
 } from '../design/index.js';
-import { escapeHtml } from '../ui/safeMarkdown.js';
 import { bytes, json, readJson, text, type GuiHttpRouter } from './guiHttpRouter.js';
 
 export interface GuiDesignHttpControllerOptions {
@@ -60,23 +58,6 @@ function encodedExport(exported: { fileName: string; mediaType: string; checksum
   };
 }
 
-function sharePage(token: string, snapshot: Awaited<ReturnType<DesignDocumentService['shares']['resolve']>>): string {
-  const root = `/design-share/${encodeURIComponent(token)}`;
-  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-    + '<title>Hadamard Design snapshot</title><style>body{margin:0;background:#f4f7fb;color:#172033;font:16px/1.55 system-ui,sans-serif}'
-    + 'main{max-width:760px;margin:8vh auto;padding:40px;background:#fff;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 20px 60px #1e3a5f18}'
-    + 'h1{margin-top:0}code{font-family:ui-monospace,monospace;font-size:13px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}'
-    + 'a{padding:10px 14px;border-radius:9px;background:#2563eb;color:#fff;text-decoration:none}a.secondary{background:#e7eef8;color:#172033}</style></head><body><main>'
-    + '<p>Hadamard Design · immutable snapshot</p><h1>Project Design snapshot</h1>'
-    + `<p>Document <code>${escapeHtml(snapshot.documentId)}</code></p>`
-    + `<p>Snapshot checksum <code>${escapeHtml(snapshot.snapshotId)}</code></p>`
-    + `<p>Exported ${escapeHtml(snapshot.exportedAt)} · expires ${escapeHtml(snapshot.expiresAt)}</p>`
-    + '<div class="actions">'
-    + `<a href="${root}/html">Read HTML</a><a class="secondary" href="${root}/pdf">Download PDF</a>`
-    + `<a class="secondary" href="${root}/package">Download Design package</a>`
-    + `<a class="secondary" href="${root}/package?import=1">Import to Hadamard</a>`
-    + '</div></main></body></html>';
-}
 
 export function registerGuiDesignHttpController(
   router: GuiHttpRouter,
@@ -168,41 +149,6 @@ export function registerGuiDesignHttpController(
     }
   });
 
-  router.route('POST', '/api/design/patch', async (req, res) => {
-    try {
-      const body = await readJson(req);
-      if (typeof body.content !== 'string') return json(res, 400, { error: 'content must be a string' });
-      const service = options.createService();
-      const savedPath = await service.patch(
-        body.content,
-        typeof body.expectedRevision === 'string' ? body.expectedRevision : undefined,
-        body.mirror === true,
-      );
-      json(res, 200, { ok: true, path: savedPath, document: await service.read() });
-    } catch (error) {
-      json(res, errorStatus(error), { error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  router.route('POST', '/api/design/config', async (req, res) => {
-    try {
-      const body = await readJson(req);
-      const service = options.createService();
-      json(res, 200, {
-        ok: true,
-        configuration: await service.patchConfiguration({
-          ...(typeof body.templateId === 'string' ? { templateId: body.templateId } : {}),
-          ...(typeof body.themeId === 'string' ? { themeId: body.themeId } : {}),
-          ...(body.themeTokens && typeof body.themeTokens === 'object' ? { themeTokens: body.themeTokens } : {}),
-          ...(Array.isArray(body.sectionOrder) ? { sectionOrder: body.sectionOrder.filter(value => typeof value === 'string') } : {}),
-          ...(Array.isArray(body.hiddenSections) ? { hiddenSections: body.hiddenSections.filter(value => typeof value === 'string') } : {}),
-        }, typeof body.expectedRevision === 'string' ? body.expectedRevision : undefined),
-      });
-    } catch (error) {
-      json(res, errorStatus(error), { error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
   router.route('POST', '/api/design/render', async (req, res) => {
     try {
       const body = await readJson(req);
@@ -272,38 +218,6 @@ export function registerGuiDesignHttpController(
     }
   });
 
-  router.route('POST', '/api/design/share', async (req, res) => {
-    try {
-      const body = await readJson(req);
-      const service = options.createService();
-      const document = await service.read();
-      if (typeof body.expectedRevision === 'string' && body.expectedRevision !== document.revision) {
-        throw new Error('DESIGN.md changed before the share snapshot was created.');
-      }
-      const created = await service.shares.create(
-        await service.transferDocument(),
-        document.revision,
-        typeof body.expiresInHours === 'number' ? body.expiresInHours : 72,
-        new Date(),
-        req.headers.host ? `http://${req.headers.host}` : undefined,
-      );
-      json(res, 200, { ...created, url: `/design-share/${created.token}` });
-    } catch (error) {
-      json(res, errorStatus(error), { error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  router.route('POST', '/api/design/share/revoke', async (req, res) => {
-    try {
-      const body = await readJson(req);
-      if (typeof body.token !== 'string') return json(res, 400, { error: 'token is required' });
-      await options.createService().shares.revoke(body.token);
-      json(res, 200, { ok: true });
-    } catch (error) {
-      json(res, 404, { error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
   router.route('POST', '/api/design/engineering-profile/preview', async (req, res) => {
     try {
       const body = await readJson(req);
@@ -338,33 +252,6 @@ export function registerGuiDesignHttpController(
       json(res, 200, { ok: true, applied });
     } catch (error) {
       json(res, errorStatus(error), { error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  router.route('GET', /^\/design-share\/[A-Za-z0-9_-]+$/u, async (_req, res, url) => {
-    const tokenValue = url.pathname.split('/').at(-1) ?? '';
-    try {
-      const snapshot = await options.createService().shares.resolve(tokenValue);
-      text(res, 200, sharePage(tokenValue, snapshot), 'text/html');
-    } catch (error) {
-      text(res, 404, error instanceof Error ? error.message : String(error));
-    }
-  });
-
-  router.route('GET', /^\/design-share\/[A-Za-z0-9_-]+\/(?:html|pdf|package)$/u, async (_req, res, url) => {
-    const [, , tokenValue = '', formatValue = ''] = url.pathname.split('/');
-    try {
-      const format = formatValue as DesignShareFormat;
-      const download = await options.createService().shares.download(tokenValue, format);
-      res.writeHead(200, {
-        'content-type': download.reference.mediaType,
-        'content-length': download.bytes.length,
-        'content-disposition': `${format === 'html' ? 'inline' : 'attachment'}; filename="${download.reference.fileName}"`,
-        'cache-control': 'private, no-store',
-      });
-      res.end(download.bytes);
-    } catch (error) {
-      text(res, 404, error instanceof Error ? error.message : String(error));
     }
   });
 

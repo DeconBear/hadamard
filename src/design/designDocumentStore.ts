@@ -16,12 +16,8 @@ export interface DesignDocumentSnapshot {
 export class DesignDocumentStore {
   readonly workspace: DesignWorkspaceService;
 
-  constructor(
-    readonly projectPath: string,
-    readonly homeDir: string,
-    private readonly workspacePath = projectPath,
-  ) {
-    this.workspace = new DesignWorkspaceService(workspacePath);
+  constructor(readonly projectPath: string) {
+    this.workspace = new DesignWorkspaceService(projectPath);
   }
 
   directory(): string {
@@ -44,8 +40,7 @@ export class DesignDocumentStore {
     };
   }
 
-  async write(content: string, options: { expectedRevision?: string; mirror?: boolean } = {}): Promise<string> {
-    void options.mirror;
+  async write(content: string, options: { expectedRevision?: string } = {}): Promise<string> {
     const saved = await this.workspace.writeMarkdown(content, options.expectedRevision);
     return saved.path;
   }

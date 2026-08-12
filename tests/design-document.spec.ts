@@ -22,7 +22,7 @@ afterEach(() => {
 
 describe('DesignDocumentStore', () => {
   it('uses DESIGN.md as the canonical source and revision-checks atomic writes', async () => {
-    const store = new DesignDocumentStore(workDir, homeDir);
+    const store = new DesignDocumentStore(workDir);
     const empty = await store.inspect();
     expect(empty.state).toBe('empty');
     await store.write('# Design\n');

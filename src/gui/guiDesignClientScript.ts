@@ -102,33 +102,6 @@ async function importDesignFile(file) {
     setProjectDocStatus('Imported as ' + action, '');
   } catch (error) { setProjectDocStatus(error.message || 'Import failed', 'error'); }
 }
-async function shareDesignSnapshot() {
-  try {
-    if (state.projectDocDirty) await saveProjectDocNow();
-    const hours = Number(prompt('Share expiry in hours (1–720)', '72') || '72');
-    const res = await api('/api/design/share', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ expectedRevision: state.projectDocRevision, expiresInHours: hours }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Share failed');
-    state.projectDocShareToken = data.token;
-    const absolute = location.origin + data.url;
-    prompt('Immutable share snapshot created. Copy this URL:', absolute);
-    setProjectDocStatus('Share snapshot created · expires ' + data.snapshot.expiresAt, '');
-  } catch (error) { setProjectDocStatus(error.message || 'Share failed', 'error'); }
-}
-async function revokeDesignShare() {
-  if (!state.projectDocShareToken || !confirm('Revoke the most recently created share token?')) return;
-  const res = await api('/api/design/share/revoke', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token: state.projectDocShareToken }),
-  });
-  const data = await res.json();
-  if (!res.ok) return setProjectDocStatus(data.error || 'Revoke failed', 'error');
-  state.projectDocShareToken = null;
-  setProjectDocStatus('Share token revoked', '');
-}
 function appendMissingTemplateSections(templateId) {
   const selected = (state.projectDocTemplates || []).find(item => item.id === templateId);
   if (!selected || !Array.isArray(selected.sections)) return;
@@ -148,59 +121,6 @@ function modalShell(title) {
   const content = document.createElement('div'); content.className = 'design-modal-content';
   panel.append(heading, content); overlay.appendChild(panel); document.body.appendChild(overlay);
   return { overlay, panel, content, close: () => overlay.remove() };
-}
-function openDesignCustomization() {
-  const modal = modalShell('Customize Design');
-  const config = state.projectDocConfiguration || {};
-  const tokens = config.theme?.tokens || {};
-  const field = (label, value, type) => {
-    const row = document.createElement('label'); row.className = 'settings-row';
-    const caption = document.createElement('span'); caption.textContent = label;
-    const input = document.createElement('input'); input.type = type || 'text'; input.value = value == null ? '' : String(value);
-    row.append(caption, input); modal.content.appendChild(row); return input;
-  };
-  const accent = field('Accent color', tokens.accentColor || '#2563eb', 'color');
-  const width = field('Page width', tokens.pageWidth || 920, 'number'); width.min = '560'; width.max = '1440';
-  const header = field('Header', tokens.header || '');
-  const footer = field('Footer', tokens.footer || '');
-  const sectionTitle = document.createElement('h3'); sectionTitle.textContent = 'Sections'; modal.content.appendChild(sectionTitle);
-  const template = (state.projectDocTemplates || []).find(item => item.id === config.template?.id);
-  const sectionRows = [];
-  for (const section of template?.sections || []) {
-    const row = document.createElement('div'); row.className = 'design-section-row';
-    const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = !(config.sections?.hidden || []).includes(section.id);
-    const textNode = document.createElement('span'); textNode.textContent = section.title;
-    const up = document.createElement('button'); up.type = 'button'; up.className = 'secondary-btn'; up.textContent = '↑'; up.title = 'Move section up';
-    const down = document.createElement('button'); down.type = 'button'; down.className = 'secondary-btn'; down.textContent = '↓'; down.title = 'Move section down';
-    const record = { id: section.id, checkbox, row };
-    up.addEventListener('click', () => {
-      const index = sectionRows.indexOf(record); if (index <= 0) return;
-      const previous = sectionRows[index - 1]; sectionRows[index - 1] = record; sectionRows[index] = previous;
-      modal.content.insertBefore(row, previous.row);
-    });
-    down.addEventListener('click', () => {
-      const index = sectionRows.indexOf(record); if (index < 0 || index >= sectionRows.length - 1) return;
-      const next = sectionRows[index + 1]; sectionRows[index + 1] = record; sectionRows[index] = next;
-      modal.content.insertBefore(next.row, row);
-    });
-    row.append(checkbox, textNode, up, down); modal.content.appendChild(row); sectionRows.push(record);
-  }
-  const actions = document.createElement('div'); actions.className = 'modal-actions';
-  const cancel = document.createElement('button'); cancel.className = 'secondary-btn'; cancel.textContent = 'Cancel'; cancel.addEventListener('click', modal.close);
-  const save = document.createElement('button'); save.className = 'primary-btn'; save.textContent = 'Save customization';
-  save.addEventListener('click', async () => {
-    const res = await api('/api/design/config', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ expectedRevision: state.projectDocRevision, themeId: config.theme?.id,
-        themeTokens: { ...tokens, accentColor: accent.value, pageWidth: Number(width.value), header: header.value, footer: footer.value },
-        hiddenSections: sectionRows.filter(item => !item.checkbox.checked).map(item => item.id),
-        sectionOrder: sectionRows.map(item => item.id) }),
-    });
-    const data = await res.json();
-    if (!res.ok) return setProjectDocStatus(data.error || 'Customization failed', 'error');
-    state.projectDocConfiguration = data.configuration; modal.close(); renderProjectDocPreview(getProjectDocContent());
-  });
-  actions.append(cancel, save); modal.panel.appendChild(actions);
 }
 async function previewEngineeringProfile() {
   const profileId = el('projectDocProfileSelect')?.value;

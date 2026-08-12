@@ -715,18 +715,14 @@ export {
   managerConfigPath,
   managerPlanPath,
   managerDesignPath,
-  managerProgressPath,
   readProjectPlanFile,
   writeProjectPlanFile,
   readDesignFile,
   writeDesignFile,
-  readProgressFile,
-  writeProgressFile,
   resolveManagerReadRoots,
   isManagerReadScope,
   MANAGER_READ_SCOPES,
   DEFAULT_MANAGER_CONFIG,
-  shouldMirrorDesignToWorkspace,
   EMPTY_PROJECT_PLAN,
 } from './manager/projectManager.js';
 export type {
