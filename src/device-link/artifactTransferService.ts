@@ -314,7 +314,10 @@ export class DeviceLinkArtifactTransferService {
 
   async acknowledgeOutgoing(deviceId: string, transferId: string, confirm: boolean): Promise<void> {
     if (!confirm) throw new Error('Outbox acknowledgement requires confirm:true.');
-    await this.readOutboxState(deviceId, transferId);
+    const statePath = path.join(this.transferDirectory('outbox', deviceId, transferId), 'state.json');
+    const text = await readFile(statePath, 'utf8').catch(() => undefined);
+    // Idempotent: a retry after a successful ack (or crash between ack and local finalize) is a no-op.
+    if (!text) return;
     await rm(this.transferDirectory('outbox', deviceId, transferId), { recursive: true, force: true });
   }
 
