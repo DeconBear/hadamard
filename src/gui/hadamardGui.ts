@@ -5029,6 +5029,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         });
       }
       case 'mode': return [{ type: 'command.result', title: 'Agent mode', text: `current: ${currentAgentMode()}. Use the Agent mode selector in the composer to change it.` }];
+      case 'document': return [{ type: 'command.result', title: 'Document', text: 'Open the Project Document workspace to choose DESIGN, PLAN, MEMORY, or RULES.' }];
       case 'permissions':
         return args
           ? runtimeMutationCommand(() => setPermissionPreset(args.toLowerCase().replace(/[ _]/g, '-')))

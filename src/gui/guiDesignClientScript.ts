@@ -1,4 +1,65 @@
 export const GUI_DESIGN_CLIENT_SCRIPT = String.raw`
+function normalizeDesignAssetPath(basePath, reference) {
+  const value = String(reference || '').trim().replace(/\\/g, '/');
+  if (!value || value.startsWith('/') || value.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(value)) return null;
+  const base = String(basePath || '').split('/').filter(Boolean);
+  for (const segment of value.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') { if (!base.length) return null; base.pop(); }
+    else base.push(segment);
+  }
+  return base.join('/');
+}
+async function designAssetDataUrl(relativePath) {
+  const response = await api('/api/design/asset?path=' + encodeURIComponent(relativePath));
+  if (!response.ok) return null;
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return 'data:' + (response.headers.get('content-type') || 'application/octet-stream') + ';base64,' + bytesToBase64(bytes);
+}
+async function inlineDesignCssAssets(css, basePath) {
+  const matches = [...String(css || '').matchAll(/url\(\s*['"]?([^'"\)]+)['"]?\s*\)/gi)];
+  let result = String(css || '');
+  for (const match of matches.reverse()) {
+    const relativePath = normalizeDesignAssetPath(basePath, match[1]);
+    if (!relativePath || match.index == null) continue;
+    const dataUrl = await designAssetDataUrl(relativePath);
+    if (dataUrl) result = result.slice(0, match.index) + 'url("' + dataUrl + '")' + result.slice(match.index + match[0].length);
+  }
+  return result;
+}
+async function loadDesignHtmlPreview(frame) {
+  try {
+    const response = await api('/api/design/preview?load=' + Date.now());
+    if (!response.ok) throw new Error(await response.text());
+    const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
+    parsed.querySelectorAll('script').forEach(node => node.remove());
+    parsed.querySelectorAll('*').forEach(node => {
+      for (const attribute of [...node.attributes]) if (/^on/i.test(attribute.name)) node.removeAttribute(attribute.name);
+    });
+    for (const link of [...parsed.querySelectorAll('link[rel="stylesheet"][href]')]) {
+      const relativePath = normalizeDesignAssetPath('', link.getAttribute('href'));
+      if (!relativePath) { link.remove(); continue; }
+      const cssResponse = await api('/api/design/asset?path=' + encodeURIComponent(relativePath));
+      if (!cssResponse.ok) { link.remove(); continue; }
+      const style = parsed.createElement('style');
+      style.textContent = await inlineDesignCssAssets(await cssResponse.text(), relativePath.split('/').slice(0, -1).join('/'));
+      link.replaceWith(style);
+    }
+    for (const node of [...parsed.querySelectorAll('img[src], source[src]')]) {
+      const relativePath = normalizeDesignAssetPath('', node.getAttribute('src'));
+      if (!relativePath) { node.removeAttribute('src'); continue; }
+      const dataUrl = await designAssetDataUrl(relativePath);
+      if (dataUrl) node.setAttribute('src', dataUrl); else node.removeAttribute('src');
+    }
+    const meta = parsed.createElement('meta');
+    meta.httpEquiv = 'Content-Security-Policy';
+    meta.content = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'none'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
+    parsed.head.prepend(meta);
+    frame.srcdoc = '<!doctype html>' + parsed.documentElement.outerHTML;
+  } catch (error) {
+    frame.srcdoc = '<!doctype html><meta charset="utf-8"><p style="font:14px system-ui;color:#b42318;padding:24px">' + escapeHtml(error?.message || 'Could not load Design HTML preview') + '</p>';
+  }
+}
 async function renderDesignPreviewServer(content) {
   const view = el('projectDocView');
   if (!view || state.projectDocSubTab !== 'design' || state.projectDocEditing) return;
@@ -316,13 +377,20 @@ async function openDesignTemplateCenter() {
   modal.overlay.addEventListener('click', event => { if (event.target === modal.overlay) modal.close(); });
 }
 async function refreshDesignEntry() {
-  if (state.projectDocDirty && !confirm('Discard unsaved document changes and reload from disk?')) return;
+  if (state.projectDocDirty) {
+    const choice = prompt('Unsaved document changes. Type save, discard, or cancel before refreshing.', 'save');
+    if (choice === 'save') {
+      await saveProjectDocNow();
+      if (state.projectDocDirty) return;
+    } else if (choice !== 'discard') return;
+  }
   const response = await api('/api/design/refresh', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: state.designEntryMode }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) return setProjectDocStatus(data.error || 'Refresh failed', 'error');
   state.projectDocLoadedFor = null;
+  state.designPreviewStale = false;
   await mountProjectDoc(true);
   setProjectDocStatus('Refreshed', '');
 }

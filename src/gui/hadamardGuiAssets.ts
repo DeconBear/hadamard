@@ -5235,11 +5235,13 @@ const state = {
   projectDocTemplates: [],
   projectDocEditing: false,
   projectDocDirty: false,
+  designPreviewStale: false,
   projectRulesCatalog: null,
   projectPromptPolicy: { customPrompt: '', projectRules: '' },
   projectRuleSelectedId: null,
   projectRuleRevision: null,
   projectDocSaveTimer: null,
+  projectDocSavePromise: null,
   projectSettingsDirty: false,
   projectSettingsSaveTimer: null,
   projectSettingsTemplates: [],
@@ -7854,6 +7856,7 @@ async function renderAuxFileEditor(filePath) {
         const saved = await saveResponse.json().catch(() => ({}));
         if (!saveResponse.ok) throw new Error(saved.error || 'Could not save file');
         savedText = editor.value;
+        markDesignPreviewStale(data.path || filePath);
         flashStatus('Saved ' + (data.path || filePath));
       } catch (error) {
         flashStatus(error && error.message ? error.message : 'Could not save file');
@@ -9972,6 +9975,7 @@ function richTextToMarkdown(root) {
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
     const content = Array.from(node.childNodes).map(inline).join('');
     const tag = node.tagName.toLowerCase();
+    if (tag === 'img') return '![' + (node.getAttribute('alt') || '') + '](' + (node.getAttribute('src') || '') + ')';
     if (tag === 'strong' || tag === 'b') return '**' + content + '**';
     if (tag === 'em' || tag === 'i') return '*' + content + '*';
     if (tag === 'del' || tag === 's' || tag === 'strike') return '~~' + content + '~~';
@@ -10004,7 +10008,27 @@ function richTextToMarkdown(root) {
   const markdown = Array.from(root.childNodes).map(block).filter(Boolean).join('\\n\\n').trimEnd();
   return markdown ? markdown + '\\n' : '';
 }
+function toggleProjectDocSource() {
+  const rich = el('projectDocRich');
+  const src = el('projectDocSource');
+  if (!rich || !src || !state.projectDocEditing) return;
+  if (src.classList.contains('hidden')) {
+    src.value = richTextToMarkdown(rich);
+    rich.classList.add('hidden');
+    src.classList.remove('hidden');
+    src.focus();
+    return;
+  }
+  renderMarkdownInto(rich, src.value);
+  src.classList.add('hidden');
+  rich.classList.remove('hidden');
+  rich.focus();
+}
 function runProjectDocFormat(command, value) {
+  if (command === 'source') {
+    toggleProjectDocSource();
+    return;
+  }
   const rich = el('projectDocRich');
   if (!rich || rich.classList.contains('hidden')) return;
   rich.focus();
@@ -10030,7 +10054,7 @@ function createProjectDocFormatBar() {
     ['H2', 'heading', 'h2', 'Heading'], ['B', 'bold', '', 'Bold'], ['I', 'italic', '', 'Italic'], ['S', 'strikeThrough', '', 'Strikethrough'],
     ['•', 'insertUnorderedList', '', 'Bulleted list'], ['1.', 'insertOrderedList', '', 'Numbered list'], ['☑', 'task', '', 'Task list'],
     ['❝', 'blockquote', '', 'Quote'], ['</>', 'codeBlock', '', 'Code block'], ['↗', 'link', '', 'Link'], ['▧', 'image', '', 'Image'], ['▦', 'table', '', 'Table'],
-    ['↶', 'undo', '', 'Undo'], ['↷', 'redo', '', 'Redo'],
+    ['↶', 'undo', '', 'Undo'], ['↷', 'redo', '', 'Redo'], ['MD', 'source', '', 'Markdown source'],
   ];
   for (const [label, command, value, title] of actions) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.title = title; button.setAttribute('aria-label', title);
@@ -10063,8 +10087,9 @@ function renderProjectDocPreview(content) {
     frame.className = 'design-html-frame';
     frame.title = 'Design HTML preview';
     frame.setAttribute('sandbox', '');
-    frame.src = '/api/design/preview?revision=' + encodeURIComponent(state.projectDocRevision || Date.now());
+    frame.srcdoc = '<!doctype html><meta charset="utf-8"><p style="font:14px system-ui;color:#667085;padding:24px">Loading Design preview…</p>';
     view.appendChild(frame);
+    void loadDesignHtmlPreview(frame);
     return;
   }
   view.classList.add('md-prose');
@@ -10154,6 +10179,15 @@ function scheduleProjectDocSave() {
 }
 async function saveProjectDocNow() {
   if (state.projectDocSubTab === 'rules') return;
+  if (state.projectDocSavePromise) {
+    await state.projectDocSavePromise;
+    if (!state.projectDocDirty) return;
+  }
+  const pending = saveProjectDocRequest();
+  state.projectDocSavePromise = pending;
+  try { await pending; } finally { if (state.projectDocSavePromise === pending) state.projectDocSavePromise = null; }
+}
+async function saveProjectDocRequest() {
   const content = getProjectDocContent();
   const subTab = state.projectDocSubTab || 'design';
   setProjectDocStatus('Saving…', 'dirty');
@@ -10175,9 +10209,9 @@ async function saveProjectDocNow() {
     if (subTab === 'design' && data.entry) {
       state.projectDocRevision = data.entry.revision || null;
     }
-    state.projectDocDirty = false;
+    state.projectDocDirty = getProjectDocContent() !== content;
     if (!state.projectDocEditing) renderProjectDocPreview(content);
-    setProjectDocStatus('', '');
+    setProjectDocStatus(state.projectDocDirty ? 'Unsaved' : '', state.projectDocDirty ? 'dirty' : '');
   } catch {
     setProjectDocStatus('Save failed', 'error');
   }
@@ -11007,6 +11041,12 @@ function mountWorkbenchTools(surface) {
   persistAuxPanelWidth();
   requestAnimationFrame(refitActiveTerminal);
 }
+function markDesignPreviewStale(filePath) {
+  const normalized = String(filePath || '').replace(/\\\\/g, '/').toLowerCase();
+  if (state.projectDocSubTab !== 'design' || !normalized.includes('/.hadamard/design/')) return;
+  state.designPreviewStale = true;
+  setProjectDocStatus('Source changed · refresh preview', 'dirty');
+}
 async function renderProjectRulesManager() {
   const view = el('projectDocView');
   const empty = el('projectDocEmpty');
@@ -11470,6 +11510,7 @@ async function saveFilesPreview() {
     data.draft = text;
     data.size = saved.size || data.size;
     data.dirty = false;
+    markDesignPreviewStale(data.path);
     paintFilesPreview();
     flashStatus('Saved ' + (data.path || state.filesSelectedPath || 'file'));
   } catch (error) {
@@ -14583,6 +14624,13 @@ async function submitText(text) {
     addMessage('command.result', '/team · opened Agents drawer.');
     return;
   }
+  if (trimmed === '/document') {
+    await switchRegion('project');
+    state.projectDetailTab = 'document';
+    switchProjectView('detail');
+    addMessage('command.result', '/document · opened Project Document.');
+    return;
+  }
   if (state.running) {
     await enqueueText(text);
     return;
@@ -14890,13 +14938,6 @@ async function deviceApi(path, options) {
   if (init.body && typeof init.body !== 'string') {
     init.headers = Object.assign({}, init.headers || {}, { 'content-type': 'application/json' });
     init.body = JSON.stringify(init.body);
-  }
-  if (trimmed === '/document') {
-    await switchRegion('project');
-    state.projectDetailTab = 'document';
-    switchProjectView('detail');
-    addMessage('command.result', '/document · opened Project Document.');
-    return;
   }
   const response = await api(path, init);
   const payload = await response.json().catch(function () { return {}; });

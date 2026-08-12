@@ -159,12 +159,18 @@ describe('projectWorkbench helpers', () => {
     await expect(writeWorkspaceFile(file, 'nope', root)).rejects.toThrow(/binary file/);
   });
 
-  it('gui source wires the five project tabs and workbench CSS', async () => {
+  it('gui source wires the four project tabs and shared workbench tools', async () => {
     const src = await readFile(new URL('../src/gui/hadamardGui.ts', import.meta.url), 'utf8');
     const assets = await readFile(new URL('../src/gui/hadamardGuiAssets.ts', import.meta.url), 'utf8');
-    expect(assets).toContain("['git', 'Git']");
-    expect(assets).toContain("['terminal', 'Terminal']");
-    expect(assets).toContain("['files', 'Files']");
+    expect(assets).toContain("['document', 'Document']");
+    expect(assets).toContain("['issues', 'Issues']");
+    expect(assets).toContain("['agents', 'Agent monitor']");
+    expect(assets).toContain("['settings', 'Project settings']");
+    expect(assets).toContain('data-aux="review"');
+    expect(assets).toContain('data-aux="git"');
+    expect(assets).toContain('data-aux="terminal"');
+    expect(assets).toContain('data-aux="browser"');
+    expect(assets).toContain('data-aux="files"');
     expect(assets).toContain('function renderProjectFilesPanel');
     expect(assets).toContain('function renderProjectGitPanel');
     expect(assets).toContain('function mountProjectTerminal');
