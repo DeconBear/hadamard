@@ -2425,6 +2425,21 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       release();
     }
   };
+  const assertSessionNavigationAllowed = (): void => {
+    const nonChatRun = [...runs.values()].find(run =>
+      run.desc.status === 'running' && run.desc.kind !== 'chat'
+    );
+    const leasedRun = runtimeRunLeases.values().next().value as string | undefined;
+    const externalRun = externalCliRuntimeManager.list().find(run =>
+      run.status === 'queued' || run.status === 'running'
+    );
+    if (nonChatRun || leasedRun || externalRun) {
+      const blocker = nonChatRun?.desc.label ?? leasedRun ?? `External CLI ${externalRun!.runId}`;
+      throw new GuiRuntimeMutationConflictError(
+        `Wait for ${blocker} to finish, or stop it before switching conversations.`,
+      );
+    }
+  };
   const assertRunCanStart = (): void => {
     if (runtimeMutationInProgress) {
       throw new GuiRuntimeMutationConflictError(
@@ -4717,9 +4732,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     config: SupportedExternalCliConfig,
     guiRunId: string,
     signal: AbortSignal,
+    originSession = session,
+    originWorkDir = workDir,
   ): AsyncIterable<AgentEvent> & { result: Promise<AgentRunResult> } {
-    const originSession = session;
-    const originWorkDir = workDir;
     const storedNativeSessionId = externalNativeSessionId(config, originSession, originWorkDir);
     const externalEffort = currentEffort();
     const permissionMode = externalCliPermissionMode();
@@ -6683,7 +6698,18 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   }
 
   async function streamRun(input: string, res: ServerResponse, clientRequestId?: string, expectedSessionId?: string): Promise<void> {
-    if (rejectMismatchedGuiSession(res, expectedSessionId, session.id)) return;
+    // A conversation may be changed while this run continues. Capture every
+    // session/runtime value used by the run so later UI navigation cannot move
+    // the in-flight stream onto the newly selected conversation.
+    const runSession = session;
+    const runWorkDir = workDir;
+    const runBridgeMode = bridgeMode;
+    const runBridgeConfig = activeBridgeConfig;
+    const runBridgeModelApi = activeBridgeModelApi;
+    const runRouter = activeRouter;
+    const runAgentOptions = currentEffectiveAgentRunOptions();
+    const runTools = currentRunTools();
+    if (rejectMismatchedGuiSession(res, expectedSessionId, runSession.id)) return;
     let nextEventSequence = 0;
     const replayEvents: Array<GuiRunEvent & { sequence: number }> = [];
     const send = (event: GuiRunEvent) => {
@@ -6700,7 +6726,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     });
     send({ type: 'user', text: input });
 
-    const externalCliSelected = activeBridgeConfig?.execution === 'cli';
+    const externalCliSelected = runBridgeConfig?.execution === 'cli';
     if (needsCredentials && !externalCliSelected) {
       send({ type: 'error', message: 'No API key configured — open Settings → Models to add one.' });
       send({ type: 'state', state: await state() });
@@ -6722,19 +6748,19 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         return;
       }
       const { name: teamName, prompt } = parsed;
-      const definition = resolveTeamDefinition(teamName, workDir, session.model);
+      const definition = resolveTeamDefinition(teamName, runWorkDir, runSession.model);
       if (!definition) {
         send({ type: 'error', message: `team not found: ${teamName}` });
         send({ type: 'done' });
         res.end();
         return;
       }
-      session.metadata.__hadamardLastTeamName = definition.name;
+      runSession.metadata.__hadamardLastTeamName = definition.name;
       const teamRunId = 'r-team-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
       const teamAbort = new AbortController();
       const teamDesc: GuiRunDescriptor = {
         runId: teamRunId, clientRequestId, kind: 'team', label: `team:${definition.name}`,
-        sessionId: session.id, model: session.model || null, startedAt: Date.now(),
+        sessionId: runSession.id, model: runSession.model || null, startedAt: Date.now(),
         status: 'running', toolCalls: 0, tokenUsage: { input: 0, output: 0 },
         team: { mode: definition.mode, round: 0, members: [] },
       };
@@ -6742,18 +6768,18 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       assertRunCanStart();
       runs.set(teamRunId, teamRun);
       try {
-        send({ type: 'run.started', runId: teamRunId, model: session.model || null });
+        send({ type: 'run.started', runId: teamRunId, model: runSession.model || null });
         const onEvent = (e: TeamEvent) => { forwardTeamEvent(e, teamRunId, send, teamDesc); };
         const result: ModelTeamResult = await askTeamDefinition(
           definition,
           prompt,
           teamAbort.signal,
           {
-            workDir,
+            workDir: runWorkDir,
             homeDir: resolveGuiHomeDir(),
             onEvent,
-            model: activeBridgeModelApi?.model ?? session.model,
-            modelApi: activeBridgeModelApi?.modelApi,
+            model: runBridgeModelApi?.model ?? runSession.model,
+            modelApi: runBridgeModelApi?.modelApi,
           },
         );
         teamDesc.status = 'done';
@@ -6840,8 +6866,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       clientRequestId,
       kind: 'chat',
       label: input.slice(0, 80) || 'chat',
-      sessionId: session.id,
-      model: session.model || null,
+      sessionId: runSession.id,
+      model: runSession.model || null,
       startedAt: Date.now(),
       status: 'running',
       toolCalls: 0,
@@ -6853,17 +6879,17 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     foregroundRunId = runId;
     let streamedTextSeen = false;
     let errorEventSeen = false;
-    await persistSessionRuntimeMetadata();
+    await persistSessionRuntimeMetadata(runSession, runBridgeConfig, runBridgeModelApi?.model ?? null);
     try {
       // Router dispatch is skipped when a named config is active — the config's
       // model and/or provider replaces per-turn routing.
-      const configActive = !!activeBridgeConfig;
+      const configActive = !!runBridgeConfig;
       let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi']; effort?: HadamardRunEffort } | undefined;
-      if (activeRouter && !bridgeMode && !configActive) {
-        const routerName = activeRouter.name;
+      if (runRouter && !runBridgeMode && !configActive) {
+        const routerName = runRouter.name;
         try {
-          const decision = await resolveRoutedRun(activeRouter, input, runAbort.signal, {
-            projectDir: workDir,
+          const decision = await resolveRoutedRun(runRouter, input, runAbort.signal, {
+            projectDir: runWorkDir,
             homeDir: resolveGuiHomeDir(),
           });
           routed = { model: decision.model, modelApi: decision.modelApi, effort: decision.effort };
@@ -6890,14 +6916,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       //  1. bridge config active → inject pre-built ModelApi (separate credentials)
       //  2. hadamard config active → inject model only (use SDK default provider)
       //  3. none active → in-process turn, optionally routed or teamed
-      const effectiveAgentOptions = currentEffectiveAgentRunOptions();
-      const hadamardModel = (!bridgeMode && activeBridgeConfig?.runtime === 'hadamard')
-        ? (activeBridgeConfig.model || undefined)
+      const effectiveAgentOptions = runAgentOptions;
+      const hadamardModel = (!runBridgeMode && runBridgeConfig?.runtime === 'hadamard')
+        ? (runBridgeConfig.model || undefined)
         : undefined;
       let stream: AsyncIterable<AgentEvent> & { result: Promise<AgentRunResult> };
-      const externalCliConfig = activeBridgeConfig?.execution === 'cli'
-      && isManagedExternalCliRuntime(activeBridgeConfig.runtime)
-        ? activeBridgeConfig as PersistedBridgeConfig & { runtime: 'claude' | 'codex' }
+      const externalCliConfig = runBridgeConfig?.execution === 'cli'
+      && isManagedExternalCliRuntime(runBridgeConfig.runtime)
+        ? runBridgeConfig as PersistedBridgeConfig & { runtime: 'claude' | 'codex' }
         : undefined;
       if (externalCliConfig) {
         send({
@@ -6908,22 +6934,29 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             + (externalCliConfig.authSource === 'apiKey' ? 'API key override' : 'native login')
             + ')',
         });
-        stream = createExternalCliAgentStream(input, externalCliConfig, runId, runAbort.signal);
-      } else if (bridgeMode && activeBridgeModelApi) {
-        const bridgeName = activeBridgeConfig?.name ?? 'bridge';
-        send({ type: 'notice', message: `bridge -> ${bridgeName} (${activeBridgeModelApi.model})` });
-        stream = session.stream(expandImageRefs(input, workDir), {
+        stream = createExternalCliAgentStream(
+          input,
+          externalCliConfig,
+          runId,
+          runAbort.signal,
+          runSession,
+          runWorkDir,
+        );
+      } else if (runBridgeMode && runBridgeModelApi) {
+        const bridgeName = runBridgeConfig?.name ?? 'bridge';
+        send({ type: 'notice', message: `bridge -> ${bridgeName} (${runBridgeModelApi.model})` });
+        stream = runSession.stream(expandImageRefs(input, runWorkDir), {
           ...effectiveAgentOptions,
           signal: withAgentRunTimeout(runAbort.signal),
           approver,
           classifier: preToolUseHookClassifier,
           canUseTool,
-          model: activeBridgeModelApi.model,
-          modelApi: activeBridgeModelApi.modelApi,
-          ...(() => { const runTools = currentRunTools(); return runTools ? { tools: runTools } : {}; })(),
+          model: runBridgeModelApi.model,
+          modelApi: runBridgeModelApi.modelApi,
+          ...(runTools ? { tools: runTools } : {}),
         });
       } else {
-        stream = session.stream(expandImageRefs(input, workDir), {
+        stream = runSession.stream(expandImageRefs(input, runWorkDir), {
           ...effectiveAgentOptions,
           signal: withAgentRunTimeout(runAbort.signal),
           approver,
@@ -6933,13 +6966,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           ...(routed?.effort ? { effort: routed.effort } : {}),
           ...(routed ? { model: routed.model, modelApi: routed.modelApi } : {}),
           ...(hadamardModel ? { model: hadamardModel } : {}),
-          ...(() => { const runTools = currentRunTools(); return runTools ? { tools: runTools } : {}; })(),
+          ...(runTools ? { tools: runTools } : {}),
         });
       }
 
       // If a hadamard config is active, send a brief notice (model-only, no credentials change).
-      if (hadamardModel && !bridgeMode) {
-        send({ type: 'notice', message: `hadamard model -> ${hadamardModel} (config: ${activeBridgeConfig!.name})` });
+      if (hadamardModel && !runBridgeMode) {
+        send({ type: 'notice', message: `hadamard model -> ${hadamardModel} (config: ${runBridgeConfig!.name})` });
       }
       // Track tool call inputs so PostToolUse hooks (fire-and-forget) get both the
       // input and the output for the matching result.
@@ -6985,8 +7018,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         ?? (externalCliConfig ? externalCliConfig.runtime : undefined)
         ?? hadamardModel
         ?? routed?.model
-        ?? activeBridgeModelApi?.model
-        ?? session.model;
+        ?? runBridgeModelApi?.model
+        ?? runSession.model;
       recordUsage(effectiveModel, (result as any).usage);
       desc.status = 'done';
       const runUsage = (result as any).usage;
@@ -6994,7 +7027,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       // Lightweight global history — one JSONL line per user turn (mirrors Codex / Claude Code).
       try {
         recordTurn({
-          sessionId: session.id,
+          sessionId: runSession.id,
           ts: Math.floor(Date.now() / 1000),
           text: input.slice(0, 200),
           model: effectiveModel,
@@ -7459,12 +7492,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       else session.followUp(input);
       return { active: true, pendingInputCount: session.pendingInputCount };
     },
-    createSession: () => withRuntimeMutation(() => enqueueServerSessionResume(async () => {
+    createSession: () => enqueueServerSessionResume(async () => {
+      assertSessionNavigationAllowed();
       session = await createGuiSession({ model: options.model, permissionMode });
       await restoreSessionRuntimeSelection();
       return state();
-    })),
-    resumeSession: req => withRuntimeMutation(() => enqueueServerSessionResume(async () => {
+    }),
+    resumeSession: req => enqueueServerSessionResume(async () => {
+      assertSessionNavigationAllowed();
       const body = await readJson(req);
       const id = typeof body.id === 'string' ? body.id : '';
       if (!id) return { status: 400, error: 'Missing session id' };
@@ -7488,7 +7523,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       }
       await restoreSessionRuntimeSelection();
       return { status: 200, state: await state() };
-    })),
+    }),
     resolvePermission: (id, decision, answers) => {
       const pending = pendingPermissions.get(id);
       if (!pending) return false;
@@ -10070,7 +10105,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           if (!['create', 'open', 'rename', 'pin', 'archive', 'restore', 'delete'].includes(action)) {
             return json(res, 400, { error: 'Unknown Session Center action.' });
           }
-          const result = await withRuntimeMutation(() => enqueueServerSessionResume(async () => {
+          const runAction = () => enqueueServerSessionResume(async () => {
+            if (action === 'open' || action === 'create') assertSessionNavigationAllowed();
             const catalog = await createSessionCenterCatalog();
             const item = await catalog.action({
               action: action as import('../storage/sessionCatalog.js').SessionCatalogAction,
@@ -10126,7 +10162,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             }
             invalidateHeavyState();
             return { ok: true, item, state: shouldOpen ? await state() : undefined };
-          }));
+          });
+          const result = action === 'open' || action === 'create'
+            ? await runAction()
+            : await withRuntimeMutation(runAction);
           return json(res, 200, result);
         } catch (error) {
           return json(res, runtimeMutationErrorStatus(error), runtimeMutationErrorBody(error));

@@ -2,7 +2,7 @@ export const GUI_SESSION_CREATE_CLIENT_SCRIPT = String.raw`
 async function performCreateSession(requestSequence) {
   try {
     if (requestSequence !== sessionResumeSequence) return;
-    const res = await api('/api/session/new', { method: 'POST' });
+    const res = await api('/api/session/new', { method: 'POST', signal: AbortSignal.timeout(15_000) });
     if (requestSequence !== sessionResumeSequence) return;
     if (!res.ok) {
       const message = (await res.text()) || 'Could not create a new conversation.';
@@ -19,7 +19,7 @@ async function performCreateSession(requestSequence) {
   } catch {
     // The server may already have switched even if the create response failed.
     try {
-      const activeRes = await api('/api/session/active');
+      const activeRes = await api('/api/session/active', { signal: AbortSignal.timeout(8_000) });
       if (!activeRes.ok || requestSequence !== sessionResumeSequence) {
         flashStatus('Could not finish creating a new conversation.');
         return;
@@ -44,10 +44,6 @@ async function performCreateSession(requestSequence) {
   }
 }
 function createNewSession() {
-  if (state.running) {
-    flashStatus('Stop the current foreground run before starting a new conversation.');
-    return Promise.resolve();
-  }
   if (state.sessionResumePending) {
     flashStatus('A conversation switch is already in progress.');
     return sessionResumeQueue;
@@ -65,10 +61,6 @@ function createNewSession() {
 export const GUI_SESSION_CENTER_OPEN_CLIENT_SCRIPT = String.raw`
 async function openSessionCenterItem(item) {
   try {
-    if (state.running) {
-      flashStatus('Stop the current foreground run before switching conversations.');
-      return;
-    }
     if (state.sessionResumePending) {
       flashStatus('A conversation switch is already in progress.');
       return;
