@@ -77,7 +77,7 @@ export class DesignImportExportService {
 
   constructor(
     private readonly renderer = new DesignRenderService(),
-    generatorVersion = '0.4.15',
+    generatorVersion = '0.4.16',
     pdf = new DesignPdfExporter(),
   ) {
     this.packages = new DesignPackageService(generatorVersion);

@@ -165,7 +165,7 @@ export class DesignWorkspaceBundleService {
   constructor(
     private readonly workspace: DesignWorkspaceService,
     private readonly templates: DesignTemplateRegistry,
-    private readonly generatorVersion = '0.4.15',
+    private readonly generatorVersion = '0.4.16',
   ) {}
 
   listTemplates(): DesignTemplateBundleSummary[] {

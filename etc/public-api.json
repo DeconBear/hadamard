@@ -1918,6 +1918,11 @@
         "signature": "export interface DiscoveredDevice {\ndeviceId: string;\nname: string;\nhost: string;\nport: number;\ncertificateFingerprint: string;\nprotocolVersion: 2;\nlastSeenAt: string;\n}"
       },
       {
+        "name": "DiscoveredProjectSession",
+        "kind": "interface",
+        "signature": "export interface DiscoveredProjectSession {\nprojectPath: string;\nsessionDirectory: string;\nsummary: SessionSummary;\n}"
+      },
+      {
         "name": "discoverHadamardSkillCatalog",
         "kind": "function",
         "signature": "export declare function discoverHadamardSkillCatalog(options?: DiscoverHadamardSkillCatalogOptions): Promise<HadamardSkillCatalog>;"
@@ -1926,6 +1931,11 @@
         "name": "DiscoverHadamardSkillCatalogOptions",
         "kind": "interface",
         "signature": "export interface DiscoverHadamardSkillCatalogOptions {\nosHomeDir?: string;\nhadamardHomeDir?: string;\nworkDir?: string;\nenv?: NodeJS.ProcessEnv | Record<string, string | undefined>;\nincludeBundledHadamard?: boolean;\nincludeMissingSources?: boolean;\ntrustedProjectSourceIds?: readonly string[];\nmaxSkillBytes?: number;\nscanConcurrency?: number;\n}"
+      },
+      {
+        "name": "discoverProjectSessions",
+        "kind": "function",
+        "signature": "export declare function discoverProjectSessions(homeDir?: string, options?: {\ncacheTtlMs?: number;\n}): Promise<DiscoveredProjectSession[]>;"
       },
       {
         "name": "DreamExecutionProfileRef",
@@ -4123,6 +4133,11 @@
         "signature": "export declare function instantiateTeamDefinition(definition: TeamDefinition, model: string): TeamDefinition;"
       },
       {
+        "name": "invalidateProjectSessionDiscovery",
+        "kind": "function",
+        "signature": "export declare function invalidateProjectSessionDiscovery(): void;"
+      },
+      {
         "name": "isAgentMode",
         "kind": "function",
         "signature": "export declare function isAgentMode(value: unknown): value is AgentMode;"
@@ -5540,7 +5555,7 @@
       {
         "name": "ResolvedRuntimeConfig",
         "kind": "interface",
-        "signature": "export interface ResolvedRuntimeConfig {\nhomeDir: string;\nloadedConfigPath?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel: string;\nmodelTier?: HadamardModelTier;\nmodelTiers: HadamardModelTierConfig;\nmaxTokens: number;\ntemperature?: number;\nrunTimeoutMs: number;\ntoolTimeoutMs: number;\nhookTimeoutMs: number;\nmcpTimeoutMs: number;\ntimeoutMs: number;\nmaxRetries: number;\nworkDir: string;\nsessionDirectory: string;\nclientName: string;\nclientVersion: string;\nsystemPrompt?: string;\nmaxToolIterations: number;\nfallbackModel?: string;\npromptCachingEnabled: boolean;\nuserId?: string;\nmetadata: Record<string, unknown>;\ncompact: HadamardCompactConfig;\nprojectMemory: import('./config/projectSettingsTypes.js').ProjectMemorySettings;\nprovider: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nsandbox: import('./sandbox/types.js').SandboxPolicy;\nsandboxCapabilities: import('./sandbox/types.js').SandboxCapabilityReport;\nlanguageServers: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree: boolean;\neffectivePolicy: import('./policy/types.js').ResolvedPolicy;\n}"
+        "signature": "export interface ResolvedRuntimeConfig {\nhomeDir: string;\nloadedConfigPath?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel: string;\nmodelTier?: HadamardModelTier;\nmodelTiers: HadamardModelTierConfig;\nmaxTokens: number;\ntemperature?: number;\nrunTimeoutMs?: number;\ntoolTimeoutMs: number;\nhookTimeoutMs: number;\nmcpTimeoutMs: number;\ntimeoutMs: number;\nmaxRetries: number;\nworkDir: string;\nsessionDirectory: string;\nclientName: string;\nclientVersion: string;\nsystemPrompt?: string;\nmaxToolIterations: number;\nfallbackModel?: string;\npromptCachingEnabled: boolean;\nuserId?: string;\nmetadata: Record<string, unknown>;\ncompact: HadamardCompactConfig;\nprojectMemory: import('./config/projectSettingsTypes.js').ProjectMemorySettings;\nprovider: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nsandbox: import('./sandbox/types.js').SandboxPolicy;\nsandboxCapabilities: import('./sandbox/types.js').SandboxCapabilityReport;\nlanguageServers: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree: boolean;\neffectivePolicy: import('./policy/types.js').ResolvedPolicy;\n}"
       },
       {
         "name": "ResolvedToolAdapter",
@@ -6200,7 +6215,7 @@
       {
         "name": "SessionSummary",
         "kind": "interface",
-        "signature": "export interface SessionSummary {\nid: string;\ntitle: string;\ntitleSource: 'auto' | 'manual';\nmodel: string;\nruntime: string;\nconfigName: string | null;\ncreatedAt: string;\nupdatedAt: string;\nlastRunAt?: string;\nlastActiveAt?: string;\nstatus: SessionStatus;\ntags: string[];\npreview: string;\nbrief?: string;\nmessageCount: number;\nrunCount: number;\narchived?: boolean;\npinned?: boolean;\nkind?: 'main' | 'worktree' | 'manager' | 'agent';\nparentSessionId?: string;\nexecutionId?: string;\nrootExecutionId?: string;\nagentName?: string;\nagentPath?: string;\nissueId?: string;\nissueNumber?: number;\nissueKey?: string;\nagentProfile?: string;\n}"
+        "signature": "export interface SessionSummary {\nid: string;\ntitle: string;\ntitleSource: 'auto' | 'manual';\nmodel: string;\nruntime: string;\nconfigName: string | null;\ncreatedAt: string;\nupdatedAt: string;\nlastRunAt?: string;\nlastActiveAt?: string;\nstatus: SessionStatus;\ntags: string[];\npreview: string;\nbrief?: string;\nmessageCount: number;\nrunCount: number;\nworkDir?: string;\narchived?: boolean;\npinned?: boolean;\nkind?: 'main' | 'worktree' | 'manager' | 'agent';\nparentSessionId?: string;\nexecutionId?: string;\nrootExecutionId?: string;\nagentName?: string;\nagentPath?: string;\nissueId?: string;\nissueNumber?: number;\nissueKey?: string;\nagentProfile?: string;\n}"
       },
       {
         "name": "setHadamardExternalSkillDisabled",
@@ -11104,6 +11119,11 @@
         "signature": "export interface DiscoveredDevice {\ndeviceId: string;\nname: string;\nhost: string;\nport: number;\ncertificateFingerprint: string;\nprotocolVersion: 2;\nlastSeenAt: string;\n}"
       },
       {
+        "name": "DiscoveredProjectSession",
+        "kind": "interface",
+        "signature": "export interface DiscoveredProjectSession {\nprojectPath: string;\nsessionDirectory: string;\nsummary: SessionSummary;\n}"
+      },
+      {
         "name": "discoverHadamardSkillCatalog",
         "kind": "function",
         "signature": "export declare function discoverHadamardSkillCatalog(options?: DiscoverHadamardSkillCatalogOptions): Promise<HadamardSkillCatalog>;"
@@ -11112,6 +11132,11 @@
         "name": "DiscoverHadamardSkillCatalogOptions",
         "kind": "interface",
         "signature": "export interface DiscoverHadamardSkillCatalogOptions {\nosHomeDir?: string;\nhadamardHomeDir?: string;\nworkDir?: string;\nenv?: NodeJS.ProcessEnv | Record<string, string | undefined>;\nincludeBundledHadamard?: boolean;\nincludeMissingSources?: boolean;\ntrustedProjectSourceIds?: readonly string[];\nmaxSkillBytes?: number;\nscanConcurrency?: number;\n}"
+      },
+      {
+        "name": "discoverProjectSessions",
+        "kind": "function",
+        "signature": "export declare function discoverProjectSessions(homeDir?: string, options?: {\ncacheTtlMs?: number;\n}): Promise<DiscoveredProjectSession[]>;"
       },
       {
         "name": "DreamExecutionProfileRef",
@@ -13319,6 +13344,11 @@
         "signature": "export declare function instantiateTeamDefinition(definition: TeamDefinition, model: string): TeamDefinition;"
       },
       {
+        "name": "invalidateProjectSessionDiscovery",
+        "kind": "function",
+        "signature": "export declare function invalidateProjectSessionDiscovery(): void;"
+      },
+      {
         "name": "isAgentMode",
         "kind": "function",
         "signature": "export declare function isAgentMode(value: unknown): value is AgentMode;"
@@ -14791,7 +14821,7 @@
       {
         "name": "ResolvedRuntimeConfig",
         "kind": "interface",
-        "signature": "export interface ResolvedRuntimeConfig {\nhomeDir: string;\nloadedConfigPath?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel: string;\nmodelTier?: HadamardModelTier;\nmodelTiers: HadamardModelTierConfig;\nmaxTokens: number;\ntemperature?: number;\nrunTimeoutMs: number;\ntoolTimeoutMs: number;\nhookTimeoutMs: number;\nmcpTimeoutMs: number;\ntimeoutMs: number;\nmaxRetries: number;\nworkDir: string;\nsessionDirectory: string;\nclientName: string;\nclientVersion: string;\nsystemPrompt?: string;\nmaxToolIterations: number;\nfallbackModel?: string;\npromptCachingEnabled: boolean;\nuserId?: string;\nmetadata: Record<string, unknown>;\ncompact: HadamardCompactConfig;\nprojectMemory: import('./config/projectSettingsTypes.js').ProjectMemorySettings;\nprovider: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nsandbox: import('./sandbox/types.js').SandboxPolicy;\nsandboxCapabilities: import('./sandbox/types.js').SandboxCapabilityReport;\nlanguageServers: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree: boolean;\neffectivePolicy: import('./policy/types.js').ResolvedPolicy;\n}"
+        "signature": "export interface ResolvedRuntimeConfig {\nhomeDir: string;\nloadedConfigPath?: string;\napiKey?: string;\nauthToken?: string;\nbaseURL?: string;\nmodel: string;\nmodelTier?: HadamardModelTier;\nmodelTiers: HadamardModelTierConfig;\nmaxTokens: number;\ntemperature?: number;\nrunTimeoutMs?: number;\ntoolTimeoutMs: number;\nhookTimeoutMs: number;\nmcpTimeoutMs: number;\ntimeoutMs: number;\nmaxRetries: number;\nworkDir: string;\nsessionDirectory: string;\nclientName: string;\nclientVersion: string;\nsystemPrompt?: string;\nmaxToolIterations: number;\nfallbackModel?: string;\npromptCachingEnabled: boolean;\nuserId?: string;\nmetadata: Record<string, unknown>;\ncompact: HadamardCompactConfig;\nprojectMemory: import('./config/projectSettingsTypes.js').ProjectMemorySettings;\nprovider: 'anthropic' | 'openai';\neffort?: HadamardEffort;\nsandbox: import('./sandbox/types.js').SandboxPolicy;\nsandboxCapabilities: import('./sandbox/types.js').SandboxCapabilityReport;\nlanguageServers: import('./codeIntel/types.js').LanguageServerDefinition[];\ntypedHooks: import('./hooks/hookTypes.js').TypedHookDefinition[];\nautoWorktree: boolean;\neffectivePolicy: import('./policy/types.js').ResolvedPolicy;\n}"
       },
       {
         "name": "ResolvedToolAdapter",
@@ -15471,7 +15501,7 @@
       {
         "name": "SessionSummary",
         "kind": "interface",
-        "signature": "export interface SessionSummary {\nid: string;\ntitle: string;\ntitleSource: 'auto' | 'manual';\nmodel: string;\nruntime: string;\nconfigName: string | null;\ncreatedAt: string;\nupdatedAt: string;\nlastRunAt?: string;\nlastActiveAt?: string;\nstatus: SessionStatus;\ntags: string[];\npreview: string;\nbrief?: string;\nmessageCount: number;\nrunCount: number;\narchived?: boolean;\npinned?: boolean;\nkind?: 'main' | 'worktree' | 'manager' | 'agent';\nparentSessionId?: string;\nexecutionId?: string;\nrootExecutionId?: string;\nagentName?: string;\nagentPath?: string;\nissueId?: string;\nissueNumber?: number;\nissueKey?: string;\nagentProfile?: string;\n}"
+        "signature": "export interface SessionSummary {\nid: string;\ntitle: string;\ntitleSource: 'auto' | 'manual';\nmodel: string;\nruntime: string;\nconfigName: string | null;\ncreatedAt: string;\nupdatedAt: string;\nlastRunAt?: string;\nlastActiveAt?: string;\nstatus: SessionStatus;\ntags: string[];\npreview: string;\nbrief?: string;\nmessageCount: number;\nrunCount: number;\nworkDir?: string;\narchived?: boolean;\npinned?: boolean;\nkind?: 'main' | 'worktree' | 'manager' | 'agent';\nparentSessionId?: string;\nexecutionId?: string;\nrootExecutionId?: string;\nagentName?: string;\nagentPath?: string;\nissueId?: string;\nissueNumber?: number;\nissueKey?: string;\nagentProfile?: string;\n}"
       },
       {
         "name": "setHadamardExternalSkillDisabled",
