@@ -1611,7 +1611,7 @@ body[data-theme="dark"] {
 .project-doc-inspector-label { color: var(--text-3); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .project-doc-inspector-value { color: var(--text-2); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 .project-doc-inspector-note { margin: 4px 0 0; padding: 9px 10px; border-radius: 9px; background: var(--bg-surface-2); color: var(--text-3); font-size: 11px; line-height: 1.5; }
-.project-doc-toolbar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 13px; padding: 16px 20px 13px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
+.project-doc-toolbar { position: sticky; top: 0; z-index: 4; flex: 0 0 auto; display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
 .project-doc-subtabs { flex: 0 0 auto; display: grid; gap: 5px; padding: 0; border: 0; background: transparent; }
 .project-doc-subtab { min-height: 38px; padding: 0 11px; border: 0; border-radius: 9px; background: transparent; color: var(--text-2); font-size: 12px; text-align: left; cursor: pointer; }
 .project-doc-subtab:hover { background: var(--surface-hover); color: var(--text-1); }
@@ -1634,6 +1634,12 @@ body[data-theme="dark"] {
   .project-doc-actions { justify-items: stretch; }
   .project-doc-action-group { justify-content: flex-start; }
 }
+@media (max-width: 880px) {
+  .workbench-split { position: relative; }
+  .workbench-split > .aux-splitter { display: none; }
+  .workbench-split > .aux-panel:not(.collapsed) { position: absolute; z-index: 25; inset: 0 0 0 auto; width: min(92vw, 420px) !important; max-width: 92vw; flex-basis: auto !important; box-shadow: -18px 0 44px rgb(0 0 0 / .16); }
+  .workbench-split > .aux-panel.collapsed { position: relative; inset: auto; box-shadow: none; }
+}
 .design-modal { width: min(900px, 94vw); max-width: 900px; max-height: 88vh; overflow: auto; padding: 20px; }
 .design-modal h2 { margin: 0 0 16px; }
 .design-modal h3 { margin: 18px 0 8px; font-size: 14px; }
@@ -1647,7 +1653,17 @@ body[data-theme="dark"] {
 .project-doc-view .design-header { margin: 0 0 18px; padding: 9px 12px; border-left: 3px solid var(--design-accent, var(--accent)); color: var(--text-2); font-weight: 600; }
 .project-doc-view .design-meta,.project-doc-view .design-footer { color: var(--text-3); font-size: 12px; }
 .project-doc-view .design-footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid var(--border); }
-.project-doc-actions { flex: 1 1 560px; min-width: 0; display: grid; justify-items: end; gap: 8px; }
+.project-doc-actions { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.project-doc-command-left, .project-doc-command-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.project-doc-command-right { margin-left: auto; }
+.project-doc-command-select { min-height: 32px; border: 1px solid var(--border); border-radius: 8px; padding: 0 28px 0 9px; background: var(--bg-surface); color: var(--text-1); font-size: 12px; font-weight: 600; }
+.project-doc-command-icon { width: 32px; height: 32px; }
+.design-html-frame { display: block; width: 100%; min-height: 680px; height: calc(100vh - 260px); border: 0; background: white; }
+.design-export-options, .design-template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.design-export-option, .design-template-card { display: flex; flex-direction: column; gap: 5px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); color: var(--text-1); text-align: left; cursor: pointer; }
+.design-export-option:hover, .design-template-card:hover { border-color: var(--border-active); background: var(--surface-hover); }
+.design-export-option span, .design-template-card span { color: var(--text-3); font-size: 11.5px; line-height: 1.45; }
+.design-template-preview { min-height: 94px; margin: -4px -4px 6px; padding: 10px; border-radius: 7px; background: var(--bg-app); color: var(--text-3); font-size: 10px; line-height: 1.7; white-space: pre-line; overflow: hidden; }
 .project-doc-action-group { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; width: 100%; }
 .project-doc-action-label { flex: 0 0 auto; margin-right: 3px; color: var(--text-3); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .project-doc-edit-btn { min-height: 28px; padding: 0 10px; font-size: 12px; }
@@ -1657,9 +1673,11 @@ body[data-theme="dark"] {
 .project-doc-scroll { flex: 1; min-height: 0; overflow: auto; padding: 24px; background: var(--bg-app); }
 .overview-search-wrap:focus-within, .detail-search-wrap:focus-within { border-color: var(--border-active); box-shadow: var(--shadow-focus); }
 .project-doc-scroll.editing { background: var(--surface-muted); }
-.project-doc-editor { box-sizing: border-box; max-width: 920px; margin: 0 auto; padding: 30px 38px 64px; width: 100%; min-height: 100%; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); box-shadow: var(--shadow-card); }
+.project-doc-editor { box-sizing: border-box; max-width: 1080px; margin: 0 auto; padding: 30px 38px 64px; width: 100%; min-height: 100%; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); box-shadow: var(--shadow-card); }
 .project-doc-empty { margin: 0; color: var(--text-2); font-size: 13px; text-align: center; padding: 40px 16px; cursor: default; }
 .project-doc-source { width: 100%; min-height: 360px; border: 0; outline: none; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; line-height: 1.55; background: transparent; color: var(--text-1); padding: 0; }
+.project-doc-rich { min-height: 560px; outline: none; cursor: text; }
+.project-doc-rich:focus { caret-color: var(--brand); }
 .project-doc-view.md-prose { font-size: 13px; line-height: 1.9; color: var(--text-1); cursor: text; }
 .project-doc-view.md-prose .design-header { font-size: 12px; letter-spacing: .01em; }
 .project-doc-view.md-prose .md-h:first-child { margin-top: 0; }
@@ -1681,6 +1699,29 @@ body[data-theme="dark"] {
 .project-doc-view.md-prose li.md-task input[type="checkbox"] { margin-right: .35em; accent-color: var(--brand); vertical-align: middle; }
 .project-doc-view.md-prose li.md-task-done { color: var(--text-2); }
 .project-doc-view.md-prose .md-table { font-size: 12px; }
+.rules-manager { display: grid; gap: 18px; }
+.rules-manager h2 { margin: 0 0 4px; font-size: 15px; }
+.rules-policy, .rules-catalog { display: grid; gap: 10px; }
+.rules-policy label { display: grid; gap: 5px; color: var(--text-2); font-size: 12px; font-weight: 600; }
+.rules-policy .project-settings-textarea { min-height: 100px; }
+.rules-policy .primary-btn { justify-self: end; }
+.rules-catalog { padding-top: 16px; border-top: 1px solid var(--border); }
+.rules-file-list { display: grid; gap: 6px; }
+.rules-file-row { display: grid; grid-template-columns: minmax(130px, .7fr) minmax(180px, 1.3fr) auto; gap: 8px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; background: var(--bg-surface); color: var(--text-1); text-align: left; cursor: pointer; }
+.rules-file-row.active { border-color: var(--border-active); background: var(--surface-hover); }
+.rules-file-row span { color: var(--text-3); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rules-file-row em { color: var(--brand); font-size: 10px; font-style: normal; font-weight: 650; }
+.rules-file-editor { display: grid; gap: 8px; min-height: 280px; }
+.rules-file-meta { display: flex; justify-content: space-between; gap: 10px; color: var(--text-3); font-size: 11px; }
+.rules-file-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rules-source { min-height: 280px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-app); }
+.rules-file-editor .primary-btn { justify-self: end; }
+@media (max-width: 760px) {
+  .project-doc-toolbar { padding: 7px 8px; }
+  .project-doc-actions { flex-wrap: wrap; }
+  .project-doc-command-left, .project-doc-command-right { max-width: 100%; overflow-x: auto; }
+  .project-doc-command-select { max-width: 150px; }
+}
 .project-issues-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-app); }
 .project-workbench-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-surface); }
 .project-workbench-panel.hidden { display: none !important; }
@@ -5156,6 +5197,7 @@ const state = {
   terminalHostMode: 'dock',
   projectDocLoadedFor: null,
   projectDocSubTab: 'design',
+  designEntryMode: 'markdown',
   projectDocPlanPath: null,
   projectDocPath: null,
   projectDocRaw: '',
@@ -5163,6 +5205,9 @@ const state = {
   projectDocTemplates: [],
   projectDocEditing: false,
   projectDocDirty: false,
+  projectRulesCatalog: null,
+  projectRuleSelectedId: null,
+  projectRuleRevision: null,
   projectDocSaveTimer: null,
   projectSettingsDirty: false,
   projectSettingsSaveTimer: null,
@@ -5563,6 +5608,14 @@ function bindAuxPanelResize() {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   });
+  handle.tabIndex = 0;
+  handle.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
+    event.preventDefault();
+    applyAuxPanelWidth(event.key === 'Home' ? 340 : state.auxPanelWidth + (event.key === 'ArrowLeft' ? 16 : -16));
+    persistAuxPanelWidth();
+  });
+  handle.addEventListener('dblclick', () => { applyAuxPanelWidth(340); persistAuxPanelWidth(); });
 }
 async function renderAuxReview() {
   const view = el('auxView');
@@ -9784,16 +9837,16 @@ function formatShortRelativeTime(iso) {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 function projectDocSubTabLabel(subTab) {
-  return ({ design: 'Design', agents: 'AGENTS.md', memory: 'Memory', plans: 'Plans' })[subTab] || 'Design';
+  return ({ design: 'DESIGN', rules: 'RULES', memory: 'MEMORY', plans: 'PLAN' })[subTab] || 'DESIGN';
 }
 function projectDocEmptyMessage(subTab) {
-  if (subTab === 'agents') return 'No AGENTS.md yet · click Edit to define project instructions.';
+  if (subTab === 'rules') return 'No project rules yet · create or select a rule file.';
   if (subTab === 'memory') return 'No MEMORY.md yet — click Edit to write.';
   if (subTab === 'plans') return 'No plan file selected — pick one from the list or click Edit.';
   return 'No project document yet — click Edit to write.';
 }
 function projectDocApiEndpoint(subTab) {
-  if (subTab === 'agents') return '/api/project-agents-doc';
+  if (subTab === 'rules') return '/api/project-agents-doc';
   if (subTab === 'memory') return '/api/project-memory-doc';
   if (subTab === 'plans') return '/api/project-plan';
   return '/api/design';
@@ -9803,27 +9856,15 @@ function updateProjectDocChrome() {
   if (title) title.textContent = projectDocSubTabLabel(state.projectDocSubTab);
   const planSelect = el('projectDocPlanSelect');
   if (planSelect) planSelect.classList.toggle('hidden', state.projectDocSubTab !== 'plans');
-  for (const id of ['projectDocDesignControls', 'projectDocTransferControls']) {
-    const control = el(id);
-    if (control) control.classList.toggle('hidden', state.projectDocSubTab !== 'design');
-  }
+  document.querySelectorAll('.project-doc-toolbar .design-only').forEach(control => control.classList.toggle('hidden', state.projectDocSubTab !== 'design'));
+  const documentSelect = el('projectDocumentSelect');
+  if (documentSelect) documentSelect.value = state.projectDocSubTab;
   const empty = el('projectDocEmpty');
   if (empty) empty.textContent = projectDocEmptyMessage(state.projectDocSubTab);
   document.querySelectorAll('.project-doc-subtab').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.docSubTab === state.projectDocSubTab);
     btn.setAttribute('aria-selected', btn.dataset.docSubTab === state.projectDocSubTab ? 'true' : 'false');
   });
-  const inspector = el('projectDocInspectorBody');
-  if (inspector) {
-    const kind = projectDocSubTabLabel(state.projectDocSubTab);
-    const pathValue = state.projectDocPath || (state.projectDocSubTab === 'plans' ? state.projectDocPlanPath : '') || 'Not created yet';
-    inspector.innerHTML = '<div class="project-doc-inspector-row"><span class="project-doc-inspector-label">Document</span><strong class="project-doc-inspector-value">' + kind + '</strong></div>'
-      + '<div class="project-doc-inspector-row"><span class="project-doc-inspector-label">Source</span><code class="project-doc-inspector-value">' + escapeHtml(pathValue) + '</code></div>'
-      + '<div class="project-doc-inspector-row"><span class="project-doc-inspector-label">Editing</span><strong class="project-doc-inspector-value">' + (state.projectDocEditing ? 'On' : 'Preview') + '</strong></div>'
-      + (state.projectDocSubTab === 'design'
-        ? '<div class="project-doc-inspector-note"><strong>Design rendering</strong><p>DESIGN.md remains Markdown source. The preview is generated from its template, theme, and section configuration.</p></div>'
-        : '<div class="project-doc-inspector-note"><strong>Human-readable document</strong><p>Double-click the preview or choose Edit to update this file.</p></div>');
-  }
 }
 
 function applyTerminalDockHeight(height) {
@@ -9859,7 +9900,7 @@ function renderProjectDocPlanSelect(plans, currentPath) {
   state.projectDocPlanPath = next || null;
 }
 function setProjectDocSubTab(tab) {
-  const allowed = { design: 1, agents: 1, memory: 1, plans: 1 };
+  const allowed = { design: 1, rules: 1, memory: 1, plans: 1 };
   const next = allowed[tab] ? tab : 'design';
   if (state.projectDocSubTab === next) return;
   if (state.projectDocDirty) void saveProjectDocNow();
@@ -9871,11 +9912,40 @@ function setProjectDocSubTab(tab) {
   void mountProjectDoc(true);
 }
 function getProjectDocContent() {
+  const rich = el('projectDocRich');
+  if (rich && !rich.classList.contains('hidden')) return richTextToMarkdown(rich);
   const src = el('projectDocSource');
   if (src && !src.classList.contains('hidden')) return src.value;
   if (state.projectDocRaw != null) return state.projectDocRaw;
   const view = el('projectDocView');
   return view && view.dataset.raw != null ? view.dataset.raw : '';
+}
+function richTextToMarkdown(root) {
+  const inline = node => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const content = Array.from(node.childNodes).map(inline).join('');
+    const tag = node.tagName.toLowerCase();
+    if (tag === 'strong' || tag === 'b') return '**' + content + '**';
+    if (tag === 'em' || tag === 'i') return '*' + content + '*';
+    if (tag === 'code') return String.fromCharCode(96) + content + String.fromCharCode(96);
+    if (tag === 'a') return '[' + content + '](' + (node.getAttribute('href') || '') + ')';
+    if (tag === 'br') return '\\n';
+    return content;
+  };
+  const block = node => {
+    if (node.nodeType === Node.TEXT_NODE) return (node.textContent || '').trim();
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const tag = node.tagName.toLowerCase();
+    if (/^h[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + inline(node).trim();
+    if (tag === 'blockquote') return inline(node).trim().split('\\n').map(line => '> ' + line).join('\\n');
+    if (tag === 'pre') return String.fromCharCode(96).repeat(3) + '\\n' + (node.textContent || '').replace(/\\n$/, '') + '\\n' + String.fromCharCode(96).repeat(3);
+    if (tag === 'hr') return '---';
+    if (tag === 'ul' || tag === 'ol') return Array.from(node.children).map((item, index) => (tag === 'ol' ? (index + 1) + '. ' : '- ') + inline(item).trim()).join('\\n');
+    return inline(node).trim();
+  };
+  const markdown = Array.from(root.childNodes).map(block).filter(Boolean).join('\\n\\n').trimEnd();
+  return markdown ? markdown + '\\n' : '';
 }
 function renderProjectDocPreview(content) {
   const view = el('projectDocView');
@@ -9893,33 +9963,55 @@ function renderProjectDocPreview(content) {
   if (empty) empty.classList.add('hidden');
   view.classList.remove('hidden');
   view.dataset.raw = state.projectDocRaw;
+  if (state.projectDocSubTab === 'design' && state.designEntryMode === 'html') {
+    view.classList.remove('md-prose');
+    view.textContent = '';
+    const frame = document.createElement('iframe');
+    frame.className = 'design-html-frame';
+    frame.title = 'Design HTML preview';
+    frame.setAttribute('sandbox', '');
+    frame.src = '/api/design/preview?revision=' + encodeURIComponent(state.projectDocRevision || Date.now());
+    view.appendChild(frame);
+    return;
+  }
+  view.classList.add('md-prose');
   renderMarkdownInto(view, state.projectDocRaw);
   if (state.projectDocSubTab === 'design') void renderDesignPreviewServer(state.projectDocRaw);
 }
 
 ${GUI_DESIGN_CLIENT_SCRIPT}
 function setProjectDocMode(editing) {
+  if (editing && state.projectDocSubTab === 'design' && state.designEntryMode === 'html') {
+    state.projectDocEditing = false;
+    void openDesignHtmlInFiles();
+    return;
+  }
   state.projectDocEditing = editing;
   const view = el('projectDocView');
   const empty = el('projectDocEmpty');
   const src = el('projectDocSource');
+  const rich = el('projectDocRich');
   const btn = el('projectDocEditBtn');
   const scroll = el('projectDocScroll');
-  if (!view || !src) return;
+  if (!view || !src || !rich) return;
   if (editing) {
     src.value = getProjectDocContent();
+    renderMarkdownInto(rich, src.value);
     view.classList.add('hidden');
     if (empty) empty.classList.add('hidden');
-    src.classList.remove('hidden');
-    if (btn) btn.textContent = 'Preview';
+    src.classList.add('hidden');
+    rich.classList.remove('hidden');
+    if (btn) { btn.innerHTML = guiIcon('eye'); btn.title = 'Preview'; btn.setAttribute('aria-label', 'Preview'); }
     if (scroll) scroll.classList.add('editing');
-    src.focus();
+    rich.focus();
     return;
   }
+  if (!rich.classList.contains('hidden')) src.value = richTextToMarkdown(rich);
+  rich.classList.add('hidden');
   src.classList.add('hidden');
   if (scroll) scroll.classList.remove('editing');
   renderProjectDocPreview(src.value);
-  if (btn) btn.textContent = 'Edit';
+  if (btn) { btn.innerHTML = guiIcon('edit'); btn.title = 'Edit'; btn.setAttribute('aria-label', 'Edit'); }
 }
 function toggleProjectDocEdit() {
   if (state.projectDocEditing) {
@@ -9968,15 +10060,16 @@ function scheduleProjectDocSave() {
   state.projectDocSaveTimer = setTimeout(() => { void saveProjectDocNow(); }, 700);
 }
 async function saveProjectDocNow() {
+  if (state.projectDocSubTab === 'rules') return;
   const content = getProjectDocContent();
   const subTab = state.projectDocSubTab || 'design';
   setProjectDocStatus('Saving…', 'dirty');
   try {
-    const endpoint = subTab === 'design' ? '/api/design/patch' : projectDocApiEndpoint(subTab);
+    const endpoint = subTab === 'design' ? '/api/design/entry' : projectDocApiEndpoint(subTab);
     const body = subTab === 'plans'
       ? { path: state.projectDocPlanPath, content }
       : subTab === 'design'
-        ? { content, expectedRevision: state.projectDocRevision }
+        ? { mode: state.designEntryMode, content, expectedRevision: state.projectDocRevision }
         : { content };
     const res = await api(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) {
@@ -9986,8 +10079,8 @@ async function saveProjectDocNow() {
     }
     const data = await res.json().catch(() => ({}));
     state.projectDocRaw = content;
-    if (subTab === 'design' && data.document) {
-      state.projectDocRevision = data.document.revision || null;
+    if (subTab === 'design' && data.entry) {
+      state.projectDocRevision = data.entry.revision || null;
     }
     state.projectDocDirty = false;
     if (!state.projectDocEditing) renderProjectDocPreview(content);
@@ -10302,13 +10395,21 @@ async function mountProjectDoc(force) {
   if (!view) return;
   const workDir = state.snapshot?.workDir || '';
   const subTab = state.projectDocSubTab || 'design';
-  const loadKey = workDir + ':' + subTab + ':' + (subTab === 'plans' ? (state.projectDocPlanPath || '') : '');
+  const loadKey = workDir + ':' + subTab + ':' + (subTab === 'plans' ? (state.projectDocPlanPath || '') : subTab === 'design' ? state.designEntryMode : '');
   if (!force && state.projectDocLoadedFor === loadKey && view.dataset.loaded === loadKey) {
     updateProjectDocChrome();
     return;
   }
   setProjectDocStatus('Loading…', '');
   state.projectDocEditing = false;
+  if (subTab === 'rules') {
+    state.projectDocLoadedFor = loadKey;
+    view.dataset.loaded = loadKey;
+    updateProjectDocChrome();
+    await renderProjectRulesManager();
+    setProjectDocStatus('', '');
+    return;
+  }
   let content = '';
   let designData = null;
   try {
@@ -10327,13 +10428,22 @@ async function mountProjectDoc(force) {
           }
         }
       }
+    } else if (subTab === 'design') {
+      const res = await api('/api/design/entry?mode=' + encodeURIComponent(state.designEntryMode));
+      if (res.ok) {
+        const data = await res.json();
+        content = typeof data.content === 'string' ? data.content : '';
+        state.projectDocPath = typeof data.path === 'string' ? data.path : null;
+        state.projectDocRevision = typeof data.revision === 'string' ? data.revision : null;
+      }
+      const manifestRes = await api('/api/design');
+      if (manifestRes.ok) designData = await manifestRes.json();
     } else {
       const res = await api(projectDocApiEndpoint(subTab));
       if (res.ok) {
         const data = await res.json();
         content = typeof data.content === 'string' ? data.content : '';
         state.projectDocPath = typeof data.path === 'string' ? data.path : null;
-        if (subTab === 'design') designData = data;
       }
     }
   } catch { /* show empty doc */ }
@@ -10349,7 +10459,7 @@ async function mountProjectDoc(force) {
   const scroll = el('projectDocScroll');
   if (scroll) scroll.classList.remove('editing');
   const btn = el('projectDocEditBtn');
-  if (btn) btn.textContent = 'Edit';
+  if (btn) { btn.innerHTML = guiIcon('edit'); btn.title = 'Edit'; btn.setAttribute('aria-label', 'Edit'); }
   setProjectDocStatus('', '');
 }
 const AGENT_EXECUTION_POLL_MS = 2000;
@@ -10874,6 +10984,68 @@ function mountWorkbenchTools(surface) {
   syncAuxChrome();
   syncTerminalToggle();
   requestAnimationFrame(refitActiveTerminal);
+}
+async function renderProjectRulesManager() {
+  const view = el('projectDocView');
+  const empty = el('projectDocEmpty');
+  if (!view) return;
+  view.classList.remove('hidden', 'md-prose');
+  if (empty) empty.classList.add('hidden');
+  view.textContent = '';
+  const response = await api('/api/project-rules');
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    view.textContent = data.error || 'Could not load project rules.';
+    return;
+  }
+  state.projectRulesCatalog = data;
+  const shell = document.createElement('div'); shell.className = 'rules-manager';
+  const policy = document.createElement('section'); policy.className = 'rules-policy';
+  policy.innerHTML = '<h2>Prompt policy</h2><p class="muted">Applied project-wide before directory-scoped AGENTS.md files.</p>';
+  const customLabel = document.createElement('label'); customLabel.innerHTML = '<span>Custom prompt</span>';
+  const custom = document.createElement('textarea'); custom.className = 'project-settings-textarea'; custom.value = data.policy?.customPrompt || ''; customLabel.appendChild(custom);
+  const rulesLabel = document.createElement('label'); rulesLabel.innerHTML = '<span>Project rules</span>';
+  const rules = document.createElement('textarea'); rules.className = 'project-settings-textarea'; rules.value = data.policy?.projectRules || ''; rulesLabel.appendChild(rules);
+  const savePolicy = document.createElement('button'); savePolicy.type = 'button'; savePolicy.className = 'primary-btn'; savePolicy.textContent = 'Save prompt policy';
+  savePolicy.addEventListener('click', async () => {
+    const saved = await api('/api/project-rule-policy', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ customPrompt: custom.value, projectRules: rules.value }) });
+    const body = await saved.json().catch(() => ({}));
+    setProjectDocStatus(saved.ok ? 'Prompt policy saved' : (body.error || 'Save failed'), saved.ok ? '' : 'error');
+  });
+  policy.append(customLabel, rulesLabel, savePolicy);
+  const catalog = document.createElement('section'); catalog.className = 'rules-catalog';
+  const heading = document.createElement('div'); heading.className = 'rules-catalog-heading'; heading.innerHTML = '<div><h2>AGENTS.md catalog</h2><p class="muted">Nested files apply only within their directory scope.</p></div>';
+  const list = document.createElement('div'); list.className = 'rules-file-list';
+  const editorHost = document.createElement('div'); editorHost.className = 'rules-file-editor';
+  const openEntry = async entry => {
+    state.projectRuleSelectedId = entry.id;
+    list.querySelectorAll('button').forEach(button => button.classList.toggle('active', button.dataset.id === entry.id));
+    editorHost.innerHTML = '<p class="muted">Loading...</p>';
+    const result = await api('/api/project-rule?id=' + encodeURIComponent(entry.id));
+    const file = await result.json().catch(() => ({}));
+    if (!result.ok) { editorHost.textContent = file.error || 'Could not load file.'; return; }
+    state.projectRuleRevision = file.revision;
+    editorHost.textContent = '';
+    const meta = document.createElement('div'); meta.className = 'rules-file-meta'; meta.innerHTML = '<strong>' + escapeHtml(file.relativePath) + '</strong><span>' + escapeHtml(file.workPath) + '</span>';
+    const textarea = document.createElement('textarea'); textarea.className = 'project-doc-source rules-source'; textarea.value = file.content || ''; textarea.spellcheck = false;
+    const save = document.createElement('button'); save.type = 'button'; save.className = 'primary-btn'; save.textContent = 'Save AGENTS.md';
+    save.addEventListener('click', async () => {
+      const saved = await api('/api/project-rule', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: entry.id, content: textarea.value, expectedRevision: state.projectRuleRevision }) });
+      const savedFile = await saved.json().catch(() => ({}));
+      if (saved.ok) state.projectRuleRevision = savedFile.revision;
+      setProjectDocStatus(saved.ok ? 'AGENTS.md saved' : (savedFile.error || 'Save failed'), saved.ok ? '' : 'error');
+    });
+    editorHost.append(meta, textarea, save);
+  };
+  for (const entry of data.entries || []) {
+    const button = document.createElement('button'); button.type = 'button'; button.dataset.id = entry.id; button.className = 'rules-file-row';
+    button.innerHTML = '<strong>' + escapeHtml(entry.relativePath) + '</strong><span>' + escapeHtml(entry.workPath) + '</span>' + (data.effectiveIds?.includes(entry.id) ? '<em>Effective</em>' : '');
+    button.addEventListener('click', () => { void openEntry(entry); }); list.appendChild(button);
+  }
+  if (!data.entries?.length) list.innerHTML = '<p class="muted">No AGENTS.md files found.</p>';
+  catalog.append(heading, list, editorHost);
+  shell.append(policy, catalog); view.appendChild(shell);
+  if (data.entries?.length) void openEntry(data.entries[0]);
 }
 function parkTerminalDock() {
   mountWorkbenchTools(state.projectView === 'detail' ? 'project' : 'conversation');
@@ -12704,28 +12876,10 @@ function renderProjectDetail() {
   docPanel.className = 'project-doc-panel document-workspace' + (state.projectDetailTab === 'document' ? '' : ' hidden');
   const docToolbar = document.createElement('header');
   docToolbar.className = 'project-doc-toolbar';
-  const docTitle = document.createElement('h2');
-  docTitle.id = 'projectDocTitle';
-  docTitle.textContent = 'Design';
   const docActions = document.createElement('div');
   docActions.className = 'project-doc-actions';
   docActions.append(...createProjectDocumentActions());
-  docToolbar.append(docTitle, docActions);
-  const docSubtabs = document.createElement('div');
-  docSubtabs.className = 'project-doc-subtabs';
-  docSubtabs.setAttribute('role', 'tablist');
-  docSubtabs.setAttribute('aria-label', 'Document sections');
-  for (const tab of [['design', 'DESIGN.md'], ['agents', 'AGENTS.md'], ['memory', 'MEMORY.md'], ['plans', 'Plans']]) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'project-doc-subtab' + (state.projectDocSubTab === tab[0] ? ' active' : '');
-    btn.dataset.docSubTab = tab[0];
-    btn.textContent = tab[1];
-    btn.setAttribute('role', 'tab');
-    btn.setAttribute('aria-selected', state.projectDocSubTab === tab[0] ? 'true' : 'false');
-    btn.addEventListener('click', () => setProjectDocSubTab(tab[0]));
-    docSubtabs.appendChild(btn);
-  }
+  docToolbar.append(docActions);
   const docScroll = document.createElement('div');
   docScroll.id = 'projectDocScroll';
   docScroll.className = 'project-doc-scroll';
@@ -12753,23 +12907,24 @@ function renderProjectDetail() {
       void saveProjectDocNow().then(() => setProjectDocMode(false));
     }
   });
-  docEditor.append(docView, docEmpty, docSource);
+  const docRich = document.createElement('div');
+  docRich.id = 'projectDocRich';
+  docRich.className = 'project-doc-rich md-prose hidden';
+  docRich.contentEditable = 'true';
+  docRich.setAttribute('role', 'textbox');
+  docRich.setAttribute('aria-multiline', 'true');
+  docRich.setAttribute('aria-label', 'Rich text document editor');
+  docRich.addEventListener('input', () => scheduleProjectDocSave());
+  docRich.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      void saveProjectDocNow().then(() => setProjectDocMode(false));
+    }
+  });
+  docEditor.append(docView, docEmpty, docSource, docRich);
   docScroll.appendChild(docEditor);
-  const docShell = document.createElement('div');
-  docShell.className = 'project-doc-shell';
-  const docSidebar = document.createElement('aside');
-  docSidebar.className = 'project-doc-sidebar';
-  const sidebarEyebrow = document.createElement('div'); sidebarEyebrow.className = 'project-doc-eyebrow'; sidebarEyebrow.textContent = 'Project documents';
-  const sidebarTitle = document.createElement('h2'); sidebarTitle.textContent = 'Documentation';
-  const sidebarHint = document.createElement('p'); sidebarHint.className = 'project-doc-sidebar-hint'; sidebarHint.textContent = 'Human-facing project context and design decisions.';
-  docSidebar.append(sidebarEyebrow, sidebarTitle, sidebarHint, docSubtabs);
   const docStage = document.createElement('div'); docStage.className = 'project-doc-stage'; docStage.append(docToolbar, docScroll);
-  const docInspector = document.createElement('aside'); docInspector.className = 'project-doc-inspector';
-  const inspectorTitle = document.createElement('h3'); inspectorTitle.textContent = 'Document details';
-  const inspectorBody = document.createElement('div'); inspectorBody.id = 'projectDocInspectorBody'; inspectorBody.className = 'project-doc-inspector-body';
-  docInspector.append(inspectorTitle, inspectorBody);
-  docShell.append(docSidebar, docStage, docInspector);
-  docPanel.append(docShell);
+  docPanel.append(docStage);
   const issuesPanel = document.createElement('section');
   issuesPanel.id = 'projectIssuesPanel';
   issuesPanel.className = 'project-issues-panel' + (state.projectDetailTab === 'issues' ? '' : ' hidden');
@@ -12803,21 +12958,6 @@ function renderProjectDetail() {
     + '<label class="settings-row"><span><strong>Default agent mode for new sessions</strong><small>ReAct uses ordinary tools; CodeAct uses persistent Python CodeCell; Hybrid exposes both.</small></span><select id="projectAgentMode"><option value="react">ReAct</option><option value="codeact">CodeAct</option><option value="hybrid">Hybrid</option></select></label>'
     + '<label class="settings-row"><span><strong>CodeAct backend</strong><small>Process is trusted-only; Container provides stronger isolation.</small></span><select id="projectCodeActBackend"><option value="process">Process (trusted only)</option><option value="container">Container</option></select></label>'
     + '<label class="settings-row"><span><strong>Security mode</strong><small>Enforce fails closed unless strong container isolation is available.</small></span><select id="projectCodeActSecurity"><option value="trusted">Trusted</option><option value="enforce">Enforce isolation</option></select></label>'
-    + '</div>'
-    + '<div class="settings-group">'
-    + '<h2>Custom prompt</h2>'
-    + '<p class="muted">Injected into the system prompt for chats in this project. Templates fill this field only.</p>'
-    + '<div class="project-settings-template-row">'
-    + '<select id="projectPromptTemplateSelect" aria-label="Prompt template"></select>'
-    + '<button type="button" class="secondary-btn" id="projectPromptTemplateApply">Apply template</button>'
-    + '<button type="button" class="secondary-btn" id="projectPromptTemplateSave">Save as template</button>'
-    + '</div>'
-    + '<textarea id="projectCustomPrompt" class="project-settings-textarea" rows="14" spellcheck="false" placeholder="Optional custom instructions\u2026"></textarea>'
-    + '</div>'
-    + '<div class="settings-group">'
-    + '<h2>Project rules</h2>'
-    + '<p class="muted">Extra project rules injected after the custom prompt, separate from instruction files.</p>'
-    + '<textarea id="projectRulesPrompt" class="project-settings-textarea" rows="10" spellcheck="false" placeholder="Optional project rules\u2026"></textarea>'
     + '</div>'
     + '<div class="settings-group">'
     + '<h2>Context instructions</h2>'
@@ -14709,6 +14849,15 @@ function bindTerminalDockResize() {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   });
+  handle.tabIndex = 0;
+  handle.addEventListener('keydown', event => {
+    if (!['ArrowUp', 'ArrowDown', 'Home'].includes(event.key)) return;
+    event.preventDefault();
+    applyTerminalDockHeight(event.key === 'Home' ? 260 : state.terminalDockHeight + (event.key === 'ArrowUp' ? 16 : -16));
+    persistAuxPanelWidth();
+    refitActiveTerminal();
+  });
+  handle.addEventListener('dblclick', () => { applyTerminalDockHeight(260); persistAuxPanelWidth(); refitActiveTerminal(); });
 }
 
 async function deviceApi(path, options) {
