@@ -70,7 +70,9 @@ import {
 } from '../parity/externalCliSessions.js';
 import { parseCrushSessionReferenceDetails } from '../parity/crushSessionHistory.js';
 import { readProjectMeta } from '../gui/projectMeta.js';
-import { readWorkspaceRegistry } from '../gui/workspaceRegistry.js';
+import { findWorkspaceProject, readWorkspaceRegistry, workspaceWorkPaths } from '../gui/workspaceRegistry.js';
+import { DesignWorkspaceService } from '../design/designWorkspaceService.js';
+import { ProjectRuleCatalogService } from '../rules/projectRuleCatalog.js';
 import {
   persistHadamardSettingsStore,
   resolveHadamardSettingsStore,
@@ -3620,6 +3622,61 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     commandBusy = true;
     renderDynamic();
     try {
+      if (name === 'document') {
+        const selected = await selectItem({
+          title: 'Project documents',
+          searchable: false,
+          items: [
+            { id: 'design', label: 'DESIGN', description: '.hadamard/design/design.md or design.html' },
+            { id: 'plan', label: 'PLAN', description: 'Current plan document' },
+            { id: 'memory', label: 'MEMORY', description: 'Durable project memory entrypoint' },
+            { id: 'rules', label: 'RULES', description: 'Directory-scoped AGENTS.md catalog' },
+          ],
+        });
+        if (!selected) return;
+        let targetPath: string | undefined;
+        if (selected === 'design') {
+          const format = await selectItem({
+            title: 'Design source',
+            searchable: false,
+            items: [
+              { id: 'markdown', label: 'Markdown', description: '.hadamard/design/design.md' },
+              { id: 'html', label: 'HTML', description: '.hadamard/design/design.html' },
+            ],
+          });
+          if (!format) return;
+          const registry = await readWorkspaceRegistry(hadamardHomeDir);
+          const primary = findWorkspaceProject(registry, sdk.config.workDir)?.path ?? sdk.config.workDir;
+          const design = new DesignWorkspaceService(primary);
+          await design.ensureRoot();
+          targetPath = design.entryPath(format === 'html' ? 'html' : 'markdown');
+          if (!fs.existsSync(targetPath)) {
+            if (format === 'html') await design.writeHtml('<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>Project Design</title></head><body><main><h1>Project Design</h1></main></body></html>\n');
+            else await design.writeMarkdown('# Project Design\n');
+          }
+        } else if (selected === 'plan') {
+          targetPath = planFilePath(sdk.config.workDir);
+        } else if (selected === 'memory') {
+          targetPath = (await sdk.memory.paths({ projectPath: sdk.config.workDir })).autoMemoryEntrypoint;
+        } else {
+          const registry = await readWorkspaceRegistry(hadamardHomeDir);
+          const project = findWorkspaceProject(registry, sdk.config.workDir);
+          const catalog = new ProjectRuleCatalogService(project ? workspaceWorkPaths(project) : [sdk.config.workDir]);
+          const entries = await catalog.list();
+          const rule = await selectItem({
+            title: 'AGENTS.md rules',
+            searchable: true,
+            items: entries.map(entry => ({ id: entry.path, label: entry.relativePath, description: entry.workPath })),
+          });
+          targetPath = rule;
+        }
+        if (!targetPath) return;
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        const editorBin = process.env.EDITOR || process.env.VISUAL || 'notepad';
+        const result = spawnSync(editorBin, [targetPath], { stdio: 'inherit', shell: false });
+        appendStatic([...formatInfoLine(result.error ? `Could not open ${targetPath}: ${result.error.message}` : `Opened ${targetPath}`), '']);
+        return;
+      }
       const memoryCommandHandled = await runTuiMemoryCommand(name, args, {
         runMemoryCommand: async input => {
           const { HadamardMemoryCommandService } = await import('../memory/memoryCommandService.js');
@@ -4090,7 +4147,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             return {
               model: config.model ?? `${session.model} (session default)`,
               readScope: config.readScope,
-              mirrorDesignToWorkspace: config.mirrorDesignToWorkspace,
               milestones: plan.milestones.length,
               today: plan.today.length,
               upcoming: plan.upcoming.length,
@@ -4107,12 +4163,10 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
                 return { ok: false, message: 'readScope must be workspace-only | workspace+docs | explicit-allowlist | full-access' };
               }
               config.readScope = value;
-            } else if (key === 'mirror') {
-              config.mirrorDesignToWorkspace = value === 'on' || value === 'true';
             } else if (key === 'allow') {
               config.allowedReadPaths = value ? value.split(',').map(item => item.trim()).filter(Boolean) : [];
             } else {
-              return { ok: false, message: 'usage: /manager config set <model|bridgeConfig|readScope|mirror|allow> <value>' };
+              return { ok: false, message: 'usage: /manager config set <model|bridgeConfig|readScope|allow> <value>' };
             }
             await writeManagerConfig(sdk.config.workDir, sdk.config.homeDir, config);
             return { ok: true, message: `Manager config updated: ${key}` };
