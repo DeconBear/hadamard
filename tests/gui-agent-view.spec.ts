@@ -33,9 +33,8 @@ describe('GUI Project Agent execution view', () => {
     expect(js).toContain('function revealActiveProjectDetailTab()');
     expect(js).toContain('tabs.scrollLeft += Math.ceil(activeRect.right - tabsRect.right)');
     expect(js).toContain('requestAnimationFrame(revealActiveProjectDetailTab)');
-    expect(js).toContain('if (window.innerWidth > 1120) setDetailConversationDrawer(false)');
     expect(js).toContain('function toggleDetailConversationDrawer()');
-    expect(js).toContain("sidebar?.classList.toggle('mobile-open', expanded)");
+    expect(js).toContain("sidebar?.classList.toggle('mobile-open', expanded && overlay)");
     expect(js).toContain("if (expanded) requestAnimationFrame(() => el('detailConvSearch')?.focus())");
     expect(js).toContain("sidebar.id = 'projectDetailSidebar'");
     expect(js).toContain("'agent-execution-root-' + root.rootExecutionId");
@@ -75,7 +74,7 @@ describe('GUI Project Agent execution view', () => {
       ['navAutomation', 'Automation'],
       ['navPlugins', 'Customize'],
       ['settingsBtn', 'Settings'],
-      ['detailConversationsBtn', 'Conversations'],
+      ['detailConversationsBtn', 'Hide conversations'],
       ['detailNewConversationBtn', '+ New conversation'],
     ]) {
       if (id === 'detailNewConversationBtn') {
@@ -99,15 +98,15 @@ describe('GUI Project Agent execution view', () => {
     const narrowStart = css.indexOf('@media (max-width: 640px)', compactStart);
     const narrow = css.slice(narrowStart, css.indexOf('.context-bar', narrowStart));
 
-    expect(tablet).toContain('.detail-conversations-toggle { display: inline-flex; }');
+    expect(tablet).toContain('.detail-conversations-toggle { display: inline-grid; }');
     expect(tablet).toContain('.detail-sidebar.mobile-open');
     expect(tablet).toContain('visibility: visible;');
     expect(compact).toContain('.sidebar { width: 56px; flex-basis: 56px; padding: 12px 8px; }');
     expect(compact).toContain('.sidebar-recents');
     expect(compact).toContain('.nav-btn > span:not(.nav-icon) { display: none !important; }');
     expect(narrow).toContain('.project-detail > .region-header');
-    expect(narrow).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
-    expect(narrow).toContain('.detail-conversations-toggle { grid-column: 1 / -1; }');
+    expect(narrow).toContain('grid-template-columns: minmax(100px, .65fr) minmax(0, 1.35fr);');
+    expect(narrow).toContain('flex-wrap: nowrap;');
     expect(narrow).toContain('.project-detail-tabs::-webkit-scrollbar { display: none; }');
   });
 
@@ -327,8 +326,8 @@ describe('GUI Project Agent execution view', () => {
     );
     expect(request).toContain('if (res.status < 500)');
     expect(request).toContain('await reconcileResumedSession(id, requestSequence)');
-    expect(reconcile).toContain("api('/api/session/active')");
-    expect(reconcile).toContain('while (requestSequence === sessionResumeSequence)');
+    expect(reconcile).toContain("api('/api/session/active',");
+    expect(reconcile).toContain('while (requestSequence === sessionResumeSequence && attempt < 5)');
     expect(reconcile).toContain('await new Promise(resolve => setTimeout');
 
     const send = js.slice(
@@ -353,7 +352,7 @@ describe('GUI Project Agent execution view', () => {
       js.indexOf('function handleEvent(event)'),
     );
 
-    expect(entry).toContain('if (state.running)');
+    expect(entry).not.toContain('if (state.running)');
     expect(entry).toContain('if (state.sessionResumePending)');
     expect(entry).toContain('.then(() => performCreateSession(requestSequence))');
     expect(create).toContain("api('/api/session/new'");
@@ -361,9 +360,34 @@ describe('GUI Project Agent execution view', () => {
     expect(create.indexOf('const snapshot = await res.json()')).toBeLessThan(
       create.indexOf('await activateResumedSession(snapshot, requestSequence)'),
     );
-    expect(create).toContain("api('/api/session/active')");
+    expect(create).toContain("api('/api/session/active',");
     expect(send).toContain('sessionId');
     expect(send).toContain('res.status === 409');
+  });
+
+  it('allows conversation navigation while another session keeps running', () => {
+    const js = createHadamardGuiClientScript();
+    const resume = js.slice(
+      js.indexOf('function resumeSession(id)'),
+      js.indexOf('function setDetailConversationDrawer', js.indexOf('function resumeSession(id)')),
+    );
+    expect(resume).not.toContain('Stop the current foreground run');
+    expect(resume).toContain('AbortSignal.timeout(15_000)');
+    expect(js).toContain('activeRequestSessionId');
+    expect(js).toContain('session-unread-dot');
+    expect(js).toContain('session-running-mark');
+    expect(js).not.toContain('Another conversation is still running');
+    expect(js).toContain("if (event.type === 'permission.request') showPermission(event)");
+  });
+
+  it('keeps a single auxiliary panel toggle per visible surface', () => {
+    const html = createHadamardGuiHtml();
+    const js = createHadamardGuiClientScript();
+    expect(html).not.toContain('id="auxFocusBtn"');
+    expect(html).not.toContain('id="auxToggleBtn"');
+    expect(html).toContain('id="auxPanelToggleBtn"');
+    expect(html).toContain('id="detailAuxPanelToggleBtn"');
+    expect(js).not.toContain('toggleAuxFocus');
   });
 
   it('forces the transcript to the bottom after the conversation view becomes visible', () => {
