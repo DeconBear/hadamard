@@ -152,6 +152,46 @@ export class DesignWorkspaceService {
     return readFile(target);
   }
 
+  async writeFile(relativePath: string, content: Buffer | string): Promise<DesignWorkspaceAsset> {
+    const target = this.resolveAssetPath(relativePath);
+    await this.ensureRoot();
+    await this.ensureSafeDirectory(path.dirname(target));
+    const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
+    const temporaryPath = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);
+    await writeFile(temporaryPath, bytes, { flag: 'wx' });
+    try {
+      await rename(temporaryPath, target);
+    } catch (error) {
+      await unlink(temporaryPath).catch(() => undefined);
+      throw error;
+    }
+    const metadata = await stat(target);
+    return {
+      path: target,
+      relativePath: path.relative(this.rootPath(), target).replaceAll(path.sep, '/'),
+      size: metadata.size,
+      modifiedAt: metadata.mtime.toISOString(),
+    };
+  }
+
+  private async ensureSafeDirectory(directory: string): Promise<void> {
+    if (!isWithin(this.rootPath(), directory)) throw new Error('Design path is outside the Design workspace.');
+    await this.assertNoSymlink(this.rootPath());
+    const segments = path.relative(this.rootPath(), directory).split(path.sep).filter(Boolean);
+    let current = this.rootPath();
+    for (const segment of segments) {
+      current = path.join(current, segment);
+      try {
+        const metadata = await lstat(current);
+        if (metadata.isSymbolicLink()) throw new Error(`Design workspace symlinks are not allowed: ${current}`);
+        if (!metadata.isDirectory()) throw new Error(`Design workspace path is not a directory: ${current}`);
+      } catch (error) {
+        if (!isMissing(error)) throw error;
+        await mkdir(current);
+      }
+    }
+  }
+
   resolveAssetPath(relativePath: string): string {
     if (!relativePath.trim() || path.isAbsolute(relativePath)) {
       throw new Error('Design asset path must be a non-empty relative path.');

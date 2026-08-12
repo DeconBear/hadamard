@@ -1656,11 +1656,40 @@ body[data-theme="dark"] {
 .project-doc-command-select { min-height: 32px; border: 1px solid var(--border); border-radius: 8px; padding: 0 28px 0 9px; background: var(--bg-surface); color: var(--text-1); font-size: 12px; font-weight: 600; }
 .project-doc-command-icon { width: 32px; height: 32px; }
 .design-html-frame { display: block; width: 100%; min-height: 680px; height: calc(100vh - 260px); border: 0; background: white; }
-.design-export-options, .design-template-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.design-export-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
 .design-export-option, .design-template-card { display: flex; flex-direction: column; gap: 5px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); color: var(--text-1); text-align: left; cursor: pointer; }
 .design-export-option:hover, .design-template-card:hover { border-color: var(--border-active); background: var(--surface-hover); }
 .design-export-option span, .design-template-card span { color: var(--text-3); font-size: 11.5px; line-height: 1.45; }
-.design-template-preview { min-height: 94px; margin: -4px -4px 6px; padding: 10px; border-radius: 7px; background: var(--bg-app); color: var(--text-3); font-size: 10px; line-height: 1.7; white-space: pre-line; overflow: hidden; }
+.design-template-center { width: min(1180px, 96vw); max-width: 1180px; height: min(780px, 90vh); overflow: hidden; display: flex; flex-direction: column; }
+.design-template-center .design-modal-content { min-height: 0; flex: 1; }
+.design-template-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px); gap: 10px; }
+.design-template-toolbar input, .design-template-toolbar select { min-height: 38px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-surface); color: var(--text-1); padding: 0 11px; }
+.design-template-layout { min-height: 0; display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 16px; overflow: hidden; }
+.design-template-grid { min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 10px; padding-right: 4px; }
+.design-template-card { padding: 9px; min-width: 0; }
+.design-template-card.active { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 18%, transparent); }
+.design-template-thumbnail { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 7px; background: var(--bg-app); }
+.design-template-card strong, .design-template-card span, .design-template-card small { overflow: hidden; text-overflow: ellipsis; }
+.design-template-card span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.design-template-card small { color: var(--text-3); font-size: 10.5px; white-space: nowrap; }
+.design-template-detail { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(300px, 1fr) auto; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg-surface); }
+.design-template-frame { width: 100%; height: 100%; border: 0; background: white; }
+.design-template-meta { display: grid; gap: 10px; padding: 13px 15px; border-top: 1px solid var(--border); }
+.design-template-meta > div:first-child { display: grid; gap: 3px; }
+.design-template-meta > div:first-child span { color: var(--text-3); font-size: 11.5px; }
+.design-template-meta .primary-btn { justify-self: end; }
+.design-change-list { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.design-change-list.compact { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); max-height: 92px; }
+.design-change-row { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface-2); }
+.design-change-row code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.design-change-action { flex: 0 0 auto; min-width: 64px; color: var(--text-3); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.design-change-row[data-action="add"] .design-change-action { color: var(--ok); }
+.design-change-row[data-action="overwrite"] .design-change-action { color: var(--warn); }
+@media (max-width: 820px) {
+  .design-template-layout { grid-template-columns: 1fr; overflow: auto; }
+  .design-template-grid { overflow: visible; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .design-template-detail { min-height: 560px; }
+}
 .project-doc-action-group { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; width: 100%; }
 .project-doc-action-label { flex: 0 0 auto; margin-right: 3px; color: var(--text-3); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .project-doc-edit-btn { min-height: 28px; padding: 0 10px; font-size: 12px; }
@@ -1675,6 +1704,10 @@ body[data-theme="dark"] {
 .project-doc-source { width: 100%; min-height: 360px; border: 0; outline: none; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; line-height: 1.55; background: transparent; color: var(--text-1); padding: 0; }
 .project-doc-rich { min-height: 560px; outline: none; cursor: text; }
 .project-doc-rich:focus { caret-color: var(--brand); }
+.project-doc-formatbar { display: none; align-items: center; gap: 4px; margin: -30px -38px 24px; padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--bg-surface); overflow-x: auto; position: sticky; top: -30px; z-index: 2; }
+.project-doc-scroll.editing .project-doc-formatbar { display: flex; }
+.project-doc-formatbar button { flex: 0 0 auto; min-width: 30px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; font-weight: 650; }
+.project-doc-formatbar button:hover { background: var(--surface-hover); color: var(--text-1); }
 .project-doc-view.md-prose { font-size: 13px; line-height: 1.9; color: var(--text-1); cursor: text; }
 .project-doc-view.md-prose .design-header { font-size: 12px; letter-spacing: .01em; }
 .project-doc-view.md-prose .md-h:first-child { margin-top: 0; }
@@ -2507,7 +2540,7 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
 .manager-quick-btn.primary:hover { background: var(--btn-primary-bg-hover); color: var(--btn-primary-fg); border-color: transparent; }
 .manager-widget.running .manager-widget-topic::after { content: ' · running'; color: var(--brand); font-weight: 500; }
 .manager-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-/* Manager settings form (plan M0/M3): model / read scope / mirror. */
+/* Manager settings form: model and read scope. */
 .manager-config-form { display: grid; gap: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); padding: 10px 12px; margin-bottom: 8px; }
 .manager-config-form.hidden { display: none; }
 .manager-config-form label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-2); }
@@ -5145,8 +5178,8 @@ const state = {
   terminalDockHeight: 260,
   activeWorkbenchSurface: 'conversation',
   workbenchLayouts: {
-    conversation: { auxWidth: 340, terminalHeight: 260 },
-    project: { auxWidth: 340, terminalHeight: 260 },
+    conversation: { auxWidth: 340, terminalHeight: 260, auxView: null, auxCollapsed: false, terminalVisible: false },
+    project: { auxWidth: 340, terminalHeight: 260, auxView: null, auxCollapsed: false, terminalVisible: false },
   },
   filesBrowsePath: null,
   browserUrl: 'https://',
@@ -5203,6 +5236,7 @@ const state = {
   projectDocEditing: false,
   projectDocDirty: false,
   projectRulesCatalog: null,
+  projectPromptPolicy: { customPrompt: '', projectRules: '' },
   projectRuleSelectedId: null,
   projectRuleRevision: null,
   projectDocSaveTimer: null,
@@ -5466,6 +5500,9 @@ function loadAuxPanelWidth() {
       const terminalHeight = Number(saved.terminalHeight);
       if (Number.isFinite(auxWidth)) state.workbenchLayouts[surface].auxWidth = Math.round(Math.max(AUX_PANEL_MIN_WIDTH, Math.min(AUX_PANEL_MAX_WIDTH, auxWidth)));
       if (Number.isFinite(terminalHeight)) state.workbenchLayouts[surface].terminalHeight = Math.round(Math.max(TERMINAL_DOCK_MIN_HEIGHT, Math.min(TERMINAL_DOCK_MAX_HEIGHT, terminalHeight)));
+      if (saved.auxView === null || ['review', 'git', 'browser', 'files'].includes(saved.auxView)) state.workbenchLayouts[surface].auxView = saved.auxView;
+      if (typeof saved.auxCollapsed === 'boolean') state.workbenchLayouts[surface].auxCollapsed = saved.auxCollapsed;
+      if (typeof saved.terminalVisible === 'boolean') state.workbenchLayouts[surface].terminalVisible = saved.terminalVisible;
     }
     const legacy = Number(localStorage.getItem(AUX_PANEL_WIDTH_KEY));
     if (Number.isFinite(legacy) && legacy >= AUX_PANEL_MIN_WIDTH && !parsed?.conversation) {
@@ -5493,6 +5530,8 @@ function applyAuxPanelWidth(width) {
 
 function showAuxLauncher() {
   state.auxView = null;
+  activeWorkbenchLayout().auxView = null;
+  persistAuxPanelWidth();
   const launcher = el('auxLauncher');
   const view = el('auxView');
   const closeBtn = el('auxCloseBtn');
@@ -5523,11 +5562,15 @@ function syncAuxChrome() {
 }
 function ensureAuxVisible() {
   state.auxCollapsed = false;
+  activeWorkbenchLayout().auxCollapsed = false;
+  persistAuxPanelWidth();
   syncAuxChrome();
 }
 function openAuxView(kind) {
   ensureAuxVisible();
   state.auxView = kind;
+  activeWorkbenchLayout().auxView = kind;
+  persistAuxPanelWidth();
   const launcher = el('auxLauncher');
   const view = el('auxView');
   const closeBtn = el('auxCloseBtn');
@@ -5541,6 +5584,8 @@ function openAuxView(kind) {
 }
 function toggleAuxPanel() {
   state.auxCollapsed = !state.auxCollapsed;
+  activeWorkbenchLayout().auxCollapsed = state.auxCollapsed;
+  persistAuxPanelWidth();
   if (state.auxCollapsed && state.auxFocused) {
     state.auxFocused = false;
     const panel = el('auxPanel');
@@ -6243,6 +6288,8 @@ function openTerminalDock() {
   const dock = el('terminalDock');
   if (!dock) return;
   dock.classList.remove('hidden');
+  activeWorkbenchLayout().terminalVisible = true;
+  persistAuxPanelWidth();
   const existing = state.tabs.find((t) => t.type === 'terminal');
   if (existing) switchTerminalTab(existing.id);
   else addTerminalPane();
@@ -6254,6 +6301,8 @@ function closeTerminalDock() {
   }
   const dock = el('terminalDock');
   if (dock) dock.classList.add('hidden');
+  activeWorkbenchLayout().terminalVisible = false;
+  persistAuxPanelWidth();
   syncTerminalToggle();
 }
 function toggleTerminalDock() {
@@ -9925,6 +9974,7 @@ function richTextToMarkdown(root) {
     const tag = node.tagName.toLowerCase();
     if (tag === 'strong' || tag === 'b') return '**' + content + '**';
     if (tag === 'em' || tag === 'i') return '*' + content + '*';
+    if (tag === 'del' || tag === 's' || tag === 'strike') return '~~' + content + '~~';
     if (tag === 'code') return String.fromCharCode(96) + content + String.fromCharCode(96);
     if (tag === 'a') return '[' + content + '](' + (node.getAttribute('href') || '') + ')';
     if (tag === 'br') return '\\n';
@@ -9938,11 +9988,57 @@ function richTextToMarkdown(root) {
     if (tag === 'blockquote') return inline(node).trim().split('\\n').map(line => '> ' + line).join('\\n');
     if (tag === 'pre') return String.fromCharCode(96).repeat(3) + '\\n' + (node.textContent || '').replace(/\\n$/, '') + '\\n' + String.fromCharCode(96).repeat(3);
     if (tag === 'hr') return '---';
-    if (tag === 'ul' || tag === 'ol') return Array.from(node.children).map((item, index) => (tag === 'ol' ? (index + 1) + '. ' : '- ') + inline(item).trim()).join('\\n');
+    if (tag === 'ul' || tag === 'ol') return Array.from(node.children).map((item, index) => {
+      const checkbox = item.querySelector(':scope > input[type="checkbox"]');
+      const prefix = tag === 'ol' ? (index + 1) + '. ' : checkbox ? '- [' + (checkbox.checked ? 'x' : ' ') + '] ' : '- ';
+      const content = Array.from(item.childNodes).filter(child => child !== checkbox).map(inline).join('').trim();
+      return prefix + content;
+    }).join('\\n');
+    if (tag === 'table') {
+      const rows = Array.from(node.querySelectorAll('tr')).map(row => Array.from(row.children).map(cell => inline(cell).trim()));
+      if (!rows.length) return '';
+      return [rows[0], rows[0].map(() => '---'), ...rows.slice(1)].map(row => '| ' + row.join(' | ') + ' |').join('\\n');
+    }
     return inline(node).trim();
   };
   const markdown = Array.from(root.childNodes).map(block).filter(Boolean).join('\\n\\n').trimEnd();
   return markdown ? markdown + '\\n' : '';
+}
+function runProjectDocFormat(command, value) {
+  const rich = el('projectDocRich');
+  if (!rich || rich.classList.contains('hidden')) return;
+  rich.focus();
+  if (command === 'codeBlock') document.execCommand('formatBlock', false, 'pre');
+  else if (command === 'blockquote') document.execCommand('formatBlock', false, 'blockquote');
+  else if (command === 'heading') document.execCommand('formatBlock', false, value || 'h2');
+  else if (command === 'link') {
+    const href = window.prompt('Link URL', 'https://');
+    if (href && /^https?:\\/\\//i.test(href)) document.execCommand('createLink', false, href);
+  } else if (command === 'image') {
+    const source = window.prompt('Image URL or relative Design asset path');
+    if (source) document.execCommand('insertImage', false, source);
+  } else if (command === 'table') {
+    document.execCommand('insertHTML', false, '<table><thead><tr><th>Column 1</th><th>Column 2</th></tr></thead><tbody><tr><td>Value</td><td>Value</td></tr></tbody></table>');
+  } else if (command === 'task') {
+    document.execCommand('insertHTML', false, '<ul><li><input type="checkbox"> Task</li></ul>');
+  } else document.execCommand(command, false, value || null);
+  scheduleProjectDocSave();
+}
+function createProjectDocFormatBar() {
+  const bar = document.createElement('div'); bar.className = 'project-doc-formatbar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Markdown formatting');
+  const actions = [
+    ['H2', 'heading', 'h2', 'Heading'], ['B', 'bold', '', 'Bold'], ['I', 'italic', '', 'Italic'], ['S', 'strikeThrough', '', 'Strikethrough'],
+    ['•', 'insertUnorderedList', '', 'Bulleted list'], ['1.', 'insertOrderedList', '', 'Numbered list'], ['☑', 'task', '', 'Task list'],
+    ['❝', 'blockquote', '', 'Quote'], ['</>', 'codeBlock', '', 'Code block'], ['↗', 'link', '', 'Link'], ['▧', 'image', '', 'Image'], ['▦', 'table', '', 'Table'],
+    ['↶', 'undo', '', 'Undo'], ['↷', 'redo', '', 'Redo'],
+  ];
+  for (const [label, command, value, title] of actions) {
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.title = title; button.setAttribute('aria-label', title);
+    button.addEventListener('mousedown', event => event.preventDefault());
+    button.addEventListener('click', () => runProjectDocFormat(command, value));
+    bar.appendChild(button);
+  }
+  return bar;
 }
 function renderProjectDocPreview(content) {
   const view = el('projectDocView');
@@ -10152,8 +10248,8 @@ function collectProjectSettingsBody() {
       backend: el('projectCodeActBackend')?.value === 'container' ? 'container' : 'process',
       securityMode: el('projectCodeActSecurity')?.value === 'enforce' ? 'enforce' : 'trusted',
     },
-    customPrompt: el('projectCustomPrompt')?.value || '',
-    projectRules: el('projectRulesPrompt')?.value || '',
+    customPrompt: state.projectPromptPolicy?.customPrompt || '',
+    projectRules: state.projectPromptPolicy?.projectRules || '',
     context: {
       instructionMode: el('projectInstructionMode')?.value || 'agents',
     },
@@ -10202,73 +10298,6 @@ async function saveProjectSettingsNow() {
     setProjectSettingsStatus('Save failed', 'error');
   }
 }
-function fillPromptTemplateSelect(templates) {
-  const select = el('projectPromptTemplateSelect');
-  if (!select) return;
-  const previous = select.value;
-  select.textContent = '';
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = 'Choose a template\u2026';
-  select.appendChild(placeholder);
-  for (const template of templates) {
-    const opt = document.createElement('option');
-    opt.value = template.id;
-    opt.textContent = template.builtin ? template.name + ' (built-in)' : template.name;
-    select.appendChild(opt);
-  }
-  if (previous && templates.some((t) => t.id === previous)) select.value = previous;
-}
-async function refreshPromptTemplates() {
-  try {
-    const res = await api('/api/prompt-templates');
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Failed to load templates');
-    state.projectSettingsTemplates = data.templates || [];
-    fillPromptTemplateSelect(state.projectSettingsTemplates);
-  } catch (error) {
-    setProjectSettingsStatus(error.message || 'Template load failed', 'error');
-  }
-}
-function applySelectedPromptTemplate() {
-  const id = el('projectPromptTemplateSelect')?.value;
-  if (!id) return;
-  const template = (state.projectSettingsTemplates || []).find((t) => t.id === id);
-  if (!template) return;
-  const area = el('projectCustomPrompt');
-  if (!area) return;
-  area.value = template.body;
-  scheduleProjectSettingsSave();
-}
-async function saveCustomPromptAsTemplate() {
-  const body = el('projectCustomPrompt')?.value || '';
-  if (!body.trim()) {
-    setProjectSettingsStatus('Custom prompt is empty', 'error');
-    return;
-  }
-  const name = window.prompt('Template name');
-  if (name == null) return;
-  if (!name.trim()) {
-    setProjectSettingsStatus('Template name is required', 'error');
-    return;
-  }
-  try {
-    const res = await api('/api/prompt-templates', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), body }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Save failed');
-    await refreshPromptTemplates();
-    if (data.template?.id && el('projectPromptTemplateSelect')) {
-      el('projectPromptTemplateSelect').value = data.template.id;
-    }
-    setProjectSettingsStatus('Template saved', '');
-  } catch (error) {
-    setProjectSettingsStatus(error.message || 'Template save failed', 'error');
-  }
-}
 function wireProjectSettingsPanel() {
   const panel = el('projectSettingsPanel');
   if (!panel || panel.dataset.wired === '1') return;
@@ -10280,16 +10309,7 @@ function wireProjectSettingsPanel() {
       scheduleProjectSettingsSave();
     }
   });
-  panel.addEventListener('input', (event) => {
-    const target = event.target;
-    if (!target || !target.id) return;
-    if (target.id === 'projectCustomPrompt' || target.id === 'projectRulesPrompt') {
-      scheduleProjectSettingsSave();
-    }
-  });
   el('projectSettingsSaveBtn')?.addEventListener('click', () => { void saveProjectSettingsNow(); });
-  el('projectPromptTemplateApply')?.addEventListener('click', () => applySelectedPromptTemplate());
-  el('projectPromptTemplateSave')?.addEventListener('click', () => { void saveCustomPromptAsTemplate(); });
   el('projectDreamRun')?.addEventListener('click', async () => {
     setProjectSettingsStatus('Running Dream…', 'dirty');
     const res = await api('/api/project-dream/run', { method: 'POST' });
@@ -10304,15 +10324,11 @@ async function mountProjectSettingsPanel(force) {
   wireProjectSettingsPanel();
   const workDir = state.snapshot?.workDir || '';
   if (!force && panel.dataset.loaded === workDir && !state.projectSettingsDirty) {
-    void refreshPromptTemplates();
     return;
   }
   setProjectSettingsStatus('Loading\u2026', '');
   try {
-    const [settingsRes] = await Promise.all([
-      api('/api/project-settings'),
-      refreshPromptTemplates(),
-    ]);
+    const settingsRes = await api('/api/project-settings');
     const data = await settingsRes.json().catch(() => ({}));
     if (!settingsRes.ok) throw new Error(data.error || 'Failed to load project settings');
     const settings = data.settings || { workMode: 'coding', customPrompt: '', projectRules: '' };
@@ -10323,8 +10339,7 @@ async function mountProjectSettingsPanel(force) {
     if (el('projectAgentMode')) el('projectAgentMode').value = settings.agentMode || 'react';
     if (el('projectCodeActBackend')) el('projectCodeActBackend').value = settings.codeAct?.backend === 'container' ? 'container' : 'process';
     if (el('projectCodeActSecurity')) el('projectCodeActSecurity').value = settings.codeAct?.securityMode === 'enforce' ? 'enforce' : 'trusted';
-    if (el('projectCustomPrompt')) el('projectCustomPrompt').value = settings.customPrompt || '';
-    if (el('projectRulesPrompt')) el('projectRulesPrompt').value = settings.projectRules || '';
+    state.projectPromptPolicy = { customPrompt: settings.customPrompt || '', projectRules: settings.projectRules || '' };
     if (el('projectInstructionMode')) el('projectInstructionMode').value = settings.context?.instructionMode || 'agents';
     const memory = settings.memory || {};
     const compact = memory.compact || {};
@@ -10971,15 +10986,25 @@ function mountWorkbenchTools(surface) {
   const panel = el('auxPanel');
   const dock = el('terminalDock');
   if (!split || !workbench || !splitter || !panel || !dock) return;
+  const previousLayout = activeWorkbenchLayout();
+  previousLayout.auxView = state.auxView;
+  previousLayout.auxCollapsed = state.auxCollapsed;
+  previousLayout.terminalVisible = !dock.classList.contains('hidden');
   split.append(splitter, panel);
   workbench.appendChild(dock);
   state.activeWorkbenchSurface = nextSurface;
   state.terminalHostMode = 'dock';
   const layout = activeWorkbenchLayout();
+  state.auxView = layout.auxView || null;
+  state.auxCollapsed = layout.auxCollapsed === true;
   applyAuxPanelWidth(layout.auxWidth);
   applyTerminalDockHeight(layout.terminalHeight);
+  if (state.auxView) openAuxView(state.auxView);
+  else showAuxLauncher();
+  dock.classList.toggle('hidden', layout.terminalVisible !== true);
   syncAuxChrome();
   syncTerminalToggle();
+  persistAuxPanelWidth();
   requestAnimationFrame(refitActiveTerminal);
 }
 async function renderProjectRulesManager() {
@@ -10996,6 +11021,7 @@ async function renderProjectRulesManager() {
     return;
   }
   state.projectRulesCatalog = data;
+  state.projectPromptPolicy = { customPrompt: data.policy?.customPrompt || '', projectRules: data.policy?.projectRules || '' };
   const shell = document.createElement('div'); shell.className = 'rules-manager';
   const policy = document.createElement('section'); policy.className = 'rules-policy';
   policy.innerHTML = '<h2>Prompt policy</h2><p class="muted">Applied project-wide before directory-scoped AGENTS.md files.</p>';
@@ -11007,6 +11033,7 @@ async function renderProjectRulesManager() {
   savePolicy.addEventListener('click', async () => {
     const saved = await api('/api/project-rule-policy', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ customPrompt: custom.value, projectRules: rules.value }) });
     const body = await saved.json().catch(() => ({}));
+    if (saved.ok) state.projectPromptPolicy = { customPrompt: custom.value, projectRules: rules.value };
     setProjectDocStatus(saved.ok ? 'Prompt policy saved' : (body.error || 'Save failed'), saved.ok ? '' : 'error');
   });
   policy.append(customLabel, rulesLabel, savePolicy);
@@ -12882,6 +12909,7 @@ function renderProjectDetail() {
   docScroll.className = 'project-doc-scroll';
   const docEditor = document.createElement('div');
   docEditor.className = 'project-doc-editor';
+  const docFormatBar = createProjectDocFormatBar();
   const docView = document.createElement('div');
   docView.id = 'projectDocView';
   docView.className = 'project-doc-view md-prose hidden';
@@ -12918,7 +12946,7 @@ function renderProjectDetail() {
       void saveProjectDocNow().then(() => setProjectDocMode(false));
     }
   });
-  docEditor.append(docView, docEmpty, docSource, docRich);
+  docEditor.append(docFormatBar, docView, docEmpty, docSource, docRich);
   docScroll.appendChild(docEditor);
   const docStage = document.createElement('div'); docStage.className = 'project-doc-stage'; docStage.append(docToolbar, docScroll);
   docPanel.append(docStage);

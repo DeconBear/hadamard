@@ -745,6 +745,7 @@ function buildGuiSystemPrompt(
   workDir: string,
   settings: Pick<ProjectSettings, 'workMode' | 'customPrompt' | 'projectRules' | 'context'> = DEFAULT_PROJECT_SETTINGS,
   hadamardHomeDir = path.join(os.homedir(), '.hadamard'),
+  projectWorkPaths = [workDir],
 ): string {
   let gitProbe = path.resolve(workDir);
   let isGit = false;
@@ -759,6 +760,7 @@ function buildGuiSystemPrompt(
   const project = loadProjectContext(workDir, {
     projectInstructionMode: settings.context.instructionMode,
     hadamardHomeDir,
+    projectWorkPaths,
   });
   const projectSection = project.text
     ? `\n\n# Project context (AGENTS.md)\n\nThe following instruction files are authoritative guidance for this workspace.\n\n${project.text}\n`
@@ -1976,6 +1978,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       ? resolveHadamardHome(guiHomeOverride, { inputKind: 'dataRoot' })
       : resolveHadamardHome(options.homeDir);
   let projectPrimaryPath = workDir;
+  let projectRegisteredWorkPaths = [workDir];
   const refreshProjectPrimaryPath = async (
     candidateWorkPath = workDir,
     homeDir = resolveGuiHomeDir(),
@@ -1985,6 +1988,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       candidateWorkPath,
     );
     projectPrimaryPath = registered?.path ?? path.resolve(candidateWorkPath);
+    projectRegisteredWorkPaths = registered ? workspaceWorkPaths(registered) : [projectPrimaryPath];
     return projectPrimaryPath;
   };
   await refreshProjectPrimaryPath();
@@ -2027,7 +2031,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
 
   try {
     projectSettings = await readProjectSettings(workDir, resolveGuiHomeDir());
-    systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir());
+    systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir(), projectRegisteredWorkPaths);
   } catch {
     // Keep defaults when settings cannot be read.
   }
@@ -2481,7 +2485,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   }
   async function reloadProjectSystemPrompt(nextWorkDir = workDir): Promise<ProjectSettings> {
     projectSettings = await readProjectSettings(nextWorkDir, resolveGuiHomeDir());
-    systemPrompt = buildGuiSystemPrompt(nextWorkDir, projectSettings, resolveGuiHomeDir());
+    systemPrompt = buildGuiSystemPrompt(nextWorkDir, projectSettings, resolveGuiHomeDir(), projectRegisteredWorkPaths);
     return projectSettings;
   }
   // Usage totals for /cost, /usage, /stats. Per-config breakdown attributes spend
@@ -5776,7 +5780,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           projectSettings = await writeProjectSettings(workDir, resolveGuiHomeDir(), {
             context: { instructionMode },
           });
-          systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir());
+          systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir(), projectRegisteredWorkPaths);
           return [{ type: 'notice', message: `context instructions: ${instructionMode}; global rules remain ~/.hadamard/AGENTS.md` }, { type: 'state' }];
         }
         if (contextArgs) {
@@ -8877,7 +8881,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         memory,
       });
       projectSettings = saved;
-      systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir());
+      systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, resolveGuiHomeDir(), projectRegisteredWorkPaths);
       invalidateHeavyState();
       return json(res, 200, { ok: true, path: workDir, settings: saved });
     } catch (error) {
@@ -9105,7 +9109,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         projectRules: typeof body.projectRules === 'string' ? body.projectRules : undefined,
       });
       projectSettings = saved;
-      systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, homeDir);
+      systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, homeDir, projectRegisteredWorkPaths);
       invalidateHeavyState();
       return json(res, 200, { ok: true, policy: { customPrompt: saved.customPrompt, projectRules: saved.projectRules } });
     } catch (error) {
