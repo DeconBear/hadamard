@@ -1,7 +1,6 @@
 import {
   DesignDocumentService,
   type DesignImportAction,
-  type DesignMigrationAction,
   type DesignShareFormat,
   type EngineeringProfileTarget,
 } from '../design/index.js';
@@ -13,11 +12,6 @@ export interface GuiDesignHttpControllerOptions {
 }
 
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
-
-function isMigrationAction(value: unknown): value is DesignMigrationAction {
-  return value === 'migrate-legacy' || value === 'keep-design'
-    || value === 'replace-with-legacy' || value === 'merge-history';
-}
 
 function isImportAction(value: unknown): value is DesignImportAction {
   return value === 'new-copy' || value === 'replace-current' || value === 'merge-sections';
@@ -122,16 +116,6 @@ export function registerGuiDesignHttpController(
       json(res, 200, await options.createService().render(body.content));
     } catch (error) {
       json(res, 400, { error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  router.route('POST', '/api/design/migrate', async (req, res) => {
-    try {
-      const body = await readJson(req);
-      if (!isMigrationAction(body.action)) return json(res, 400, { error: 'Invalid migration action' });
-      json(res, 200, { ok: true, document: await options.createService().migrate(body.action) });
-    } catch (error) {
-      json(res, errorStatus(error), { error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -290,9 +274,4 @@ export function registerGuiDesignHttpController(
     }
   });
 
-  // One-release read compatibility. New writes must use the revision-aware Design endpoint.
-  router.route('GET', '/api/project-doc', async (_req, res) => {
-    const document = await options.createService().read();
-    json(res, 200, { content: document.content, path: document.designPath, deprecated: true });
-  });
 }

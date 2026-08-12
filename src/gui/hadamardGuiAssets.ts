@@ -1597,14 +1597,42 @@ body[data-theme="dark"] {
 .project-settings-textarea { width: 100%; box-sizing: border-box; min-height: 160px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg-surface); color: var(--text-1); font: 12.5px/1.45 var(--font-mono); resize: vertical; }
 .project-doc-panel { min-height: 0; display: flex; flex-direction: column; background: var(--bg-surface); border-right: 1px solid var(--border); overflow: hidden; }
 .detail-main .project-doc-panel { flex: 1; border-right: 0; }
-.project-doc-toolbar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
-.project-doc-subtabs { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 0 16px 8px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
-.project-doc-migration { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 16px; color: var(--text-2); background: color-mix(in srgb, var(--warning) 10%, var(--bg-surface)); border-bottom: 1px solid var(--border); font-size: 12px; }
-.project-doc-migration span { flex: 1; }
-.project-doc-subtab { min-height: 28px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer; }
-.project-doc-subtab.active { border-color: var(--border); background: var(--bg-surface-2); color: var(--text-1); font-weight: 600; }
+.project-doc-shell { min-height: 0; flex: 1; display: grid; grid-template-columns: 196px minmax(0, 1fr) 232px; background: var(--bg-app); }
+.project-doc-sidebar { min-width: 0; overflow: auto; padding: 20px 12px; border-right: 1px solid var(--border); background: var(--bg-app); }
+.project-doc-eyebrow { margin: 0 10px 7px; color: var(--text-3); font-size: 10px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
+.project-doc-sidebar h2 { margin: 0 10px 6px; color: var(--text-1); font-size: 17px; line-height: 1.25; }
+.project-doc-sidebar-hint { margin: 0 10px 18px; color: var(--text-3); font-size: 11px; line-height: 1.55; }
+.project-doc-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-surface); }
+.project-doc-inspector { min-width: 0; overflow: auto; padding: 20px 16px; border-left: 1px solid var(--border); background: var(--bg-app); }
+.project-doc-inspector h3 { margin: 0 0 14px; color: var(--text-1); font-size: 13px; }
+.project-doc-inspector-body { display: grid; gap: 12px; }
+.project-doc-inspector-row { display: grid; gap: 3px; }
+.project-doc-inspector-label { color: var(--text-3); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.project-doc-inspector-value { color: var(--text-2); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.project-doc-inspector-note { margin: 4px 0 0; padding: 9px 10px; border-radius: 9px; background: var(--bg-surface-2); color: var(--text-3); font-size: 11px; line-height: 1.5; }
+.project-doc-toolbar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 13px; padding: 16px 20px 13px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
+.project-doc-subtabs { flex: 0 0 auto; display: grid; gap: 5px; padding: 0; border: 0; background: transparent; }
+.project-doc-subtab { min-height: 38px; padding: 0 11px; border: 0; border-radius: 9px; background: transparent; color: var(--text-2); font-size: 12px; text-align: left; cursor: pointer; }
+.project-doc-subtab:hover { background: var(--surface-hover); color: var(--text-1); }
+.project-doc-subtab.active { background: var(--bg-surface); color: var(--text-1); font-weight: 650; box-shadow: var(--shadow-card); }
 .project-doc-plan-select { min-height: 28px; min-width: 220px; max-width: 360px; border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; background: var(--bg-surface); color: var(--text-1); font-size: 12px; }
 .project-doc-toolbar h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-2); }
+@media (max-width: 1120px) {
+  .project-doc-shell { grid-template-columns: 180px minmax(0, 1fr); }
+  .project-doc-inspector { display: none; }
+}
+@media (max-width: 760px) {
+  .project-doc-shell { display: block; }
+  .project-doc-sidebar { border-right: 0; border-bottom: 1px solid var(--border); padding: 10px 12px; }
+  .project-doc-sidebar-hint, .project-doc-eyebrow, .project-doc-sidebar h2 { display: none; }
+  .project-doc-subtabs { display: flex; overflow-x: auto; gap: 4px; }
+  .project-doc-subtab { min-height: 34px; white-space: nowrap; }
+  .project-doc-scroll { padding: 12px; }
+  .project-doc-editor { padding: 22px 20px 48px; border-radius: 10px; }
+  .project-doc-toolbar { padding: 12px; }
+  .project-doc-actions { justify-items: stretch; }
+  .project-doc-action-group { justify-content: flex-start; }
+}
 .design-modal { width: min(900px, 94vw); max-width: 900px; max-height: 88vh; overflow: auto; padding: 20px; }
 .design-modal h2 { margin: 0 0 16px; }
 .design-modal h3 { margin: 18px 0 8px; font-size: 14px; }
@@ -1618,18 +1646,21 @@ body[data-theme="dark"] {
 .project-doc-view .design-header { margin: 0 0 18px; padding: 9px 12px; border-left: 3px solid var(--design-accent, var(--accent)); color: var(--text-2); font-weight: 600; }
 .project-doc-view .design-meta,.project-doc-view .design-footer { color: var(--text-3); font-size: 12px; }
 .project-doc-view .design-footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid var(--border); }
-.project-doc-actions { flex: 1 1 640px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.project-doc-actions { flex: 1 1 560px; min-width: 0; display: grid; justify-items: end; gap: 8px; }
+.project-doc-action-group { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; width: 100%; }
+.project-doc-action-label { flex: 0 0 auto; margin-right: 3px; color: var(--text-3); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .project-doc-edit-btn { min-height: 28px; padding: 0 10px; font-size: 12px; }
 .project-doc-status { font-size: 11px; color: var(--text-2); }
 .project-doc-status.dirty { color: var(--brand); }
 .project-doc-status.error { color: var(--err); }
-.project-doc-scroll { flex: 1; min-height: 0; overflow: auto; background: var(--bg-surface); }
+.project-doc-scroll { flex: 1; min-height: 0; overflow: auto; padding: 24px; background: var(--bg-app); }
 .overview-search-wrap:focus-within, .detail-search-wrap:focus-within { border-color: var(--border-active); box-shadow: var(--shadow-focus); }
 .project-doc-scroll.editing { background: var(--surface-muted); }
-.project-doc-editor { max-width: 680px; margin: 0 auto; padding: 16px 28px 36px; width: 100%; min-height: 100%; }
+.project-doc-editor { box-sizing: border-box; max-width: 920px; margin: 0 auto; padding: 30px 38px 64px; width: 100%; min-height: 100%; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); box-shadow: var(--shadow-card); }
 .project-doc-empty { margin: 0; color: var(--text-2); font-size: 13px; text-align: center; padding: 40px 16px; cursor: default; }
 .project-doc-source { width: 100%; min-height: 360px; border: 0; outline: none; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; line-height: 1.55; background: transparent; color: var(--text-1); padding: 0; }
 .project-doc-view.md-prose { font-size: 13px; line-height: 1.9; color: var(--text-1); cursor: text; }
+.project-doc-view.md-prose .design-header { font-size: 12px; letter-spacing: .01em; }
 .project-doc-view.md-prose .md-h:first-child { margin-top: 0; }
 .project-doc-view.md-prose h1.md-h { font-size: 1.2em; font-weight: 650; margin: 1em 0 .45em; line-height: 1.45; color: var(--text-1); }
 .project-doc-view.md-prose h2.md-h { font-size: 1.08em; font-weight: 650; margin: .85em 0 .4em; line-height: 1.45; color: var(--text-1); }
@@ -5111,9 +5142,9 @@ const state = {
   projectDocLoadedFor: null,
   projectDocSubTab: 'design',
   projectDocPlanPath: null,
+  projectDocPath: null,
   projectDocRaw: '',
   projectDocRevision: null,
-  projectDocMigrationState: 'empty',
   projectDocTemplates: [],
   projectDocEditing: false,
   projectDocDirty: false,
@@ -8748,6 +8779,7 @@ async function switchProject(projectPath, view = 'conversation') {
   state.projectDocLoadedFor = null;
   state.projectDocSubTab = 'design';
   state.projectDocPlanPath = null;
+  state.projectDocPath = null;
   state.projectDocEditing = false;
   state.projectDocRaw = '';
   state.projectDocDirty = false;
@@ -9617,14 +9649,16 @@ function formatShortRelativeTime(iso) {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 function projectDocSubTabLabel(subTab) {
-  return ({ design: 'Design', memory: 'Memory', plans: 'Plans' })[subTab] || 'Design';
+  return ({ design: 'Design', agents: 'AGENTS.md', memory: 'Memory', plans: 'Plans' })[subTab] || 'Design';
 }
 function projectDocEmptyMessage(subTab) {
+  if (subTab === 'agents') return 'No AGENTS.md yet · click Edit to define project instructions.';
   if (subTab === 'memory') return 'No MEMORY.md yet — click Edit to write.';
   if (subTab === 'plans') return 'No plan file selected — pick one from the list or click Edit.';
   return 'No project document yet — click Edit to write.';
 }
 function projectDocApiEndpoint(subTab) {
+  if (subTab === 'agents') return '/api/project-agents-doc';
   if (subTab === 'memory') return '/api/project-memory-doc';
   if (subTab === 'plans') return '/api/project-plan';
   return '/api/design';
@@ -9634,7 +9668,7 @@ function updateProjectDocChrome() {
   if (title) title.textContent = projectDocSubTabLabel(state.projectDocSubTab);
   const planSelect = el('projectDocPlanSelect');
   if (planSelect) planSelect.classList.toggle('hidden', state.projectDocSubTab !== 'plans');
-  for (const id of ['projectDocTemplateSelect', 'projectDocThemeSelect', 'projectDocImportBtn', 'projectDocExportBtn', 'projectDocShareBtn']) {
+  for (const id of ['projectDocDesignControls', 'projectDocTransferControls']) {
     const control = el(id);
     if (control) control.classList.toggle('hidden', state.projectDocSubTab !== 'design');
   }
@@ -9644,6 +9678,17 @@ function updateProjectDocChrome() {
     btn.classList.toggle('active', btn.dataset.docSubTab === state.projectDocSubTab);
     btn.setAttribute('aria-selected', btn.dataset.docSubTab === state.projectDocSubTab ? 'true' : 'false');
   });
+  const inspector = el('projectDocInspectorBody');
+  if (inspector) {
+    const kind = projectDocSubTabLabel(state.projectDocSubTab);
+    const pathValue = state.projectDocPath || (state.projectDocSubTab === 'plans' ? state.projectDocPlanPath : '') || 'Not created yet';
+    inspector.innerHTML = '<div class="project-doc-inspector-row"><span class="project-doc-inspector-label">Document</span><strong class="project-doc-inspector-value">' + kind + '</strong></div>'
+      + '<div class="project-doc-inspector-row"><span class="project-doc-inspector-label">Source</span><code class="project-doc-inspector-value">' + escapeHtml(pathValue) + '</code></div>'
+      + '<div class="project-doc-inspector-row"><span class="project-doc-inspector-label">Editing</span><strong class="project-doc-inspector-value">' + (state.projectDocEditing ? 'On' : 'Preview') + '</strong></div>'
+      + (state.projectDocSubTab === 'design'
+        ? '<div class="project-doc-inspector-note"><strong>Design rendering</strong><p>DESIGN.md remains Markdown source. The preview is generated from its template, theme, and section configuration.</p></div>'
+        : '<div class="project-doc-inspector-note"><strong>Human-readable document</strong><p>Double-click the preview or choose Edit to update this file.</p></div>');
+  }
 }
 function renderProjectDocPlanSelect(plans, currentPath) {
   const select = el('projectDocPlanSelect');
@@ -9669,7 +9714,7 @@ function renderProjectDocPlanSelect(plans, currentPath) {
   state.projectDocPlanPath = next || null;
 }
 function setProjectDocSubTab(tab) {
-  const allowed = { design: 1, memory: 1, plans: 1 };
+  const allowed = { design: 1, agents: 1, memory: 1, plans: 1 };
   const next = allowed[tab] ? tab : 'design';
   if (state.projectDocSubTab === next) return;
   if (state.projectDocDirty) void saveProjectDocNow();
@@ -9798,7 +9843,6 @@ async function saveProjectDocNow() {
     state.projectDocRaw = content;
     if (subTab === 'design' && data.document) {
       state.projectDocRevision = data.document.revision || null;
-      state.projectDocMigrationState = data.document.state || 'design';
     }
     state.projectDocDirty = false;
     if (!state.projectDocEditing) renderProjectDocPreview(content);
@@ -10134,6 +10178,7 @@ async function mountProjectDoc(force) {
           if (planRes.ok) {
             const planData = await planRes.json();
             content = typeof planData.content === 'string' ? planData.content : '';
+            state.projectDocPath = typeof planData.path === 'string' ? planData.path : planPath;
           }
         }
       }
@@ -10142,6 +10187,7 @@ async function mountProjectDoc(force) {
       if (res.ok) {
         const data = await res.json();
         content = typeof data.content === 'string' ? data.content : '';
+        state.projectDocPath = typeof data.path === 'string' ? data.path : null;
         if (subTab === 'design') designData = data;
       }
     }
@@ -12515,7 +12561,7 @@ function renderProjectDetail() {
   requestAnimationFrame(revealActiveProjectDetailTab);
   const docPanel = document.createElement('section');
   docPanel.id = 'projectDocumentPanel';
-  docPanel.className = 'project-doc-panel' + (state.projectDetailTab === 'document' ? '' : ' hidden');
+  docPanel.className = 'project-doc-panel document-workspace' + (state.projectDetailTab === 'document' ? '' : ' hidden');
   const docToolbar = document.createElement('header');
   docToolbar.className = 'project-doc-toolbar';
   const docTitle = document.createElement('h2');
@@ -12529,7 +12575,7 @@ function renderProjectDetail() {
   docSubtabs.className = 'project-doc-subtabs';
   docSubtabs.setAttribute('role', 'tablist');
   docSubtabs.setAttribute('aria-label', 'Document sections');
-  for (const tab of [['design', 'Design'], ['memory', 'Memory'], ['plans', 'Plans']]) {
+  for (const tab of [['design', 'DESIGN.md'], ['agents', 'AGENTS.md'], ['memory', 'MEMORY.md'], ['plans', 'Plans']]) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'project-doc-subtab' + (state.projectDocSubTab === tab[0] ? ' active' : '');
@@ -12540,9 +12586,6 @@ function renderProjectDetail() {
     btn.addEventListener('click', () => setProjectDocSubTab(tab[0]));
     docSubtabs.appendChild(btn);
   }
-  const migration = document.createElement('div');
-  migration.id = 'projectDocMigration';
-  migration.className = 'project-doc-migration hidden';
   const docScroll = document.createElement('div');
   docScroll.id = 'projectDocScroll';
   docScroll.className = 'project-doc-scroll';
@@ -12572,7 +12615,21 @@ function renderProjectDetail() {
   });
   docEditor.append(docView, docEmpty, docSource);
   docScroll.appendChild(docEditor);
-  docPanel.append(docToolbar, docSubtabs, migration, docScroll);
+  const docShell = document.createElement('div');
+  docShell.className = 'project-doc-shell';
+  const docSidebar = document.createElement('aside');
+  docSidebar.className = 'project-doc-sidebar';
+  const sidebarEyebrow = document.createElement('div'); sidebarEyebrow.className = 'project-doc-eyebrow'; sidebarEyebrow.textContent = 'Project documents';
+  const sidebarTitle = document.createElement('h2'); sidebarTitle.textContent = 'Documentation';
+  const sidebarHint = document.createElement('p'); sidebarHint.className = 'project-doc-sidebar-hint'; sidebarHint.textContent = 'Human-facing project context and design decisions.';
+  docSidebar.append(sidebarEyebrow, sidebarTitle, sidebarHint, docSubtabs);
+  const docStage = document.createElement('div'); docStage.className = 'project-doc-stage'; docStage.append(docToolbar, docScroll);
+  const docInspector = document.createElement('aside'); docInspector.className = 'project-doc-inspector';
+  const inspectorTitle = document.createElement('h3'); inspectorTitle.textContent = 'Document details';
+  const inspectorBody = document.createElement('div'); inspectorBody.id = 'projectDocInspectorBody'; inspectorBody.className = 'project-doc-inspector-body';
+  docInspector.append(inspectorTitle, inspectorBody);
+  docShell.append(docSidebar, docStage, docInspector);
+  docPanel.append(docShell);
   const issuesPanel = document.createElement('section');
   issuesPanel.id = 'projectIssuesPanel';
   issuesPanel.className = 'project-issues-panel' + (state.projectDetailTab === 'issues' ? '' : ' hidden');

@@ -17,7 +17,6 @@ const RETAINED_PROJECT_ARTIFACTS = new Set([
   'issues.json',
   'plan.json',
   'DESIGN.md',
-  'PROGRESS.md',
   'manager.json',
   'terminals',
   'mailboxes',
