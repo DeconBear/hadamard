@@ -28,7 +28,7 @@ describe('DesignDocumentStore', () => {
     await store.write('# Design\n');
     const saved = await store.inspect();
     expect(saved.state).toBe('design');
-    expect(saved.designPath).toMatch(/DESIGN\.md$/u);
+    expect(saved.designPath).toBe(path.join(workDir, '.hadamard', 'design', 'design.md'));
     expect(saved.content).toBe('# Design\n');
     await expect(store.write('# stale', { expectedRevision: empty.revision })).rejects.toThrow(/changed since/u);
     expect(fs.readdirSync(path.dirname(saved.designPath)).some(name => name.endsWith('.tmp'))).toBe(false);

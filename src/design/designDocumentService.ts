@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import { getHadamardProjectSessionDirectory } from '../config/projectSessionDirectory.js';
 import { type DesignArtifactRepository, SqliteDesignArtifactRepository } from './designArtifactRepository.js';
 import { DesignConfigurationStore, type DesignConfiguration } from './designConfiguration.js';
 import { DesignDocumentStore } from './designDocumentStore.js';
@@ -43,14 +44,15 @@ export class DesignDocumentService {
     options: DesignDocumentServiceOptions = {},
   ) {
     this.store = new DesignDocumentStore(projectPath, homeDir, workspacePath);
-    this.configurations = new DesignConfigurationStore(this.store.directory());
+    const stateDirectory = getHadamardProjectSessionDirectory(projectPath, homeDir);
+    this.configurations = new DesignConfigurationStore(stateDirectory);
     this.transfers = new DesignImportExportService(this.renderer, options.generatorVersion);
     this.artifacts = options.artifacts ?? new SqliteDesignArtifactRepository(
-      path.join(this.store.directory(), 'design-artifacts-v2.sqlite'),
+      path.join(stateDirectory, 'design-artifacts-v2.sqlite'),
     );
     this.imports = new DesignImportCommitService(this.store, this.configurations, this.artifacts);
     this.shares = new DesignShareService(
-      path.join(this.store.directory(), 'design-shares.json'), this.artifacts, this.transfers,
+      path.join(stateDirectory, 'design-shares.json'), this.artifacts, this.transfers,
     );
     this.engineeringProfiles = new EngineeringProfileService(workspacePath, this.store);
   }

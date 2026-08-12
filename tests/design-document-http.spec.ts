@@ -65,6 +65,22 @@ describe('GUI Design document HTTP boundary', () => {
       });
       expect(rendered.body.bodyHtml).toContain('&lt;script&gt;');
 
+      const htmlEntry = await request<{ entry: { path: string; revision: string } }>(server, '/api/design/entry', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'html', content: '<!doctype html><h1>Design</h1>' }),
+      });
+      expect(htmlEntry.status).toBe(200);
+      expect(path.normalize(htmlEntry.body.entry.path)).toBe(
+        path.normalize(path.join(workDir, '.hadamard', 'design', 'design.html')),
+      );
+      const refreshedHtml = await request<{ content: string; revision: string }>(server, '/api/design/refresh', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'html' }),
+      });
+      expect(refreshedHtml.body).toMatchObject({
+        content: '<!doctype html><h1>Design</h1>', revision: htmlEntry.body.entry.revision,
+      });
+
       expect((await request(server, '/api/project-doc', { method: 'POST' })).status).toBe(404);
 
       const agents = await request<{ content: string; name: string }>(server, '/api/project-agents-doc');
