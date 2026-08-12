@@ -98,7 +98,7 @@ export async function writeDesignFile(workDir: string, homeDir: string, content:
 
 /** @deprecated Reads the canonical Design document, including legacy migration preview content. */
 export const readProgressFile = readDesignFile;
-/** @deprecated Writes DESIGN.md. It never creates or updates PROGRESS.md. */
+/** Writes DESIGN.md in the project store. */
 export const writeProgressFile = writeDesignFile;
 
 // ── Manager configuration (manager.json) ─────────────────────────

@@ -4,7 +4,6 @@ export * from './designConfiguration.js';
 export * from './designArtifactRepository.js';
 export * from './designImportCommitService.js';
 export * from './designImportExportService.js';
-export * from './designMigration.js';
 export * from './designPackage.js';
 export * from './designPdfExporter.js';
 export * from './designRenderService.js';

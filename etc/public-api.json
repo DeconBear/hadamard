@@ -1565,7 +1565,7 @@
       {
         "name": "DesignDocumentService",
         "kind": "class",
-        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly shares: DesignShareService;\nreadonly engineeringProfiles: EngineeringProfileService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: import(\"./designMigration.js\").DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\nmigrate(action: DesignMigrationAction): Promise<import(\"./designDocumentStore.js\").DesignDocumentSnapshot>;\n}"
+        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly shares: DesignShareService;\nreadonly engineeringProfiles: EngineeringProfileService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: \"empty\" | \"design\";\ndesignPath: string;\ndesignContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\n}"
       },
       {
         "name": "DesignDocumentServiceOptions",
@@ -1575,12 +1575,12 @@
       {
         "name": "DesignDocumentSnapshot",
         "kind": "interface",
-        "signature": "export interface DesignDocumentSnapshot extends DesignMigrationInspection {\ncontent: string;\nrevision: string;\n}"
+        "signature": "export interface DesignDocumentSnapshot {\ncontent: string;\nrevision: string;\nstate: 'empty' | 'design';\ndesignPath: string;\ndesignContent?: string;\n}"
       },
       {
         "name": "DesignDocumentStore",
         "kind": "class",
-        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly homeDir: string;\nprivate readonly workspacePath;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\nmirror?: boolean;\n}): Promise<string>;\nmigrate(action: DesignMigrationAction, now?: Date): Promise<DesignDocumentSnapshot>;\n}"
+        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly homeDir: string;\nprivate readonly workspacePath;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\nmirror?: boolean;\n}): Promise<string>;\n}"
       },
       {
         "name": "DesignFrontmatter",
@@ -1621,21 +1621,6 @@
         "name": "DesignImportPreview",
         "kind": "interface",
         "signature": "export interface DesignImportPreview {\nkind: DesignImportKind;\neditable: boolean;\nmarkdown?: string;\nconfiguration?: DesignConfiguration;\nmanifest?: DesignPackageManifest;\nchecksum: string;\nwarnings: string[];\nassets?: DesignPackageAsset[];\n}"
-      },
-      {
-        "name": "DesignMigrationAction",
-        "kind": "type",
-        "signature": "export type DesignMigrationAction = 'migrate-legacy' | 'keep-design' | 'replace-with-legacy' | 'merge-history';"
-      },
-      {
-        "name": "DesignMigrationInspection",
-        "kind": "interface",
-        "signature": "export interface DesignMigrationInspection {\nstate: DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}"
-      },
-      {
-        "name": "DesignMigrationState",
-        "kind": "type",
-        "signature": "export type DesignMigrationState = 'empty' | 'design' | 'legacy-progress' | 'conflict';"
       },
       {
         "name": "DesignPackageAsset",
@@ -4063,11 +4048,6 @@
         "signature": "export declare class InMemoryTaskStore implements ScheduledTaskStore {\nprivate readonly tasks;\nsave(task: ScheduledTaskRecord): Promise<void>;\nload(id: string): Promise<ScheduledTaskRecord | undefined>;\nlist(): Promise<ScheduledTaskRecord[]>;\ndelete(id: string): Promise<void>;\n}"
       },
       {
-        "name": "inspectDesignMigration",
-        "kind": "function",
-        "signature": "export declare function inspectDesignMigration(projectStoreDirectory: string): Promise<DesignMigrationInspection>;"
-      },
-      {
         "name": "inspectSkillMcpBundle",
         "kind": "function",
         "signature": "export declare function inspectSkillMcpBundle(packagePath: string, manifest: SkillMcpBundleManifest): Promise<PluginBundleTrustSummary>;"
@@ -4286,11 +4266,6 @@
         "name": "LanguageServerRegistry",
         "kind": "class",
         "signature": "export declare class LanguageServerRegistry {\nprivate readonly definitions;\nconstructor(definitions?: LanguageServerDefinition[]);\nlist(): LanguageServerDefinition[];\nforFile(filePath: string): LanguageServerDefinition | undefined;\ncapabilities(): Promise<LanguageServerCapability[]>;\n}"
-      },
-      {
-        "name": "LEGACY_PROGRESS_FILE_NAME",
-        "kind": "value",
-        "signature": "LEGACY_PROGRESS_FILE_NAME = \"PROGRESS.md\""
       },
       {
         "name": "linuxSandboxCapabilities",
@@ -10741,7 +10716,7 @@
       {
         "name": "DesignDocumentService",
         "kind": "class",
-        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly shares: DesignShareService;\nreadonly engineeringProfiles: EngineeringProfileService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: import(\"./designMigration.js\").DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\nmigrate(action: DesignMigrationAction): Promise<import(\"./designDocumentStore.js\").DesignDocumentSnapshot>;\n}"
+        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly shares: DesignShareService;\nreadonly engineeringProfiles: EngineeringProfileService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: \"empty\" | \"design\";\ndesignPath: string;\ndesignContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\n}"
       },
       {
         "name": "DesignDocumentServiceOptions",
@@ -10751,12 +10726,12 @@
       {
         "name": "DesignDocumentSnapshot",
         "kind": "interface",
-        "signature": "export interface DesignDocumentSnapshot extends DesignMigrationInspection {\ncontent: string;\nrevision: string;\n}"
+        "signature": "export interface DesignDocumentSnapshot {\ncontent: string;\nrevision: string;\nstate: 'empty' | 'design';\ndesignPath: string;\ndesignContent?: string;\n}"
       },
       {
         "name": "DesignDocumentStore",
         "kind": "class",
-        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly homeDir: string;\nprivate readonly workspacePath;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\nmirror?: boolean;\n}): Promise<string>;\nmigrate(action: DesignMigrationAction, now?: Date): Promise<DesignDocumentSnapshot>;\n}"
+        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly homeDir: string;\nprivate readonly workspacePath;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\nmirror?: boolean;\n}): Promise<string>;\n}"
       },
       {
         "name": "DesignFrontmatter",
@@ -10797,21 +10772,6 @@
         "name": "DesignImportPreview",
         "kind": "interface",
         "signature": "export interface DesignImportPreview {\nkind: DesignImportKind;\neditable: boolean;\nmarkdown?: string;\nconfiguration?: DesignConfiguration;\nmanifest?: DesignPackageManifest;\nchecksum: string;\nwarnings: string[];\nassets?: DesignPackageAsset[];\n}"
-      },
-      {
-        "name": "DesignMigrationAction",
-        "kind": "type",
-        "signature": "export type DesignMigrationAction = 'migrate-legacy' | 'keep-design' | 'replace-with-legacy' | 'merge-history';"
-      },
-      {
-        "name": "DesignMigrationInspection",
-        "kind": "interface",
-        "signature": "export interface DesignMigrationInspection {\nstate: DesignMigrationState;\ndesignPath: string;\nlegacyProgressPath: string;\ndesignContent?: string;\nlegacyProgressContent?: string;\nreadableContent?: string;\n}"
-      },
-      {
-        "name": "DesignMigrationState",
-        "kind": "type",
-        "signature": "export type DesignMigrationState = 'empty' | 'design' | 'legacy-progress' | 'conflict';"
       },
       {
         "name": "DesignPackageAsset",
@@ -13249,11 +13209,6 @@
         "signature": "export declare class InMemoryTaskStore implements ScheduledTaskStore {\nprivate readonly tasks;\nsave(task: ScheduledTaskRecord): Promise<void>;\nload(id: string): Promise<ScheduledTaskRecord | undefined>;\nlist(): Promise<ScheduledTaskRecord[]>;\ndelete(id: string): Promise<void>;\n}"
       },
       {
-        "name": "inspectDesignMigration",
-        "kind": "function",
-        "signature": "export declare function inspectDesignMigration(projectStoreDirectory: string): Promise<DesignMigrationInspection>;"
-      },
-      {
         "name": "inspectSkillMcpBundle",
         "kind": "function",
         "signature": "export declare function inspectSkillMcpBundle(packagePath: string, manifest: SkillMcpBundleManifest): Promise<PluginBundleTrustSummary>;"
@@ -13472,11 +13427,6 @@
         "name": "LanguageServerRegistry",
         "kind": "class",
         "signature": "export declare class LanguageServerRegistry {\nprivate readonly definitions;\nconstructor(definitions?: LanguageServerDefinition[]);\nlist(): LanguageServerDefinition[];\nforFile(filePath: string): LanguageServerDefinition | undefined;\ncapabilities(): Promise<LanguageServerCapability[]>;\n}"
-      },
-      {
-        "name": "LEGACY_PROGRESS_FILE_NAME",
-        "kind": "value",
-        "signature": "LEGACY_PROGRESS_FILE_NAME = \"PROGRESS.md\""
       },
       {
         "name": "LegacyAgentEventAdapterOptions",
