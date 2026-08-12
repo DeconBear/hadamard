@@ -3,7 +3,9 @@ package dev.hadamard.companion.background
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
 import android.net.Uri
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.Data
@@ -72,7 +74,17 @@ class VisibleTaskWorker(
       .setOngoing(true)
       .setProgress(100, progressValue, false)
       .build()
-    return ForegroundInfo(NOTIFICATION_ID, notification)
+    // API 34+ WorkManager foreground promotion requires an explicit service type that
+    // matches FOREGROUND_SERVICE_DATA_SYNC in the manifest.
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      ForegroundInfo(
+        NOTIFICATION_ID,
+        notification,
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+      )
+    } else {
+      ForegroundInfo(NOTIFICATION_ID, notification)
+    }
   }
 
   private fun errorData(message: String) = workDataOf(KEY_ERROR to message.take(500))

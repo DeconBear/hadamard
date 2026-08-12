@@ -126,6 +126,8 @@ describe('Device Link artifact transfer', () => {
       .rejects.toThrow('confirm:true');
     await service.acknowledgeOutgoing('phone-5', staged.manifest.transferId, true);
     expect(await service.listOutbox('phone-5')).toEqual([]);
+    await service.acknowledgeOutgoing('phone-5', staged.manifest.transferId, true);
+    expect(await service.listOutbox('phone-5')).toEqual([]);
     await expect(service.stageOutgoing('phone-5', '../outside.txt')).rejects.toThrow('escapes');
   });
 });

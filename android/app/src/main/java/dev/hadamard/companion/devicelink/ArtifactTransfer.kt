@@ -136,20 +136,52 @@ class MobileInboxStore(
     workspace: WorkspacePort,
     confirm: Boolean,
   ): Pair<MobileInboxItem, WorkspaceDocument> {
+    val (_, document) = stageCommit(deviceId, transferId, workspace, confirm)
+    return markCommitted(deviceId, transferId) to document
+  }
+
+  /**
+   * Writes the artifact into the workspace and records `workspaceDocumentId` while keeping
+   * status [InboxStatus.VERIFIED]. Call [markCommitted] only after desktop acknowledgement succeeds.
+   */
+  @Synchronized
+  fun stageCommit(
+    deviceId: String,
+    transferId: String,
+    workspace: WorkspacePort,
+    confirm: Boolean,
+  ): Pair<MobileInboxItem, WorkspaceDocument> {
     require(confirm) { "Inbox commit requires explicit confirmation" }
     var item = requireItem(deviceId, transferId)
     require(item.status == InboxStatus.VERIFIED) { "Only a verified inbox item can be committed" }
+    item.workspaceDocumentId?.let { stagedId ->
+      val existing = workspace.list().find { it.documentId == stagedId }
+        ?: error("Staged workspace document is missing")
+      return item to existing
+    }
     require(workspace.list().none { it.displayName == item.manifest.name }) { "Workspace already contains this name" }
     val artifact = File(transferDirectory(deviceId, transferId), "artifact.bin")
     check(hashFile(artifact) == item.manifest.sha256) { "Inbox artifact integrity changed before commit" }
     val document = workspace.create(null, item.manifest.name, item.manifest.mediaType, artifact.readBytes())
     item = item.copy(
-      status = InboxStatus.COMMITTED,
       workspaceDocumentId = document.documentId,
       updatedAt = System.currentTimeMillis(),
     )
     writeState(item)
     return item to document
+  }
+
+  @Synchronized
+  fun markCommitted(deviceId: String, transferId: String): MobileInboxItem {
+    var item = requireItem(deviceId, transferId)
+    require(item.status == InboxStatus.VERIFIED) { "Only a verified inbox item can be committed" }
+    require(!item.workspaceDocumentId.isNullOrBlank()) { "Inbox item has no staged workspace document" }
+    item = item.copy(
+      status = InboxStatus.COMMITTED,
+      updatedAt = System.currentTimeMillis(),
+    )
+    writeState(item)
+    return item
   }
 
   fun list(): List<MobileInboxItem> = root.listFiles().orEmpty()
@@ -285,13 +317,46 @@ class ArtifactTransferClient(
     workspace: WorkspacePort,
     confirm: Boolean,
   ): WorkspaceDocument {
-    val (_, document) = inbox.commit(item.deviceId, item.manifest.transferId, workspace, confirm)
-    rpc.request(
+    require(confirm) { "Inbox commit requires explicit confirmation" }
+    val current = inbox.read(item.deviceId, item.manifest.transferId)
+      ?: error("Inbox transfer was not found")
+    if (current.status == InboxStatus.COMMITTED) {
+      acknowledgeOutgoing(current, allowMissing = true)
+      return resolveWorkspaceDocument(current, workspace)
+    }
+    val alreadyStaged = !current.workspaceDocumentId.isNullOrBlank()
+    val (_, document) = inbox.stageCommit(
       item.deviceId,
-      "artifact/outbox/ack",
-      JSONObject().put("transferId", item.manifest.transferId).put("confirm", true),
+      item.manifest.transferId,
+      workspace,
+      confirm,
     )
+    // Ack before marking COMMITTED so a network failure cannot leave the phone
+    // committed while the desktop outbox is still live. Retries reuse the staged doc.
+    acknowledgeOutgoing(item, allowMissing = alreadyStaged)
+    inbox.markCommitted(item.deviceId, item.manifest.transferId)
     return document
+  }
+
+  private suspend fun acknowledgeOutgoing(item: MobileInboxItem, allowMissing: Boolean) {
+    try {
+      rpc.request(
+        item.deviceId,
+        "artifact/outbox/ack",
+        JSONObject().put("transferId", item.manifest.transferId).put("confirm", true),
+      )
+    } catch (error: Exception) {
+      val missing = error.message?.contains("Outgoing artifact transfer was not found") == true
+      if (allowMissing && missing) return
+      throw error
+    }
+  }
+
+  private fun resolveWorkspaceDocument(item: MobileInboxItem, workspace: WorkspacePort): WorkspaceDocument {
+    val documentId = item.workspaceDocumentId
+      ?: error("Committed inbox item is missing workspaceDocumentId")
+    return workspace.list().find { it.documentId == documentId }
+      ?: error("Committed workspace document is missing")
   }
 }
 
