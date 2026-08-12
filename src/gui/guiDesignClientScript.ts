@@ -273,54 +273,121 @@ function applyDesignDocumentState(designData) {
     profileSelect.value = designData.configuration?.template?.id || designData.parsed?.frontmatter?.template || 'software.general';
   }
 }
-function createProjectDocumentActions() {
-  const statusWrap = document.createElement('div'); statusWrap.className = 'project-doc-status-wrap';
-  const statusLabel = document.createElement('label'); statusLabel.htmlFor = 'projectStatusSelect'; statusLabel.textContent = '状态';
-  const statusSelect = document.createElement('select'); statusSelect.id = 'projectStatusSelect'; statusSelect.className = 'project-status-select'; statusSelect.setAttribute('aria-label', 'Project status');
-  const currentStatus = projectStatusOf(state.snapshot?.projects?.find((project) => project.active) || { status: 'not_started' });
-  for (const value of PROJECT_STATUSES) {
-    const option = document.createElement('option'); option.value = value; option.textContent = PROJECT_STATUS_LABELS[value]; option.selected = value === currentStatus; statusSelect.appendChild(option);
+function designIconButton(id, icon, title, action) {
+  const control = document.createElement('button');
+  control.type = 'button';
+  control.id = id;
+  control.className = 'icon-btn project-doc-command-icon';
+  control.innerHTML = guiIcon(icon);
+  control.title = title;
+  control.setAttribute('aria-label', title);
+  control.addEventListener('click', action);
+  return control;
+}
+function setDesignEntryMode(mode) {
+  const next = mode === 'html' ? 'html' : 'markdown';
+  if (state.designEntryMode === next) return;
+  if (state.projectDocDirty) void saveProjectDocNow();
+  state.designEntryMode = next;
+  state.projectDocLoadedFor = null;
+  state.projectDocEditing = false;
+  void mountProjectDoc(true);
+}
+function openDesignExportDialog() {
+  const modal = modalShell('Export Design');
+  const hint = document.createElement('p');
+  hint.className = 'muted';
+  hint.textContent = 'Choose one export artifact. Package is the lossless format for importing into Hadamard.';
+  modal.content.appendChild(hint);
+  const actions = document.createElement('div'); actions.className = 'design-export-options';
+  for (const item of [['package', 'Design package', 'Lossless bundle for sharing and re-import'], ['html', 'HTML', 'Portable human-readable page'], ['pdf', 'PDF', 'Fixed-layout document']]) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'design-export-option';
+    button.innerHTML = '<strong>' + item[1] + '</strong><span>' + item[2] + '</span>';
+    button.addEventListener('click', () => { modal.close(); void exportDesign(item[0]); });
+    actions.appendChild(button);
   }
-  statusSelect.addEventListener('change', () => void saveProjectStatus(statusSelect.value)); statusWrap.append(statusLabel, statusSelect);
+  modal.content.appendChild(actions);
+  modal.overlay.addEventListener('click', event => { if (event.target === modal.overlay) modal.close(); });
+}
+function openDesignTemplateCenter() {
+  const modal = modalShell('Design templates');
+  const grid = document.createElement('div'); grid.className = 'design-template-grid';
+  for (const template of state.projectDocTemplates || []) {
+    const card = document.createElement('button'); card.type = 'button'; card.className = 'design-template-card';
+    const preview = document.createElement('div'); preview.className = 'design-template-preview';
+    preview.textContent = (template.sections || []).slice(0, 5).map(section => section.title).join('\n');
+    const title = document.createElement('strong'); title.textContent = template.name;
+    const description = document.createElement('span'); description.textContent = template.description || '';
+    card.append(preview, title, description);
+    card.addEventListener('click', () => { modal.close(); appendMissingTemplateSections(template.id); });
+    grid.appendChild(card);
+  }
+  modal.content.appendChild(grid);
+  modal.overlay.addEventListener('click', event => { if (event.target === modal.overlay) modal.close(); });
+}
+async function refreshDesignEntry() {
+  if (state.projectDocDirty && !confirm('Discard unsaved document changes and reload from disk?')) return;
+  const response = await api('/api/design/refresh', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: state.designEntryMode }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return setProjectDocStatus(data.error || 'Refresh failed', 'error');
+  state.projectDocLoadedFor = null;
+  await mountProjectDoc(true);
+  setProjectDocStatus('Refreshed', '');
+}
+async function openDesignFolder() {
+  const response = await api('/api/design/open-folder', { method: 'POST' });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) setProjectDocStatus(data.error || 'Could not open Design folder', 'error');
+}
+async function openDesignHtmlInFiles() {
+  ensureAuxVisible();
+  state.auxView = 'files';
+  el('auxLauncher')?.classList.add('hidden');
+  el('auxView')?.classList.remove('hidden');
+  el('auxCloseBtn')?.classList.remove('hidden');
+  const manifest = await api('/api/design').then(res => res.json());
+  let target = manifest?.workspace?.entries?.html?.path;
+  if (target && manifest?.workspace?.entries?.html?.exists !== true) {
+    const created = await api('/api/design/entry', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'html', content: '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>Project Design</title>\n</head>\n<body>\n  <main>\n    <h1>Project Design</h1>\n  </main>\n</body>\n</html>\n' }),
+    });
+    const data = await created.json().catch(() => ({}));
+    if (!created.ok) return setProjectDocStatus(data.error || 'Could not create design.html', 'error');
+    target = data.entry?.path || target;
+    state.projectDocRevision = data.entry?.revision || null;
+  }
+  if (target) await renderAuxFileEditor(target);
+}
+function createProjectDocumentActions() {
+  const documentSelect = document.createElement('select'); documentSelect.id = 'projectDocumentSelect'; documentSelect.className = 'project-doc-command-select'; documentSelect.setAttribute('aria-label', 'Document');
+  for (const item of [['design', 'DESIGN'], ['plans', 'PLAN'], ['memory', 'MEMORY'], ['rules', 'RULES']]) {
+    const option = document.createElement('option'); option.value = item[0]; option.textContent = item[1]; option.selected = item[0] === state.projectDocSubTab; documentSelect.appendChild(option);
+  }
+  documentSelect.addEventListener('change', () => setProjectDocSubTab(documentSelect.value));
   const planSelect = document.createElement('select'); planSelect.id = 'projectDocPlanSelect'; planSelect.className = 'project-doc-plan-select hidden'; planSelect.setAttribute('aria-label', 'Plan file');
   planSelect.addEventListener('change', () => {
     if (state.projectDocDirty) void saveProjectDocNow();
     state.projectDocPlanPath = planSelect.value || null; state.projectDocLoadedFor = null; void mountProjectDoc(true);
   });
-  const templateSelect = document.createElement('select'); templateSelect.id = 'projectDocTemplateSelect'; templateSelect.className = 'project-doc-plan-select'; templateSelect.setAttribute('aria-label', 'Design template');
-  templateSelect.addEventListener('change', () => appendMissingTemplateSections(templateSelect.value));
-  const themeSelect = document.createElement('select'); themeSelect.id = 'projectDocThemeSelect'; themeSelect.className = 'project-doc-plan-select'; themeSelect.setAttribute('aria-label', 'Design theme');
-  for (const theme of [['clean-light', 'Light'], ['clean-dark', 'Dark']]) {
-    const option = document.createElement('option'); option.value = theme[0]; option.textContent = theme[1]; themeSelect.appendChild(option);
-  }
-  themeSelect.addEventListener('change', () => updateDesignFrontmatter('theme', themeSelect.value));
-  const profileSelect = document.createElement('select'); profileSelect.id = 'projectDocProfileSelect'; profileSelect.className = 'project-doc-plan-select'; profileSelect.setAttribute('aria-label', 'Engineering Profile');
-  for (const profile of state.projectDocProfiles || []) { const option = document.createElement('option'); option.value = profile.id; option.textContent = 'Profile · ' + profile.name; profileSelect.appendChild(option); }
+  const modeSelect = document.createElement('select'); modeSelect.id = 'projectDesignModeSelect'; modeSelect.className = 'project-doc-command-select design-only'; modeSelect.setAttribute('aria-label', 'Design source format');
+  for (const mode of [['markdown', 'Markdown'], ['html', 'HTML']]) { const option = document.createElement('option'); option.value = mode[0]; option.textContent = mode[1]; option.selected = state.designEntryMode === mode[0]; modeSelect.appendChild(option); }
+  modeSelect.addEventListener('change', () => setDesignEntryMode(modeSelect.value));
   const importInput = document.createElement('input'); importInput.type = 'file'; importInput.id = 'projectDocImportInput'; importInput.className = 'hidden'; importInput.accept = '.hadamard-design.zip,.zip,.md,.html,.htm,.pdf,text/markdown,text/html,application/pdf';
   importInput.addEventListener('change', () => { void importDesignFile(importInput.files?.[0]); importInput.value = ''; });
-  const button = (id, label, action) => {
-    const control = document.createElement('button'); control.type = 'button'; control.id = id; control.className = 'pill-btn'; control.textContent = label; control.addEventListener('click', action); return control;
-  };
-  const importButton = button('projectDocImportBtn', 'Import', () => importInput.click());
-  const packageButton = button('projectDocExportPackageBtn', 'Export package', () => void exportDesign('package'));
-  const htmlButton = button('projectDocExportBtn', 'Export HTML', () => void exportDesign('html'));
-  const pdfButton = button('projectDocExportPdfBtn', 'Export PDF', () => void exportDesign('pdf'));
-  const customizeButton = button('projectDocCustomizeBtn', 'Customize', () => openDesignCustomization());
-  const profileButton = button('projectDocProfileBtn', 'Profile diff', () => void previewEngineeringProfile());
-  const shareButton = button('projectDocShareBtn', 'Share snapshot', () => void shareDesignSnapshot()); shareButton.title = 'Create an immutable three-format share snapshot';
-  const revokeButton = button('projectDocRevokeShareBtn', 'Revoke share', () => void revokeDesignShare());
-  const editButton = button('projectDocEditBtn', 'Edit', () => toggleProjectDocEdit()); editButton.classList.add('project-doc-edit-btn');
+  const templateButton = designIconButton('projectDocTemplateBtn', 'list', 'Templates', openDesignTemplateCenter);
+  const importButton = designIconButton('projectDocImportBtn', 'plus', 'Import', () => importInput.click());
+  const exportButton = designIconButton('projectDocExportBtn', 'drive', 'Export', openDesignExportDialog);
+  const profileButton = designIconButton('projectDocProfileBtn', 'git', 'Engineering profile diff', () => void previewEngineeringProfile());
+  const folderButton = designIconButton('projectDocFolderBtn', 'folder', 'Open Design folder', () => void openDesignFolder());
+  const refreshButton = designIconButton('projectDocRefreshBtn', 'refresh', 'Refresh from disk', () => void refreshDesignEntry());
+  const editButton = designIconButton('projectDocEditBtn', 'edit', 'Edit', () => toggleProjectDocEdit()); editButton.classList.add('project-doc-edit-btn');
   const documentStatus = document.createElement('span'); documentStatus.id = 'projectDocStatus'; documentStatus.className = 'project-doc-status';
-  const group = (label, controls, className = '') => {
-    const wrapper = document.createElement('div'); wrapper.className = 'project-doc-action-group ' + className;
-    if (label) { const caption = document.createElement('span'); caption.className = 'project-doc-action-label'; caption.textContent = label; wrapper.appendChild(caption); }
-    wrapper.append(...controls); return wrapper;
-  };
-  const designControls = group('Design system', [templateSelect, themeSelect, profileSelect, customizeButton, profileButton], 'design-only');
-  designControls.id = 'projectDocDesignControls';
-  const transferControls = group('Transfer', [importButton, packageButton, htmlButton, pdfButton, shareButton, revokeButton], 'design-only');
-  transferControls.id = 'projectDocTransferControls';
-  const documentControls = group('', [statusWrap, planSelect, editButton, documentStatus], 'document-controls');
-  return [documentControls, designControls, transferControls, importInput];
+  for (const control of [templateButton, importButton, exportButton, profileButton, folderButton, refreshButton]) control.classList.add('design-only');
+  const left = document.createElement('div'); left.className = 'project-doc-command-left'; left.append(documentSelect, modeSelect, planSelect);
+  const right = document.createElement('div'); right.className = 'project-doc-command-right'; right.id = 'projectDocDesignControls'; right.append(templateButton, importButton, exportButton, profileButton, folderButton, refreshButton, editButton, documentStatus);
+  return [left, right, importInput];
 }
 `;
