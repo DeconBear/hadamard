@@ -7631,9 +7631,7 @@ function renderComposerMeta() {
   if (modeSelect) {
     modeSelect.value = snap.agentMode || 'react';
     modeSelect.disabled = Boolean(state.running || snap.running);
-    modeSelect.title = snap.codeActEnabled
-      ? 'Agent execution mode for this Session'
-      : 'CodeAct is disabled in Project Settings';
+    modeSelect.title = 'Agent execution mode for this Session';
   }
   const bridge = snap.bridgeState || {};
   const config = bridge.activeConfig || null;
@@ -9872,7 +9870,6 @@ function collectProjectSettingsBody() {
     workMode,
     agentMode: el('projectAgentMode')?.value || 'react',
     codeAct: {
-      enabled: Boolean(el('projectCodeActEnabled')?.checked),
       backend: el('projectCodeActBackend')?.value === 'container' ? 'container' : 'process',
       securityMode: el('projectCodeActSecurity')?.value === 'enforce' ? 'enforce' : 'trusted',
     },
@@ -10045,7 +10042,6 @@ async function mountProjectSettingsPanel(force) {
     if (coding) coding.checked = settings.workMode !== 'daily';
     if (daily) daily.checked = settings.workMode === 'daily';
     if (el('projectAgentMode')) el('projectAgentMode').value = settings.agentMode || 'react';
-    if (el('projectCodeActEnabled')) el('projectCodeActEnabled').checked = settings.codeAct?.enabled === true;
     if (el('projectCodeActBackend')) el('projectCodeActBackend').value = settings.codeAct?.backend === 'container' ? 'container' : 'process';
     if (el('projectCodeActSecurity')) el('projectCodeActSecurity').value = settings.codeAct?.securityMode === 'enforce' ? 'enforce' : 'trusted';
     if (el('projectCustomPrompt')) el('projectCustomPrompt').value = settings.customPrompt || '';
@@ -12619,9 +12615,8 @@ function renderProjectDetail() {
     + '</div>'
     + '<div class="settings-group">'
     + '<h2>Agent execution</h2>'
-    + '<p class="muted">The project default applies when a Session or saved Agent does not override it. CodeAct is off by default.</p>'
-    + '<label class="settings-row"><span><strong>Project default mode</strong><small>ReAct uses ordinary tools; Hybrid exposes ordinary tools and CodeCell.</small></span><select id="projectAgentMode"><option value="react">ReAct</option><option value="codeact">CodeAct</option><option value="hybrid">Hybrid</option></select></label>'
-    + '<label class="settings-row"><span><strong>Enable CodeAct</strong><small>Allows persistent Python CodeCell execution for this project.</small></span><input type="checkbox" id="projectCodeActEnabled"></label>'
+    + '<p class="muted">The default applies when a Session, saved Agent, or Workflow/Graph node does not override it. Choose CodeAct or Hybrid when the session needs Python CodeCell execution.</p>'
+    + '<label class="settings-row"><span><strong>Default agent mode for new sessions</strong><small>ReAct uses ordinary tools; CodeAct uses persistent Python CodeCell; Hybrid exposes both.</small></span><select id="projectAgentMode"><option value="react">ReAct</option><option value="codeact">CodeAct</option><option value="hybrid">Hybrid</option></select></label>'
     + '<label class="settings-row"><span><strong>CodeAct backend</strong><small>Process is trusted-only; Container provides stronger isolation.</small></span><select id="projectCodeActBackend"><option value="process">Process (trusted only)</option><option value="container">Container</option></select></label>'
     + '<label class="settings-row"><span><strong>Security mode</strong><small>Enforce fails closed unless strong container isolation is available.</small></span><select id="projectCodeActSecurity"><option value="trusted">Trusted</option><option value="enforce">Enforce isolation</option></select></label>'
     + '</div>'
