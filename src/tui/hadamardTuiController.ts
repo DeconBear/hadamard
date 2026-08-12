@@ -3171,13 +3171,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         react: selected.includes('react'),
         codeact: selected.includes('codeact'),
       });
-      if ((mode === 'codeact' || mode === 'hybrid') && !projectSettings.codeAct.enabled) {
-        appendStatic([
-          ...formatErrorLine('CodeAct is disabled for this project. Enable it in Project Settings first.'),
-          '',
-        ]);
-        return;
-      }
       await session.mergeMetadata(sessionAgentModePatch(mode));
       appendStatic([...formatInfoLine(`agent mode set to: ${mode}`), '']);
     } catch (error) {

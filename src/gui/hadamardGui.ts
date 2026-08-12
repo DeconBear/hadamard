@@ -3125,7 +3125,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       permissionMode: currentPermissionMode(),
       effort: currentEffort() ?? 'auto',
       agentMode: currentAgentMode(),
-      codeActEnabled: projectSettings.codeAct.enabled,
       activeTeamName,
       teamPreferences: teamPrefs,
       activeRouterName: activeRouter?.name ?? null,
@@ -8896,9 +8895,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       const body = await readJson(req);
       if (!isAgentMode(body.agentMode)) {
         return json(res, 400, { error: 'agentMode must be react, codeact, or hybrid.' });
-      }
-      if ((body.agentMode === 'codeact' || body.agentMode === 'hybrid') && !projectSettings.codeAct.enabled) {
-        return json(res, 409, { error: 'CodeAct is disabled for this project. Enable it in Project Settings first.' });
       }
       await session.mergeMetadata(sessionAgentModePatch(body.agentMode));
       invalidateHeavyState();
