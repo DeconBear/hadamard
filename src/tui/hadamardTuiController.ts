@@ -269,8 +269,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   }
 
   const hadamardHomeDir = resolveHadamardHome();
+  const workspaceRegistry = await readWorkspaceRegistry(hadamardHomeDir);
+  const registeredProject = findWorkspaceProject(workspaceRegistry, workDir);
+  const projectWorkPaths = registeredProject ? workspaceWorkPaths(registeredProject) : [workDir];
   let projectSettings = await readProjectSettings(workDir, hadamardHomeDir);
-  let systemPrompt = buildTuiSystemPrompt(workDir, projectSettings, hadamardHomeDir);
+  let systemPrompt = buildTuiSystemPrompt(workDir, projectSettings, hadamardHomeDir, projectWorkPaths);
 
   let applyPlanPermission: (() => Promise<void>) | null = null;
   let managedPluginRuntime: ReturnType<typeof createManagedPluginRuntime> | null = null;
@@ -1870,7 +1873,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     projectSettings = await writeProjectSettings(workDir, hadamardHomeDir, {
       context: { instructionMode },
     });
-    systemPrompt = buildTuiSystemPrompt(workDir, projectSettings, hadamardHomeDir);
+    systemPrompt = buildTuiSystemPrompt(workDir, projectSettings, hadamardHomeDir, projectWorkPaths);
     appendStatic([
       ...formatInfoLine(`context instructions: ${instructionMode}`),
       ...formatInfoLine('Global rules remain ~/.hadamard/AGENTS.md.'),

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstat, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { resolveProjectAgentsPaths } from '../memory/projectContext.js';
 
 const SKIP_DIRECTORIES = new Set([
   '.git', '.hadamard', '.next', '.nuxt', '.turbo', '.venv', 'build', 'coverage', 'dist',
@@ -60,10 +61,8 @@ export class ProjectRuleCatalogService {
   }
 
   effectiveFor(targetPath: string, entries: ProjectRuleEntry[]): ProjectRuleEntry[] {
-    const target = path.resolve(targetPath);
-    return entries
-      .filter(entry => inside(entry.scopePath, target))
-      .sort((left, right) => left.scopePath.length - right.scopePath.length);
+    const paths = new Set(resolveProjectAgentsPaths(targetPath, this.workPaths).map(candidate => normalize(candidate)));
+    return entries.filter(entry => paths.has(normalize(entry.path)));
   }
 
   private async scan(root: string, directory: string, output: ProjectRuleEntry[], includeContent: boolean): Promise<void> {

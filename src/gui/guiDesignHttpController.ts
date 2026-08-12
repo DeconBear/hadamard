@@ -3,6 +3,7 @@ import {
   DesignDocumentService,
   type DesignImportAction,
   type EngineeringProfileTarget,
+  type DesignWorkspaceFileChange,
 } from '../design/index.js';
 import { bytes, json, readJson, text, type GuiHttpRouter } from './guiHttpRouter.js';
 
@@ -23,6 +24,13 @@ function isEngineeringTarget(value: unknown): value is EngineeringProfileTarget 
 
 function isDesignEntryMode(value: unknown): value is DesignEntryMode {
   return value === 'html' || value === 'markdown';
+}
+
+function isWorkspaceChanges(value: unknown): value is DesignWorkspaceFileChange[] {
+  return Array.isArray(value) && value.every(item => item && typeof item === 'object'
+    && typeof (item as Record<string, unknown>).path === 'string'
+    && typeof (item as Record<string, unknown>).action === 'string'
+    && typeof (item as Record<string, unknown>).afterRevision === 'string');
 }
 
 function designAssetMediaType(filePath: string): string {
@@ -67,8 +75,36 @@ export function registerGuiDesignHttpController(
     const service = options.createService();
     json(res, 200, {
       ...(await service.read()), workspace: await service.store.workspace.inspect(),
-      templates: service.templates.list(), themes: service.themes, profiles: service.profiles,
+      templates: service.workspaceBundles.listTemplates(), profiles: service.profiles,
     });
+  });
+
+  router.route('GET', '/api/design/templates', async (_req, res) => {
+    json(res, 200, { templates: options.createService().workspaceBundles.listTemplates() });
+  });
+
+  router.route('GET', '/api/design/template/preview', async (_req, res, url) => {
+    try {
+      const id = url.searchParams.get('id');
+      if (!id) return json(res, 400, { error: 'id is required' });
+      json(res, 200, await options.createService().workspaceBundles.previewTemplateApply(id));
+    } catch (error) {
+      json(res, 404, { error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.route('POST', '/api/design/template/apply', async (req, res) => {
+    try {
+      const body = await readJson(req);
+      if (typeof body.id !== 'string' || body.confirmed !== true || !isWorkspaceChanges(body.expectedChanges)) {
+        return json(res, 400, { error: 'id, confirmed, and expectedChanges are required' });
+      }
+      const service = options.createService();
+      const changes = await service.workspaceBundles.applyTemplate(body.id, true, body.expectedChanges);
+      json(res, 200, { ok: true, changes, workspace: await service.store.workspace.inspect() });
+    } catch (error) {
+      json(res, errorStatus(error), { error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   router.route('GET', '/api/design/entry', async (_req, res, url) => {
@@ -164,16 +200,18 @@ export function registerGuiDesignHttpController(
       try {
         const body = await readJson(req);
         const service = options.createService();
-        const document = await service.transferDocument(typeof body.content === 'string' ? body.content : undefined);
+        const document = format === 'package'
+          ? undefined
+          : await service.transferDocument(typeof body.content === 'string' ? body.content : undefined);
         const exported = format === 'html'
-          ? service.transfers.exportHtml(document)
+          ? service.transfers.exportHtml(document!)
           : format === 'pdf'
-            ? service.transfers.exportPdf(document, {
+            ? service.transfers.exportPdf(document!, {
               ...(typeof body.title === 'string' ? { title: body.title } : {}),
               ...(typeof body.author === 'string' ? { author: body.author } : {}),
               ...(typeof body.sourceUrl === 'string' ? { sourceUrl: body.sourceUrl } : {}),
             })
-            : service.transfers.exportPackage(document);
+            : await service.workspaceBundles.export();
         json(res, 200, encodedExport(exported));
       } catch (error) {
         json(res, 400, { error: error instanceof Error ? error.message : String(error) });
@@ -184,8 +222,17 @@ export function registerGuiDesignHttpController(
   router.route('POST', '/api/design/import/preview', async (req, res) => {
     try {
       const imported = decodeImport(await readJson(req));
-      const { assets: _assets, ...preview } = options.createService().previewImport(imported.bytes, imported.fileName);
-      json(res, 200, preview);
+      const service = options.createService();
+      if (imported.fileName.toLowerCase().endsWith('.zip')) {
+        try {
+          const { files, ...preview } = await service.workspaceBundles.preview(imported.bytes);
+          return json(res, 200, { ...preview, files: files.map(file => ({ path: file.path, mediaType: file.mediaType, size: file.bytes.length, sha256: file.sha256 })) });
+        } catch (workspaceError) {
+          if (String(workspaceError).includes('hadamard-design-workspace')) throw workspaceError;
+        }
+      }
+      const { assets: _assets, ...legacyPreview } = service.previewImport(imported.bytes, imported.fileName);
+      json(res, 200, legacyPreview);
     } catch (error) {
       json(res, error instanceof SyntaxError ? 413 : 400, { error: error instanceof Error ? error.message : String(error) });
     }
@@ -194,11 +241,17 @@ export function registerGuiDesignHttpController(
   router.route('POST', '/api/design/import/commit', async (req, res) => {
     try {
       const body = await readJson(req);
-      if (body.confirmed !== true || !isImportAction(body.action) || typeof body.expectedRevision !== 'string') {
-        return json(res, 400, { error: 'confirmed, valid action, and expectedRevision are required' });
-      }
+      if (body.confirmed !== true) return json(res, 400, { error: 'confirmed is required' });
       const imported = decodeImport(body);
       const service = options.createService();
+      if (isWorkspaceChanges(body.expectedChanges)) {
+        const preview = await service.workspaceBundles.preview(imported.bytes);
+        const changes = await service.workspaceBundles.apply(preview, true, body.expectedChanges);
+        return json(res, 200, { ok: true, result: { action: 'replace-workspace', changes }, workspace: await service.store.workspace.inspect() });
+      }
+      if (!isImportAction(body.action) || typeof body.expectedRevision !== 'string') {
+        return json(res, 400, { error: 'valid action and expectedRevision are required for legacy imports' });
+      }
       const result = await service.commitImport(imported.bytes, imported.fileName, body.action, body.expectedRevision);
       json(res, 200, { ok: true, result, document: await service.read() });
     } catch (error) {
