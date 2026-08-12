@@ -10,6 +10,7 @@ import { bytes, json, readJson, text, type GuiHttpRouter } from './guiHttpRouter
 
 export interface GuiDesignHttpControllerOptions {
   createService(): DesignDocumentService;
+  openFolder?(folderPath: string): void;
 }
 
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
@@ -99,6 +100,17 @@ export function registerGuiDesignHttpController(
     }
   });
 
+  router.route('POST', '/api/design/open-folder', async (_req, res) => {
+    try {
+      const workspace = options.createService().store.workspace;
+      const folderPath = await workspace.ensureRoot();
+      options.openFolder?.(folderPath);
+      json(res, 200, { ok: true, path: folderPath });
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
   router.route('POST', '/api/design/refresh', async (req, res) => {
     try {
       const body = await readJson(req);
@@ -134,6 +146,25 @@ export function registerGuiDesignHttpController(
       bytes(res, 200, body, designAssetMediaType(relativePath));
     } catch (error) {
       text(res, 404, error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  router.route('GET', '/api/design/preview', async (_req, res) => {
+    try {
+      const workspace = options.createService().store.workspace;
+      const entry = await workspace.readEntry('html');
+      if (!entry.exists) return text(res, 404, 'design.html does not exist');
+      const source = entry.content
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/giu, '')
+        .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/giu, '');
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'content-security-policy': "default-src 'none'; style-src 'unsafe-inline' 'self'; img-src 'self' data:; font-src 'self'; script-src 'none'; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
+      });
+      res.end(source);
+    } catch (error) {
+      text(res, 400, error instanceof Error ? error.message : String(error));
     }
   });
 

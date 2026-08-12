@@ -42,6 +42,7 @@ export function registerGuiShellHttpController(router: GuiHttpRouter, authToken:
         "img-src 'self' data:",
         "connect-src 'self'",
         "font-src 'self'",
+        "frame-src 'self'",
         "base-uri 'none'",
         "form-action 'self'",
       ].join('; '),

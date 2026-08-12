@@ -382,6 +382,7 @@ import { registerGuiAgentHttpController } from './guiAgentHttpController.js';
 import { registerGuiReferenceHttpController } from './guiReferenceHttpController.js';
 import { registerGuiDesignHttpController } from './guiDesignHttpController.js';
 import { DesignDocumentService } from '../design/designDocumentService.js';
+import { ProjectRuleCatalogService } from '../rules/projectRuleCatalog.js';
 import {
   createGuiReferenceHttpService,
   type GuiReferenceSnapshot,
@@ -7436,6 +7437,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   registerGuiShellHttpController(httpRouter, authToken);
   registerGuiDesignHttpController(httpRouter, {
     createService: () => new DesignDocumentService(projectPrimaryPath, resolveGuiHomeDir(), projectPrimaryPath),
+    openFolder: openPathInSystem,
   });
   registerGuiChatHttpController(httpRouter, {
     runtimeMutationInProgress: () => runtimeMutationInProgress,
@@ -9053,6 +9055,65 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       const agentsPath = path.join(workDir, 'AGENTS.md');
       await writeFile(agentsPath, content, 'utf8');
       return json(res, 200, { ok: true, content, path: agentsPath, name: 'AGENTS.md' });
+    } catch (error) {
+      return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  if (req.method === 'GET' && url.pathname === '/api/project-rules') {
+    try {
+      const homeDir = resolveGuiHomeDir();
+      const registered = findWorkspaceProject(await readWorkspaceRegistry(homeDir), projectPrimaryPath);
+      const workPaths = registered ? workspaceWorkPaths(registered) : [projectPrimaryPath];
+      const catalog = new ProjectRuleCatalogService(workPaths);
+      const entries = await catalog.list(false);
+      const effective = catalog.effectiveFor(workDir, entries);
+      const settings = await readProjectSettings(workDir, homeDir);
+      return json(res, 200, {
+        entries,
+        effectiveIds: effective.map(entry => entry.id),
+        targetPath: workDir,
+        policy: { customPrompt: settings.customPrompt, projectRules: settings.projectRules },
+      });
+    } catch (error) {
+      return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  if (req.method === 'GET' && url.pathname === '/api/project-rule') {
+    try {
+      const homeDir = resolveGuiHomeDir();
+      const registered = findWorkspaceProject(await readWorkspaceRegistry(homeDir), projectPrimaryPath);
+      const catalog = new ProjectRuleCatalogService(registered ? workspaceWorkPaths(registered) : [projectPrimaryPath]);
+      return json(res, 200, await catalog.read(url.searchParams.get('id') || ''));
+    } catch (error) {
+      return json(res, 404, { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  if (req.method === 'PUT' && url.pathname === '/api/project-rule') {
+    try {
+      const body = await readJson(req);
+      if (typeof body.id !== 'string' || typeof body.content !== 'string' || typeof body.expectedRevision !== 'string') {
+        return json(res, 400, { error: 'id, content, and expectedRevision are required' });
+      }
+      const homeDir = resolveGuiHomeDir();
+      const registered = findWorkspaceProject(await readWorkspaceRegistry(homeDir), projectPrimaryPath);
+      const catalog = new ProjectRuleCatalogService(registered ? workspaceWorkPaths(registered) : [projectPrimaryPath]);
+      return json(res, 200, await catalog.write(body.id, body.content, body.expectedRevision));
+    } catch (error) {
+      return json(res, 409, { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  if (req.method === 'PUT' && url.pathname === '/api/project-rule-policy') {
+    try {
+      const body = await readJson(req);
+      const homeDir = resolveGuiHomeDir();
+      const saved = await writeProjectSettings(workDir, homeDir, {
+        customPrompt: typeof body.customPrompt === 'string' ? body.customPrompt : undefined,
+        projectRules: typeof body.projectRules === 'string' ? body.projectRules : undefined,
+      });
+      projectSettings = saved;
+      systemPrompt = buildGuiSystemPrompt(workDir, projectSettings, homeDir);
+      invalidateHeavyState();
+      return json(res, 200, { ok: true, policy: { customPrompt: saved.customPrompt, projectRules: saved.projectRules } });
     } catch (error) {
       return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
     }
