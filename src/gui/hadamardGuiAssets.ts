@@ -1582,7 +1582,7 @@ body[data-theme="dark"] {
 .conv-side { flex: 0 0 auto; display: grid; gap: 4px; align-items: start; text-align: right; }
 /* --- Project plan checklist (plan/UI_PLAN §4.2). --- */
 .detail-layout { flex: 1; min-height: 0; display: flex; gap: 0; align-items: stretch; height: 100%; }
-.detail-main { min-height: 0; min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; background: var(--bg-surface); border-right: 1px solid var(--border); overflow: hidden; }
+.detail-main { min-height: 0; min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; background: var(--bg-surface); border-right: 1px solid var(--border); overflow: hidden; container-type: inline-size; container-name: project-detail-main; }
 .detail-conv-splitter { flex: 0 0 5px; width: 5px; cursor: col-resize; position: relative; background: var(--border); touch-action: none; align-self: stretch; z-index: 2; }
 .detail-conv-splitter::after { content: ''; position: absolute; inset: 0 -3px; }
 .detail-conv-splitter:hover, .detail-conv-splitter.dragging { background: var(--brand); opacity: .55; }
@@ -1593,6 +1593,8 @@ body[data-theme="dark"] {
 .project-detail-tab.active { color: var(--brand); border-bottom-color: var(--brand); background: var(--brand-soft); }
 .project-work-path-select { max-width: min(280px, 28vw); }
 .project-detail > .region-header { display: grid; grid-template-columns: minmax(180px, 1fr) auto; }
+.project-detail > .region-header .region-titles { overflow: hidden; }
+.project-detail > .region-header .pc-path { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-detail > .region-header .region-actions { flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: none; padding: 4px 0; }
 .project-detail > .region-header .region-actions::-webkit-scrollbar { display: none; }
 .project-detail > .region-header .region-actions > * { flex: 0 0 auto; }
@@ -1663,10 +1665,20 @@ body[data-theme="dark"] {
 .project-doc-view .design-meta,.project-doc-view .design-footer { color: var(--text-3); font-size: 12px; }
 .project-doc-view .design-footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid var(--border); }
 .project-doc-actions { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.project-doc-command-left, .project-doc-command-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.project-doc-command-left, .project-doc-command-right { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 0 auto; }
 .project-doc-command-right { margin-left: auto; }
 .project-doc-command-select { min-height: 32px; border: 1px solid var(--border); border-radius: 8px; padding: 0 28px 0 9px; background: var(--bg-surface); color: var(--text-1); font-size: 12px; font-weight: 600; }
 .project-doc-command-icon { width: 32px; height: 32px; }
+@container project-detail-main (max-width: 680px) {
+  .project-doc-toolbar { align-items: stretch; }
+  .project-doc-actions { flex-wrap: wrap; row-gap: 6px; }
+  .project-doc-command-left, .project-doc-command-right { flex: 1 1 100%; width: 100%; max-width: 100%; }
+  .project-doc-command-left { flex-wrap: wrap; }
+  .project-doc-command-right { margin-left: 0; justify-content: flex-end; flex-wrap: wrap; }
+  .project-doc-command-left .project-doc-command-select { flex: 1 1 132px; min-width: 0; max-width: none; }
+  .project-doc-command-left .project-doc-plan-select { flex: 1 1 220px; min-width: 0; max-width: 100%; }
+  .project-doc-status { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
 .design-html-frame { display: block; width: 100%; min-height: 680px; height: calc(100vh - 260px); border: 0; background: white; }
 .design-export-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
 .design-export-option, .design-template-card { display: flex; flex-direction: column; gap: 5px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); color: var(--text-1); text-align: left; cursor: pointer; }
