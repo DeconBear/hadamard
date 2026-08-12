@@ -248,20 +248,8 @@ async function previewEngineeringProfile() {
   });
   actions.append(cancel, apply); modal.panel.appendChild(actions);
 }
-async function migrateLegacyDesign(action) {
-  try {
-    const res = await api('/api/design/migrate', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Migration failed');
-    state.projectDocLoadedFor = null;
-    await mountProjectDoc(true);
-  } catch (error) { setProjectDocStatus(error.message || 'Migration failed', 'error'); }
-}
 function applyDesignDocumentState(designData) {
   state.projectDocRevision = designData.revision || null;
-  state.projectDocMigrationState = designData.state || 'empty';
   state.projectDocTemplates = Array.isArray(designData.templates) ? designData.templates : [];
   state.projectDocConfiguration = designData.configuration || null;
   state.projectDocProfiles = Array.isArray(designData.profiles) ? designData.profiles : [];
@@ -284,36 +272,6 @@ function applyDesignDocumentState(designData) {
     }
     profileSelect.value = designData.configuration?.template?.id || designData.parsed?.frontmatter?.template || 'software.general';
   }
-  const migration = el('projectDocMigration');
-  if (!migration) return;
-  migration.textContent = '';
-  migration.classList.toggle('hidden', designData.state !== 'legacy-progress' && designData.state !== 'conflict');
-  if (designData.state !== 'legacy-progress' && designData.state !== 'conflict') return;
-  const message = document.createElement('span');
-  message.textContent = designData.state === 'legacy-progress'
-    ? 'Legacy PROGRESS.md is shown as a read-only migration preview.'
-    : 'DESIGN.md and legacy PROGRESS.md both exist. No file has been overwritten.';
-  const migrate = document.createElement('button');
-  migrate.type = 'button'; migrate.className = 'secondary-btn';
-  migrate.textContent = designData.state === 'legacy-progress' ? 'Migrate to DESIGN.md' : 'Merge under History';
-  migrate.addEventListener('click', () => void migrateLegacyDesign(designData.state === 'legacy-progress' ? 'migrate-legacy' : 'merge-history'));
-  migration.append(message, migrate);
-  if (designData.state !== 'conflict') return;
-  const keep = document.createElement('button');
-  keep.type = 'button'; keep.className = 'secondary-btn'; keep.textContent = 'Keep DESIGN.md';
-  keep.addEventListener('click', () => void migrateLegacyDesign('keep-design'));
-  const replace = document.createElement('button');
-  replace.type = 'button'; replace.className = 'secondary-btn'; replace.textContent = 'Use legacy';
-  replace.addEventListener('click', () => {
-    if (confirm('Replace DESIGN.md with legacy PROGRESS.md after creating a backup?')) void migrateLegacyDesign('replace-with-legacy');
-  });
-  const details = document.createElement('details');
-  const summary = document.createElement('summary'); summary.textContent = 'Compare';
-  const comparison = document.createElement('pre');
-  comparison.textContent = '--- DESIGN.md ---\n' + (designData.designContent || '')
-    + '\n--- legacy PROGRESS.md ---\n' + (designData.legacyProgressContent || '');
-  details.append(summary, comparison);
-  migration.append(keep, replace, details);
 }
 function createProjectDocumentActions() {
   const statusWrap = document.createElement('div'); statusWrap.className = 'project-doc-status-wrap';
@@ -353,7 +311,16 @@ function createProjectDocumentActions() {
   const revokeButton = button('projectDocRevokeShareBtn', 'Revoke share', () => void revokeDesignShare());
   const editButton = button('projectDocEditBtn', 'Edit', () => toggleProjectDocEdit()); editButton.classList.add('project-doc-edit-btn');
   const documentStatus = document.createElement('span'); documentStatus.id = 'projectDocStatus'; documentStatus.className = 'project-doc-status';
-  return [statusWrap, planSelect, templateSelect, themeSelect, profileSelect, importInput, importButton, packageButton, htmlButton, pdfButton,
-    customizeButton, profileButton, shareButton, revokeButton, editButton, documentStatus];
+  const group = (label, controls, className = '') => {
+    const wrapper = document.createElement('div'); wrapper.className = 'project-doc-action-group ' + className;
+    if (label) { const caption = document.createElement('span'); caption.className = 'project-doc-action-label'; caption.textContent = label; wrapper.appendChild(caption); }
+    wrapper.append(...controls); return wrapper;
+  };
+  const designControls = group('Design system', [templateSelect, themeSelect, profileSelect, customizeButton, profileButton], 'design-only');
+  designControls.id = 'projectDocDesignControls';
+  const transferControls = group('Transfer', [importButton, packageButton, htmlButton, pdfButton, shareButton, revokeButton], 'design-only');
+  transferControls.id = 'projectDocTransferControls';
+  const documentControls = group('', [statusWrap, planSelect, editButton, documentStatus], 'document-controls');
+  return [documentControls, designControls, transferControls, importInput];
 }
 `;

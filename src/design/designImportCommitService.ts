@@ -105,9 +105,6 @@ export class DesignImportCommitService {
     }
     const current = await this.documents.inspect();
     if (current.revision !== expectedRevision) throw new Error('DESIGN.md changed since import preview.');
-    if (current.state === 'legacy-progress' || current.state === 'conflict') {
-      throw new Error('Resolve legacy DESIGN/PROGRESS migration before importing.');
-    }
     const currentConfiguration = await this.configurations.load();
     const importedConfiguration = preview.configuration
       ? normalizeDesignConfiguration(preview.configuration)

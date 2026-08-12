@@ -9037,8 +9037,25 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       return json(res, 400, { error: (error as Error).message });
     }
   }
-  if (req.method === 'POST' && url.pathname === '/api/project-doc') {
-    return json(res, 410, { error: 'Use POST /api/design/patch.' });
+  if (req.method === 'GET' && url.pathname === '/api/project-agents-doc') {
+    try {
+      const agentsPath = path.join(workDir, 'AGENTS.md');
+      const content = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '';
+      return json(res, 200, { content, path: agentsPath, name: 'AGENTS.md' });
+    } catch (error) {
+      return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  if (req.method === 'POST' && url.pathname === '/api/project-agents-doc') {
+    try {
+      const body = await readJson(req);
+      const content = typeof body.content === 'string' ? body.content : '';
+      const agentsPath = path.join(workDir, 'AGENTS.md');
+      await writeFile(agentsPath, content, 'utf8');
+      return json(res, 200, { ok: true, content, path: agentsPath, name: 'AGENTS.md' });
+    } catch (error) {
+      return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
   }
   if (req.method === 'GET' && url.pathname === '/api/project-memory-doc') {
     if (!sdk) return json(res, 503, { error: 'Hadamard SDK is not configured.' });

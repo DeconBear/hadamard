@@ -3,8 +3,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { getHadamardProjectSessionDirectory } from '../src/config/projectSessionDirectory.js';
-import { resolveHadamardHome } from '../src/config/hadamardHome.js';
 import { startHadamardGuiServer } from '../src/gui/hadamardGui.js';
 
 const temporaryDirectories: string[] = [];
@@ -27,7 +25,7 @@ async function request<T>(
 }
 
 describe('GUI Design document HTTP boundary', () => {
-  it('reads, revision-patches, renders, and rejects the removed legacy write endpoint', async () => {
+  it('reads, revision-patches, renders, and exposes the project document endpoints', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'design-http-'));
     temporaryDirectories.push(root);
     const workDir = path.join(root, 'work');
@@ -67,39 +65,16 @@ describe('GUI Design document HTTP boundary', () => {
       });
       expect(rendered.body.bodyHtml).toContain('&lt;script&gt;');
 
-      expect((await request(server, '/api/project-doc', { method: 'POST' })).status).toBe(410);
-    } finally {
-      await server.close();
-    }
-  }, 30_000);
+      expect((await request(server, '/api/project-doc', { method: 'POST' })).status).toBe(404);
 
-  it('exposes legacy content only as a migration preview', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'design-http-legacy-'));
-    temporaryDirectories.push(root);
-    const workDir = path.join(root, 'work');
-    const homeDir = path.join(root, 'home');
-    await Promise.all([mkdir(workDir), mkdir(homeDir)]);
-    const configPath = path.join(homeDir, 'settings.json');
-    await writeFile(configPath, JSON.stringify({ env: {
-      HADAMARD_PROVIDER: 'openai', HADAMARD_API_KEY: 'test-key',
-      HADAMARD_BASE_URL: 'http://127.0.0.1:1/v1', HADAMARD_MODEL: 'test-model',
-    } }), 'utf8');
-    const projectStore = getHadamardProjectSessionDirectory(workDir, resolveHadamardHome(homeDir));
-    await mkdir(projectStore, { recursive: true });
-    await writeFile(path.join(projectStore, 'PROGRESS.md'), '# Legacy status\n', 'utf8');
-    const server = await startHadamardGuiServer({
-      workDir, homeDir, configPath, host: '127.0.0.1',
-      port: 47000 + Math.floor(Math.random() * 5000),
-    });
-    try {
-      const preview = await request<{ state: string; content: string; designPath: string }>(server, '/api/design');
-      expect(path.normalize(preview.body.designPath)).toBe(path.normalize(path.join(projectStore, 'DESIGN.md')));
-      expect(preview.body).toMatchObject({ state: 'legacy-progress', content: '# Legacy status\n' });
-      const migrated = await request<{ document: { state: string } }>(server, '/api/design/migrate', {
+      const agents = await request<{ content: string; name: string }>(server, '/api/project-agents-doc');
+      expect(agents.status).toBe(200);
+      expect(agents.body).toMatchObject({ content: '', name: 'AGENTS.md' });
+      const savedAgents = await request<{ content: string }>(server, '/api/project-agents-doc', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'migrate-legacy' }),
+        body: JSON.stringify({ content: '# Project rules\n' }),
       });
-      expect(migrated.body.document.state).toBe('design');
+      expect(savedAgents.body.content).toBe('# Project rules\n');
     } finally {
       await server.close();
     }
