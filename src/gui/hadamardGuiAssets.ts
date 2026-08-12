@@ -182,9 +182,10 @@ export function createHadamardGuiHtml(): string {
             <select id="detailWorkPathSelect" class="overview-toolbar-select project-work-path-select" aria-label="Active project work path"></select>
             <button type="button" id="detailAddWorkPathBtn" class="pill-btn">+ Work path</button>
             <button type="button" id="detailRemoveWorkPathBtn" class="pill-btn hidden">Remove path</button>
-            <button type="button" id="detailOpenLocationBtn" class="pill-btn">Open location</button>
+            <button type="button" id="detailOpenLocationBtn" class="icon-btn" aria-label="Open workspace folder" title="Open workspace folder">${guiIcon('folder')}</button>
             <button type="button" id="detailNewConversationBtn" class="pill-btn">+ New conversation</button>
-            <button type="button" id="detailConversationsBtn" class="pill-btn detail-conversations-toggle" aria-label="Conversations" title="Show conversations" aria-expanded="false" aria-controls="projectDetailSidebar">Conversations</button>
+            <button type="button" id="detailConversationsBtn" class="icon-btn detail-conversations-toggle" aria-label="Hide conversations" title="Hide conversations" aria-expanded="true" aria-controls="projectDetailSidebar">${guiIcon('panelLeft')}</button>
+            <button type="button" id="detailAuxPanelToggleBtn" class="icon-btn" title="Hide panel" aria-label="Hide panel" aria-pressed="true">${guiIcon('panelRight')}</button>
           </div>
         </header>
         <div class="detail-body" id="detailBody"></div>
@@ -244,11 +245,16 @@ export function createHadamardGuiHtml(): string {
         <div class="top-actions">
           <button id="backToOverviewBtn" class="icon-btn" title="Back to conversation list" aria-label="Back to conversation list">${guiIcon('chevronLeft')}</button>
           <button id="openLocationBtn" class="icon-btn" title="Open workspace folder" aria-label="Open workspace folder">${guiIcon('folder')}</button>
+          <button id="conversationListToggleBtn" class="icon-btn" title="Show conversations" aria-label="Show conversations" aria-expanded="false" aria-controls="conversationListDrawer">${guiIcon('panelLeft')}</button>
           <button id="auxPanelToggleBtn" class="icon-btn" title="Toggle side panel" aria-label="Toggle side panel" aria-pressed="true">${guiIcon('panelRight')}</button>
         </div>
       </header>
       <div class="workbench" id="conversationWorkbench">
         <div class="workbench-split" id="conversationWorkbenchSplit">
+          <aside id="conversationListDrawer" class="conversation-list-drawer" aria-label="Conversations" aria-hidden="true">
+            <header class="conversation-list-head"><strong>Conversations</strong><label class="conv-sidebar-search"><span>${guiIcon('search')}</span><input id="conversationListSearch" placeholder="Search..." autocomplete="off" aria-label="Search conversations"></label></header>
+            <div id="conversationListRows" class="conversation-list-rows"></div>
+          </aside>
           <div class="workbench-chat">
             <section class="pane pane-chat active" id="pane-chat-default">
               <div class="chat-chrome">
@@ -345,8 +351,6 @@ export function createHadamardGuiHtml(): string {
           <aside class="aux-panel" id="auxPanel" aria-label="Workbench panel">
             <header class="aux-chrome">
               <div class="aux-chrome-spacer"></div>
-              <button type="button" id="auxFocusBtn" class="icon-btn" title="Focus panel" aria-label="Focus panel">${guiIcon('maximize')}</button>
-              <button type="button" id="auxToggleBtn" class="icon-btn" title="Hide panel" aria-label="Hide panel">${guiIcon('panelRight')}</button>
               <button type="button" id="auxCloseBtn" class="icon-btn hidden" title="Back to actions" aria-label="Back to actions">${guiIcon('close')}</button>
             </header>
             <div class="aux-body" id="auxBody">
@@ -1584,6 +1588,10 @@ body[data-theme="dark"] {
 .project-detail-tab:hover { color: var(--text-1); background: var(--surface-hover); }
 .project-detail-tab.active { color: var(--brand); border-bottom-color: var(--brand); background: var(--brand-soft); }
 .project-work-path-select { max-width: min(280px, 28vw); }
+.project-detail > .region-header { display: grid; grid-template-columns: minmax(180px, 1fr) auto; }
+.project-detail > .region-header .region-actions { flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: none; padding: 4px 0; }
+.project-detail > .region-header .region-actions::-webkit-scrollbar { display: none; }
+.project-detail > .region-header .region-actions > * { flex: 0 0 auto; }
 .project-settings-panel { min-height: 0; display: flex; flex-direction: column; background: var(--bg-surface); overflow: hidden; }
 .project-settings-chrome { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
 .project-settings-chrome strong { flex: 1; font-size: 13px; }
@@ -2046,7 +2054,8 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
 .issue-comment-form input { min-width: 0; height: 34px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-1); padding: 0 10px; font-size: 12.5px; }
 .issue-comment-form button { width: 38px; min-width: 38px; padding: 0; }
 .detail-sidebar { min-height: 0; min-width: 220px; max-width: min(70vw, 560px); width: var(--detail-sidebar-width, 300px); flex: 0 0 var(--detail-sidebar-width, 300px); display: flex; flex-direction: column; background: var(--bg-sidebar); overflow: hidden; }
-.detail-conversations-toggle { display: none; }
+.detail-sidebar.desktop-collapsed { display: none; }
+.detail-conversations-toggle { display: inline-grid; }
 .detail-conversations-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .conv-sidebar-top { flex: 1; min-height: 0; min-width: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .conv-sidebar-head { flex: 0 0 auto; padding: 12px 12px 8px; display: grid; gap: 8px; border-bottom: 1px solid var(--border); background: var(--bg-surface); }
@@ -2059,6 +2068,14 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
 .conv-sidebar-row.active { background: var(--surface-selected); }
 .conv-sidebar-row .csr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 7px; }
 .conv-sidebar-row .csr-dot.hidden { display: none; }
+.session-running-mark { width: 13px; flex: 0 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 1px; }
+.session-running-mark i { width: 2px; height: 2px; border-radius: 50%; background: currentColor; animation: session-running-wave 1s infinite ease-in-out; }
+.session-running-mark i:nth-child(2) { animation-delay: .14s; }
+.session-running-mark i:nth-child(3) { animation-delay: .28s; }
+.session-unread-dot { width: 7px; height: 7px; border-radius: 50%; background: #3388dc; flex: 0 0 7px; }
+.sr-session-row.running, .conv-sidebar-row.running, .conversation-list-row.running { background: var(--surface-selected); }
+.sr-session-row.running .sr-session-title, .conv-sidebar-row.running .csr-title, .conversation-list-row.running .csr-title { color: var(--text-1); font-weight: 600; }
+@keyframes session-running-wave { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-2px); opacity: 1; } }
 .conv-sidebar-row .csr-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text-2); }
 .conv-sidebar-row.active .csr-title { color: var(--text-1); font-weight: 600; }
 .conv-sidebar-row .csr-meta { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); font-size: 12px; flex: 0 0 auto; white-space: nowrap; margin-left: auto; }
@@ -2860,6 +2877,13 @@ body[data-sidebar-mode="nav"] .sidebar .sidebar-footer .nav-btn span:not(.nav-ic
 .workbench { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .workbench-split { flex: 1; min-height: 0; display: flex; }
 .workbench-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.conversation-list-drawer { flex: 0 0 0; width: 0; min-width: 0; overflow: hidden; border-right: 0 solid var(--border); background: var(--bg-sidebar); display: flex; flex-direction: column; transition: width .16s ease, flex-basis .16s ease; }
+.conversation-list-drawer.open { flex-basis: min(320px, 34vw); width: min(320px, 34vw); border-right-width: 1px; }
+.conversation-list-head { flex: 0 0 auto; padding: 12px; display: grid; gap: 9px; border-bottom: 1px solid var(--border); }
+.conversation-list-head strong { font-size: 13px; }
+.conversation-list-rows { flex: 1; min-height: 0; overflow: auto; padding: 5px 8px; display: grid; align-content: start; gap: 2px; }
+.conversation-list-row { width: 100%; min-width: 0; border: 0; border-radius: 8px; background: transparent; min-height: 34px; padding: 6px 9px; display: flex; align-items: center; gap: 8px; color: var(--text-2); cursor: pointer; text-align: left; }
+.conversation-list-row:hover, .conversation-list-row.active { background: var(--surface-selected); color: var(--text-1); }
 .project-workbench-primary { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .project-workbench-primary > .detail-layout { flex: 1; min-width: 0; }
 .workbench-chat .pane-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -2867,18 +2891,14 @@ body[data-sidebar-mode="nav"] .sidebar .sidebar-footer .nav-btn span:not(.nav-ic
 .aux-splitter::after { content: ''; position: absolute; inset: 0 -3px; }
 .aux-splitter:hover, .aux-splitter.dragging { background: var(--brand); opacity: .55; }
 .workbench-split.aux-collapsed .aux-splitter,
-.workbench.aux-focused .aux-splitter,
-.workbench-split.aux-focused .aux-splitter { display: none; }
+.workbench-split.aux-collapsed .aux-splitter { display: none; }
 .aux-panel { flex: 0 0 var(--aux-panel-width, 340px); width: var(--aux-panel-width, 340px); min-width: 240px; max-width: min(70vw, 720px); border-left: 1px solid var(--border); background: var(--bg-surface); display: flex; flex-direction: column; min-height: 0; transition: flex-basis .15s ease, width .15s ease, min-width .15s ease; }
 .workbench-split.resizing-aux .aux-panel { transition: none; }
 .aux-panel.collapsed { flex: 0 0 40px; width: 40px; min-width: 40px; max-width: 40px; }
 .aux-panel.collapsed .aux-body,
-.aux-panel.collapsed #auxFocusBtn,
 .aux-panel.collapsed #auxCloseBtn,
 .aux-panel.collapsed .aux-chrome-spacer { display: none !important; }
-.aux-panel.collapsed .aux-chrome { flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px; padding: 10px 4px; height: 100%; }
-.aux-panel.collapsed .aux-chrome .icon-btn { width: 30px; height: 30px; }
-.aux-panel.focused { position: absolute; inset: 0; z-index: 30; width: auto; max-width: none; min-width: 0; flex: none; border-left: 0; }
+.aux-panel.collapsed { display: none; }
 .top-actions .icon-btn[aria-pressed="true"] { background: rgba(0,0,0,.07); color: var(--text-1); }
 .aux-chrome { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 6px 8px; min-height: 36px; }
 .aux-chrome-spacer { flex: 1; }
@@ -4211,7 +4231,7 @@ body { margin: 0; color: var(--text-1); background: var(--bg-app); }
   .plan-preview { grid-column: 1; grid-row: auto; }
   .detail-layout { position: relative; }
   .detail-conv-splitter { display: none; }
-  .detail-conversations-toggle { display: inline-flex; }
+  .detail-conversations-toggle { display: inline-grid; }
   .detail-sidebar {
     position: absolute;
     inset: 0 0 0 auto;
@@ -4738,6 +4758,14 @@ body[data-density="compact"] .composer-meta { padding: 5px 12px; }
   .composer-stack { width: calc(100% - 24px); margin: 0 auto 12px; }
   .composer { margin: 0; }
   .composer-meta { width: calc(100% - 16px); }
+  .topbar { min-height: 68px; padding: 10px 12px; gap: 8px; }
+  .topbar h1 { font-size: 16px; }
+  .topbar p { max-width: 52vw; font-size: 11.5px; }
+  .top-actions { gap: 4px; flex: 0 0 auto; }
+  .top-actions .icon-btn { width: 32px; height: 32px; }
+  .conversation-list-drawer.open { position: absolute; inset: 0 auto 0 0; z-index: 18; width: min(320px, calc(100% - 44px)); flex-basis: auto; box-shadow: 12px 0 28px rgba(24,24,27,.16); }
+  .project-detail > .region-header { grid-template-columns: minmax(120px, .7fr) minmax(0, 1.3fr); padding: 6px 10px; }
+  .project-work-path-select { max-width: 180px; }
   .mode-grid, .two-col { grid-template-columns: 1fr; }
   .settings-command-row { grid-template-columns: 1fr; }
   .automation-schedule-grid { grid-template-columns: 1fr; }
@@ -4764,11 +4792,11 @@ body[data-density="compact"] .composer-meta { padding: 5px 12px; }
 }
 @media (max-width: 640px) {
   .project-detail > .region-header {
-    min-height: 0;
-    align-items: stretch;
-    flex-direction: column;
+    min-height: 56px;
+    align-items: center;
+    grid-template-columns: minmax(100px, .65fr) minmax(0, 1.35fr);
     gap: 8px;
-    padding: 10px 12px;
+    padding: 6px 8px;
   }
   .project-detail > .region-header .pc-path {
     margin: 2px 0 0;
@@ -4779,16 +4807,16 @@ body[data-density="compact"] .composer-meta { padding: 5px 12px; }
   }
   .project-detail > .region-header .region-actions {
     width: 100%;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
   }
   .project-detail > .region-header .pill-btn {
-    width: 100%;
-    min-width: 0;
+    width: auto;
     padding-left: 8px;
     padding-right: 8px;
   }
-  .project-detail > .region-header .detail-conversations-toggle { grid-column: 1 / -1; }
+  .project-detail > .region-header .project-work-path-select { max-width: 132px; }
   .project-detail-tabs { scrollbar-width: none; }
   .project-detail-tabs::-webkit-scrollbar { display: none; }
 }
@@ -5164,6 +5192,7 @@ const state = {
   // null (e.g. slash commands, which emit no run.started).
   activeRunId: null,
   activeClientRequestId: null,
+  activeRequestSessionId: null,
   activeRunSequence: 0,
   runRecoverySequence: 0,
   recoveringRun: false,
@@ -5173,7 +5202,6 @@ const state = {
   activeTabId: null,
   auxView: null,
   auxCollapsed: false,
-  auxFocused: false,
   auxPanelWidth: 340,
   terminalDockHeight: 260,
   activeWorkbenchSurface: 'conversation',
@@ -5194,6 +5222,11 @@ const state = {
   gitGroupCollapsed: { staged: false, unstaged: false, history: false },
   gitSidebarWidth: 320,
   detailSidebarWidth: 300,
+  detailConversationOpen: true,
+  conversationListOpen: false,
+  conversationListQuery: '',
+  sessionUnread: new Set(),
+  observedRunningSessions: new Set(),
   gitSelected: null,
   gitTreeExpanded: {},
   // App shell: which of the 5 primary regions (Project/Team/Automation/Customize/Devices)
@@ -5524,7 +5557,7 @@ function applyAuxPanelWidth(width) {
   const split = activeWorkbenchSplit();
   const panel = el('auxPanel');
   if (split) split.style.setProperty('--aux-panel-width', next + 'px');
-  if (panel && !panel.classList.contains('collapsed') && !panel.classList.contains('focused')) {
+  if (panel && !panel.classList.contains('collapsed')) {
     panel.style.width = next + 'px';
     panel.style.flexBasis = next + 'px';
   }
@@ -5546,14 +5579,14 @@ function syncAuxChrome() {
   if (panel) panel.classList.toggle('collapsed', state.auxCollapsed);
   const split = activeWorkbenchSplit();
   if (split) split.classList.toggle('aux-collapsed', state.auxCollapsed);
-  if (panel && (state.auxCollapsed || state.auxFocused)) {
+  if (panel && state.auxCollapsed) {
     panel.style.width = '';
     panel.style.flexBasis = '';
   } else {
     applyAuxPanelWidth(state.auxPanelWidth);
   }
   const title = state.auxCollapsed ? 'Show panel' : 'Hide panel';
-  for (const id of ['auxToggleBtn', 'auxPanelToggleBtn']) {
+  for (const id of ['auxPanelToggleBtn', 'detailAuxPanelToggleBtn']) {
     const toggle = el(id);
     if (!toggle) continue;
     toggle.title = title;
@@ -5588,24 +5621,7 @@ function toggleAuxPanel() {
   state.auxCollapsed = !state.auxCollapsed;
   activeWorkbenchLayout().auxCollapsed = state.auxCollapsed;
   persistAuxPanelWidth();
-  if (state.auxCollapsed && state.auxFocused) {
-    state.auxFocused = false;
-    const panel = el('auxPanel');
-    if (panel) panel.classList.remove('focused');
-    const workbench = activeWorkbench();
-    if (workbench) workbench.classList.remove('aux-focused');
-  }
   syncAuxChrome();
-}
-function toggleAuxFocus() {
-  state.auxFocused = !state.auxFocused;
-  const panel = el('auxPanel');
-  if (panel) panel.classList.toggle('focused', state.auxFocused);
-  const workbench = activeWorkbench();
-  if (workbench) workbench.classList.toggle('aux-focused', state.auxFocused);
-  const split = activeWorkbenchSplit();
-  if (split) split.classList.toggle('aux-focused', state.auxFocused);
-  if (!state.auxFocused && !state.auxCollapsed) applyAuxPanelWidth(state.auxPanelWidth);
 }
 function bindAuxPanelResize() {
   const handle = el('auxSplitter');
@@ -5638,7 +5654,7 @@ function bindAuxPanelResize() {
   };
   handle.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
-    if (state.auxCollapsed || state.auxFocused) return;
+    if (state.auxCollapsed) return;
     event.preventDefault();
     const split = activeWorkbenchSplit();
     if (!split) return;
@@ -7359,7 +7375,8 @@ function appendSidebarProjectGroup(root, project) {
     for (const session of sessions) {
       const srow = document.createElement('button');
       srow.type = 'button';
-      srow.className = 'sr-session-row' + (state.snapshot?.session?.id === session.id && project.active ? ' active' : '');
+      const isRunning = runningSessionIds().has(session.id);
+      srow.className = 'sr-session-row' + (state.snapshot?.session?.id === session.id && project.active ? ' active' : '') + (isRunning ? ' running' : '');
       const label = conversationDisplayLabel(session, project.name);
       srow.title = label;
       const title = document.createElement('span');
@@ -7368,6 +7385,8 @@ function appendSidebarProjectGroup(root, project) {
       const time = document.createElement('span');
       time.className = 'sr-session-time';
       time.textContent = session.updatedAt ? formatRelativeTimeShort(session.updatedAt) : '';
+      if (isRunning) srow.appendChild(runningMark());
+      else if (state.sessionUnread.has(session.id)) { const dot = document.createElement('span'); dot.className = 'session-unread-dot'; srow.appendChild(dot); }
       srow.append(title, time);
       srow.addEventListener('click', () => {
         void openSidebarSession(project.activeWorkPath || project.path, session.id);
@@ -7684,6 +7703,7 @@ async function loadState() {
     if (requestVersion !== apiMutationVersion) {
       return loadState();
     }
+    updateSessionActivityIndicators(snapshot);
     state.snapshot = snapshot;
     state.loadError = null;
   } catch (error) {
@@ -7694,6 +7714,7 @@ async function loadState() {
   applyLoadedState();
 }
 function applyLoadedState() {
+  updateSessionActivityIndicators(state.snapshot);
   applyPreferences(state.snapshot.settings?.preferences);
   syncDefaultModelOnboarding();
   document.body.dataset.terminalCapable = state.snapshot.terminalCapable ? 'true' : 'false';
@@ -7710,7 +7731,11 @@ function applyLoadedState() {
   const foregroundIsCurrent = Boolean(
     foreground && (!state.snapshot.session?.id || foreground.sessionId === state.snapshot.session.id),
   );
-  state.running = Boolean(state.activeClientRequestId || state.recoveringRun || foregroundIsCurrent);
+  const clientRequestIsCurrent = Boolean(
+    state.activeClientRequestId
+      && (!state.activeRequestSessionId || state.activeRequestSessionId === state.snapshot.session?.id),
+  );
+  state.running = Boolean(clientRequestIsCurrent || state.recoveringRun || foregroundIsCurrent);
   setRunStatus(state.running ? 'Running' : readyLabel(), state.running ? 'running' : '');
   renderComposerMeta();
   renderPermissionPicker();
@@ -7729,6 +7754,7 @@ function applyLoadedState() {
   if (!el('workspaceModal').classList.contains('hidden')) renderWorkspaceChoices();
   if (!el('settingsModal').classList.contains('hidden')) renderSettingsCommandPanels();
   refreshProjectDetailSidebar();
+  if (state.conversationListOpen) renderConversationListDrawer();
 }
 function syncDefaultModelOnboarding() {
   const modal = el('defaultModelOnboarding');
@@ -8893,6 +8919,7 @@ async function activateResumedSession(snapshot, requestSequence) {
   stashCurrentSessionCache();
   state.snapshot = snapshot;
   state.activeSessionId = nextSessionId;
+  state.sessionUnread.delete(nextSessionId);
   if (transcriptCacheFresh(cached)) {
     state.lastHydratedMessages = cached.messages;
     applyLoadedState();
@@ -8908,9 +8935,9 @@ async function activateResumedSession(snapshot, requestSequence) {
 }
 async function reconcileResumedSession(id, requestSequence) {
   let attempt = 0;
-  while (requestSequence === sessionResumeSequence) {
+  while (requestSequence === sessionResumeSequence && attempt < 5) {
     try {
-      const res = await api('/api/session/active');
+      const res = await api('/api/session/active', { signal: AbortSignal.timeout(8_000) });
       if (!res.ok) throw new Error('Could not read the active conversation.');
       const payload = await res.json();
       const activeSession = payload?.session;
@@ -8933,6 +8960,9 @@ async function reconcileResumedSession(id, requestSequence) {
       await new Promise(resolve => setTimeout(resolve, Math.min(2000, 250 * (2 ** Math.min(attempt, 3)))));
     }
   }
+  if (requestSequence === sessionResumeSequence) {
+    flashStatus('Could not switch conversations. Please try again.');
+  }
 }
 async function performResumeSession(id, requestSequence) {
   try {
@@ -8942,7 +8972,7 @@ async function performResumeSession(id, requestSequence) {
       switchProjectView('conversation');
       return;
     }
-    const res = await api('/api/session/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) });
+    const res = await api('/api/session/resume', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }), signal: AbortSignal.timeout(15_000) });
     if (requestSequence !== sessionResumeSequence) return;
     if (!res.ok) {
       const message = (await res.text()) || 'Could not resume this conversation.';
@@ -8965,10 +8995,6 @@ async function performResumeSession(id, requestSequence) {
   }
 }
 function resumeSession(id) {
-  if (state.running) {
-    flashStatus('Stop the current foreground run before switching conversations.');
-    return Promise.resolve();
-  }
   if (state.sessionResumePending) {
     flashStatus('A conversation switch is already in progress.');
     return sessionResumeQueue;
@@ -8984,15 +9010,88 @@ function resumeSession(id) {
 ${GUI_SESSION_CREATE_CLIENT_SCRIPT}
 function setDetailConversationDrawer(open) {
   const sidebar = el('projectDetailSidebar');
+  const splitter = el('detailConvSplitter');
   const toggle = el('detailConversationsBtn');
+  const overlay = window.matchMedia('(max-width: 1120px)').matches;
   const expanded = Boolean(open && sidebar);
-  sidebar?.classList.toggle('mobile-open', expanded);
+  state.detailConversationOpen = expanded;
+  sidebar?.classList.toggle('mobile-open', expanded && overlay);
+  sidebar?.classList.toggle('desktop-collapsed', !expanded && !overlay);
+  splitter?.classList.toggle('hidden', !expanded && !overlay);
   toggle?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  toggle?.setAttribute('aria-label', expanded ? 'Hide conversations' : 'Show conversations');
+  toggle?.setAttribute('title', expanded ? 'Hide conversations' : 'Show conversations');
+  if (toggle) toggle.innerHTML = guiIcon(expanded ? 'panelLeft' : 'panelRight');
   if (expanded) requestAnimationFrame(() => el('detailConvSearch')?.focus());
 }
 function toggleDetailConversationDrawer() {
   const sidebar = el('projectDetailSidebar');
-  setDetailConversationDrawer(!sidebar?.classList.contains('mobile-open'));
+  const open = window.matchMedia('(max-width: 1120px)').matches
+    ? sidebar?.classList.contains('mobile-open')
+    : !sidebar?.classList.contains('desktop-collapsed');
+  setDetailConversationDrawer(!open);
+}
+function runningSessionIds() {
+  return new Set((state.snapshot?.runs || []).filter(run => run.status === 'running' && run.sessionId).map(run => run.sessionId));
+}
+function runningMark() {
+  const mark = document.createElement('span');
+  mark.className = 'session-running-mark';
+  mark.setAttribute('aria-label', 'Running');
+  mark.innerHTML = '<i></i><i></i><i></i>';
+  return mark;
+}
+function updateSessionActivityIndicators(snapshot) {
+  const next = new Set((snapshot?.runs || []).filter(run => run.status === 'running' && run.sessionId).map(run => run.sessionId));
+  for (const id of state.observedRunningSessions) {
+    if (!next.has(id) && id !== snapshot?.session?.id) state.sessionUnread.add(id);
+  }
+  state.observedRunningSessions = next;
+  const active = snapshot?.session?.id;
+  if (active) state.sessionUnread.delete(active);
+  try { localStorage.setItem('hadamard.gui.sessionUnread', JSON.stringify([...state.sessionUnread])); } catch { /* optional */ }
+}
+function setConversationListOpen(open) {
+  state.conversationListOpen = Boolean(open);
+  const drawer = el('conversationListDrawer');
+  const toggle = el('conversationListToggleBtn');
+  drawer?.classList.toggle('open', state.conversationListOpen);
+  drawer?.setAttribute('aria-hidden', state.conversationListOpen ? 'false' : 'true');
+  toggle?.setAttribute('aria-expanded', state.conversationListOpen ? 'true' : 'false');
+  toggle?.setAttribute('title', state.conversationListOpen ? 'Hide conversations' : 'Show conversations');
+  toggle?.setAttribute('aria-label', state.conversationListOpen ? 'Hide conversations' : 'Show conversations');
+  if (toggle) toggle.innerHTML = guiIcon(state.conversationListOpen ? 'panelLeft' : 'panelRight');
+  if (state.conversationListOpen) renderConversationListDrawer();
+}
+function renderConversationListDrawer() {
+  const root = el('conversationListRows');
+  if (!root) return;
+  root.textContent = '';
+  const query = (state.conversationListQuery || '').trim().toLowerCase();
+  const running = runningSessionIds();
+  const projectName = projectNameFromSnapshot();
+  const items = (state.snapshot?.sessions || []).filter(item => {
+    if (item.kind === 'manager') return false;
+    return !query || [item.title, item.brief, item.preview].filter(Boolean).join(' ').toLowerCase().includes(query);
+  });
+  for (const item of items) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    const isRunning = running.has(item.id);
+    row.className = 'conversation-list-row' + (item.id === state.snapshot?.session?.id ? ' active' : '') + (isRunning ? ' running' : '');
+    if (isRunning) row.appendChild(runningMark());
+    else if (state.sessionUnread.has(item.id)) { const dot = document.createElement('span'); dot.className = 'session-unread-dot'; row.appendChild(dot); }
+    const title = document.createElement('span');
+    title.className = 'csr-title';
+    title.textContent = conversationDisplayLabel(item, projectName);
+    const time = document.createElement('span');
+    time.className = 'csr-time';
+    time.textContent = item.updatedAt ? formatRelativeTimeShort(item.updatedAt) : '';
+    row.append(title, time);
+    row.addEventListener('click', () => { setConversationListOpen(false); void resumeSession(item.id); });
+    root.appendChild(row);
+  }
+  if (!items.length) { const empty = document.createElement('p'); empty.className = 'region-empty'; empty.textContent = 'No matching conversations.'; root.appendChild(empty); }
 }
 function refreshProjectDetailSidebar() {
   if (state.projectView !== 'detail') return;
@@ -9004,6 +9103,12 @@ function refreshProjectDetailSidebar() {
   }
   renderConvSidebarList();
   renderConvSidebarDetail();
+}
+function loadSessionIndicatorState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('hadamard.gui.sessionUnread') || '[]');
+    if (Array.isArray(saved)) state.sessionUnread = new Set(saved.filter(id => typeof id === 'string' && id));
+  } catch { state.sessionUnread = new Set(); }
 }
 async function switchProject(projectPath, view = 'conversation') {
   if (!projectPath) return false;
@@ -9656,6 +9761,7 @@ async function refreshSessionCenter() {
 function switchProjectView(view) {
   const prev = state.projectView;
   if (view !== 'detail') setDetailConversationDrawer(false);
+  if (view !== 'conversation') setConversationListOpen(false);
   if (prev === 'detail' && view !== 'detail') {
     if (state.projectDocDirty) void saveProjectDocNow();
     if (state.projectDocSaveTimer) { clearTimeout(state.projectDocSaveTimer); state.projectDocSaveTimer = null; }
@@ -10975,7 +11081,9 @@ function revealActiveProjectDetailTab() {
 window.addEventListener('resize', () => {
   requestAnimationFrame(revealActiveProjectDetailTab);
   requestAnimationFrame(positionModelPickerFlyout);
-  if (window.innerWidth > 1120) setDetailConversationDrawer(false);
+  if (window.innerWidth > 1120 && state.projectView === 'detail') {
+    setDetailConversationDrawer(state.detailConversationOpen);
+  }
 });
 function setProjectDetailTab(tab) {
   const allowed = { document: 1, issues: 1, agents: 1, settings: 1 };
@@ -12633,14 +12741,17 @@ function filteredDetailSessions() {
 }
 function buildCompactConvRow(item, opts) {
   const archived = Boolean(opts?.archived || item.archived);
+  const isRunning = runningSessionIds().has(item.id);
   const row = document.createElement('div');
-  row.className = 'conv-sidebar-row' + (item.id === state.detailSelectedId ? ' active' : '');
+  row.className = 'conv-sidebar-row' + (item.id === state.detailSelectedId ? ' active' : '') + (isRunning ? ' running' : '');
   row.dataset.sessionId = item.id;
   row.setAttribute('role', 'button');
   row.tabIndex = 0;
-  const dot = document.createElement('span');
-  dot.className = 'csr-dot' + (item.status === 'running' || (!archived && item.id === state.snapshot?.session?.id) ? '' : ' hidden');
-  dot.setAttribute('aria-hidden', 'true');
+  const indicator = isRunning ? runningMark() : document.createElement('span');
+  if (!isRunning) {
+    indicator.className = state.sessionUnread.has(item.id) ? 'session-unread-dot' : 'csr-dot hidden';
+    indicator.setAttribute('aria-hidden', 'true');
+  }
   const title = document.createElement('span');
   title.className = 'csr-title';
   const projectName = (state.snapshot?.projects || []).find((p) => p.active)?.name
@@ -12681,9 +12792,9 @@ function buildCompactConvRow(item, opts) {
     meta.append(issue);
   }
   meta.append(actions, time);
-  row.append(dot, title, meta);
+  row.append(indicator, title, meta);
   row.addEventListener('click', () => selectDetailConversation(item.id));
-  row.addEventListener('dblclick', () => { void resumeSession(item.id); });
+  row.addEventListener('dblclick', () => { state.sessionUnread.delete(item.id); void resumeSession(item.id); });
   row.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -13103,7 +13214,7 @@ function renderProjectDetail() {
   body.appendChild(projectWorkbench);
   mountWorkbenchTools('project');
   bindDetailSidebarResize(layout, sidebar, splitter);
-  setDetailConversationDrawer(false);
+  setDetailConversationDrawer(state.detailConversationOpen);
   const searchInput = el('detailConvSearch');
   if (searchInput) {
     searchInput.value = state.detailConvQuery || '';
@@ -13905,8 +14016,18 @@ async function refreshRail() {
     const res = await api('/api/runs');
     if (!res.ok) return;
     const st = await res.json();
-    if (state.snapshot) state.snapshot.runs = Array.isArray(st.runs) ? st.runs : (state.snapshot.runs || []);
+    if (state.snapshot) {
+      const nextSnapshot = Object.assign({}, state.snapshot, {
+        runs: Array.isArray(st.runs) ? st.runs : (state.snapshot.runs || []),
+        foregroundRunId: st.foregroundRunId ?? state.snapshot.foregroundRunId,
+      });
+      updateSessionActivityIndicators(nextSnapshot);
+      state.snapshot = nextSnapshot;
+    }
     renderContextRail();
+    renderProjects();
+    refreshProjectDetailSidebar();
+    if (state.conversationListOpen) renderConversationListDrawer();
   } catch { /* transient — keep last render */ }
 }
 let railReminderTimer = null;
@@ -22615,6 +22736,12 @@ async function sendText(text) {
   state.runRecoverySequence += 1;
   setRunStatus('Running', 'running');
   const sessionId = state.snapshot?.session?.id || state.activeSessionId || '';
+  const requestSessionId = sessionId;
+  state.activeRequestSessionId = requestSessionId;
+  state.observedRunningSessions.add(sessionId);
+  state.sessionUnread.delete(sessionId);
+  renderProjects();
+  if (state.conversationListOpen) renderConversationListDrawer();
   let serverAccepted = false;
   let terminalEventSeen = false;
   try {
@@ -22663,16 +22790,34 @@ async function sendText(text) {
     return;
   } finally {
     state.recoveringRun = false;
-    state.running = false;
+    const stillViewingRequestSession = (state.snapshot?.session?.id || state.activeSessionId || '') === requestSessionId;
+    state.running = stillViewingRequestSession ? false : Boolean(
+      (state.snapshot?.runs || []).some(run => run.status === 'running' && run.sessionId === (state.snapshot?.session?.id || state.activeSessionId)),
+    );
     if (state.activeClientRequestId === clientRequestId) state.activeClientRequestId = null;
-    setRunStatus(readyLabel());
+    if (state.activeRequestSessionId === requestSessionId) state.activeRequestSessionId = null;
+    if (stillViewingRequestSession) setRunStatus(readyLabel());
+    if (!stillViewingRequestSession) state.sessionUnread.add(requestSessionId);
+    state.observedRunningSessions.delete(requestSessionId);
+    void loadState();
     await processQueue();
   }
 }
 function handleEvent(event) {
+  const eventBelongsToVisibleSession = !state.activeRequestSessionId
+    || (state.snapshot?.session?.id || state.activeSessionId || '') === state.activeRequestSessionId;
   if (Number.isSafeInteger(event.sequence)) {
     if (event.sequence <= state.activeRunSequence) return;
     state.activeRunSequence = event.sequence;
+  }
+  if (!eventBelongsToVisibleSession) {
+    if (event.type === 'run.started' && event.runId) state.activeRunId = String(event.runId);
+    if (event.type === 'permission.request') showPermission(event);
+    if (event.type === 'done' || event.type === 'error') {
+      if (state.activeRequestSessionId) state.sessionUnread.add(state.activeRequestSessionId);
+      void loadState();
+    }
+    return;
   }
   const T = tx();
   if (event.type === 'user') {
@@ -26806,6 +26951,11 @@ el('overviewNewWorkspaceBtn').addEventListener('click', addWorkspace);
 el('overviewChatsBtn').addEventListener('click', () => switchProjectView('chats'));
 bindOverviewToolbar();
 el('backToOverviewBtn').addEventListener('click', () => switchProjectView('detail'));
+el('conversationListToggleBtn').addEventListener('click', () => setConversationListOpen(!state.conversationListOpen));
+el('conversationListSearch')?.addEventListener('input', (event) => {
+  state.conversationListQuery = event.target.value || '';
+  renderConversationListDrawer();
+});
 el('detailNewConversationBtn').addEventListener('click', () => createNewSession().catch(console.error));
 el('detailWorkPathSelect')?.addEventListener('change', (event) => {
   const next = event.target.value;
@@ -26825,10 +26975,6 @@ el('sessionCenterBack').addEventListener('click', () => switchProjectView('overv
 el('sessionCenterNew').addEventListener('click', async () => {
   const projectPath = el('sessionCenterProject')?.value || state.snapshot?.workDir;
   if (!projectPath) return;
-  if (state.running) {
-    flashStatus('Stop the current foreground run before starting a new conversation.');
-    return;
-  }
   if (state.sessionResumePending) {
     flashStatus('A conversation switch is already in progress.');
     return;
@@ -27078,7 +27224,6 @@ document.addEventListener('keydown', (event) => {
     closePermissionPicker();
     closeAddContextMenu();
     if (state.auxView) showAuxLauncher();
-    else if (state.auxFocused) toggleAuxFocus();
   }
   if (event.key === ' ' || event.code === 'Space') {
     if (!isTypingTarget(event.target) && isGraphEditorActive() && !teamModalOpen()) {
@@ -27187,14 +27332,14 @@ document.querySelectorAll('#auxLauncher [data-aux]').forEach((button) => {
   button.addEventListener('click', () => handleAuxAction(button.dataset.aux));
 });
 el('auxCloseBtn').addEventListener('click', () => showAuxLauncher());
-el('auxToggleBtn').addEventListener('click', () => toggleAuxPanel());
 el('auxPanelToggleBtn').addEventListener('click', () => toggleAuxPanel());
-el('auxFocusBtn').addEventListener('click', () => toggleAuxFocus());
+el('detailAuxPanelToggleBtn').addEventListener('click', () => toggleAuxPanel());
 el('terminalDockClose').addEventListener('click', () => {
   if (state.terminalHostMode === 'project') closeProjectTerminal();
   else closeTerminalDock();
 });
 loadAuxPanelWidth();
+loadSessionIndicatorState();
 applyAuxPanelWidth(activeWorkbenchLayout().auxWidth);
 applyTerminalDockHeight(activeWorkbenchLayout().terminalHeight);
 bindAuxPanelResize();
