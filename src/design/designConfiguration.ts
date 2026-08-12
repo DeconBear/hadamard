@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { writeJsonAtomic } from '../storage/atomicJsonWrite.js';
@@ -93,6 +93,7 @@ export class DesignConfigurationStore {
   }
 
   async save(configuration: DesignConfiguration): Promise<void> {
+    await mkdir(this.directory, { recursive: true });
     await writeJsonAtomic(this.path(), normalizeDesignConfiguration(configuration));
   }
 

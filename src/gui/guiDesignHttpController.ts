@@ -1,11 +1,12 @@
 import {
+  type DesignEntryMode,
   DesignDocumentService,
   type DesignImportAction,
   type DesignShareFormat,
   type EngineeringProfileTarget,
 } from '../design/index.js';
 import { escapeHtml } from '../ui/safeMarkdown.js';
-import { json, readJson, text, type GuiHttpRouter } from './guiHttpRouter.js';
+import { bytes, json, readJson, text, type GuiHttpRouter } from './guiHttpRouter.js';
 
 export interface GuiDesignHttpControllerOptions {
   createService(): DesignDocumentService;
@@ -19,6 +20,19 @@ function isImportAction(value: unknown): value is DesignImportAction {
 
 function isEngineeringTarget(value: unknown): value is EngineeringProfileTarget {
   return value === 'design' || value === 'agents' || value === 'policy' || value === 'validators';
+}
+
+function isDesignEntryMode(value: unknown): value is DesignEntryMode {
+  return value === 'html' || value === 'markdown';
+}
+
+function designAssetMediaType(filePath: string): string {
+  const extension = filePath.toLowerCase().split('.').at(-1) ?? '';
+  return ({
+    css: 'text/css', gif: 'image/gif', html: 'text/html', jpeg: 'image/jpeg', jpg: 'image/jpeg',
+    js: 'text/javascript', json: 'application/json', md: 'text/markdown', png: 'image/png',
+    svg: 'image/svg+xml', webp: 'image/webp', woff: 'font/woff', woff2: 'font/woff2',
+  } as Record<string, string>)[extension] ?? 'application/octet-stream';
 }
 
 function errorStatus(error: unknown): number {
@@ -70,8 +84,57 @@ export function registerGuiDesignHttpController(
   router.route('GET', '/api/design', async (_req, res) => {
     const service = options.createService();
     json(res, 200, {
-      ...(await service.read()), templates: service.templates.list(), themes: service.themes, profiles: service.profiles,
+      ...(await service.read()), workspace: await service.store.workspace.inspect(),
+      templates: service.templates.list(), themes: service.themes, profiles: service.profiles,
     });
+  });
+
+  router.route('GET', '/api/design/entry', async (_req, res, url) => {
+    try {
+      const mode = url.searchParams.get('mode');
+      if (!isDesignEntryMode(mode)) return json(res, 400, { error: 'mode must be html or markdown' });
+      json(res, 200, await options.createService().store.workspace.readEntry(mode));
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.route('POST', '/api/design/refresh', async (req, res) => {
+    try {
+      const body = await readJson(req);
+      if (!isDesignEntryMode(body.mode)) return json(res, 400, { error: 'mode must be html or markdown' });
+      json(res, 200, await options.createService().store.workspace.refreshEntry(body.mode));
+    } catch (error) {
+      json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.route('POST', '/api/design/entry', async (req, res) => {
+    try {
+      const body = await readJson(req);
+      if (!isDesignEntryMode(body.mode) || typeof body.content !== 'string') {
+        return json(res, 400, { error: 'mode and content are required' });
+      }
+      const workspace = options.createService().store.workspace;
+      const saved = body.mode === 'html'
+        ? await workspace.writeHtml(body.content, typeof body.expectedRevision === 'string' ? body.expectedRevision : undefined)
+        : await workspace.writeMarkdown(body.content, typeof body.expectedRevision === 'string' ? body.expectedRevision : undefined);
+      json(res, 200, { ok: true, entry: saved });
+    } catch (error) {
+      json(res, errorStatus(error), { error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.route('GET', '/api/design/asset', async (_req, res, url) => {
+    try {
+      const relativePath = url.searchParams.get('path');
+      if (!relativePath) return json(res, 400, { error: 'path is required' });
+      const workspace = options.createService().store.workspace;
+      const body = await workspace.readAsset(relativePath);
+      bytes(res, 200, body, designAssetMediaType(relativePath));
+    } catch (error) {
+      text(res, 404, error instanceof Error ? error.message : String(error));
+    }
   });
 
   router.route('POST', '/api/design/patch', async (req, res) => {

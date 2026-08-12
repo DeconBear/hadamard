@@ -1,5 +1,6 @@
 export * from './designDocumentService.js';
 export * from './designDocumentStore.js';
+export * from './designWorkspaceService.js';
 export * from './designConfiguration.js';
 export * from './designArtifactRepository.js';
 export * from './designImportCommitService.js';

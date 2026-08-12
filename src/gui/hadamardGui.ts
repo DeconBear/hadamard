@@ -7435,7 +7435,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   const httpRouter = new GuiHttpRouter();
   registerGuiShellHttpController(httpRouter, authToken);
   registerGuiDesignHttpController(httpRouter, {
-    createService: () => new DesignDocumentService(projectPrimaryPath, resolveGuiHomeDir(), workDir),
+    createService: () => new DesignDocumentService(projectPrimaryPath, resolveGuiHomeDir(), projectPrimaryPath),
   });
   registerGuiChatHttpController(httpRouter, {
     runtimeMutationInProgress: () => runtimeMutationInProgress,
