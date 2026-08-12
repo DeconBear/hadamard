@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { type DesignArtifactRepository, SqliteDesignArtifactRepository } from './designArtifactRepository.js';
 import { DesignConfigurationStore, type DesignConfiguration } from './designConfiguration.js';
-import { DesignDocumentStore, type DesignMigrationAction } from './designDocumentStore.js';
+import { DesignDocumentStore } from './designDocumentStore.js';
 import { DesignImportCommitService, type DesignImportAction } from './designImportCommitService.js';
 import { DesignImportExportService, type DesignImportPreview, type DesignTransferDocument } from './designImportExportService.js';
 import { DesignRenderService } from './designRenderService.js';
@@ -164,7 +164,4 @@ export class DesignDocumentService {
     );
   }
 
-  migrate(action: DesignMigrationAction) {
-    return this.store.migrate(action);
-  }
 }
