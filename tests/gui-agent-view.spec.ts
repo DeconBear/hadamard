@@ -110,6 +110,19 @@ describe('GUI Project Agent execution view', () => {
     expect(narrow).toContain('.project-detail-tabs::-webkit-scrollbar { display: none; }');
   });
 
+  it('reflows project document actions according to the available panel width', () => {
+    const css = createHadamardGuiStyles();
+    const compactStart = css.indexOf('@container project-detail-main (max-width: 680px)');
+    const compact = css.slice(compactStart, css.indexOf('.design-html-frame', compactStart));
+
+    expect(css).toContain('container-name: project-detail-main;');
+    expect(css).toContain('.project-detail > .region-header .region-titles { overflow: hidden; }');
+    expect(compactStart).toBeGreaterThan(-1);
+    expect(compact).toContain('.project-doc-actions { flex-wrap: wrap; row-gap: 6px; }');
+    expect(compact).toContain('flex: 1 1 100%; width: 100%; max-width: 100%;');
+    expect(compact).toContain('.project-doc-command-right { margin-left: 0; justify-content: flex-end; flex-wrap: wrap; }');
+  });
+
   it('guards polling and response commits to the visible project Agent tab', () => {
     const js = createHadamardGuiClientScript();
 
