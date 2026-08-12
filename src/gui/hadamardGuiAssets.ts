@@ -247,8 +247,8 @@ export function createHadamardGuiHtml(): string {
           <button id="auxPanelToggleBtn" class="icon-btn" title="Toggle side panel" aria-label="Toggle side panel" aria-pressed="true">${guiIcon('panelRight')}</button>
         </div>
       </header>
-      <div class="workbench">
-        <div class="workbench-split">
+      <div class="workbench" id="conversationWorkbench">
+        <div class="workbench-split" id="conversationWorkbenchSplit">
           <div class="workbench-chat">
             <section class="pane pane-chat active" id="pane-chat-default">
               <div class="chat-chrome">
@@ -381,6 +381,7 @@ export function createHadamardGuiHtml(): string {
           </aside>
         </div>
         <div class="terminal-dock hidden" id="terminalDock" aria-label="Terminal">
+          <div class="terminal-dock-splitter" id="terminalDockSplitter" role="separator" aria-orientation="horizontal" aria-label="Resize terminal" title="Drag to resize"></div>
           <header class="terminal-dock-header">
             <div class="terminal-dock-tabs" id="terminalDockTabs"></div>
             <button type="button" id="terminalDockClose" class="icon-btn" title="Close terminal" aria-label="Close terminal">${guiIcon('close')}</button>
@@ -2788,6 +2789,8 @@ body[data-sidebar-mode="nav"] .sidebar .sidebar-footer .nav-btn span:not(.nav-ic
 .workbench { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .workbench-split { flex: 1; min-height: 0; display: flex; }
 .workbench-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.project-workbench-primary { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.project-workbench-primary > .detail-layout { flex: 1; min-width: 0; }
 .workbench-chat .pane-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .aux-splitter { flex: 0 0 5px; width: 5px; cursor: col-resize; position: relative; background: var(--border); touch-action: none; align-self: stretch; z-index: 2; }
 .aux-splitter::after { content: ''; position: absolute; inset: 0 -3px; }
@@ -2869,11 +2872,17 @@ body[data-sidebar-mode="nav"] .sidebar .sidebar-footer .nav-btn span:not(.nav-ic
 .aux-browser-frame-host { flex: 1 1 auto; min-height: 240px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; }
 .aux-browser-frame { display: block; width: 100%; height: 100%; min-height: 240px; border: 0; }
 .aux-file-preview { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-muted); font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: calc(100% - 40px); overflow: auto; }
+.aux-file-editor-body { display: flex; flex-direction: column; overflow: hidden; }
+.aux-file-editor-path { flex: 0 0 auto; margin: 0 0 8px; font-size: 11.5px; word-break: break-all; }
+.aux-file-editor { flex: 1 1 auto; width: 100%; min-height: 0; resize: none; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--code-bg, var(--bg-app)); color: var(--text-1); font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; overflow: auto; }
 .aux-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aux-path-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .aux-path-bar input { flex: 1; min-width: 0; height: 30px; border: 1px solid var(--border); border-radius: 7px; padding: 0 10px; font-size: 12.5px; background: var(--bg-surface); color: var(--text-1); }
-.terminal-dock { flex: 0 0 260px; min-height: 160px; max-height: 45vh; display: flex; flex-direction: column; border-top: 1px solid var(--term-border); background: var(--term-bg); color: var(--term-fg); }
+.terminal-dock { flex: 0 0 var(--terminal-dock-height, 260px); height: var(--terminal-dock-height, 260px); min-height: 160px; max-height: 70vh; display: flex; flex-direction: column; border-top: 1px solid var(--term-border); background: var(--term-bg); color: var(--term-fg); }
 .terminal-dock.hidden { display: none !important; }
+.terminal-dock-splitter { flex: 0 0 5px; height: 5px; cursor: row-resize; background: var(--term-border); touch-action: none; position: relative; }
+.terminal-dock-splitter::after { content: ''; position: absolute; inset: -3px 0; }
+.terminal-dock-splitter:hover, .terminal-dock-splitter.dragging { background: var(--brand); opacity: .65; }
 .terminal-dock-header { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 2px 8px 2px 10px; background: var(--term-chrome); border-bottom: 1px solid var(--term-border); min-height: 32px; }
 .terminal-dock-tabs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; }
 .terminal-dock-tab { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 8px; border-radius: 6px; border: 0; background: transparent; color: var(--term-muted); font-size: 12px; }
@@ -5095,6 +5104,12 @@ const state = {
   auxCollapsed: false,
   auxFocused: false,
   auxPanelWidth: 340,
+  terminalDockHeight: 260,
+  activeWorkbenchSurface: 'conversation',
+  workbenchLayouts: {
+    conversation: { auxWidth: 340, terminalHeight: 260 },
+    project: { auxWidth: 340, terminalHeight: 260 },
+  },
   filesBrowsePath: null,
   browserUrl: 'https://',
   filesTreeExpanded: {},
@@ -5381,26 +5396,51 @@ function refreshOpenTerminalThemes() {
 }
 // --- Workbench aux panel + terminal dock (Codex-style) ---
 const AUX_PANEL_WIDTH_KEY = 'hadamard.gui.auxPanelWidth';
+const WORKBENCH_LAYOUT_KEY = 'hadamard.gui.workbenchLayouts';
 const AUX_PANEL_MIN_WIDTH = 240;
 const AUX_PANEL_MAX_WIDTH = 720;
+const TERMINAL_DOCK_MIN_HEIGHT = 160;
+const TERMINAL_DOCK_MAX_HEIGHT = 720;
+
+function activeWorkbench() {
+  return state.activeWorkbenchSurface === 'project' ? el('projectDetailWorkbench') : el('conversationWorkbench');
+}
+
+function activeWorkbenchSplit() {
+  return state.activeWorkbenchSurface === 'project' ? el('projectDetailWorkbenchSplit') : el('conversationWorkbenchSplit');
+}
+
+function activeWorkbenchLayout() {
+  return state.workbenchLayouts[state.activeWorkbenchSurface] || state.workbenchLayouts.conversation;
+}
 
 function loadAuxPanelWidth() {
   try {
-    const raw = Number(localStorage.getItem(AUX_PANEL_WIDTH_KEY));
-    if (Number.isFinite(raw) && raw >= AUX_PANEL_MIN_WIDTH) {
-      state.auxPanelWidth = Math.round(Math.min(AUX_PANEL_MAX_WIDTH, raw));
+    const parsed = JSON.parse(localStorage.getItem(WORKBENCH_LAYOUT_KEY) || '{}');
+    for (const surface of ['conversation', 'project']) {
+      const saved = parsed && parsed[surface];
+      if (!saved || typeof saved !== 'object') continue;
+      const auxWidth = Number(saved.auxWidth);
+      const terminalHeight = Number(saved.terminalHeight);
+      if (Number.isFinite(auxWidth)) state.workbenchLayouts[surface].auxWidth = Math.round(Math.max(AUX_PANEL_MIN_WIDTH, Math.min(AUX_PANEL_MAX_WIDTH, auxWidth)));
+      if (Number.isFinite(terminalHeight)) state.workbenchLayouts[surface].terminalHeight = Math.round(Math.max(TERMINAL_DOCK_MIN_HEIGHT, Math.min(TERMINAL_DOCK_MAX_HEIGHT, terminalHeight)));
+    }
+    const legacy = Number(localStorage.getItem(AUX_PANEL_WIDTH_KEY));
+    if (Number.isFinite(legacy) && legacy >= AUX_PANEL_MIN_WIDTH && !parsed?.conversation) {
+      state.workbenchLayouts.conversation.auxWidth = Math.round(Math.min(AUX_PANEL_MAX_WIDTH, legacy));
     }
   } catch { /* storage is optional */ }
 }
 
 function persistAuxPanelWidth() {
-  try { localStorage.setItem(AUX_PANEL_WIDTH_KEY, String(state.auxPanelWidth)); } catch { /* optional */ }
+  try { localStorage.setItem(WORKBENCH_LAYOUT_KEY, JSON.stringify(state.workbenchLayouts)); } catch { /* optional */ }
 }
 
 function applyAuxPanelWidth(width) {
   const next = Math.round(Math.max(AUX_PANEL_MIN_WIDTH, Math.min(AUX_PANEL_MAX_WIDTH, Number(width) || 340)));
   state.auxPanelWidth = next;
-  const split = document.querySelector('.workbench-split');
+  activeWorkbenchLayout().auxWidth = next;
+  const split = activeWorkbenchSplit();
   const panel = el('auxPanel');
   if (split) split.style.setProperty('--aux-panel-width', next + 'px');
   if (panel && !panel.classList.contains('collapsed') && !panel.classList.contains('focused')) {
@@ -5421,7 +5461,7 @@ function showAuxLauncher() {
 function syncAuxChrome() {
   const panel = el('auxPanel');
   if (panel) panel.classList.toggle('collapsed', state.auxCollapsed);
-  const split = document.querySelector('.workbench-split');
+  const split = activeWorkbenchSplit();
   if (split) split.classList.toggle('aux-collapsed', state.auxCollapsed);
   if (panel && (state.auxCollapsed || state.auxFocused)) {
     panel.style.width = '';
@@ -5463,7 +5503,7 @@ function toggleAuxPanel() {
     state.auxFocused = false;
     const panel = el('auxPanel');
     if (panel) panel.classList.remove('focused');
-    const workbench = document.querySelector('.workbench');
+    const workbench = activeWorkbench();
     if (workbench) workbench.classList.remove('aux-focused');
   }
   syncAuxChrome();
@@ -5472,23 +5512,24 @@ function toggleAuxFocus() {
   state.auxFocused = !state.auxFocused;
   const panel = el('auxPanel');
   if (panel) panel.classList.toggle('focused', state.auxFocused);
-  const workbench = document.querySelector('.workbench');
+  const workbench = activeWorkbench();
   if (workbench) workbench.classList.toggle('aux-focused', state.auxFocused);
-  const split = document.querySelector('.workbench-split');
+  const split = activeWorkbenchSplit();
   if (split) split.classList.toggle('aux-focused', state.auxFocused);
   if (!state.auxFocused && !state.auxCollapsed) applyAuxPanelWidth(state.auxPanelWidth);
 }
 function bindAuxPanelResize() {
   const handle = el('auxSplitter');
   const panel = el('auxPanel');
-  const split = document.querySelector('.workbench-split');
-  if (!handle || !panel || !split || handle.dataset.bound === '1') return;
+  if (!handle || !panel || handle.dataset.bound === '1') return;
   handle.dataset.bound = '1';
   let dragging = false;
   let startX = 0;
   let startWidth = 0;
   const onMove = (event) => {
     if (!dragging) return;
+    const split = activeWorkbenchSplit();
+    if (!split) return;
     const bounds = split.getBoundingClientRect();
     const maxByViewport = Math.min(AUX_PANEL_MAX_WIDTH, Math.floor(bounds.width * 0.7));
     const delta = startX - event.clientX; // dragging left widens the right panel
@@ -5499,7 +5540,7 @@ function bindAuxPanelResize() {
     if (!dragging) return;
     dragging = false;
     handle.classList.remove('dragging');
-    split.classList.remove('resizing-aux');
+    activeWorkbenchSplit()?.classList.remove('resizing-aux');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     persistAuxPanelWidth();
@@ -5510,6 +5551,8 @@ function bindAuxPanelResize() {
     if (event.button !== 0) return;
     if (state.auxCollapsed || state.auxFocused) return;
     event.preventDefault();
+    const split = activeWorkbenchSplit();
+    if (!split) return;
     dragging = true;
     startX = event.clientX;
     startWidth = panel.getBoundingClientRect().width;
@@ -6043,7 +6086,7 @@ async function renderAuxFiles(targetPath) {
         row.addEventListener('click', () => { renderAuxFiles(entry.path).catch(console.error); });
       } else {
         row.title = entry.path;
-        row.addEventListener('click', () => { renderAuxFilePreview(entry.path).catch(console.error); });
+        row.addEventListener('click', () => { renderAuxFileEditor(entry.path).catch(console.error); });
       }
       body.appendChild(row);
     }
@@ -7646,6 +7689,98 @@ function updateConversationSummary() {
     || snap.session?.model
     || 'default';
   el('workspace').textContent = (snap.workDir || '') + ' - ' + model + ' - ' + snap.permissionMode + ' - mode:' + (snap.agentMode || 'react') + ' - effort:' + snap.effort + ' - team:' + (snap.activeTeamName || 'none');
+}
+async function renderAuxFileEditor(filePath) {
+  const view = el('auxView');
+  if (!view) return;
+  view.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'aux-view-header';
+  const title = document.createElement('span');
+  title.className = 'aux-view-title';
+  title.textContent = filePath.split(/[\\/]/).pop() || 'File';
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.className = 'pill-btn';
+  backBtn.textContent = 'Files';
+  backBtn.addEventListener('click', () => { void renderAuxFiles(state.filesBrowsePath); });
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'pill-btn';
+  saveBtn.textContent = 'Save';
+  saveBtn.disabled = true;
+  head.append(title, backBtn, saveBtn);
+  const body = document.createElement('div');
+  body.className = 'aux-view-body aux-file-editor-body';
+  const loading = document.createElement('p');
+  loading.className = 'aux-empty muted';
+  loading.textContent = 'Loading...';
+  body.appendChild(loading);
+  view.append(head, body);
+  try {
+    const response = await api('/api/workspace-file?path=' + encodeURIComponent(filePath));
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Could not read file');
+    body.textContent = '';
+    const pathLabel = document.createElement('p');
+    pathLabel.className = 'muted aux-file-editor-path';
+    pathLabel.textContent = data.path || filePath;
+    body.appendChild(pathLabel);
+    if (data.binary || data.image) {
+      const note = document.createElement('p');
+      note.className = 'aux-empty muted';
+      note.textContent = 'Binary files are preview-only.';
+      body.appendChild(note);
+      return;
+    }
+    const editor = document.createElement('textarea');
+    editor.className = 'aux-file-editor';
+    editor.value = typeof data.text === 'string' ? data.text : '';
+    editor.readOnly = Boolean(data.truncated);
+    editor.spellcheck = false;
+    editor.wrap = 'off';
+    editor.setAttribute('aria-label', 'File editor');
+    body.appendChild(editor);
+    let savedText = editor.value;
+    editor.addEventListener('input', () => { saveBtn.disabled = editor.value === savedText; });
+    const save = async () => {
+      if (saveBtn.disabled || editor.readOnly) return;
+      saveBtn.disabled = true;
+      try {
+        const saveResponse = await api('/api/workspace-file', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ path: data.path || filePath, text: editor.value }),
+        });
+        const saved = await saveResponse.json().catch(() => ({}));
+        if (!saveResponse.ok) throw new Error(saved.error || 'Could not save file');
+        savedText = editor.value;
+        flashStatus('Saved ' + (data.path || filePath));
+      } catch (error) {
+        flashStatus(error && error.message ? error.message : 'Could not save file');
+      }
+      saveBtn.disabled = editor.value === savedText;
+    };
+    saveBtn.addEventListener('click', () => { void save(); });
+    editor.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void save();
+      }
+    });
+    if (data.truncated) {
+      const note = document.createElement('p');
+      note.className = 'muted';
+      note.textContent = 'Preview truncated; editing is disabled.';
+      body.appendChild(note);
+    }
+  } catch (error) {
+    body.textContent = '';
+    const note = document.createElement('p');
+    note.className = 'aux-empty muted';
+    note.textContent = error && error.message ? error.message : 'Could not read file.';
+    body.appendChild(note);
+  }
 }
 function renderComposerMeta() {
   const snap = state.snapshot || {};
@@ -9425,7 +9560,6 @@ function switchProjectView(view) {
     state.projectDocEditing = false;
     if (state.projectSettingsDirty) void saveProjectSettingsNow();
     if (state.projectSettingsSaveTimer) { clearTimeout(state.projectSettingsSaveTimer); state.projectSettingsSaveTimer = null; }
-    if (state.projectDetailTab === 'terminal' || state.terminalHostMode === 'project') parkTerminalDock();
     stopAgentExecutionPolling();
   }
   const ov = el('projectOverview');
@@ -9439,6 +9573,7 @@ function switchProjectView(view) {
   cv.classList.toggle('hidden', view !== 'conversation');
   document.body.dataset.sidebarMode = view === 'overview' || view === 'chats' ? 'nav' : 'full';
   state.projectView = view;
+  if (view === 'conversation') mountWorkbenchTools('conversation');
   if (view === 'conversation' && prev !== 'conversation') {
     requestAnimationFrame(forceScrollTranscriptToBottom);
   }
@@ -9689,6 +9824,16 @@ function updateProjectDocChrome() {
         ? '<div class="project-doc-inspector-note"><strong>Design rendering</strong><p>DESIGN.md remains Markdown source. The preview is generated from its template, theme, and section configuration.</p></div>'
         : '<div class="project-doc-inspector-note"><strong>Human-readable document</strong><p>Double-click the preview or choose Edit to update this file.</p></div>');
   }
+}
+
+function applyTerminalDockHeight(height) {
+  const workbench = activeWorkbench();
+  const dock = el('terminalDock');
+  const maxAvailable = workbench ? Math.max(TERMINAL_DOCK_MIN_HEIGHT, Math.floor(workbench.getBoundingClientRect().height * 0.7)) : TERMINAL_DOCK_MAX_HEIGHT;
+  const next = Math.round(Math.max(TERMINAL_DOCK_MIN_HEIGHT, Math.min(TERMINAL_DOCK_MAX_HEIGHT, maxAvailable, Number(height) || 260)));
+  state.terminalDockHeight = next;
+  activeWorkbenchLayout().terminalHeight = next;
+  if (dock) dock.style.setProperty('--terminal-dock-height', next + 'px');
 }
 function renderProjectDocPlanSelect(plans, currentPath) {
   const select = el('projectDocPlanSelect');
@@ -10677,19 +10822,15 @@ window.addEventListener('resize', () => {
   if (window.innerWidth > 1120) setDetailConversationDrawer(false);
 });
 function setProjectDetailTab(tab) {
-  const allowed = { document: 1, issues: 1, git: 1, terminal: 1, files: 1, agents: 1, settings: 1 };
+  const allowed = { document: 1, issues: 1, agents: 1, settings: 1 };
   const next = allowed[tab] ? tab : 'document';
   if (state.projectDetailTab === next) {
-    if (next === 'terminal') mountProjectTerminal();
-    else if (next === 'agents') void refreshAgentExecutions(true);
+    if (next === 'agents') void refreshAgentExecutions(true);
     else if (next === 'settings') void mountProjectSettingsPanel(false);
     return;
   }
   if (state.projectDetailTab === 'document' && state.projectDocDirty) void saveProjectDocNow();
   if (state.projectDetailTab === 'settings' && state.projectSettingsDirty) void saveProjectSettingsNow();
-  if (state.projectDetailTab === 'terminal' && next !== 'terminal') {
-    parkTerminalDock();
-  }
   if (next !== 'agents') stopAgentExecutionPolling();
   state.projectDetailTab = next;
   let activeTab = null;
@@ -10704,9 +10845,6 @@ function setProjectDetailTab(tab) {
   const panels = {
     document: el('projectDocumentPanel'),
     issues: el('projectIssuesPanel'),
-    git: el('projectGitPanel'),
-    terminal: el('projectTerminalPanel'),
-    files: el('projectFilesPanel'),
     agents: el('agentExecutionsPanel'),
     settings: el('projectSettingsPanel'),
   };
@@ -10715,23 +10853,30 @@ function setProjectDetailTab(tab) {
   }
   if (next === 'document') void mountProjectDoc(false);
   else if (next === 'issues') void loadProjectIssues(false);
-  else if (next === 'git') void renderProjectGitPanel(false);
-  else if (next === 'files') void renderProjectFilesPanel(false);
-  else if (next === 'terminal') mountProjectTerminal();
   else if (next === 'agents') void refreshAgentExecutions(true);
   else if (next === 'settings') void mountProjectSettingsPanel(false);
 }
-function workbenchHome() {
-  return document.querySelector('#projectConversation .workbench') || el('projectConversation');
+function mountWorkbenchTools(surface) {
+  const nextSurface = surface === 'project' ? 'project' : 'conversation';
+  const split = nextSurface === 'project' ? el('projectDetailWorkbenchSplit') : el('conversationWorkbenchSplit');
+  const workbench = nextSurface === 'project' ? el('projectDetailWorkbench') : el('conversationWorkbench');
+  const splitter = el('auxSplitter');
+  const panel = el('auxPanel');
+  const dock = el('terminalDock');
+  if (!split || !workbench || !splitter || !panel || !dock) return;
+  split.append(splitter, panel);
+  workbench.appendChild(dock);
+  state.activeWorkbenchSurface = nextSurface;
+  state.terminalHostMode = 'dock';
+  const layout = activeWorkbenchLayout();
+  applyAuxPanelWidth(layout.auxWidth);
+  applyTerminalDockHeight(layout.terminalHeight);
+  syncAuxChrome();
+  syncTerminalToggle();
+  requestAnimationFrame(refitActiveTerminal);
 }
 function parkTerminalDock() {
-  const dock = el('terminalDock');
-  const home = workbenchHome();
-  if (!dock || !home) return;
-  if (dock.parentElement !== home) home.appendChild(dock);
-  if (state.projectView !== 'conversation') dock.classList.add('hidden');
-  state.terminalHostMode = 'dock';
-  syncTerminalToggle();
+  mountWorkbenchTools(state.projectView === 'detail' ? 'project' : 'conversation');
 }
 function mountProjectTerminal() {
   const host = el('projectTerminalHost');
@@ -12473,7 +12618,8 @@ async function removeActiveProjectWorkPath() {
 }
 
 function renderProjectDetail() {
-  if (state.terminalHostMode === 'project') parkTerminalDock();
+  if (state.activeWorkbenchSurface === 'project') mountWorkbenchTools('conversation');
+  if (!['document', 'issues', 'agents', 'settings'].includes(state.projectDetailTab)) state.projectDetailTab = 'document';
   const name = projectNameFromSnapshot();
   const w = state.snapshot?.workDir || '';
   const bc = el('detailBreadcrumb');
@@ -12511,18 +12657,12 @@ function renderProjectDetail() {
   const detailTabs = [
     ['document', 'Document'],
     ['issues', 'Issues'],
-    ['git', 'Git'],
-    ['terminal', 'Terminal'],
-    ['files', 'Files'],
     ['agents', 'Agent monitor'],
     ['settings', 'Project settings'],
   ];
   const detailPanelIds = {
     document: 'projectDocumentPanel',
     issues: 'projectIssuesPanel',
-    git: 'projectGitPanel',
-    terminal: 'projectTerminalPanel',
-    files: 'projectFilesPanel',
     agents: 'agentExecutionsPanel',
     settings: 'projectSettingsPanel',
   };
@@ -12633,19 +12773,6 @@ function renderProjectDetail() {
   const issuesPanel = document.createElement('section');
   issuesPanel.id = 'projectIssuesPanel';
   issuesPanel.className = 'project-issues-panel' + (state.projectDetailTab === 'issues' ? '' : ' hidden');
-  const gitPanel = document.createElement('section');
-  gitPanel.id = 'projectGitPanel';
-  gitPanel.className = 'project-workbench-panel' + (state.projectDetailTab === 'git' ? '' : ' hidden');
-  const terminalPanel = document.createElement('section');
-  terminalPanel.id = 'projectTerminalPanel';
-  terminalPanel.className = 'project-workbench-panel project-terminal-panel' + (state.projectDetailTab === 'terminal' ? '' : ' hidden');
-  const terminalHost = document.createElement('div');
-  terminalHost.id = 'projectTerminalHost';
-  terminalHost.className = 'project-terminal-host';
-  terminalPanel.appendChild(terminalHost);
-  const filesPanel = document.createElement('section');
-  filesPanel.id = 'projectFilesPanel';
-  filesPanel.className = 'project-workbench-panel' + (state.projectDetailTab === 'files' ? '' : ' hidden');
   const agentsPanel = document.createElement('section');
   agentsPanel.id = 'agentExecutionsPanel';
   agentsPanel.className = 'project-workbench-panel agent-execution-panel' + (state.projectDetailTab === 'agents' ? '' : ' hidden');
@@ -12713,16 +12840,13 @@ function renderProjectDetail() {
   for (const [tabKey, panel] of Object.entries({
     document: docPanel,
     issues: issuesPanel,
-    git: gitPanel,
-    terminal: terminalPanel,
-    files: filesPanel,
     agents: agentsPanel,
     settings: settingsPanel,
   })) {
     panel.setAttribute('role', 'tabpanel');
     panel.setAttribute('aria-labelledby', 'projectTab' + tabKey.slice(0, 1).toUpperCase() + tabKey.slice(1));
   }
-  main.append(tabs, docPanel, issuesPanel, gitPanel, terminalPanel, filesPanel, agentsPanel, settingsPanel);
+  main.append(tabs, docPanel, issuesPanel, agentsPanel, settingsPanel);
   const sidebar = document.createElement('aside');
   sidebar.className = 'detail-sidebar';
   sidebar.id = 'projectDetailSidebar';
@@ -12759,7 +12883,19 @@ function renderProjectDetail() {
   sidebar.style.width = sidebarWidth + 'px';
   sidebar.style.flexBasis = sidebarWidth + 'px';
   layout.append(main, splitter, sidebar);
-  body.appendChild(layout);
+  const projectPrimary = document.createElement('div');
+  projectPrimary.className = 'project-workbench-primary';
+  projectPrimary.appendChild(layout);
+  const projectSplit = document.createElement('div');
+  projectSplit.className = 'workbench-split';
+  projectSplit.id = 'projectDetailWorkbenchSplit';
+  projectSplit.appendChild(projectPrimary);
+  const projectWorkbench = document.createElement('div');
+  projectWorkbench.className = 'workbench project-detail-workbench';
+  projectWorkbench.id = 'projectDetailWorkbench';
+  projectWorkbench.appendChild(projectSplit);
+  body.appendChild(projectWorkbench);
+  mountWorkbenchTools('project');
   bindDetailSidebarResize(layout, sidebar, splitter);
   setDetailConversationDrawer(false);
   const searchInput = el('detailConvSearch');
@@ -12773,9 +12909,6 @@ function renderProjectDetail() {
   renderConvSidebarList();
   renderConvSidebarDetail();
   if (state.projectDetailTab === 'issues') void loadProjectIssues(false);
-  else if (state.projectDetailTab === 'git') void renderProjectGitPanel(false);
-  else if (state.projectDetailTab === 'files') void renderProjectFilesPanel(false);
-  else if (state.projectDetailTab === 'terminal') mountProjectTerminal();
   else if (state.projectDetailTab === 'agents') void refreshAgentExecutions(true);
   else if (state.projectDetailTab === 'settings') void mountProjectSettingsPanel(false);
   else void mountProjectDoc(false);
@@ -14538,6 +14671,43 @@ function deviceScopePicker(selected, idPrefix) {
 function selectedDeviceScopes(container) {
   return Array.from(container.querySelectorAll('input[data-device-scope]:checked')).map(function (input) {
     return input.dataset.deviceScope;
+  });
+}
+
+function bindTerminalDockResize() {
+  const handle = el('terminalDockSplitter');
+  const dock = el('terminalDock');
+  if (!handle || !dock || handle.dataset.bound === '1') return;
+  handle.dataset.bound = '1';
+  let dragging = false;
+  let startY = 0;
+  let startHeight = 0;
+  const onMove = (event) => {
+    if (!dragging) return;
+    applyTerminalDockHeight(startHeight + startY - event.clientY);
+    refitActiveTerminal();
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    persistAuxPanelWidth();
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+  };
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    dragging = true;
+    startY = event.clientY;
+    startHeight = dock.getBoundingClientRect().height;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   });
 }
 
@@ -26807,8 +26977,10 @@ el('terminalDockClose').addEventListener('click', () => {
   else closeTerminalDock();
 });
 loadAuxPanelWidth();
-applyAuxPanelWidth(state.auxPanelWidth);
+applyAuxPanelWidth(activeWorkbenchLayout().auxWidth);
+applyTerminalDockHeight(activeWorkbenchLayout().terminalHeight);
 bindAuxPanelResize();
+bindTerminalDockResize();
 syncAuxChrome();
 syncTerminalToggle();
 async function initializeGui() {
