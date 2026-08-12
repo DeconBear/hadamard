@@ -15,7 +15,10 @@ function resolveElectronExecutable() {
   if (process.platform === 'win32') {
     const brandedLauncher = join(dirname(electronExe), 'Hadamard.exe');
     if (!existsSync(brandedLauncher)) {
-      const prep = spawnSync(process.execPath, [prepareLauncher], { stdio: 'inherit' });
+      const prep = spawnSync(process.execPath, [prepareLauncher], {
+        stdio: process.platform === 'win32' ? 'ignore' : 'inherit',
+        windowsHide: process.platform === 'win32',
+      });
       if (prep.status !== 0) {
         process.stderr.write(
           'Hadamard: branded launcher unavailable; taskbar may show the Electron icon.\n',
@@ -28,20 +31,28 @@ function resolveElectronExecutable() {
 }
 
 const electron = resolveElectronExecutable();
+const windowsGuiLaunch = process.platform === 'win32';
 
 const child = spawn(electron, [main, ...process.argv.slice(2)], {
-  stdio: 'inherit',
+  stdio: windowsGuiLaunch ? 'ignore' : 'inherit',
   env: {
     ...process.env,
     HADAMARD_GUI_ROOT: rootDir,
   },
-  windowsHide: false,
+  windowsHide: windowsGuiLaunch,
+  detached: windowsGuiLaunch,
 });
 
-child.on('exit', (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  process.exit(code ?? 0);
-});
+if (windowsGuiLaunch) {
+  // The Windows desktop app owns its own lifetime. Detach the GUI so the
+  // Node launcher can exit immediately without leaving a console window.
+  child.unref();
+} else {
+  child.on('exit', (code, signal) => {
+    if (signal) process.kill(process.pid, signal);
+    process.exit(code ?? 0);
+  });
+}
 
 child.on('error', (error) => {
   console.error('Failed to start hadamard-gui:', error);
