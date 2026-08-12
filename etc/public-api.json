@@ -1055,7 +1055,7 @@
       {
         "name": "createExaSearchTool",
         "kind": "function",
-        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"pdf\" | \"news\" | \"github\" | \"company\" | \"research paper\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
+        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"news\" | \"github\" | \"company\" | \"research paper\" | \"pdf\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
       },
       {
         "name": "createExitWorktreeTool",
@@ -1535,7 +1535,22 @@
       {
         "name": "DESIGN_FILE_NAME",
         "kind": "value",
-        "signature": "DESIGN_FILE_NAME = \"DESIGN.md\""
+        "signature": "DESIGN_FILE_NAME = \"design.md\""
+      },
+      {
+        "name": "DESIGN_HTML_FILE_NAME",
+        "kind": "value",
+        "signature": "DESIGN_HTML_FILE_NAME = \"design.html\""
+      },
+      {
+        "name": "DESIGN_MARKDOWN_FILE_NAME",
+        "kind": "value",
+        "signature": "DESIGN_MARKDOWN_FILE_NAME = \"design.md\""
+      },
+      {
+        "name": "DESIGN_WORKSPACE_DIRECTORY",
+        "kind": "value",
+        "signature": "DESIGN_WORKSPACE_DIRECTORY: string"
       },
       {
         "name": "DesignArtifact",
@@ -1565,7 +1580,7 @@
       {
         "name": "DesignDocumentService",
         "kind": "class",
-        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly shares: DesignShareService;\nreadonly engineeringProfiles: EngineeringProfileService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: \"empty\" | \"design\";\ndesignPath: string;\ndesignContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\n}"
+        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly engineeringProfiles: EngineeringProfileService;\nreadonly workspaceBundles: DesignWorkspaceBundleService;\nconstructor(projectPath: string, homeDir: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: \"empty\" | \"design\";\ndesignPath: string;\ndesignContent?: string;\n}>;\npatch(content: string, expectedRevision?: string): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\n}"
       },
       {
         "name": "DesignDocumentServiceOptions",
@@ -1580,7 +1595,12 @@
       {
         "name": "DesignDocumentStore",
         "kind": "class",
-        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly homeDir: string;\nprivate readonly workspacePath;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\nmirror?: boolean;\n}): Promise<string>;\n}"
+        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly workspace: DesignWorkspaceService;\nconstructor(projectPath: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\n}): Promise<string>;\n}"
+      },
+      {
+        "name": "DesignEntryMode",
+        "kind": "type",
+        "signature": "export type DesignEntryMode = 'html' | 'markdown';"
       },
       {
         "name": "DesignFrontmatter",
@@ -1683,24 +1703,14 @@
         "signature": "export declare class DesignRenderService {\nrender(source: string, overrides?: Partial<DesignThemeTokens>, sections?: DesignRenderSections): DesignRenderResult;\n}"
       },
       {
-        "name": "DesignShareFormat",
-        "kind": "type",
-        "signature": "export type DesignShareFormat = 'html' | 'pdf' | 'package';"
-      },
-      {
-        "name": "DesignShareService",
-        "kind": "class",
-        "signature": "export declare class DesignShareService {\nprivate readonly ledgerPath;\nprivate readonly artifacts;\nprivate readonly transfers;\nconstructor(ledgerPath: string, artifacts: DesignArtifactRepository, transfers: DesignImportExportService);\nprivate load;\nprivate save;\ncreate(document: DesignTransferDocument, revision: string, expiresInHours?: number, now?: Date, sourceBaseUrl?: string): Promise<{\ntoken: string;\nsnapshot: Omit<DesignShareSnapshot, 'tokenHash'>;\n}>;\nresolve(token: string, now?: Date): Promise<Omit<DesignShareSnapshot, 'tokenHash'>>;\ndownload(token: string, format: DesignShareFormat, now?: Date): Promise<{\nsnapshot: Omit<DesignShareSnapshot, \"tokenHash\">;\nreference: {\nid: string;\nchecksum: string;\nmediaType: string;\nfileName: string;\n};\nbytes: Buffer<ArrayBufferLike>;\n}>;\nrevoke(token: string, now?: Date): Promise<void>;\n}"
-      },
-      {
-        "name": "DesignShareSnapshot",
-        "kind": "interface",
-        "signature": "export interface DesignShareSnapshot {\nsnapshotId: string;\ndocumentId: string;\nrevision: string;\nexportedAt: string;\nexpiresAt: string;\nrevokedAt?: string;\ntokenHash: string;\npermission: 'design.snapshot.read';\nartifacts: Record<DesignShareFormat, {\nid: string;\nchecksum: string;\nmediaType: string;\nfileName: string;\n}>;\n}"
-      },
-      {
         "name": "DesignTemplate",
         "kind": "interface",
         "signature": "export interface DesignTemplate {\nid: string;\nversion: number;\nname: string;\ndescription: string;\nengineeringProfileId: string;\nsections: readonly DesignTemplateSection[];\n}"
+      },
+      {
+        "name": "DesignTemplateBundleSummary",
+        "kind": "interface",
+        "signature": "export interface DesignTemplateBundleSummary {\nid: string;\nversion: number;\nname: string;\ndescription: string;\ncategory: string;\nentries: Array<'markdown' | 'html'>;\nthumbnail: string;\n}"
       },
       {
         "name": "DesignTemplateRegistry",
@@ -1726,6 +1736,51 @@
         "name": "DesignTransferDocument",
         "kind": "interface",
         "signature": "export interface DesignTransferDocument {\nmarkdown: string;\nconfiguration: DesignConfiguration;\nassets?: DesignPackageAsset[];\n}"
+      },
+      {
+        "name": "DesignWorkspaceAsset",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceAsset {\npath: string;\nrelativePath: string;\nsize: number;\nmodifiedAt: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceBundleExport",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceBundleExport {\nfileName: 'design.hadamard-design.zip';\nmediaType: 'application/vnd.hadamard.design-workspace+zip';\nbytes: Buffer;\nchecksum: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceBundleFile",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceBundleFile {\npath: string;\nmediaType: string;\nbytes: Buffer;\nsha256: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceBundlePreview",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceBundlePreview {\nkind: 'hadamard-workspace-bundle';\neditable: true;\nchecksum: string;\nwarnings: string[];\nfiles: DesignWorkspaceBundleFile[];\nchanges: DesignWorkspaceFileChange[];\n}"
+      },
+      {
+        "name": "DesignWorkspaceBundleService",
+        "kind": "class",
+        "signature": "export declare class DesignWorkspaceBundleService {\nprivate readonly workspace;\nprivate readonly templates;\nprivate readonly generatorVersion;\nconstructor(workspace: DesignWorkspaceService, templates: DesignTemplateRegistry, generatorVersion?: string);\nlistTemplates(): DesignTemplateBundleSummary[];\ntemplatePreview(id: string): {\ntemplate: DesignTemplateBundleSummary;\nhtml: string;\nmarkdown: string;\nchanges: DesignWorkspaceFileChange[];\n};\npreviewTemplateApply(id: string): Promise<ReturnType<DesignWorkspaceBundleService['templatePreview']>>;\napplyTemplate(id: string, confirmed: boolean, expectedChanges?: readonly DesignWorkspaceFileChange[]): Promise<DesignWorkspaceFileChange[]>;\nexport(now?: Date): Promise<DesignWorkspaceBundleExport>;\npreview(bytes: Buffer): Promise<DesignWorkspaceBundlePreview>;\napply(preview: DesignWorkspaceBundlePreview, confirmed: boolean, expectedChanges?: readonly DesignWorkspaceFileChange[]): Promise<DesignWorkspaceFileChange[]>;\nprivate changesFor;\nprivate assertFiles;\nprivate assertUnchanged;\n}"
+      },
+      {
+        "name": "DesignWorkspaceEntry",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceEntry {\nmode: DesignEntryMode;\npath: string;\nexists: boolean;\nrevision: string;\nsize: number;\nmodifiedAt?: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceFileChange",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceFileChange {\npath: string;\naction: 'add' | 'overwrite' | 'unchanged' | 'preserve';\nbeforeRevision?: string;\nafterRevision: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceInspection",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceInspection {\nprimaryWorkspacePath: string;\nrootPath: string;\nentries: Record<DesignEntryMode, DesignWorkspaceEntry>;\n}"
+      },
+      {
+        "name": "DesignWorkspaceService",
+        "kind": "class",
+        "signature": "export declare class DesignWorkspaceService {\nreadonly primaryWorkspacePath: string;\nconstructor(primaryWorkspacePath: string);\nrootPath(): string;\nentryPath(mode: DesignEntryMode): string;\nensureRoot(): Promise<string>;\ninspect(): Promise<DesignWorkspaceInspection>;\nreadEntry(mode: DesignEntryMode): Promise<DesignWorkspaceEntry & {\ncontent: string;\n}>;\nrefreshEntry(mode: DesignEntryMode): Promise<DesignWorkspaceEntry & {\ncontent: string;\n}>;\nwriteMarkdown(content: string, expectedRevision?: string): Promise<DesignWorkspaceEntry & {\ncontent: string;\n}>;\nwriteHtml(content: string, expectedRevision?: string): Promise<DesignWorkspaceEntry & {\ncontent: string;\n}>;\nlistAssets(): Promise<DesignWorkspaceAsset[]>;\nreadAsset(relativePath: string): Promise<Buffer>;\nwriteFile(relativePath: string, content: Buffer | string): Promise<DesignWorkspaceAsset>;\nprivate ensureSafeDirectory;\nresolveAssetPath(relativePath: string): string;\nprivate writeEntry;\nprivate inspectEntry;\nprivate assertNoSymlink;\n}"
       },
       {
         "name": "detectBridgeProviders",
@@ -4535,7 +4590,7 @@
       {
         "name": "ManagerConfig",
         "kind": "interface",
-        "signature": "export interface ManagerConfig {\nmodel?: string;\nbridgeConfig?: string;\nreadScope: ManagerReadScope;\nallowedReadPaths: string[];\nmirrorDesignToWorkspace: boolean;\nmirrorProgressToWorkspace?: boolean;\npromptOverride?: string;\nactiveSessionId?: string;\n}"
+        "signature": "export interface ManagerConfig {\nmodel?: string;\nbridgeConfig?: string;\nreadScope: ManagerReadScope;\nallowedReadPaths: string[];\npromptOverride?: string;\nactiveSessionId?: string;\n}"
       },
       {
         "name": "managerConfigPath",
@@ -4551,11 +4606,6 @@
         "name": "managerPlanPath",
         "kind": "function",
         "signature": "export declare function managerPlanPath(workDir: string, homeDir: string): string;"
-      },
-      {
-        "name": "managerProgressPath",
-        "kind": "value",
-        "signature": "managerProgressPath: typeof managerDesignPath"
       },
       {
         "name": "ManagerReadScope",
@@ -5311,11 +5361,6 @@
         "name": "readProfilesFromAgentDefinitions",
         "kind": "function",
         "signature": "export declare function readProfilesFromAgentDefinitions(homeDir?: string): AgentProfile[];"
-      },
-      {
-        "name": "readProgressFile",
-        "kind": "value",
-        "signature": "readProgressFile: typeof readDesignFile"
       },
       {
         "name": "readProjectMemorySettingsPatch",
@@ -6198,11 +6243,6 @@
         "signature": "export declare function shouldIncludeGitHubDigest(instruction?: string): boolean;"
       },
       {
-        "name": "shouldMirrorDesignToWorkspace",
-        "kind": "function",
-        "signature": "export declare function shouldMirrorDesignToWorkspace(config: ManagerConfig): boolean;"
-      },
-      {
         "name": "SignedDeviceLinkRequest",
         "kind": "interface",
         "signature": "export interface SignedDeviceLinkRequest extends AppServerRequestV2 {\nauth: DeviceLinkRequestAuth;\n}"
@@ -6976,11 +7016,6 @@
         "name": "writeManagerConfig",
         "kind": "function",
         "signature": "export declare function writeManagerConfig(workDir: string, homeDir: string, config: ManagerConfig): Promise<void>;"
-      },
-      {
-        "name": "writeProgressFile",
-        "kind": "value",
-        "signature": "writeProgressFile: typeof writeDesignFile"
       },
       {
         "name": "writeProjectPlanFile",
@@ -10206,7 +10241,7 @@
       {
         "name": "createExaSearchTool",
         "kind": "function",
-        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"pdf\" | \"news\" | \"github\" | \"company\" | \"research paper\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
+        "signature": "export declare function createExaSearchTool(options?: CreateExaSearchToolOptions): import(\"../types.js\").AgentToolDefinition<{\nquery: string;\ntype: \"auto\" | \"deep\" | \"fast\" | \"instant\" | \"deep-lite\" | \"deep-reasoning\";\nnum_results: number;\ninclude_text: boolean;\ninclude_highlights: boolean;\ncategory?: \"news\" | \"github\" | \"company\" | \"research paper\" | \"pdf\" | \"tweet\" | \"personal site\" | \"linkedin profile\" | \"financial report\" | undefined;\ninclude_domains?: string[] | undefined;\nexclude_domains?: string[] | undefined;\n}, string>;"
       },
       {
         "name": "createExitWorktreeTool",
@@ -10686,7 +10721,22 @@
       {
         "name": "DESIGN_FILE_NAME",
         "kind": "value",
-        "signature": "DESIGN_FILE_NAME = \"DESIGN.md\""
+        "signature": "DESIGN_FILE_NAME = \"design.md\""
+      },
+      {
+        "name": "DESIGN_HTML_FILE_NAME",
+        "kind": "value",
+        "signature": "DESIGN_HTML_FILE_NAME = \"design.html\""
+      },
+      {
+        "name": "DESIGN_MARKDOWN_FILE_NAME",
+        "kind": "value",
+        "signature": "DESIGN_MARKDOWN_FILE_NAME = \"design.md\""
+      },
+      {
+        "name": "DESIGN_WORKSPACE_DIRECTORY",
+        "kind": "value",
+        "signature": "DESIGN_WORKSPACE_DIRECTORY: string"
       },
       {
         "name": "DesignArtifact",
@@ -10716,7 +10766,7 @@
       {
         "name": "DesignDocumentService",
         "kind": "class",
-        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly shares: DesignShareService;\nreadonly engineeringProfiles: EngineeringProfileService;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: \"empty\" | \"design\";\ndesignPath: string;\ndesignContent?: string;\n}>;\npatch(content: string, expectedRevision?: string, mirror?: boolean): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\n}"
+        "signature": "export declare class DesignDocumentService {\nreadonly store: DesignDocumentStore;\nreadonly configurations: DesignConfigurationStore;\nreadonly templates: import(\"./designTemplateRegistry.js\").DesignTemplateRegistry;\nreadonly themes: readonly import(\"./designTheme.js\").DesignTheme[];\nreadonly profiles: readonly import(\"./engineeringProfiles.js\").EngineeringProfile[];\nreadonly renderer: DesignRenderService;\nreadonly transfers: DesignImportExportService;\nreadonly artifacts: DesignArtifactRepository;\nreadonly imports: DesignImportCommitService;\nreadonly engineeringProfiles: EngineeringProfileService;\nreadonly workspaceBundles: DesignWorkspaceBundleService;\nconstructor(projectPath: string, homeDir: string, options?: DesignDocumentServiceOptions);\nconfiguration(): Promise<DesignConfiguration>;\ntransferDocument(content?: string): Promise<DesignTransferDocument>;\nread(): Promise<{\nparsed: import(\"./designSchema.js\").ParsedDesignDocument;\nconfiguration: DesignConfiguration;\ncontent: string;\nrevision: string;\nstate: \"empty\" | \"design\";\ndesignPath: string;\ndesignContent?: string;\n}>;\npatch(content: string, expectedRevision?: string): Promise<string>;\npatchConfiguration(patch: {\ntemplateId?: string;\nthemeId?: string;\nthemeTokens?: Partial<DesignThemeTokens>;\nsectionOrder?: string[];\nhiddenSections?: string[];\n}, expectedRevision?: string): Promise<DesignConfiguration>;\nrender(content: string): Promise<import(\"./designRenderService.js\").DesignRenderResult>;\npreviewImport(bytes: Buffer, fileName: string): DesignImportPreview;\ncommitImport(bytes: Buffer, fileName: string, action: DesignImportAction, expectedRevision: string): Promise<import(\"./designImportCommitService.js\").DesignImportCommitResult>;\nattachReference(bytes: Buffer, fileName: string): Promise<import(\"./designArtifactRepository.js\").DesignArtifact>;\n}"
       },
       {
         "name": "DesignDocumentServiceOptions",
@@ -10731,7 +10781,12 @@
       {
         "name": "DesignDocumentStore",
         "kind": "class",
-        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly homeDir: string;\nprivate readonly workspacePath;\nconstructor(projectPath: string, homeDir: string, workspacePath?: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\nmirror?: boolean;\n}): Promise<string>;\n}"
+        "signature": "export declare class DesignDocumentStore {\nreadonly projectPath: string;\nreadonly workspace: DesignWorkspaceService;\nconstructor(projectPath: string);\ndirectory(): string;\ndesignPath(): string;\ninspect(): Promise<DesignDocumentSnapshot>;\nwrite(content: string, options?: {\nexpectedRevision?: string;\n}): Promise<string>;\n}"
+      },
+      {
+        "name": "DesignEntryMode",
+        "kind": "type",
+        "signature": "export type DesignEntryMode = 'html' | 'markdown';"
       },
       {
         "name": "DesignFrontmatter",
@@ -10834,24 +10889,14 @@
         "signature": "export declare class DesignRenderService {\nrender(source: string, overrides?: Partial<DesignThemeTokens>, sections?: DesignRenderSections): DesignRenderResult;\n}"
       },
       {
-        "name": "DesignShareFormat",
-        "kind": "type",
-        "signature": "export type DesignShareFormat = 'html' | 'pdf' | 'package';"
-      },
-      {
-        "name": "DesignShareService",
-        "kind": "class",
-        "signature": "export declare class DesignShareService {\nprivate readonly ledgerPath;\nprivate readonly artifacts;\nprivate readonly transfers;\nconstructor(ledgerPath: string, artifacts: DesignArtifactRepository, transfers: DesignImportExportService);\nprivate load;\nprivate save;\ncreate(document: DesignTransferDocument, revision: string, expiresInHours?: number, now?: Date, sourceBaseUrl?: string): Promise<{\ntoken: string;\nsnapshot: Omit<DesignShareSnapshot, 'tokenHash'>;\n}>;\nresolve(token: string, now?: Date): Promise<Omit<DesignShareSnapshot, 'tokenHash'>>;\ndownload(token: string, format: DesignShareFormat, now?: Date): Promise<{\nsnapshot: Omit<DesignShareSnapshot, \"tokenHash\">;\nreference: {\nid: string;\nchecksum: string;\nmediaType: string;\nfileName: string;\n};\nbytes: Buffer<ArrayBufferLike>;\n}>;\nrevoke(token: string, now?: Date): Promise<void>;\n}"
-      },
-      {
-        "name": "DesignShareSnapshot",
-        "kind": "interface",
-        "signature": "export interface DesignShareSnapshot {\nsnapshotId: string;\ndocumentId: string;\nrevision: string;\nexportedAt: string;\nexpiresAt: string;\nrevokedAt?: string;\ntokenHash: string;\npermission: 'design.snapshot.read';\nartifacts: Record<DesignShareFormat, {\nid: string;\nchecksum: string;\nmediaType: string;\nfileName: string;\n}>;\n}"
-      },
-      {
         "name": "DesignTemplate",
         "kind": "interface",
         "signature": "export interface DesignTemplate {\nid: string;\nversion: number;\nname: string;\ndescription: string;\nengineeringProfileId: string;\nsections: readonly DesignTemplateSection[];\n}"
+      },
+      {
+        "name": "DesignTemplateBundleSummary",
+        "kind": "interface",
+        "signature": "export interface DesignTemplateBundleSummary {\nid: string;\nversion: number;\nname: string;\ndescription: string;\ncategory: string;\nentries: Array<'markdown' | 'html'>;\nthumbnail: string;\n}"
       },
       {
         "name": "DesignTemplateRegistry",
@@ -10877,6 +10922,51 @@
         "name": "DesignTransferDocument",
         "kind": "interface",
         "signature": "export interface DesignTransferDocument {\nmarkdown: string;\nconfiguration: DesignConfiguration;\nassets?: DesignPackageAsset[];\n}"
+      },
+      {
+        "name": "DesignWorkspaceAsset",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceAsset {\npath: string;\nrelativePath: string;\nsize: number;\nmodifiedAt: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceBundleExport",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceBundleExport {\nfileName: 'design.hadamard-design.zip';\nmediaType: 'application/vnd.hadamard.design-workspace+zip';\nbytes: Buffer;\nchecksum: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceBundleFile",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceBundleFile {\npath: string;\nmediaType: string;\nbytes: Buffer;\nsha256: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceBundlePreview",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceBundlePreview {\nkind: 'hadamard-workspace-bundle';\neditable: true;\nchecksum: string;\nwarnings: string[];\nfiles: DesignWorkspaceBundleFile[];\nchanges: DesignWorkspaceFileChange[];\n}"
+      },
+      {
+        "name": "DesignWorkspaceBundleService",
+        "kind": "class",
+        "signature": "export declare class DesignWorkspaceBundleService {\nprivate readonly workspace;\nprivate readonly templates;\nprivate readonly generatorVersion;\nconstructor(workspace: DesignWorkspaceService, templates: DesignTemplateRegistry, generatorVersion?: string);\nlistTemplates(): DesignTemplateBundleSummary[];\ntemplatePreview(id: string): {\ntemplate: DesignTemplateBundleSummary;\nhtml: string;\nmarkdown: string;\nchanges: DesignWorkspaceFileChange[];\n};\npreviewTemplateApply(id: string): Promise<ReturnType<DesignWorkspaceBundleService['templatePreview']>>;\napplyTemplate(id: string, confirmed: boolean, expectedChanges?: readonly DesignWorkspaceFileChange[]): Promise<DesignWorkspaceFileChange[]>;\nexport(now?: Date): Promise<DesignWorkspaceBundleExport>;\npreview(bytes: Buffer): Promise<DesignWorkspaceBundlePreview>;\napply(preview: DesignWorkspaceBundlePreview, confirmed: boolean, expectedChanges?: readonly DesignWorkspaceFileChange[]): Promise<DesignWorkspaceFileChange[]>;\nprivate changesFor;\nprivate assertFiles;\nprivate assertUnchanged;\n}"
+      },
+      {
+        "name": "DesignWorkspaceEntry",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceEntry {\nmode: DesignEntryMode;\npath: string;\nexists: boolean;\nrevision: string;\nsize: number;\nmodifiedAt?: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceFileChange",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceFileChange {\npath: string;\naction: 'add' | 'overwrite' | 'unchanged' | 'preserve';\nbeforeRevision?: string;\nafterRevision: string;\n}"
+      },
+      {
+        "name": "DesignWorkspaceInspection",
+        "kind": "interface",
+        "signature": "export interface DesignWorkspaceInspection {\nprimaryWorkspacePath: string;\nrootPath: string;\nentries: Record<DesignEntryMode, DesignWorkspaceEntry>;\n}"
+      },
+      {
+        "name": "DesignWorkspaceService",
+        "kind": "class",
+        "signature": "export declare class DesignWorkspaceService {\nreadonly primaryWorkspacePath: string;\nconstructor(primaryWorkspacePath: string);\nrootPath(): string;\nentryPath(mode: DesignEntryMode): string;\nensureRoot(): Promise<string>;\ninspect(): Promise<DesignWorkspaceInspection>;\nreadEntry(mode: DesignEntryMode): Promise<DesignWorkspaceEntry & {\ncontent: string;\n}>;\nrefreshEntry(mode: DesignEntryMode): Promise<DesignWorkspaceEntry & {\ncontent: string;\n}>;\nwriteMarkdown(content: string, expectedRevision?: string): Promise<DesignWorkspaceEntry & {\ncontent: string;\n}>;\nwriteHtml(content: string, expectedRevision?: string): Promise<DesignWorkspaceEntry & {\ncontent: string;\n}>;\nlistAssets(): Promise<DesignWorkspaceAsset[]>;\nreadAsset(relativePath: string): Promise<Buffer>;\nwriteFile(relativePath: string, content: Buffer | string): Promise<DesignWorkspaceAsset>;\nprivate ensureSafeDirectory;\nresolveAssetPath(relativePath: string): string;\nprivate writeEntry;\nprivate inspectEntry;\nprivate assertNoSymlink;\n}"
       },
       {
         "name": "detectBridgeProviders",
@@ -13736,7 +13826,7 @@
       {
         "name": "ManagerConfig",
         "kind": "interface",
-        "signature": "export interface ManagerConfig {\nmodel?: string;\nbridgeConfig?: string;\nreadScope: ManagerReadScope;\nallowedReadPaths: string[];\nmirrorDesignToWorkspace: boolean;\nmirrorProgressToWorkspace?: boolean;\npromptOverride?: string;\nactiveSessionId?: string;\n}"
+        "signature": "export interface ManagerConfig {\nmodel?: string;\nbridgeConfig?: string;\nreadScope: ManagerReadScope;\nallowedReadPaths: string[];\npromptOverride?: string;\nactiveSessionId?: string;\n}"
       },
       {
         "name": "managerConfigPath",
@@ -13752,11 +13842,6 @@
         "name": "managerPlanPath",
         "kind": "function",
         "signature": "export declare function managerPlanPath(workDir: string, homeDir: string): string;"
-      },
-      {
-        "name": "managerProgressPath",
-        "kind": "value",
-        "signature": "managerProgressPath: typeof managerDesignPath"
       },
       {
         "name": "ManagerReadScope",
@@ -14517,11 +14602,6 @@
         "name": "readProfilesFromAgentDefinitions",
         "kind": "function",
         "signature": "export declare function readProfilesFromAgentDefinitions(homeDir?: string): AgentProfile[];"
-      },
-      {
-        "name": "readProgressFile",
-        "kind": "value",
-        "signature": "readProgressFile: typeof readDesignFile"
       },
       {
         "name": "readProjectMemorySettingsPatch",
@@ -15444,11 +15524,6 @@
         "signature": "export declare function shouldIncludeGitHubDigest(instruction?: string): boolean;"
       },
       {
-        "name": "shouldMirrorDesignToWorkspace",
-        "kind": "function",
-        "signature": "export declare function shouldMirrorDesignToWorkspace(config: ManagerConfig): boolean;"
-      },
-      {
         "name": "SignedDeviceLinkRequest",
         "kind": "interface",
         "signature": "export interface SignedDeviceLinkRequest extends AppServerRequestV2 {\nauth: DeviceLinkRequestAuth;\n}"
@@ -16272,11 +16347,6 @@
         "name": "writeManagerConfig",
         "kind": "function",
         "signature": "export declare function writeManagerConfig(workDir: string, homeDir: string, config: ManagerConfig): Promise<void>;"
-      },
-      {
-        "name": "writeProgressFile",
-        "kind": "value",
-        "signature": "writeProgressFile: typeof writeDesignFile"
       },
       {
         "name": "writeProjectPlanFile",

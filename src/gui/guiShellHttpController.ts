@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { resolveGuiAssetsDir } from './guiAssets.js';
 import {
@@ -11,14 +10,7 @@ import {
 } from './hadamardGuiAssets.js';
 import { bytes, text, type GuiHttpRouter } from './guiHttpRouter.js';
 
-const xtermAssetsDir = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  '..',
-  'assets',
-  'xterm',
-);
+const xtermAssetsDir = resolveGuiAssetsDir();
 const XTERM_TYPES = new Map<string, string>([
   ['xterm.js', 'text/javascript'],
   ['xterm.css', 'text/css'],
@@ -71,7 +63,8 @@ export function registerGuiShellHttpController(router: GuiHttpRouter, authToken:
     const type = XTERM_TYPES.get(name);
     if (!type) return text(res, 404, 'Not found');
     try {
-      text(res, 200, readFileSync(path.join(xtermAssetsDir, name), 'utf8'), type);
+      if (!xtermAssetsDir) return text(res, 404, 'Not found');
+      text(res, 200, readFileSync(path.join(xtermAssetsDir, 'xterm', name), 'utf8'), type);
     } catch {
       text(res, 404, 'Not found');
     }
