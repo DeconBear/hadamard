@@ -217,8 +217,11 @@ describe('compactHadamardConversationIfNeeded', () => {
     expect(outcome.tokenEstimateAfter).toBeLessThan(outcome.tokenEstimateBefore);
     expect(modelApi.createCalls).toHaveLength(1);
     expect(isLoopCompactRequest(modelApi.createCalls[0]!)).toBe(true);
-    // The summary request should include tool-free serialized older turns.
-    expect(String(modelApi.createCalls[0]?.messages[0]?.content)).toContain('analysis one');
+    // The summary request carries the real older messages verbatim and ends
+    // with the compaction instruction (cache-reusing summarizer shape).
+    expect(String(modelApi.createCalls[0]?.messages[0]?.content)).toContain('first request');
+    expect(JSON.stringify(modelApi.createCalls[0]?.messages)).toContain('analysis one');
+    expect(String(modelApi.createCalls[0]?.messages.at(-1)?.content)).toContain('<summary>');
   });
 
   it('keeps the latest project-instruction reminder after in-loop compact', async () => {
@@ -602,6 +605,7 @@ describe('conversation engine in-loop auto-compact', () => {
       expect(result.text).toContain('All done after compact.');
       const compactCalls = modelApi.createCalls.filter(isLoopCompactRequest);
       expect(compactCalls).toHaveLength(1);
+      expect(result.loopCompactions?.[0]?.shadowedTokenCount).toBeGreaterThan(0);
 
       const lastRegularCall = modelApi.createCalls.at(-1)!;
       expect(isLoopCompactRequest(lastRegularCall)).toBe(false);
@@ -1064,6 +1068,81 @@ describe('compactHadamardSession prefix stability', () => {
     expect(result.reason).toBe('compacted');
     expect(JSON.stringify(next.messages[0])).toContain('SESSION_SUMMARY');
     expect(modelApi.createCalls.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('loop compact prune and cache-reusing summaries', () => {
+  it('prunes old tool results without a summary call when loopCompactPruneToolResults is set', async () => {
+    const modelApi = new MockModelApi({
+      create: () => {
+        throw new Error('summary must not run in prune mode');
+      },
+    });
+    const longResult = 'prune-target-'.repeat(300);
+    const messages: MessageParam[] = [
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_old', name: 'lookup', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_old', content: longResult }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'tail' }] },
+      { role: 'user', content: 'continue' },
+    ];
+    const outcome = await compactHadamardConversationIfNeeded(messages, {
+      model: 'test-model',
+      modelApi,
+      compactConfig: baseCompactConfig({
+        autoCompactThresholdTokens: 40,
+        loopCompactPruneToolResults: true,
+        microcompactEnabled: true,
+        microcompactMinContentChars: 20,
+        microcompactKeepRecentToolResults: 0,
+        preserveRecentMessages: 2,
+      }),
+      maxTokens: 256,
+      runKey: 'prune-run',
+    });
+    expect(outcome.compacted).toBe(true);
+    expect(outcome.reason).toBe('prune');
+    expect(outcome.clearedToolResults).toBeGreaterThanOrEqual(1);
+    expect(outcome.shadowedTokenCount).toBeGreaterThan(0);
+    expect(outcome.summary).toBeUndefined();
+    expect(modelApi.createCalls).toHaveLength(0);
+    expect(JSON.stringify(outcome.messages)).toContain('[Old tool result content cleared]');
+  });
+
+  it('replays the main system/tools prefix in the summary request and sends real messages', async () => {
+    const modelApi = new MockModelApi({
+      create: () => makeMessage([{ type: 'text', text: 'CACHE_REUSE_SUMMARY' }]),
+    });
+    const longText = 'x'.repeat(3_000);
+    const messages: MessageParam[] = [
+      { role: 'user', content: longText },
+      { role: 'assistant', content: [{ type: 'text', text: longText }] },
+      { role: 'user', content: 'latest' },
+    ];
+    const outcome = await compactHadamardConversationIfNeeded(messages, {
+      model: 'test-model',
+      modelApi,
+      compactConfig: baseCompactConfig({
+        autoCompactThresholdTokens: 100,
+        preserveRecentMessages: 1,
+        microcompactEnabled: false,
+      }),
+      maxTokens: 256,
+      runKey: 'cache-run',
+      systemPrompt: 'MAIN_SYSTEM_PROMPT',
+      tools: [{ name: 'lookup' }],
+    });
+    expect(outcome.compacted).toBe(true);
+    expect(outcome.shadowedTokenCount).toBeGreaterThan(0);
+    const summaryCall = modelApi.createCalls.find(isLoopCompactRequest)!;
+    expect(summaryCall.system).toBe('MAIN_SYSTEM_PROMPT');
+    expect(JSON.stringify(summaryCall.tools)).toContain('lookup');
+    const last = summaryCall.messages.at(-1)!;
+    expect(last.role).toBe('user');
+    expect(String(last.content)).toContain('<summary>');
+    expect(String(last.content)).not.toContain('<conversation_to_summarize>');
+    // The real (microcompacted) history rides the request verbatim.
+    expect(JSON.stringify(summaryCall.messages)).toContain('xxxx');
   });
 });
 

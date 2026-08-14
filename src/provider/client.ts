@@ -629,9 +629,6 @@ export default class HadamardProviderClient {
   }
 }
 
-function shouldRetryStatus(status: number): boolean {
-  return status === 408 || status === 409 || status === 429 || status >= 500;
-}
 
 const MAX_RETRY_AFTER_MS = 30_000;
 

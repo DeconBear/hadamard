@@ -11,13 +11,13 @@
     "parity/hadamardBridgeSdk.ts": { "maxLines": 2898, "reason": "Bridge SDK compatibility composition root." },
     "parity/hadamardCleanBridgeCompatSdk.ts": { "maxLines": 1876, "reason": "Clean bridge compatibility composition root." },
     "runtime-v2/agentRuntime.ts": { "maxLines": 1745, "reason": "Runtime v2 facade; collaborators must absorb new behavior." },
-    "runtime/agentClient.ts": { "maxLines": 5717, "reason": "Public SDK compatibility facade and composition root; managed runtime lifecycle, draft sessions, model-capped compaction, CodeAct sub-dispatch transcript records, plan-mode guidance, and the request-proposal hook remain centralized here while collaborators absorb domain behavior." },
-    "runtime/conversationEngine.ts": { "maxLines": 1082, "reason": "Turn coordinator facade; reconciles only provenance-marked internal context while preserving ordinary append-only history, and runs the dsh-style tool scheduling contract (barriers, synthetic aborted results, concluded turns, repeat-call guard, request proposals)." },
+    "runtime/agentClient.ts": { "maxLines": 5731, "reason": "Public SDK compatibility facade and composition root; managed runtime lifecycle, draft sessions, model-capped compaction, CodeAct sub-dispatch transcript records, plan-mode guidance, request proposals, and structured trajectory persistence remain centralized here while collaborators absorb domain behavior." },
+    "runtime/conversationEngine.ts": { "maxLines": 1211, "reason": "Turn coordinator facade; reconciles only provenance-marked internal context while preserving ordinary append-only history, and runs the dsh-style tool scheduling contract (barriers, synthetic aborted results, concluded turns, repeat-call guard, request proposals, cold-resume repair, trajectory emissions)." },
     "runtime/externalSkillCatalog.ts": { "maxLines": 1249, "reason": "Existing external skill catalog debt." },
-    "runtime/hadamardCompact.ts": { "maxLines": 1355, "reason": "Existing compact engine debt; in-loop compact preserves the latest project-instruction reminder." },
+    "runtime/hadamardCompact.ts": { "maxLines": 1403, "reason": "Existing compact engine debt; in-loop compact preserves the latest project-instruction reminder, prices shadowed spans, and supports prune mode plus cache-reusing summary requests." },
     "storage-v2/sqliteStorage.ts": { "maxLines": 1232, "reason": "SQLite infrastructure adapter with segregated public stores." },
     "tui/hadamardTuiController.ts": { "maxLines": 4948, "reason": "TUI composition/state root; session-scoped model context selection uses shared parsing and model-catalog metadata." },
-    "types.ts": { "maxLines": 3454, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, a per-run context-window override, the tool scheduling/CodeAct contract surface, retry policy, and request proposals." }
+    "types.ts": { "maxLines": 3463, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, a per-run context-window override, the tool scheduling/CodeAct contract surface, retry policy, request proposals, and compaction shadow pricing." }
   },
   "interfaces": {
     "config/agentProfiles.ts#SelectableAgent": { "maxMembers": 28, "reason": "Compatibility DTO extended with the reusable Agent execution mode." },
@@ -35,7 +35,7 @@
     "types.ts#HadamardSkillDefinition": { "maxMembers": 26, "reason": "Public skill definition." },
     "types.ts#HadamardSkillDefinitionSummary": { "maxMembers": 21, "reason": "Public skill summary DTO." },
     "types.ts#CreateAgentSdkOptions": { "maxMembers": 57, "reason": "Public compatibility facade options; managed plugin assembly remains an explicit runtime control while internal roles are segregated, plus the parallel tool-call bound and retry policy." },
-    "types.ts#HadamardCompactConfig": { "maxMembers": 28, "reason": "Public compact configuration." },
+    "types.ts#HadamardCompactConfig": { "maxMembers": 29, "reason": "Public compact configuration extended with the opt-in prune mode." },
     "types.ts#AgentRunOptions": { "maxMembers": 32, "reason": "Public run options extended with structured project-instruction loading, a model-capped context-window override, and the per-iteration request-proposal hook." },
     "types.ts#AgentRunResult": { "maxMembers": 24, "reason": "Public result DTO." },
     "types.ts#HadamardBackgroundTaskRecord": { "maxMembers": 38, "reason": "Persisted background-task schema." },
