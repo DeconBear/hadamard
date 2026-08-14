@@ -51,7 +51,6 @@ import {
   resolveHadamardHome,
   externalSkillPreferencesToRuntimeOptions,
   readHadamardExternalSkillPreferences,
-  createManagedPluginRuntime,
   patchManagedPluginSettings,
   readManagedPluginCatalog,
   listRouterProfiles,
@@ -315,16 +314,13 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   let systemPrompt = buildTuiSystemPrompt(workDir, projectSettings, hadamardHomeDir, projectWorkPaths);
 
   let applyPlanPermission: (() => Promise<void>) | null = null;
-  let managedPluginRuntime: ReturnType<typeof createManagedPluginRuntime> | null = null;
+  let managedPluginSettings: Record<string, unknown> = {};
   let tools: AgentToolDefinition[] = [];
   const rebuildInteractiveTools = async (): Promise<void> => {
-    if (managedPluginRuntime) {
-      await managedPluginRuntime.close();
-    }
     const store = await resolveHadamardSettingsStore({
       configPath: options.configPath,
     });
-    managedPluginRuntime = createManagedPluginRuntime(store.raw, { cwd: workDir });
+    managedPluginSettings = store.raw;
     tools = [
       ...createHadamardCoreTools({
         cwd: workDir,
@@ -332,7 +328,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           if (mode === 'plan') await applyPlanPermission?.();
         },
       }),
-      ...managedPluginRuntime.tools,
     ];
     const byName = new Map(tools.map(tool => [tool.name, tool]));
     tools = [...byName.values()];
@@ -349,7 +344,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       workDir,
       sessionDirectory: activeSessionDirectory,
       tools,
-      skills: managedPluginRuntime?.skills ?? [],
+      managedPlugins: managedPluginSettings,
       permissionMode,
       externalSkills: externalSkillPreferencesToRuntimeOptions(externalSkillPreferences),
       // Load user-managed stdio MCP servers from ~/.hadamard/mcp.json (gap #10).
@@ -4879,16 +4874,14 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     process.stdout.write(`${A.dim}Goodbye.${A.reset}\n`);
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.stdin.pause();
-    if (managedPluginRuntime) {
-      try {
-        await closeManagedPluginsForExit(managedPluginRuntime.close);
-      } catch (error) {
-        exitCode = 1;
-        process.stderr.write(
-          `[hadamard-tui] ERROR: ${errorMessage(error)} ` +
-          'Check E2B/Playwright resources manually before assuming billing has stopped.\n',
-        );
-      }
+    try {
+      await closeManagedPluginsForExit(() => sdk.close());
+    } catch (error) {
+      exitCode = 1;
+      process.stderr.write(
+        `[hadamard-tui] ERROR: ${errorMessage(error)} ` +
+        'Check E2B/Playwright resources manually before assuming billing has stopped.\n',
+      );
     }
     if (deviceLinkService) {
       await deviceLinkService.close().catch(error => {
@@ -4899,7 +4892,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     }
     await deleteEmptyTuiSession(session);
     const cleanupResults = await Promise.allSettled([
-      sdk.close(),
       ...(globalAssistantSdk ? [globalAssistantSdk.close()] : []),
       externalCliRuntimeManager.close(),
       ...[...externalBridgeRuntimes.values()].map(runtime => runtime.client.close()),

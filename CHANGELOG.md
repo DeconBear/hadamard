@@ -6,6 +6,17 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.17 - 2026-08-14
+
+### Fixes
+
+- Keep empty SDK, TUI, and GUI sessions as non-resumable drafts until the first user turn
+- Centralize managed plugin assembly in the SDK runtime and reduce Computer Use/Playwright prompt schemas
+- Apply selected model context windows consistently across all compaction paths
+- Share the context-window selector between the SDK and GUI
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.16...v0.4.17
+
 ## v0.4.16 - 2026-08-13
 
 ### Features

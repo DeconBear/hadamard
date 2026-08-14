@@ -385,6 +385,16 @@ export type {
   WorkflowRunOptions,
 } from './workflow/types.js';
 export { createAgentSdk, HadamardAgentClient, AgentSessionsApi } from './runtime/agentClient.js';
+export {
+  STANDARD_CONTEXT_WINDOWS,
+  clampContextWindowTokens,
+  formatContextWindowTokens,
+  modelContextWindowLimit,
+  modelContextWindowOptions,
+  parseContextWindowTokens,
+  readSessionContextWindow,
+  resolveModelContextEntry,
+} from './config/modelContextWindow.js';
 export * from './runtime/agentExecution.js';
 export * from './runtime/hadamardAgentExecutions.js';
 export {

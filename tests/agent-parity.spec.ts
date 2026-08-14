@@ -487,8 +487,8 @@ describe('Hadamard advanced parity features', () => {
               {
                 type: 'tool_use',
                 id: 'toolu_open_url',
-                name: 'computer_open_url',
-                input: { url: 'https://example.com' },
+                name: 'computer_use',
+                input: { action: 'open_url', args: { url: 'https://example.com' } },
               },
             ],
             'tool_use',
@@ -528,7 +528,10 @@ describe('Hadamard advanced parity features', () => {
 
     try {
       const result = await sdk.run('Open the browser.');
-      expect(result.toolCalls[0]?.publicName).toBe('computer_open_url');
+      expect(result.toolCalls[0]?.publicName).toBe('computer_use');
+      expect((await sdk.listToolMetadata()).filter(tool => tool.name.startsWith('computer')))
+        .toEqual([expect.objectContaining({ name: 'computer_use' })]);
+      expect(sdk.skills.listMetadata().map(skill => skill.name)).toContain('computer-use');
       expect(calls).toContain('open:https://example.com');
     } finally {
       await sdk.close();
@@ -547,15 +550,18 @@ describe('Hadamard advanced parity features', () => {
               {
                 type: 'tool_use',
                 id: 'toolu_workflow',
-                name: 'computer_run_workflow',
+                name: 'computer_use',
                 input: {
-                  steps: [
-                    { action: 'open_url', url: 'https://example.com' },
-                    { action: 'type_text', text: 'release-ready' },
-                    { action: 'keypress', keys: ['ENTER'] },
-                    { action: 'wait', durationMs: 1 },
-                    { action: 'take_screenshot', outputPath: 'artifacts/release.png' },
-                  ],
+                  action: 'run_workflow',
+                  args: {
+                    steps: [
+                      { action: 'open_url', url: 'https://example.com' },
+                      { action: 'type_text', text: 'release-ready' },
+                      { action: 'keypress', keys: ['ENTER'] },
+                      { action: 'wait', durationMs: 1 },
+                      { action: 'take_screenshot', outputPath: 'artifacts/release.png' },
+                    ],
+                  },
                 },
               },
             ],
@@ -603,7 +609,7 @@ describe('Hadamard advanced parity features', () => {
         | { stepCount?: number; results?: Array<Record<string, unknown>> }
         | undefined;
 
-      expect(result.toolCalls[0]?.publicName).toBe('computer_run_workflow');
+      expect(result.toolCalls[0]?.publicName).toBe('computer_use');
       expect(workflowOutput?.stepCount).toBe(5);
       expect(calls).toEqual([
         'open:https://example.com',
@@ -614,6 +620,41 @@ describe('Hadamard advanced parity features', () => {
     } finally {
       await sdk.close();
     }
+  });
+
+  it('exposes browser-use through one SDK dispatcher and one Skill', async () => {
+    const sessionDirectory = await createTempDir('hadamard-browser-dispatcher-');
+    let closed = false;
+    const session = {
+      navigate: async (url: string) => ({ tabId: 'tab-1', url, title: 'Test' }),
+      goBack: async () => ({ url: 'about:blank', title: 'Test' }),
+      wait: async () => undefined,
+      snapshot: async () => ({}),
+      click: async () => ({ ok: true as const }),
+      type: async () => ({ ok: true as const }),
+      press: async () => ({ ok: true as const }),
+      scroll: async () => ({ ok: true as const }),
+      screenshot: async () => ({}),
+      tabsDetailed: async () => [],
+      switchTab: async (tabId: string) => ({ ok: true as const, tabId }),
+      closeTab: async (tabId = 'tab-1') => ({ ok: true as const, closed: tabId }),
+      extract: async () => ({ url: 'about:blank', title: 'Test', text: '' }),
+      close: async () => { closed = true; },
+    };
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      modelApi: new MockModelApi({
+        create: async () => makeMessage([{ type: 'text', text: 'ok' }]),
+      }),
+      browserUse: { session },
+    });
+
+    expect((await sdk.listToolMetadata()).filter(tool => tool.name.startsWith('browser')))
+      .toEqual([expect.objectContaining({ name: 'browser_use' })]);
+    expect(sdk.skills.listMetadata().map(skill => skill.name)).toContain('playwright');
+    await sdk.close();
+    expect(closed).toBe(true);
   });
 
   it('provides a composable computer-use toolkit with focus-aware workflow steps', async () => {

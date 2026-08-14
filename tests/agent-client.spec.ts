@@ -8,6 +8,7 @@ import { z } from 'zod';
 import {
   HadamardProviderApiError,
   createAgentSdk,
+  patchManagedPluginSettings,
   SessionStore,
   tool,
   type ModelApi,
@@ -304,6 +305,138 @@ describe('HadamardAgentClient', () => {
       expect(summaries[0]?.runCount).toBe(2);
       expect(resumed.messages.length).toBeGreaterThan(0);
       expect(session.title.length).toBeGreaterThan(0);
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('keeps empty user sessions as non-resumable in-memory drafts', async () => {
+    const sessionDirectory = await createSessionDirectory();
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      modelApi: new MockModelApi({
+        create: () => makeMessage([{ type: 'text', text: 'ok' }]),
+      }),
+    });
+
+    try {
+      const session = await sdk.createSession();
+      await session.mergeMetadata({ __hadamardContextWindowTokens: 128_000 });
+      await session.rename('Draft title');
+
+      expect(await sdk.sessions.list()).toEqual([]);
+      await expect(new SessionStore(sessionDirectory).load(session.id)).rejects.toThrow();
+      await expect(sdk.resumeSession(session.id)).rejects.toThrow();
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('loads managed plugin capabilities inside the SDK runtime', async () => {
+    const sessionDirectory = await createSessionDirectory();
+    const managedPlugins: Record<string, unknown> = {};
+    patchManagedPluginSettings(managedPlugins, 'github', {
+      enabled: true,
+      hostname: 'github.com',
+    });
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      managedPlugins,
+      modelApi: new MockModelApi({
+        create: () => makeMessage([{ type: 'text', text: 'ok' }]),
+      }),
+    });
+
+    try {
+      expect(sdk.skills.listMetadata().map(skill => skill.name)).toContain('github');
+      expect((await sdk.listToolMetadata()).some(tool => tool.name.startsWith('github_'))).toBe(false);
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('filters and removes legacy persisted empty user sessions', async () => {
+    const sessionDirectory = await createSessionDirectory();
+    const store = new SessionStore(sessionDirectory);
+    const legacy = await store.create({ id: 'legacy-empty', model: 'test-model' });
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      modelApi: new MockModelApi({
+        create: () => makeMessage([{ type: 'text', text: 'ok' }]),
+      }),
+    });
+
+    try {
+      expect((await sdk.sessions.list()).some(session => session.id === legacy.id)).toBe(false);
+      await expect(sdk.resumeSession(legacy.id)).rejects.toThrow();
+      await expect(store.load(legacy.id)).rejects.toThrow();
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('uses the session context window for manual and post-run compaction', async () => {
+    const sessionDirectory = await createSessionDirectory();
+    const modelApi = new MockModelApi({
+      create: (request) => {
+        if ((request.metadata as Record<string, unknown> | undefined)?.hadamard_internal_task === 'compact') {
+          return makeMessage([{ type: 'text', text: 'Compact summary.' }]);
+        }
+        const message = makeMessage([{ type: 'text', text: 'ok' }]);
+        message.usage!.input_tokens = 190;
+        return message;
+      },
+    });
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      modelApi,
+      compact: {
+        contextWindowTokens: 1_000,
+        maxContextWindowTokens: 1_000,
+        effectiveContextWindowPercent: 100,
+        preserveRecentMessages: 1,
+      },
+    });
+
+    try {
+      const session = await sdk.createSession();
+      await session.mergeMetadata({ __hadamardContextWindowTokens: 200 });
+      await session.send('Use the smaller session window.');
+      expect(modelApi.createCalls.some(request =>
+        (request.metadata as Record<string, unknown> | undefined)?.hadamard_internal_task === 'compact'
+      )).toBe(true);
+      const manual = await session.compact();
+      expect(manual.budget?.rawContextWindowTokens).toBe(200);
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('does not clamp a selected context window to the unknown-model fallback', async () => {
+    const root = await createSessionDirectory();
+    const homeDir = path.join(root, 'home');
+    const workDir = path.join(root, 'work');
+    await Promise.all([mkdir(homeDir, { recursive: true }), mkdir(workDir, { recursive: true })]);
+    const sdk = await createAgentSdk({
+      model: 'model-without-context-metadata',
+      homeDir,
+      workDir,
+      sessionDirectory: path.join(root, 'sessions'),
+      modelApi: new MockModelApi({
+        create: () => makeMessage([{ type: 'text', text: 'ok' }]),
+      }),
+    });
+
+    try {
+      expect(sdk.config.compact.contextWindowSource).toBe('fallback');
+      const session = await sdk.createSession();
+      await session.mergeMetadata({ __hadamardContextWindowTokens: 2_000_000 });
+      const compact = await session.compact();
+      expect(compact.budget?.rawContextWindowTokens).toBe(2_000_000);
     } finally {
       await sdk.close();
     }
