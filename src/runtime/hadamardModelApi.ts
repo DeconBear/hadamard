@@ -1,4 +1,4 @@
-﻿import HadamardProviderClient from '../provider/client.js';
+import HadamardProviderClient from '../provider/client.js';
 
 import type { ModelApi, ModelRequest, ModelStreamHandle, ResolvedRuntimeConfig } from '../types.js';
 
@@ -65,6 +65,7 @@ export function createHadamardModelApi(config: ResolvedRuntimeConfig): ModelApi 
     baseURL: config.baseURL ?? null,
     timeout: config.timeoutMs,
     maxRetries: config.maxRetries,
+    retryPolicy: config.retryPolicy,
   });
   return new HadamardModelApi(client);
 }

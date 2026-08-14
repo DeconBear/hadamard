@@ -5,6 +5,11 @@ import type {
 } from './openai-types.js';
 import { HadamardProviderApiError } from '../errors.js';
 import { computeRetryDelayMs, parseRetryAfterMs } from './client.js';
+import {
+  resolveProviderRetryPolicy,
+  type HadamardRetryPolicyConfig,
+  type ResolvedProviderRetryPolicy,
+} from './retryPolicy.js';
 
 export interface OpenaiProviderClientOptions {
   apiKey?: string | null;
@@ -12,6 +17,8 @@ export interface OpenaiProviderClientOptions {
   baseURL?: string | null;
   timeout?: number;
   maxRetries?: number;
+  /** Resolved per-route retry policy; overrides the default predicate and backoff. */
+  retryPolicy?: HadamardRetryPolicyConfig;
   fetch?: typeof fetch;
 }
 
@@ -355,10 +362,12 @@ export default class OpenaiProviderClient {
   private readonly apiKey?: string | null;
   private readonly authToken?: string | null;
   private readonly baseURL?: string | null;
+  private readonly retryPolicy: ResolvedProviderRetryPolicy;
 
   constructor(options: OpenaiProviderClientOptions = {}) {
     this.fetchImpl = options.fetch ?? fetch;
-    this.maxRetries = options.maxRetries ?? 2;
+    this.retryPolicy = resolveProviderRetryPolicy(options.retryPolicy, options.maxRetries ?? 2);
+    this.maxRetries = this.retryPolicy.maxRetries;
     this.timeoutMs = options.timeout;
     this.apiKey = options.apiKey ?? null;
     this.authToken = options.authToken ?? null;
@@ -410,7 +419,7 @@ export default class OpenaiProviderClient {
             errorType: payload?.error?.type,
           },
         );
-        if (!shouldRetryStatus(response.status) || attempt === this.maxRetries) {
+        if (!this.shouldRetryStatus(response.status) || attempt === this.maxRetries) {
           throw error;
         }
         retryAfterMs = parseRetryAfterMs(response);
@@ -420,18 +429,27 @@ export default class OpenaiProviderClient {
         if (signal?.aborted) {
           throw signal.reason ?? error;
         }
-        const retryable = shouldRetryError(error);
+        const retryable = this.shouldRetryTransportError(error);
         if (attempt === this.maxRetries || !retryable) {
           throw retryable ? normalizeTransportError(error, normalizeChatUrl(this.baseURL)) : error;
         }
       }
 
-      await delay(computeRetryDelayMs(attempt, retryAfterMs), signal);
+      await delay(computeRetryDelayMs(attempt, retryAfterMs, this.retryPolicy.backoff), signal);
     }
 
     throw lastError instanceof Error
       ? lastError
       : new Error('The provider request failed unexpectedly.');
+  }
+
+  private shouldRetryStatus(status: number): boolean {
+    if (this.retryPolicy.retryableStatuses.includes(status)) return true;
+    return this.retryPolicy.retryServerErrors && status >= 500;
+  }
+
+  private shouldRetryTransportError(error: unknown): boolean {
+    return this.retryPolicy.retryTransportErrors && shouldRetryError(error);
   }
 
   private buildHeaders(): Record<string, string> {

@@ -50,6 +50,11 @@ export interface ConversationLifecycleOptions {
   hooks?: HadamardHooks;
   typedHookRunner?: HookRunner;
   emit?: (event: AgentEvent) => void;
+  /** Per-iteration request-config proposal hook (dsh agent/request equivalent). */
+  onRequestProposal?: (context: import('../types.js').HadamardRequestProposalContext) =>
+    | import('../types.js').HadamardRequestProposal
+    | void
+    | Promise<import('../types.js').HadamardRequestProposal | void>;
 }
 
 export interface ConversationQueueOptions {
