@@ -202,7 +202,13 @@ describe('Hadamard dream parity', () => {
       await sdk.memory.updateSettings({ autoDreamEnabled: true }, { homeDir: sandbox.homeDir });
       const current = await sdk.createSession({ title: 'Current session' });
       for (let index = 0; index < 5; index += 1) {
-        await sdk.createSession({ title: `Older session ${index + 1}` });
+        await sdk.createSession({
+          title: `Older session ${index + 1}`,
+          initialMessages: [
+            { role: 'user', content: `Older session ${index + 1} input` },
+            { role: 'assistant', content: `Older session ${index + 1} response` },
+          ],
+        });
       }
 
       const launched = await sdk.maybeAutoDream({
@@ -236,7 +242,13 @@ describe('Hadamard dream parity', () => {
     try {
       await sdk.memory.updateSettings({ autoDreamEnabled: true }, { homeDir: sandbox.homeDir });
       for (let index = 0; index < 5; index += 1) {
-        await sdk.createSession({ title: `Top-level session ${index + 1}` });
+        await sdk.createSession({
+          title: `Top-level session ${index + 1}`,
+          initialMessages: [
+            { role: 'user', content: `Top-level session ${index + 1} input` },
+            { role: 'assistant', content: `Top-level session ${index + 1} response` },
+          ],
+        });
       }
 
       const teammateSession = await sdk.createSession({
@@ -271,7 +283,13 @@ describe('Hadamard dream parity', () => {
     try {
       await sdk.memory.updateSettings({ autoDreamEnabled: true }, { homeDir: sandbox.homeDir });
       const current = await sdk.createSession({ title: 'Current session' });
-      await sdk.createSession({ title: 'Only one old session' });
+      await sdk.createSession({
+        title: 'Only one old session',
+        initialMessages: [
+          { role: 'user', content: 'Only one old session input' },
+          { role: 'assistant', content: 'Only one old session response' },
+        ],
+      });
 
       const result = await sdk.maybeAutoDream({
         currentSessionId: current.id,
