@@ -793,8 +793,12 @@ describe('consecutive tool failure handling', () => {
       });
 
       expect(result.incompleteReason).toBe('consecutive_tool_failures:always_fails');
-      expect(result.toolCalls).toHaveLength(3);
+      // The repeat-call guard injects advisory reminders at thresholds [3, 5]
+      // and hard-stops at the 5th identical failing call (dsh reminder shape).
+      expect(result.toolCalls).toHaveLength(5);
       expect(result.toolCalls.every(call => call.isError)).toBe(true);
+      expect(JSON.stringify(result.messages)).toContain('repeating the exact same tool call');
+      expect(JSON.stringify(result.messages)).toContain('Repeated tool call detected');
 
       // No dangling tool_use: every tool_use id has a matching tool_result.
       const toolUseIds = new Set<string>();

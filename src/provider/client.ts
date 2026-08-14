@@ -14,6 +14,11 @@ import type {
 } from './types.js';
 import { HadamardProviderApiError } from '../errors.js';
 import { robustJsonParse } from './json-parse.js';
+import {
+  resolveProviderRetryPolicy,
+  type HadamardRetryPolicyConfig,
+  type ResolvedProviderRetryPolicy,
+} from './retryPolicy.js';
 
 export interface HadamardProviderClientOptions {
   apiKey?: string | null;
@@ -21,6 +26,8 @@ export interface HadamardProviderClientOptions {
   baseURL?: string | null;
   timeout?: number;
   maxRetries?: number;
+  /** Resolved per-route retry policy; overrides the default predicate and backoff. */
+  retryPolicy?: HadamardRetryPolicyConfig;
   fetch?: typeof fetch;
 }
 
@@ -496,10 +503,12 @@ export default class HadamardProviderClient {
   private readonly apiKey?: string | null;
   private readonly authToken?: string | null;
   private readonly baseURL?: string | null;
+  private readonly retryPolicy: ResolvedProviderRetryPolicy;
 
   constructor(options: HadamardProviderClientOptions = {}) {
     this.fetchImpl = options.fetch ?? fetch;
-    this.maxRetries = options.maxRetries ?? 2;
+    this.retryPolicy = resolveProviderRetryPolicy(options.retryPolicy, options.maxRetries ?? 2);
+    this.maxRetries = this.retryPolicy.maxRetries;
     this.timeoutMs = options.timeout;
     this.apiKey = options.apiKey ?? null;
     this.authToken = options.authToken ?? null;
@@ -567,7 +576,7 @@ export default class HadamardProviderClient {
               (typeof payload?.error === 'object' ? undefined : undefined),
           },
         );
-        if (!shouldRetryStatus(response.status) || attempt === this.maxRetries) {
+        if (!this.shouldRetryStatus(response.status) || attempt === this.maxRetries) {
           throw error;
         }
         retryAfterMs = parseRetryAfterMs(response);
@@ -577,18 +586,27 @@ export default class HadamardProviderClient {
         if (options?.signal?.aborted) {
           throw options.signal.reason ?? error;
         }
-        const retryable = shouldRetryError(error);
+        const retryable = this.shouldRetryTransportError(error);
         if (attempt === this.maxRetries || !retryable) {
           throw retryable ? normalizeTransportError(error, normalizeMessagesUrl(this.baseURL)) : error;
         }
       }
 
-      await delay(computeRetryDelayMs(attempt, retryAfterMs), options?.signal);
+      await delay(computeRetryDelayMs(attempt, retryAfterMs, this.retryPolicy.backoff), options?.signal);
     }
 
     throw lastError instanceof Error
       ? lastError
       : new Error('The provider request failed unexpectedly.');
+  }
+
+  private shouldRetryStatus(status: number): boolean {
+    if (this.retryPolicy.retryableStatuses.includes(status)) return true;
+    return this.retryPolicy.retryServerErrors && status >= 500;
+  }
+
+  private shouldRetryTransportError(error: unknown): boolean {
+    return this.retryPolicy.retryTransportErrors && shouldRetryError(error);
   }
 
   private buildHeaders(streaming: boolean, betas?: string[]): HeadersInit {
@@ -640,11 +658,18 @@ export function parseRetryAfterMs(response: Response): number | undefined {
   return undefined;
 }
 
-export function computeRetryDelayMs(attempt: number, retryAfterMs?: number): number {
-  // Exponential backoff capped at 30s with +/-25% jitter to avoid
+export function computeRetryDelayMs(
+  attempt: number,
+  retryAfterMs?: number,
+  backoffConfig: { initialDelayMs?: number; maxDelayMs?: number; jitterRatio?: number } = {},
+): number {
+  // Exponential backoff capped at maxDelayMs with symmetric jitter to avoid
   // synchronized retry storms across parallel runs (Claude Code-style).
-  const backoff = Math.min(500 * 2 ** attempt, 30_000);
-  const jittered = Math.round(backoff * (0.75 + Math.random() * 0.5));
+  const initialDelayMs = backoffConfig.initialDelayMs ?? 500;
+  const maxDelayMs = backoffConfig.maxDelayMs ?? 30_000;
+  const jitterRatio = backoffConfig.jitterRatio ?? 0.25;
+  const backoff = Math.min(initialDelayMs * 2 ** attempt, maxDelayMs);
+  const jittered = Math.round(backoff * (1 - jitterRatio + Math.random() * jitterRatio * 2));
   if (retryAfterMs === undefined) {
     return jittered;
   }
