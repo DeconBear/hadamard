@@ -49,6 +49,8 @@ function serializeCodeCellResult(record: CodeCellExecutionRecord): string {
     resourceUsage: record.resourceUsage,
     artifacts: record.artifacts,
     stateLost: record.stateLost ?? false,
+    outputLimit: record.outputLimit ?? false,
+    ...(record.failureKind ? { failureKind: record.failureKind } : {}),
     sourceHash: record.sourceHash,
     recordPath: record.recordPath,
   }, null, 2);

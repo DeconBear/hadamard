@@ -48,3 +48,22 @@ export type CodeActAgentEvent =
       type: 'kernel.started' | 'kernel.restarted' | 'kernel.stopped';
       reason?: string;
     });
+
+/** Structured audit record for one host-tool sub-dispatch made from inside a code cell. */
+export interface ToolCodeDispatchEvent {
+  type: 'tool.code_dispatch';
+  runId: string;
+  iteration: number;
+  /** Outer CodeCell tool-use id anchoring this sub-call. */
+  rootCallId: string;
+  /** Correlated sub-call id: `${rootCallId}:host:${requestId}`. */
+  subCallId: string;
+  /** Host tool name (or the raw RPC method, e.g. artifact.put). */
+  name: string;
+  phase: 'start' | 'settle';
+  isError?: boolean;
+  /** Brief lossless-JSON argument or result summary (bounded). */
+  summary?: string;
+  timestamp: string;
+}
+

@@ -28,6 +28,10 @@ export interface ConversationToolExecutionResult {
   record: AgentToolCallRecord;
   resultBlock: ToolResultBlockParam;
   permissionBehavior?: HadamardPermissionDecision['behavior'];
+  /** Model-facing context deferred by the tool for the next step's user message. */
+  additionalContexts?: { type: 'text'; text: string }[];
+  /** The tool requested the agent turn to conclude after this batch. */
+  concludesTurn?: boolean;
 }
 
 export interface ConversationToolExecutionContext {
@@ -73,6 +77,8 @@ export async function executeConversationToolUse(
   let isError = false;
   let content: ToolResultBlockParam['content'] | undefined;
   let permissionBehavior: HadamardPermissionDecision['behavior'] | undefined;
+  let concludedTurn = false;
+  const deferredContexts: { type: 'text'; text: string }[] = [];
   try {
     if (!adapter) {
       throw new ToolExecutionError(toolUse.name, `No tool named "${toolUse.name}" is currently registered.`);
@@ -169,6 +175,12 @@ export async function executeConversationToolUse(
       effort,
       fileChangeJournal: options.fileChangeJournal,
       sandboxExecutor: options.sandboxExecutor,
+      concludeTurn: () => { concludedTurn = true; },
+      deferAdditionalContext: (context) => {
+        if (context && typeof context.text === 'string') {
+          deferredContexts.push({ type: 'text', text: context.text });
+        }
+      },
     };
     const execution = await withDeadline(
       `Tool ${toolUse.name}`,
@@ -207,6 +219,14 @@ export async function executeConversationToolUse(
     output = execution.rawOutput;
     isError = execution.isError ?? false;
     content = modelFacingExecution.content;
+    concludedTurn = concludedTurn || execution.concludesTurn === true;
+    if (execution.additionalContexts) {
+      for (const context of execution.additionalContexts) {
+        if (context && typeof context.text === 'string') {
+          deferredContexts.push({ type: 'text', text: context.text });
+        }
+      }
+    }
     const postToolOutputs = await runTypedLifecycleHooks(
       options,
       'PostToolUse',
@@ -233,6 +253,7 @@ export async function executeConversationToolUse(
     isError,
     completedAt: nowIso(),
     durationMs: Date.now() - startedClock,
+    ...(concludedTurn ? { concludesTurn: true } : {}),
   };
   return {
     record,
@@ -243,5 +264,7 @@ export async function executeConversationToolUse(
       is_error: isError,
     },
     permissionBehavior,
+    ...(deferredContexts.length > 0 ? { additionalContexts: deferredContexts } : {}),
+    ...(concludedTurn ? { concludesTurn: true } : {}),
   };
 }
