@@ -1,11 +1,12 @@
 /**
  * Hadamard System Prompt — aligned with Claude Code's prompt architecture.
  *
- * All tool prompts are injected via the `prompt` field on each tool definition.
- * The conversation engine concatenates: base system prompt + all tool prompts.
+ * Tool-specific guidance lives on `tools[].description`. The runtime folds each
+ * tool's `prompt()` into that description at request time and does not append
+ * the same text to the system prompt. `toolPrompts` remains for callers that
+ * still want an explicit system appendix. Project instruction files are loaded
+ * by the SDK into a user-role reminder, not this string.
  */
-
-import { loadProjectContext } from '../memory/projectContext.js';
 
 export function buildSystemPrompt(params: {
   workDir: string;
@@ -82,13 +83,5 @@ ${envSections.join('\n')}
     .filter(p => p.length > 0)
     .join('\n\n');
 
-  // Load Hadamard instruction files (AGENTS.md by default) so the agent
-  // picks up project-specific instructions — the canonical Claude Code behavior.
-  const project = loadProjectContext(params.workDir);
-  const projectSection = project.text
-    ? `\n\n# Project context (AGENTS.md)\n\nThe following instruction files are authoritative guidance for this workspace.\n\n${project.text}\n`
-    : '';
-
-  const withProject = `${base}${projectSection}`;
-  return toolSection ? `${withProject}\n\n# Tool-specific guidance\n\n${toolSection}` : withProject;
+  return toolSection ? `${base}\n\n# Tool-specific guidance\n\n${toolSection}` : base;
 }

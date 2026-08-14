@@ -104,6 +104,15 @@ class MockModelApi implements ModelApi {
   }
 }
 
+function providerToolDescription(request: ModelRequest | undefined, name: string): string {
+  const tools = request?.tools ?? [];
+  for (const tool of tools) {
+    const record = tool as { name?: string; description?: string };
+    if (record.name === name) return record.description ?? '';
+  }
+  return '';
+}
+
 describe('concurrent read-only tool execution', () => {
   it('runs consecutive read-only tools in parallel and keeps result order', async () => {
     const sessionDirectory = await createSessionDirectory();
@@ -1294,8 +1303,10 @@ describe('skill registry tool', () => {
     try {
       const result = await sdk.run('Prepare the release.');
 
-      expect(modelApi.createCalls[0]?.system).toContain('Available skills');
-      expect(modelApi.createCalls[0]?.system).toContain('release-check');
+      expect(providerToolDescription(modelApi.createCalls[0], 'Skill')).toContain('Available skills');
+      expect(providerToolDescription(modelApi.createCalls[0], 'Skill')).toContain('release-check');
+      expect(String(modelApi.createCalls[0]?.system ?? '')).not.toContain('Available skills');
+      expect(JSON.stringify(modelApi.createCalls[0])).not.toContain('Step A: run tests');
       const skillOutput = result.toolCalls.find((call) => call.publicName === 'Skill')?.outputText ?? '';
       expect(skillOutput).toContain('Loaded skill "release-check"');
       expect(skillOutput).toContain('Step A: run tests. Step B: update changelog.');

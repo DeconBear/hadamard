@@ -163,6 +163,9 @@ function createAgentDefinition(input: {
     allowNestedAgents: parseBoolean(
       input.frontmatter.allowNestedAgents ?? input.frontmatter['allow-nested-agents'],
     ),
+    projectInstructions: parseEnum(input.frontmatter.projectInstructions, ['inherit', 'omit']) as
+      | HadamardAgentDefinition['projectInstructions']
+      | undefined,
     source: input.source,
     sourcePath: input.filePath,
     metadata: {

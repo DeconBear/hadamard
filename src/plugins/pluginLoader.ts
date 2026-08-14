@@ -50,24 +50,23 @@ export class PluginLoader {
     const pluginIds = [...new Set(installed
       .filter(item => isSkillMcpBundleManifest(item.manifest))
       .map(item => item.manifest.id))];
-    const loaded: LoadedSkillMcpBundle[] = [];
-    for (const pluginId of pluginIds) {
+    const loaded = await Promise.all(pluginIds.map(async pluginId => {
       const packages = installed.filter(item => item.manifest.id === pluginId);
       const manifest = resolvePluginVersion(
         packages.map(item => item.manifest),
         { pinnedVersion: packages[0]?.pinnedVersion },
       ) as SkillMcpBundleManifest | undefined;
       const selected = packages.find(item => item.manifest.version === manifest?.version);
-      if (!selected?.enabled || !manifest || !isSkillMcpBundleManifest(manifest)) continue;
+      if (!selected?.enabled || !manifest || !isSkillMcpBundleManifest(manifest)) return null;
       if (!await this.trust.isTrusted({
         pluginId,
         version: manifest.version,
         integrity: manifest.integrity,
         capabilities: manifest.capabilities,
         source: manifest.source,
-      })) continue;
-      loaded.push(await loadSkillMcpBundle(selected.packagePath, manifest));
-    }
-    return loaded;
+      })) return null;
+      return loadSkillMcpBundle(selected.packagePath, manifest);
+    }));
+    return loaded.filter((bundle): bundle is LoadedSkillMcpBundle => bundle !== null);
   }
 }

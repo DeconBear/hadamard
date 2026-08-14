@@ -113,6 +113,15 @@ import {
   resolveHadamardConfigurationModel,
 } from '../config/modelConfigurationCatalog.js';
 import {
+  formatContextWindowTokens,
+  HADAMARD_CONTEXT_WINDOW_METADATA_KEY,
+  modelContextWindowLimit,
+  modelContextWindowOptions,
+  parseContextWindowTokens,
+  readSessionContextWindow,
+  resolveModelContextEntry,
+} from '../config/modelContextWindow.js';
+import {
   findBridgeConfig,
   maskApiKey,
   readBridgeConfigs,
@@ -131,10 +140,15 @@ import { estimateCost } from '../team/pricing.js';
 import { planFilePath, readPlanFile } from '../tools/planMode/PlanModeTools.js';
 import { loadProjectContext } from '../memory/projectContext.js';
 import {
+  hashProjectInstructionContent,
+  parseProjectInstructionState,
+} from '../memory/projectInstructionContext.js';
+import { getPersistedHadamardCompactState } from '../runtime/hadamardCompact.js';
+import { applyResolvedToolDescriptions } from '../runtime/agentClientRunHelpers.js';
+import {
   LegacySurfaceEventPipeline,
   type SurfaceSemanticEvent,
 } from '../surfaces/index.js';
-import { pathToFileURL } from 'node:url';
 import {
   HADAMARD_INTERACTIVE_COMMANDS,
   SUBCOMMAND_DESCRIPTIONS,
@@ -165,7 +179,6 @@ import {
 import type { TuiSelectionItem } from './selection.js';
 import {
   StreamFlusher,
-  formatBanner,
   formatCompactNotice,
   formatDivider,
   formatEditCall,
@@ -210,7 +223,17 @@ import {
   tuiTextInputDialogCursorPosition,
 } from './tuiFramePresenter.js';
 import { onboardTuiCredentials } from './tuiOnboarding.js';
-import { nextTuiContextTokenEstimate } from './tuiContextUsage.js';
+import { formatWelcomePage } from './tuiWelcomeBanner.js';
+import {
+  nextTuiContextTokenEstimate,
+  estimateTuiContextTokenBreakdown,
+} from './tuiContextUsage.js';
+import type { RequestTokenEstimateBreakdown } from '../runtime/requestTokenEstimate.js';
+import { formatSessionHistory } from './tuiSessionHistory.js';
+import {
+  isEmptyUserSessionSummary,
+  isEmptyUserStoredSession,
+} from '../storage/sessionVisibility.js';
 import {
   buildTuiResumeCandidates,
   resolveTuiResumeReference,
@@ -277,7 +300,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   }
 
   const hadamardHomeDir = resolveHadamardHome();
-  const workspaceRegistry = await readWorkspaceRegistry(hadamardHomeDir);
+  const [workspaceRegistry, loadedProjectSettings] = await Promise.all([
+    readWorkspaceRegistry(hadamardHomeDir),
+    readProjectSettings(workDir, hadamardHomeDir),
+  ]);
+  let projectSettings = loadedProjectSettings;
   let registeredProject = findWorkspaceProject(workspaceRegistry, workDir);
   let projectPrimaryPath = registeredProject?.path ?? workDir;
   let projectWorkPaths = registeredProject ? workspaceWorkPaths(registeredProject) : [workDir];
@@ -285,7 +312,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     projectPrimaryPath,
     hadamardHomeDir,
   );
-  let projectSettings = await readProjectSettings(workDir, hadamardHomeDir);
   let systemPrompt = buildTuiSystemPrompt(workDir, projectSettings, hadamardHomeDir, projectWorkPaths);
 
   let applyPlanPermission: (() => Promise<void>) | null = null;
@@ -312,15 +338,18 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     tools = [...byName.values()];
   };
   const createCleanSdk = async () => {
-    await rebuildInteractiveTools();
-    const externalSkillPreferences = await readHadamardExternalSkillPreferences({
-      hadamardHomeDir: resolveHadamardHome(),
-      workDir,
-    });
+    const [, externalSkillPreferences] = await Promise.all([
+      rebuildInteractiveTools(),
+      readHadamardExternalSkillPreferences({
+        hadamardHomeDir,
+        workDir,
+      }),
+    ]);
     return createAgentSdk({
       workDir,
       sessionDirectory: activeSessionDirectory,
       tools,
+      skills: managedPluginRuntime?.skills ?? [],
       permissionMode,
       externalSkills: externalSkillPreferencesToRuntimeOptions(externalSkillPreferences),
       // Load user-managed stdio MCP servers from ~/.hadamard/mcp.json (gap #10).
@@ -333,11 +362,15 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     });
   };
   let sdk: Awaited<ReturnType<typeof createAgentSdk>>;
-  let toolMetadata: Awaited<ReturnType<typeof sdk.listToolMetadata>>;
+  let toolMetadata: Awaited<ReturnType<typeof sdk.listToolMetadata>> = [];
+  let toolMetadataReady: Promise<void> = Promise.resolve();
   while (true) {
     try {
       sdk = await createCleanSdk();
-      toolMetadata = await sdk.listToolMetadata();
+      toolMetadataReady = sdk.listToolMetadata().then(
+        list => { toolMetadata = list; },
+        () => undefined,
+      );
       break;
     } catch (error) {
       if (error instanceof Error && error.message.includes('No Hadamard credential')) {
@@ -350,32 +383,15 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     }
   }
 
-  // Build a dynamic capabilities section injected into the system prompt each
-  // turn (gap #16 vs claude-code) — subagents, MCP servers+tools, skills — so
-  // the model knows what it can delegate to/use beyond the core tool list.
-  function buildAgentContext(): string {
-    const parts: string[] = [];
-    const agents = sdk.listAgentDefinitions();
-    if (agents.length > 0) {
-      parts.push(`Available subagents: ${agents.map(a => a.name).join(', ')}`);
-    }
-    const byServer = new Map<string, typeof toolMetadata>();
-    for (const tool of toolMetadata.filter(item => item.provider === 'mcp')) {
-      const server = tool.server ?? 'mcp';
-      if (!byServer.has(server)) byServer.set(server, []);
-      byServer.get(server)!.push(tool);
-    }
-    for (const [server, tools] of byServer) {
-      const names = tools.map(t => t.name).slice(0, 12).join(', ');
-      parts.push(`MCP server "${server}": ${names}${tools.length > 12 ? '…' : ''}`);
-    }
-    const skills = sdk.skills.listMetadata();
-    if (skills.length > 0) {
-      parts.push(`Skills: ${skills.map(s => s.name).slice(0, 12).join(', ')}${skills.length > 12 ? '…' : ''}`);
-    }
-    return parts.length > 0 ? `\n\n# Available capabilities\n\n${parts.join('\n')}\n` : '';
+  const startupSessions = await sdk.sessions.list();
+  const requestedResume = options.resumeSessionId
+    ? startupSessions.find(item => item.id === options.resumeSessionId)
+    : undefined;
+  if (requestedResume && isEmptyUserSessionSummary(requestedResume)) {
+    await sdk.sessions.delete(requestedResume.id).catch(() => undefined);
+    await sdk.close().catch(() => undefined);
+    throw new Error(`Session '${requestedResume.id}' is empty and cannot be resumed.`);
   }
-
   let session = options.resumeSessionId
     ? await sdk.resumeSession(options.resumeSessionId, {
         model: options.model,
@@ -456,6 +472,12 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     runtime: ManagedExternalCliRuntime;
   };
   type TuiAgentSession = typeof session;
+
+  async function deleteEmptyTuiSession(target: TuiAgentSession): Promise<void> {
+    if (isEmptyUserStoredSession(target.snapshot())) {
+      await target.delete().catch(() => undefined);
+    }
+  }
   interface ExternalSessionBinding {
     runtime: ManagedExternalCliRuntime;
     configName: string;
@@ -565,6 +587,44 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       [CONFIG_NAME_METADATA_KEY]: config?.name ?? null,
       [RUNTIME_MODEL_METADATA_KEY]: config?.model ?? modelLabel ?? null,
     });
+  }
+  async function configureContextWindow(value?: string): Promise<void> {
+    const model = bridgeModelLabel ?? activeBridgeConfig?.model ?? session.model;
+    const entry = resolveModelContextEntry(model, readBridgeConfigs().configs, activeBridgeConfig) ?? {
+      name: model,
+      contextWindowTokens: sdk.config.compact.contextWindowTokens,
+      maxContextWindowTokens: sdk.config.compact.maxContextWindowTokens,
+    };
+    const limit = modelContextWindowLimit(entry);
+    const available = modelContextWindowOptions(entry);
+    let selected = value ? parseContextWindowTokens(value) : undefined;
+    if (value && (!selected || (limit && selected > limit))) {
+      appendStatic([
+        ...formatErrorLine(limit
+          ? `Invalid context window: ${value}. Model limit is ${formatContextWindowTokens(limit)}.`
+          : `Invalid context window: ${value}.`),
+        '',
+      ]);
+      return;
+    }
+    if (!value) {
+      const choice = await selectItem({
+        title: 'Context window',
+        subtitle: limit
+          ? `${model} · limit ${formatContextWindowTokens(limit)}`
+          : `${model} · model limit not declared`,
+        searchable: false,
+        items: available.map(tokens => ({
+          id: String(tokens),
+          label: formatContextWindowTokens(tokens),
+          description: tokens === entry?.contextWindowTokens ? 'model default' : 'session limit',
+        })),
+      });
+      if (!choice) return;
+      selected = Number(choice);
+    }
+    await session.mergeMetadata({ [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: selected });
+    appendStatic([...formatInfoLine(`context window: ${formatContextWindowTokens(selected!)}`), '']);
   }
   function clearBridgeSelection(): void {
     bridgeMode = false;
@@ -766,6 +826,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   let providerActivitySeen = false;
   let runToolCount = 0;
   let lastTokenEstimate: number | undefined;
+  let lastTokenBreakdown: RequestTokenEstimateBreakdown | undefined;
   // Running token + USD totals for /cost and /usage. Per-config breakdown
   // shows spend by each bridge config so the user can compare backends.
   let totalInputTokens = 0;
@@ -1175,7 +1236,9 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   /** Always-visible mode + live context-usage line (usage shown as % of the window). */
   function buildModeLine(): string {
     const used = lastTokenEstimate ?? 0;
-    const window = sdk.config.compact.contextWindowTokens ?? 200_000;
+    const window = readSessionContextWindow(session.metadata)
+      ?? sdk.config.compact.contextWindowTokens
+      ?? 200_000;
     const pct = window > 0 ? Math.min(100, Math.round((used / window) * 100)) : 0;
     const usedK = used >= 1000 ? `${(used / 1000).toFixed(used >= 100_000 ? 0 : 1)}k` : `${used}`;
     const ctxColor = pct >= 90 ? A.red : pct >= 70 ? A.yellow : A.dim;
@@ -1319,6 +1382,133 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
   function appendStatic(lines: readonly string[]): void {
     screen.appendStatic(lines);
+  }
+
+  function paintWelcome(): void {
+    appendStatic(formatWelcomePage({
+      workDir,
+      model: session.model,
+      toolCount: toolMetadata.length || tools.length,
+      permissionMode: currentPermissionMode(),
+      width: screen.width,
+    }));
+  }
+
+  async function refreshContextEstimate(): Promise<void> {
+    const sessionId = session.id;
+    await toolMetadataReady;
+    const project = loadProjectContext(workDir, {
+      projectInstructionMode: projectSettings.context.instructionMode,
+      hadamardHomeDir,
+      projectWorkPaths,
+    });
+    const instructionState = parseProjectInstructionState(session.metadata);
+    const compactCount = getPersistedHadamardCompactState(session.metadata).compactCount;
+    const contentHash = hashProjectInstructionContent(project.text, project.sources);
+    const pendingInject = !instructionState
+      || compactCount > instructionState.injectedAtCompactCount
+      || instructionState.contentHash !== contentHash;
+    const localTools = [...new Map(
+      toolMetadata
+        .map(metadata => sdk.getTool(metadata.name))
+        .filter((tool): tool is AgentToolDefinition => Boolean(tool))
+        .map(tool => [tool.name, tool]),
+    ).values()];
+    const estimatedLocalTools = await applyResolvedToolDescriptions(
+      [
+        ...localTools,
+        ...(activeTeamTool ? [activeTeamTool] : []),
+      ],
+      { workDir, permissionMode: currentPermissionMode() },
+    );
+    const estimate = estimateTuiContextTokenBreakdown({
+      systemPrompt,
+      tools: [
+        ...estimatedLocalTools,
+        ...toolMetadata
+          .filter(metadata => metadata.provider === 'mcp' && !sdk.getTool(metadata.name))
+          .map(metadata => ({
+            name: metadata.name,
+            description: metadata.description,
+            inputJsonSchema: {},
+          })),
+      ],
+      messages: session.messages,
+    });
+    if (pendingInject) {
+      estimate.messageTokens += Math.ceil(project.text.length / 4);
+      estimate.uncalibratedTokens += Math.ceil(project.text.length / 4);
+      estimate.totalTokens += Math.ceil(project.text.length / 4);
+    }
+    if (session.id === sessionId) {
+      lastTokenBreakdown = estimate;
+      lastTokenEstimate = estimate.totalTokens;
+      renderDynamic();
+    }
+  }
+
+  function projectInstructionRunOptions() {
+    const contextWindowTokens = readSessionContextWindow(session.metadata);
+    return {
+      ...(contextWindowTokens ? { contextWindowTokens } : {}),
+      projectInstructions: {
+        mode: projectSettings.context.instructionMode,
+        workPaths: projectWorkPaths,
+      },
+    };
+  }
+
+  function paintSessionHistory(): void {
+    appendStatic(formatSessionHistory(session.messages, screen.width));
+    void refreshContextEstimate();
+  }
+
+  function paintResumedSession(): void {
+    process.stdout.write('\x1b[2J\x1b[H');
+    screen.setDynamic([]);
+    paintWelcome();
+    appendStatic([
+      ...formatInfoLine(`resumed: ${session.id} · ${session.title} · ${session.model}`),
+      ...formatInfoLine(`workspace: ${workDir}`),
+      '',
+    ]);
+    paintSessionHistory();
+    renderDynamic();
+  }
+
+  async function clearConversation(): Promise<void> {
+    const previousSession = session;
+    const effort = currentEffort();
+    const agentMode = currentAgentMode();
+    const nextSession = await sdk.createSession({
+      title: path.basename(workDir),
+      model: previousSession.model,
+      permissionMode: currentPermissionMode(),
+      permissions: previousSession.permissionContext.permissions,
+      metadata: {
+        ...(effort ? { [SESSION_EFFORT_KEY]: effort } : {}),
+        ...(readSessionContextWindow(previousSession.metadata)
+          ? { [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: readSessionContextWindow(previousSession.metadata) }
+          : {}),
+        ...sessionAgentModePatch(agentMode),
+      },
+    });
+    session = nextSession;
+    await persistSessionRuntimeMetadata();
+    await deleteEmptyTuiSession(previousSession);
+    totalInputTokens = 0;
+    totalOutputTokens = 0;
+    totalCostUsd = 0;
+    configUsage.clear();
+    currentTodos = [];
+    lastTokenEstimate = undefined;
+    lastTokenBreakdown = undefined;
+    await refreshContextEstimate();
+    process.stdout.write('\x1b[2J\x1b[H');
+    screen.setDynamic([]);
+    paintWelcome();
+    renderDynamic();
+    runSessionStartHooks(() => readSessionStartHooks(getLoadedJsonConfig()?.raw), workDir);
   }
 
   function collapseReasoning(): void {
@@ -1469,7 +1659,6 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     toolCallNames.clear();
     statusNote = 'preparing locally';
     streamedTextSeen = false;
-    lastTokenEstimate = undefined;
     abortCtrl = new AbortController();
     spinnerTimer = setInterval(() => {
       spinnerFrame += 1;
@@ -1482,6 +1671,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
     appendStatic(formatUserPrompt(text));
     renderDynamic();
+    await toolMetadataReady;
 
     // /model router: classify this turn and route it to a model (possibly on a
     // different provider). Only applies to the in-process SDK — bridge mode
@@ -1530,7 +1720,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         // session → context intact; switching bridge↔hadamard is seamless.
         statusNote = `bridge:${activeBridgeConfig?.name ?? 'bridge'}`;
         const stream = session.stream(expandImageRefs(text), {
-          systemPrompt: systemPrompt + buildAgentContext(),
+          systemPrompt,
+          ...projectInstructionRunOptions(),
           signal: abortCtrl.signal,
           permissionMode: currentPermissionMode(),
           effort: currentEffort(),
@@ -1551,7 +1742,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           bridgeModelLabel,
         );
         const stream = session.stream(expandImageRefs(text), {
-          systemPrompt: systemPrompt + buildAgentContext(),
+          systemPrompt,
+          ...projectInstructionRunOptions(),
           signal: abortCtrl.signal,
           permissionMode: currentPermissionMode(),
           // A matched route's effort overrides the session effort for this turn.
@@ -1647,6 +1839,26 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         providerActivitySeen = false;
         statusNote = 'waiting for model 0s';
         lastTokenEstimate = nextTuiContextTokenEstimate(lastTokenEstimate, event);
+        if (
+          typeof data.systemTokenEstimate === 'number'
+          && typeof data.toolTokenEstimate === 'number'
+          && typeof data.messageTokenEstimate === 'number'
+        ) {
+          const multiplier = typeof data.tokenEstimateMultiplier === 'number'
+            ? data.tokenEstimateMultiplier
+            : 1;
+          const uncalibratedTokens = data.systemTokenEstimate
+            + data.toolTokenEstimate
+            + data.messageTokenEstimate;
+          lastTokenBreakdown = {
+            systemTokens: data.systemTokenEstimate,
+            toolTokens: data.toolTokenEstimate,
+            messageTokens: data.messageTokenEstimate,
+            uncalibratedTokens,
+            totalTokens: lastTokenEstimate ?? Math.ceil(uncalibratedTokens * multiplier),
+            multiplier,
+          };
+        }
         renderDynamic();
         return;
       case 'text.delta': {
@@ -1809,11 +2021,13 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       localProjectPath: projectPrimaryPath,
       localSessionDirectory: sdk.config.sessionDirectory,
       currentSessionId: session.id,
+      scopeProjectPath: workDir,
       includeAgents: options.includeAgents,
     });
   }
 
   async function activateResumeCandidate(target: TuiResumeCandidate): Promise<void> {
+    const previousSession = session;
     const targetDirectory = path.resolve(target.sessionDirectory);
     const currentDirectory = path.resolve(sdk.config.sessionDirectory);
     const normalizeRuntimePath = (value: string) => {
@@ -1826,6 +2040,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     ) {
       session = await sdk.resumeSession(target.summary.id);
       await restoreSessionRuntimeSelection();
+      await deleteEmptyTuiSession(previousSession);
       return;
     }
 
@@ -1877,6 +2092,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       await deviceLinkService.close().catch(() => undefined);
       deviceLinkService = null;
     }
+    await deleteEmptyTuiSession(previousSession);
     await previousSdk.close().catch(() => undefined);
   }
 
@@ -1898,11 +2114,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       return false;
     }
     await activateResumeCandidate(candidate);
-    appendStatic([
-      ...formatInfoLine(`resumed: ${session.id} · ${session.title} · ${session.model}`),
-      ...formatInfoLine(`workspace: ${workDir}`),
-      '',
-    ]);
+    paintResumedSession();
     return true;
   }
 
@@ -1915,7 +2127,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const byKey = new Map(candidates.map(item => [item.key, item]));
     const selected = await selectItem({
       title: 'Resume a Session',
-      subtitle: 'Search all persisted Hadamard workspaces',
+      subtitle: `Sessions in ${workDir}`,
       items: candidates.map(item => ({
         id: item.key,
         label: item.summary.title,
@@ -1931,11 +2143,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const target = selected ? byKey.get(selected) : undefined;
     if (target) {
       await activateResumeCandidate(target);
-      appendStatic([
-        ...formatInfoLine(`resumed: ${session.id} · ${session.title} · ${session.model}`),
-        ...formatInfoLine(`workspace: ${workDir}`),
-        '',
-      ]);
+      paintResumedSession();
     }
   }
 
@@ -2049,6 +2257,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         await activateBridgeConfig(selectedConfig);
       }
     }
+    await configureContextWindow();
     appendStatic([...formatInfoLine(`model configuration: ${activeBridgeConfig?.name ?? 'default'} · ${bridgeModelLabel ?? session.model}`), '']);
   }
 
@@ -3811,6 +4020,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         activeBridgeConfigName: () => activeBridgeConfig?.name,
         bridgeModelLabel: () => bridgeModelLabel,
         chooseModel,
+        configureContextWindow,
         configureModelSettings,
         chooseRouter,
         chooseEffort,
@@ -3828,11 +4038,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       if (configurationCommandHandled) return;
       const basicCommandHandled = await runTuiBasicCommand(name, args, {
         selectItem,
-        clear: () => {
-          process.stdout.write('\x1b[2J\x1b[H');
-          screen.setDynamic([]);
-          renderDynamic();
-        },
+        clear: clearConversation,
         startRun,
         shutdown: () => { void shutdown(0); },
         toolNames: () => toolMetadata.map(tool => tool.name),
@@ -3909,7 +4115,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           return session.id;
         },
         listStoredSessions: async () => (await sdk.sessions.list())
-          .filter(isTuiChatSession)
+          .filter(item => isTuiChatSession(item) && !isEmptyUserSessionSummary(item))
           .map(item => ({
             id: item.id,
             title: item.title,
@@ -4393,20 +4599,36 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       if (await runTuiContextCommand(name, args, {
         configureContext: configureContextSettings,
         contextSnapshot: async () => {
-          const { resolveHadamardCompactBudget } = await import('../runtime/hadamardCompact.js');
-          const compactBudget = resolveHadamardCompactBudget(sdk.config.compact);
-          const project = loadProjectContext(sdk.config.workDir, {
+          await refreshContextEstimate();
+          const { resolveHadamardCompactBudget, getPersistedHadamardCompactState } = await import('../runtime/hadamardCompact.js');
+          const compactBudget = resolveHadamardCompactBudget({
+            ...sdk.config.compact,
+            ...(readSessionContextWindow(session.metadata)
+              ? { contextWindowTokens: readSessionContextWindow(session.metadata) }
+              : {}),
+          });
+          const project = loadProjectContext(workDir, {
             projectInstructionMode: projectSettings.context.instructionMode,
             hadamardHomeDir,
+            projectWorkPaths,
           });
+          const instructionState = parseProjectInstructionState(session.metadata);
           return {
             effectiveWindowTokens: compactBudget.effectiveContextWindowTokens,
             rawWindowTokens: compactBudget.rawContextWindowTokens,
             autoCompactTokenLimit: compactBudget.autoCompactTokenLimit,
             compactSource: compactBudget.source,
             usedTokens: lastTokenEstimate ?? 0,
+            systemTokens: lastTokenBreakdown?.systemTokens,
+            toolTokens: lastTokenBreakdown?.toolTokens,
+            messageTokens: lastTokenBreakdown?.messageTokens,
+            tokenEstimateMultiplier: lastTokenBreakdown?.multiplier,
             messages: session.messages.length,
             systemPromptChars: systemPrompt.length,
+            projectInstructionChars: project.text.length,
+            projectInstructionHash: instructionState?.contentHash.slice(0, 12),
+            projectInstructionKey: instructionState?.contextKey.split('\n')[0],
+            compactCount: getPersistedHadamardCompactState(session.metadata).compactCount,
             toolCount: toolMetadata.length,
             mcpToolCount: toolMetadata.filter(tool => tool.provider === 'mcp').length,
             instructionFiles: project.sources,
@@ -4543,7 +4765,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       // Slash completions are not a resubmit of the recalled follow-up.
       restoreAbandonedFollowUp(session, recalledFollowUp);
       recalledFollowUp = null;
-      editor.clear();
+      editor.setText(selectedCommand);
+      editor.submit();
       menuSelected = 0;
       if (running && !canRunInteractiveCommand(selectedCommand.slice(1), true)) {
         appendStatic(formatInfoLine(`/${selectedName} requires an idle session; it will be available after this run`));
@@ -4674,6 +4897,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       });
       deviceLinkService = null;
     }
+    await deleteEmptyTuiSession(session);
     const cleanupResults = await Promise.allSettled([
       sdk.close(),
       ...(globalAssistantSdk ? [globalAssistantSdk.close()] : []),
@@ -4694,16 +4918,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     process.exit(exitCode);
   }
 
+  process.stdout.write('\x1b[2J\x1b[H');
   screen.start();
-  appendStatic(
-    formatBanner({
-      workDir,
-      model: session.model,
-      toolCount: toolMetadata.length,
-      permissionMode: currentPermissionMode(),
-      width: screen.width,
-    }),
-  );
+  await refreshContextEstimate();
+  paintWelcome();
+  paintSessionHistory();
   await restoreSessionRuntimeSelection();
   renderDynamic();
 
@@ -4724,19 +4943,4 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
 
   // Keep the process alive until shutdown() exits it.
   await new Promise(() => {});
-}
-
-// Allow running this module directly (`npx tsx src/tui/hadamardTui.ts`), not only
-// via the cli/ wrapper. Requires an interactive terminal.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    process.stderr.write(
-      'hadamard TUI requires an interactive terminal (TTY). Run it directly in your terminal — not piped or through another tool.\n',
-    );
-    process.exit(1);
-  }
-  runHadamardTui().catch((error: unknown) => {
-    process.stderr.write(`Fatal: ${(error as Error).stack ?? (error as Error).message}\n`);
-    process.exit(1);
-  });
 }

@@ -125,10 +125,7 @@ export async function loadHadamardExternalSkillDefinitions(options: {
 
   selected.sort((left, right) => left.entry.name.localeCompare(right.entry.name));
   skippedConflicts.sort((left, right) => left.name.localeCompare(right.name));
-  const definitions: HadamardSkillDefinition[] = [];
-  const loadedSkillIds: string[] = [];
-  const loadErrors: HadamardExternalSkillLoadError[] = [];
-  for (const candidate of selected) {
+  const loaded = await mapWithConcurrency(selected, 16, async candidate => {
     try {
       const definition = await loadHadamardSkillDefinitionFile({
         skillFile: candidate.origin.skillFile,
@@ -138,29 +135,46 @@ export async function loadHadamardExternalSkillDefinitions(options: {
         loadedFrom: candidate.origin.loadedFrom === 'commands' ? 'commands' : 'skills',
         includeDeclaredAllowedTools: candidate.origin.provider === 'hadamard',
       });
-      definitions.push({
-        ...definition,
-        description: candidate.entry.description,
-        version: candidate.entry.version ?? definition.version,
-        allowedTools: candidate.origin.provider === 'hadamard'
-          ? definition.allowedTools
-          : undefined,
-        metadata: {
-          ...(definition.metadata ?? {}),
-          __hadamardExternalSkillId: candidate.entry.id,
-          __hadamardExternalSkillProvider: candidate.origin.provider,
-          __hadamardExternalSkillSourceId: candidate.origin.sourceId,
-          __hadamardExternalSkillReadOnly: candidate.origin.readOnly,
+      return {
+        ok: true as const,
+        definition: {
+          ...definition,
+          description: candidate.entry.description,
+          version: candidate.entry.version ?? definition.version,
+          allowedTools: candidate.origin.provider === 'hadamard'
+            ? definition.allowedTools
+            : undefined,
+          metadata: {
+            ...(definition.metadata ?? {}),
+            __hadamardExternalSkillId: candidate.entry.id,
+            __hadamardExternalSkillProvider: candidate.origin.provider,
+            __hadamardExternalSkillSourceId: candidate.origin.sourceId,
+            __hadamardExternalSkillReadOnly: candidate.origin.readOnly,
+          },
         },
-      });
-      loadedSkillIds.push(candidate.entry.id);
-    } catch (error) {
-      loadErrors.push({
         skillId: candidate.entry.id,
-        name: candidate.entry.name,
-        sourceId: candidate.origin.sourceId,
-        message: error instanceof Error ? error.message : String(error),
-      });
+      };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: {
+          skillId: candidate.entry.id,
+          name: candidate.entry.name,
+          sourceId: candidate.origin.sourceId,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  });
+  const definitions: HadamardSkillDefinition[] = [];
+  const loadedSkillIds: string[] = [];
+  const loadErrors: HadamardExternalSkillLoadError[] = [];
+  for (const result of loaded) {
+    if (result.ok) {
+      definitions.push(result.definition);
+      loadedSkillIds.push(result.skillId);
+    } else {
+      loadErrors.push(result.error);
     }
   }
 
@@ -192,4 +206,25 @@ function normalizeRuntimeOptions(
   options: boolean | HadamardExternalSkillsOptions | undefined,
 ): HadamardExternalSkillsOptions {
   return options && typeof options === 'object' ? options : {};
+}
+
+async function mapWithConcurrency<T, U>(
+  values: readonly T[],
+  concurrency: number,
+  worker: (value: T) => Promise<U>,
+): Promise<U[]> {
+  const results = new Array<U>(values.length);
+  let nextIndex = 0;
+  const runners = Array.from(
+    { length: Math.min(concurrency, Math.max(values.length, 1)) },
+    async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await worker(values[index]!);
+      }
+    },
+  );
+  await Promise.all(runners);
+  return results;
 }

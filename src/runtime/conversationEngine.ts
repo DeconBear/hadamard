@@ -6,6 +6,10 @@
 
 import { HadamardSdkError } from '../errors.js';
 import {
+  reconcileHadamardContextMessages,
+  stripHadamardMessageProvenance,
+} from '../memory/projectInstructionContext.js';
+import {
   getHadamardTodoSnapshot,
   TODO_WRITE_TOOL_NAME,
 } from '../tools/todo/TodoWriteTool.js';
@@ -46,6 +50,10 @@ import { enforceToolResultsAggregateBudget } from './toolResultArtifactStore.js'
 import { executeConversationToolUse } from './conversationToolExecutor.js';
 import { consumeStream } from './modelStreamConsumer.js';
 import {
+  calibrateRequestTokenMultiplier,
+  estimateRequestTokenBreakdown,
+} from './requestTokenEstimate.js';
+import {
   appendTextToToolResultContent,
   buildTodoReminderText,
   isLikelyTruncatedToolUse,
@@ -57,7 +65,6 @@ import {
   MAX_STREAM_INTERRUPTION_RETRIES,
   aggregateRequestUsage,
   applyAnthropicPromptCacheBreakpoints,
-  clamp,
   ensureNotAborted,
   getReportedInputTokens,
   getRequestByteLength,
@@ -86,12 +93,37 @@ export async function executeConversation(
   const promptText =
     typeof options.input === 'string' ? options.input : extractTextFromContent(options.input);
   const postSamplingHooks = resolveHadamardPostSamplingHooks(options.hooks);
-  const conversation = deepClone(options.messages ?? []);
+  const reconciledContext = reconcileHadamardContextMessages(
+    deepClone(options.messages ?? []),
+    deepClone(options.prefixedMessages ?? []),
+  );
+  const conversation = reconciledContext.messages;
+  const prefixedMessages = reconciledContext.prefixedMessages;
   let initialUserMessage: MessageParam | undefined;
   if (!options.skipInitialInput) {
-    conversation.push(...deepClone(options.prefixedMessages ?? []));
+    conversation.push(...prefixedMessages);
     initialUserMessage = buildUserMessage(options.input);
     conversation.push(initialUserMessage);
+  } else if (prefixedMessages.length > 0) {
+    // Reactive compact retry: the user turn is already on the snapshot.
+    // Reinsert rebuilt prefixes immediately before that user turn so the
+    // request still ends with the actual prompt, rather than internal context.
+    let retryInputIndex = -1;
+    for (let index = conversation.length - 1; index >= 0; index -= 1) {
+      const candidate = conversation[index];
+      if (
+        candidate?.role === 'user' &&
+        extractTextFromContent(candidate.content) === promptText
+      ) {
+        retryInputIndex = index;
+        break;
+      }
+    }
+    if (retryInputIndex >= 0) {
+      conversation.splice(retryInputIndex, 0, ...prefixedMessages);
+    } else {
+      conversation.push(...prefixedMessages);
+    }
   }
 
   if (!options.skipRunStartedEvent) {
@@ -126,11 +158,19 @@ export async function executeConversation(
     options.mcpServers ?? [],
     { signal: options.signal, timeoutMs: options.config.mcpTimeoutMs },
   );
-  const fixedRequestTokens = estimateFixedRequestTokens(
-    options.systemPrompt ?? options.config.systemPrompt,
-    resolvedTools,
-  );
-  const toolMap = new Map(resolvedTools.map((tool) => [tool.publicName, tool]));
+  const systemPrompt = options.systemPrompt ?? options.config.systemPrompt;
+  const providerTools = resolvedTools.map(tool => tool.providerTool);
+  const fixedRequestBreakdown = estimateRequestTokenBreakdown({
+    systemPrompt,
+    tools: providerTools,
+    messageTokens: 0,
+  });
+  const fixedRequestTokens = fixedRequestBreakdown.uncalibratedTokens;
+  const toolMap = new Map<string, (typeof resolvedTools)[number]>();
+  for (const tool of resolvedTools) {
+    toolMap.set(tool.publicName, tool);
+    for (const alias of tool.aliases ?? []) toolMap.set(alias, tool);
+  }
   const requestSummaries: AgentRequestSummary[] = [];
   const toolCalls: AgentToolCallRecord[] = [];
   const permissionDecisions: HadamardPermissionDecision[] = [];
@@ -226,11 +266,11 @@ export async function executeConversation(
     const request: ModelRequest = {
       model,
       max_tokens: options.maxTokens ?? options.config.maxTokens,
-      system: options.systemPrompt ?? options.config.systemPrompt,
+      system: systemPrompt,
       temperature: options.temperature ?? options.config.temperature,
       top_p: options.topP,
       effort,
-      tools: resolvedTools.length > 0 ? resolvedTools.map((tool) => tool.providerTool) : undefined,
+      tools: resolvedTools.length > 0 ? providerTools : undefined,
       tool_choice: options.toolChoice,
       metadata:
         options.userId ?? options.config.userId
@@ -241,13 +281,17 @@ export async function executeConversation(
       context_management: useAnthropicContextManagement
         ? getHadamardApiContextManagement(conversation, options.config.compact)
         : undefined,
-      messages: deepClone(preparedMessages.messages),
+      messages: deepClone(preparedMessages.messages.map(stripHadamardMessageProvenance)),
       signal: options.signal,
     };
     const requestByteLength = getRequestByteLength(request);
-    const requestTokenEstimate = Math.ceil(
-      (preparedMessages.tokenEstimateAfter + fixedRequestTokens) * tokenEstimateMultiplier,
-    );
+    const requestTokenBreakdown = estimateRequestTokenBreakdown({
+      systemPrompt,
+      tools: providerTools,
+      messageTokens: preparedMessages.tokenEstimateAfter,
+      multiplier: tokenEstimateMultiplier,
+    });
+    const requestTokenEstimate = requestTokenBreakdown.totalTokens;
 
     // Prompt caching: cache stable system/tools prefixes and the latest message
     // on Anthropic API hosts. Multiple breakpoints improve cache retention when
@@ -274,6 +318,10 @@ export async function executeConversation(
       iteration,
       requestTokenEstimate,
       requestByteLength,
+      systemTokenEstimate: requestTokenBreakdown.systemTokens,
+      toolTokenEstimate: requestTokenBreakdown.toolTokens,
+      messageTokenEstimate: requestTokenBreakdown.messageTokens,
+      tokenEstimateMultiplier: requestTokenBreakdown.multiplier,
       localMicrocompact: undefined,
       timestamp: nowIso(),
     });
@@ -420,20 +468,12 @@ export async function executeConversation(
     conversation.push(assistantMessage);
     await appendRawTranscript(options, [assistantMessage]);
     lastRequestInputTokens = getReportedInputTokens(message.usage);
-    if (lastRequestInputTokens !== undefined && requestTokenEstimate > 0) {
-      const observedMultiplier = clamp(
-        lastRequestInputTokens / Math.max(
-          preparedMessages.tokenEstimateAfter,
-          1,
-        ),
-        0.5,
-        8,
-      );
-      tokenEstimateMultiplier = clamp(
-        (tokenEstimateMultiplier * 0.65) + (observedMultiplier * 0.35),
-        0.5,
-        8,
-      );
+    if (lastRequestInputTokens !== undefined && requestTokenBreakdown.uncalibratedTokens > 0) {
+      tokenEstimateMultiplier = calibrateRequestTokenMultiplier({
+        currentMultiplier: tokenEstimateMultiplier,
+        reportedInputTokens: lastRequestInputTokens,
+        uncalibratedRequestTokens: requestTokenBreakdown.uncalibratedTokens,
+      });
     }
 
     for (const hook of postSamplingHooks) {
@@ -939,19 +979,5 @@ export async function executeConversation(
       );
     }
   }
-}
-
-function estimateFixedRequestTokens(
-  systemPrompt: string | undefined,
-  tools: readonly { providerTool: unknown }[],
-): number {
-  const systemChars = systemPrompt?.length ?? 0;
-  let toolChars = 0;
-  try {
-    toolChars = JSON.stringify(tools.map(tool => tool.providerTool)).length;
-  } catch {
-    toolChars = 0;
-  }
-  return Math.ceil((systemChars + toolChars) / 4);
 }
 

@@ -10,17 +10,18 @@ import {
 } from '../runtime/agentExecutionPolicy.js';
 import type {
   DreamExecutionProfileRef,
+  ProjectInstructionMode,
   ProjectMemorySettings,
   ProjectMemorySettingsPatch,
 } from './projectSettingsTypes.js';
 export type {
   DreamExecutionProfileRef,
+  ProjectInstructionMode,
   ProjectMemorySettings,
   ProjectMemorySettingsPatch,
 } from './projectSettingsTypes.js';
 
 export type ProjectWorkMode = 'coding' | 'daily';
-export type ProjectInstructionMode = 'agents' | 'claude' | 'both';
 export interface ProjectContextSettings {
   instructionMode: ProjectInstructionMode;
 }

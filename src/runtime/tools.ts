@@ -77,11 +77,13 @@ export function createLocalToolAdapter(
   publicName = definition.name,
   sourceName = definition.name,
   mcpServerName?: string,
+  aliases: string[] = publicName === definition.name ? [...(definition.aliases ?? [])] : [],
 ): ResolvedToolAdapter {
   assertPublicToolName(publicName);
   return {
     publicName,
     sourceName,
+    ...(aliases.length > 0 ? { aliases } : {}),
     provider: mcpServerName ? 'mcp' : 'local',
     mcpServerName,
     providerTool: buildProviderTool(definition, publicName),

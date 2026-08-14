@@ -19,6 +19,7 @@ function createPort(): TuiConfigurationCommandPort & { output: string[][] } {
     activeBridgeConfigName: () => undefined,
     bridgeModelLabel: () => null,
     chooseModel: vi.fn(async () => undefined),
+    configureContextWindow: vi.fn(async () => undefined),
     configureModelSettings: vi.fn(async () => undefined),
     chooseRouter: vi.fn(async () => undefined),
     chooseEffort: vi.fn(async () => undefined),
@@ -44,6 +45,7 @@ describe('runTuiConfigurationCommand', () => {
 
     expect(port.disableBridge).toHaveBeenCalledTimes(1);
     expect(port.setSessionModel).toHaveBeenCalledWith('vendor/model-x');
+    expect(port.configureContextWindow).toHaveBeenCalledTimes(1);
     expect(port.output.flat().map(stripAnsi).join('\n')).toContain('custom model: vendor/model-x');
   });
 
@@ -59,6 +61,12 @@ describe('runTuiConfigurationCommand', () => {
       ]),
     );
     expect(port.output.flat().map(stripAnsi).join('\n')).toContain('permissions: Read-only');
+  });
+
+  it('routes model context selection through the shared model command', async () => {
+    const port = createPort();
+    await runTuiConfigurationCommand('model', 'context 128k', port);
+    expect(port.configureContextWindow).toHaveBeenCalledWith('128k');
   });
 
   it('opens the shared ReAct and CodeAct mode selector', async () => {

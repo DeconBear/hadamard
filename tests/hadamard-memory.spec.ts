@@ -106,6 +106,27 @@ describe('Hadamard memory helpers', () => {
     expect(state.paths.autoMemoryDir).toBe(path.join(tempDir, '.hadamard', 'custom-memory'));
   });
 
+  it('keeps memory policy without injecting an empty memory_summary.md placeholder', async () => {
+    const tempDir = await createTempDir('hadamard-memory-empty-summary-');
+    process.env.HADAMARD_CONFIG_DIR = path.join(tempDir, '.hadamard');
+    const projectPath = path.join(tempDir, 'workspace');
+    await mkdir(projectPath, { recursive: true });
+    const memory = createHadamardMemoryApi({
+      homeDir: tempDir,
+      projectPath,
+      sessionId: 'empty-summary',
+    });
+    const paths = await memory.paths();
+    await mkdir(paths.autoMemoryDir, { recursive: true });
+    await writeFile(paths.autoMemoryEntrypoint, '# MEMORY\n\nNothing durable yet.\n', 'utf8');
+
+    const prompt = await memory.buildPromptWithEntrypoints();
+    expect(prompt).toContain('# Memory');
+    expect(prompt).toContain('ProposeMemory');
+    expect(prompt).not.toContain('is currently empty');
+    expect(prompt).not.toMatch(/\n## .+[/\\]memory_summary\.md\n/u);
+  });
+
   it('returns default compact state when no bridge transcripts are available', async () => {
     const tempDir = await createTempDir('hadamard-memory-boundary-');
     process.env.HADAMARD_CONFIG_DIR = path.join(tempDir, '.hadamard');

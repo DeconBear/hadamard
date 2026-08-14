@@ -152,6 +152,9 @@ export async function executeConversationToolUse(
       sessionId: options.sessionId,
       cwd: workDir,
       metadata: { ...(options.metadata ?? {}) },
+      projectInstructions: options.projectInstructions
+        ? structuredClone(options.projectInstructions)
+        : undefined,
       prompt: promptText,
       iteration,
       permissionMode: options.permissionMode,

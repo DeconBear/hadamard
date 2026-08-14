@@ -20,6 +20,7 @@ import {
   filterHadamardMessagesForSessionMemory,
   serializeHadamardSessionMemoryRuntimeState,
 } from '../memory/hadamardSessionMemoryState.js';
+import { isHadamardProjectInstructionMessage } from '../memory/projectInstructionContext.js';
 
 export const HADAMARD_COMPACT_STATE_KEY = '__hadamardCompactState';
 export const HADAMARD_COMPACT_HISTORY_KEY = '__hadamardCompactHistory';
@@ -74,6 +75,18 @@ export interface HadamardCompactExecutionContext {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function latestProjectInstructionMessage(
+  messages: readonly MessageParam[],
+): MessageParam | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message && isHadamardProjectInstructionMessage(message)) {
+      return structuredClone(message);
+    }
+  }
+  return undefined;
 }
 
 export function getPersistedHadamardCompactState(
@@ -1246,8 +1259,10 @@ export async function compactHadamardConversationIfNeeded(
     };
   }
 
+  const projectInstruction = latestProjectInstructionMessage(messages);
   const nextMessages = [
     buildPostCompactSummaryMessage(summary, context.force ? 'reactive' : 'auto'),
+    ...(projectInstruction ? [projectInstruction] : []),
     ...messagesToKeep,
   ];
   return {

@@ -80,6 +80,19 @@ describe('product RunEvent wiring boundary', () => {
     expect(source).toMatch(/managedPluginRuntime(?:Close)?(?:\(\)|\.close(?:\(\))?)/);
   });
 
+  it('injects managed-plugin Skills into both Hadamard SDK interactive surfaces', async () => {
+    const tui = await readSurfaceSource('src/tui/hadamardTui.ts');
+    const gui = await readSurfaceSource('src/gui/hadamardGui.ts');
+    expect(tui).toContain('skills: managedPluginRuntime?.skills ?? []');
+    expect(gui).toContain('skills: managedPluginSkills');
+  });
+
+  it('commits completion-selected TUI commands to input history', async () => {
+    const tui = await readSurfaceSource('src/tui/hadamardTui.ts');
+    expect(tui).toContain('editor.setText(selectedCommand);');
+    expect(tui).toContain('editor.submit();');
+  });
+
   it.each([
     'src/tui/hadamardTui.ts',
   ])('%s retries managed plugin cleanup and exits nonzero on failure', async (file) => {

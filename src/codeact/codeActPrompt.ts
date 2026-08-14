@@ -32,10 +32,7 @@ export function buildAgentModePrompt(
       codeCellInstructions(capabilities),
     ].join('\n\n');
   }
-  return [
-    'Use the available ordinary JSON tools when they materially advance the task.',
-    'Observe each tool result before choosing the next action, and finish with a direct answer when the task is complete.',
-  ].join('\n');
+  return '';
 }
 
 export function filterToolsForExecutionPolicy(

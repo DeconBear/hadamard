@@ -609,7 +609,7 @@ describe('Hadamard advanced parity features', () => {
         'open:https://example.com',
         'type:release-ready',
         'keys:ENTER',
-        `screenshot:${path.join(process.cwd(), 'artifacts', 'release.png')}`,
+        `screenshot:${path.join(sdk.config.workDir, 'artifacts', 'release.png')}`,
       ]);
     } finally {
       await sdk.close();
@@ -696,7 +696,7 @@ describe('Hadamard advanced parity features', () => {
         'open:https://example.com/releases',
         'focus:Example Domain',
         'clipboard:release checklist',
-        `screenshot:${path.join(process.cwd(), 'artifacts', 'focus.png')}`,
+        `screenshot:${path.join(sdk.config.workDir, 'artifacts', 'focus.png')}`,
       ]);
     } finally {
       await sdk.close();

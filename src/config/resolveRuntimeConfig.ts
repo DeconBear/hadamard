@@ -87,7 +87,11 @@ export async function resolveRuntimeConfig(
     await migrateLegacyActoviqHomeIfNeeded().catch(() => undefined);
   }
   const homeDir = resolveHadamardHome(options.homeDir);
-  const workDir = path.resolve(options.workDir ?? process.cwd());
+  const workDir = path.resolve(
+    options.workDir
+      ?? process.env.HADAMARD_WORKDIR
+      ?? process.cwd(),
+  );
   const projectMemoryPatch = await readProjectMemorySettingsPatch(workDir, homeDir);
   await migrateLegacyProjectActoviqDirIfNeeded(workDir).catch(() => undefined);
   const loadedConfig = getLoadedJsonConfig();

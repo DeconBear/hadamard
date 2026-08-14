@@ -75,9 +75,6 @@ export class McpConnectionManager {
     const adapters: ResolvedToolAdapter[] = [];
     for (const localTool of localTools) {
       adapters.push(createLocalToolAdapter(localTool));
-      for (const alias of localTool.aliases ?? []) {
-        adapters.push(createLocalToolAdapter(localTool, alias, localTool.name));
-      }
     }
 
     const externalServers: ExternalServerDefinition[] = [];
@@ -91,18 +88,9 @@ export class McpConnectionManager {
               qualifyToolName(prefix, localTool.name),
               localTool.name,
               server.name,
+              (localTool.aliases ?? []).map(alias => qualifyToolName(prefix, alias)),
             ),
           );
-          for (const alias of localTool.aliases ?? []) {
-            adapters.push(
-              createLocalToolAdapter(
-                localTool,
-                qualifyToolName(prefix, alias),
-                localTool.name,
-                server.name,
-              ),
-            );
-          }
         }
         continue;
       }
@@ -365,10 +353,12 @@ function positiveInteger(value: number, name: string): number {
 function ensureUniqueToolNames(adapters: ResolvedToolAdapter[]): void {
   const seen = new Set<string>();
   for (const adapter of adapters) {
-    if (seen.has(adapter.publicName)) {
-      throw new ConfigurationError(`Duplicate tool name "${adapter.publicName}" was detected.`);
+    for (const name of [adapter.publicName, ...(adapter.aliases ?? [])]) {
+      if (seen.has(name)) {
+        throw new ConfigurationError(`Duplicate tool name "${name}" was detected.`);
+      }
+      seen.add(name);
     }
-    seen.add(adapter.publicName);
   }
 }
 

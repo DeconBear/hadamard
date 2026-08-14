@@ -33,6 +33,7 @@ const HADAMARD_AGENT_TEMPLATES: ReadonlyArray<HadamardAgentTemplate> = [
     frontmatter: {
       permissionMode: 'plan',
       tools: READ_ONLY_RESEARCH_TOOLS,
+      projectInstructions: 'omit',
     },
     body: [
       'You are the Hadamard Plan agent.',
@@ -93,6 +94,7 @@ export function hadamardAgentTemplateToDefinition(
 ): HadamardAgentDefinition {
   const permissionMode = template.frontmatter.permissionMode;
   const tools = template.frontmatter.tools;
+  const projectInstructions = template.frontmatter.projectInstructions;
   return {
     name: template.name,
     description: template.description,
@@ -101,6 +103,9 @@ export function hadamardAgentTemplateToDefinition(
       ? { permissionMode: permissionMode as HadamardPermissionMode }
       : {}),
     ...(Array.isArray(tools) ? { allowedTools: tools.map(String) } : {}),
+    ...(projectInstructions === 'inherit' || projectInstructions === 'omit'
+      ? { projectInstructions }
+      : {}),
     metadata: { source: 'template' },
     source: 'custom',
   };

@@ -173,8 +173,9 @@ describe('Hadamard SDK subagent parity', () => {
         request.tools?.some(toolDefinition => toolDefinition.name === 'Agent'),
       );
       expect(parentRequest?.tools?.map(toolDefinition => toolDefinition.name)).toEqual(
-        expect.arrayContaining(['Agent', 'Task', 'SendMessage']),
+        expect.arrayContaining(['Agent', 'SendMessage']),
       );
+      expect(parentRequest?.tools?.map(toolDefinition => toolDefinition.name)).not.toContain('Task');
       expect(deliveredNotification).toBe(true);
       const childRequest = modelApi.requests.find(request =>
         request.system?.includes('focused code-review subagent'),

@@ -1,6 +1,6 @@
 export const HADAMARD_INTERACTIVE_COMMANDS: Record<string, string> = {
   help: 'Show available commands',
-  clear: 'Clear the screen',
+  clear: 'Clear conversation history and free context',
   init: 'Generate an AGENTS.md for this project',
   compact: 'Compact the current session',
   memory: 'Show memory/compact state',
@@ -64,7 +64,6 @@ export type InteractiveCommandRunPolicy = 'during-run' | 'idle-only';
  */
 const DURING_RUN_COMMANDS = new Set([
   'help',
-  'clear',
   'context',
   'cost',
   'usage',
@@ -143,7 +142,7 @@ export const SUBCOMMANDS: Record<string, string[]> = {
     'off',
     'help',
   ],
-  model: ['config', 'custom', 'router'],
+  model: ['config', 'context', 'custom', 'router'],
   team: ['ask', 'list', 'attach', 'off', 'status', 'clone', 'delete'],
   issues: ['list', 'show', 'create', 'start', 'review', 'done', 'block'],
   manager: ['chat', 'update', 'status', 'config', 'schedule', 'sessions', 'new', 'resume', 'team'],
@@ -284,7 +283,7 @@ const COMMAND_USAGES: Record<string, string> = {
   batch: '/batch <file>',
   goal: '/goal [<objective>|status|run|pause|resume|clear]',
   export: '/export [filename]',
-  model: '/model [<configuration>|custom <model-id>|config|router [name|off]]',
+  model: '/model [<configuration>|custom <model-id>|context [tokens]|config|router [name|off]]',
   effort: '/effort [auto|low|medium|high|max]',
   mode: '/mode',
   permissions: '/permissions [read-only|workspace|full]',

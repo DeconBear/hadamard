@@ -42,6 +42,8 @@ afterEach(() => {
 describe('built-in agent set (S1b §9.2)', () => {
   it('keeps exactly general-purpose and Explore as active built-ins', () => {
     expect(getDefaultHadamardAgents().map(agent => agent.name)).toEqual(['general-purpose', 'Explore']);
+    expect(getDefaultHadamardAgents().find(agent => agent.name === 'Explore')?.projectInstructions).toBe('omit');
+    expect(getDefaultHadamardAgents().find(agent => agent.name === 'general-purpose')?.projectInstructions).toBeUndefined();
   });
 
   it('templates carry the four removed agents with complete fields', () => {
@@ -54,6 +56,7 @@ describe('built-in agent set (S1b §9.2)', () => {
     }
     const plan = getHadamardAgentTemplate('Plan')!;
     expect(plan.frontmatter.permissionMode).toBe('plan');
+    expect(plan.frontmatter.projectInstructions).toBe('omit');
     expect(plan.frontmatter.tools).toEqual(
       expect.arrayContaining(['Read', 'Glob', 'Grep', 'Bash', 'PowerShell', 'WebFetch', 'WebSearch']),
     );

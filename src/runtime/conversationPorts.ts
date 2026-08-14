@@ -26,6 +26,7 @@ export interface ConversationInputOptions {
   toolChoice?: AgentRunOptions['toolChoice'];
   userId?: string;
   metadata?: Record<string, unknown>;
+  projectInstructions?: AgentRunOptions['projectInstructions'];
   effort?: AgentRunOptions['effort'];
   signal?: AbortSignal;
   streaming: boolean;

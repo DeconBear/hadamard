@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { McpConnectionManager } from '../src/mcp/connectionManager.js';
 import type {
+  AgentToolDefinition,
   StdioMcpServerDefinition,
   ToolExecutionContext,
 } from '../src/types.js';
@@ -92,6 +93,23 @@ function toolContext(signal?: AbortSignal): ToolExecutionContext {
 }
 
 describe('McpConnectionManager', () => {
+  it('keeps local aliases for execution without publishing duplicate schemas', async () => {
+    const manager = new McpConnectionManager({ name: 'test', version: '1' });
+    const localTool = {
+      name: 'Agent',
+      aliases: ['Task'],
+      description: 'Delegate work.',
+      inputJsonSchema: { type: 'object', properties: {} },
+      inputSchema: { parseAsync: async (input: unknown) => input },
+      execute: async () => 'done',
+    } as unknown as AgentToolDefinition;
+    const adapters = await manager.resolveToolAdapters([localTool]);
+    expect(adapters).toHaveLength(1);
+    expect(adapters[0]).toMatchObject({ publicName: 'Agent', aliases: ['Task'] });
+    expect(adapters.map(adapter => adapter.providerTool.name)).toEqual(['Agent']);
+    await manager.closeAll();
+  });
+
   it('discovers servers in parallel and reuses the TTL catalog', async () => {
     const gate = deferred<void>();
     const clients: FakeMcpClient[] = [];

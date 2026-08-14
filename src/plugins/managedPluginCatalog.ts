@@ -89,7 +89,7 @@ export const MANAGED_PLUGIN_DEFINITIONS: readonly ManagedPluginDefinition[] = [
   {
     id: 'github',
     name: 'GitHub',
-    description: 'Work with repositories, pull requests, issues, and checks.',
+    description: 'Work with repositories, pull requests, issues, and checks through the authenticated gh CLI.',
     category: 'Developer',
     featured: true,
   },
@@ -210,11 +210,9 @@ const PLUGIN_SPECS: Record<ManagedPluginId, ManagedPluginSpec> = {
     },
   },
   github: {
-    secretField: 'token',
     fields: {
       hostname: { kind: 'string', default: 'github.com' },
       defaultOwner: { kind: 'string' },
-      timeoutMs: { kind: 'number', default: 30_000 },
     },
   },
   'kimi-webbridge': {

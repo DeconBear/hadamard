@@ -120,7 +120,7 @@ describe('managed plugin catalog', () => {
     expect(plugin?.config).not.toHaveProperty('e2bApiKey');
   });
 
-  it('uses a configured GitHub token without exposing it', () => {
+  it('uses gh CLI authentication and ignores legacy alternate token settings', () => {
     const raw: Record<string, unknown> = {};
     patchManagedPluginSettings(raw, 'github', {
       enabled: true,
@@ -131,7 +131,7 @@ describe('managed plugin catalog', () => {
     const plugin = readManagedPluginCatalog(raw).plugins.find(item => item.id === 'github');
     expect(plugin).toMatchObject({
       state: 'ready',
-      secretConfigured: true,
+      secretConfigured: false,
       config: { hostname: 'github.example.test' },
     });
     expect(plugin?.config).not.toHaveProperty('token');

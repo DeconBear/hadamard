@@ -30,7 +30,9 @@ export class HadamardToolsApi {
     name: string,
     options?: HadamardCleanToolLookupOptions,
   ): Promise<HadamardCleanToolMetadata | undefined> {
-    return (await this.listMetadata(options)).find(tool => tool.name === name);
+    return (await this.listMetadata(options)).find(
+      tool => tool.name === name || tool.aliases?.includes(name),
+    );
   }
 
   async getCatalog(options?: HadamardCleanToolLookupOptions): Promise<HadamardCleanToolCatalog> {
@@ -58,6 +60,7 @@ export async function resolveHadamardCleanToolMetadata(params: {
 export function summarizeHadamardResolvedTool(adapter: ResolvedToolAdapter): HadamardCleanToolMetadata {
   return {
     name: adapter.publicName,
+    ...(adapter.aliases?.length ? { aliases: [...adapter.aliases] } : {}),
     description: adapter.providerTool.description ?? '',
     provider: adapter.provider,
     category: inferHadamardCleanToolCategory(adapter),
@@ -97,7 +100,12 @@ function inferHadamardCleanToolCategory(
     return 'mcp';
   }
 
-  if (adapter.publicName === 'Task') {
+  if (
+    adapter.publicName === 'Agent' ||
+    adapter.publicName === 'Task' ||
+    adapter.aliases?.includes('Agent') ||
+    adapter.aliases?.includes('Task')
+  ) {
     return 'task';
   }
 
