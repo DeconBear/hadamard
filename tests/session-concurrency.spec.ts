@@ -212,7 +212,13 @@ describe('AgentSession turn serialization', () => {
     });
 
     try {
-      const sessionA = await sdkA.createSession({ title: 'Cross-client sends' });
+      const sessionA = await sdkA.createSession({
+        title: 'Cross-client sends',
+        initialMessages: [
+          { role: 'user', content: 'established turn' },
+          { role: 'assistant', content: 'established answer' },
+        ],
+      });
       const sessionB = await sdkB.sessions.resume(sessionA.id);
       const sendA = sessionA.send('client A turn');
       const sendB = sessionB.send('client B turn');
@@ -230,6 +236,8 @@ describe('AgentSession turn serialization', () => {
       const secondTranscript = requestTranscript(modelApi.createCalls[1]!.request);
       const secondTurn = firstTurn === 'client A turn' ? 'client B turn' : 'client A turn';
       expect(secondTranscript).toEqual([
+        'established turn',
+        'established answer',
         firstTurn,
         `${firstTurn} answer`,
         secondTurn,
@@ -239,6 +247,8 @@ describe('AgentSession turn serialization', () => {
       await Promise.all([sendA, sendB]);
       const stored = await new SessionStore(sessionDirectory).load(sessionA.id);
       expect(stored.messages.map(message => extractTextFromContent(message.content))).toEqual([
+        'established turn',
+        'established answer',
         firstTurn,
         `${firstTurn} answer`,
         secondTurn,
@@ -301,7 +311,13 @@ describe('AgentSession turn serialization', () => {
     });
 
     try {
-      const session = await sdk.createSession({ title: 'Idle session' });
+      const session = await sdk.createSession({
+        title: 'Idle session',
+        initialMessages: [
+          { role: 'user', content: 'established turn' },
+          { role: 'assistant', content: 'established answer' },
+        ],
+      });
       const store = new SessionStore(sessionDirectory);
       await store.updateStatus(session.id, 'idle');
 

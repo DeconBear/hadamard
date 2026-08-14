@@ -265,12 +265,12 @@ describe('GUI Project Agent execution view', () => {
     expect(js).toContain('plugin-detail-panel');
     expect(js).toContain("if (options.type !== 'textarea')");
     expect(js).toContain("document.createElement('form')");
-    expect(source).toContain('if (managedPluginRuntimeClose)');
-    expect(source).toContain('await managedPluginRuntimeClose()');
-    expect(source).toContain('if (managedPluginCloseError) throw managedPluginCloseError');
+    expect(source).toContain('managedPlugins: managedPluginSettings');
+    expect(source).toContain('await sdk.close()');
+    expect(source).toContain('if (runtimeCloseError) throw runtimeCloseError');
     expect(js).toContain('Qwen / DashScope');
     expect(js).toContain('E2B isolated desktop');
-    expect(js).toContain('Reuse the secure login already managed by GitHub CLI'.replace('Reuse', 'Leave the alternate token empty to reuse'));
+    expect(js).toContain('Run gh auth login in a terminal to configure credentials');
     expect(js).toContain('Persistent profile directory');
     expect(js).toContain("api('/api/customize/skills'");
     expect(js).toContain("action: 'source'");

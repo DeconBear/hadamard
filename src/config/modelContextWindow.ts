@@ -2,7 +2,7 @@ import type { ProviderModelEntry, PersistedBridgeConfig } from '../parity/bridge
 
 export const HADAMARD_CONTEXT_WINDOW_METADATA_KEY = '__hadamardContextWindowTokens';
 
-const STANDARD_CONTEXT_WINDOWS = [
+export const STANDARD_CONTEXT_WINDOWS = [
   16_000,
   32_000,
   64_000,

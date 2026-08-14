@@ -29,6 +29,10 @@ import { renderMarkdown } from './guiMarkdown.js';
 import { detectEditorLanguage, highlightCode } from './guiSyntaxHighlight.js';
 import { getTranscriptClientScript, getTranscriptStyles } from './transcript/index.js';
 import {
+  formatContextWindowTokens,
+  STANDARD_CONTEXT_WINDOWS,
+} from '../config/modelContextWindow.js';
+import {
   GUI_SESSION_CENTER_OPEN_CLIENT_SCRIPT,
   GUI_SESSION_CREATE_CLIENT_SCRIPT,
 } from './guiSessionClientScript.js';
@@ -100,6 +104,9 @@ function guiIcon(name: string): string {
 }
 
 export function createHadamardGuiHtml(): string {
+  const contextWindowOptions = STANDARD_CONTEXT_WINDOWS
+    .map(tokens => `<option value="${tokens}">${formatContextWindowTokens(tokens).toUpperCase()}</option>`)
+    .join('\n            ');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -705,14 +712,7 @@ export function createHadamardGuiHtml(): string {
           <input id="bridgeNewModelName" autocomplete="off" placeholder="Model id (e.g. deepseek-chat)">
           <select id="bridgeNewModelContextWindow" aria-label="Context length">
             <option value="">Context length</option>
-            <option value="16000">16K</option>
-            <option value="32000">32K</option>
-            <option value="64000">64K</option>
-            <option value="128000">128K</option>
-            <option value="256000">256K</option>
-            <option value="400000">400K</option>
-            <option value="1000000">1M</option>
-            <option value="2000000">2M</option>
+            ${contextWindowOptions}
           </select>
           <input id="bridgeNewModelCompactLimit" type="number" min="1000" step="1000" placeholder="Auto-compact limit (optional)">
           <input id="bridgeNewModelEffectivePercent" type="number" min="1" max="100" step="1" value="95" placeholder="Effective window %">
@@ -8400,7 +8400,7 @@ function pickerModelMetadata(target, modelName) {
 function pickerContextOptions(target, modelName) {
   const metadata = pickerModelMetadata(target, modelName);
   const limit = Number(metadata?.maxContextWindowTokens || metadata?.contextWindowTokens || 0);
-  const standard = [16000, 32000, 64000, 128000, 200000, 256000, 384000, 400000, 1000000, 2000000];
+  const standard = ${JSON.stringify(STANDARD_CONTEXT_WINDOWS)};
   if (!limit) return standard;
   return Array.from(new Set([
     ...standard.filter(value => value <= limit),
@@ -24427,7 +24427,7 @@ function closeBridgeEditor() {
   updateBridgeLocalConfigButton();
 }
 let draftBridgeModels = [];
-const BRIDGE_CONTEXT_WINDOW_OPTIONS = [16000, 32000, 64000, 128000, 256000, 400000, 1000000, 2000000];
+const BRIDGE_CONTEXT_WINDOW_OPTIONS = ${JSON.stringify(STANDARD_CONTEXT_WINDOWS)};
 function formatContextWindowLabel(tokens) {
   const n = Number(tokens);
   if (!Number.isFinite(n) || n <= 0) return '';

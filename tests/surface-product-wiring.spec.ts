@@ -73,18 +73,17 @@ describe('product RunEvent wiring boundary', () => {
   it.each([
     'src/tui/hadamardTui.ts',
     'src/gui/hadamardGui.ts',
-  ])('%s mounts and closes the managed plugin runtime', async (file) => {
+  ])('%s delegates managed plugin settings to the shared SDK runtime', async (file) => {
     const source = await readSurfaceSource(file);
-    expect(source).toContain('createManagedPluginRuntime');
-    expect(source).toMatch(/managedPluginRuntime(?:Close)?/);
-    expect(source).toMatch(/managedPluginRuntime(?:Close)?(?:\(\)|\.close(?:\(\))?)/);
+    expect(source).toContain('managedPlugins: managedPluginSettings');
+    expect(source).not.toContain('createManagedPluginRuntime');
   });
 
-  it('injects managed-plugin Skills into both Hadamard SDK interactive surfaces', async () => {
+  it('does not inject managed-plugin tools or Skills outside the SDK', async () => {
     const tui = await readSurfaceSource('src/tui/hadamardTui.ts');
     const gui = await readSurfaceSource('src/gui/hadamardGui.ts');
-    expect(tui).toContain('skills: managedPluginRuntime?.skills ?? []');
-    expect(gui).toContain('skills: managedPluginSkills');
+    expect(tui).not.toContain('skills: managedPluginRuntime?.skills ?? []');
+    expect(gui).not.toContain('skills: managedPluginSkills');
   });
 
   it('commits completion-selected TUI commands to input history', async () => {
@@ -101,7 +100,7 @@ describe('product RunEvent wiring boundary', () => {
     expect(source).toContain('MANAGED_PLUGIN_FINAL_CLOSE_ATTEMPTS = 2');
     expect(source).toContain('billing may continue');
     expect(source).toContain('exitCode = 1');
-    expect(source).not.toMatch(/managedPluginRuntime\?*\.close\(\)\.catch\(\(\) => undefined\)/);
+    expect(source).toContain('closeManagedPluginsForExit(() => sdk.close())');
   });
 
   it('reports GUI and Electron cleanup failures instead of always exiting successfully', async () => {
@@ -114,7 +113,7 @@ describe('product RunEvent wiring boundary', () => {
       'utf8',
     );
 
-    expect(gui).toContain('managed plugin cleanup attempt ${attempt}/2 failed');
+    expect(gui).toContain('SDK runtime cleanup attempt ${attempt}/2 failed');
     expect(gui).toContain("process.exit(1)");
     expect(gui).not.toContain('close().finally(() => process.exit(0))');
     expect(electron).toContain('quittingAfterCleanup');

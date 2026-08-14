@@ -306,7 +306,6 @@ import {
   type ManagedPluginId,
 } from '../plugins/managedPluginCatalog.js';
 import { probeManagedPlugin } from '../plugins/managedPluginHealth.js';
-import { createManagedPluginRuntime } from '../plugins/managedPluginRuntime.js';
 import { PluginPackageManager } from '../plugins/pluginManager.js';
 import { readPackageVersion } from '../cli/version.js';
 import {
@@ -2036,13 +2035,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   // TerminalSnapshot vision tool (plan phase 6) can close over it at build time.
   const terminalManager = new TerminalManager();
   let terminalCapable = false;
-  let managedPluginRuntimeClose: (() => Promise<void>) | null = null;
-  let managedPluginSkills: ReturnType<typeof createManagedPluginRuntime>['skills'] = [];
+  let managedPluginSettings: Record<string, unknown> = {};
   const rebuildTools = async () => {
-    if (managedPluginRuntimeClose) {
-      await managedPluginRuntimeClose();
-      managedPluginRuntimeClose = null;
-    }
     const base = [
       ...createHadamardCoreTools({
         cwd: workDir,
@@ -2056,18 +2050,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }).catch(() => undefined);
     if (!store) {
       tools = base;
-      managedPluginSkills = [];
+      managedPluginSettings = {};
       return;
     }
-    const pluginRuntime = createManagedPluginRuntime(store.raw, {
-      cwd: workDir,
-    });
-    tools = [...base, ...pluginRuntime.tools];
-    // Prefer managed-plugin tools when names collide (e.g. TavilySearch).
-    const byName = new Map(tools.map(tool => [tool.name, tool]));
-    tools = [...byName.values()];
-    managedPluginSkills = pluginRuntime.skills;
-    managedPluginRuntimeClose = pluginRuntime.close;
+    tools = base;
+    managedPluginSettings = store.raw;
   };
   let tools = [
     ...createHadamardCoreTools({
@@ -2087,7 +2074,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       workDir,
       sessionDirectory: getHadamardProjectSessionDirectory(projectPrimaryPath, resolveGuiHomeDir()),
       tools,
-      skills: managedPluginSkills,
+      managedPlugins: managedPluginSettings,
       permissionMode,
       externalSkills: externalSkillPreferencesToRuntimeOptions(externalSkillPreferences),
       ...(options.model ? { model: options.model } : {}),
@@ -10646,25 +10633,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   process.stdout.write(`hadamard-gui listening on ${url}\n`);
 
   const close = async () => {
-    let managedPluginCloseError: unknown;
+    let runtimeCloseError: unknown;
     for (const rec of runs.values()) rec.abort.abort();
     runs.clear();
     foregroundRunId = null;
     await automationScheduler.dispose();
     terminalManager.closeAll();
     await externalCliRuntimeManager.close().catch(() => undefined);
-    if (managedPluginRuntimeClose) {
-      const closeRuntime = managedPluginRuntimeClose;
+    if (sdk) {
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
-          await closeRuntime();
-          managedPluginRuntimeClose = null;
-          managedPluginCloseError = undefined;
+          await sdk.close();
+          runtimeCloseError = undefined;
           break;
         } catch (error) {
-          managedPluginCloseError = error;
+          runtimeCloseError = error;
           process.stderr.write(
-            `[hadamard-gui] warning: managed plugin cleanup attempt ${attempt}/2 failed: ` +
+            `[hadamard-gui] warning: SDK runtime cleanup attempt ${attempt}/2 failed: ` +
             `${error instanceof Error ? error.message : String(error)}\n`,
           );
         }
@@ -10672,7 +10657,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }
     await deviceLinkController.close();
     await deleteEmptyGuiSession(session);
-    if (sdk) await sdk.close().catch(() => undefined);
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
       server.closeIdleConnections?.();
@@ -10684,7 +10668,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     ]));
     durableIssueResources.clear();
     durableIssueResourcePending.clear();
-    if (managedPluginCloseError) throw managedPluginCloseError;
+    if (runtimeCloseError) throw runtimeCloseError;
   };
   return { url, token: authToken, close };
 }

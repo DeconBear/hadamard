@@ -46,8 +46,8 @@ export class AgentSessionsApi {
     this.manager = manager;
   }
 
-  list(): Promise<SessionSummary[]> {
-    return this.store.list();
+  async list(): Promise<SessionSummary[]> {
+    return (await this.store.list()).filter(session => !isEmptyUserSessionSummary(session));
   }
 
   get(sessionId: string): Promise<AgentSession> {

@@ -15,11 +15,18 @@ import {
 } from '../computer/hadamardComputerUse.js';
 import {
   createHadamardBrowserUseMcpServer,
-  createHadamardBrowserTools,
+  createHadamardBrowserUseToolkit,
 } from '../browser/hadamardBrowserTools.js';
+import {
+  createManagedActionDispatcher,
+  createManagedActionSkill,
+} from '../plugins/managedPluginSkills.js';
+import { createManagedPluginRuntime } from '../plugins/managedPluginRuntime.js';
+import { resolveHadamardSettingsStore } from '../config/hadamardSettingsStore.js';
 import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
 import {
   clampContextWindowTokens,
+  readSessionContextWindow,
   resolveModelContextEntry,
 } from '../config/modelContextWindow.js';
 import { getHadamardProjectSessionDirectory } from '../config/projectSessionDirectory.js';
@@ -76,13 +83,14 @@ import { McpConnectionManager } from '../mcp/connectionManager.js';
 import { PluginLoader } from '../plugins/pluginLoader.js';
 import { PluginPackageStore } from '../plugins/pluginPackageStore.js';
 import { PluginTrustStore } from '../plugins/pluginTrustStore.js';
-import { RunAbortedError } from '../errors.js';
+import { RunAbortedError, SessionNotFoundError } from '../errors.js';
 import { AgentExecutionStore } from '../storage/agentExecutionStore.js';
 import { BackgroundTaskStore } from '../storage/backgroundTaskStore.js';
 import { MailboxStore } from '../storage/mailboxStore.js';
 import { SessionStore } from '../storage/sessionStore.js';
 import { SessionGraph } from '../storage/sessionGraph.js';
 import { SessionForkService } from '../storage/sessionForkService.js';
+import { isEmptyUserStoredSession } from '../storage/sessionVisibility.js';
 import {
   TaskWorktreeCoordinator,
   type TaskWorktreeLocator,
@@ -122,6 +130,7 @@ import type {
   HadamardBackgroundTaskQueuedInput,
   HadamardAgentContinuityState,
   HadamardCompactStateOptions,
+  HadamardCompactConfig,
   HadamardDreamRunResult,
   HadamardDreamState,
   HadamardDelegatedAgentRecord,
@@ -791,6 +800,7 @@ export class HadamardAgentClient {
     private readonly maxSubagentFanout = 8,
     taskWorktreeCoordinator?: TaskWorktreeCoordinator,
     externalAgentRunner?: CreateAgentSdkOptions['externalAgentRunner'],
+    private readonly runtimeClosers: ReadonlyArray<() => Promise<void>> = [],
   ) {
     this.externalAgentRunner = externalAgentRunner ?? runExternalAgentOnce;
     this.sessionManager = new SessionManager(this.store, sessionManagerConfig);
@@ -1194,13 +1204,41 @@ export class HadamardAgentClient {
       ...(options.mcpServers ?? []),
       ...pluginBundles.flatMap(bundle => bundle.mcpServers),
     ];
+    const runtimeClosers: Array<() => Promise<void>> = [];
+    if (options.managedPlugins !== false) {
+      const managedSettings = isRecord(options.managedPlugins)
+        ? options.managedPlugins
+        : (await resolveHadamardSettingsStore({ homeDir: config.homeDir })).raw;
+      const managedRuntime = createManagedPluginRuntime(managedSettings, { cwd: config.workDir });
+      defaultTools.push(...managedRuntime.tools);
+      skillDefinitions.push(...managedRuntime.skills);
+      runtimeClosers.push(managedRuntime.close);
+    }
     if (options.computerUse) {
       const computerUseOptions: CreateHadamardComputerUseOptions =
         typeof options.computerUse === 'object' ? options.computerUse : {};
       if (computerUseOptions.asMcpServer) {
         defaultMcpServers.push(createHadamardComputerUseMcpServer(computerUseOptions));
       } else {
-        defaultTools.push(...createHadamardComputerUseTools(computerUseOptions));
+        const sourceTools = createHadamardComputerUseTools(computerUseOptions);
+        const sourcePrefix = computerUseOptions.prefix?.trim()
+          ? `${computerUseOptions.prefix.trim()}_`
+          : 'computer_';
+        defaultTools.push(createManagedActionDispatcher({
+          name: 'computer_use',
+          description: 'Run one Computer Use action. Load the computer-use Skill for actions and arguments.',
+          sourcePrefix,
+          sourceTools,
+        }));
+        skillDefinitions.push(createManagedActionSkill({
+          name: 'computer-use',
+          description: 'Control the configured desktop through one compact Computer Use dispatcher.',
+          whenToUse: 'Use for OS-level desktop interaction that browser automation or shell commands cannot perform.',
+          dispatcherName: 'computer_use',
+          sourcePrefix,
+          sourceTools,
+          guidance: ['Focus the intended window before typing or sending keys. Use screenshots to verify visual state.'],
+        }));
       }
     }
     if (options.browserUse) {
@@ -1209,7 +1247,25 @@ export class HadamardAgentClient {
       if (browserUseOptions.asMcpServer) {
         defaultMcpServers.push(createHadamardBrowserUseMcpServer(browserUseOptions));
       } else {
-        defaultTools.push(...createHadamardBrowserTools(browserUseOptions));
+        const runtime = createHadamardBrowserUseToolkit(browserUseOptions);
+        const sourcePrefix = browserUseOptions.prefix?.trim()
+          ? `${browserUseOptions.prefix.trim()}_`
+          : 'browser_';
+        defaultTools.push(createManagedActionDispatcher({
+          name: 'browser_use',
+          description: 'Run one Playwright browser action. Load the playwright Skill for actions and arguments.',
+          sourcePrefix,
+          sourceTools: runtime.tools,
+        }));
+        skillDefinitions.push(createManagedActionSkill({
+          name: 'playwright',
+          description: 'Navigate, inspect, and interact with a controlled browser through one compact dispatcher.',
+          whenToUse: 'Use for deterministic browser automation, page inspection, form interaction, and screenshots.',
+          dispatcherName: 'browser_use',
+          sourcePrefix,
+          sourceTools: runtime.tools,
+        }));
+        runtimeClosers.push(() => runtime.session.close());
       }
     }
     let client: HadamardAgentClient | undefined;
@@ -1234,6 +1290,10 @@ export class HadamardAgentClient {
         );
       });
     }
+    const deduplicatedTools = [...new Map(defaultTools.map(toolDefinition => [
+      toolDefinition.name,
+      toolDefinition,
+    ])).values()];
     client = new HadamardAgentClient(
       config,
       store,
@@ -1243,7 +1303,7 @@ export class HadamardAgentClient {
       teammateStore,
       modelApi,
       mcpManager,
-      defaultTools,
+      deduplicatedTools,
       defaultMcpServers,
       options.hooks,
       agentDefinitions,
@@ -1260,6 +1320,7 @@ export class HadamardAgentClient {
       options.maxSubagentFanout,
       taskWorktreeCoordinator,
       options.externalAgentRunner,
+      runtimeClosers,
     );
     const interruptedTasks = await client.backgroundTaskManager.reconcileInterruptedTasks();
     await client.reconcileInterruptedAgentExecutions(interruptedTasks);
@@ -1396,7 +1457,7 @@ export class HadamardAgentClient {
           : {}),
       },
       initialMessages: options.initialMessages,
-    });
+    }, { deferEmptyUserSession: true });
     if (this.taskWorktrees && (options.kind === undefined || options.kind === 'main')) {
       try {
         const locator = await this.taskWorktrees.createOrResume(stored.id);
@@ -1440,9 +1501,14 @@ export class HadamardAgentClient {
     sessionId: string,
     options: SessionResumeOptions = {},
   ): Promise<AgentSession> {
+    const resumable = await this.store.load(sessionId);
+    if (isEmptyUserStoredSession(resumable)) {
+      await this.store.delete(sessionId).catch(() => undefined);
+      throw new SessionNotFoundError(sessionId);
+    }
     if (!options.fork) {
       if (!this.hasPersistedSessionResumeOverrides(options)) {
-        const loaded = await this.store.load(sessionId);
+        const loaded = resumable;
         if (loaded.status === 'active') {
           return this.hydrateSession(loaded);
         }
@@ -1629,7 +1695,6 @@ export class HadamardAgentClient {
 
   async close(): Promise<void> {
     if (closedAgentClients.has(this)) return;
-    closedAgentClients.add(this);
     const errors: unknown[] = [];
     try {
       await runClientLifecycleHook(
@@ -1675,9 +1740,17 @@ export class HadamardAgentClient {
     } catch (error) {
       errors.push(error);
     }
+    for (const close of this.runtimeClosers) {
+      try {
+        await close();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
     if (errors.length > 0) {
       throw new AggregateError(errors, 'Errors occurred while closing the agent SDK.');
     }
+    closedAgentClients.add(this);
   }
 
   listAgentDefinitions(): HadamardAgentDefinitionSummary[] {
@@ -2579,7 +2652,7 @@ export class HadamardAgentClient {
     options: AgentRunOptions,
   ): Promise<AgentRunResult> {
     const runId = createId();
-    const initialSnapshot = await this.store.load(session.id);
+    const initialSnapshot = await this.store.loadForRuntime(session.id);
     session.replace(initialSnapshot);
     const resolvedOptions = this.applySessionRuntimeOverrides(
       session.id,
@@ -2609,6 +2682,7 @@ export class HadamardAgentClient {
       execution.result,
       resolvedOptions,
       execution.augmentations.surfacedMemories,
+      execution.augmentations.metadata,
       hookOutcome,
     );
     await this.sessionManager.touch(session.id);
@@ -2632,7 +2706,7 @@ export class HadamardAgentClient {
         return this.store.runExclusiveTurn(session.id, async () => {
           let unsubscribeExecution: () => void = () => undefined;
           try {
-            const initialSnapshot = await this.store.load(session.id);
+            const initialSnapshot = await this.store.loadForRuntime(session.id);
             session.replace(initialSnapshot);
             const rootExecutionId =
               typeof initialSnapshot.metadata[HADAMARD_ROOT_EXECUTION_ID_KEY] === 'string'
@@ -2681,6 +2755,7 @@ export class HadamardAgentClient {
               execution.result,
               resolvedOptions,
               execution.augmentations.surfacedMemories,
+              execution.augmentations.metadata,
               hookOutcome,
             );
             await this.sessionManager.touch(session.id);
@@ -2907,17 +2982,22 @@ export class HadamardAgentClient {
     const runMaxToolIterations = executionPolicy.turnPolicy === 'single'
       ? 1
       : options.__hadamardMaxToolIterations ?? options.maxToolIterations;
+    const declaredContextEntry = resolveModelContextEntry(
+      model,
+      readBridgeConfigs(this.config.homeDir).configs,
+    ) ?? (this.config.compact.contextWindowSource !== 'fallback'
+      ? {
+          name: model,
+          contextWindowTokens: this.config.compact.contextWindowTokens,
+          maxContextWindowTokens: this.config.compact.maxContextWindowTokens,
+        }
+      : undefined);
     const requestedContextWindow = typeof options.contextWindowTokens === 'number'
       && Number.isFinite(options.contextWindowTokens)
       && options.contextWindowTokens > 0
-      ? clampContextWindowTokens(
-          options.contextWindowTokens,
-          resolveModelContextEntry(model, readBridgeConfigs(this.config.homeDir).configs) ?? {
-            name: model,
-            contextWindowTokens: this.config.compact.contextWindowTokens,
-            maxContextWindowTokens: this.config.compact.maxContextWindowTokens,
-          },
-        )
+      ? declaredContextEntry
+        ? clampContextWindowTokens(options.contextWindowTokens, declaredContextEntry)
+        : Math.max(1, Math.floor(options.contextWindowTokens))
       : undefined;
     const runtimeConfig =
       runMaxToolIterations || workDir !== this.config.workDir || requestedContextWindow
@@ -3065,7 +3145,7 @@ export class HadamardAgentClient {
                 // catalog actions during the turn is preserved. Keep this on
                 // SessionStore.save: checkpoint failures are part of the
                 // reactive-compaction recovery contract.
-                const current = await this.store.load(checkpointSession!.id);
+                const current = await this.store.loadForRuntime(checkpointSession!.id);
                 const snap = {
                   ...current,
                   messages: deepClone(messages),
@@ -3799,7 +3879,10 @@ export class HadamardAgentClient {
         systemPrompt: snapshot.systemPrompt ?? this.config.systemPrompt,
         model: this.resolveModel(options.model ?? snapshot.model),
         modelApi: this.modelApi,
-        compactConfig: this.config.compact,
+        compactConfig: this.resolveCompactConfig(
+          this.resolveModel(options.model ?? snapshot.model),
+          options.contextWindowTokens ?? readSessionContextWindow(snapshot.metadata),
+        ),
         runtimeState: this.getSessionMemoryRuntimeState(snapshot),
       },
     );
@@ -4836,7 +4919,11 @@ export class HadamardAgentClient {
   ): Promise<HadamardSessionCompactResult> {
     const snapshot = session.snapshot();
     const runtimeState = this.getSessionMemoryRuntimeState(snapshot);
-    const budget = resolveHadamardCompactBudget(this.config.compact);
+    const compactConfig = this.resolveCompactConfig(
+      this.resolveModel(options.model ?? snapshot.model),
+      readSessionContextWindow(snapshot.metadata),
+    );
+    const budget = resolveHadamardCompactBudget(compactConfig);
     const latestUsage = snapshot.runs.at(-1)?.usage;
     const reportedInputTokens = latestUsage
       ? [
@@ -4885,7 +4972,7 @@ export class HadamardAgentClient {
         systemPrompt: snapshot.systemPrompt ?? this.config.systemPrompt,
         model: this.resolveModel(snapshot.model),
         modelApi: this.modelApi,
-        compactConfig: this.config.compact,
+        compactConfig,
         runtimeState,
         reportedInputTokens: currentInputTokens,
       },
@@ -5145,6 +5232,7 @@ export class HadamardAgentClient {
     result: AgentRunResult,
     options: InternalAgentRunOptions,
     surfacedMemories: readonly HadamardSurfacedMemory[] = [],
+    augmentationMetadata: Record<string, unknown> = {},
     hookOutcome: { sessionMetadata?: Record<string, unknown>; tags?: string[] } = {},
   ): Promise<void> {
     const workDir = this.resolveRunWorkDir(options);
@@ -5160,6 +5248,7 @@ export class HadamardAgentClient {
     next.metadata = {
       ...next.metadata,
       __hadamardWorkDir: workDir,
+      ...augmentationMetadata,
       ...(options.metadata ?? {}),
       ...(hookOutcome.sessionMetadata ?? {}),
     };
@@ -5274,7 +5363,10 @@ export class HadamardAgentClient {
       systemPrompt: next.systemPrompt ?? this.config.systemPrompt,
       model: this.resolveModel(options.model ?? next.model),
       modelApi: this.modelApi,
-      compactConfig: this.config.compact,
+      compactConfig: this.resolveCompactConfig(
+        this.resolveModel(options.model ?? next.model),
+        options.contextWindowTokens ?? readSessionContextWindow(next.metadata),
+      ),
       runtimeState: runtimeStateForCompact,
       reportedInputTokens: result.usage?.input_tokens,
     });
@@ -5295,6 +5387,34 @@ export class HadamardAgentClient {
         // Keep auto-dream best-effort so the foreground run still completes.
       }
     }
+  }
+
+  private resolveCompactConfig(model: string, requested?: number): HadamardCompactConfig {
+    if (!requested || !Number.isFinite(requested) || requested <= 0) {
+      return this.config.compact;
+    }
+    const entry = resolveModelContextEntry(
+      model,
+      readBridgeConfigs(this.config.homeDir).configs,
+    ) ?? (this.config.compact.contextWindowSource !== 'fallback'
+      ? {
+          name: model,
+          contextWindowTokens: this.config.compact.contextWindowTokens,
+          maxContextWindowTokens: this.config.compact.maxContextWindowTokens,
+        }
+      : undefined);
+    return {
+      ...this.config.compact,
+      contextWindowTokens: entry
+        ? clampContextWindowTokens(requested, entry)
+        : Math.max(1, Math.floor(requested)),
+      maxContextWindowTokens: entry
+        ? entry.maxContextWindowTokens
+          ?? entry.contextWindowTokens
+          ?? this.config.compact.maxContextWindowTokens
+        : undefined,
+      contextWindowSource: 'run',
+    };
   }
 
   private requireAgentDefinition(agent: string): HadamardAgentDefinition {
