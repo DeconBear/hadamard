@@ -252,8 +252,10 @@ describe('TUI and GUI parity', () => {
     expect(html).toContain('Browser (Playwright) and Computer Use are configured under Customize');
     expect(html).toContain('id="navAutomation"');
     expect(html).toContain('id="regionAutomation"');
-    expect(gui).toContain('createManagedPluginRuntime');
-    expect(tui).toContain('createManagedPluginRuntime');
+    expect(gui).toContain('managedPlugins: managedPluginSettings');
+    expect(tui).toContain('managedPlugins: managedPluginSettings');
+    expect(gui).not.toContain('createManagedPluginRuntime');
+    expect(tui).not.toContain('createManagedPluginRuntime');
     expect(gui).toContain("event.type === 'team.proposal'");
     expect(tui).toContain('createAssistantTeamTools');
     expect(SUBCOMMANDS.assistant).toEqual(['chat', 'sessions', 'new', 'resume', 'team']);

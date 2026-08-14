@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  STANDARD_CONTEXT_WINDOWS,
   clampContextWindowTokens,
   formatContextWindowTokens,
   modelContextWindowOptions,
@@ -32,7 +33,8 @@ describe('model context-window selection', () => {
   });
 
   it('offers the GUI picker choices when model metadata is not declared', () => {
-    expect(modelContextWindowOptions(undefined)).toEqual([
+    expect(modelContextWindowOptions(undefined)).toEqual(STANDARD_CONTEXT_WINDOWS);
+    expect(STANDARD_CONTEXT_WINDOWS).toEqual([
       16_000,
       32_000,
       64_000,
