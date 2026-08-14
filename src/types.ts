@@ -399,6 +399,13 @@ export interface ResolvedToolAdapter {
   ) => Promise<'allow' | 'deny' | 'ask' | void> | 'allow' | 'deny' | 'ask' | void;
 }
 
+export interface HadamardRetryPolicyConfig {
+  mode: 'normal' | 'always';
+  maxRetries?: number;
+  retryableCodes?: string[];
+  backoff?: { initialDelayMs?: number; maxDelayMs?: number; jitterRatio?: number };
+}
+
 export interface ResolvedRuntimeConfig {
   homeDir: string;
   loadedConfigPath?: string;
@@ -421,6 +428,8 @@ export interface ResolvedRuntimeConfig {
   /** Provider request timeout retained for compatibility. */
   timeoutMs: number;
   maxRetries: number;
+  /** Provider request-retry policy resolved per route (dsh retry-policy shape). */
+  retryPolicy?: import('./provider/retryPolicy.js').ResolvedProviderRetryPolicy;
   workDir: string;
   sessionDirectory: string;
   clientName: string;
@@ -892,6 +901,8 @@ export interface CreateAgentSdkOptions {
   mcpTimeoutMs?: number;
   timeoutMs?: number;
   maxRetries?: number;
+  /** Provider request-retry policy (normal bounded or always; per-route code list + backoff). */
+  retryPolicy?: HadamardRetryPolicyConfig;
   workDir?: string;
   sessionDirectory?: string;
   clientName?: string;
@@ -1103,6 +1114,30 @@ export interface AgentRunOptions {
     mode?: ProjectInstructionMode;
     workPaths?: string[];
   };
+  /**
+   * Per-iteration request-config proposal hook (dsh agent/request equivalent):
+   * called before each model request; returned overrides (model/effort/maxTokens)
+   * apply to the next request. Re-routes stay within this run.
+   */
+  requestProposal?: (context: HadamardRequestProposalContext) =>
+    | HadamardRequestProposal
+    | void
+    | Promise<HadamardRequestProposal | void>;
+}
+
+export interface HadamardRequestProposalContext {
+  iteration: number;
+  model: string;
+  effort?: HadamardEffort;
+  maxTokens: number;
+  input: string;
+  workDir: string;
+}
+
+export interface HadamardRequestProposal {
+  model?: string;
+  effort?: HadamardEffort;
+  maxTokens?: number;
 }
 
 export interface SessionCreateOptions {
