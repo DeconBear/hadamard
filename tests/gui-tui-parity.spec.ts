@@ -919,4 +919,19 @@ describe('TUI and GUI parity', () => {
     expect(existsSync(join(root, 'assets', 'hadamard-icon.png'))).toBe(true);
     expect(existsSync(join(root, 'assets', 'hadamard-icon.ico'))).toBe(true);
   });
+
+  it('keeps project instructions out of system builders and passes the same SDK option', () => {
+    const root = join(import.meta.dirname, '..');
+    const tui = readTuiSources(root);
+    const gui = readGuiSources(root);
+    const systemPrompt = readFileSync(join(root, 'src', 'prompts', 'systemPrompt.ts'), 'utf8');
+    expect(tui).not.toContain('# Project context (AGENTS.md)');
+    expect(gui).not.toContain('# Project context (AGENTS.md)');
+    expect(systemPrompt).not.toContain('# Project context (AGENTS.md)');
+    expect(tui).toContain('projectInstructions:');
+    expect(gui).toContain('projectInstructions:');
+    expect(tui).not.toContain('function buildAgentContext');
+    expect(tui).toMatch(/project instructions/i);
+    expect(gui).toContain('Project instructions:');
+  });
 });

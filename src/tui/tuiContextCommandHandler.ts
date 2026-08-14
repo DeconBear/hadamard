@@ -7,8 +7,16 @@ export interface TuiContextSnapshot {
   autoCompactTokenLimit: number;
   compactSource: string;
   usedTokens: number;
+  systemTokens?: number;
+  toolTokens?: number;
+  messageTokens?: number;
+  tokenEstimateMultiplier?: number;
   messages: number;
   systemPromptChars: number;
+  projectInstructionChars?: number;
+  projectInstructionHash?: string;
+  projectInstructionKey?: string;
+  compactCount?: number;
   toolCount: number;
   mcpToolCount: number;
   instructionFiles: string[];
@@ -78,13 +86,25 @@ export async function runTuiContextCommand(
       ? `${(snapshot.effectiveWindowTokens / 1000).toFixed(0)}k`
       : `${snapshot.effectiveWindowTokens}`;
     const color = pct >= 90 ? A.red : pct >= 70 ? A.yellow : A.dim;
+    const tokenBreakdown = typeof snapshot.systemTokens === 'number'
+      && typeof snapshot.toolTokens === 'number'
+      && typeof snapshot.messageTokens === 'number'
+      ? `  ${A.dim}request estimate${A.reset} system ${snapshot.systemTokens.toLocaleString()} + tools ${snapshot.toolTokens.toLocaleString()} + messages ${snapshot.messageTokens.toLocaleString()}`
+        + (snapshot.tokenEstimateMultiplier && snapshot.tokenEstimateMultiplier !== 1
+          ? ` 路 calibrated 脳${snapshot.tokenEstimateMultiplier.toFixed(2)}`
+          : '')
+      : `  ${A.dim}request estimate${A.reset} breakdown unavailable until the next model request`;
     port.appendStatic([
       `${A.bold}Context window${A.reset}`,
       `  ${color}${pct}% used (${used} / ${window} tokens)${A.reset}`,
+      tokenBreakdown,
       `  ${A.dim}raw window${A.reset}      ${snapshot.rawWindowTokens}`,
       `  ${A.dim}compact limit${A.reset}  ${snapshot.autoCompactTokenLimit} (${snapshot.compactSource})`,
       `  ${A.dim}messages${A.reset}        ${snapshot.messages}`,
       `  ${A.dim}system prompt${A.reset}   ~${snapshot.systemPromptChars} chars`,
+      `  ${A.dim}project instructions${A.reset} ~${snapshot.projectInstructionChars ?? 0} chars` +
+        (snapshot.projectInstructionHash ? ` · hash ${snapshot.projectInstructionHash}` : '') +
+        (typeof snapshot.compactCount === 'number' ? ` · compact ${snapshot.compactCount}` : ''),
       `  ${A.dim}tools${A.reset}           ${snapshot.toolCount}${snapshot.mcpToolCount > 0 ? ` (${snapshot.mcpToolCount} MCP)` : ''}`,
       `  ${A.dim}instruction files${A.reset} ${snapshot.instructionFiles.length ? snapshot.instructionFiles.join(', ') : '(none loaded)'}`,
       `  ${A.dim}active${A.reset}         model=${snapshot.model} · effort=${snapshot.effort} · team=${snapshot.team} · router=${snapshot.router} · bridge=${snapshot.bridge}`,

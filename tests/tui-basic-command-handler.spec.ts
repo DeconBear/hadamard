@@ -11,7 +11,7 @@ function createPort(): TuiBasicCommandPort & { output: string[][] } {
   return {
     output,
     selectItem: vi.fn(async () => undefined),
-    clear: vi.fn(),
+    clear: vi.fn(async () => undefined),
     startRun: vi.fn(async () => undefined),
     shutdown: vi.fn(),
     toolNames: () => ['Read', 'Write'],
@@ -75,6 +75,14 @@ describe('runTuiBasicCommand', () => {
 
     await runTuiBasicCommand('exit', '', port);
     expect(port.shutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('awaits conversation clearing', async () => {
+    const port = createPort();
+    let cleared = false;
+    port.clear = vi.fn(async () => { cleared = true; });
+    expect(await runTuiBasicCommand('clear', '', port)).toBe(true);
+    expect(cleared).toBe(true);
   });
 
   it('leaves agent-run coordination commands to the controller', async () => {

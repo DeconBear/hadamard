@@ -691,6 +691,7 @@ function extractInheritedDelegationOptions(
     effort?: AgentRunOptions['effort'];
     signal?: AbortSignal;
     metadata?: Record<string, unknown>;
+    projectInstructions?: AgentRunOptions['projectInstructions'];
   },
   delegation: {
     depth: number;
@@ -709,6 +710,9 @@ function extractInheritedDelegationOptions(
     effort: context.effort,
     signal: context.signal,
     model: delegation.model,
+    projectInstructions: context.projectInstructions
+      ? structuredClone(context.projectInstructions)
+      : undefined,
     metadata: {
       ...inheritedMetadata,
       __hadamardAgentDepth: delegation.depth,

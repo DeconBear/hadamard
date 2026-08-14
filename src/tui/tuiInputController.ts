@@ -302,6 +302,10 @@ export class TuiInputController {
             break;
           }
         }
+        if (editor.isBrowsingHistory()) {
+          editor.historyPrev();
+          break;
+        }
         const atToken = activeAtToken(editor.text, editor.cursor);
         const atCount = atToken ? completions.atCompletions(atToken.token).length : 0;
         const menu = filterSlashCommands(editor.text);
@@ -312,6 +316,10 @@ export class TuiInputController {
         break;
       }
       case 'down': {
+        if (editor.isBrowsingHistory()) {
+          editor.historyNext();
+          break;
+        }
         const atToken = activeAtToken(editor.text, editor.cursor);
         const atCount = atToken ? completions.atCompletions(atToken.token).length : 0;
         const menu = filterSlashCommands(editor.text);

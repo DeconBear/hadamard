@@ -165,7 +165,8 @@ interface SkillCandidate {
 }
 
 const DEFAULT_MAX_SKILL_BYTES = 1024 * 1024;
-const DEFAULT_SCAN_CONCURRENCY = 8;
+const DEFAULT_SCAN_CONCURRENCY = 16;
+const SOURCE_SCAN_CONCURRENCY = 6;
 const EMPTY_EXCLUSIONS = new Set<string>();
 const CODEX_EXCLUSIONS = new Set(['.system']);
 
@@ -179,17 +180,13 @@ export async function discoverHadamardSkillCatalog(
 ): Promise<HadamardSkillCatalog> {
   const descriptors = await buildSourceDescriptors(options);
   const diagnostics: HadamardSkillCatalogDiagnostic[] = [];
-  const candidates: SkillCandidate[] = [];
-
-  for (const source of descriptors) {
-    const discovered = source.kind === 'bundled'
-      ? bundledCandidates(source)
-      : source.kind === 'commands'
-        ? await scanCommandSkillSource(source, options, diagnostics)
-        : await scanSkillSource(source, options, diagnostics);
+  const candidates = (await mapWithConcurrency(descriptors, SOURCE_SCAN_CONCURRENCY, async source => {
+    const discovered = source.kind === 'bundled' ? bundledCandidates(source)
+      : source.kind === 'commands' ? await scanCommandSkillSource(source, options, diagnostics)
+      : await scanSkillSource(source, options, diagnostics);
     source.skillCount = discovered.length;
-    candidates.push(...discovered);
-  }
+    return discovered;
+  })).flat();
 
   const skills = deduplicateCandidates(candidates);
   const conflicts = markConflicts(skills);

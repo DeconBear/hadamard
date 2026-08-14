@@ -97,6 +97,18 @@ describe('TuiInputController', () => {
     expect(harness.setRecalledFollowUp).toHaveBeenCalledWith('queued question');
   });
 
+  it('recalls a slash command with Up and restores the draft with Down', () => {
+    const harness = createHarness();
+    harness.editor.insert('/model context');
+    harness.editor.submit();
+
+    harness.controller.handleKey(undefined, { name: 'up' });
+    expect(harness.editor.text).toBe('/model context');
+
+    harness.controller.handleKey(undefined, { name: 'down' });
+    expect(harness.editor.text).toBe('');
+  });
+
   it('filters and confirms a selection dialog without leaking state into the editor', () => {
     const resolve = vi.fn();
     const harness = createHarness({

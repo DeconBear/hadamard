@@ -13,6 +13,11 @@ import {
 } from '../src/tui/transcript.js';
 import { filterSlashCommands, activeAtToken, isTuiChatSession } from '../src/tui/hadamardTui.js';
 import {
+  formatWelcomePage,
+  formatWelcomeWordmark,
+  printWelcomeSplash,
+} from '../src/tui/tuiWelcomeBanner.js';
+import {
   filterTuiSelectionItems,
   moveTuiSelection,
 } from '../src/tui/selection.js';
@@ -48,6 +53,45 @@ describe('ansi helpers', () => {
     expect(wrapped).toHaveLength(2);
     expect(stripAnsi(wrapped[0]!)).toBe('abc');
     expect(wrapped[1]!.startsWith(A.dim)).toBe(true);
+  });
+});
+
+describe('TUI welcome banner', () => {
+  it('renders a Hadamard wordmark with the package version', () => {
+    const plain = formatWelcomeWordmark('0.4.16').map(stripAnsi).join('\n');
+    expect(plain).toContain('Hadamard');
+    expect(plain).toContain('v0.4.16');
+    expect(plain).toContain('█  █');
+    expect(plain).toContain('████');
+  });
+
+  it('renders the entry page with workspace, model, tools, and tips', () => {
+    const plain = formatWelcomePage({
+      workDir: '/repo/hadamard',
+      model: 'deepseek-chat',
+      toolCount: 22,
+      permissionMode: 'bypassPermissions',
+      version: '0.4.16',
+      width: 80,
+    }).map(stripAnsi).join('\n');
+    expect(plain).toContain('Hadamard');
+    expect(plain).toContain('/repo/hadamard');
+    expect(plain).toContain('deepseek-chat');
+    expect(plain).toContain('22 loaded');
+    expect(plain).toContain('bypassPermissions');
+    expect(plain).toContain('/help');
+  });
+
+  it('prints an immediate splash before the runtime loads', () => {
+    let written = '';
+    printWelcomeSplash({
+      version: '0.4.16',
+      stream: { write(text: string) { written += text; return true; } } as NodeJS.WriteStream,
+    });
+    const plain = stripAnsi(written);
+    expect(plain).toContain('Hadamard');
+    expect(plain).toContain('v0.4.16');
+    expect(plain).toContain('starting');
   });
 });
 

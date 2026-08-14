@@ -23,6 +23,7 @@ export interface TuiConfigurationCommandPort {
   activeBridgeConfigName(): string | undefined;
   bridgeModelLabel(): string | null;
   chooseModel(): Promise<void>;
+  configureContextWindow(value?: string): Promise<void>;
   configureModelSettings(): Promise<void>;
   chooseRouter(arg: string): Promise<void>;
   chooseEffort(): Promise<void>;
@@ -56,6 +57,10 @@ export async function runTuiConfigurationCommand(
         await port.configureModelSettings();
         return true;
       }
+      if (args === 'context' || args.startsWith('context ')) {
+        await port.configureContextWindow(args.slice('context'.length).trim() || undefined);
+        return true;
+      }
       if (args === 'router' || args.startsWith('router ')) {
         await port.chooseRouter(args.slice('router'.length).trim());
         return true;
@@ -68,6 +73,7 @@ export async function runTuiConfigurationCommand(
         }
         await port.disableBridge();
         await port.setSessionModel(customModel);
+        await port.configureContextWindow();
         port.appendStatic([...formatInfoLine(`custom model: ${port.sessionModel()}`), '']);
         return true;
       }
@@ -98,6 +104,7 @@ export async function runTuiConfigurationCommand(
       if (config.source === 'default') {
         await port.disableBridge();
         await port.setSessionModel(explicitModel || defaults.model);
+        await port.configureContextWindow();
         port.appendStatic([...formatInfoLine(`model configuration: default · ${port.sessionModel()}`), '']);
         return true;
       }
@@ -119,6 +126,7 @@ export async function runTuiConfigurationCommand(
         selectedConfig = { ...selectedConfig, model };
       }
       await port.activateBridgeConfig(selectedConfig);
+      await port.configureContextWindow();
       port.appendStatic([
         ...formatInfoLine(`model configuration: ${port.activeBridgeConfigName() ?? config.name} · ${port.bridgeModelLabel() ?? port.sessionModel()}`),
         '',

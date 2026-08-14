@@ -60,4 +60,40 @@ describe('TUI Session resume resolution', () => {
     expect(candidates.map(item => item.summary.id)).toEqual(['one', 'two']);
     expect(() => resolveTuiResumeReference(candidates, 'Repeated')).toThrow(/ambiguous/u);
   });
+
+  it('lists and resolves only Sessions from the current working directory', () => {
+    const currentPath = path.resolve('E:/projects/alpha');
+    const otherPath = path.resolve('E:/projects/beta');
+    const current = summary('alpha-session', 'Current project', currentPath);
+    const other = summary('beta-session', 'Other project', otherPath);
+    const candidates = buildTuiResumeCandidates([
+      { projectPath: currentPath, sessionDirectory: 'E:/state/alpha', summary: current },
+      { projectPath: otherPath, sessionDirectory: 'E:/state/beta', summary: other },
+    ], [], {
+      localProjectPath: currentPath,
+      localSessionDirectory: 'E:/state/alpha',
+      currentSessionId: 'current',
+      scopeProjectPath: currentPath,
+    });
+
+    expect(candidates.map(item => item.summary.id)).toEqual(['alpha-session']);
+    expect(resolveTuiResumeReference(candidates, 'alpha-session').summary.id).toBe('alpha-session');
+    expect(() => resolveTuiResumeReference(candidates, 'beta-session')).toThrow(/No persisted Session/u);
+  });
+
+  it('does not expose an empty user Session as resumable', () => {
+    const projectPath = path.resolve('E:/projects/alpha');
+    const empty = { ...summary('empty', 'Empty', projectPath), messageCount: 0, runCount: 0 };
+    const candidates = buildTuiResumeCandidates(
+      [{ projectPath, sessionDirectory: 'E:/state/alpha', summary: empty }],
+      [empty],
+      {
+        localProjectPath: projectPath,
+        localSessionDirectory: 'E:/state/alpha',
+        currentSessionId: 'current',
+      },
+    );
+    expect(candidates).toEqual([]);
+    expect(() => resolveTuiResumeReference(candidates, 'empty')).toThrow(/No persisted Session/u);
+  });
 });

@@ -17,8 +17,15 @@ function createPort(): TuiContextCommandPort & { output: string[][] } {
       autoCompactTokenLimit: 90_000,
       compactSource: 'model',
       usedTokens: 20_000,
+      systemTokens: 2500,
+      toolTokens: 12500,
+      messageTokens: 5000,
+      tokenEstimateMultiplier: 1,
       messages: 8,
       systemPromptChars: 2400,
+      projectInstructionChars: 15000,
+      projectInstructionHash: 'abc123def456',
+      compactCount: 2,
       toolCount: 12,
       mcpToolCount: 2,
       instructionFiles: ['AGENTS.md'],
@@ -58,6 +65,9 @@ describe('runTuiContextCommand', () => {
     const port = createPort();
     await runTuiContextCommand('context', '', port);
     expect(output(port)).toContain('20% used (20.0k / 100k tokens)');
+    expect(output(port)).toContain('system 2,500 + tools 12,500 + messages 5,000');
+    expect(output(port)).toContain('system prompt   ~2400 chars');
+    expect(output(port)).toContain('project instructions ~15000 chars · hash abc123def456 · compact 2');
     expect(output(port)).toContain('tools           12 (2 MCP)');
     expect(output(port)).toContain('instruction files AGENTS.md');
     expect(output(port)).toContain('model=test-model · effort=high · team=reviewer');

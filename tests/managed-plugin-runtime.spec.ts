@@ -9,8 +9,11 @@ import {
   createManagedPluginRuntime,
   prepareKimiCommandArgs,
 } from '../src/plugins/managedPluginRuntime.js';
+import { createManagedActionDispatcher } from '../src/plugins/managedPluginSkills.js';
 import { patchManagedPluginSettings } from '../src/plugins/managedPluginCatalog.js';
 import { decideHadamardToolPermission } from '../src/runtime/hadamardPermissions.js';
+import { tool } from '../src/runtime/tools.js';
+import { z } from 'zod';
 
 describe('managed plugin runtime', () => {
   it('mounts only enabled and configured managed plugin tools', async () => {
@@ -52,16 +55,21 @@ describe('managed plugin runtime', () => {
 
     expect(names).toEqual(expect.arrayContaining([
       'ocr_extract',
-      'computer_open_url',
-      'github_status',
-      'github_read_api',
-      'github_write_api',
+      'computer_use',
       'kimi_webbridge',
-      'browser_navigate',
-      'browser_snapshot',
+      'browser_use',
       'TavilySearch',
       'ExaSearch',
     ]));
+    expect(names.some(name => name.startsWith('github_'))).toBe(false);
+    expect(names.some(name => name.startsWith('computer_') && name !== 'computer_use')).toBe(false);
+    expect(names.some(name => name.startsWith('browser_') && name !== 'browser_use')).toBe(false);
+    expect(runtime.skills.map(skill => skill.name)).toEqual(expect.arrayContaining([
+      'computer-use',
+      'github',
+      'playwright',
+    ]));
+    expect(runtime.tools).toHaveLength(6);
     expect(JSON.stringify(runtime.tools.map(item => item.inputJsonSchema))).not.toContain('qwen-secret');
     expect(JSON.stringify(runtime.tools.map(item => item.inputJsonSchema))).not.toContain('tvly-secret');
     expect(JSON.stringify(runtime.tools.map(item => item.inputJsonSchema))).not.toContain('exa-secret');
@@ -78,6 +86,7 @@ describe('managed plugin runtime', () => {
 
     const runtime = createManagedPluginRuntime(raw, { cwd: process.cwd() });
     expect(runtime.tools).toEqual([]);
+    expect(runtime.skills).toEqual([]);
     await runtime.close();
   });
 
@@ -90,22 +99,22 @@ describe('managed plugin runtime', () => {
     });
 
     const runtime = createManagedPluginRuntime(raw, { cwd: process.cwd() });
-    expect(runtime.tools.map(item => item.name)).toContain('computer_start');
+    expect(runtime.tools.map(item => item.name)).toEqual(['computer_use']);
+    expect(runtime.skills.map(item => item.name)).toEqual(['computer-use']);
     expect(JSON.stringify(runtime.tools.map(item => item.inputJsonSchema))).not.toContain('e2b-secret');
     await runtime.close();
   });
 
-  it('requires interaction for remote GitHub writes and signed-in Kimi browser access', async () => {
+  it('registers GitHub only as a gh CLI skill and keeps interactive tool approvals', async () => {
     const raw: Record<string, unknown> = {};
     patchManagedPluginSettings(raw, 'github', { enabled: true });
     patchManagedPluginSettings(raw, 'kimi-webbridge', { enabled: true });
     const runtime = createManagedPluginRuntime(raw, { cwd: process.cwd() });
 
     try {
-      const githubWrite = runtime.tools.find(item => item.name === 'github_write_api')!;
+      expect(runtime.tools.some(item => item.name.startsWith('github_'))).toBe(false);
+      expect(runtime.skills.find(item => item.name === 'github')?.prompt).toContain('gh auth status');
       const kimi = runtime.tools.find(item => item.name === 'kimi_webbridge')!;
-      expect(githubWrite.isDestructive?.({})).toBe(true);
-      expect(githubWrite.requiresUserInteraction?.()).toBe(true);
       expect(kimi.requiresUserInteraction?.()).toBe(true);
       expect(kimi.isReadOnly?.({ action: 'screenshot', args: {} })).toBe(true);
       expect(kimi.isDestructive?.({
@@ -113,11 +122,6 @@ describe('managed plugin runtime', () => {
         args: { path: 'screen.png' },
       })).toBe(true);
       for (const [definition, toolInput] of [
-        [githubWrite, {
-          endpoint: 'repos/example/project/issues',
-          method: 'POST',
-          fields: { title: 'test' },
-        }],
         [kimi, { action: 'click', args: { ref: 1 } }],
       ] as const) {
         const approver = vi.fn(async () => ({
@@ -143,6 +147,48 @@ describe('managed plugin runtime', () => {
     } finally {
       await runtime.close();
     }
+  });
+
+  it('dispatches compact actions through the original schema and permission metadata', async () => {
+    const read = tool(
+      {
+        name: 'demo_read',
+        description: 'Read a value.',
+        inputSchema: z.strictObject({ value: z.string().min(1) }),
+        isReadOnly: () => true,
+      },
+      async ({ value }) => ({ value }),
+    );
+    const write = tool(
+      {
+        name: 'demo_write',
+        description: 'Write a value.',
+        inputSchema: z.strictObject({ value: z.string().min(1) }),
+        isDestructive: () => true,
+      },
+      async ({ value }) => ({ value }),
+    );
+    const dispatcher = createManagedActionDispatcher({
+      name: 'demo_use',
+      description: 'Dispatch demo actions.',
+      sourcePrefix: 'demo_',
+      sourceTools: [read, write],
+    });
+
+    expect(dispatcher.isReadOnly?.({ action: 'read', args: { value: 'ok' } })).toBe(true);
+    expect(dispatcher.isDestructive?.({ action: 'write', args: { value: 'ok' } })).toBe(true);
+    expect(dispatcher.isDestructive?.({ action: 'missing' })).toBe(true);
+    await expect(dispatcher.execute(
+      { action: 'read', args: { value: '' } },
+      {
+        cwd: process.cwd(),
+        runId: 'run-dispatch',
+        permissionMode: 'default',
+        metadata: {},
+        prompt: 'dispatcher validation test',
+        iteration: 1,
+      },
+    )).rejects.toThrow(/Invalid args/);
   });
 
   it('constrains Kimi output and upload paths to the workspace', async () => {

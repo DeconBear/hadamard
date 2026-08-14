@@ -104,6 +104,15 @@ class MockModelApi implements ModelApi {
   }
 }
 
+function providerToolDescription(request: ModelRequest | undefined, name: string): string {
+  const tools = request?.tools ?? [];
+  for (const tool of tools) {
+    const record = tool as { name?: string; description?: string };
+    if (record.name === name) return record.description ?? '';
+  }
+  return '';
+}
+
 describe('HadamardAgentClient', () => {
   it('lets a run select automatic effort over a configured default', async () => {
     const sessionDirectory = await createSessionDirectory();
@@ -372,6 +381,7 @@ describe('HadamardAgentClient', () => {
       mode: 'plan',
       permissions: [{ toolName: 'write_note', behavior: 'deny', source: 'session' }],
     });
+    await session.appendMessages([{ role: 'user', content: 'Persist these runtime settings.' }]);
     const sessionId = session.id;
     await firstSdk.close();
 
@@ -1748,8 +1758,11 @@ describe('HadamardAgentClient', () => {
     try {
       const result = await sdk.run('Please debug this validation path.');
 
-      expect(modelApi.createCalls[0]?.system).toContain('Available subagents');
-      expect(modelApi.createCalls[0]?.system).toContain('debugger');
+      expect(providerToolDescription(modelApi.createCalls[0], 'Agent')
+        || providerToolDescription(modelApi.createCalls[0], 'Task')).toContain('Available subagents');
+      expect(providerToolDescription(modelApi.createCalls[0], 'Agent')
+        || providerToolDescription(modelApi.createCalls[0], 'Task')).toContain('debugger');
+      expect(String(modelApi.createCalls[0]?.system ?? '')).not.toContain('Available subagents');
       expect(result.text).toContain('debugger summary');
       expect(result.toolCalls[0]?.outputText).toContain('Tool calls: 0');
       expect(result.toolCalls[0]?.outputText).toContain('Debugger summary');
@@ -1919,7 +1932,9 @@ describe('HadamardAgentClient', () => {
       const result = await stream.result;
 
       expect(deltas.join('')).toContain('Main stream received child summary.');
-      expect(modelApi.streamCalls[0]?.system).toContain('Available subagents');
+      expect(providerToolDescription(modelApi.streamCalls[0], 'Agent')
+        || providerToolDescription(modelApi.streamCalls[0], 'Task')).toContain('Available subagents');
+      expect(String(modelApi.streamCalls[0]?.system ?? '')).not.toContain('Available subagents');
       expect(result.delegatedAgents).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
