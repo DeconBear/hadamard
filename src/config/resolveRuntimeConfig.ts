@@ -279,6 +279,11 @@ export async function resolveRuntimeConfig(
       : undefined,
   ].filter((warning): warning is string => typeof warning === 'string');
 
+  const maxParallelToolCalls = resolveMaxParallelToolCalls(
+    options.maxParallelToolCalls
+    ?? getRuntimeConfigValue('HADAMARD_MAX_PARALLEL_TOOL_CALLS', ...envSources),
+  );
+
   return {
     homeDir,
     loadedConfigPath: loadedConfig?.path,
@@ -307,6 +312,9 @@ export async function resolveRuntimeConfig(
     // semantics: the loop ends when the model stops calling tools, on abort,
     // or via an explicit caller-provided limit.
     maxToolIterations: options.maxToolIterations ?? Number.POSITIVE_INFINITY,
+    // Bounded rolling pool for parallel-classified tool calls, mirroring
+    // dsh's maxParallelToolCalls scheduling contract.
+    maxParallelToolCalls,
     fallbackModel,
     promptCachingEnabled: options.promptCachingEnabled ?? true,
     userId: options.userId,
@@ -389,6 +397,17 @@ function normalizeLanguageServers(
         : {}),
     }];
   });
+}
+
+function resolveMaxParallelToolCalls(value: string | number | undefined): number {
+  const resolved = value === undefined || value === '' ? 10 : value;
+  const parsed = typeof resolved === 'number' ? resolved : Number.parseInt(resolved, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 128) {
+    throw new ConfigurationError(
+      'maxParallelToolCalls must be an integer between 1 and 128.',
+    );
+  }
+  return parsed;
 }
 
 function resolvePositiveTimeout(

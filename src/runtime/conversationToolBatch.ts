@@ -1,4 +1,6 @@
 import type { ToolResultBlockParam, ToolUseBlock } from '../provider/types.js';
+import type { AgentToolCallEventPayload, AgentToolCallRecord } from '../types.js';
+import { nowIso } from './helpers.js';
 import {
   formatHadamardTodoListLines,
   getHadamardTodoSnapshot,
@@ -45,6 +47,197 @@ export async function runSequentially<T, R>(items: T[], run: (item: T) => Promis
     results.push(await run(item));
   }
   return results;
+}
+
+export interface ToolUseConcurrencyToolMap {
+  isReadOnly?: (input?: unknown) => boolean;
+  isConcurrencySafe?: () => boolean;
+  requiresUserInteraction?: () => boolean;
+}
+
+/**
+ * Fail-closed concurrency classification shared by the scheduling contract:
+ * only an exact \`true\` from \`isConcurrencySafe\` (else a \`true\` read-only
+ * verdict) opts a call into parallelism; a throwing classifier, an
+ * interactive tool, or a non-true verdict is exclusive.
+ */
+export function isToolUseConcurrencySafe(
+  toolUse: ToolUseBlock,
+  toolMap: Map<string, ToolUseConcurrencyToolMap>,
+): boolean {
+  const adapter = toolMap.get(toolUse.name);
+  if (!adapter || adapter.requiresUserInteraction?.() === true) {
+    return false;
+  }
+  try {
+    const concurrencySafe = adapter.isConcurrencySafe?.();
+    if (concurrencySafe !== undefined) {
+      return concurrencySafe === true;
+    }
+    return adapter.isReadOnly?.(toolUse.input) === true;
+  } catch {
+    return false;
+  }
+}
+
+export interface ToolUseSchedulerOutcome<T> {
+  /** Per-index results in model order; undefined means the call was never started. */
+  results: (T | undefined)[];
+  /** True when the abort signal fired or an unexpected run rejection stopped new starts. */
+  aborted: boolean;
+}
+
+export interface ToolUseSchedulerOptions {
+  /** Upper bound for in-flight parallel-classified calls. */
+  maxParallel: number;
+  /** Abort signal; stops new starts and drains started calls to quiescence. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Execute model-ordered tool calls under the dsh-style scheduling contract:
+ *
+ * - classification is re-read lazily right before each start (fail-closed:
+ *   a throwing classifier or a non-true result is exclusive);
+ * - parallel-classified calls overlap in a bounded rolling pool
+ *   (`maxParallel`);
+ * - an exclusive call waits for the pool to drain, runs alone, and holds its
+ *   barrier through completion (the whole per-call path, including
+ *   post-execute hooks — mirroring dsh's exclusive-group commit barrier);
+ * - results land in model order regardless of completion order;
+ * - on abort (or an unexpected `run` rejection) new starts stop, started
+ *   calls drain to quiescence, and skipped calls stay `undefined` so the
+ *   caller can record synthetic results and keep persisted sessions
+ *   replay-valid (dsh's TOOL_ABORTED_BEFORE_DISPATCH semantics).
+ *
+ * `run` is expected to resolve with the per-call outcome (the engine's
+ * executor normalizes every tool error into an error result). An unexpected
+ * rejection is a terminal scheduler failure: started calls drain, then the
+ * first failure rethrows without fabricating results.
+ */
+export async function executeToolUsesWithContract<T>(
+  toolUses: readonly ToolUseBlock[],
+  classify: (toolUse: ToolUseBlock, index: number) => boolean,
+  run: (toolUse: ToolUseBlock, index: number) => Promise<T>,
+  options: ToolUseSchedulerOptions,
+): Promise<ToolUseSchedulerOutcome<T>> {
+  const results: (T | undefined)[] = new Array<T | undefined>(toolUses.length).fill(undefined);
+  const inFlight = new Set<Promise<void>>();
+  const maxParallel = Math.max(1, Math.trunc(options.maxParallel) || 1);
+  let nextToStart = 0;
+  // Function read so control-flow narrowing never masks an abort that fires
+  // across an await boundary.
+  const isAborted = (): boolean => options.signal?.aborted === true;
+  let aborted = isAborted();
+  let failure: { index: number; error: unknown } | undefined;
+
+  const start = (index: number): void => {
+    const toolUse = toolUses[index]!;
+    const promise = Promise.resolve()
+      .then(() => run(toolUse, index))
+      .then(
+        (value) => { results[index] = value; },
+        (error) => { failure ??= { index, error }; },
+      )
+      .finally(() => { inFlight.delete(promise); });
+    inFlight.add(promise);
+  };
+
+  const drain = async (): Promise<void> => {
+    while (inFlight.size > 0) {
+      await Promise.allSettled([...inFlight]);
+    }
+  };
+
+  while (nextToStart < toolUses.length) {
+    if (failure !== undefined || isAborted()) {
+      aborted = true;
+      break;
+    }
+    const index = nextToStart;
+    const toolUse = toolUses[index]!;
+    // Lazy fail-closed reclassification immediately before start: a registry
+    // change while queued can flip a later call exclusive, and a throwing
+    // classifier degrades to exclusive (dsh executionMode semantics).
+    let safe = false;
+    try {
+      safe = classify(toolUse, index);
+    } catch {
+      safe = false;
+    }
+    if (!safe) {
+      // Exclusive barrier: wait for the parallel pool to drain, then run
+      // alone and hold the barrier through completion.
+      await drain();
+      if (failure !== undefined || isAborted()) {
+        aborted = true;
+        break;
+      }
+      nextToStart += 1;
+      try {
+        results[index] = await run(toolUse, index);
+      } catch (error) {
+        failure ??= { index, error };
+        aborted = true;
+        break;
+      }
+      continue;
+    }
+    if (inFlight.size >= maxParallel) {
+      await Promise.race([...inFlight]);
+      continue;
+    }
+    nextToStart += 1;
+    start(index);
+  }
+
+  if (failure !== undefined) {
+    // Terminal scheduler failure: drain every started dispatch, then surface
+    // the first failure without fabricating results.
+    await drain();
+    aborted = true;
+    throw failure.error;
+  }
+  await drain();
+  if (isAborted()) {
+    aborted = true;
+  }
+  return { results, aborted };
+}
+
+/** Synthetic call/result pair for a model call skipped by abort before dispatch. */
+export function buildAbortedBeforeDispatchResult(
+  toolUse: ToolUseBlock,
+  now: string = nowIso(),
+): { callPayload: AgentToolCallEventPayload; record: AgentToolCallRecord; resultBlock: ToolResultBlockParam } {
+  const message = 'Error: tool call aborted before dispatch';
+  const callPayload: AgentToolCallEventPayload = {
+    id: toolUse.id,
+    name: toolUse.name,
+    publicName: toolUse.name,
+    provider: 'local',
+    input: structuredClone(toolUse.input),
+    startedAt: now,
+  };
+  const record: AgentToolCallRecord = {
+    ...callPayload,
+    outputText: message,
+    output: { error: message },
+    isError: true,
+    completedAt: now,
+    durationMs: 0,
+    abortedBeforeDispatch: true,
+  };
+  return {
+    callPayload,
+    record,
+    resultBlock: {
+      type: 'tool_result',
+      tool_use_id: toolUse.id,
+      content: message,
+      is_error: true,
+    },
+  };
 }
 
 export async function runWithConcurrencyLimit<T, R>(

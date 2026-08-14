@@ -40,6 +40,18 @@ describe('CodeAct mode prompt and tool pruning', () => {
     expect(filterToolsForExecutionPolicy([ordinary, codeCell], policy).map(tool => tool.name)).toEqual(['CodeCell']);
   });
 
+  it('renders the typed host SDK section when provided', () => {
+    const policy = resolveAgentExecutionPolicy({
+      agentMode: 'codeact', ordinaryTools: ['Read'], codeActEnabled: true,
+    });
+    const prompt = buildAgentModePrompt(policy, {
+      hostSdk: 'class HadamardHost:\n    """stub"""\n',
+    });
+    expect(prompt).toContain('Typed host-tool surface');
+    expect(prompt).toContain('class HadamardHost:');
+    expect(buildAgentModePrompt(policy)).not.toContain('class HadamardHost:');
+  });
+
   it('routes Hybrid explicitly and bounds Single to zero or one ordinary tool', () => {
     const hybrid = resolveAgentExecutionPolicy({
       agentMode: 'hybrid', ordinaryTools: ['Read'], codeActEnabled: true,

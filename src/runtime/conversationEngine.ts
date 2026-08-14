@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   MessageParam,
   ToolResultBlockParam,
   ToolUseBlock,
@@ -55,11 +55,11 @@ import {
 } from './requestTokenEstimate.js';
 import {
   appendTextToToolResultContent,
+  buildAbortedBeforeDispatchResult,
   buildTodoReminderText,
+  executeToolUsesWithContract,
   isLikelyTruncatedToolUse,
-  partitionToolUsesForConcurrency,
-  runSequentially,
-  runWithConcurrencyLimit,
+  isToolUseConcurrencySafe,
 } from './conversationToolBatch.js';
 import {
   MAX_STREAM_INTERRUPTION_RETRIES,
@@ -75,7 +75,6 @@ import {
   streamInterruptionBackoffMs,
 } from './modelRequestPolicy.js';
 
-const MAX_CONCURRENT_TOOL_USES = 10;
 const TODO_REMINDER_INTERVAL = 10;
 const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3;
 const MAX_CONSECUTIVE_PERMISSION_DENIALS = 3;
@@ -761,36 +760,68 @@ export async function executeConversation(
         },
       });
 
-    // Execute tool batches: consecutive concurrency-safe (read-only) tools run
-    // in parallel (limit 10), everything else serially. Results are recorded
-    // in the original tool_use order regardless of completion order.
+    // Execute tool calls under the dsh-style scheduling contract: lazy
+    // fail-closed classification, a bounded rolling pool for parallel-safe
+    // calls, exclusive barriers that hold through completion, model-ordered
+    // results, and abort semantics that drain started calls while leaving
+    // skipped calls unexecuted (the caller records synthetic results below).
+    const maxParallelToolCalls = Math.max(1, options.config.maxParallelToolCalls ?? 10);
+    const classifyToolUse = (toolUse: ToolUseBlock) => isToolUseConcurrencySafe(toolUse, toolMap);
+    const additionalContexts: { type: 'text'; text: string }[] = [];
+    let concludedTurn = false;
     let abortedAfterToolBatch = false;
-    for (const batch of partitionToolUsesForConcurrency(toolUses, toolMap)) {
-      const outcomes =
-        batch.concurrent && batch.toolUses.length > 1
-          ? await runWithConcurrencyLimit(
-              batch.toolUses,
-              MAX_CONCURRENT_TOOL_USES,
-              runSingleToolUse,
-            )
-          : await runSequentially(batch.toolUses, runSingleToolUse);
-      for (const outcome of outcomes) {
-        if (outcome.permissionBehavior === 'deny') denialTracker.recordDenial();
-        else if (outcome.permissionBehavior === 'allow') denialTracker.recordAllow();
-        toolCalls.push(outcome.record);
-        toolResults.push(outcome.resultBlock);
+    const schedule = await executeToolUsesWithContract(
+      toolUses,
+      classifyToolUse,
+      (toolUse) => runSingleToolUse(toolUse),
+      { maxParallel: maxParallelToolCalls, signal: options.signal },
+    );
+    for (let batchIndex = 0; batchIndex < toolUses.length; batchIndex += 1) {
+      const toolUse = toolUses[batchIndex]!;
+      const outcome = schedule.results[batchIndex];
+      if (outcome === undefined) {
+        // Aborted before dispatch: record a synthetic result so persisted
+        // sessions never hold dangling tool_use ids (dsh
+        // TOOL_ABORTED_BEFORE_DISPATCH semantics).
+        const synthetic = buildAbortedBeforeDispatchResult(toolUse);
+        toolCalls.push(synthetic.record);
+        toolResults.push(synthetic.resultBlock);
+        options.emit?.({
+          type: 'tool.call',
+          runId: options.runId,
+          iteration,
+          call: synthetic.callPayload,
+          timestamp: synthetic.record.completedAt,
+        });
         options.emit?.({
           type: 'tool.result',
           runId: options.runId,
           iteration,
-          result: outcome.record,
-          timestamp: outcome.record.completedAt,
+          result: synthetic.record,
+          timestamp: synthetic.record.completedAt,
         });
+        continue;
       }
-      if (options.signal?.aborted) {
-        abortedAfterToolBatch = true;
-        break;
+      if (outcome.permissionBehavior === 'deny') denialTracker.recordDenial();
+      else if (outcome.permissionBehavior === 'allow') denialTracker.recordAllow();
+      toolCalls.push(outcome.record);
+      toolResults.push(outcome.resultBlock);
+      options.emit?.({
+        type: 'tool.result',
+        runId: options.runId,
+        iteration,
+        result: outcome.record,
+        timestamp: outcome.record.completedAt,
+      });
+      if (outcome.additionalContexts && outcome.additionalContexts.length > 0) {
+        additionalContexts.push(...outcome.additionalContexts);
       }
+      if (outcome.concludesTurn) {
+        concludedTurn = true;
+      }
+    }
+    if (schedule.aborted) {
+      abortedAfterToolBatch = true;
     }
 
     // Aggregate per-message budget: N parallel tools can each pass the
@@ -910,6 +941,10 @@ export async function executeConversation(
       role: 'user',
       content: [
         ...toolResults,
+        // Tool-deferred model-facing context rides the same user message as
+        // the tool results so the model sees it on the very next request
+        // (dsh additionalContexts → next-step inbox semantics).
+        ...additionalContexts,
         ...queuedInputs.map((text) => ({
           type: 'text' as const,
           text: `[User message sent while you were working — factor it into your current task]\n${text}`,
@@ -931,6 +966,42 @@ export async function executeConversation(
 
     if (abortedAfterToolBatch) {
       ensureNotAborted(options.signal);
+    }
+
+    // A tool declared the turn complete (concludesTurn): results and contexts
+    // are already committed above, so end the turn as a normal completion.
+    if (concludedTurn) {
+      if (!finalMessage) {
+        throw new HadamardSdkError('No final message was produced.');
+      }
+      const completedAt = nowIso();
+      const result: AgentRunResult = {
+        runId: options.runId,
+        sessionId: options.sessionId,
+        model,
+        text: extractTextFromContent(finalMessage.content),
+        message: finalMessage,
+        messages: conversation,
+        stopReason: 'end_turn',
+        hookStopReason,
+        usage: aggregateRequestUsage(requestSummaries),
+        requests: requestSummaries,
+        toolCalls,
+        permissionDecisions,
+        ...(loopCompactions.length > 0 ? { loopCompactions } : {}),
+        startedAt,
+        completedAt,
+      };
+      await runTypedLifecycleHooks(options, 'Stop', {
+        iteration,
+        stopReason: result.stopReason,
+      });
+      await runTypedLifecycleHooks(options, 'TurnEnd', {
+        iteration,
+        stopReason: result.stopReason,
+        toolCalls: result.toolCalls.length,
+      });
+      return result;
     }
 
     if (

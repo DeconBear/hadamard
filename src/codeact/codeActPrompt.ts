@@ -4,6 +4,8 @@ import { CODE_CELL_TOOL_NAME } from './codeCellTool.js';
 
 export interface AgentModePromptCapabilities {
   hostCapabilities?: readonly string[];
+  /** Rendered typed host-tool stubs (CodeAct SDK section) for codeact/hybrid modes. */
+  hostSdk?: string;
 }
 
 export function buildAgentModePrompt(
@@ -51,11 +53,15 @@ function codeCellInstructions(capabilities: AgentModePromptCapabilities): string
   const host = capabilities.hostCapabilities?.length
     ? `Allowed host RPC capabilities: ${capabilities.hostCapabilities.join(', ')}.`
     : 'Host RPC capabilities are explicit and may be unavailable; never assume direct access to provider credentials.';
+  const sdk = capabilities.hostSdk?.trim()
+    ? `Typed host-tool surface reachable from CodeCell code (signatures are authoritative for parameter names):\n${capabilities.hostSdk}`
+    : '';
   return [
     'Use CodeCell with language="python" and executable Python source.',
     'The namespace persists for this session until a restart, crash, interrupt, or idle cleanup changes the generation.',
     'Inspect stdout, stderr, the structured final-expression result, artifact references, and stateLost after every cell.',
     host,
+    ...(sdk ? [sdk] : []),
     'Keep cells auditable and bounded. Finish only when the requested observable result is verified.',
   ].join('\n');
 }
