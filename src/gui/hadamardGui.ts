@@ -4687,6 +4687,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     let run: ExternalCliRunSnapshot;
     try {
       assertRunCanStart();
+      // Materialize an empty chat before launching a background run. Empty
+      // sessions intentionally remain in-memory drafts, so deferring the
+      // first user message until completion would let cleanup or a session
+      // switch discard the draft before the result is persisted.
+      await originSession.appendMessages([
+        { role: 'user', content: prompt },
+      ]);
       run = await externalCliRuntimeManager.start({
       hadamardSessionId: originSession.id,
       configId,
@@ -4739,7 +4746,6 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         );
       }
       await originSession.appendMessages([
-        { role: 'user', content: prompt },
         { role: 'assistant', content: completed.result.text },
       ]);
     };
