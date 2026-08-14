@@ -1543,7 +1543,7 @@ export class HadamardAgentClient {
   }
 
   async getSessionDiff(sessionId: string): Promise<import('../review/types.js').ThreadDiff> {
-    const stored = await this.store.load(sessionId);
+    const stored = await this.store.loadForRuntime(sessionId);
     const locator = await this.taskWorktrees?.read(sessionId);
     const worktreePath = locator?.worktreePath ?? stored.worktreePath;
     const repoRoot = locator?.repoRoot ?? stored.originalWorkDir;
