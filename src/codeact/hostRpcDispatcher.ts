@@ -5,6 +5,7 @@ import { decideHadamardToolPermission } from '../runtime/hadamardPermissions.js'
 import { markExplicitSafetyApproval } from '../runtime/safetyChecks.js';
 import type { AgentToolDefinition, ToolExecutionContext } from '../types.js';
 import { CodeActArtifactRecorder } from './codeActArtifacts.js';
+import { CodeActSubdispatchScheduler } from './subdispatchScheduler.js';
 import type {
   CodeActHostRpcHandler,
   CodeActHostRpcRequest,
@@ -19,6 +20,7 @@ export class CodeActHostRpcDispatcher {
     private readonly context: ToolExecutionContext,
     private readonly artifacts: CodeActArtifactRecorder,
     private readonly sessionId: string,
+    private readonly maxParallelSubCalls = 8,
   ) {
     for (const tool of tools) {
       this.tools.set(tool.name, tool);
@@ -26,8 +28,50 @@ export class CodeActHostRpcDispatcher {
     }
   }
 
+  /**
+   * One handler per cell execution: wraps a fresh sub-dispatch scheduler so
+   * nested host calls obey the same concurrency contract as the native loop
+   * (ordered commit, bounded parallel pool, exclusive barriers, drain on
+   * settle).
+   */
   handler(): CodeActHostRpcHandler {
-    return request => this.dispatch(request);
+    const scheduler = new CodeActSubdispatchScheduler({
+      maxParallel: this.maxParallelSubCalls,
+      classify: request => this.classifyRequest(request),
+      dispatch: request => this.dispatch(request),
+      rootCallId: this.context.toolUseId ?? this.sessionId,
+      onEvent: payload => {
+        this.context.runtime?.emit?.({
+          ...payload,
+          runId: this.context.runId,
+          iteration: this.context.iteration,
+        });
+      },
+    });
+    return {
+      dispatch: request => scheduler.schedule(request).catch(error => ({
+        id: request.id,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      })),
+      drain: () => scheduler.drain(),
+    };
+  }
+
+  /** Fail-closed classification: only exact-true parallel, everything else exclusive. */
+  private classifyRequest(request: CodeActHostRpcRequest): boolean {
+    if (request.method !== 'tool.call') return false;
+    const envelope = asRecord(request.input);
+    const name = typeof envelope?.name === 'string' ? envelope.name : '';
+    const definition = name ? this.tools.get(name) : undefined;
+    if (!definition || definition.requiresUserInteraction?.() === true) return false;
+    try {
+      const concurrencySafe = definition.isConcurrencySafe?.();
+      if (concurrencySafe !== undefined) return concurrencySafe === true;
+      return definition.isReadOnly?.(envelope?.input) === true;
+    } catch {
+      return false;
+    }
   }
 
   async dispatch(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse> {

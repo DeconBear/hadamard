@@ -28,10 +28,17 @@ export function resolveCodeActSettings(input: CodeActSettings): ResolvedCodeActS
     idleTimeoutMs: clampInteger(input.idleTimeoutMs, 60_000, 1_000, 3_600_000),
     executionTimeoutMs: clampInteger(input.executionTimeoutMs, 120_000, 100, 3_600_000),
     maxOutputChars: clampInteger(input.maxOutputChars, 80_000, 1_000, 10_000_000),
+    maxOutputBytes: clampInteger(
+      input.maxOutputBytes,
+      (input.maxOutputChars ?? 80_000) * 4,
+      1_000,
+      40_000_000,
+    ),
     environmentAllowlist: uniqueStrings(input.environmentAllowlist ?? []),
     containerImage: input.containerImage?.trim() || 'python:3.12-alpine',
     containerMemoryMb: clampInteger(input.containerMemoryMb, 512, 64, 32_768),
     containerCpuLimit: clampNumber(input.containerCpuLimit, 1, 0.1, 64),
+    maxParallelSubCalls: clampInteger(input.maxParallelSubCalls, 8, 1, 32),
   };
 }
 

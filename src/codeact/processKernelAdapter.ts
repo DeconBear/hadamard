@@ -28,6 +28,8 @@ interface ActiveExecution {
   stdout: string;
   stderr: string;
   artifacts: CodeCellExecutionResult['artifacts'];
+  outputBytes: number;
+  outputLimit: boolean;
   resolve(result: CodeCellExecutionResult): void;
   timer: ReturnType<typeof setTimeout>;
   abortListener?: () => void;
@@ -141,6 +143,7 @@ class JsonLineProcessKernel implements CodeActKernel {
           error: `CodeCell timed out after ${request.timeoutMs}ms. Kernel state was lost.`,
           durationMs: request.timeoutMs,
           stateLost: true,
+          failureKind: 'timeout',
         });
         this.child.kill();
       }, request.timeoutMs);
@@ -149,6 +152,8 @@ class JsonLineProcessKernel implements CodeActKernel {
         stdout: '',
         stderr: '',
         artifacts: [],
+        outputBytes: 0,
+        outputLimit: false,
         resolve,
         timer,
         settled: false,
@@ -158,7 +163,15 @@ class JsonLineProcessKernel implements CodeActKernel {
         request.signal.addEventListener('abort', active.abortListener, { once: true });
       }
       this.active = active;
-      this.write({ v: 1, type: 'execute', executionId: request.executionId, code: request.code });
+      this.write({
+        v: 1,
+        type: 'execute',
+        executionId: request.executionId,
+        code: request.code,
+        ...(request.toolNameMap && Object.keys(request.toolNameMap).length > 0
+          ? { toolNameMap: request.toolNameMap }
+          : {}),
+      });
     });
   }
 
@@ -169,6 +182,7 @@ class JsonLineProcessKernel implements CodeActKernel {
       error: 'CodeCell execution was interrupted. Kernel state was lost.',
       durationMs: 0,
       stateLost: true,
+      failureKind: 'interrupt',
     });
     this.child.kill();
     return true;
@@ -208,6 +222,10 @@ class JsonLineProcessKernel implements CodeActKernel {
     const active = this.active;
     if (!active || message.executionId !== active.request.executionId || active.settled) return;
     if (message.type === 'stream') {
+      active.outputBytes += Buffer.byteLength(message.delta);
+      if (active.outputBytes > this.options.maxOutputBytes && !active.outputLimit) {
+        active.outputLimit = true;
+      }
       if (message.stream === 'stdout') {
         active.stdout = appendLimited(active.stdout, message.delta, this.options.maxOutputChars);
       } else {
@@ -227,6 +245,7 @@ class JsonLineProcessKernel implements CodeActKernel {
         error: message.error,
         durationMs: message.durationMs,
         resourceUsage: message.resourceUsage,
+        ...(message.ok ? {} : { failureKind: 'exception' as const }),
       });
     }
   }
@@ -236,7 +255,7 @@ class JsonLineProcessKernel implements CodeActKernel {
     message: Extract<KernelInboundMessage, { type: 'host_rpc' }>,
   ): Promise<void> {
     const response: import('./types.js').CodeActHostRpcResponse = active.request.hostRpc
-      ? await active.request.hostRpc(message.request).catch(error => ({
+      ? await active.request.hostRpc.dispatch(message.request).catch(error => ({
           id: message.request.id,
           ok: false,
           error: error instanceof Error ? error.message : String(error),
@@ -262,6 +281,9 @@ class JsonLineProcessKernel implements CodeActKernel {
     active.settled = true;
     clearTimeout(active.timer);
     if (active.abortListener) active.request.signal?.removeEventListener('abort', active.abortListener);
+    // Cell-run settlement: stop new host dispatches, abandon queued-unstarted
+    // calls, and drain started ones without blocking the cell result.
+    void active.request.hostRpc?.drain().catch(() => undefined);
     this.active = undefined;
     active.resolve({
       executionId: active.request.executionId,
@@ -270,6 +292,7 @@ class JsonLineProcessKernel implements CodeActKernel {
       stdout: active.stdout,
       stderr: active.stderr,
       artifacts: active.artifacts,
+      ...(active.outputLimit ? { outputLimit: true, failureKind: 'output-limit' as const } : {}),
       ...partial,
     });
   }
@@ -283,6 +306,7 @@ class JsonLineProcessKernel implements CodeActKernel {
         error: `${error.message} Kernel state was lost.`,
         durationMs: 0,
         stateLost: true,
+        failureKind: 'kernel-exit',
       });
     }
   }

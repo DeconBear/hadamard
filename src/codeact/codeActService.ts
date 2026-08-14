@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { AgentEvent, AgentToolDefinition, ToolExecutionContext } from '../types.js';
 import { CodeActArtifactRecorder, hashCodeCellSource } from './codeActArtifacts.js';
+import { RESERVED_HOST_METHODS, sanitizeCodeActName } from './codeActSdk.js';
 import { buildCodeActEnvironment, assertCodeActBackend, resolveCodeActSettings } from './codeActPolicy.js';
 import { ContainerKernelAdapter } from './containerKernelAdapter.js';
 import { CodeActHostRpcDispatcher } from './hostRpcDispatcher.js';
@@ -46,6 +47,7 @@ export class CodeActService {
       this.settings.idleTimeoutMs,
       buildCodeActEnvironment(this.settings.environmentAllowlist),
       this.settings.maxOutputChars,
+      this.settings.maxOutputBytes,
       (sessionId, generation, reason) => this.emitKernelEvent(
         sessionId, generation, 'kernel.stopped', reason,
       ),
@@ -91,7 +93,17 @@ export class CodeActService {
       }, input.context);
       const dispatcher = new CodeActHostRpcDispatcher(
         input.hostTools ?? [], input.context, this.artifacts, sessionId,
+        this.settings.maxParallelSubCalls,
       );
+      // Typed `hadamard.<name>` dispatch map: sanitized method name → real
+      // host tool name (reserved helpers and CodeCell itself are excluded).
+      const toolNameMap: Record<string, string> = {};
+      for (const tool of input.hostTools ?? []) {
+        const methodName = sanitizeCodeActName(tool.name);
+        if (!RESERVED_HOST_METHODS.has(methodName)) {
+          toolNameMap[methodName] = tool.name;
+        }
+      }
       const result = await lease.kernel.execute({
       executionId,
       sessionId,
@@ -101,6 +113,7 @@ export class CodeActService {
       timeoutMs: input.timeoutMs ?? this.settings.executionTimeoutMs,
       signal: input.context.signal,
       hostRpc: dispatcher.handler(),
+      toolNameMap,
       onDelta: (stream, delta) => this.emit({
         type: 'code_cell.delta',
         runId: input.context.runId,
