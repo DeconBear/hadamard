@@ -924,6 +924,8 @@ export interface CreateAgentSdkOptions {
   computerUse?: boolean | CreateHadamardComputerUseOptions;
   /** Opt-in Playwright browser automation tools (browser-use style snapshot/index actions). */
   browserUse?: boolean | CreateHadamardBrowserUseOptions;
+  /** Load managed plugin capabilities from Hadamard settings, or from the supplied settings object. */
+  managedPlugins?: boolean | Record<string, unknown>;
   provider?: 'anthropic' | 'openai';
   effort?: HadamardEffort;
   modelApi?: ModelApi;

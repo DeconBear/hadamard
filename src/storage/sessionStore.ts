@@ -23,6 +23,7 @@ import {
   truncateText,
 } from '../runtime/helpers.js';
 import { extractConversationBrief, extractPreviewFromMessages } from '../runtime/messageUtils.js';
+import { isEmptyUserStoredSession } from './sessionVisibility.js';
 import { writeJsonAtomic } from './atomicJsonWrite.js';
 import {
   assertSafeStorageSegment,
@@ -37,6 +38,8 @@ const SESSION_TURN_HEARTBEAT_MS = 5_000;
 const SESSION_TURN_LOCK_RETRY_MS = 25;
 
 export class SessionStore {
+  private readonly draftSessions = new Map<string, StoredSession>();
+
   constructor(
     private readonly rootDirectory: string,
     private readonly collectionDirectory = 'sessions',
@@ -94,9 +97,15 @@ export class SessionStore {
     }
   }
 
-  async create(options: SessionCreateOptions = {}): Promise<StoredSession> {
+  async create(
+    options: SessionCreateOptions = {},
+    behavior: { deferEmptyUserSession?: boolean } = {},
+  ): Promise<StoredSession> {
     await this.ensureReady();
     if (options.id) {
+      if (this.draftSessions.has(options.id)) {
+        throw new Error(`Session already exists: ${options.id}`);
+      }
       try {
         await this.load(options.id);
         throw new Error(`Session already exists: ${options.id}`);
@@ -129,7 +138,11 @@ export class SessionStore {
       branchName: options.branchName,
       originalWorkDir: options.originalWorkDir,
     };
-    await this.save(session);
+    if (behavior.deferEmptyUserSession && isEmptyUserStoredSession(session)) {
+      this.draftSessions.set(session.id, deepClone(session));
+    } else {
+      await this.save(session);
+    }
     return session;
   }
 
@@ -138,6 +151,14 @@ export class SessionStore {
     const filePath = this.sessionPath(session.id);
     await this.withSessionLock(session.id, async () => {
       const current = await this.loadIfExists(session.id);
+      const draft = current ? undefined : this.draftSessions.get(session.id);
+      if (draft && isEmptyUserStoredSession(session)) {
+        const next = { ...deepClone(session), revision: 0 };
+        validateStoredSession(next, session.id);
+        this.draftSessions.set(session.id, next);
+        session.revision = 0;
+        return;
+      }
       const expectedRevision = normalizeRevision(session.revision, session.id);
       const actualRevision = current?.revision ?? 0;
 
@@ -155,6 +176,7 @@ export class SessionStore {
       };
       validateStoredSession(next, session.id);
       await writeJsonAtomic(filePath, next);
+      this.draftSessions.delete(session.id);
       session.revision = nextRevision;
     });
   }
@@ -166,11 +188,22 @@ export class SessionStore {
     await this.ensureReady();
     const filePath = this.sessionPath(sessionId);
     return this.withSessionLock(sessionId, async () => {
-      const current = await this.loadIfExists(sessionId);
+      const persisted = await this.loadIfExists(sessionId);
+      const current = persisted ?? this.draftSessions.get(sessionId);
       if (!current) {
         throw new SessionNotFoundError(sessionId);
       }
       const mutated = mutation(deepClone(current));
+      if (!persisted && isEmptyUserStoredSession(mutated)) {
+        const next = {
+          ...deepClone(mutated),
+          id: sessionId,
+          revision: 0,
+        };
+        validateStoredSession(next, sessionId);
+        this.draftSessions.set(sessionId, next);
+        return deepClone(next);
+      }
       const next: StoredSession = {
         ...deepClone(mutated),
         id: sessionId,
@@ -178,8 +211,15 @@ export class SessionStore {
       };
       validateStoredSession(next, sessionId);
       await writeJsonAtomic(filePath, next);
+      this.draftSessions.delete(sessionId);
       return deepClone(next);
     });
+  }
+
+  /** Load a live SDK draft or a persisted session without exposing drafts to resume/list callers. */
+  async loadForRuntime(sessionId: string): Promise<StoredSession> {
+    const draft = this.draftSessions.get(sessionId);
+    return draft ? deepClone(draft) : this.load(sessionId);
   }
 
   async load(sessionId: string): Promise<StoredSession> {
@@ -233,6 +273,7 @@ export class SessionStore {
 
   async delete(sessionId: string): Promise<void> {
     await this.ensureReady();
+    this.draftSessions.delete(sessionId);
     await rm(this.sessionPath(sessionId), { force: true });
   }
 
@@ -291,7 +332,7 @@ export class SessionStore {
   }
 
   async saveCheckpoint(sessionId: string, label: string): Promise<SessionCheckpoint> {
-    const session = await this.load(sessionId);
+    const session = await this.loadForRuntime(sessionId);
     const checkpointId = createId();
     const checkpoint: SessionCheckpoint = {
       id: checkpointId,
