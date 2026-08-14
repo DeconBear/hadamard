@@ -23,6 +23,7 @@ export class CodeActKernelPool {
     private readonly idleTimeoutMs: number,
     private readonly environment: Record<string, string>,
     private readonly maxOutputChars: number,
+    private readonly maxOutputBytes: number,
     private readonly onStopped?: (sessionId: string, generation: number, reason: string) => void,
   ) {}
 
@@ -44,6 +45,7 @@ export class CodeActKernelPool {
       workDir: resolvedWorkDir,
       environment: { ...this.environment },
       maxOutputChars: this.maxOutputChars,
+      maxOutputBytes: this.maxOutputBytes,
     });
     const entry: KernelEntry = { kernel, workDir: resolvedWorkDir };
     this.entries.set(sessionId, entry);

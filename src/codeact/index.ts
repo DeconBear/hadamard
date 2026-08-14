@@ -9,3 +9,5 @@ export * from './hostRpcDispatcher.js';
 export * from './codeActService.js';
 export * from './codeCellTool.js';
 export * from './codeActPrompt.js';
+export * from './codeActSdk.js';
+

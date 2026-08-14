@@ -2,6 +2,7 @@ export const PYTHON_KERNEL_PROGRAM = String.raw`
 import ast
 import json
 import os
+import queue
 import sys
 import threading
 import time
@@ -9,10 +10,20 @@ import traceback
 
 PROTOCOL_OUT = os.fdopen(os.dup(sys.stdout.fileno()), "w", encoding="utf-8", buffering=1)
 PROTOCOL_IN = sys.stdin
+try:
+    # The host-RPC router holds a pending read on this pipe for the kernel's
+    # whole lifetime. A child process inheriting that read handle can hang on
+    # Windows, so cell-spawned subprocesses must not inherit stdin.
+    os.set_inheritable(sys.stdin.fileno(), False)
+except Exception:
+    pass
 NAMESPACE = {"__name__": "__main__"}
 CURRENT_EXECUTION = None
 RPC_SEQUENCE = 0
 SEND_LOCK = threading.Lock()
+RPC_PENDING = {}
+RPC_PENDING_LOCK = threading.Lock()
+COMMAND_QUEUE = None
 
 def send(message):
     with SEND_LOCK:
@@ -64,30 +75,108 @@ def end_capture(capture):
     stdout_thread.join(timeout=2.0)
     stderr_thread.join(timeout=2.0)
 
+class HadamardToolError(RuntimeError):
+    def __init__(self, tool_name, message):
+        super().__init__(message)
+        self.tool_name = tool_name
+
+NAMESPACE["HadamardToolError"] = HadamardToolError
+
 def host_call(method, input_value=None):
     global RPC_SEQUENCE
-    RPC_SEQUENCE += 1
-    request_id = str(RPC_SEQUENCE)
+    with RPC_PENDING_LOCK:
+        RPC_SEQUENCE += 1
+        request_id = str(RPC_SEQUENCE)
+        holder = {"event": threading.Event(), "response": None}
+        RPC_PENDING[request_id] = holder
     send({"v": 1, "type": "host_rpc", "executionId": CURRENT_EXECUTION,
           "request": {"id": request_id, "method": method, "input": input_value}})
-    response_line = PROTOCOL_IN.readline()
-    if not response_line:
-        raise RuntimeError("Host RPC channel closed")
-    envelope = json.loads(response_line)
-    if envelope.get("type") != "host_rpc_result" or envelope.get("executionId") != CURRENT_EXECUTION:
-        raise RuntimeError("Host RPC response did not match the active execution")
-    response = envelope.get("response") or {}
-    if response.get("id") != request_id:
-        raise RuntimeError("Host RPC response ID mismatch")
+    holder["event"].wait()
+    response = holder.get("response")
+    if response is None:
+        raise RuntimeError("Host RPC channel closed before the response arrived")
     if not response.get("ok"):
         raise RuntimeError(response.get("error") or "Host RPC failed")
     return response.get("result")
+
+def _stdin_has_data():
+    if os.name != "nt":
+        return True
+    try:
+        import msvcrt
+        handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+    except Exception:
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        available = wintypes.DWORD()
+        if ctypes.windll.kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None):
+            return available.value > 0
+    except Exception:
+        pass
+    return True
+
+def stdin_router():
+    if os.name != "nt":
+        for line in PROTOCOL_IN:
+            _route_line(line)
+        return
+    # Windows: poll with PeekNamedPipe instead of holding a permanently
+    # pending read on the stdin pipe. A blocking read outstanding while a
+    # cell spawns child processes can wedge python.exe children that inherit
+    # the handle, so only read when data is actually available. Read the raw
+    # fd (never the text wrapper, which may buffer ahead past a line we are
+    # not ready to route) and split lines ourselves.
+    pending = b""
+    while True:
+        if _stdin_has_data():
+            chunk = os.read(sys.stdin.fileno(), 65536)
+            if not chunk:
+                break
+            pending += chunk
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                _route_line(line.decode("utf-8", errors="replace"))
+        else:
+            time.sleep(0.01)
+
+def _route_line(line):
+    try:
+        envelope = json.loads(line)
+    except Exception:
+        return
+    if not isinstance(envelope, dict):
+        return
+    if envelope.get("type") == "host_rpc_result":
+        response = envelope.get("response") or {}
+        request_id = str(response.get("id"))
+        with RPC_PENDING_LOCK:
+            holder = RPC_PENDING.pop(request_id, None)
+        if holder is not None:
+            holder["response"] = response
+            holder["event"].set()
+        return
+    COMMAND_QUEUE.put(envelope)
+
+def parallel(callables, max_workers=8):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(fn) for fn in callables]
+        return [future.result() for future in futures]
 
 class HadamardHost:
     def call(self, method, input_value=None):
         return host_call(method, input_value)
     def tool(self, name, input_value=None):
-        return host_call("tool.call", {"name": name, "input": input_value or {}})
+        try:
+            return host_call("tool.call", {"name": name, "input": input_value or {}})
+        except HadamardToolError:
+            raise
+        except RuntimeError as error:
+            raise HadamardToolError(name, str(error)) from error
+    def parallel(self, callables, max_workers=8):
+        return parallel(callables, max_workers=max_workers)
     def read(self, file_path, offset=None, limit=None):
         input_value = {"file_path": file_path}
         if offset is not None: input_value["offset"] = offset
@@ -101,6 +190,19 @@ class HadamardHost:
         return self.tool("Grep", input_value)
     def artifact(self, name, content, media_type="text/plain"):
         return host_call("artifact.put", {"name": name, "content": content, "mediaType": media_type})
+    def __getattr__(self, name):
+        mapping = NAMESPACE.get("TOOL_NAME_MAP") or {}
+        real_name = mapping.get(name)
+        if real_name is None:
+            raise AttributeError(name)
+        def dispatch(**kwargs):
+            try:
+                return host_call("tool.call", {"name": real_name, "input": kwargs})
+            except HadamardToolError:
+                raise
+            except RuntimeError as error:
+                raise HadamardToolError(real_name, str(error)) from error
+        return dispatch
 
 NAMESPACE["hadamard"] = HadamardHost()
 
@@ -124,9 +226,10 @@ def resource_usage():
     except Exception:
         return {}
 
-def execute(execution_id, code):
+def execute(execution_id, code, tool_name_map=None):
     global CURRENT_EXECUTION
     CURRENT_EXECUTION = execution_id
+    NAMESPACE["TOOL_NAME_MAP"] = tool_name_map or {}
     started = time.monotonic()
     capture = begin_capture(execution_id)
     try:
@@ -155,17 +258,19 @@ def execute(execution_id, code):
         send(envelope)
         CURRENT_EXECUTION = None
 
+COMMAND_QUEUE = queue.Queue()
+ROUTER_THREAD = threading.Thread(target=stdin_router, daemon=True)
+ROUTER_THREAD.start()
 send({"v": 1, "type": "ready", "pid": os.getpid()})
-for line in PROTOCOL_IN:
-    command = {}
+while True:
+    command = COMMAND_QUEUE.get()
     try:
-        command = json.loads(line)
         if command.get("v") != 1:
             raise RuntimeError("Unsupported protocol version")
         if command.get("type") == "shutdown":
             break
         if command.get("type") == "execute":
-            execute(command["executionId"], command["code"])
+            execute(command["executionId"], command["code"], command.get("toolNameMap"))
     except BaseException:
         send({"v": 1, "type": "result", "executionId": command.get("executionId", "unknown"),
               "ok": False, "error": traceback.format_exc(limit=20), "durationMs": 0})

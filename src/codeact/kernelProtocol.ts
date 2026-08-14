@@ -20,7 +20,14 @@ export type KernelInboundMessage =
     };
 
 export type KernelOutboundMessage =
-  | { v: 1; type: 'execute'; executionId: string; code: string }
+  | {
+      v: 1;
+      type: 'execute';
+      executionId: string;
+      code: string;
+      /** Sanitized method name → real host tool name, for typed `hadamard.<name>` dispatch. */
+      toolNameMap?: Record<string, string>;
+    }
   | { v: 1; type: 'host_rpc_result'; executionId: string; response: unknown }
   | { v: 1; type: 'shutdown' };
 

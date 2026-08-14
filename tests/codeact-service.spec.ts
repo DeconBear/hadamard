@@ -160,6 +160,96 @@ describe('CodeActService process kernel', () => {
     expect(denied.error).toContain('Denied by permission rule Echo');
   });
 
+  it('dispatches typed hadamard.<method> calls through the tool name map', async () => {
+    const cwd = await workspace();
+    const instance = service();
+    const seen: string[] = [];
+    const weather = tool(
+      {
+        name: 'weather_lookup',
+        description: 'Looks up weather.',
+        inputSchema: z.strictObject({ city: z.string(), units: z.enum(['c', 'f']).optional() }),
+        isReadOnly: () => true,
+      },
+      async input => {
+        seen.push(`${input.city}:${input.units ?? 'default'}`);
+        return { ok: true };
+      },
+    );
+    const result = await instance.execute({
+      language: 'python',
+      code: 'hadamard.weather_lookup(city="hangzhou", units="c")',
+      context: context(cwd),
+      hostTools: [weather],
+    });
+    expect(result.status).toBe('completed');
+    expect(result.result?.value).toEqual({ ok: true });
+    expect(seen).toEqual(['hangzhou:c']);
+  });
+
+  it('runs parallel host sub-calls concurrently and exclusive writes as barriers', async () => {
+    const cwd = await workspace();
+    const instance = service();
+    const tracker = { active: 0, maxActive: 0, writeOverlappedReads: false };
+    const makeRead = (name: string) => tool(
+      {
+        name,
+        description: 'A read.',
+        inputSchema: z.strictObject({ delay_ms: z.number().int().optional() }),
+        isReadOnly: () => true,
+      },
+      async input => {
+        tracker.active += 1;
+        tracker.maxActive = Math.max(tracker.maxActive, tracker.active);
+        await new Promise(resolve => setTimeout(resolve, input.delay_ms ?? 80));
+        tracker.active -= 1;
+        return { done: true };
+      },
+    );
+    const write = tool(
+      {
+        name: 'write_state',
+        description: 'A write.',
+        inputSchema: z.strictObject({}),
+        isConcurrencySafe: () => false,
+      },
+      async () => {
+        if (tracker.active > 0) tracker.writeOverlappedReads = true;
+        tracker.active += 1;
+        tracker.maxActive = Math.max(tracker.maxActive, tracker.active);
+        await new Promise(resolve => setTimeout(resolve, 30));
+        tracker.active -= 1;
+        return { done: true };
+      },
+    );
+    const events: AgentEvent[] = [];
+    const code = [
+      'results = hadamard.parallel([',
+      '    lambda: hadamard.read_one(delay_ms=80),',
+      '    lambda: hadamard.read_two(delay_ms=80),',
+      '])',
+      'hadamard.write_state()',
+      'results',
+    ].join('\n');
+    const result = await instance.execute({
+      language: 'python',
+      code,
+      context: context(cwd, { runtime: { emit: event => events.push(event) } }),
+      hostTools: [makeRead('read_one'), makeRead('read_two'), write],
+    });
+    expect(result.status).toBe('completed');
+    expect(result.result?.value).toEqual([{ done: true }, { done: true }]);
+    // The two reads overlapped; the exclusive write never did.
+    expect(tracker.maxActive).toBe(2);
+    expect(tracker.writeOverlappedReads).toBe(false);
+    const dispatches = events.filter(event => event.type === 'tool.code_dispatch');
+    expect(dispatches).toHaveLength(6); // 3 sub-calls × start + settle
+    expect(dispatches.filter(event => event.phase === 'start').map(event => event.name)).toEqual([
+      'read_one', 'read_two', 'write_state',
+    ]);
+    expect(dispatches.every(event => event.subCallId.startsWith('cell-1:host:'))).toBe(true);
+  });
+
   it('preserves the host tool sandbox boundary for nested RPC calls', async () => {
     const cwd = await workspace();
     const instance = service();
@@ -263,6 +353,95 @@ describe('CodeActService process kernel', () => {
     expect(recovered.generation).toBeGreaterThan(crashed.generation);
   });
 
+  it('reports the output-limit failure kind when the byte budget is exceeded', async () => {
+    const cwd = await workspace();
+    const instance = service({ enabled: true, maxOutputChars: 1_000, maxOutputBytes: 2_000 });
+    const result = await instance.execute({
+      language: 'python',
+      code: 'print("z" * 10_000)',
+      context: context(cwd),
+    });
+    expect(result.status).toBe('completed');
+    expect(result.outputLimit).toBe(true);
+    expect(result.failureKind).toBe('output-limit');
+    expect(result.stdout.length).toBeLessThanOrEqual(1_000);
+    expect(result.stdout).toContain('[output truncated by Hadamard]');
+  });
+
+  it('classifies timeout, interrupt, and kernel-exit failure kinds', async () => {
+    const cwd = await workspace();
+    const timedOut = new CodeActService({
+      enabled: true,
+      pythonCommand: process.platform === 'win32' ? 'python' : 'python3',
+      executionTimeoutMs: 100,
+    });
+    services.push(timedOut);
+    const timeoutResult = await timedOut.execute({
+      language: 'python',
+      code: 'import time\ntime.sleep(5)',
+      context: context(cwd, { toolUseId: 'timeout-cell' }),
+    });
+    expect(timeoutResult.status).toBe('failed');
+    expect(timeoutResult.failureKind).toBe('timeout');
+    expect(timeoutResult.stateLost).toBe(true);
+
+    const crashed = new CodeActService({
+      enabled: true,
+      pythonCommand: process.platform === 'win32' ? 'python' : 'python3',
+    });
+    services.push(crashed);
+    const crashResult = await crashed.execute({
+      language: 'python',
+      code: 'import os\nos._exit(17)',
+      context: context(cwd, { toolUseId: 'crash-cell-2' }),
+    });
+    expect(crashResult.status).toBe('failed');
+    expect(crashResult.failureKind).toBe('kernel-exit');
+    expect(crashResult.stateLost).toBe(true);
+
+    const instance = service();
+    const interruptPromise = instance.execute({
+      language: 'python',
+      code: 'import time\ntime.sleep(10)',
+      context: context(cwd, { toolUseId: 'interrupt-cell' }),
+    });
+    expect(await waitForInterrupt(instance, 'session-codeact', 'interrupt-cell')).toBe(true);
+    const interruptResult = await interruptPromise;
+    expect(interruptResult.status).toBe('interrupted');
+    expect(interruptResult.failureKind).toBe('interrupt');
+  });
+
+  it('raises a catchable HadamardToolError carrying the failing tool name', async () => {
+    const cwd = await workspace();
+    const instance = service();
+    const echo = tool(
+      {
+        name: 'Echo',
+        description: 'Echoes a value.',
+        inputSchema: z.strictObject({ value: z.string() }),
+        isReadOnly: () => true,
+      },
+      async input => ({ echoed: input.value }),
+    );
+    const code = [
+      'try:',
+      '    hadamard.Echo(value="nope")',
+      'except HadamardToolError as e:',
+      '    print("CAUGHT", e.tool_name)',
+    ].join('\n');
+    const result = await instance.execute({
+      language: 'python',
+      code,
+      context: context(cwd, {
+        permissionMode: 'default',
+        permissions: [{ toolName: 'Echo', behavior: 'deny' }],
+      }),
+      hostTools: [echo],
+    });
+    expect(result.status).toBe('completed');
+    expect(result.stdout).toContain('CAUGHT Echo');
+  });
+
   it('fails closed when enforce mode is paired with a trusted-only adapter', async () => {
     const adapter: CodeActKernelAdapter = {
       backend: 'process',
@@ -314,6 +493,7 @@ describe('CodeActService process kernel', () => {
         generation: 1,
         workDir: cwd,
         maxOutputChars: 1_000,
+        maxOutputBytes: 4_000,
         environment: {
           HADAMARD_CODEACT: '1',
           PYTHONIOENCODING: 'utf-8',

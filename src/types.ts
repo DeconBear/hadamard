@@ -56,6 +56,10 @@ export interface ToolExecutionContext {
       after: Buffer | null;
     }): Promise<unknown>;
   };
+  /** Request the agent turn to conclude after this tool batch commits its results. */
+  concludeTurn?: () => void;
+  /** Attach model-facing context to the next step's user message. */
+  deferAdditionalContext?: (context: { type: 'text'; text: string }) => void;
   /** OS isolation boundary, separate from the permission approval decision. */
   sandboxExecutor?: {
     readonly policy: import('./sandbox/types.js').SandboxPolicy;
@@ -366,6 +370,10 @@ export interface ResolvedToolExecutionResult {
   text: string;
   rawOutput?: unknown;
   isError?: boolean;
+  /** Model-facing context attached to the next step's user message (dsh additionalContexts equivalent). */
+  additionalContexts?: { type: 'text'; text: string }[];
+  /** Request the agent turn to conclude after this tool batch commits its results. */
+  concludesTurn?: boolean;
 }
 
 export interface ResolvedToolAdapter {
@@ -420,6 +428,8 @@ export interface ResolvedRuntimeConfig {
   systemPrompt?: string;
   /** ReAct loop turn cap. Defaults to Infinity (no cap) like Claude Code's main agent. */
   maxToolIterations: number;
+  /** Upper bound for in-flight parallel tool calls per assistant message. Defaults to 10. */
+  maxParallelToolCalls?: number;
   /** Model switched to after repeated overload/rate-limit failures. */
   fallbackModel?: string;
   /** Add a prompt-cache breakpoint to Anthropic requests. Defaults to true. */
@@ -889,6 +899,8 @@ export interface CreateAgentSdkOptions {
   systemPrompt?: string;
   /** Optional ReAct loop turn cap. Unset means unlimited. */
   maxToolIterations?: number;
+  /** Upper bound for in-flight parallel tool calls per assistant message. Defaults to 10. */
+  maxParallelToolCalls?: number;
   fallbackModel?: string;
   promptCachingEnabled?: boolean;
   userId?: string;
@@ -1168,6 +1180,10 @@ export interface AgentToolCallRecord extends AgentToolCallEventPayload {
   isError: boolean;
   completedAt: string;
   durationMs: number;
+  /** The tool requested the agent turn to conclude after this batch. */
+  concludesTurn?: boolean;
+  /** Synthetic record for a call skipped by abort before dispatch. */
+  abortedBeforeDispatch?: boolean;
 }
 
 export interface AgentRunResult {
@@ -1584,6 +1600,7 @@ export interface WaitForHadamardBackgroundTaskOptions {
 }
 
 export type AgentEvent = import('./events/codeActEvents.js').CodeActAgentEvent
+  | import('./events/codeActEvents.js').ToolCodeDispatchEvent
   | {
       type: 'run.started';
       runId: string;

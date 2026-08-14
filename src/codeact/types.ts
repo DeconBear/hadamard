@@ -4,6 +4,9 @@ export type CodeActLanguage = 'python';
 export type CodeActBackend = 'process' | 'container';
 export type CodeActSecurityMode = 'trusted' | 'enforce';
 
+/** Orthogonal cell-run failure kinds (dsh CodeRunFailure equivalent): the error is a result field, never a rejection. */
+export type CodeRunFailureKind = 'exception' | 'timeout' | 'interrupt' | 'kernel-exit' | 'output-limit';
+
 export interface CodeActSettings {
   enabled: boolean;
   backend?: CodeActBackend;
@@ -12,10 +15,14 @@ export interface CodeActSettings {
   idleTimeoutMs?: number;
   executionTimeoutMs?: number;
   maxOutputChars?: number;
+  /** Combined stdout/stderr byte budget; exceeding it sets outputLimit. Defaults to 4× maxOutputChars. */
+  maxOutputBytes?: number;
   environmentAllowlist?: string[];
   containerImage?: string;
   containerMemoryMb?: number;
   containerCpuLimit?: number;
+  /** Upper bound for in-flight parallel host-tool sub-calls made from a cell. */
+  maxParallelSubCalls?: number;
 }
 
 export interface ResolvedCodeActSettings {
@@ -26,10 +33,14 @@ export interface ResolvedCodeActSettings {
   idleTimeoutMs: number;
   executionTimeoutMs: number;
   maxOutputChars: number;
+  /** Combined stdout/stderr byte budget; exceeding it sets outputLimit. */
+  maxOutputBytes: number;
   environmentAllowlist: string[];
   containerImage: string;
   containerMemoryMb: number;
   containerCpuLimit: number;
+  /** Upper bound for in-flight parallel host-tool sub-calls made from a cell. */
+  maxParallelSubCalls: number;
 }
 
 export interface CodeActBackendStatus {
@@ -63,6 +74,8 @@ export interface CodeCellExecutionRequest {
   signal?: AbortSignal;
   hostRpc?: CodeActHostRpcHandler;
   onDelta?: (stream: 'stdout' | 'stderr', delta: string) => void;
+  /** Sanitized method name → real host tool name, for typed `hadamard.<name>` dispatch. */
+  toolNameMap?: Record<string, string>;
 }
 
 export interface CodeCellExecutionResult {
@@ -78,6 +91,10 @@ export interface CodeCellExecutionResult {
   resourceUsage?: Record<string, number>;
   artifacts: CodeActArtifactReference[];
   stateLost?: boolean;
+  /** True when the combined stdout/stderr byte budget was exceeded. */
+  outputLimit?: boolean;
+  /** Structured failure classification for the settled cell run. */
+  failureKind?: CodeRunFailureKind;
 }
 
 export interface CodeCellExecutionRecord extends CodeCellExecutionResult {
@@ -103,9 +120,12 @@ export interface CodeActHostRpcResponse {
   artifact?: CodeActArtifactReference;
 }
 
-export type CodeActHostRpcHandler = (
-  request: CodeActHostRpcRequest,
-) => Promise<CodeActHostRpcResponse>;
+export interface CodeActHostRpcHandler {
+  /** Route one host request through the per-cell sub-dispatch scheduler. */
+  dispatch(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse>;
+  /** Stop new dispatches, abandon queued-unstarted calls, and drain started ones. */
+  drain(): Promise<void>;
+}
 
 export interface CodeActKernel {
   readonly sessionId: string;
@@ -121,6 +141,7 @@ export interface CodeActKernelStartOptions {
   workDir: string;
   environment: Record<string, string>;
   maxOutputChars: number;
+  maxOutputBytes: number;
 }
 
 export interface CodeActKernelAdapter {

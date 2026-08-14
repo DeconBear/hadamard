@@ -34,6 +34,7 @@ import { resolveHadamardModelReference } from '../config/modelTiers.js';
 import { agentProfileRunOverrides, resolveAgentProfileRun } from '../config/agentProfiles.js';
 import { readProjectSettings, type DreamExecutionProfileRef } from '../config/projectSettings.js';
 import { CodeActService } from '../codeact/codeActService.js';
+import { renderCodeActHostSdk } from '../codeact/codeActSdk.js';
 import { createCodeCellTool, CODE_CELL_TOOL_NAME } from '../codeact/codeCellTool.js';
 import {
   buildAgentModePrompt,
@@ -2975,6 +2976,9 @@ export class HadamardAgentClient {
           hostCapabilities: executionPolicy.actionSpace === 'hybrid'
             ? ordinaryTools.map(toolDefinition => toolDefinition.name)
             : [],
+          hostSdk: executionPolicy.actionSpace === 'code-cell' || executionPolicy.actionSpace === 'hybrid'
+            ? renderCodeActHostSdk(ordinaryTools)
+            : undefined,
         }),
       ],
     );
@@ -3125,6 +3129,27 @@ export class HadamardAgentClient {
           emit: (event: AgentEvent) => {
             this.executions.recordRuntimeEvent(executionIdentity, event);
             this.activateConditionalSkillsFromEvent(event);
+            if (event.type === 'tool.code_dispatch') {
+              // Structured sub-dispatch audit record: appended to the raw
+              // transcript only; the model-visible history still carries just
+              // the outer CodeCell result.
+              transcriptMessages.push({
+                role: 'user',
+                content: [{
+                  type: 'text',
+                  text: JSON.stringify({
+                    kind: 'code-dispatch',
+                    rootCallId: event.rootCallId,
+                    subCallId: event.subCallId,
+                    name: event.name,
+                    phase: event.phase,
+                    isError: event.isError ?? false,
+                    ...(event.summary !== undefined ? { summary: event.summary } : {}),
+                    timestamp: event.timestamp,
+                  }),
+                }],
+              });
+            }
             if (event.type === 'tool.permission') {
               void this.auditLog.append({
                 id: `${runId}:${event.iteration}:${event.decision.publicName}`,
