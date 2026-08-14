@@ -16,7 +16,7 @@ import type { AgentToolDefinition, ToolExecutionContext } from '../types.js';
 import { fileReadPrompt, FILE_READ_TOOL_NAME } from './prompts/fileReadPrompt.js';
 import { fileWritePrompt, FILE_WRITE_TOOL_NAME } from './prompts/fileWritePrompt.js';
 import { fileEditPrompt, FILE_EDIT_TOOL_NAME } from './prompts/fileEditPrompt.js';
-import { fileSearchPrompt } from './prompts/fileSearchPrompt.js';
+import { globPrompt, grepPrompt } from './prompts/fileSearchPrompt.js';
 
 export interface HadamardFileToolsOptions {
   cwd?: string;
@@ -239,14 +239,15 @@ const Glob = (opts: { cwd: string; defaultGlobLimit: number }) =>
         '- Supports glob patterns like "**/*.js" or "src/**/*.ts"\n' +
         '- Returns matching file paths sorted by modification time\n' +
         '- Use this tool when you need to find files by name patterns\n' +
-        '- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead',
+        '- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead\n' +
+        '- Prefer Glob over Bash find / ls / dir for filename searches',
       inputSchema: z.strictObject({
         pattern: z.string().describe('The glob pattern to match files against'),
         path: z.string().optional().describe('The directory to search in. Defaults to the current working directory.'),
         limit: z.number().int().positive().optional().describe(`Maximum number of results. Defaults to ${opts.defaultGlobLimit}.`),
       }),
       isReadOnly: () => true,
-      prompt: fileSearchPrompt,
+      prompt: globPrompt,
     },
     async (input, context) => {
       const searchRoot = resolvePath(input.path ?? (context.cwd || opts.cwd), context.cwd || opts.cwd);
@@ -304,7 +305,7 @@ const Grep = (opts: { cwd: string; defaultGrepLimit: number }) =>
         multiline: z.boolean().optional().default(false),
       }),
       isReadOnly: () => true,
-      prompt: fileSearchPrompt,
+      prompt: grepPrompt,
     },
     async (input, context) => {
       const searchRoot = resolvePath(input.path ?? (context.cwd || opts.cwd), context.cwd || opts.cwd);

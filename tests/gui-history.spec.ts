@@ -78,4 +78,63 @@ describe('GUI session history', () => {
       await server.close();
     }
   });
+
+  it('starts a fresh session on /clear and keeps the old conversation resumable', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-gui-clear-'));
+    tempDirs.push(root);
+    const homeDir = path.join(root, 'home');
+    const workDir = path.join(root, 'work');
+    await mkdir(workDir, { recursive: true });
+    const sessionDirectory = getHadamardProjectSessionDirectory(workDir, homeDir);
+    const store = new SessionStore(sessionDirectory);
+    await store.create({
+      id: 'chat-before-clear',
+      metadata: { __hadamardWorkDir: workDir },
+      initialMessages: [
+        { role: 'user', content: 'keep this conversation' },
+        { role: 'assistant', content: 'kept' },
+      ],
+    });
+    const configPath = path.join(homeDir, '.hadamard', 'settings.json');
+    await mkdir(path.dirname(configPath), { recursive: true });
+    await writeFile(configPath, JSON.stringify({
+      HADAMARD_PROVIDER: 'openai',
+      HADAMARD_API_KEY: 'test-key',
+      HADAMARD_MODEL: 'gpt-4o-mini',
+    }), 'utf8');
+    const server = await startHadamardGuiServer({
+      workDir,
+      homeDir,
+      host: '127.0.0.1',
+      port: 47000 + Math.floor(Math.random() * 9000),
+      configPath,
+      resumeSessionId: 'chat-before-clear',
+    });
+
+    try {
+      const response = await fetch(`${server.url}api/send`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-hadamard-token': server.token,
+        },
+        body: JSON.stringify({ text: '/clear', sessionId: 'chat-before-clear' }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('"type":"clear"');
+
+      const state = await fetch(`${server.url}api/state`, {
+        headers: { 'x-hadamard-token': server.token },
+      }).then(res => res.json()) as {
+        session: { id: string; messages: number };
+        sessions: Array<{ id: string }>;
+      };
+      expect(state.session.id).not.toBe('chat-before-clear');
+      expect(state.session.messages).toBe(0);
+      expect(state.sessions.map(item => item.id)).toContain('chat-before-clear');
+      expect((await store.load('chat-before-clear')).messages).toHaveLength(2);
+    } finally {
+      await server.close();
+    }
+  });
 });

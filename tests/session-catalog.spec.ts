@@ -46,6 +46,9 @@ async function seed(
       __hadamardKind: kind,
       ...(pinned ? { __hadamardPinned: true } : {}),
     },
+    initialMessages: kind === 'main'
+      ? [{ role: 'user', content: `Seed ${title}` }]
+      : [],
   });
   await store.mutate(id, session => ({ ...session, updatedAt }));
 }
@@ -62,6 +65,16 @@ function catalog(activity?: {
 }
 
 describe('SessionCatalog query', () => {
+  it('hides empty user Sessions while retaining internal Sessions', async () => {
+    const root = getHadamardProjectSessionDirectory(projectA, homeDir);
+    const store = new SessionStore(root);
+    await store.create({ id: 'empty-user', kind: 'main', title: 'Empty', model: 'test-model' });
+    await store.create({ id: 'empty-manager', kind: 'manager', title: 'Manager', model: 'test-model' });
+
+    expect((await catalog().query()).items).toEqual([]);
+    expect((await catalog().query({ types: ['assistant-project'] })).items)
+      .toHaveLength(1);
+  });
   it('aggregates only known projects and defaults to user chats', async () => {
     await seed(projectA, 'user-a', 'main', 'Alpha chat', '2026-07-01T00:00:00.000Z');
     await seed(projectB, 'manager-b', 'manager', 'Project manager', '2026-07-02T00:00:00.000Z');
@@ -127,6 +140,8 @@ describe('SessionCatalog actions', () => {
       title: 'Draft',
       model: 'test-model',
     });
+    await expect(service.action({ action: 'open', locator: created.locator }))
+      .rejects.toThrow(/Unknown Session/i);
     const renamed = await service.action({
       action: 'rename',
       locator: created.locator,

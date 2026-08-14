@@ -48,7 +48,7 @@ describe('filterInteractiveCommands', () => {
       'bridge off',
       'bridge help',
     ]);
-    expect(filterInteractiveCommands('/model ')).toEqual(['model config', 'model custom', 'model router']);
+    expect(filterInteractiveCommands('/model ')).toEqual(['model config', 'model context', 'model custom', 'model router']);
     expect(filterInteractiveCommands('/automation ')).toEqual(['automation list', 'automation new']);
     expect(filterInteractiveCommands('/plan ')).toEqual([
       'plan view',
@@ -139,7 +139,7 @@ describe('filterInteractiveCommands', () => {
       expect(interactiveCommandRunPolicy(command)).toBe('during-run');
       expect(canRunInteractiveCommand(command, true)).toBe(true);
     }
-    for (const command of ['model', 'compact', 'resume', 'permissions', 'workflows', 'mcp', 'context settings', 'context setting both']) {
+    for (const command of ['clear', 'model', 'compact', 'resume', 'permissions', 'workflows', 'mcp', 'context settings', 'context setting both']) {
       expect(interactiveCommandRunPolicy(command)).toBe('idle-only');
       expect(canRunInteractiveCommand(command, true)).toBe(false);
       expect(canRunInteractiveCommand(command, false)).toBe(true);
@@ -150,12 +150,14 @@ describe('filterInteractiveCommands', () => {
     expect(filterInteractiveCommands('/model')).toEqual([
       'model',
       'model config',
+      'model context',
       'model custom',
       'model router',
     ]);
     expect(selectInteractiveCommand('/model')).toBe('/model');
     expect(filterInteractiveCommands('/model ')).toEqual([
       'model config',
+      'model context',
       'model custom',
       'model router',
     ]);

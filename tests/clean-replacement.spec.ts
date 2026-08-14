@@ -200,7 +200,7 @@ describe('Hadamard SDK replacement parity', () => {
       expect(toolMetadata).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ name: 'Read', category: 'file' }),
-          expect.objectContaining({ name: 'Task', category: 'task' }),
+          expect.objectContaining({ name: 'Agent', aliases: ['Task'], category: 'task' }),
           expect.objectContaining({ name: 'computer_open_url', category: 'computer' }),
           expect.objectContaining({ name: 'computer_focus_window', category: 'computer' }),
           expect.objectContaining({ name: 'computer_wait', category: 'computer' }),
@@ -210,6 +210,10 @@ describe('Hadamard SDK replacement parity', () => {
       expect(toolCatalog.byCategory.file.length).toBeGreaterThan(0);
       expect(toolCatalog.byCategory.computer.length).toBeGreaterThan(0);
       expect(toolCatalog.byCategory.task.length).toBe(1);
+      await expect(sdk.getToolMetadata('Task')).resolves.toMatchObject({
+        name: 'Agent',
+        aliases: ['Task'],
+      });
       expect(overview.tools.length).toBe(toolMetadata.length);
       expect(overview.skills).toEqual(
         expect.arrayContaining([expect.objectContaining({ name: 'release-check' })]),
@@ -413,9 +417,7 @@ describe('Hadamard SDK replacement parity', () => {
       expect(runtimeCatalog.tools.some(tool => tool.name === 'Read')).toBe(
         cleanToolMetadata.some(tool => tool.name === 'Read'),
       );
-      expect(runtimeCatalog.tools.some(tool => tool.name === 'Task')).toBe(
-        cleanToolMetadata.some(tool => tool.name === 'Task'),
-      );
+      expect(cleanToolMetadata.find(tool => tool.name === 'Agent')?.aliases).toContain('Task');
       expect(runtimeCatalog.skills.some(skillDefinition => skillDefinition.name === 'debug')).toBe(
         cleanSkills.includes('debug'),
       );

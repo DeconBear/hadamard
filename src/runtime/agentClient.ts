@@ -18,6 +18,10 @@ import {
   createHadamardBrowserTools,
 } from '../browser/hadamardBrowserTools.js';
 import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
+import {
+  clampContextWindowTokens,
+  resolveModelContextEntry,
+} from '../config/modelContextWindow.js';
 import { getHadamardProjectSessionDirectory } from '../config/projectSessionDirectory.js';
 import { resolveHadamardModelReference } from '../config/modelTiers.js';
 import { agentProfileRunOverrides, resolveAgentProfileRun } from '../config/agentProfiles.js';
@@ -29,7 +33,7 @@ import {
   filterToolsForExecutionPolicy,
 } from '../codeact/codeActPrompt.js';
 import type { CodeActSettings } from '../codeact/types.js';
-import { findBridgeConfig } from '../parity/bridgeConfigs.js';
+import { findBridgeConfig, readBridgeConfigs } from '../parity/bridgeConfigs.js';
 import { buildRouteModelApi } from '../router/modelRouter.js';
 import { recordCompatUsage } from '../compat/diagnostics.js';
 import {
@@ -62,6 +66,12 @@ import {
   parseHadamardSessionMemoryRuntimeState,
   serializeHadamardSessionMemoryRuntimeState,
 } from '../memory/hadamardSessionMemoryState.js';
+import {
+  markHadamardContextMessage,
+  parseProjectInstructionState,
+  prepareProjectInstructionContext,
+  stripLegacyHadamardProjectContextSection,
+} from '../memory/projectInstructionContext.js';
 import { McpConnectionManager } from '../mcp/connectionManager.js';
 import { PluginLoader } from '../plugins/pluginLoader.js';
 import { PluginPackageStore } from '../plugins/pluginPackageStore.js';
@@ -243,7 +253,8 @@ import {
   extractHadamardDreamTouchedFiles,
 } from './agentClientDreamHelpers.js';
 import {
-  collectToolPrompts,
+  applyResolvedToolDescriptions,
+  buildCompactSkillToolPrompt,
   combineAbortSignals,
   filterAgentTools,
   isGitWorkspaceDirty,
@@ -328,6 +339,7 @@ interface InternalAgentRunOptions extends AgentRunOptions {
   __hadamardWorkDir?: string;
   __hadamardPersistedWorkDir?: string;
   __hadamardInitialPrompt?: string;
+  __hadamardOmitProjectInstructions?: boolean;
 }
 
 interface PreparedSkillExecution {
@@ -1060,7 +1072,9 @@ export class HadamardAgentClient {
     name: string,
     options?: import('../types.js').HadamardCleanToolLookupOptions,
   ): Promise<import('../types.js').HadamardCleanToolMetadata | undefined> {
-    return (await this.listToolMetadata(options)).find(tool => tool.name === name);
+    return (await this.listToolMetadata(options)).find(
+      tool => tool.name === name || tool.aliases?.includes(name),
+    );
   }
 
   /** Resolve a tool definition by name from the default tool registry. */
@@ -1116,31 +1130,41 @@ export class HadamardAgentClient {
     }, {
       requestTimeoutMs: config.mcpTimeoutMs,
     });
-    const externalSkills = options.externalSkills
-      ? (await loadHadamardExternalSkillDefinitions({
-          hadamardHomeDir: config.homeDir,
-          workDir: config.workDir,
-          externalSkills: options.externalSkills,
-        })).definitions
-      : [];
-    const pluginPackageRoot = path.join(config.homeDir, 'plugin-packages');
-    const pluginBundles = await new PluginLoader(
-      new PluginPackageStore(path.join(pluginPackageRoot, 'packages')),
-      new PluginTrustStore(path.join(pluginPackageRoot, 'trust.json')),
-    ).loadEnabledBundles();
+    const pluginPackages = path.join(config.homeDir, 'plugin-packages');
     const externalSkillCatalogEnabled = Boolean(options.externalSkills);
-    const loadedSkills = await loadHadamardSkillDefinitions({
-      homeDir: config.homeDir,
-      workDir: config.workDir,
-      skillDirectories: [
-        ...(options.skillDirectories ?? []),
-        ...pluginBundles.flatMap(bundle => bundle.skillDirectories),
-      ],
-      disableDefaultSkills: externalSkillCatalogEnabled ? true : options.disableDefaultSkills,
-      loadDefaultSkillDirectories: externalSkillCatalogEnabled
-        ? false
-        : options.loadDefaultSkillDirectories,
-    });
+    const [externalSkills, pluginBundles] = await Promise.all([
+      options.externalSkills
+        ? loadHadamardExternalSkillDefinitions({
+            hadamardHomeDir: config.homeDir,
+            workDir: config.workDir,
+            externalSkills: options.externalSkills,
+          }).then(result => result.definitions)
+        : Promise.resolve([] as HadamardSkillDefinition[]),
+      new PluginLoader(
+        new PluginPackageStore(path.join(pluginPackages, 'packages')),
+        new PluginTrustStore(path.join(pluginPackages, 'trust.json')),
+      ).loadEnabledBundles(),
+    ]);
+    // Unified agent store (S1a): migrate legacy agent-configs.json into agents/*.md.
+    migrateAgentProfilesToMarkdown(config.homeDir, path.join(config.homeDir, 'agents'));
+    const [loadedSkills, loadedAgents] = await Promise.all([
+      loadHadamardSkillDefinitions({
+        homeDir: config.homeDir,
+        workDir: config.workDir,
+        skillDirectories: [
+          ...(options.skillDirectories ?? []),
+          ...pluginBundles.flatMap(bundle => bundle.skillDirectories),
+        ],
+        disableDefaultSkills: externalSkillCatalogEnabled ? true : options.disableDefaultSkills,
+        loadDefaultSkillDirectories: !externalSkillCatalogEnabled && options.loadDefaultSkillDirectories,
+      }),
+      loadHadamardAgentDefinitions({
+        homeDir: config.homeDir,
+        workDir: config.workDir,
+        agentDirectories: options.agentDirectories,
+        loadDefaultAgentDirectories: options.loadDefaultAgentDirectories,
+      }),
+    ]);
     loadedSkills.push(...await Promise.all(pluginBundles.flatMap(bundle => bundle.directSkills)
       .map(registration => loadHadamardSkillDefinitionFile({
         ...registration,
@@ -1160,15 +1184,6 @@ export class HadamardAgentClient {
           ...(options.skills ?? []),
         ]
       : [...loadedSkills, ...(options.skills ?? [])];
-    // Unified agent store (S1a): auto-migrate legacy agent-configs.json into
-    // agents/*.md before loading definitions (idempotent, no-op once migrated).
-    migrateAgentProfilesToMarkdown(config.homeDir, path.join(config.homeDir, 'agents'));
-    const loadedAgents = await loadHadamardAgentDefinitions({
-      homeDir: config.homeDir,
-      workDir: config.workDir,
-      agentDirectories: options.agentDirectories,
-      loadDefaultAgentDirectories: options.loadDefaultAgentDirectories,
-    });
     const agentDefinitions = mergeAgentDefinitions(
       options.disableDefaultAgents === true ? [] : getDefaultHadamardAgents(),
       loadedAgents,
@@ -2018,7 +2033,7 @@ export class HadamardAgentClient {
         }),
         isReadOnly: () => true,
         prompt: () => {
-          const names = this.listSkillDefinitions()
+          const skills = this.listSkillDefinitions()
             .filter(
               (definition) =>
                 definition.disableModelInvocation !== true &&
@@ -2027,24 +2042,11 @@ export class HadamardAgentClient {
                 (!definition.paths?.length ||
                   this.activatedConditionalSkills.has(definition.name)),
             )
-            .map((definition) => {
-              const parts = [`- ${definition.name}`];
-              if (definition.description) parts.push(`: ${definition.description}`);
-              if (definition.whenToUse) parts.push(` (use when: ${definition.whenToUse})`);
-              if (definition.argumentHint) parts.push(` [args: ${definition.argumentHint}]`);
-              return parts.join('');
-            });
-          if (names.length === 0) {
-            return '';
-          }
-          return [
-            'You can autonomously load a registered skill with the Skill tool whenever the current task',
-            'matches its purpose — decide for yourself from each skill\'s description and "use when" guidance',
-            'below, then call Skill({ skill, args? }) without waiting to be asked. Prefer a matching skill over',
-            'improvising when one applies.',
-            'Available skills:',
-            ...names,
-          ].join('\n');
+            .map(definition => ({
+              name: definition.name,
+              description: definition.description,
+            }));
+          return buildCompactSkillToolPrompt(skills);
         },
       },
       async ({ skill, args }, context) => {
@@ -2724,6 +2726,15 @@ export class HadamardAgentClient {
     skipInitialInput = false,
     onInitialInputCheckpointed?: () => void,
   ): Promise<AgentRunResult> {
+    if (augmentations?.metadata && Object.keys(augmentations.metadata).length > 0) {
+      options = {
+        ...options,
+        metadata: {
+          ...(options.metadata ?? {}),
+          ...augmentations.metadata,
+        },
+      };
+    }
     const workDir = this.resolveRunWorkDir(options);
     let activeWorkDir = workDir;
     const model = this.resolveModel(options.model ?? session?.model);
@@ -2875,8 +2886,7 @@ export class HadamardAgentClient {
       goalTools = filterToolsForExecutionPolicy(ordinaryTools, executionPolicy);
     }
 
-    // Collect tool prompts for system prompt assembly
-    const toolPromptParts = await collectToolPrompts(goalTools, {
+    goalTools = await applyResolvedToolDescriptions(goalTools, {
       workDir,
       permissionMode: options.permissionMode ?? this.defaultPermissionMode,
     });
@@ -2891,15 +2901,26 @@ export class HadamardAgentClient {
             ? ordinaryTools.map(toolDefinition => toolDefinition.name)
             : [],
         }),
-        ...toolPromptParts,
       ],
     );
 
     const runMaxToolIterations = executionPolicy.turnPolicy === 'single'
       ? 1
       : options.__hadamardMaxToolIterations ?? options.maxToolIterations;
+    const requestedContextWindow = typeof options.contextWindowTokens === 'number'
+      && Number.isFinite(options.contextWindowTokens)
+      && options.contextWindowTokens > 0
+      ? clampContextWindowTokens(
+          options.contextWindowTokens,
+          resolveModelContextEntry(model, readBridgeConfigs(this.config.homeDir).configs) ?? {
+            name: model,
+            contextWindowTokens: this.config.compact.contextWindowTokens,
+            maxContextWindowTokens: this.config.compact.maxContextWindowTokens,
+          },
+        )
+      : undefined;
     const runtimeConfig =
-      runMaxToolIterations || workDir !== this.config.workDir
+      runMaxToolIterations || workDir !== this.config.workDir || requestedContextWindow
         ? {
             ...this.config,
             workDir,
@@ -2907,6 +2928,15 @@ export class HadamardAgentClient {
             sandboxCapabilities: sandboxExecutor.capability,
             ...(runMaxToolIterations
               ? { maxToolIterations: runMaxToolIterations }
+              : {}),
+            ...(requestedContextWindow
+              ? {
+                  compact: {
+                    ...this.config.compact,
+                    contextWindowTokens: requestedContextWindow,
+                    contextWindowSource: 'run' as const,
+                  },
+                }
               : {}),
           }
         : this.config;
@@ -2999,6 +3029,7 @@ export class HadamardAgentClient {
           toolChoice: options.toolChoice,
           userId: options.userId ?? this.config.userId,
           metadata,
+          projectInstructions: options.projectInstructions,
           signal,
           permissionMode: options.permissionMode ?? this.defaultPermissionMode,
           permissions: options.permissions ?? this.defaultPermissions,
@@ -3289,16 +3320,17 @@ export class HadamardAgentClient {
     session?: StoredSession,
     extraSystemPromptParts: string[] = [],
   ): Promise<string | undefined> {
-    const basePrompt = options.systemPrompt ?? session?.systemPrompt ?? this.config.systemPrompt;
+    const basePromptRaw = options.systemPrompt ?? session?.systemPrompt ?? this.config.systemPrompt;
+    const basePrompt = typeof basePromptRaw === 'string'
+      ? stripLegacyHadamardProjectContextSection(basePromptRaw).prompt || undefined
+      : basePromptRaw;
     const memoryState = await this.memory.state();
     const memoryPrompt = memoryState.enabled.autoMemory
       ? await this.memory.buildPromptWithEntrypoints()
       : undefined;
     const durableUsageKey = session?.id ?? '__standalone__';
     const loadedMemorySections = memoryPrompt
-      ? (memoryPrompt.includes('is currently empty') || memoryPrompt.includes('memory_summary.md is currently empty')
-        ? 0
-        : 1)
+      ? (/\n## .+[\\/]memory_summary\.md\n\n\S/u.test(memoryPrompt) ? 1 : 0)
       : 0;
     if (
       memoryPrompt
@@ -3352,10 +3384,10 @@ export class HadamardAgentClient {
         }))
       : [];
     const initialPromptMessages = internalOptions.__hadamardInitialPrompt
-      ? [{
+      ? [markHadamardContextMessage({
           role: 'user' as const,
           content: internalOptions.__hadamardInitialPrompt,
-        }]
+        }, 'agent-initial-prompt')]
       : [];
     const agentMemoryMessages = session
       ? await this.prepareAgentMemoryMessages(session, internalOptions)
@@ -3395,7 +3427,9 @@ export class HadamardAgentClient {
       if (!result) {
         continue;
       }
-      prefixedMessages.push(...normalizeHadamardHookMessages(result.messages));
+      prefixedMessages.push(...normalizeHadamardHookMessages(result.messages).map(message =>
+        markHadamardContextMessage(message, 'session-start-hooks')
+      ));
       if (result.systemPromptParts?.length) {
         systemPromptParts.push(...result.systemPromptParts.filter(Boolean));
       }
@@ -3403,6 +3437,31 @@ export class HadamardAgentClient {
         Object.assign(metadata, result.metadata);
       }
     }
+
+    const workDir = this.resolveRunWorkDir(internalOptions);
+    const projectSettings = await readProjectSettings(workDir, this.config.homeDir);
+    const configuredWorkPaths = internalOptions.projectInstructions?.workPaths ?? [];
+    const workPaths = configuredWorkPaths.length > 0
+      ? [...new Set(configuredWorkPaths)]
+      : (() => {
+          const configuredRoot = path.resolve(this.config.workDir);
+          const relative = path.relative(configuredRoot, path.resolve(workDir));
+          return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+            ? [configuredRoot]
+            : [workDir];
+        })();
+    const projectInstruction = prepareProjectInstructionContext({
+      workDir,
+      homeDir: this.config.homeDir,
+      mode: internalOptions.projectInstructions?.mode ?? projectSettings.context.instructionMode,
+      workPaths,
+      compactCount: session ? getPersistedHadamardCompactState(session.metadata).compactCount : 0,
+      previousState: parseProjectInstructionState(session?.metadata),
+      persistState: Boolean(session),
+      omit: internalOptions.__hadamardOmitProjectInstructions === true,
+    });
+    prefixedMessages.unshift(...projectInstruction.prefixedMessages);
+    Object.assign(metadata, projectInstruction.metadataPatch);
 
     return {
       hooks,
@@ -3426,10 +3485,10 @@ export class HadamardAgentClient {
     for (const skillName of skillNames) {
       const definition = this.getSkillDefinition(skillName);
       if (!definition) {
-        messages.push({
+        messages.push(markHadamardContextMessage({
           role: 'user',
           content: `<agent_skill_warning>Skill "${skillName}" was requested by the agent definition but is not registered.</agent_skill_warning>`,
-        });
+        }, 'preloaded-skills'));
         continue;
       }
       const resolved = await resolveHadamardSkillPrompt(definition, '', {
@@ -3439,14 +3498,14 @@ export class HadamardAgentClient {
         sessionId,
         userId: this.config.userId,
       });
-      messages.push({
+      messages.push(markHadamardContextMessage({
         role: 'user',
         content: [
           `<agent_skill name="${skillName}">`,
           extractTextFromContent(resolved.content),
           '</agent_skill>',
         ].join('\n'),
-      });
+      }, 'preloaded-skills'));
     }
     return messages;
   }
@@ -3478,7 +3537,7 @@ export class HadamardAgentClient {
     } catch {
       // A new agent memory starts empty and can be updated by normal file tools.
     }
-    return [{
+    return [markHadamardContextMessage({
       role: 'user',
       content: [
         `<agent_memory scope="${scope}" path="${memoryPath}">`,
@@ -3486,7 +3545,7 @@ export class HadamardAgentClient {
         '</agent_memory>',
         `Persist durable lessons for future ${agentName} runs by updating ${memoryPath}.`,
       ].join('\n'),
-    }];
+    }, 'agent-memory')];
   }
 
   private async applyPostRunHooks(
@@ -3641,7 +3700,9 @@ export class HadamardAgentClient {
     }
 
     return {
-      prefixedMessages: buildInvokedSkillMessages(invokedSkills),
+      prefixedMessages: buildInvokedSkillMessages(invokedSkills).map(message =>
+        markHadamardContextMessage(message, 'invoked-skills')
+      ),
       invokedSkills,
     };
   }
@@ -4214,9 +4275,23 @@ export class HadamardAgentClient {
     executionIdentity?: AgentExecutionIdentity,
     backgroundTaskId?: string,
   ): AgentRunOptions {
+    const configuredProjectInstructions = runOptions.projectInstructions;
+    const configuredWorkPaths = configuredProjectInstructions?.workPaths ?? [];
+    const projectInstructions = configuredProjectInstructions && configuredWorkPaths.length > 0
+      ? {
+          ...configuredProjectInstructions,
+          workPaths: configuredWorkPaths.some((projectPath) => {
+            const relative = path.relative(path.resolve(projectPath), path.resolve(workDir));
+            return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+          })
+            ? [...configuredWorkPaths]
+            : [workDir],
+        }
+      : configuredProjectInstructions;
     return {
       ...runOptions,
       workDir,
+      projectInstructions,
       metadata: {
         ...(runOptions.metadata ?? {}),
         ...(executionIdentity ? serializeAgentExecutionIdentity(executionIdentity) : {}),
@@ -5075,7 +5150,10 @@ export class HadamardAgentClient {
     const workDir = this.resolveRunWorkDir(options);
     const next = deepClone(snapshot);
     next.model = result.model;
-    next.systemPrompt = options.systemPrompt ?? next.systemPrompt;
+    const persistedSystemPrompt = options.systemPrompt ?? next.systemPrompt;
+    next.systemPrompt = typeof persistedSystemPrompt === 'string'
+      ? stripLegacyHadamardProjectContextSection(persistedSystemPrompt).prompt || undefined
+      : persistedSystemPrompt;
     next.messages = deepClone(result.messages);
     next.updatedAt = result.completedAt;
     next.lastRunAt = result.completedAt;
@@ -5418,6 +5496,7 @@ export class HadamardAgentClient {
         : undefined,
       __hadamardWorkDir: options.workDir ?? definition.cwd,
       __hadamardInitialPrompt: definition.initialPrompt,
+      __hadamardOmitProjectInstructions: definition.projectInstructions === 'omit',
     };
   }
 

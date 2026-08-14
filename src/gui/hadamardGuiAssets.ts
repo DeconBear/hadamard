@@ -8390,6 +8390,32 @@ function pickerTargetModel(target) {
   return pickerConfigModels(target?.config)[0] || target?.config?.model || '';
 }
 
+function pickerModelMetadata(target, modelName) {
+  const config = target?.kind === 'agent'
+    ? (state.snapshot?.bridgeState?.configs || []).find(item => item.name === target.agent.bridgeConfig)
+    : target?.config;
+  return (config?.models || []).find(item => item.name === modelName) || null;
+}
+
+function pickerContextOptions(target, modelName) {
+  const metadata = pickerModelMetadata(target, modelName);
+  const limit = Number(metadata?.maxContextWindowTokens || metadata?.contextWindowTokens || 0);
+  const standard = [16000, 32000, 64000, 128000, 200000, 256000, 384000, 400000, 1000000, 2000000];
+  if (!limit) return standard;
+  return Array.from(new Set([
+    ...standard.filter(value => value <= limit),
+    Number(metadata?.contextWindowTokens || 0),
+    Number(metadata?.maxContextWindowTokens || 0),
+    limit,
+  ].filter(value => value > 0 && value <= limit))).sort((a, b) => a - b);
+}
+
+function formatPickerContextWindow(tokens) {
+  if (tokens >= 1000000 && tokens % 1000000 === 0) return (tokens / 1000000) + 'M';
+  if (tokens >= 1000 && tokens % 1000 === 0) return (tokens / 1000) + 'k';
+  return Number(tokens).toLocaleString();
+}
+
 function renderPickerEffortPopover(targetKey) {
   const pop = el('modelPickerEditPopover');
   if (!pop) return;
@@ -8459,6 +8485,29 @@ function renderPickerEffortPopover(targetKey) {
       el('modelPickerItems')?.querySelector('.picker-item[data-picker-value="' + CSS.escape(targetKey) + '"]')?.focus();
     });
     pop.appendChild(item);
+  }
+
+  const contextOptions = pickerContextOptions(target, currentModel);
+  if (contextOptions.length) {
+    const contextHeading = document.createElement('div');
+    contextHeading.className = 'picker-section-label';
+    contextHeading.textContent = 'Context window';
+    pop.appendChild(contextHeading);
+    const currentContext = Number(state.snapshot?.session?.contextWindowTokens || 0);
+    for (const tokens of contextOptions) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'picker-detail-item';
+      const label = document.createElement('span');
+      label.className = 'picker-item-label';
+      label.textContent = formatPickerContextWindow(tokens);
+      item.append(label, makePickerCheck(targetIsActive && currentContext === tokens));
+      item.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void selectPickerTarget(target, currentModel, null, { close: false, contextWindowTokens: tokens });
+      });
+      pop.appendChild(item);
+    }
   }
 
   const effortHeading = document.createElement('div');
@@ -8811,12 +8860,16 @@ function selectPickerTarget(target, model, effort, opts) {
   return selectPickerSelection({
     bridgeConfig: target?.name || '',
     model: model || '',
+    ...((opts && opts.contextWindowTokens) ? { contextWindowTokens: opts.contextWindowTokens } : {}),
   }, effort, opts);
 }
 
 async function selectPickerAgent(agentName, effort, opts) {
   if (!agentName) return selectPickerSelection(null, effort, opts);
-  return selectPickerSelection({ name: agentName }, effort, opts, agentName);
+  return selectPickerSelection({
+    name: agentName,
+    ...((opts && opts.contextWindowTokens) ? { contextWindowTokens: opts.contextWindowTokens } : {}),
+  }, effort, opts, agentName);
 }
 
 async function selectPickerRouter(name) {
@@ -16220,9 +16273,7 @@ function pluginFieldDefinitions(plugin) {
   ];
   if (plugin.id === 'github') return [
     { name: 'hostname', label: 'GitHub host', value: c.hostname || 'github.com' },
-    { name: 'token', label: 'Alternate token (optional)', secret: true, secretConfigured: plugin.secretConfigured },
     { name: 'defaultOwner', label: 'Default owner (optional)', value: c.defaultOwner || '' },
-    { name: 'timeoutMs', label: 'Command timeout (ms)', type: 'number', value: c.timeoutMs || 30000 },
   ];
   if (plugin.id === 'kimi-webbridge') return [
     { name: 'daemonUrl', label: 'Local daemon URL', value: c.daemonUrl || 'http://127.0.0.1:10086', full: true },
@@ -16476,7 +16527,7 @@ function renderManagedPluginDetail(body, plugin) {
   health.className = 'plugin-health ' + plugin.state;
   health.textContent = plugin.statusDetail || (
     plugin.id === 'github'
-      ? 'Uses the account stored by gh auth login unless an alternate token is configured.'
+      ? 'Uses the account and host authentication managed by gh auth login.'
       : plugin.id === 'kimi-webbridge'
         ? 'Reuses the browser extension and the login sessions already open in Chrome or Edge.'
         : plugin.id === 'computer-use' && plugin.config?.backend === 'e2b'
@@ -16558,7 +16609,7 @@ function renderManagedPluginDetail(body, plugin) {
   note.textContent = plugin.id === 'playwright'
     ? 'A persistent profile or CDP attachment can reuse browser login state. Storage-state contents are never displayed.'
     : plugin.id === 'github'
-      ? 'Leave the alternate token empty to reuse the secure login already managed by GitHub CLI.'
+      ? 'Run gh auth login in a terminal to configure credentials; Hadamard does not copy tokens into prompts or commands.'
       : plugin.id === 'ocr'
         ? 'Images and documents are sent only to the provider configured above.'
         : plugin.id === 'computer-use'

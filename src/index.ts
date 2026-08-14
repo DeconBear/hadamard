@@ -169,6 +169,22 @@ export {
   redactMemorySecrets,
   serializeHadamardSessionMemoryRuntimeState,
 } from './memory/hadamardSessionMemoryState.js';
+export {
+  HADAMARD_PROJECT_INSTRUCTION_STATE_KEY,
+  buildProjectInstructionContextKey,
+  hashProjectInstructionContent,
+  isHadamardProjectInstructionMessage,
+  parseProjectInstructionState,
+  prepareProjectInstructionContext,
+  serializeProjectInstructionState,
+  stripLegacyHadamardProjectContextSection,
+} from './memory/projectInstructionContext.js';
+export type {
+  AgentProjectInstructionOptions,
+  PreparedProjectInstructionContext,
+  ProjectInstructionPolicy,
+  ProjectInstructionStateV1,
+} from './memory/projectInstructionContext.js';
 export { buildSystemPrompt } from './prompts/systemPrompt.js';
 export { loadDefaultHadamardSettings } from './config/loadDefaultHadamardSettings.js';
 export { loadHadamardSettings } from './config/loadHadamardSettings.js';

@@ -39,6 +39,7 @@ const DEFAULT_HADAMARD_AGENTS: ReadonlyArray<HadamardAgentDefinition> = [
     ].join('\n'),
     allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'PowerShell', 'WebFetch', 'WebSearch'],
     permissionMode: 'plan',
+    projectInstructions: 'omit',
     metadata: DEFAULT_AGENT_METADATA,
     source: 'built-in',
   },

@@ -33,7 +33,7 @@ export interface TuiBasicCommandPort {
     title: string;
     items: TuiSelectionItem[];
   }): Promise<string | undefined>;
-  clear(): void;
+  clear(): Promise<void>;
   startRun(prompt: string): Promise<void>;
   shutdown(): void;
   toolNames(): string[];
@@ -72,7 +72,7 @@ export async function runTuiBasicCommand(
       return true;
     }
     case 'clear':
-      port.clear();
+      await port.clear();
       return true;
     case 'init':
       await port.startRun(

@@ -229,6 +229,10 @@ export class InputEditor {
     return true;
   }
 
+  isBrowsingHistory(): boolean {
+    return this.historyIndex !== -1;
+  }
+
   /**
    * Wrap the buffer into visual lines of `width` columns and locate the
    * cursor in that grid. Wide characters occupy two columns.

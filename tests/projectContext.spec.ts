@@ -108,4 +108,32 @@ describe('loadProjectContext', () => {
     expect(result.sources).toContain('~/.hadamard/AGENTS.md');
     expect(result.text).toContain('GLOBAL HADAMARD RULE');
   });
+
+  it('combines the global AGENTS.md with only the active workspace rules', async () => {
+    const parent = await makeTempDir('ctx-workspaces-');
+    const hadamardHomeDir = await makeTempDir('ctx-shared-home-');
+    const first = path.join(parent, 'first');
+    const second = path.join(parent, 'second');
+    await mkdir(first, { recursive: true });
+    await mkdir(second, { recursive: true });
+    await writeFile(path.join(hadamardHomeDir, 'AGENTS.md'), 'GLOBAL RULE\n');
+    await writeFile(path.join(first, 'AGENTS.md'), 'FIRST RULE\n');
+    await writeFile(path.join(second, 'AGENTS.md'), 'SECOND RULE\n');
+
+    const firstResult = loadProjectContext(first, {
+      hadamardHomeDir,
+      projectWorkPaths: [first],
+    });
+    const secondResult = loadProjectContext(second, {
+      hadamardHomeDir,
+      projectWorkPaths: [second],
+    });
+
+    expect(firstResult.text).toContain('GLOBAL RULE');
+    expect(firstResult.text).toContain('FIRST RULE');
+    expect(firstResult.text).not.toContain('SECOND RULE');
+    expect(secondResult.text).toContain('GLOBAL RULE');
+    expect(secondResult.text).toContain('SECOND RULE');
+    expect(secondResult.text).not.toContain('FIRST RULE');
+  });
 });

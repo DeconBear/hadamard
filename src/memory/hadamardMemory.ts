@@ -374,14 +374,8 @@ export class HadamardMemoryApi {
     ];
     const summaryPath = path.join(paths.autoMemoryDir, 'memory_summary.md');
     const summaryContent = (await readTextIfExists(summaryPath))?.slice(0, 20_000);
-    lines.push('', `## ${summaryPath}`);
     if (summaryContent?.trim()) {
-      lines.push('', truncateEntrypointContent(summaryContent).content);
-    } else {
-      lines.push(
-        '',
-        `memory_summary.md is currently empty. After Dream runs, it will map sections of \`${paths.autoMemoryEntrypoint}\`.`,
-      );
+      lines.push('', `## ${summaryPath}`, '', truncateEntrypointContent(summaryContent).content);
     }
 
     return lines.join('\n');

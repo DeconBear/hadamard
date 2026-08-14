@@ -85,6 +85,12 @@ export function surfaceSemanticToLegacyAgentEvent(
         iteration,
         requestTokenEstimate: safeInteger(data.requestTokenEstimate),
         requestByteLength: safeInteger(data.requestByteLength),
+        systemTokenEstimate: safeInteger(data.systemTokenEstimate),
+        toolTokenEstimate: safeInteger(data.toolTokenEstimate),
+        messageTokenEstimate: safeInteger(data.messageTokenEstimate),
+        tokenEstimateMultiplier: typeof data.tokenEstimateMultiplier === 'number'
+          ? data.tokenEstimateMultiplier
+          : undefined,
         localMicrocompact: asRecord(data.localMicrocompact) as never,
         timestamp: semantic.timestamp,
       };

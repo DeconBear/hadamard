@@ -9,8 +9,7 @@ import { createHadamardBrowserUseToolkit } from '../browser/hadamardBrowserTools
 import { createHadamardComputerUseTools } from '../computer/hadamardComputerUse.js';
 import { createE2bComputerUseToolkit } from '../computer/e2bComputerUse.js';
 import { tool } from '../runtime/tools.js';
-import type { AgentToolDefinition } from '../types.js';
-import { createGitHubPlugin, type GitHubApiField } from './githubPlugin.js';
+import type { AgentToolDefinition, HadamardSkillDefinition } from '../types.js';
 import {
   KIMI_WEBBRIDGE_ALLOWED_ACTIONS,
   createKimiWebBridgePlugin,
@@ -40,6 +39,11 @@ import {
 import { createExaSearchTool } from '../tools/exaSearch.js';
 import { createTavilySearchTool } from '../tools/tavilySearch.js';
 import { hasMediaGenSecret } from './mediaGenProfiles.js';
+import {
+  createGitHubCliSkill,
+  createManagedActionDispatcher,
+  createManagedActionSkill,
+} from './managedPluginSkills.js';
 
 export interface ManagedPluginRuntimeOptions {
   cwd: string;
@@ -47,16 +51,10 @@ export interface ManagedPluginRuntimeOptions {
 
 export interface ManagedPluginRuntime {
   tools: AgentToolDefinition[];
+  skills: HadamardSkillDefinition[];
   enabledPluginIds: ManagedPluginId[];
   close(): Promise<void>;
 }
-
-const githubFieldSchema = z.union([
-  z.string(),
-  z.number(),
-  z.boolean(),
-  z.null(),
-]);
 
 const readOnlyKimiActions = new Set<KimiWebBridgeAction>([
   'find_tab',
@@ -70,6 +68,7 @@ export function createManagedPluginRuntime(
   options: ManagedPluginRuntimeOptions,
 ): ManagedPluginRuntime {
   const tools: AgentToolDefinition[] = [];
+  const skills: HadamardSkillDefinition[] = [];
   const enabledPluginIds: ManagedPluginId[] = [];
   const closers: Array<() => Promise<void>> = [];
 
@@ -104,24 +103,50 @@ export function createManagedPluginRuntime(
         timeoutMs: numberValue(computer.timeoutMs),
       });
       enabledPluginIds.push('computer-use');
-      tools.push(...runtime.tools);
+      tools.push(createManagedActionDispatcher({
+        name: 'computer_use',
+        description: 'Run one Computer Use action. Load the computer-use Skill for actions and arguments.',
+        sourcePrefix: 'computer_',
+        sourceTools: runtime.tools,
+      }));
+      skills.push(createManagedActionSkill({
+        name: 'computer-use',
+        description: 'Control a configured local or E2B desktop through one compact Computer Use dispatcher.',
+        whenToUse: 'Use for OS-level desktop interaction that browser automation or shell commands cannot perform.',
+        dispatcherName: 'computer_use',
+        sourcePrefix: 'computer_',
+        sourceTools: runtime.tools,
+        guidance: ['This backend is an isolated E2B desktop. Start it before other actions and stop it when finished.'],
+      }));
       closers.push(runtime.close);
     } else if (backend === 'local') {
+      const sourceTools = createHadamardComputerUseTools();
       enabledPluginIds.push('computer-use');
-      tools.push(...createHadamardComputerUseTools());
+      tools.push(createManagedActionDispatcher({
+        name: 'computer_use',
+        description: 'Run one Computer Use action. Load the computer-use Skill for actions and arguments.',
+        sourcePrefix: 'computer_',
+        sourceTools,
+      }));
+      skills.push(createManagedActionSkill({
+        name: 'computer-use',
+        description: 'Control the local Windows desktop through one compact Computer Use dispatcher.',
+        whenToUse: 'Use for OS-level desktop interaction that browser automation or shell commands cannot perform.',
+        dispatcherName: 'computer_use',
+        sourcePrefix: 'computer_',
+        sourceTools,
+        guidance: ['Focus the intended window before typing or sending keys. Use screenshots to verify visual state.'],
+      }));
     }
   }
 
   const github = readStoredManagedPluginConfig(raw, 'github');
   if (github.enabled === true) {
-    const plugin = createGitHubPlugin({
-      cwd: options.cwd,
-      host: stringValue(github.hostname),
-      token: stringValue(github.token),
-      timeoutMs: numberValue(github.timeoutMs),
-    });
     enabledPluginIds.push('github');
-    tools.push(...createGitHubAgentTools(plugin));
+    skills.push(createGitHubCliSkill({
+      hostname: stringValue(github.hostname),
+      defaultOwner: stringValue(github.defaultOwner),
+    }));
   }
 
   const kimi = readStoredManagedPluginConfig(raw, 'kimi-webbridge');
@@ -149,7 +174,21 @@ export function createManagedPluginRuntime(
       allowEvaluate: playwright.allowEvaluate === true,
     });
     enabledPluginIds.push('playwright');
-    tools.push(...runtime.tools);
+    tools.push(createManagedActionDispatcher({
+      name: 'browser_use',
+      description: 'Run one Playwright browser action. Load the playwright Skill for actions and arguments.',
+      sourcePrefix: 'browser_',
+      sourceTools: runtime.tools,
+    }));
+    skills.push(createManagedActionSkill({
+      name: 'playwright',
+      description: 'Navigate, inspect, and interact with a controlled browser through one compact dispatcher.',
+      whenToUse: 'Use for deterministic browser automation, page inspection, form interaction, and screenshots.',
+      dispatcherName: 'browser_use',
+      sourcePrefix: 'browser_',
+      sourceTools: runtime.tools,
+      guidance: ['Prefer snapshot indexes for interaction. Take a new snapshot after navigation or major page changes.'],
+    }));
     closers.push(() => runtime.session.close());
   }
 
@@ -203,6 +242,7 @@ export function createManagedPluginRuntime(
 
   return {
     tools,
+    skills,
     enabledPluginIds,
     close: async () => {
       const errors: unknown[] = [];
@@ -218,68 +258,6 @@ export function createManagedPluginRuntime(
       }
     },
   };
-}
-
-function createGitHubAgentTools(
-  plugin: ReturnType<typeof createGitHubPlugin>,
-): AgentToolDefinition[] {
-  return [
-    tool(
-      {
-        name: 'github_status',
-        description:
-          'Check whether GitHub CLI is installed and authenticated. Reuses the stored gh login unless this plugin has an alternate token.',
-        inputSchema: z.strictObject({}),
-        isReadOnly: () => true,
-      },
-      async () => plugin.status(),
-    ),
-    tool(
-      {
-        name: 'github_read_api',
-        description: 'Read a GitHub REST API endpoint through the authenticated GitHub CLI.',
-        inputSchema: z.strictObject({
-          endpoint: z.string().min(1),
-          query: z.record(z.string(), githubFieldSchema).optional(),
-        }),
-        isReadOnly: () => true,
-      },
-      async ({ endpoint, query }) => plugin.readApi(
-        endpoint,
-        query as Record<string, GitHubApiField> | undefined,
-      ),
-    ),
-    tool(
-      {
-        name: 'github_write_api',
-        description:
-          'Create or update GitHub data through the authenticated GitHub CLI. This is a remote write and requires approval.',
-        inputSchema: z.strictObject({
-          endpoint: z.string().min(1),
-          method: z.enum(['POST', 'PATCH', 'PUT']),
-          fields: z.record(z.string(), githubFieldSchema).optional(),
-        }),
-        isDestructive: () => true,
-        requiresUserInteraction: () => true,
-      },
-      async ({ endpoint, method, fields }) => plugin.writeApi({
-        endpoint,
-        method,
-        fields: fields as Record<string, GitHubApiField> | undefined,
-      }),
-    ),
-    tool(
-      {
-        name: 'github_delete_api',
-        description:
-          'Delete data through a GitHub REST API endpoint. This is a destructive remote action and requires approval.',
-        inputSchema: z.strictObject({ endpoint: z.string().min(1) }),
-        isDestructive: () => true,
-        requiresUserInteraction: () => true,
-      },
-      async ({ endpoint }) => plugin.deleteApi(endpoint),
-    ),
-  ];
 }
 
 function createKimiAgentTool(

@@ -1,5 +1,7 @@
 import type { HadamardRunEffort } from '../contracts/runtimeOptions.js';
 
+export type ProjectInstructionMode = 'agents' | 'claude' | 'both';
+
 export type DreamExecutionProfileRef =
   | { kind: 'config'; name: string; model?: string; effort?: HadamardRunEffort }
   | { kind: 'agent'; name: string; effort?: HadamardRunEffort };

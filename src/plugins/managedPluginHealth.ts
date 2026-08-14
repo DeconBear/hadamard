@@ -68,8 +68,6 @@ export async function probeManagedPlugin(
     const status = await createGitHubPlugin({
       cwd: options.cwd,
       host: stringValue(config.hostname),
-      token: stringValue(config.token),
-      timeoutMs: numberValue(config.timeoutMs),
     }).status();
     if (status.ok) return { state: 'ready', detail: status.message };
     return {

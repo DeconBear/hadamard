@@ -2,6 +2,7 @@ import path from 'node:path';
 
 import type { DiscoveredProjectSession } from '../storage/sessionDiscovery.js';
 import type { SessionSummary } from '../types.js';
+import { isEmptyUserSessionSummary } from '../storage/sessionVisibility.js';
 
 export interface TuiResumeCandidate {
   key: string;
@@ -14,6 +15,11 @@ function candidateKey(sessionDirectory: string, sessionId: string): string {
   return `${path.resolve(sessionDirectory).normalize('NFC')}\0${sessionId}`;
 }
 
+function normalizedPath(value: string): string {
+  const resolved = path.resolve(value).normalize('NFC');
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
 export function buildTuiResumeCandidates(
   discovered: readonly DiscoveredProjectSession[],
   local: readonly SessionSummary[],
@@ -21,20 +27,26 @@ export function buildTuiResumeCandidates(
     localProjectPath: string;
     localSessionDirectory: string;
     currentSessionId: string;
+    /** Restrict both the picker and direct reference resolution to this cwd. */
+    scopeProjectPath?: string;
     includeAgents?: boolean;
   },
 ): TuiResumeCandidate[] {
   const byKey = new Map<string, TuiResumeCandidate>();
   const add = (projectPath: string, sessionDirectory: string, summary: SessionSummary) => {
+    const resolvedProjectPath = path.resolve(summary.workDir?.trim() || projectPath);
     if (
       summary.id === options.currentSessionId
+      || isEmptyUserSessionSummary(summary)
       || summary.kind === 'manager'
       || (summary.kind === 'agent' && options.includeAgents !== true)
+      || (options.scopeProjectPath
+        && normalizedPath(resolvedProjectPath) !== normalizedPath(options.scopeProjectPath))
     ) return;
     const key = candidateKey(sessionDirectory, summary.id);
     byKey.set(key, {
       key,
-      projectPath: path.resolve(summary.workDir?.trim() || projectPath),
+      projectPath: resolvedProjectPath,
       sessionDirectory: path.resolve(sessionDirectory),
       summary,
     });

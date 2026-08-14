@@ -198,6 +198,10 @@ function normalizeLegacyEvent(event: AgentEvent): NormalizedLegacyEvent {
           iteration: event.iteration,
           requestTokenEstimate: event.requestTokenEstimate,
           requestByteLength: event.requestByteLength,
+          systemTokenEstimate: event.systemTokenEstimate,
+          toolTokenEstimate: event.toolTokenEstimate,
+          messageTokenEstimate: event.messageTokenEstimate,
+          tokenEstimateMultiplier: event.tokenEstimateMultiplier,
           localMicrocompact: event.localMicrocompact,
         },
       };

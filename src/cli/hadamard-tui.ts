@@ -7,9 +7,12 @@
  * Runtime defaults: default Hadamard settings loading,
  * createHadamardCoreTools({ cwd }), bypassPermissions, and
  * uncapped tool iterations.
+ *
+ * The welcome splash is printed before the TUI controller is imported so the
+ * terminal is not blank while the SDK graph loads.
  */
-import { runHadamardTui } from '../tui/hadamardTui.js';
 import type { HadamardPermissionMode } from '../types.js';
+import { printWelcomeSplash } from '../tui/tuiWelcomeBanner.js';
 import { readPackageVersion } from './version.js';
 
 const PERMISSION_MODES = new Set(['default', 'acceptEdits', 'plan', 'bypassPermissions', 'auto']);
@@ -90,6 +93,8 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
   process.exit(1);
 }
 
+printWelcomeSplash({ version: readPackageVersion(import.meta.url) });
+const { runHadamardTui } = await import('../tui/hadamardTuiController.js');
 runHadamardTui(args).catch((error) => {
   process.stderr.write(`Fatal: ${(error as Error).stack ?? (error as Error).message}\n`);
   process.exit(1);

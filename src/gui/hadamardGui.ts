@@ -266,6 +266,10 @@ import {
 import { listPlanFiles, planDirFor, planFilePath, readPlanFile } from '../tools/planMode/PlanModeTools.js';
 import { isReadOnlyBashCommand } from '../runtime/bashClassification.js';
 import { loadProjectContext } from '../memory/projectContext.js';
+import {
+  hashProjectInstructionContent,
+  parseProjectInstructionState,
+} from '../memory/projectInstructionContext.js';
 import { recordTurn } from '../memory/sessionHistory.js';
 import {
   addMcpServer,
@@ -353,6 +357,18 @@ import {
   readSessionAgentMode,
   sessionAgentModePatch,
 } from '../runtime/agentModeService.js';
+import {
+  formatContextWindowTokens,
+  HADAMARD_CONTEXT_WINDOW_METADATA_KEY,
+  modelContextWindowLimit,
+  modelContextWindowOptions,
+  parseContextWindowTokens,
+  readSessionContextWindow,
+  resolveModelContextEntry,
+} from '../config/modelContextWindow.js';
+import { applyResolvedToolDescriptions } from '../runtime/agentClientRunHelpers.js';
+import { estimateRequestTokenBreakdown } from '../runtime/requestTokenEstimate.js';
+import { estimateHadamardConversationTokens } from '../memory/hadamardSessionMemoryState.js';
 import { isAgentMode } from '../runtime/agentExecutionPolicy.js';
 import {
   createPromptTemplate,
@@ -414,6 +430,10 @@ import type {
 } from '../types.js';
 import { AgentSession } from '../runtime/agentSession.js';
 import { SessionStore } from '../storage/sessionStore.js';
+import {
+  isEmptyUserSessionSummary,
+  isEmptyUserStoredSession,
+} from '../storage/sessionVisibility.js';
 import { discoverProjectSessions } from '../storage/sessionDiscovery.js';
 import { AgentExecutionStore } from '../storage/agentExecutionStore.js';
 import { BackgroundTaskStore } from '../storage/backgroundTaskStore.js';
@@ -421,7 +441,8 @@ import { assertSafeStorageSegment } from '../storage/pathSafety.js';
 import { extractConversationBrief, extractPreviewFromMessages } from '../runtime/messageUtils.js';
 import { truncateText } from '../runtime/helpers.js';
 import { generateReviewSummary } from '../review/reviewSummaryService.js';
-import type { ContentBlockParam, ToolResultBlockParam, ToolUseBlock } from '../provider/types.js';
+import type { ContentBlockParam } from '../provider/types.js';
+import { buildSessionTranscriptEvents } from '../ui/sessionTranscriptView.js';
 
 const DEFAULT_PORT = 4174;
 const EFFORT_LEVELS: readonly HadamardEffort[] = ['low', 'medium', 'high', 'max'];
@@ -745,8 +766,8 @@ const DEFAULT_GUI_PREFERENCES: GuiPreferences = {
 function buildGuiSystemPrompt(
   workDir: string,
   settings: Pick<ProjectSettings, 'workMode' | 'customPrompt' | 'projectRules' | 'context'> = DEFAULT_PROJECT_SETTINGS,
-  hadamardHomeDir = path.join(os.homedir(), '.hadamard'),
-  projectWorkPaths = [workDir],
+  _hadamardHomeDir = path.join(os.homedir(), '.hadamard'),
+  _projectWorkPaths = [workDir],
 ): string {
   let gitProbe = path.resolve(workDir);
   let isGit = false;
@@ -756,16 +777,6 @@ function buildGuiSystemPrompt(
     if (parent === gitProbe) break;
     gitProbe = parent;
   }
-  // Load Hadamard instruction files (AGENTS.md by default) so the agent
-  // picks up project-specific instructions — the canonical Claude Code behavior.
-  const project = loadProjectContext(workDir, {
-    projectInstructionMode: settings.context.instructionMode,
-    hadamardHomeDir,
-    projectWorkPaths,
-  });
-  const projectSection = project.text
-    ? `\n\n# Project context (AGENTS.md)\n\nThe following instruction files are authoritative guidance for this workspace.\n\n${project.text}\n`
-    : '';
   const base = (
     `You are Hadamard Agent, an interactive GUI agent. Working directory: ${workDir}\n\n` +
     `<env>\nWorking directory: ${workDir}\nIs git repo: ${isGit ? 'Yes' : 'No'}\nPlatform: ${process.platform}\nDate: ${new Date().toISOString().slice(0, 10)}\n</env>\n\n` +
@@ -791,7 +802,7 @@ function buildGuiSystemPrompt(
         `- You are equally capable in this mode — only the presentation is less technical. Still use tools and do the real work; just summarize results in accessible terms.`
       : ``)
   );
-  return appendProjectSettingsToPrompt(base, settings) + projectSection;
+  return appendProjectSettingsToPrompt(base, settings);
 }
 
 /** Read the raw request body as a string (for webhook filter matching). */
@@ -997,6 +1008,7 @@ interface StoredSessionFile {
   storageId: string;
   filePath: string;
   messageCount: number;
+  runCount: number;
   title?: string;
   brief?: string;
   workDir?: string;
@@ -1119,6 +1131,7 @@ async function listStoredSessionFiles(projectRoot: string): Promise<StoredSessio
       const raw = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
       const metadata = isPlainRecord(raw) && isPlainRecord(raw.metadata) ? raw.metadata : {};
       const messages = isPlainRecord(raw) && Array.isArray(raw.messages) ? raw.messages : [];
+      const runs = isPlainRecord(raw) && Array.isArray(raw.runs) ? raw.runs : [];
       const kind = inferStoredSessionKind(isPlainRecord(raw) ? raw.kind : undefined, metadata);
       const updatedAt = isPlainRecord(raw) && typeof raw.updatedAt === 'string'
         ? raw.updatedAt
@@ -1133,6 +1146,7 @@ async function listStoredSessionFiles(projectRoot: string): Promise<StoredSessio
         storageId,
         filePath,
         messageCount: messages.length,
+        runCount: runs.length,
         ...(title ? { title } : {}),
         ...(brief ? { brief } : {}),
         workDir: typeof metadata.__hadamardWorkDir === 'string' ? metadata.__hadamardWorkDir : undefined,
@@ -1212,7 +1226,9 @@ async function listArchivedSessionsForWorkDir(
     try {
       const raw = JSON.parse(await readFile(path.join(archiveDir, file), 'utf8')) as unknown;
       const summary = storedJsonToSessionSummary(raw, true);
-      if (summary && summary.messageCount > 0 && isVisibleChatSession(summary)) sessions.push(summary);
+      if (summary && !isEmptyUserSessionSummary(summary) && isVisibleChatSession(summary)) {
+        sessions.push(summary);
+      }
     } catch {
       // Skip unreadable archived sessions.
     }
@@ -1273,6 +1289,7 @@ async function cleanupStoredEmptySessions(
         || runtimeProtectedSessionIds.has(item.storageId)
         || item.kind === 'agent'
         || item.messageCount > 0
+        || item.runCount > 0
       ) continue;
       await rm(item.filePath, { force: true });
       await rm(path.join(projectRoot, 'sessions', '.checkpoints', item.storageId), {
@@ -1313,7 +1330,7 @@ async function listUnregisteredGuiSessions(
   for (const item of await discoverProjectSessions(homeDir)) {
     const summary = item.summary;
     if (
-      summary.messageCount === 0
+      isEmptyUserSessionSummary(summary)
       || summary.kind === 'manager'
       || summary.kind === 'agent'
       || registeredKeys.has(normalizeFsPath(item.projectPath))
@@ -1343,7 +1360,7 @@ async function projectSessionOverview(
   const candidates: SidebarRecentSession[] = [];
   // Single directory pass — previously stats + recents each readdir+parsed every JSON.
   for (const item of await listStoredSessionFiles(projectRoot)) {
-    if (item.messageCount === 0 || !isVisibleChatSession(item)) continue;
+    if ((item.messageCount === 0 && item.runCount === 0) || !isVisibleChatSession(item)) continue;
     if (item.workDir && !workKeys.has(normalizeFsPath(item.workDir))) continue;
     count += 1;
     lastUsedAt = maxIso(lastUsedAt, item.updatedAt || '');
@@ -1818,6 +1835,7 @@ function sessionView(session: AgentSession | undefined) {
     id: session.id,
     title: session.title,
     model: session.model,
+    contextWindowTokens: readSessionContextWindow(session.metadata) ?? null,
     messages: session.messages.length,
     permissionContext: session.permissionContext,
   };
@@ -1829,65 +1847,7 @@ function sessionView(session: AgentSession | undefined) {
  * opened or resumed.
  */
 function renderableHistory(session: AgentSession): GuiRunEvent[] {
-  const events: GuiRunEvent[] = [];
-  const results = new Map<string, { ok: boolean; text: string }>();
-  const stringifyResult = (content: ToolResultBlockParam['content']): string => {
-    if (typeof content === 'string') return content;
-    if (Array.isArray(content)) {
-      return content
-        .map((block) => {
-          if (block && typeof block === 'object' && typeof (block as { text?: unknown }).text === 'string') {
-            return (block as { text: string }).text;
-          }
-          try {
-            return JSON.stringify(block);
-          } catch {
-            return '';
-          }
-        })
-        .join('\n');
-    }
-    return '';
-  };
-
-  for (const message of session.messages) {
-    if (!Array.isArray(message.content)) continue;
-    for (const block of message.content) {
-      if (block && typeof block === 'object' && (block as { type?: unknown }).type === 'tool_result') {
-        const result = block as ToolResultBlockParam;
-        results.set(result.tool_use_id, { ok: !result.is_error, text: stringifyResult(result.content) });
-      }
-    }
-  }
-
-  for (const message of session.messages) {
-    const content = message.content;
-    if (typeof content === 'string') {
-      if (content.trim()) events.push({ type: message.role === 'assistant' ? 'assistant' : 'user', text: content });
-      continue;
-    }
-    if (!Array.isArray(content)) continue;
-    for (const block of content) {
-      if (!block || typeof block !== 'object') continue;
-      const type = (block as { type?: unknown }).type;
-      if (type === 'text' && typeof (block as { text?: unknown }).text === 'string' && (block as { text: string }).text.trim()) {
-        events.push({ type: message.role === 'assistant' ? 'assistant' : 'user', text: (block as { text: string }).text });
-      } else if (type === 'tool_use') {
-        const call = block as ToolUseBlock;
-        const result = results.get(call.id);
-        events.push({
-          type: 'tool',
-          id: call.id,
-          name: call.name,
-          input: call.input,
-          ok: result ? result.ok : true,
-          text: result ? result.text : '',
-        });
-      }
-    }
-  }
-
-  return events;
+  return buildSessionTranscriptEvents(session.messages);
 }
 
 /** Flatten a manager session into panel rows (user/assistant/tool), newest capped. */
@@ -2077,6 +2037,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   const terminalManager = new TerminalManager();
   let terminalCapable = false;
   let managedPluginRuntimeClose: (() => Promise<void>) | null = null;
+  let managedPluginSkills: ReturnType<typeof createManagedPluginRuntime>['skills'] = [];
   const rebuildTools = async () => {
     if (managedPluginRuntimeClose) {
       await managedPluginRuntimeClose();
@@ -2095,6 +2056,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }).catch(() => undefined);
     if (!store) {
       tools = base;
+      managedPluginSkills = [];
       return;
     }
     const pluginRuntime = createManagedPluginRuntime(store.raw, {
@@ -2104,6 +2066,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     // Prefer managed-plugin tools when names collide (e.g. TavilySearch).
     const byName = new Map(tools.map(tool => [tool.name, tool]));
     tools = [...byName.values()];
+    managedPluginSkills = pluginRuntime.skills;
     managedPluginRuntimeClose = pluginRuntime.close;
   };
   let tools = [
@@ -2124,6 +2087,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       workDir,
       sessionDirectory: getHadamardProjectSessionDirectory(projectPrimaryPath, resolveGuiHomeDir()),
       tools,
+      skills: managedPluginSkills,
       permissionMode,
       externalSkills: externalSkillPreferencesToRuntimeOptions(externalSkillPreferences),
       ...(options.model ? { model: options.model } : {}),
@@ -2198,12 +2162,16 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   };
   const createCredentiallessSession = async (): Promise<AgentSession> => {
     if (options.resumeSessionId) {
-      return hydrateCredentiallessSession(
-        await credentiallessSessionStore.load(options.resumeSessionId),
-      );
+      const requested = await credentiallessSessionStore.load(options.resumeSessionId);
+      if (isEmptyUserStoredSession(requested)) {
+        await credentiallessSessionStore.delete(requested.id).catch(() => undefined);
+        throw new Error(`Session '${requested.id}' is empty and cannot be resumed.`);
+      }
+      return hydrateCredentiallessSession(requested);
     }
     if (options.continueMostRecent) {
-      const [mostRecent] = await credentiallessSessionStore.list();
+      const mostRecent = (await credentiallessSessionStore.list())
+        .find(item => !isEmptyUserSessionSummary(item));
       if (mostRecent) {
         return hydrateCredentiallessSession(
           await credentiallessSessionStore.load(mostRecent.id),
@@ -2230,6 +2198,15 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const createdSdk = await createCleanSdk();
     sdk = createdSdk;
     toolMetadata = await createdSdk.listToolMetadata();
+    if (options.resumeSessionId) {
+      const requested = (await createdSdk.sessions.list())
+        .find(item => item.id === options.resumeSessionId);
+      if (requested && isEmptyUserSessionSummary(requested)) {
+        await createdSdk.sessions.delete(requested.id).catch(() => undefined);
+        await createdSdk.close().catch(() => undefined);
+        throw new Error(`Session '${requested.id}' is empty and cannot be resumed.`);
+      }
+    }
     session = options.resumeSessionId
       ? await createdSdk.resumeSession(options.resumeSessionId, {
           model: options.model,
@@ -2308,6 +2285,16 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         });
     }
     return hydrateCredentiallessSession(loaded);
+  };
+  const deleteEmptyGuiSession = async (target: AgentSession): Promise<void> => {
+    if (isEmptyUserStoredSession(target.snapshot())) {
+      await target.delete().catch(() => undefined);
+    }
+  };
+  const replaceGuiSession = async (next: AgentSession): Promise<void> => {
+    const previous = session;
+    session = next;
+    if (previous.id !== next.id) await deleteEmptyGuiSession(previous);
   };
 
   // Only persist an explicitly requested startup workspace (CLI `hadamard-gui <dir>`
@@ -2827,17 +2814,19 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         const nextSdk = await createCleanSdk();
         try {
           const sessions = await nextSdk.sessions.list();
-          const resumable = sessions.find(item => item.messageCount > 0 && item.status !== 'closed' && isVisibleChatSession(item))
-            ?? sessions.find(item => item.messageCount > 0 && isVisibleChatSession(item))
-            ?? sessions.find(item => item.status !== 'closed' && isVisibleChatSession(item));
-          session = resumable
+          const resumable = sessions.find(item =>
+            !isEmptyUserSessionSummary(item) && item.status !== 'closed' && isVisibleChatSession(item)
+          ) ?? sessions.find(item => !isEmptyUserSessionSummary(item) && isVisibleChatSession(item));
+          const nextSession = resumable
             ? await nextSdk.resumeSession(resumable.id, { model: options.model, permissionMode: options.permissionMode })
             : await nextSdk.createSession({ model: options.model, permissionMode });
+          session = nextSession;
           // Tool metadata is not needed to paint project detail; fill after open returns.
           toolMetadata = [];
           sdk = nextSdk;
           needsCredentials = false;
           await restoreSessionRuntimeSelection();
+          await deleteEmptyGuiSession(previousSession);
           if (previousSdk) await previousSdk.close().catch(() => undefined);
           void nextSdk.listToolMetadata().then((meta) => { toolMetadata = meta; }).catch(() => undefined);
         } catch (error) {
@@ -2862,6 +2851,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           model: options.model ?? 'external-cli',
           metadata: { __hadamardWorkDir: workDir },
         }));
+        await deleteEmptyGuiSession(previousSession);
         if (previousSdk) await previousSdk.close().catch(() => undefined);
       }
     } catch (error) {
@@ -2901,6 +2891,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     return isEffort(stored) ? stored : sdk?.config.effort;
   };
   const currentAgentMode = () => readSessionAgentMode(session?.metadata, projectSettings.agentMode);
+  const currentContextWindow = () => readSessionContextWindow(session?.metadata);
   const currentEffectiveAgentRunOptions = () => {
     const agent = activeAgentSelectionName
       ? findSelectableAgent(activeAgentSelectionName, resolveGuiHomeDir())
@@ -2908,9 +2899,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     if (!agent) {
       return {
         systemPrompt,
+        ...(currentContextWindow() ? { contextWindowTokens: currentContextWindow() } : {}),
         permissionMode: currentPermissionMode(),
         effort: currentEffort(),
         agentMode: currentAgentMode(),
+        projectInstructions: {
+          mode: projectSettings.context.instructionMode,
+          workPaths: projectRegisteredWorkPaths,
+        },
       };
     }
     const effective = resolveEffectiveAgentRunOptions(agent, {
@@ -2926,9 +2922,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     }
     return {
       systemPrompt: effective.systemPrompt,
+      ...(currentContextWindow() ? { contextWindowTokens: currentContextWindow() } : {}),
       agentMode: effective.agentMode ?? currentAgentMode(),
       permissionMode: effective.permissionMode,
       effort: effective.effort,
+      projectInstructions: {
+        mode: projectSettings.context.instructionMode,
+        workPaths: projectRegisteredWorkPaths,
+      },
       ...(typeof effective.maxTokens === 'number' ? { maxTokens: effective.maxTokens } : {}),
       ...(typeof effective.temperature === 'number' ? { temperature: effective.temperature } : {}),
       ...(typeof effective.topP === 'number' ? { topP: effective.topP } : {}),
@@ -3168,7 +3169,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     // Hide 0-message conversations entirely — they're auto-cleaned on the
     // backend (cleanupStoredEmptySessions), and showing empty chats in the
     // list is noise. The active session is still resumable via the chat view.
-    const sessions = allSessions.filter(item => item.messageCount > 0 && isVisibleChatSession(item));
+    const sessions = allSessions.filter(item =>
+      !isEmptyUserSessionSummary(item) && isVisibleChatSession(item)
+    );
     const archivedSessions = light
       ? []
       : await listArchivedSessionsForWorkDir(workDir, homeDir);
@@ -3927,7 +3930,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     try {
       const stored = await sdk!.sessions.list();
       sessionSummaries = stored
-        .filter(isVisibleChatSession)
+        .filter(item => isVisibleChatSession(item) && !isEmptyUserSessionSummary(item))
         .map(s => ({
           id: s.id,
           title: s.title,
@@ -5020,13 +5023,73 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           })),
         }];
       case 'clear':
-        return [{ type: 'clear' }];
+        return runtimeMutationCommand(async () => {
+          const previousSession = session;
+          const effort = currentEffort();
+          const agentMode = currentAgentMode();
+          const nextSession = await createGuiSession({
+            title: path.basename(workDir),
+            model: previousSession.model,
+            permissionMode: currentPermissionMode(),
+            permissions: previousSession.permissionContext.permissions,
+            metadata: {
+              ...(effort ? { __hadamardEffort: effort } : {}),
+              ...(currentContextWindow()
+                ? { [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: currentContextWindow() }
+                : {}),
+              ...sessionAgentModePatch(agentMode),
+            },
+          });
+          await replaceGuiSession(nextSession);
+          await persistSessionRuntimeMetadata();
+          totalInputTokens = 0;
+          totalOutputTokens = 0;
+          totalCostUsd = 0;
+          configUsage.clear();
+          invalidateHeavyState();
+          runSessionStartHooks(() => readSessionStartHooks(getLoadedJsonConfig()?.raw), workDir);
+          return [{ type: 'clear' }, { type: 'state' }];
+        });
       case 'exit':
       case 'quit':
         return [{ type: 'notice', message: 'Close the browser tab or stop the hadamard-gui process to quit.' }];
       case 'model': {
-        if (!args) return [{ type: 'command.result', title: 'Model', text: `current: ${session.model}` }];
+        if (!args) return [{
+          type: 'command.result',
+          title: 'Model',
+          text: `current: ${session.model}\ncontext: ${currentContextWindow() ? formatContextWindowTokens(currentContextWindow()!) : 'model default'}`,
+        }];
         if (args === 'config') return [{ type: 'settings.open' }];
+        if (args === 'context' || args.startsWith('context ')) {
+          const requested = args.slice('context'.length).trim();
+          const model = bridgeModelLabel ?? activeBridgeConfig?.model ?? session.model;
+          const entry = resolveModelContextEntry(
+            model,
+            readBridgeConfigs(resolveGuiHomeDir()).configs,
+            activeBridgeConfig,
+          ) ?? (sdk ? {
+            name: model,
+            contextWindowTokens: sdk.config.compact.contextWindowTokens,
+            maxContextWindowTokens: sdk.config.compact.maxContextWindowTokens,
+          } : undefined);
+          const limit = modelContextWindowLimit(entry);
+          const available = modelContextWindowOptions(entry);
+          if (!requested) return [{
+            type: 'command.result',
+            title: `Context window · ${model}`,
+            text: `current: ${currentContextWindow() ? formatContextWindowTokens(currentContextWindow()!) : 'model default'}\nsupported selections: ${available.map(formatContextWindowTokens).join(', ')}\n${limit ? `model limit: ${formatContextWindowTokens(limit)}` : 'model limit: not declared'}`,
+          }];
+          const tokens = parseContextWindowTokens(requested);
+          if (!tokens || (limit && tokens > limit)) {
+            return [{ type: 'error', message: limit
+              ? `invalid context window: ${requested}; model limit is ${formatContextWindowTokens(limit)}`
+              : `invalid context window: ${requested}` }];
+          }
+          return runtimeMutationCommand(async () => {
+            await session.mergeMetadata({ [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: tokens });
+            return [{ type: 'notice', message: `context window set to: ${formatContextWindowTokens(tokens)}` }];
+          });
+        }
         if (args === 'custom' || args.startsWith('custom ')) {
           const customModel = args.slice('custom'.length).trim();
           if (!customModel) return [{ type: 'error', message: 'usage: /model custom <model-id>' }];
@@ -5118,10 +5181,12 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         return [{
           type: 'command.result',
           title: 'Sessions',
-          items: sessions.filter(isVisibleChatSession).map(item => ({
+          items: sessions
+            .filter(item => isVisibleChatSession(item) && !isEmptyUserSessionSummary(item))
+            .map(item => ({
             label: item.id === session.id ? `${item.id} (current)` : item.id,
             description: `${item.title} · ${item.model} · ${item.status}`,
-          })),
+            })),
         }];
       }
       case 'resume': {
@@ -5269,10 +5334,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             return [{ type: 'error', message: `No Agent execution or conversation matches '${target}'. Use /agents runs to browse.` }];
           }
           return runtimeMutationCommand(async () => {
-            session = await resumeGuiSession(node.sessionId, {
+            await replaceGuiSession(await resumeGuiSession(node.sessionId, {
               model: options.model,
               permissionMode: options.permissionMode,
-            });
+            }));
             await restoreSessionRuntimeSelection();
             return [{ type: 'notice', message: `opened Agent conversation: ${session.id}` }, { type: 'state' }];
           });
@@ -5669,14 +5734,18 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           const forked = await sdk.sessionForks.forkAtMessage(session.id, messageId, {
             branchName: rest.join(' ').trim() || undefined,
           });
-          session = await resumeGuiSession(forked.id, { permissionMode: options.permissionMode });
+          await replaceGuiSession(
+            await resumeGuiSession(forked.id, { permissionMode: options.permissionMode }),
+          );
           return [{ type: 'notice', message: `Session branch created: ${forked.id}` }, { type: 'state' }];
         }
         if (action === 'clone') {
           const cloned = await sdk.sessionForks.clone(session.id, {
             branchName: rest.join(' ').trim() || undefined,
           });
-          session = await resumeGuiSession(cloned.id, { permissionMode: options.permissionMode });
+          await replaceGuiSession(
+            await resumeGuiSession(cloned.id, { permissionMode: options.permissionMode }),
+          );
           return [{ type: 'notice', message: `Session cloned: ${cloned.id}` }, { type: 'state' }];
         }
         if (action === 'label') {
@@ -5835,10 +5904,55 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         const project = loadProjectContext(workDir, {
           projectInstructionMode: projectSettings.context.instructionMode,
           hadamardHomeDir: resolveGuiHomeDir(),
+          projectWorkPaths: projectRegisteredWorkPaths,
         });
         const mcp = toolMetadata.filter(t => t.provider === 'mcp').length;
-        const { resolveHadamardCompactBudget } = await import('../runtime/hadamardCompact.js');
-        const compactBudget = resolveHadamardCompactBudget(sdk!.config.compact);
+        const { resolveHadamardCompactBudget, getPersistedHadamardCompactState } = await import('../runtime/hadamardCompact.js');
+        const compactBudget = resolveHadamardCompactBudget({
+          ...sdk!.config.compact,
+          ...(currentContextWindow() ? { contextWindowTokens: currentContextWindow() } : {}),
+        });
+        const instructionState = parseProjectInstructionState(session.metadata);
+        const compactCount = getPersistedHadamardCompactState(session.metadata).compactCount;
+        const projectHash = instructionState?.contentHash.slice(0, 12);
+        const contentHash = hashProjectInstructionContent(project.text, project.sources);
+        const pendingProjectInstructions = !instructionState
+          || compactCount > instructionState.injectedAtCompactCount
+          || instructionState.contentHash !== contentHash;
+        const localTools = sdk
+          ? [...new Map(
+              toolMetadata
+                .map(metadata => sdk!.getTool(metadata.name))
+                .filter((tool): tool is AgentToolDefinition => Boolean(tool))
+                .map(tool => [tool.name, tool]),
+            ).values()]
+          : tools;
+        const estimatedLocalTools = await applyResolvedToolDescriptions(
+          [
+            ...localTools,
+            ...(activeTeamTool ? [activeTeamTool] : []),
+          ],
+          { workDir, permissionMode: currentPermissionMode() },
+        );
+        const requestBreakdown = estimateRequestTokenBreakdown({
+          systemPrompt,
+          tools: [
+            ...estimatedLocalTools.map(tool => ({
+              name: tool.name,
+              description: tool.description,
+              input_schema: tool.inputJsonSchema ?? {},
+            })),
+            ...toolMetadata
+              .filter(metadata => metadata.provider === 'mcp' && !sdk?.getTool(metadata.name))
+              .map(metadata => ({
+                name: metadata.name,
+                description: metadata.description,
+                input_schema: {},
+              })),
+          ],
+          messageTokens: estimateHadamardConversationTokens(session.messages)
+            + (pendingProjectInstructions ? Math.ceil(project.text.length / 4) : 0),
+        });
         const lines = [
           `Model: ${session.model}`,
           `Effort: ${currentEffort() ?? 'auto'}`,
@@ -5847,7 +5961,12 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           `Raw context window: ${compactBudget.rawContextWindowTokens}`,
           `Effective context window: ${compactBudget.effectiveContextWindowTokens}`,
           `Automatic compact limit: ${compactBudget.autoCompactTokenLimit} (${compactBudget.source})`,
+          `Next request estimate: ${requestBreakdown.totalTokens.toLocaleString()} tokens`,
+          `Request breakdown: system ${requestBreakdown.systemTokens.toLocaleString()} + tools ${requestBreakdown.toolTokens.toLocaleString()} + messages ${requestBreakdown.messageTokens.toLocaleString()}`,
           `System prompt: ${systemPrompt.length} chars`,
+          `Project instructions: ${project.text.length} chars`
+            + (projectHash ? ` · hash ${projectHash}` : '')
+            + ` · compact ${compactCount}`,
           `Tools: ${toolMetadata.length} (${mcp} MCP)`,
           `Bridge: ${bridgeMode ? (activeBridgeConfig?.name ?? 'on') : 'off'}`,
           `Instruction files: ${project.sources.length ? project.sources.join(', ') : '(none)'}`,
@@ -5877,6 +5996,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         const project = loadProjectContext(workDir, {
           projectInstructionMode: projectSettings.context.instructionMode,
           hadamardHomeDir: resolveGuiHomeDir(),
+          projectWorkPaths: projectRegisteredWorkPaths,
         });
         const isGit = await gitText(['rev-parse', '--is-inside-work-tree']) === 'true';
         const key = env.HADAMARD_API_KEY ? maskApiKey(env.HADAMARD_API_KEY) : env.HADAMARD_AUTH_TOKEN ? '(auth token)' : '(none)';
@@ -7524,7 +7644,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     },
     createSession: () => enqueueServerSessionResume(async () => {
       assertSessionNavigationAllowed();
-      session = await createGuiSession({ model: options.model, permissionMode });
+      await replaceGuiSession(await createGuiSession({ model: options.model, permissionMode }));
       await restoreSessionRuntimeSelection();
       return state();
     }),
@@ -7535,21 +7655,25 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       if (!id) return { status: 400, error: 'Missing session id' };
       const listed = await listGuiSessions();
       const target = listed.find(item => item.id === id);
+      if (target && isEmptyUserSessionSummary(target)) {
+        await (sdk ? sdk.sessions.delete(id) : credentiallessSessionStore.delete(id)).catch(() => undefined);
+        return { status: 404, error: 'Empty sessions cannot be resumed.' };
+      }
       if (target?.kind === 'manager') {
         return { status: 400, error: 'Manager sessions live in the Project Manager panel only.' };
       }
       try {
-        session = await resumeGuiSession(id, {
+        await replaceGuiSession(await resumeGuiSession(id, {
           model: options.model,
           permissionMode: options.permissionMode,
-        });
+        }));
       } catch {
         const restored = await unarchiveSession(id);
         if (!restored) return { status: 404, error: 'Session not found' };
-        session = await resumeGuiSession(id, {
+        await replaceGuiSession(await resumeGuiSession(id, {
           model: options.model,
           permissionMode: options.permissionMode,
-        });
+        }));
       }
       await restoreSessionRuntimeSelection();
       return { status: 200, state: await state() };
@@ -8254,6 +8378,27 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           activeRouter = null;
           routedModelLabel = null;
           await persistSessionRuntimeMetadata();
+          const entry = resolveModelContextEntry(
+            config.model || session.model,
+            readBridgeConfigs(resolveGuiHomeDir()).configs,
+            config,
+          );
+          const requestedContextWindow = parseContextWindowTokens(body.contextWindowTokens);
+          const limit = modelContextWindowLimit(entry);
+          if (requestedContextWindow) {
+            if (limit && requestedContextWindow > limit) {
+              throw new Error(
+                `Context window exceeds the model limit of ${formatContextWindowTokens(limit)}.`,
+              );
+            }
+            await session.mergeMetadata({
+              [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: requestedContextWindow,
+            });
+          } else if (limit && currentContextWindow() && currentContextWindow()! > limit) {
+            await session.mergeMetadata({
+              [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: entry?.contextWindowTokens ?? limit,
+            });
+          }
           const requestedEffort = typeof body.effort === 'string' ? body.effort.trim() : '';
           const effort = requestedEffort || defaultEffort;
           if (effort === 'auto' || isEffort(effort)) {
@@ -8890,7 +9035,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       ? await sdk.dream.state({ currentSessionId: session.id }).catch(() => undefined)
       : undefined;
     const compactBudget = sdk
-      ? (await import('../runtime/hadamardCompact.js')).resolveHadamardCompactBudget(sdk.config.compact)
+      ? (await import('../runtime/hadamardCompact.js')).resolveHadamardCompactBudget({
+          ...sdk.config.compact,
+          ...(currentContextWindow() ? { contextWindowTokens: currentContextWindow() } : {}),
+        })
       : undefined;
     const dailyDreamTime = settings.memory.durableMemory.dailyDreamTimeLocal || '03:00';
     const autoDream = settings.memory.durableMemory.autoDream === true;
@@ -10161,10 +10309,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             }
             if (shouldOpen) {
               if (item.type === 'user') {
-                session = await resumeGuiSession(item.locator.sessionId, {
+                await replaceGuiSession(await resumeGuiSession(item.locator.sessionId, {
                   model: options.model,
                   permissionMode: options.permissionMode,
-                });
+                }));
                 await restoreSessionRuntimeSelection();
               } else if (item.type === 'assistant-global' || item.type === 'assistant-project') {
                 await selectAssistantCatalogItem(item);
@@ -10523,6 +10671,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       }
     }
     await deviceLinkController.close();
+    await deleteEmptyGuiSession(session);
     if (sdk) await sdk.close().catch(() => undefined);
     await new Promise<void>((resolve) => {
       server.close(() => resolve());

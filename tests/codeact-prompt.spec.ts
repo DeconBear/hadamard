@@ -24,7 +24,8 @@ describe('CodeAct mode prompt and tool pruning', () => {
       agentMode: 'react', ordinaryTools: ['Read'], codeActEnabled: false,
     });
     const prompt = buildAgentModePrompt(policy);
-    expect(prompt).toContain('ordinary JSON tools');
+    expect(prompt).toBe('');
+    expect(prompt).not.toMatch(/Use tools|observe (the )?result|complete the task/i);
     expect(prompt).not.toMatch(/CodeCell|kernel|host RPC/i);
     expect(filterToolsForExecutionPolicy([ordinary, codeCell], policy).map(tool => tool.name)).toEqual(['Read']);
   });

@@ -76,24 +76,100 @@ export function mergeUniqueByName<T extends { name: string }>(defaults: T[], ove
   return [...merged.values()];
 }
 
-export async function collectToolPrompts(
+const COMPACT_SKILL_INDEX_MAX_CHARS = 6_000;
+const COMPACT_SKILL_DESCRIPTION_MAX_CHARS = 96;
+
+function compactOneLine(value: string): string {
+  return value.replace(/\s+/gu, ' ').trim();
+}
+
+/** Build a bounded discovery index; full skill instructions stay lazy-loaded by Skill(). */
+export function buildCompactSkillToolPrompt(
+  skills: readonly { name: string; description?: string }[],
+): string {
+  if (skills.length === 0) return '';
+  const header = [
+    'Use Skill({ skill, args? }) when a listed skill matches the task.',
+    'The call loads its full instructions on demand. Available skills:',
+  ];
+  const baseLines = skills.map(skill => `- ${skill.name}`);
+  const fixedChars = header.join('\n').length + baseLines.join('\n').length + skills.length;
+  const perDescriptionBudget = Math.max(
+    0,
+    Math.min(
+      COMPACT_SKILL_DESCRIPTION_MAX_CHARS,
+      Math.floor((COMPACT_SKILL_INDEX_MAX_CHARS - fixedChars) / skills.length) - 3,
+    ),
+  );
+  const lines = skills.map((skill, index) => {
+    const description = compactOneLine(skill.description ?? '');
+    if (!description || perDescriptionBudget <= 0) return baseLines[index]!;
+    const compact = description.length > perDescriptionBudget
+      ? `${description.slice(0, Math.max(1, perDescriptionBudget - 1)).trimEnd()}…`
+      : description;
+    return `${baseLines[index]}: ${compact}`;
+  });
+  return [...header, ...lines].join('\n').slice(0, COMPACT_SKILL_INDEX_MAX_CHARS);
+}
+
+function normalizeToolPromptText(value: string): string {
+  return value.replace(/\s+/gu, ' ').trim();
+}
+
+/**
+ * Fold each tool's `prompt()` into `tools[].description` (Claude Code:
+ * `description: await tool.prompt()`). Shared or identical prompt text is
+ * left out so Bash-style duplicates and Glob+Grep's combined blob are not
+ * copied into every tool. Callers must not also append these strings to the
+ * system prompt.
+ */
+export async function applyResolvedToolDescriptions(
   tools: AgentToolDefinition[],
   context: { workDir: string; permissionMode?: HadamardPermissionMode },
-): Promise<string[]> {
-  const parts: string[] = [];
+): Promise<AgentToolDefinition[]> {
   const toolNames = tools.map(toolDefinition => toolDefinition.name);
-  for (const toolDefinition of tools) {
-    if (!toolDefinition.prompt) continue;
+  const resolved = await Promise.all(tools.map(async toolDefinition => {
+    if (!toolDefinition.prompt) {
+      return { toolDefinition, promptText: '' };
+    }
     try {
       const result = await toolDefinition.prompt({
         tools: toolNames,
         workDir: context.workDir,
         permissionMode: context.permissionMode,
       });
-      if (result && result.trim().length > 0) parts.push(result.trim());
+      return { toolDefinition, promptText: result?.trim() ?? '' };
     } catch {
-      // Optional tool prompt failures do not fail the run.
+      return { toolDefinition, promptText: '' };
     }
+  }));
+
+  const promptCounts = new Map<string, number>();
+  for (const { promptText } of resolved) {
+    if (!promptText) continue;
+    promptCounts.set(promptText, (promptCounts.get(promptText) ?? 0) + 1);
   }
-  return parts;
+
+  const emittedSharedPrompts = new Set<string>();
+  return resolved.map(({ toolDefinition, promptText }) => {
+    if (!promptText) return toolDefinition;
+    const description = toolDefinition.description.trim();
+    if (normalizeToolPromptText(promptText) === normalizeToolPromptText(description)) {
+      return toolDefinition;
+    }
+    if ((promptCounts.get(promptText) ?? 0) > 1) {
+      if (emittedSharedPrompts.has(promptText)) return toolDefinition;
+      emittedSharedPrompts.add(promptText);
+      return {
+        ...toolDefinition,
+        description: promptText.length > description.length
+          ? promptText
+          : `${description}\n\n${promptText}`,
+      };
+    }
+    if (promptText.length <= description.length) {
+      return toolDefinition;
+    }
+    return { ...toolDefinition, description: promptText };
+  });
 }
