@@ -21,6 +21,10 @@ import {
   migrateLegacyHadamardProjectData,
 } from './projectSessionDirectory.js';
 import { resolveSandboxPolicy } from '../sandbox/policyResolver.js';
+import {
+  resolveProviderRetryPolicy,
+  type HadamardRetryPolicyConfig,
+} from '../provider/retryPolicy.js';
 import { SandboxExecutor } from '../sandbox/sandboxExecutor.js';
 import { parseTypedHooks } from '../hooks/hookConfig.js';
 import { loadPolicyDocuments } from '../policy/policyLoader.js';
@@ -283,6 +287,12 @@ export async function resolveRuntimeConfig(
     options.maxParallelToolCalls
     ?? getRuntimeConfigValue('HADAMARD_MAX_PARALLEL_TOOL_CALLS', ...envSources),
   );
+  const rawRetryPolicy = options.retryPolicy
+    ?? (loadedConfig?.raw?.retryPolicy as HadamardRetryPolicyConfig | undefined);
+  const retryPolicy = resolveProviderRetryPolicy(
+    rawRetryPolicy,
+    options.maxRetries ?? 10,
+  );
 
   return {
     homeDir,
@@ -302,7 +312,8 @@ export async function resolveRuntimeConfig(
     timeoutMs: options.timeoutMs ?? 600000,
     // Claude Code uses DEFAULT_MAX_RETRIES=10; long runs need to survive
     // transient 429/5xx windows instead of failing the whole session.
-    maxRetries: options.maxRetries ?? 10,
+    maxRetries: options.maxRetries ?? retryPolicy.maxRetries,
+    retryPolicy,
     workDir,
     sessionDirectory,
     clientName: options.clientName ?? 'actoviq-agent-sdk',

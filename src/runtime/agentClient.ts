@@ -2966,12 +2966,17 @@ export class HadamardAgentClient {
       workDir,
       permissionMode: options.permissionMode ?? this.defaultPermissionMode,
     });
+    const runPermissionMode = options.permissionMode ?? this.defaultPermissionMode;
+    const planGuidance = runPermissionMode === 'plan'
+      ? 'You are in plan mode. Research with read-only tools only; do not modify files or run mutating commands. Present your completed plan with ExitPlanMode and wait for user approval before implementing.'
+      : undefined;
     const systemPrompt = await this.resolveSystemPrompt(
       options,
       session,
       [
         ...(augmentations?.systemPromptParts ?? []),
         ...(goalPromptPart ? [goalPromptPart] : []),
+        ...(planGuidance ? [planGuidance] : []),
         buildAgentModePrompt(executionPolicy, {
           hostCapabilities: executionPolicy.actionSpace === 'hybrid'
             ? ordinaryTools.map(toolDefinition => toolDefinition.name)
@@ -3204,6 +3209,7 @@ export class HadamardAgentClient {
           },
           skipRunStartedEvent,
           skipInitialInput,
+          onRequestProposal: options.requestProposal,
           modelApi: options.modelApi ?? this.modelApi,
           config: runtimeConfig,
           mcpManager: this.mcpManager,

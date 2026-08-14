@@ -33,6 +33,7 @@ import {
   prepareHadamardProviderRequestMessages,
 } from './hadamardApiMicrocompact.js';
 import { createDenialTracker } from './denialTracking.js';
+import { RepeatCallGuard } from './repeatCallGuard.js';
 import {
   assistantMessageToParam,
   buildUserMessage,
@@ -85,10 +86,11 @@ export async function executeConversation(
   const startedAt = nowIso();
   let workDir = options.sessionWorkDir ?? options.config.workDir;
   let model = options.model ?? options.config.model;
-  const effort =
+  let effort =
     options.effort === 'auto'
       ? undefined
       : options.effort ?? options.config.effort;
+  let maxTokensOverride: number | undefined;
   const promptText =
     typeof options.input === 'string' ? options.input : extractTextFromContent(options.input);
   const postSamplingHooks = resolveHadamardPostSamplingHooks(options.hooks);
@@ -178,8 +180,8 @@ export async function executeConversation(
   let iteration = 0;
   let finalMessage: AgentRunResult['message'] | undefined;
   let toolResults: ToolResultBlockParam[] = [];
-  let consecutiveFailures = 0;
   const denialTracker = createDenialTracker();
+  const repeatCallGuard = new RepeatCallGuard();
   let lastFailedTool = '';
   let maxTokensRecoveryCount = 0;
   let modelFallbackUsed = false;
@@ -203,7 +205,7 @@ export async function executeConversation(
       model,
       modelApi: options.modelApi,
       compactConfig: options.config.compact,
-      maxTokens: options.maxTokens ?? options.config.maxTokens,
+      maxTokens: maxTokensOverride ?? options.maxTokens ?? options.config.maxTokens,
       lastRequestInputTokens,
       tokenEstimateMultiplier,
       compactWindowPrefixTokens,
@@ -252,6 +254,26 @@ export async function executeConversation(
       });
     }
 
+    // Per-iteration request-config proposal (dsh agent/request equivalent):
+    // hooks may re-route the next request's model/effort/maxTokens mid-run.
+    const proposal = await options.onRequestProposal?.({
+      iteration,
+      model,
+      effort,
+      maxTokens: maxTokensOverride ?? options.maxTokens ?? options.config.maxTokens,
+      input: promptText,
+      workDir,
+    });
+    if (proposal?.model && proposal.model !== model) {
+      model = proposal.model;
+    }
+    if (proposal?.effort) {
+      effort = proposal.effort;
+    }
+    if (proposal?.maxTokens) {
+      maxTokensOverride = proposal.maxTokens;
+    }
+
     const useAnthropicContextManagement = isAnthropicAPI(options.config.baseURL);
     // Never rewrite historical tool_result content on the wire. Sliding-window
     // local microcompact breaks automatic prefix caches (DeepSeek / MiniMax /
@@ -264,7 +286,7 @@ export async function executeConversation(
     );
     const request: ModelRequest = {
       model,
-      max_tokens: options.maxTokens ?? options.config.maxTokens,
+      max_tokens: maxTokensOverride ?? options.maxTokens ?? options.config.maxTokens,
       system: systemPrompt,
       temperature: options.temperature ?? options.config.temperature,
       top_p: options.topP,
@@ -376,7 +398,7 @@ export async function executeConversation(
           model,
           modelApi: options.modelApi,
           compactConfig: options.config.compact,
-          maxTokens: options.maxTokens ?? options.config.maxTokens,
+          maxTokens: maxTokensOverride ?? options.maxTokens ?? options.config.maxTokens,
           compactWindowPrefixTokens,
           runKey: options.runId,
           signal: options.signal,
@@ -856,21 +878,26 @@ export async function executeConversation(
       }
     }
 
-    // Detect repeated tool failures to prevent retry loops
-    // Only check newly added results (from this iteration)
+    // Repeat-call guard: consecutive identical ERROR calls by canonical
+    // arguments get gentle-then-detailed reminders at thresholds [3, 5], and
+    // escalate to a hard stop at the ceiling (dsh repeat-tool-reminder shape).
+    // Only newly added results (from this iteration) are inspected.
+    let repeatReminder: string | undefined;
+    let repeatHardStop = false;
     for (const tr of toolResults.slice(-toolUses.length)) {
-      if (tr.is_error) {
-        const toolName = toolCalls.find((tc) => tc.id === tr.tool_use_id)?.name;
-        if (toolName && toolName === lastFailedTool) {
-          consecutiveFailures += 1;
-        } else {
-          lastFailedTool = toolName ?? '';
-          consecutiveFailures = 1;
+      const record = toolCalls.find((tc) => tc.id === tr.tool_use_id);
+      if (record) {
+        const outcome = repeatCallGuard.record(record.name, record.input, tr.is_error === true);
+        if (outcome.reminder) repeatReminder = outcome.reminder;
+        if (outcome.hardStop) {
+          repeatHardStop = true;
+          lastFailedTool = record.name;
         }
-      } else {
-        consecutiveFailures = 0;
-        lastFailedTool = '';
       }
+    }
+    if (repeatReminder && toolResults.length > 0) {
+      const lastResult = toolResults.at(-1)!;
+      appendTextToToolResultContent(lastResult, `<system-reminder>\n${repeatReminder}\n</system-reminder>`);
     }
 
     // Mid-run steering: user messages queued while tools were running ride in
@@ -1006,7 +1033,7 @@ export async function executeConversation(
 
     if (
       denialTracker.isExceeded(MAX_CONSECUTIVE_PERMISSION_DENIALS) ||
-      (consecutiveFailures >= 3 && lastFailedTool)
+      (repeatHardStop && lastFailedTool)
     ) {
       const completedAt = nowIso();
       const deniedRepeatedly = denialTracker.isExceeded(MAX_CONSECUTIVE_PERMISSION_DENIALS);
@@ -1046,7 +1073,7 @@ export async function executeConversation(
       throw new HadamardSdkError(
         deniedRepeatedly
           ? `Tool calls were denied ${denialTracker.consecutiveDenials} times consecutively. Stopping to prevent a refusal loop.`
-          : `Tool "${lastFailedTool}" failed ${consecutiveFailures} times consecutively. Stopping to prevent retry loop.`,
+          : `Tool "${lastFailedTool}" repeated the identical failing call past the guard ceiling. Stopping to prevent a retry loop.`,
       );
     }
   }
