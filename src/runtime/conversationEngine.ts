@@ -58,10 +58,12 @@ import {
   appendTextToToolResultContent,
   buildAbortedBeforeDispatchResult,
   buildTodoReminderText,
+  buildUnpairedToolUseRepair,
   executeToolUsesWithContract,
   isLikelyTruncatedToolUse,
   isToolUseConcurrencySafe,
 } from './conversationToolBatch.js';
+import type { TrajectoryEvent, TrajectoryEventPayload } from './trajectoryEvents.js';
 import {
   MAX_STREAM_INTERRUPTION_RETRIES,
   aggregateRequestUsage,
@@ -84,6 +86,21 @@ export async function executeConversation(
   options: ExecuteConversationOptions,
 ): Promise<AgentRunResult> {
   const startedAt = nowIso();
+
+  // Structured append-only trajectory channel: every event carries a
+  // monotonic per-run seq; observers can never break the loop.
+  let trajectorySeq = 0;
+  const emitTrajectory = (payload: TrajectoryEventPayload): void => {
+    trajectorySeq += 1;
+    try {
+      void Promise.resolve(
+        options.onTrajectoryEvent?.({ ...payload, seq: trajectorySeq, timestamp: nowIso() } as TrajectoryEvent),
+      ).catch(() => undefined);
+    } catch {
+      // Trajectory observers can never fail the turn.
+    }
+  };
+
   let workDir = options.sessionWorkDir ?? options.config.workDir;
   let model = options.model ?? options.config.model;
   let effort =
@@ -100,6 +117,15 @@ export async function executeConversation(
   );
   const conversation = reconciledContext.messages;
   const prefixedMessages = reconciledContext.prefixedMessages;
+
+  // Cold-resume repair: close unpaired tool_use blocks in persisted history
+  // so the provider never rejects the resumed session (dsh repair.ts shape).
+  const repairMessage = buildUnpairedToolUseRepair(conversation);
+  if (repairMessage) {
+    conversation.push(repairMessage);
+    await appendRawTranscript(options, [repairMessage]);
+  }
+
   let initialUserMessage: MessageParam | undefined;
   if (!options.skipInitialInput) {
     conversation.push(...prefixedMessages);
@@ -135,6 +161,12 @@ export async function executeConversation(
       model,
       input: promptText,
       timestamp: startedAt,
+    });
+    emitTrajectory({
+      type: 'run.started',
+      runId: options.runId,
+      sessionId: options.sessionId,
+      model,
     });
   }
   await requireLifecycleContinue(options, 'SessionStart', { input: promptText });
@@ -205,6 +237,8 @@ export async function executeConversation(
       model,
       modelApi: options.modelApi,
       compactConfig: options.config.compact,
+      systemPrompt,
+      tools: providerTools,
       maxTokens: maxTokensOverride ?? options.maxTokens ?? options.config.maxTokens,
       lastRequestInputTokens,
       tokenEstimateMultiplier,
@@ -233,7 +267,20 @@ export async function executeConversation(
         messagesSummarized: loopCompact.messagesSummarized,
         preservedMessages: loopCompact.preservedMessages,
         clearedToolResults: loopCompact.clearedToolResults,
+        ...(loopCompact.shadowedTokenCount !== undefined
+          ? { shadowedTokenCount: loopCompact.shadowedTokenCount }
+          : {}),
         summary: loopCompact.summary,
+      });
+      emitTrajectory({
+        type: 'conversation.compacted',
+        runId: options.runId,
+        iteration,
+        trigger: loopCompact.reason === 'prune' ? 'prune' : 'auto',
+        messagesSummarized: loopCompact.messagesSummarized,
+        ...(loopCompact.shadowedTokenCount !== undefined
+          ? { shadowedTokenCount: loopCompact.shadowedTokenCount }
+          : {}),
       });
       options.emit?.({
         type: 'conversation.compacted',
@@ -346,6 +393,13 @@ export async function executeConversation(
       localMicrocompact: undefined,
       timestamp: nowIso(),
     });
+    emitTrajectory({
+      type: 'request.started',
+      runId: options.runId,
+      iteration,
+      model,
+      requestTokenEstimate,
+    });
     await requireLifecycleContinue(options, 'ModelRequest', {
       iteration,
       model,
@@ -398,6 +452,8 @@ export async function executeConversation(
           model,
           modelApi: options.modelApi,
           compactConfig: options.config.compact,
+          systemPrompt,
+          tools: providerTools,
           maxTokens: maxTokensOverride ?? options.maxTokens ?? options.config.maxTokens,
           compactWindowPrefixTokens,
           runKey: options.runId,
@@ -415,7 +471,20 @@ export async function executeConversation(
             messagesSummarized: reactiveOutcome.messagesSummarized,
             preservedMessages: reactiveOutcome.preservedMessages,
             clearedToolResults: reactiveOutcome.clearedToolResults,
+            ...(reactiveOutcome.shadowedTokenCount !== undefined
+              ? { shadowedTokenCount: reactiveOutcome.shadowedTokenCount }
+              : {}),
             summary: reactiveOutcome.summary,
+          });
+          emitTrajectory({
+            type: 'conversation.compacted',
+            runId: options.runId,
+            iteration,
+            trigger: 'reactive',
+            messagesSummarized: reactiveOutcome.messagesSummarized,
+            ...(reactiveOutcome.shadowedTokenCount !== undefined
+              ? { shadowedTokenCount: reactiveOutcome.shadowedTokenCount }
+              : {}),
           });
           options.emit?.({
             type: 'conversation.compacted',
@@ -488,6 +557,14 @@ export async function executeConversation(
     const assistantMessage = assistantMessageToParam(message);
     conversation.push(assistantMessage);
     await appendRawTranscript(options, [assistantMessage]);
+    emitTrajectory({
+      type: 'assistant.message',
+      runId: options.runId,
+      iteration,
+      messageId: message.id,
+      stopReason: message.stop_reason ?? null,
+      ...(message.usage ? { usage: message.usage } : {}),
+    });
     lastRequestInputTokens = getReportedInputTokens(message.usage);
     if (lastRequestInputTokens !== undefined && requestTokenBreakdown.uncalibratedTokens > 0) {
       tokenEstimateMultiplier = calibrateRequestTokenMultiplier({
@@ -701,6 +778,11 @@ export async function executeConversation(
         startedAt,
         completedAt,
       };
+      emitTrajectory({
+        type: 'run.completed',
+        runId: options.runId,
+        stopReason: result.stopReason,
+      });
       await runTypedLifecycleHooks(options, 'Stop', {
         iteration,
         stopReason: result.stopReason,
@@ -747,6 +829,12 @@ export async function executeConversation(
           startedAt,
           completedAt,
         };
+        emitTrajectory({
+          type: 'run.completed',
+          runId: options.runId,
+          stopReason: result.stopReason,
+          incompleteReason: result.incompleteReason,
+        });
         await runTypedLifecycleHooks(options, 'Stop', {
           iteration,
           stopReason: result.incompleteReason,
@@ -822,6 +910,22 @@ export async function executeConversation(
           result: synthetic.record,
           timestamp: synthetic.record.completedAt,
         });
+        emitTrajectory({
+          type: 'tool.call',
+          runId: options.runId,
+          iteration,
+          toolUseId: toolUse.id,
+          name: toolUse.name,
+          abortedBeforeDispatch: true,
+        });
+        emitTrajectory({
+          type: 'tool.result',
+          runId: options.runId,
+          iteration,
+          toolUseId: toolUse.id,
+          name: toolUse.name,
+          isError: true,
+        });
         continue;
       }
       if (outcome.permissionBehavior === 'deny') denialTracker.recordDenial();
@@ -834,6 +938,14 @@ export async function executeConversation(
         iteration,
         result: outcome.record,
         timestamp: outcome.record.completedAt,
+      });
+      emitTrajectory({
+        type: 'tool.result',
+        runId: options.runId,
+        iteration,
+        toolUseId: toolUse.id,
+        name: toolUse.name,
+        isError: outcome.record.isError,
       });
       if (outcome.additionalContexts && outcome.additionalContexts.length > 0) {
         additionalContexts.push(...outcome.additionalContexts);
@@ -949,6 +1061,12 @@ export async function executeConversation(
         startedAt,
         completedAt,
       };
+      emitTrajectory({
+        type: 'run.completed',
+        runId: options.runId,
+        stopReason: result.stopReason,
+        incompleteReason: result.incompleteReason,
+      });
       await runTypedLifecycleHooks(options, 'Stop', {
         iteration,
         stopReason: result.incompleteReason,
@@ -1019,6 +1137,11 @@ export async function executeConversation(
         startedAt,
         completedAt,
       };
+      emitTrajectory({
+        type: 'run.completed',
+        runId: options.runId,
+        stopReason: result.stopReason,
+      });
       await runTypedLifecycleHooks(options, 'Stop', {
         iteration,
         stopReason: result.stopReason,
@@ -1059,6 +1182,12 @@ export async function executeConversation(
           startedAt,
           completedAt,
         };
+        emitTrajectory({
+          type: 'run.completed',
+          runId: options.runId,
+          stopReason: result.stopReason,
+          incompleteReason: result.incompleteReason,
+        });
         await runTypedLifecycleHooks(options, 'Stop', {
           iteration,
           stopReason: result.incompleteReason,

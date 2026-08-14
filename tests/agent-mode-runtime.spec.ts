@@ -83,10 +83,15 @@ describe('Agent mode runtime integration', () => {
 
       expect(codeact?.tools?.map(item => item.name)).toEqual(['CodeCell']);
       expect(codeact?.system).toMatch(/CodeCell|code cell/i);
-      expect(codeact?.system).not.toContain('Echo a value.');
+      // CodeAct/hybrid prompts now carry the typed host-tool SDK section, so
+      // host tool descriptions are intentionally visible as stubs.
+      expect(codeact?.system).toContain('Typed host-tool surface');
+      expect(codeact?.system).toContain('def Echo(self, value: str | None = None) -> Any:');
+      expect(codeact?.system).toContain('Host tool: Echo.');
 
       expect(hybrid?.tools?.map(item => item.name)).toEqual(['Echo', 'CodeCell']);
       expect(hybrid?.system).toContain('two action planes');
+      expect(hybrid?.system).toContain('def Echo(self, value: str | None = None) -> Any:');
 
       expect(single?.tools?.map(item => item.name)).toEqual(['Echo']);
       expect(single?.system).toContain('at most one ordinary tool');

@@ -65,6 +65,8 @@ export interface ConversationQueueOptions {
 export interface ConversationPersistenceOptions {
   onConversationCheckpoint?: (messages: MessageParam[]) => void | Promise<void>;
   onTranscriptMessages?: (messages: MessageParam[]) => void | Promise<void>;
+  /** Structured append-only trajectory events (audit/replay channel). */
+  onTrajectoryEvent?: (event: import('./trajectoryEvents.js').TrajectoryEvent) => void | Promise<void>;
   takePendingConversationRestore?: () => MessageParam[] | undefined;
   sessionWorkDir?: string;
   onSessionWorkDirChange?: (workDir: string) => void;

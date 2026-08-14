@@ -51,7 +51,8 @@ import {
   resolveHadamardSessionStartHooks,
 } from '../hooks/hadamardHooks.js';
 import { createHadamardMemoryApi, type HadamardMemoryApi } from '../memory/hadamardMemory.js';
-import { appendMessagesToTranscript } from '../memory/hadamardTranscriptLogger.js';
+import { appendMessagesToTranscript, appendTrajectoryEvents } from '../memory/hadamardTranscriptLogger.js';
+import type { TrajectoryEvent } from './trajectoryEvents.js';
 import {
   buildHadamardDreamPrompt,
   createHadamardDreamApi,
@@ -3082,15 +3083,23 @@ export class HadamardAgentClient {
     });
     this.conversationRestoreStack.push(undefined);
     const transcriptMessages: MessageParam[] = [];
+    const trajectoryEvents: TrajectoryEvent[] = [];
     const flushTranscript = async (): Promise<void> => {
-      if (!checkpointSession || transcriptMessages.length === 0) return;
+      if (!checkpointSession || (transcriptMessages.length === 0 && trajectoryEvents.length === 0)) return;
       const pending = transcriptMessages.splice(0);
+      const pendingEvents = trajectoryEvents.splice(0);
       const paths = await this.memory.paths({ projectPath: this.config.workDir });
       await appendMessagesToTranscript(
         paths.projectStateDir,
         checkpointSession.id,
         workDir,
         pending,
+      );
+      await appendTrajectoryEvents(
+        paths.projectStateDir,
+        checkpointSession.id,
+        workDir,
+        pendingEvents,
       );
     };
     try {
@@ -3198,6 +3207,11 @@ export class HadamardAgentClient {
           onTranscriptMessages: checkpointSession
             ? (messages) => {
                 transcriptMessages.push(...deepClone(messages));
+              }
+            : undefined,
+          onTrajectoryEvent: checkpointSession
+            ? (event) => {
+                trajectoryEvents.push(structuredClone(event));
               }
             : undefined,
           takePendingConversationRestore: () => {
