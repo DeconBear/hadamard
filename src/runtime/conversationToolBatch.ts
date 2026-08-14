@@ -1,6 +1,6 @@
-import type { ToolResultBlockParam, ToolUseBlock } from '../provider/types.js';
+import type { MessageParam, ToolResultBlockParam, ToolUseBlock } from '../provider/types.js';
 import type { AgentToolCallEventPayload, AgentToolCallRecord } from '../types.js';
-import { nowIso } from './helpers.js';
+import { isRecord, nowIso } from './helpers.js';
 import {
   formatHadamardTodoListLines,
   getHadamardTodoSnapshot,
@@ -203,6 +203,45 @@ export async function executeToolUsesWithContract<T>(
     aborted = true;
   }
   return { results, aborted };
+}
+
+const UNPAIRED_TOOL_USE_REPAIR_TEXT = [
+  'The previous run was interrupted before this tool call completed, and its',
+  'outcome is unknown. If the action is read-only or idempotent, retry it;',
+  'otherwise inspect the current state first to avoid duplicating work.',
+].join(' ');
+
+/**
+ * Cold-resume repair (dsh repair.ts equivalent at message scope): close every
+ * unpaired tool_use in the persisted history with a synthetic error result so
+ * providers never reject the session on resume.
+ */
+export function buildUnpairedToolUseRepair(messages: readonly MessageParam[]): MessageParam | undefined {
+  const toolResultIds = new Set<string>();
+  const toolUseBlocks: ToolUseBlock[] = [];
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (!isRecord(block)) continue;
+      if (block.type === 'tool_use' && typeof block.id === 'string') {
+        toolUseBlocks.push(block as unknown as ToolUseBlock);
+      }
+      if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+        toolResultIds.add(block.tool_use_id);
+      }
+    }
+  }
+  const dangling = toolUseBlocks.filter(block => !toolResultIds.has(block.id));
+  if (dangling.length === 0) return undefined;
+  return {
+    role: 'user',
+    content: dangling.map(block => ({
+      type: 'tool_result' as const,
+      tool_use_id: block.id,
+      is_error: true,
+      content: UNPAIRED_TOOL_USE_REPAIR_TEXT,
+    })),
+  };
 }
 
 /** Synthetic call/result pair for a model call skipped by abort before dispatch. */

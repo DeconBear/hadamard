@@ -397,6 +397,7 @@ function buildCompactSummaryPrompt(
   preservedMessagesCount: number,
   summaryInstructions?: string,
   promptMode: 'hybrid' | 'structured' | 'free' = 'hybrid',
+  includeConversationBlock = true,
 ): string {
   const customInstructions = summaryInstructions?.trim()
     ? `\nUser guidance for this summary (follow these priorities):\n${summaryInstructions.trim()}\n`
@@ -409,12 +410,14 @@ function buildCompactSummaryPrompt(
     '',
   ];
 
-  const conversationBlock = [
-    '',
-    '<conversation_to_summarize>',
-    notes,
-    '</conversation_to_summarize>',
-  ];
+  const conversationBlock = includeConversationBlock
+    ? [
+        '',
+        '<conversation_to_summarize>',
+        notes,
+        '</conversation_to_summarize>',
+      ]
+    : [];
 
   if (promptMode === 'free') {
     // Codex-style: free-form handoff summary, minimal structural constraints.
@@ -1074,6 +1077,10 @@ export interface HadamardLoopCompactContext {
   /** Circuit-breaker key; use the runId so one bad run cannot poison others. */
   runKey: string;
   signal?: AbortSignal;
+  /** Main-loop system prompt; replayed as the summary request's system prefix so the auxiliary call reuses the provider KV cache (dsh summarizer shape). */
+  systemPrompt?: string;
+  /** Main-loop provider tool schemas; replayed as the summary request's tool prefix. */
+  tools?: unknown[];
   /**
    * Reactive mode: the provider already rejected the request as too long, so
    * token estimates are known to undercount. Skips threshold checks and goes
@@ -1097,7 +1104,9 @@ export interface HadamardLoopCompactOutcome {
   preservedMessages: number;
   clearedToolResults: number;
   summary?: string;
-  reason?: 'disabled' | 'threshold_not_met' | 'microcompact' | 'compacted' | 'failed' | 'circuit_breaker_open';
+  /** Estimated token count of the content shadowed by this compaction (dsh shadow price). */
+  shadowedTokenCount?: number;
+  reason?: 'disabled' | 'threshold_not_met' | 'microcompact' | 'prune' | 'compacted' | 'failed' | 'circuit_breaker_open';
   consecutiveFailures?: number;
   error?: string;
 }
@@ -1198,27 +1207,63 @@ export async function compactHadamardConversationIfNeeded(
     return { ...unchanged, reason: 'threshold_not_met' };
   }
 
+  // Model-free prune mode (opt-in): clear old tool_result content and skip the
+  // summary call entirely. Defaults off because it rewrites historical
+  // tool_result content and breaks automatic prefix caches.
+  if (config.loopCompactPruneToolResults === true) {
+    // Stage 1 already cleared the old tool_result content; the pruned array
+    // becomes the live conversation without a summary call.
+    const nextMessages = microcompacted.messages;
+    return {
+      messages: nextMessages,
+      compacted: true,
+      tokenEstimateBefore,
+      tokenEstimateAfter: Math.ceil(
+        estimateHadamardConversationTokens(nextMessages) * tokenEstimateMultiplier,
+      ),
+      messagesSummarized: messagesToSummarize.length,
+      preservedMessages: messagesToKeep.length,
+      clearedToolResults: microcompacted.clearedCount,
+      shadowedTokenCount: Math.ceil(
+        estimateHadamardConversationTokens(messagesToSummarize) * tokenEstimateMultiplier,
+      ),
+      reason: 'prune',
+    };
+  }
+
   let retryCount = 0;
   let retryMessagesToSummarize = messagesToSummarize;
   let response: Awaited<ReturnType<ModelApi['createMessage']>>;
   while (true) {
     try {
-      const rewritePrompt = buildCompactSummaryPrompt(
-        serializeMessagesForSummary(retryMessagesToSummarize),
+      // Cache-reusing summary request (dsh summarizer shape): replay the main
+      // loop's own system prompt and tool schemas, send the to-be-compacted
+      // messages verbatim, and finish with the compaction instruction. The
+      // auxiliary call is then a genuine prefix of the last routed request,
+      // so automatic provider KV caches (DeepSeek) serve it.
+      const instructionPrompt = buildCompactSummaryPrompt(
+        '',
         messagesToKeep.length,
         mergeCompactInstructions(config.compactInstructions, context.summaryInstructions),
         config.compactPromptMode ?? 'hybrid',
+        false,
       );
       response = await context.modelApi.createMessage({
         model: context.model,
         max_tokens: Math.min(config.maxSummaryTokens, MAX_COMPACT_SUMMARY_TOKENS),
-        system:
-          'You are compacting a long-running engineering session. Produce a dense but concise continuation summary.',
+        system: context.systemPrompt
+          ?? 'You are compacting a long-running engineering session. Produce a dense but concise continuation summary.',
+        ...(context.tools && context.tools.length > 0
+          ? { tools: context.tools as import('../types.js').ModelRequest['tools'] }
+          : {}),
         metadata: {
           hadamard_internal_task: 'loop_compact',
           hadamard_compact_retry_count: retryCount,
         },
-        messages: [{ role: 'user', content: rewritePrompt }],
+        messages: [
+          ...retryMessagesToSummarize,
+          { role: 'user' as const, content: instructionPrompt },
+        ],
         signal: context.signal,
       });
       compactionFailureCounts.delete(failureKey);
@@ -1275,6 +1320,9 @@ export async function compactHadamardConversationIfNeeded(
     messagesSummarized: messagesToSummarize.length,
     preservedMessages: messagesToKeep.length,
     clearedToolResults: microcompacted.clearedCount,
+    shadowedTokenCount: Math.ceil(
+      estimateHadamardConversationTokens(messagesToSummarize) * tokenEstimateMultiplier,
+    ),
     summary,
     reason: 'compacted',
   };
