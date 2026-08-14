@@ -113,9 +113,6 @@ function createErrorMessage(status: number, payload?: ApiErrorShape): string {
   return `Provider request failed with HTTP ${status}: ${msg}`;
 }
 
-function shouldRetryStatus(status: number): boolean {
-  return status === 408 || status === 409 || status === 429 || status >= 500;
-}
 
 function shouldRetryError(error: unknown): boolean {
   if (error instanceof HadamardProviderApiError) {

@@ -995,6 +995,13 @@ export interface HadamardCompactConfig {
    * Claude Code's per-iteration autocompact. Defaults to true.
    */
   loopAutoCompactEnabled?: boolean;
+  /**
+   * Model-free prune mode: when enabled, in-loop auto-compact only clears old
+   * tool_result content below the preserve boundary instead of writing a
+   * summary. Default false — pruning rewrites historical tool_result content
+   * on the wire and breaks automatic prefix caches (DeepSeek/MiniMax).
+   */
+  loopCompactPruneToolResults?: boolean;
   /** Model context window in tokens used to derive the in-loop compact threshold. */
   contextWindowTokens?: number;
   maxContextWindowTokens?: number;
@@ -1253,6 +1260,8 @@ export interface AgentRunResult {
 
 export interface AgentLoopCompactionRecord {
   trigger: 'auto' | 'reactive';
+  /** Estimated token count of the content shadowed by this compaction (dsh shadow price). */
+  shadowedTokenCount?: number;
   iteration: number;
   tokenEstimateBefore: number;
   tokenEstimateAfter: number;
