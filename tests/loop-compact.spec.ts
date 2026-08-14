@@ -221,6 +221,48 @@ describe('compactHadamardConversationIfNeeded', () => {
     expect(String(modelApi.createCalls[0]?.messages[0]?.content)).toContain('analysis one');
   });
 
+  it('keeps the latest project-instruction reminder after in-loop compact', async () => {
+    const modelApi = new MockModelApi({
+      create: () => makeMessage([{ type: 'text', text: 'LOOP_COMPACT_SUMMARY of older turns' }]),
+    });
+    const filler = 'data '.repeat(120);
+    const projectInstruction = {
+      role: 'user' as const,
+      content: [
+        '<system-reminder>',
+        '# Project instructions',
+        'Keep the workspace rules.',
+        'IMPORTANT: this context may or may not be relevant to the current task.',
+        '</system-reminder>',
+      ].join('\n'),
+      __hadamardContext: { kind: 'project-instructions' },
+    } as MessageParam;
+    const messages: MessageParam[] = [
+      projectInstruction,
+      { role: 'user', content: `first request ${filler}` },
+      { role: 'assistant', content: [{ type: 'text', text: `analysis one ${filler}` }] },
+      { role: 'user', content: 'latest question' },
+    ];
+
+    const outcome = await compactHadamardConversationIfNeeded(messages, {
+      model: 'test-model',
+      modelApi,
+      compactConfig: baseCompactConfig({ loopAutoCompactThresholdTokens: 100 }),
+      maxTokens: 1_000,
+      runKey: 'run-preserve-project-instructions',
+      force: true,
+    });
+
+    expect(outcome.compacted).toBe(true);
+    expect(outcome.messages[0]?.content).toContain('LOOP_COMPACT_SUMMARY');
+    expect(outcome.messages.some(message =>
+      typeof message.content === 'string' && message.content.includes('# Project instructions'),
+    )).toBe(true);
+    expect(outcome.messages.some(message =>
+      typeof message.content === 'string' && message.content.includes('Keep the workspace rules.'),
+    )).toBe(true);
+  });
+
   it('does not write microcompact-only tool_result clears back into the conversation', async () => {
     const modelApi = new MockModelApi({
       create: () => makeMessage([{ type: 'text', text: 'SUMMARY after clearing verbose tool output' }]),

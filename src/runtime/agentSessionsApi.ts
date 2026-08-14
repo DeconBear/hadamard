@@ -4,6 +4,7 @@ import type {
 } from '../types.js';
 import type { SessionStore } from '../storage/sessionStore.js';
 import type { AgentSession } from './agentSession.js';
+import { isEmptyUserSessionSummary } from '../storage/sessionVisibility.js';
 
 interface AgentSessionsStorePort {
   list(): Promise<SessionSummary[]>;
@@ -59,7 +60,9 @@ export class AgentSessionsApi {
 
   async continueMostRecent(options: SessionResumeOptions = {}): Promise<AgentSession> {
     const sessions = await this.store.list();
-    const chatSessions = sessions.filter(session => session.kind !== 'manager');
+    const chatSessions = sessions.filter(session =>
+      session.kind !== 'manager' && !isEmptyUserSessionSummary(session)
+    );
     const mostRecent = chatSessions.find(session => session.status !== 'closed') ?? chatSessions[0];
     if (!mostRecent) throw new Error('No stored sessions are available to resume.');
     return this.resumeSession(mostRecent.id, options);

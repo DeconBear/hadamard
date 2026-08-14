@@ -13,6 +13,7 @@ import type {
 import type { z } from 'zod';
 import type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
 import type { AgentMode, AgentNodeMode } from './runtime/agentExecutionPolicy.js';
+import type { ProjectInstructionMode } from './config/projectSettingsTypes.js';
 export type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
 export interface LoadedJsonConfigData {
   path: string;
@@ -32,6 +33,7 @@ export interface ToolExecutionContext {
   sessionId?: string;
   cwd: string;
   metadata: Record<string, unknown>;
+  projectInstructions?: AgentRunOptions['projectInstructions'];
   prompt: string;
   iteration: number;
   permissionMode?: HadamardPermissionMode;
@@ -240,7 +242,11 @@ export interface CreateToolOptions<Input = any, Output = any> {
   validateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;
   /** Compact summary for the tool invocation in collapsed views. */
   getToolUseSummary?: (input: Input) => string;
-  /** System prompt text teaching the model how to use this tool. */
+  /**
+   * Model-facing usage text. The runtime copies this into `tools[].description`
+   * when it is longer than the static description; it is not also appended to
+   * the system prompt.
+   */
   prompt?: (options: ToolPromptOptions) => Promise<string> | string;
 }
 
@@ -282,6 +288,7 @@ export interface AgentToolDefinition<Input = any, Output = any> {
   inputsEquivalent?: (a: Input, b: Input) => boolean;
   validateInput?: (input: Input, context: ToolExecutionContext) => Promise<ValidationResult> | ValidationResult;
   getToolUseSummary?: (input: Input) => string;
+  /** Folded into `description` at request time; not also appended to the system prompt. */
   prompt?: (options: ToolPromptOptions) => Promise<string> | string;
 }
 
@@ -364,6 +371,8 @@ export interface ResolvedToolExecutionResult {
 export interface ResolvedToolAdapter {
   publicName: string;
   sourceName: string;
+  /** Execution-only compatibility names; never serialized as duplicate provider schemas. */
+  aliases?: string[];
   provider: 'local' | 'mcp';
   mcpServerName?: string;
   providerTool: ProviderTool;
@@ -575,6 +584,11 @@ export interface HadamardAgentDefinition {
   isolation?: 'worktree';
   cwd?: string;
   allowNestedAgents?: boolean;
+  /**
+   * Whether this agent receives the current workspace project instructions.
+   * Default `inherit`. Read-only Explore/Plan agents should set `omit`.
+   */
+  projectInstructions?: 'inherit' | 'omit';
   source?: 'built-in' | 'user' | 'project' | 'custom';
   sourcePath?: string;
 }
@@ -730,6 +744,7 @@ export type HadamardCleanToolCategory =
 
 export interface HadamardCleanToolMetadata {
   name: string;
+  aliases?: string[];
   description: string;
   provider: 'local' | 'mcp';
   category: HadamardCleanToolCategory;
@@ -1020,6 +1035,8 @@ export interface AgentRunOptions {
   tools?: AgentToolDefinition[];
   mcpServers?: AgentMcpServerDefinition[];
   model?: string;
+  /** Session/run context budget, capped to the selected model's declared maximum. */
+  contextWindowTokens?: number;
   /** Per-run/node execution mode. Single is intended for Workflow/Graph nodes. */
   agentMode?: AgentNodeMode | 'inherit';
   /** Disable the SDK default tool catalog for bounded node executions. */
@@ -1064,6 +1081,14 @@ export interface AgentRunOptions {
   inheritWorktree?: boolean;
   /** Override the working directory at the session level (used by worktrees). */
   sessionWorkDir?: string;
+  /**
+   * Project instruction files (AGENTS.md / CLAUDE.md). The SDK loads these into
+   * a user-role meta reminder; omit this to use project settings + `[workDir]`.
+   */
+  projectInstructions?: {
+    mode?: ProjectInstructionMode;
+    workPaths?: string[];
+  };
 }
 
 export interface SessionCreateOptions {
@@ -1571,6 +1596,10 @@ export type AgentEvent = import('./events/codeActEvents.js').CodeActAgentEvent
       iteration: number;
       requestTokenEstimate?: number;
       requestByteLength?: number;
+      systemTokenEstimate?: number;
+      toolTokenEstimate?: number;
+      messageTokenEstimate?: number;
+      tokenEstimateMultiplier?: number;
       localMicrocompact?: AgentRequestSummary['localMicrocompact'];
       timestamp: string;
     }

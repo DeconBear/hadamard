@@ -169,6 +169,19 @@ export function getReportedInputTokens(usage: AgentRunResult['usage']): number |
   if (!usage) {
     return undefined;
   }
+  // DeepSeek's input_tokens already includes prompt-cache hits and misses.
+  // normalizeProviderUsage mirrors hits into Anthropic's cache_read field for
+  // observability, so summing that mirror would count cached input twice.
+  if (
+    typeof usage.input_tokens === 'number'
+    && Number.isFinite(usage.input_tokens)
+    && (
+      typeof usage.prompt_cache_hit_tokens === 'number'
+      || typeof usage.prompt_cache_miss_tokens === 'number'
+    )
+  ) {
+    return Math.max(usage.input_tokens, 0);
+  }
   const parts = [
     usage.input_tokens,
     usage.cache_creation_input_tokens,

@@ -138,25 +138,7 @@ export function formatDivider(width: number): string[] {
   return [`${A.gray}${'─'.repeat(Math.max(Math.min(width, 80), 8))}${A.reset}`];
 }
 
-export function formatBanner(options: {
-  workDir: string;
-  model: string;
-  toolCount: number;
-  permissionMode: string;
-  version?: string;
-  width?: number;
-}): string[] {
-  const width = Math.max(options.width ?? 80, 20);
-  const title = `Hadamard Agent${options.version ? ` v${options.version}` : ''}`;
-  const workDir = truncateToWidth(options.workDir, Math.max(width - 10, 20));
-  return [
-    `${A.cyan}${A.bold}✻ ${title}${A.reset}`,
-    `${A.dim}  cwd    ${A.reset}${workDir}`,
-    `${A.dim}  model  ${A.reset}${options.model} ${A.dim}· permissions: ${options.permissionMode}${A.reset}`,
-    `${A.dim}  tools  ${A.reset}${options.toolCount} loaded`,
-    '',
-  ];
-}
+export { formatBanner, formatWelcomePage } from './tuiWelcomeBanner.js';
 
 /**
  * Incremental flusher for streamed assistant text: complete visual lines move

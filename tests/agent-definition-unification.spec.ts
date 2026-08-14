@@ -103,6 +103,7 @@ describe('frontmatter new keys (S1a)', () => {
       'tools: Read, Grep, Bash',
       'subagent: false',
       'allowedAgents: Explore, Plan',
+      'projectInstructions: omit',
       '---',
       '',
       'You are a senior engineer.',
@@ -127,6 +128,7 @@ describe('frontmatter new keys (S1a)', () => {
     expect(coder?.allowedTools).toEqual(['Read', 'Grep', 'Bash']);
     expect(coder?.subagent).toBe(false);
     expect(coder?.allowedAgents).toEqual(['Explore', 'Plan']);
+    expect(coder?.projectInstructions).toBe('omit');
   });
 
   it('defaults: promptMode replace, subagent delegatable, maxTurns still maps', async () => {

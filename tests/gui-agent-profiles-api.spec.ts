@@ -5,7 +5,9 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { startHadamardGuiServer } from '../src/gui/hadamardGui.js';
+import { getHadamardProjectSessionDirectory } from '../src/config/projectSessionDirectory.js';
 import { addBridgeConfig, readBridgeConfigs } from '../src/parity/bridgeConfigs.js';
+import { SessionStore } from '../src/storage/sessionStore.js';
 
 const tempDirs: string[] = [];
 
@@ -206,11 +208,23 @@ describe('GUI agent profile API', () => {
       model: 'model-alpha',
       models: [{ name: 'model-alpha' }, { name: 'model-alpha-v2' }],
     }, homeDir);
+    const seededSession = await new SessionStore(
+      getHadamardProjectSessionDirectory(workDir, homeDir),
+    ).create({
+      id: 'scoped-model-chat',
+      model: 'model-default',
+      initialMessages: [
+        { role: 'user', content: 'Keep this chat resumable.' },
+        { role: 'assistant', content: 'Ready.' },
+      ],
+      metadata: { __hadamardWorkDir: workDir },
+    });
 
     let server = await startHadamardGuiServer({
       workDir,
       homeDir,
       configPath,
+      resumeSessionId: seededSession.id,
       host: '127.0.0.1',
       port: 45000 + Math.floor(Math.random() * 10000),
     });

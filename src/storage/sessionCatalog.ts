@@ -7,6 +7,7 @@ import { createId, nowIso } from '../runtime/helpers.js';
 import { extractTextFromContent } from '../runtime/messageUtils.js';
 import { SessionStore } from './sessionStore.js';
 import { safeStorageFileName } from './pathSafety.js';
+import { isEmptyUserSessionSummary } from './sessionVisibility.js';
 import type { SessionStatus, SessionSummary, StoredSession } from '../types.js';
 
 export type SessionCatalogType =
@@ -254,7 +255,9 @@ export class SessionCatalog {
     if (!input.locator) throw new Error(`${input.action} requires a Session locator.`);
     const locator = { ...input.locator };
     const resolved = this.resolveLocator(locator);
-    const item = await this.find(locator);
+    const item = await this.find(locator, {
+      includeEmptyUserSessions: input.action !== 'open',
+    });
     if (!item) throw new Error(`Unknown Session: ${locator.sessionId}`);
     if (input.action === 'open') return item;
     if (item.type === 'agent') {
@@ -301,7 +304,7 @@ export class SessionCatalog {
       );
       return item;
     }
-    return (await this.find(locator)) ?? item;
+    return (await this.find(locator, { includeEmptyUserSessions: true })) ?? item;
   }
 
   async reference(locator: SessionCatalogLocator): Promise<SessionCatalogReference> {
@@ -382,7 +385,9 @@ export class SessionCatalog {
     );
   }
 
-  private async loadKnownSessions(): Promise<SessionCatalogItem[]> {
+  private async loadKnownSessions(
+    options: { includeEmptyUserSessions?: boolean } = {},
+  ): Promise<SessionCatalogItem[]> {
     const items: SessionCatalogItem[] = [];
     for (const projectPath of this.projectPaths) {
       const root = getHadamardProjectSessionDirectory(projectPath, this.options.homeDir);
@@ -392,6 +397,7 @@ export class SessionCatalog {
       ]);
       for (const [list, isArchived] of [[active, false], [archived, true]] as const) {
         for (const summary of list) {
+          if (!options.includeEmptyUserSessions && isEmptyUserSessionSummary(summary)) continue;
           items.push(itemFromSummary(
             summary,
             {
@@ -427,8 +433,11 @@ export class SessionCatalog {
     return items;
   }
 
-  private async find(locator: SessionCatalogLocator): Promise<SessionCatalogItem | null> {
-    return (await this.loadKnownSessions())
+  private async find(
+    locator: SessionCatalogLocator,
+    options: { includeEmptyUserSessions?: boolean } = {},
+  ): Promise<SessionCatalogItem | null> {
+    return (await this.loadKnownSessions(options))
       .find(item => item.locatorKey === sessionCatalogLocatorKey(locator)) ?? null;
   }
 
