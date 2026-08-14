@@ -15,6 +15,7 @@ describe('release workflows', () => {
     expect(workflow).toMatch(/^on:\r?\n\s+release:\r?$/mu);
     expect(workflow).toContain('types:\n      - published');
     expect(workflow).not.toMatch(/^\s+push:\r?$/mu);
-    expect(workflow).toContain('RELEASE_TAG="${{ github.event.release.tag_name }}"');
+    expect(workflow).toContain('RELEASE_TAG="${{ github.event_name ==');
+    expect(workflow).toContain('inputs.tag || github.event.release.tag_name');
   });
 });

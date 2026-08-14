@@ -39,7 +39,12 @@ describe('automatic Session worktrees', () => {
     });
     let sessionId = '';
     try {
-      const session = await sdk.createSession();
+      const session = await sdk.createSession({
+        initialMessages: [
+          { role: 'user', content: 'Prepare the worktree.' },
+          { role: 'assistant', content: 'The worktree is ready.' },
+        ],
+      });
       sessionId = session.id;
       const snapshot = session.snapshot();
       expect(snapshot.kind).toBe('worktree');
