@@ -11,13 +11,13 @@
     "parity/hadamardBridgeSdk.ts": { "maxLines": 2898, "reason": "Bridge SDK compatibility composition root." },
     "parity/hadamardCleanBridgeCompatSdk.ts": { "maxLines": 1876, "reason": "Clean bridge compatibility composition root." },
     "runtime-v2/agentRuntime.ts": { "maxLines": 1745, "reason": "Runtime v2 facade; collaborators must absorb new behavior." },
-    "runtime/agentClient.ts": { "maxLines": 5566, "reason": "Public SDK compatibility facade and composition root; persistent internal context is provenance-marked and run context windows are model-capped by collaborators." },
+    "runtime/agentClient.ts": { "maxLines": 5686, "reason": "Public SDK compatibility facade and composition root; managed runtime lifecycle, draft sessions, and model-capped compaction remain centralized here while collaborators absorb domain behavior." },
     "runtime/conversationEngine.ts": { "maxLines": 984, "reason": "Turn coordinator facade; reconciles only provenance-marked internal context while preserving ordinary append-only history." },
     "runtime/externalSkillCatalog.ts": { "maxLines": 1249, "reason": "Existing external skill catalog debt." },
     "runtime/hadamardCompact.ts": { "maxLines": 1355, "reason": "Existing compact engine debt; in-loop compact preserves the latest project-instruction reminder." },
     "storage-v2/sqliteStorage.ts": { "maxLines": 1232, "reason": "SQLite infrastructure adapter with segregated public stores." },
     "tui/hadamardTuiController.ts": { "maxLines": 4948, "reason": "TUI composition/state root; session-scoped model context selection uses shared parsing and model-catalog metadata." },
-    "types.ts": { "maxLines": 3400, "reason": "Public compatibility type barrel; carries structured project instructions and a per-run context-window override." }
+    "types.ts": { "maxLines": 3402, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, and a per-run context-window override." }
   },
   "interfaces": {
     "config/agentProfiles.ts#SelectableAgent": { "maxMembers": 28, "reason": "Compatibility DTO extended with the reusable Agent execution mode." },
@@ -34,7 +34,7 @@
     "types.ts#HadamardAgentDefinitionSummary": { "maxMembers": 27, "reason": "Public summary DTO extended with reusable Agent mode." },
     "types.ts#HadamardSkillDefinition": { "maxMembers": 26, "reason": "Public skill definition." },
     "types.ts#HadamardSkillDefinitionSummary": { "maxMembers": 21, "reason": "Public skill summary DTO." },
-    "types.ts#CreateAgentSdkOptions": { "maxMembers": 54, "reason": "Public compatibility facade options; internal roles are segregated." },
+    "types.ts#CreateAgentSdkOptions": { "maxMembers": 55, "reason": "Public compatibility facade options; managed plugin assembly remains an explicit runtime control while internal roles are segregated." },
     "types.ts#HadamardCompactConfig": { "maxMembers": 28, "reason": "Public compact configuration." },
     "types.ts#AgentRunOptions": { "maxMembers": 31, "reason": "Public run options extended with structured project-instruction loading and a model-capped context-window override." },
     "types.ts#AgentRunResult": { "maxMembers": 24, "reason": "Public result DTO." },
