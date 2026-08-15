@@ -19,6 +19,7 @@ import type {
   OpenaiTool,
 } from './openai-types.js';
 import OpenaiProviderClient, { OpenaiProviderMessageStream } from './openai-client.js';
+import type { ResolvedProviderRetryPolicy } from './retryPolicy.js';
 import type { ResolvedRuntimeConfig } from '../types.js';
 
 // ── Request: Anthropic → OpenAI ─────────────────────────────────
@@ -426,14 +427,17 @@ export class OpenaiModelApi implements ModelApi {
 
 // ── Factory ──────────────────────────────────────────────────────
 
-export function createOpenaiModelApi(config: ResolvedRuntimeConfig): ModelApi {
+export function createOpenaiModelApi(
+  config: ResolvedRuntimeConfig,
+  retryPolicyOverride?: ResolvedProviderRetryPolicy,
+): ModelApi {
   const client = new OpenaiProviderClient({
     apiKey: config.apiKey ?? null,
     authToken: config.authToken ?? null,
     baseURL: config.baseURL ?? null,
     timeout: config.timeoutMs,
     maxRetries: config.maxRetries,
-    resolvedRetryPolicy: config.retryPolicy,
+    resolvedRetryPolicy: retryPolicyOverride ?? config.retryPolicy,
   });
   return new OpenaiModelApi(client);
 }
