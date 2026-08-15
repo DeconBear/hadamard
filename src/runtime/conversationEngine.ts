@@ -9,10 +9,7 @@ import {
   reconcileHadamardContextMessages,
   stripHadamardMessageProvenance,
 } from '../memory/projectInstructionContext.js';
-import {
-  getHadamardTodoSnapshot,
-  TODO_WRITE_TOOL_NAME,
-} from '../tools/todo/TodoWriteTool.js';
+import { TODO_WRITE_TOOL_NAME } from '../tools/todo/TodoWriteTool.js';
 import type {
   AgentLoopCompactionRecord,
   AgentRequestSummary,
@@ -24,16 +21,13 @@ import type {
 } from '../types.js';
 import { asError, deepClone, nowIso } from './helpers.js';
 import { resolveHadamardPostSamplingHooks, resolveHadamardStopHooks } from '../hooks/hadamardHooks.js';
-import {
-  compactHadamardConversationIfNeeded,
-  isHadamardPromptTooLongError,
-} from './hadamardCompact.js';
+import { createBuiltInConversationExtensions } from './conversationExtensions.js';
+import type { ConversationExtensionPoints } from './conversationExtensions.js';
 import {
   getHadamardApiContextManagement,
   prepareHadamardProviderRequestMessages,
 } from './hadamardApiMicrocompact.js';
 import { createDenialTracker } from './denialTracking.js';
-import { RepeatCallGuard } from './repeatCallGuard.js';
 import {
   assistantMessageToParam,
   buildUserMessage,
@@ -58,28 +52,23 @@ import {
 import {
   appendTextToToolResultContent,
   buildAbortedBeforeDispatchResult,
-  buildTodoReminderText,
   buildUnpairedToolUseRepair,
   executeToolUsesWithContract,
   isLikelyTruncatedToolUse,
   isToolUseConcurrencySafe,
 } from './conversationToolBatch.js';
 import type { TrajectoryEvent, TrajectoryEventPayload } from './trajectoryEvents.js';
+import { fingerprintRequestHeader } from './surfaceProjection.js';
 import {
-  MAX_STREAM_INTERRUPTION_RETRIES,
   aggregateRequestUsage,
   applyAnthropicPromptCacheBreakpoints,
   ensureNotAborted,
   getReportedInputTokens,
   getRequestByteLength,
-  isModelFallbackEligibleError,
   isAnthropicAPI,
-  isRetryableStreamInterruption,
   sleep,
-  streamInterruptionBackoffMs,
 } from './modelRequestPolicy.js';
 
-const TODO_REMINDER_INTERVAL = 10;
 const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3;
 const MAX_CONSECUTIVE_PERMISSION_DENIALS = 3;
 
@@ -169,7 +158,24 @@ export async function executeConversation(
       sessionId: options.sessionId,
       model,
     });
+    emitTrajectory({
+      type: 'turn.started',
+      runId: options.runId,
+      sessionId: options.sessionId,
+      model,
+      input: promptText,
+    });
   }
+  // Durable surface seed: one snapshot covering the pre-seeded session
+  // history, the cold-resume repair, prefixes, and the initial user turn. The
+  // projection replays this byte-for-byte as the model-visible starting point.
+  emitTrajectory({
+    type: 'conversation.replaced',
+    runId: options.runId,
+    iteration: 0,
+    reason: 'seed',
+    messages: deepClone(conversation),
+  });
   await requireLifecycleContinue(options, 'SessionStart', { input: promptText });
   await requireLifecycleContinue(options, 'TurnStart', { input: promptText });
   if (initialUserMessage) {
@@ -214,11 +220,17 @@ export async function executeConversation(
   let finalMessage: AgentRunResult['message'] | undefined;
   let toolResults: ToolResultBlockParam[] = [];
   const denialTracker = createDenialTracker();
-  const repeatCallGuard = new RepeatCallGuard();
+  // Swappable strategies; the built-ins preserve current behavior exactly.
+  const builtInExtensions = createBuiltInConversationExtensions();
+  const extensions: Required<ConversationExtensionPoints> = {
+    autoCompact: options.extensions?.autoCompact ?? builtInExtensions.autoCompact,
+    requestError: options.extensions?.requestError ?? builtInExtensions.requestError,
+    repeatCall: options.extensions?.repeatCall ?? builtInExtensions.repeatCall,
+    todoReminder: options.extensions?.todoReminder ?? builtInExtensions.todoReminder,
+  };
   let lastFailedTool = '';
   let maxTokensRecoveryCount = 0;
   let modelFallbackUsed = false;
-  let iterationsSinceTodoWrite = 0;
   let streamInterruptionRetryIteration = 0;
   let streamInterruptionRetries = 0;
   let reactiveCompactAttempted = false;
@@ -227,14 +239,56 @@ export async function executeConversation(
   let compactWindowPrefixTokens = 0;
   let lastPromptCachePrefixSignature: string | undefined;
 
+  // Turn/step envelope: a step spans one model request plus its tool batch;
+  // the previous step closes at the next loop top (or at every return site).
+  let lastStep: { iteration: number; toolUseCount: number; aborted?: boolean } | undefined;
+  let iterationReused = false;
+
+  const closeStepAndTurn = (stopReason: string | null, incompleteReason?: string): void => {
+    if (lastStep && lastStep.iteration === iteration) {
+      emitTrajectory({
+        type: 'step.ended',
+        runId: options.runId,
+        iteration,
+        toolUseCount: lastStep.toolUseCount,
+        ...(lastStep.aborted ? { aborted: true } : {}),
+      });
+      lastStep = undefined;
+    }
+    emitTrajectory({
+      type: 'turn.ended',
+      runId: options.runId,
+      stopReason,
+      ...(incompleteReason !== undefined ? { incompleteReason } : {}),
+    });
+  };
+
   while (true) {
     ensureNotAborted(options.signal);
     iteration += 1;
+    if (!iterationReused) {
+      if (lastStep) {
+        emitTrajectory({
+          type: 'step.ended',
+          runId: options.runId,
+          iteration: lastStep.iteration,
+          toolUseCount: lastStep.toolUseCount,
+          ...(lastStep.aborted ? { aborted: true } : {}),
+        });
+      }
+      lastStep = { iteration, toolUseCount: 0 };
+      emitTrajectory({
+        type: 'step.started',
+        runId: options.runId,
+        iteration,
+      });
+    }
+    iterationReused = false;
 
     // In-loop auto-compact: keep a single long run within the context window
     // by summarizing old turns before each provider request. Mirrors Claude
     // Code's per-iteration autocompact and never throws.
-    const loopCompact = await compactHadamardConversationIfNeeded(conversation, {
+    const loopCompact = await extensions.autoCompact(conversation, {
       model,
       modelApi: options.modelApi,
       compactConfig: options.config.compact,
@@ -282,6 +336,13 @@ export async function executeConversation(
         ...(loopCompact.shadowedTokenCount !== undefined
           ? { shadowedTokenCount: loopCompact.shadowedTokenCount }
           : {}),
+      });
+      emitTrajectory({
+        type: 'conversation.replaced',
+        runId: options.runId,
+        iteration,
+        reason: 'auto-compact',
+        messages: deepClone(loopCompact.messages),
       });
       options.emit?.({
         type: 'conversation.compacted',
@@ -343,6 +404,17 @@ export async function executeConversation(
       messages: deepClone(preparedMessages.messages.map(stripHadamardMessageProvenance)),
       signal: options.signal,
     };
+    emitTrajectory({
+      type: 'request.header',
+      runId: options.runId,
+      iteration,
+      model,
+      maxTokens: request.max_tokens,
+      ...(effort ? { effort } : {}),
+      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      ...(request.top_p !== undefined ? { topP: request.top_p } : {}),
+      ...fingerprintRequestHeader(request.system, request.tools as unknown[] | undefined),
+    });
     const requestByteLength = getRequestByteLength(request);
     const requestTokenBreakdown = estimateRequestTokenBreakdown({
       systemPrompt,
@@ -410,111 +482,115 @@ export async function executeConversation(
         streamInterruptionRetryIteration = iteration;
         streamInterruptionRetries = 0;
       }
-      if (
-        isRetryableStreamInterruption(error) &&
-        streamInterruptionRetries < MAX_STREAM_INTERRUPTION_RETRIES
-      ) {
-        streamInterruptionRetries += 1;
+      // The request-error strategy (swappable extension) decides the recovery
+      // ladder: stream retry → reactive compact → fallback model → rethrow.
+      const decision = await extensions.requestError({
+        error,
+        model,
+        fallbackModel: options.config.fallbackModel,
+        modelFallbackUsed,
+        streamInterruptionRetries,
+        reactiveCompactAttempted,
+        modelApi: options.modelApi,
+        conversation,
+        compactConfig: options.config.compact,
+        systemPrompt,
+        tools: providerTools,
+        maxTokens: maxTokensOverride ?? options.maxTokens ?? options.config.maxTokens,
+        compactWindowPrefixTokens,
+        runKey: options.runId,
+        signal: options.signal,
+      });
+      if ('compactAttempted' in decision && decision.compactAttempted === true) reactiveCompactAttempted = true;
+      if (decision.action === 'stream-retry') {
+        streamInterruptionRetries = decision.retryCount;
         options.emit?.({
           type: 'request.interrupted',
           runId: options.runId,
           iteration,
-          retry: streamInterruptionRetries,
-          maxRetries: MAX_STREAM_INTERRUPTION_RETRIES,
+          retry: decision.retryCount,
+          maxRetries: decision.maxRetries,
           reason: asError(error).message,
           timestamp: nowIso(),
         });
-        await sleep(
-          streamInterruptionBackoffMs(streamInterruptionRetries),
-          options.signal,
-        );
+        await sleep(decision.backoffMs, options.signal);
         iteration -= 1;
+        iterationReused = true;
         continue;
       }
-      // Reactive compact: the provider rejected the request as too long even
-      // though proactive estimates approved it (estimate drift, smaller real
-      // context window, or oversized preserved tail). Force-compact the
-      // in-flight conversation and retry this iteration, preserving mid-run
-      // progress. One attempt per successful-response window, mirroring
-      // Claude Code's withheld-prompt-too-long reactive compact.
-      if (isHadamardPromptTooLongError(error) && !reactiveCompactAttempted) {
-        reactiveCompactAttempted = true;
-        const reactiveOutcome = await compactHadamardConversationIfNeeded(conversation, {
-          model,
-          modelApi: options.modelApi,
-          compactConfig: options.config.compact,
-          systemPrompt,
-          tools: providerTools,
-          maxTokens: maxTokensOverride ?? options.maxTokens ?? options.config.maxTokens,
-          compactWindowPrefixTokens,
-          runKey: options.runId,
-          signal: options.signal,
-          force: true,
+      if (decision.action === 'reactive-compact') {
+        // Reactive compact: the provider rejected the request as too long even
+        // though proactive estimates approved it (estimate drift, smaller real
+        // context window, or oversized preserved tail). Force-compact the
+        // in-flight conversation and retry this iteration, preserving mid-run
+        // progress. One attempt per successful-response window, mirroring
+        // Claude Code's withheld-prompt-too-long reactive compact.
+        const reactiveOutcome = decision.outcome;
+        compactWindowPrefixTokens = reactiveOutcome.tokenEstimateAfter;
+        conversation.splice(0, conversation.length, ...reactiveOutcome.messages);
+        loopCompactions.push({
+          trigger: 'reactive',
+          iteration,
+          tokenEstimateBefore: reactiveOutcome.tokenEstimateBefore,
+          tokenEstimateAfter: reactiveOutcome.tokenEstimateAfter,
+          messagesSummarized: reactiveOutcome.messagesSummarized,
+          preservedMessages: reactiveOutcome.preservedMessages,
+          clearedToolResults: reactiveOutcome.clearedToolResults,
+          ...(reactiveOutcome.shadowedTokenCount !== undefined
+            ? { shadowedTokenCount: reactiveOutcome.shadowedTokenCount }
+            : {}),
+          summary: reactiveOutcome.summary,
         });
-        if (reactiveOutcome.compacted) {
-          compactWindowPrefixTokens = reactiveOutcome.tokenEstimateAfter;
-          conversation.splice(0, conversation.length, ...reactiveOutcome.messages);
-          loopCompactions.push({
-            trigger: 'reactive',
-            iteration,
-            tokenEstimateBefore: reactiveOutcome.tokenEstimateBefore,
-            tokenEstimateAfter: reactiveOutcome.tokenEstimateAfter,
-            messagesSummarized: reactiveOutcome.messagesSummarized,
-            preservedMessages: reactiveOutcome.preservedMessages,
-            clearedToolResults: reactiveOutcome.clearedToolResults,
-            ...(reactiveOutcome.shadowedTokenCount !== undefined
-              ? { shadowedTokenCount: reactiveOutcome.shadowedTokenCount }
-              : {}),
-            summary: reactiveOutcome.summary,
-          });
-          emitTrajectory({
-            type: 'conversation.compacted',
-            runId: options.runId,
-            iteration,
-            trigger: 'reactive',
-            messagesSummarized: reactiveOutcome.messagesSummarized,
-            ...(reactiveOutcome.shadowedTokenCount !== undefined
-              ? { shadowedTokenCount: reactiveOutcome.shadowedTokenCount }
-              : {}),
-          });
-          options.emit?.({
-            type: 'conversation.compacted',
-            runId: options.runId,
-            iteration,
-            trigger: 'reactive',
-            tokenEstimateBefore: reactiveOutcome.tokenEstimateBefore,
-            tokenEstimateAfter: reactiveOutcome.tokenEstimateAfter,
-            messagesSummarized: reactiveOutcome.messagesSummarized,
-            preservedMessages: reactiveOutcome.preservedMessages,
-            clearedToolResults: reactiveOutcome.clearedToolResults,
-            timestamp: nowIso(),
-          });
-          iteration -= 1;
-          continue;
-        }
+        emitTrajectory({
+          type: 'conversation.compacted',
+          runId: options.runId,
+          iteration,
+          trigger: 'reactive',
+          messagesSummarized: reactiveOutcome.messagesSummarized,
+          ...(reactiveOutcome.shadowedTokenCount !== undefined
+            ? { shadowedTokenCount: reactiveOutcome.shadowedTokenCount }
+            : {}),
+        });
+        options.emit?.({
+          type: 'conversation.compacted',
+          runId: options.runId,
+          iteration,
+          trigger: 'reactive',
+          tokenEstimateBefore: reactiveOutcome.tokenEstimateBefore,
+          tokenEstimateAfter: reactiveOutcome.tokenEstimateAfter,
+          messagesSummarized: reactiveOutcome.messagesSummarized,
+          preservedMessages: reactiveOutcome.preservedMessages,
+          clearedToolResults: reactiveOutcome.clearedToolResults,
+          timestamp: nowIso(),
+        });
+        emitTrajectory({
+          type: 'conversation.replaced',
+          runId: options.runId,
+          iteration,
+          reason: 'reactive-compact',
+          messages: deepClone(reactiveOutcome.messages),
+        });
+        iteration -= 1;
+        iterationReused = true;
+        continue;
       }
-      // Fallback model: after transport-level retries are exhausted, switch to
-      // the configured fallback model once and retry this iteration.
-      const fallbackModel = options.config.fallbackModel;
-      if (
-        fallbackModel &&
-        !modelFallbackUsed &&
-        fallbackModel !== model &&
-        isModelFallbackEligibleError(error)
-      ) {
+      if (decision.action === 'fallback-model') {
+        // Fallback model: after transport-level retries are exhausted, switch
+        // to the configured fallback model once and retry this iteration.
         modelFallbackUsed = true;
         const fromModel = model;
-        model = fallbackModel;
+        model = decision.toModel;
         options.emit?.({
           type: 'model.fallback',
           runId: options.runId,
           iteration,
           fromModel,
-          toModel: fallbackModel,
+          toModel: decision.toModel,
           reason: asError(error).message,
           timestamp: nowIso(),
         });
         iteration -= 1;
+        iterationReused = true;
         continue;
       }
       throw error;
@@ -548,6 +624,13 @@ export async function executeConversation(
     const assistantMessage = assistantMessageToParam(message);
     conversation.push(assistantMessage);
     await appendRawTranscript(options, [assistantMessage]);
+    emitTrajectory({
+      type: 'conversation.append',
+      runId: options.runId,
+      iteration,
+      origin: 'assistant',
+      message: assistantMessage,
+    });
     emitTrajectory({
       type: 'assistant.message',
       runId: options.runId,
@@ -629,11 +712,19 @@ export async function executeConversation(
       if (result?.blockingErrors && result.blockingErrors.length > 0) {
         for (const err of result.blockingErrors) {
           const msg = typeof err === 'string' ? err : `${err.command ? `[${err.command}] ` : ''}${err.reason}`;
-          conversation.push({
-            role: 'user',
+          const hookErrorReminder = {
+            role: 'user' as const,
             content: `<system-reminder>\nStop hook reported blocking error: ${msg}\n</system-reminder>`,
+          };
+          conversation.push(hookErrorReminder);
+          await appendRawTranscript(options, [hookErrorReminder]);
+          emitTrajectory({
+            type: 'conversation.append',
+            runId: options.runId,
+            iteration,
+            origin: 'system-nudge',
+            message: hookErrorReminder,
           });
-          await appendRawTranscript(options, [conversation.at(-1)!]);
         }
       }
       if (result?.nonBlockingErrors && result.nonBlockingErrors.length > 0) {
@@ -683,6 +774,9 @@ export async function executeConversation(
     });
 
     const toolUses = message.content.filter((block): block is ToolUseBlock => block.type === 'tool_use');
+    if (lastStep && lastStep.iteration === iteration) {
+      lastStep.toolUseCount = toolUses.length;
+    }
 
     if (
       !preventContinuation &&
@@ -690,17 +784,25 @@ export async function executeConversation(
       toolUses.length > 0 &&
       toolUses.some(isLikelyTruncatedToolUse)
     ) {
-      conversation.push({
-        role: 'user',
+      const truncatedToolUseReminder = {
+        role: 'user' as const,
         content: toolUses.map(toolUse => ({
-          type: 'tool_result',
+          type: 'tool_result' as const,
           tool_use_id: toolUse.id,
           is_error: true,
           content:
             'The model response hit max_tokens while constructing this tool call, so its JSON arguments were incomplete. Retry the tool call with complete JSON arguments and smaller output.',
         })),
+      };
+      conversation.push(truncatedToolUseReminder);
+      await appendRawTranscript(options, [truncatedToolUseReminder]);
+      emitTrajectory({
+        type: 'conversation.append',
+        runId: options.runId,
+        iteration,
+        origin: 'system-nudge',
+        message: truncatedToolUseReminder,
       });
-      await appendRawTranscript(options, [conversation.at(-1)!]);
       continue;
     }
 
@@ -714,13 +816,21 @@ export async function executeConversation(
       maxTokensRecoveryCount < MAX_OUTPUT_TOKENS_RECOVERY_LIMIT
     ) {
       maxTokensRecoveryCount += 1;
-      conversation.push({
-        role: 'user',
+      const recoveryNudge = {
+        role: 'user' as const,
         content:
           'Output token limit hit. Resume directly — no apology, no recap of what you were doing. ' +
           'Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.',
+      };
+      conversation.push(recoveryNudge);
+      await appendRawTranscript(options, [recoveryNudge]);
+      emitTrajectory({
+        type: 'conversation.append',
+        runId: options.runId,
+        iteration,
+        origin: 'system-nudge',
+        message: recoveryNudge,
       });
-      await appendRawTranscript(options, [conversation.at(-1)!]);
       continue;
     }
 
@@ -728,8 +838,8 @@ export async function executeConversation(
       const queuedSteering = (await options.drainQueuedInputs?.()) ?? [];
       const queuedFollowUps = options.drainFollowUpInputs?.() ?? [];
       if (queuedSteering.length > 0 || queuedFollowUps.length > 0) {
-        conversation.push({
-          role: 'user',
+        const steeringMessage = {
+          role: 'user' as const,
           content: [
             ...queuedSteering.map((text) => ({
               type: 'text' as const,
@@ -740,8 +850,16 @@ export async function executeConversation(
               text: `[User follow-up queued for after your previous response]\n${text}`,
             })),
           ],
+        };
+        conversation.push(steeringMessage);
+        await appendRawTranscript(options, [steeringMessage]);
+        emitTrajectory({
+          type: 'conversation.append',
+          runId: options.runId,
+          iteration,
+          origin: 'system-nudge',
+          message: steeringMessage,
         });
-        await appendRawTranscript(options, [conversation.at(-1)!]);
         maxTokensRecoveryCount = 0;
         continue;
       }
@@ -769,6 +887,7 @@ export async function executeConversation(
         startedAt,
         completedAt,
       };
+      closeStepAndTurn(result.stopReason);
       emitTrajectory({
         type: 'run.completed',
         runId: options.runId,
@@ -788,16 +907,24 @@ export async function executeConversation(
 
     if (iteration >= options.config.maxToolIterations) {
       if (toolUses.length > 0) {
-        conversation.push({
-          role: 'user',
+        const limitMessage = {
+          role: 'user' as const,
           content: toolUses.map(toolUse => ({
-            type: 'tool_result',
+            type: 'tool_result' as const,
             tool_use_id: toolUse.id,
             is_error: true,
             content: `The run exceeded the max tool iteration limit (${options.config.maxToolIterations}) before this tool could execute.`,
           })),
+        };
+        conversation.push(limitMessage);
+        await appendRawTranscript(options, [limitMessage]);
+        emitTrajectory({
+          type: 'conversation.append',
+          runId: options.runId,
+          iteration,
+          origin: 'system-nudge',
+          message: limitMessage,
         });
-        await appendRawTranscript(options, [conversation.at(-1)!]);
       }
       const completedAt = nowIso();
       if (finalMessage) {
@@ -820,6 +947,7 @@ export async function executeConversation(
           startedAt,
           completedAt,
         };
+        closeStepAndTurn(result.stopReason, result.incompleteReason);
         emitTrajectory({
           type: 'run.completed',
           runId: options.runId,
@@ -955,6 +1083,9 @@ export async function executeConversation(
     }
     if (schedule.aborted) {
       abortedAfterToolBatch = true;
+      if (lastStep && lastStep.iteration === iteration) {
+        lastStep.aborted = true;
+      }
     }
 
     // Aggregate per-message budget: N parallel tools can each pass the
@@ -973,20 +1104,15 @@ export async function executeConversation(
     // Todo continuity reminder: when TodoWrite is available but unused for a
     // stretch of iterations, re-inject the current todo state so long runs
     // stay anchored to the plan (mirrors Claude Code's 10-turn reminder).
-    if (toolUses.some((toolUse) => toolUse.name === TODO_WRITE_TOOL_NAME)) {
-      iterationsSinceTodoWrite = 0;
-    } else {
-      iterationsSinceTodoWrite += 1;
-      if (toolMap.has(TODO_WRITE_TOOL_NAME) && iterationsSinceTodoWrite >= TODO_REMINDER_INTERVAL) {
-        const reminder = buildTodoReminderText(
-          getHadamardTodoSnapshot(options.sessionId ?? options.runId),
-        );
-        const lastResult = toolResults.at(-1);
-        if (lastResult) {
-          appendTextToToolResultContent(lastResult, reminder);
-          iterationsSinceTodoWrite = 0;
-        }
-      }
+    // The interval/state lives in the swappable todo-reminder extension.
+    const todoReminder = extensions.todoReminder.observe({
+      toolUseNames: toolUses.map((toolUse) => toolUse.name),
+      todoToolAvailable: toolMap.has(TODO_WRITE_TOOL_NAME),
+      sessionKey: options.sessionId ?? options.runId,
+    });
+    if (todoReminder) {
+      const lastResult = toolResults.at(-1);
+      if (lastResult) appendTextToToolResultContent(lastResult, todoReminder);
     }
 
     // Repeat-call guard: consecutive identical ERROR calls by canonical
@@ -998,7 +1124,7 @@ export async function executeConversation(
     for (const tr of toolResults.slice(-toolUses.length)) {
       const record = toolCalls.find((tc) => tc.id === tr.tool_use_id);
       if (record) {
-        const outcome = repeatCallGuard.record(record.name, record.input, tr.is_error === true);
+        const outcome = extensions.repeatCall.record(record.name, record.input, tr.is_error === true);
         if (outcome.reminder) repeatReminder = outcome.reminder;
         if (outcome.hardStop) {
           repeatHardStop = true;
@@ -1022,6 +1148,13 @@ export async function executeConversation(
     const restoredConversation = options.takePendingConversationRestore?.();
     if (restoredConversation) {
       conversation.splice(0, conversation.length, ...deepClone(restoredConversation));
+      emitTrajectory({
+        type: 'conversation.replaced',
+        runId: options.runId,
+        iteration,
+        reason: 'restore',
+        messages: deepClone(restoredConversation),
+      });
       toolResults = [];
       if (options.onConversationCheckpoint) {
         try {
@@ -1060,6 +1193,7 @@ export async function executeConversation(
         startedAt,
         completedAt,
       };
+      closeStepAndTurn(result.stopReason, result.incompleteReason);
       emitTrajectory({
         type: 'run.completed',
         runId: options.runId,
@@ -1081,8 +1215,8 @@ export async function executeConversation(
     // Always push tool results before any early return so the conversation
     // never ends with dangling tool_use blocks (which would make a persisted
     // session unusable: providers reject unpaired tool_use ids on resume).
-    conversation.push({
-      role: 'user',
+    const toolResultMessage = {
+      role: 'user' as const,
       content: [
         ...toolResults,
         // Tool-deferred model-facing context rides the same user message as
@@ -1094,8 +1228,16 @@ export async function executeConversation(
           text: `[User message sent while you were working — factor it into your current task]\n${text}`,
         })),
       ],
+    };
+    conversation.push(toolResultMessage);
+    await appendRawTranscript(options, [toolResultMessage]);
+    emitTrajectory({
+      type: 'conversation.append',
+      runId: options.runId,
+      iteration,
+      origin: 'tool-results',
+      message: toolResultMessage,
     });
-    await appendRawTranscript(options, [conversation.at(-1)!]);
     toolResults = [];
 
     // Persist mid-run so a host kill (e.g. accidental taskkill of node.exe)
@@ -1136,6 +1278,7 @@ export async function executeConversation(
         startedAt,
         completedAt,
       };
+      closeStepAndTurn(result.stopReason);
       emitTrajectory({
         type: 'run.completed',
         runId: options.runId,
@@ -1181,6 +1324,7 @@ export async function executeConversation(
           startedAt,
           completedAt,
         };
+        closeStepAndTurn(result.stopReason, result.incompleteReason);
         emitTrajectory({
           type: 'run.completed',
           runId: options.runId,
