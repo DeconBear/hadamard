@@ -1078,6 +1078,8 @@ export interface AgentRunOptions {
   maxTokens?: number;
   /** Per-run tool-iteration cap; overrides the SDK config cap for this run. */
   maxToolIterations?: number;
+  /** Per-run override of the ReAct driver's swappable strategies (compaction/request-error/repeat-guard/todo-reminder). */
+  extensions?: import('./runtime/conversationExtensions.js').ConversationExtensionPoints;
   /** Restrict the effective default/custom tool catalog to these names. */
   allowedTools?: string[];
   /** Apply Agent filesystem/process confinement for this run. */
