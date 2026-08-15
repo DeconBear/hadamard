@@ -27,7 +27,7 @@ const probeTools = () => [
   makeTool('type', z.strictObject({ x: z.string() }), 'Keyword-named tool.'),
 ];
 
-const golden = "# Typed host-tool stubs reachable from CodeCell code through the global\n# `hadamard` object. Signatures are authoritative for parameter names; every\n# method dispatches the matching host tool, and `hadamard.tool(\"<name>\", {...})` stays\n# available for tools without a typed stub.\n# A failed host call raises HadamardToolError with a `tool_name` attribute;\n# catch it to branch on which tool failed.\nclass HadamardHost:\n    \"\"\"Host-tool bridge (typed surface).\"\"\"\n\n    def bad_tool(self) -> Any:\n        \"\"\"Tool with an invalid identifier param. Host tool: bad-tool. Called as hadamard.bad_tool. Not keyword-accessible (invalid Python identifiers): not-valid.\"\"\"\n        ...\n\n    def search(self, pattern: str, path: str | None = None, include: str | None = None) -> Any:\n        \"\"\"Search file contents with a ripgrep regular expression. Host tool: Grep.\"\"\"\n        ...\n\n    def read(self, file_path: str, offset: int | None = None) -> Any:\n        \"\"\"Read a UTF-8 text file. Host tool: Read.\"\"\"\n        ...\n\n    def type_(self, x: str) -> Any:\n        \"\"\"Keyword-named tool. Host tool: type. Called as hadamard.type_.\"\"\"\n        ...\n\n    def weather_lookup(self, city: str, units: Literal['c'] | Literal['f'] | None = None, tags: list[str] | None = None) -> Any:\n        \"\"\"Look up current weather. Host tool: weather_lookup.\"\"\"\n        ...";
+const golden = "# Typed host-tool stubs reachable from CodeCell code through the global\n# `hadamard` object. Signatures are authoritative for parameter names; every\n# method dispatches the matching host tool, and `hadamard.tool(\"<name>\", {...})` stays\n# available for tools without a typed stub.\n# A failed host call raises HadamardToolError with a `tool_name` attribute;\n# catch it to branch on which tool failed.\n# Any tool schema is queryable on demand with hadamard.tool_schema(\"<ToolName>\").\nclass HadamardHost:\n    \"\"\"Host-tool bridge (typed surface).\"\"\"\n\n    def bad_tool(self) -> Any:\n        \"\"\"Tool with an invalid identifier param. Host tool: bad-tool. Called as hadamard.bad_tool. Not keyword-accessible (invalid Python identifiers): not-valid.\"\"\"\n        ...\n\n    def search(self, pattern: str, path: str | None = None, include: str | None = None) -> Any:\n        \"\"\"Search file contents with a ripgrep regular expression. Host tool: Grep.\"\"\"\n        ...\n\n    def read(self, file_path: str, offset: int | None = None) -> Any:\n        \"\"\"Read a UTF-8 text file. Host tool: Read.\"\"\"\n        ...\n\n    def type_(self, x: str) -> Any:\n        \"\"\"Keyword-named tool. Host tool: type. Called as hadamard.type_.\"\"\"\n        ...\n\n    def weather_lookup(self, city: str, units: Literal['c'] | Literal['f'] | None = None, tags: list[str] | None = None) -> Any:\n        \"\"\"Look up current weather. Host tool: weather_lookup.\"\"\"\n        ...";
 
 describe('renderCodeActHostSdk', () => {
   it('renders byte-stable typed stubs for a fixed tool set', () => {
@@ -77,7 +77,7 @@ describe('renderCodeActHostSdk', () => {
     expect(sdk).not.toContain('Look up current weather');
   });
 
-  it('truncates the tool list when even folded signatures overflow', () => {
+  it('truncates the tool list but keeps every remaining tool discoverable', () => {
     const weather = makeTool(
       'weather_lookup',
       z.strictObject({ city: z.string() }),
@@ -86,6 +86,33 @@ describe('renderCodeActHostSdk', () => {
     const sdk = renderCodeActHostSdk([weather], { maxChars: 80 });
     expect(sdk).toContain('truncated typed surface');
     expect(sdk).toContain('omitted for prompt budget');
+    expect(sdk).toContain('weather_lookup');
+    expect(sdk).toContain('hadamard.tool_schema');
+  });
+
+  it('emits a complete compact index for omitted and reserved tools', () => {
+    const longPurpose = (word: string) => `${word} performs a long multi-step operation over the workspace so the purpose line in the truncated index exercises its full width budget.`;
+    const wideSchema = z.strictObject({
+      p1: z.string(), p2: z.string(), p3: z.string(), p4: z.string(),
+      p5: z.string(), p6: z.string(), p7: z.string(), p8: z.string(),
+    });
+    const tools = [
+      makeTool('alpha_tool', wideSchema, longPurpose('Alpha')),
+      makeTool('bravo_tool', wideSchema, longPurpose('Bravo')),
+      makeTool('charlie_tool', wideSchema, longPurpose('Charlie')),
+      makeTool('delta_tool', wideSchema, longPurpose('Delta')),
+      makeTool('echo_tool', wideSchema, longPurpose('Echo')),
+      makeTool('foxtrot_tool', wideSchema, longPurpose('Foxtrot')),
+    ];
+    const sdk = renderCodeActHostSdk(tools, { maxChars: 500 });
+    expect(sdk).toContain('truncated typed surface');
+    expect(sdk).toContain('index below keeps every remaining tool discoverable');
+    expect(sdk).toContain('Compact name index');
+    // Every remaining name stays visible: purposes render as a one-line index,
+    // and names that no longer fit fall back to the compact name index.
+    for (const name of ['alpha_tool', 'bravo_tool', 'charlie_tool', 'delta_tool', 'echo_tool', 'foxtrot_tool']) {
+      expect(sdk).toContain(name);
+    }
   });
 
   it('uses the declared default budget', () => {

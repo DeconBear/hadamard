@@ -56,6 +56,7 @@ export class CodeActSubdispatchScheduler {
   private driving = false;
   private driverPromise: Promise<void> = Promise.resolve();
   private wake: (() => void) | undefined;
+  private readonly pendingEmits = new Set<Promise<void>>();
 
   constructor(private readonly options: CodeActSubdispatchOptions) {}
 
@@ -72,7 +73,7 @@ export class CodeActSubdispatchScheduler {
         resolve,
         reject,
         start: () => {
-          void this.emit({
+          this.trackEmit({
             phase: 'start',
             subCallId,
             rootCallId: this.options.rootCallId,
@@ -95,7 +96,7 @@ export class CodeActSubdispatchScheduler {
           const parked = entry.parked;
           if (parked === undefined) return;
           if (parked.error !== undefined) {
-            void this.emit({
+            this.trackEmit({
               phase: 'settle',
               subCallId,
               rootCallId: this.options.rootCallId,
@@ -111,7 +112,7 @@ export class CodeActSubdispatchScheduler {
             entry.reject(new Error('CodeAct dispatch produced no response.'));
             return;
           }
-          void this.emit({
+          this.trackEmit({
             phase: 'settle',
             subCallId,
             rootCallId: this.options.rootCallId,
@@ -139,11 +140,12 @@ export class CodeActSubdispatchScheduler {
     release?.();
   }
 
-  /** Stop new starts, abandon queued-unstarted calls, and drain started ones. */
+  /** Stop new starts, abandon queued-unstarted calls, and drain started ones plus their audit emissions. */
   async drain(): Promise<void> {
     this.over = true;
     this.wakeup();
     await this.drive();
+    await Promise.allSettled([...this.pendingEmits]);
   }
 
   private nameOf(request: CodeActHostRpcRequest): string {
@@ -234,6 +236,16 @@ export class CodeActSubdispatchScheduler {
           this.wake = resolve;
         });
     }
+  }
+
+  private trackEmit(
+    payload: Omit<ToolCodeDispatchEvent, 'type' | 'runId' | 'iteration' | 'timestamp'>,
+  ): void {
+    const promise = this.emit(payload);
+    this.pendingEmits.add(promise);
+    void promise
+      .catch(() => undefined)
+      .finally(() => this.pendingEmits.delete(promise));
   }
 
   private async emit(

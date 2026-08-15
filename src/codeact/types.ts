@@ -15,7 +15,7 @@ export interface CodeActSettings {
   idleTimeoutMs?: number;
   executionTimeoutMs?: number;
   maxOutputChars?: number;
-  /** Combined stdout/stderr byte budget; exceeding it sets outputLimit. Defaults to 4× maxOutputChars. */
+  /** Hard outer-output byte budget (stdout/stderr + host RPC payloads + final result envelope); exceeding it hard-stops the cell with a single output-limit failure. Defaults to 4× maxOutputChars. */
   maxOutputBytes?: number;
   environmentAllowlist?: string[];
   containerImage?: string;
@@ -33,7 +33,7 @@ export interface ResolvedCodeActSettings {
   idleTimeoutMs: number;
   executionTimeoutMs: number;
   maxOutputChars: number;
-  /** Combined stdout/stderr byte budget; exceeding it sets outputLimit. */
+  /** Hard outer-output byte budget (stdout/stderr + host RPC payloads + final result envelope); exceeding it hard-stops the cell with a single output-limit failure. */
   maxOutputBytes: number;
   environmentAllowlist: string[];
   containerImage: string;
@@ -72,6 +72,8 @@ export interface CodeCellExecutionRequest {
   workDir: string;
   timeoutMs: number;
   signal?: AbortSignal;
+  /** Abort the per-cell controller from inside the adapter so started nested calls observe settlement abort before drain. */
+  abort?: (reason: Error) => void;
   hostRpc?: CodeActHostRpcHandler;
   onDelta?: (stream: 'stdout' | 'stderr', delta: string) => void;
   /** Sanitized method name → real host tool name, for typed `hadamard.<name>` dispatch. */
@@ -91,7 +93,7 @@ export interface CodeCellExecutionResult {
   resourceUsage?: Record<string, number>;
   artifacts: CodeActArtifactReference[];
   stateLost?: boolean;
-  /** True when the combined stdout/stderr byte budget was exceeded. */
+  /** Present only with status 'failed' + failureKind 'output-limit': the hard outer-output budget was exceeded. */
   outputLimit?: boolean;
   /** Structured failure classification for the settled cell run. */
   failureKind?: CodeRunFailureKind;

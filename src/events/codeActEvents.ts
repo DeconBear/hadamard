@@ -17,6 +17,9 @@ export interface AgentCodeCellResult {
     sizeBytes?: number;
   }>;
   stateLost?: boolean;
+  /** Present only with status 'failed' + failureKind 'output-limit'. */
+  outputLimit?: boolean;
+  failureKind?: 'exception' | 'timeout' | 'interrupt' | 'kernel-exit' | 'output-limit';
 }
 
 interface CodeActEventBase {
