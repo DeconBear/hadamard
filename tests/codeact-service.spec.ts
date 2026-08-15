@@ -57,6 +57,7 @@ function service(extra: ConstructorParameters<typeof CodeActService>[0] = { enab
     backend: extra.backend,
     securityMode: extra.securityMode,
     maxOutputChars: extra.maxOutputChars,
+    maxOutputBytes: extra.maxOutputBytes,
     environmentAllowlist: extra.environmentAllowlist,
     containerImage: extra.containerImage,
     containerMemoryMb: extra.containerMemoryMb,
@@ -113,12 +114,15 @@ describe('CodeActService process kernel', () => {
 
   it('bounds captured output and marks truncation before it reaches history', async () => {
     const cwd = await workspace();
-    const instance = service({ enabled: true, maxOutputChars: 1_000 });
+    // Keep the byte budget wide so this stays a pure display-truncation test
+    // (hard budget stops are covered by the output-limit cases).
+    const instance = service({ enabled: true, maxOutputChars: 1_000, maxOutputBytes: 40_000 });
     const result = await instance.execute({
       language: 'python',
       code: 'print("z" * 5000)',
       context: context(cwd),
     });
+    expect(result.status).toBe('completed');
     expect(result.stdout.length).toBeLessThanOrEqual(1_000);
     expect(result.stdout).toContain('[output truncated by Hadamard]');
   });
@@ -448,7 +452,7 @@ describe('CodeActService process kernel', () => {
     expect(recovered.generation).toBeGreaterThan(crashed.generation);
   });
 
-  it('reports the output-limit failure kind when the byte budget is exceeded', async () => {
+  it('hard-stops with a single output-limit failure when the byte budget is exceeded', async () => {
     const cwd = await workspace();
     const instance = service({ enabled: true, maxOutputChars: 1_000, maxOutputBytes: 2_000 });
     const result = await instance.execute({
@@ -456,9 +460,12 @@ describe('CodeActService process kernel', () => {
       code: 'print("z" * 10_000)',
       context: context(cwd),
     });
-    expect(result.status).toBe('completed');
+    // Budget breaches are one unique failure: never completed + failureKind.
+    expect(result.status).toBe('failed');
     expect(result.outputLimit).toBe(true);
     expect(result.failureKind).toBe('output-limit');
+    expect(result.stateLost).toBe(true);
+    expect(result.error).toContain('output budget');
     expect(result.stdout.length).toBeLessThanOrEqual(1_000);
     expect(result.stdout).toContain('[output truncated by Hadamard]');
   });
