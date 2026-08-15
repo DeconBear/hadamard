@@ -326,6 +326,9 @@ export async function resolveRuntimeConfig(
     // Bounded rolling pool for parallel-classified tool calls, mirroring
     // dsh's maxParallelToolCalls scheduling contract.
     maxParallelToolCalls,
+    toolPresentation: options.toolPresentation === 'ptc' || options.toolPresentation === 'both'
+      ? options.toolPresentation
+      : 'native',
     fallbackModel,
     promptCachingEnabled: options.promptCachingEnabled ?? true,
     userId: options.userId,

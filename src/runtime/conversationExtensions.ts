@@ -1,12 +1,9 @@
-import type { MessageParam } from '../provider/types.js';
-import type { ModelApi } from '../types.js';
+import type { ConversationExtensionPoints, HadamardLoopCompactOutcome } from '../types.js';
 import {
   compactHadamardConversationIfNeeded,
   isHadamardPromptTooLongError,
 } from './hadamardCompact.js';
-import type { HadamardLoopCompactContext, HadamardLoopCompactOutcome } from './hadamardCompact.js';
 import { RepeatCallGuard } from './repeatCallGuard.js';
-import type { RepeatCallRecord } from './repeatCallGuard.js';
 import { buildTodoReminderText } from './conversationToolBatch.js';
 import { getHadamardTodoSnapshot, TODO_WRITE_TOOL_NAME } from '../tools/todo/TodoWriteTool.js';
 import {
@@ -15,74 +12,22 @@ import {
   isRetryableStreamInterruption,
   streamInterruptionBackoffMs,
 } from './modelRequestPolicy.js';
-import type { ExecuteConversationOptions } from './conversationPorts.js';
 import { defineContributionServiceKey } from '../contrib/contributionHost.js';
 import type { ContributionApplyContext, HadamardRuntimeContribution } from '../contrib/contributionHost.js';
 
+export type { ConversationExtensionPoints } from '../types.js';
+
 /**
- * Typed extension points that thin the ReAct driver: compaction, request-
- * error strategy, repeat-call guard, and the todo reminder are swappable
- * strategies consumed by executeConversation. The driver keeps the state
- * machine, request assembly, tool scheduling, pairing, safety, and abort
- * invariants; these seams only decide what the driver should do next. The
- * built-in factory preserves the exact current behavior and doubles as the
- * default contribution registered in the runtime contribution host.
+ * Built-in implementations of the ReAct driver's swappable strategies
+ * (compaction, request-error recovery, repeat-call guard, todo reminder).
+ * The driver keeps the state machine, request assembly, tool scheduling,
+ * pairing, safety, and abort invariants; these seams only decide what the
+ * driver should do next. The factory preserves the exact current behavior
+ * and doubles as the default contribution registered in the runtime
+ * contribution host.
  *
  * @module src/runtime/conversationExtensions
  */
-
-export type AutoCompactExtension = (
-  messages: MessageParam[],
-  context: HadamardLoopCompactContext,
-) => Promise<HadamardLoopCompactOutcome>;
-
-export interface RequestErrorContext {
-  error: unknown;
-  model: string;
-  fallbackModel?: string;
-  modelFallbackUsed: boolean;
-  streamInterruptionRetries: number;
-  reactiveCompactAttempted: boolean;
-  modelApi: ModelApi;
-  conversation: MessageParam[];
-  compactConfig: ExecuteConversationOptions['config']['compact'];
-  systemPrompt: string | undefined;
-  tools: unknown[];
-  maxTokens: number;
-  compactWindowPrefixTokens: number;
-  runKey: string;
-  signal?: AbortSignal;
-}
-
-export type RequestErrorDecision =
-  | { action: 'stream-retry'; retryCount: number; maxRetries: number; backoffMs: number }
-  | { action: 'reactive-compact'; outcome: HadamardLoopCompactOutcome; compactAttempted: true }
-  | { action: 'fallback-model'; toModel: string; compactAttempted?: boolean }
-  | { action: 'rethrow'; compactAttempted?: boolean };
-
-export type RequestErrorExtension = (context: RequestErrorContext) => Promise<RequestErrorDecision>;
-
-export interface ConversationRepeatExtension {
-  record(toolName: string, input: unknown, isError: boolean): RepeatCallRecord;
-}
-
-export interface ConversationTodoObservation {
-  toolUseNames: readonly string[];
-  todoToolAvailable: boolean;
-  sessionKey: string;
-}
-
-export interface ConversationTodoReminderExtension {
-  /** Returns the reminder to append to the last tool result, or undefined. */
-  observe(observation: ConversationTodoObservation): string | undefined;
-}
-
-export interface ConversationExtensionPoints {
-  autoCompact?: AutoCompactExtension;
-  requestError?: RequestErrorExtension;
-  repeatCall?: ConversationRepeatExtension;
-  todoReminder?: ConversationTodoReminderExtension;
-}
 
 const TODO_REMINDER_INTERVAL = 10;
 

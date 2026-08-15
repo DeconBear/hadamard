@@ -1,0 +1,95 @@
+import { HadamardSdkError } from '../errors.js';
+import type { AgentToolDefinition, ResolvedToolAdapter } from '../types.js';
+import { renderCodeActHostSdk } from './codeActSdk.js';
+import { CODE_CELL_TOOL_NAME } from './codeCellTool.js';
+import { RUN_CODE_TOOL_NAME } from './runCodeTool.js';
+
+/**
+ * Tool presentation layer (dsh native/code/both, Hadamard-owned): separates
+ * HOW tools are presented to the model from the agent mode (ReAct driver)
+ * and from the compute runtime (persistent CodeAct kernel). PTC presents one
+ * stateless run_code wire tool plus a typed SDK; the model composes multiple
+ * tool calls inside a program instead of emitting many JSON tool calls.
+ *
+ * @module src/codeact/toolPresentation
+ */
+
+import type { ToolPresentationMode } from './presentationTypes.js';
+
+export type { ToolPresentationMode } from './presentationTypes.js';
+
+export interface ToolPresentationPlan {
+  mode: ToolPresentationMode;
+  /** Wire-level tools the provider sees for this request. */
+  providerTools: import('../provider/types.js').Tool[];
+  /** Present when the run_code wire tool is on the wire. */
+  wireToolName?: string;
+  /** Typed host-tool SDK text (empty for native). */
+  sdk: string;
+  /** System-prompt instructions for the presentation (empty for native). */
+  instructions: string;
+}
+
+export function resolveToolPresentation(options: {
+  mode: ToolPresentationMode | undefined;
+  resolvedTools: readonly ResolvedToolAdapter[];
+  /** Pre-resolution tool definitions the SDK is rendered from. */
+  sdkTools: readonly AgentToolDefinition[];
+}): ToolPresentationPlan {
+  const mode = options.mode ?? 'native';
+  if (mode === 'native') {
+    return {
+      mode,
+      providerTools: options.resolvedTools.map((tool) => tool.providerTool),
+      sdk: '',
+      instructions: '',
+    };
+  }
+  const wire = options.resolvedTools.find((tool) => tool.publicName === RUN_CODE_TOOL_NAME);
+  if (!wire) {
+    throw new HadamardSdkError(
+      `Tool presentation '${mode}' requires the ${RUN_CODE_TOOL_NAME} tool to be registered.`,
+      'PTC_TOOL_MISSING',
+    );
+  }
+  const sdkTools = options.sdkTools.filter((tool) => tool.name !== CODE_CELL_TOOL_NAME && tool.name !== RUN_CODE_TOOL_NAME);
+  const sdk = renderCodeActHostSdk(sdkTools);
+  const providerTools = mode === 'ptc'
+    ? [wire.providerTool]
+    : [
+        ...options.resolvedTools
+          .filter((tool) => tool.publicName !== RUN_CODE_TOOL_NAME)
+          .map((tool) => tool.providerTool),
+        wire.providerTool,
+      ];
+  return {
+    mode,
+    providerTools,
+    wireToolName: RUN_CODE_TOOL_NAME,
+    sdk,
+    instructions: buildPtcInstructions(mode, sdk, sdkTools.length),
+  };
+}
+
+function buildPtcInstructions(mode: 'ptc' | 'both', sdk: string, toolCount: number): string {
+  const intro = mode === 'ptc'
+    ? [
+        'Tools are presented through a single run_code wire tool: instead of emitting many JSON tool calls, compose multiple tool calls inside one Python program.',
+        `The typed SDK below declares the ${toolCount} visible host tool(s).`,
+      ].join('\n')
+    : [
+        'Ordinary JSON tools AND a run_code wire tool are both available; prefer run_code when several tool calls compose into one program.',
+      ].join('\n');
+  const sdkBlock = sdk.trim()
+    ? `Typed host-tool surface reachable from run_code programs (signatures are authoritative for parameter names):\n${sdk}`
+    : '';
+  return [
+    intro,
+    'Each run_code call executes in a fresh, stateless environment: no variables survive between calls, and programs cannot read files or state from earlier calls except through host tools.',
+    'Only stdout (print) and the final expression value are returned to the model; intermediate tool results stay inside the program, so filter large outputs before returning.',
+    'A failed host call raises HadamardToolError with a tool_name attribute; catch it to branch on which tool failed.',
+    'Host tool calls inside a program go through the same permission checks as direct tool calls.',
+    ...(sdkBlock ? [sdkBlock] : []),
+  ].join('\n');
+}
+
