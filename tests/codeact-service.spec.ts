@@ -160,6 +160,101 @@ describe('CodeActService process kernel', () => {
     expect(denied.error).toContain('Denied by permission rule Echo');
   });
 
+  it('prefers the runtime nested-tool executor for host RPC calls', async () => {
+    const cwd = await workspace();
+    const instance = service();
+    const directCalls: string[] = [];
+    const nestedCalls: string[] = [];
+    const echo = tool(
+      {
+        name: 'Echo',
+        description: 'Echoes a value.',
+        inputSchema: z.strictObject({ value: z.string() }),
+        isReadOnly: () => true,
+      },
+      async input => {
+        directCalls.push(input.value);
+        return { direct: input.value };
+      },
+    );
+    const result = await instance.execute({
+      language: 'python',
+      code: 'hadamard.tool("Echo", {"value": "nested"})',
+      context: context(cwd, {
+        runtime: {
+          executeTool: async (definition, input, execution) => {
+            nestedCalls.push(`${definition.name}:${String((input as { value: string }).value)}:${execution.toolUseId}`);
+            return {
+              id: execution.toolUseId,
+              name: definition.name,
+              publicName: definition.name,
+              provider: 'local',
+              input,
+              outputText: 'nested-result',
+              output: { nested: true },
+              isError: false,
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              durationMs: 0,
+            };
+          },
+        },
+      }),
+      hostTools: [echo],
+    });
+
+    expect(result.status).toBe('completed');
+    expect(result.result?.value).toEqual({ nested: true });
+    expect(nestedCalls).toHaveLength(1);
+    expect(directCalls).toEqual([]);
+  });
+
+  it('aborts nested host-tool execution at the cell deadline', async () => {
+    const cwd = await workspace();
+    const instance = service({ enabled: true, executionTimeoutMs: 100 });
+    let nestedAborted = false;
+    const slow = tool(
+      {
+        name: 'Slow',
+        description: 'Waits until aborted.',
+        inputSchema: z.strictObject({}),
+        isReadOnly: () => true,
+      },
+      async () => ({ direct: true }),
+    );
+    const result = await instance.execute({
+      language: 'python',
+      code: 'hadamard.tool("Slow", {})',
+      timeoutMs: 100,
+      context: context(cwd, {
+        runtime: {
+          executeTool: async (definition, input, execution) => new Promise((resolve) => {
+            execution.signal?.addEventListener('abort', () => {
+              nestedAborted = true;
+              resolve({
+                id: execution.toolUseId,
+                name: definition.name,
+                publicName: definition.name,
+                provider: 'local',
+                input,
+                outputText: 'aborted',
+                output: { aborted: true },
+                isError: true,
+                startedAt: new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+                durationMs: 0,
+              });
+            }, { once: true });
+          }),
+        },
+      }),
+      hostTools: [slow],
+    });
+
+    expect(result.failureKind).toBe('timeout');
+    await expect.poll(() => nestedAborted).toBe(true);
+  });
+
   it('dispatches typed hadamard.<method> calls through the tool name map', async () => {
     const cwd = await workspace();
     const instance = service();

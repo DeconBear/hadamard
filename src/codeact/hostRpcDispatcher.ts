@@ -128,14 +128,28 @@ export class CodeActHostRpcDispatcher {
   private async callTool(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse> {
     const envelope = asRecord(request.input);
     const requestedName = requiredString(envelope.name, 'tool name');
-    const input = envelope.input ?? {};
+    const input = asRecord(envelope.input ?? {});
     const definition = this.tools.get(requestedName);
     if (!definition) return { id: request.id, ok: false, error: `Host tool ${requestedName} is not available.` };
     if (definition.name === 'CodeCell') {
       return { id: request.id, ok: false, error: 'CodeCell cannot recursively invoke itself through Host RPC.' };
     }
-    const adapter = createLocalToolAdapter(definition, definition.name, definition.name);
     const toolUseId = `codeact-host-${randomUUID()}`;
+    const nestedExecutor = this.context.runtime?.executeTool;
+    if (nestedExecutor) {
+      const record = await nestedExecutor(definition, input, {
+        toolUseId,
+        signal: this.context.signal,
+      });
+      if (record.isError) {
+        return { id: request.id, ok: false, error: record.outputText || `Host tool ${definition.name} failed.` };
+      }
+      return { id: request.id, ok: true, result: record.output ?? record.outputText };
+    }
+
+    // Standalone CodeActService consumers do not have a conversation runtime.
+    // Preserve a small direct fallback for that public embedding path.
+    const adapter = createLocalToolAdapter(definition, definition.name, definition.name);
     const startedAt = new Date().toISOString();
     this.context.runtime?.emit?.({
       type: 'tool.call',
