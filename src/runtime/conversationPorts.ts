@@ -78,6 +78,11 @@ export interface ConversationRuntimeDependencies {
   mcpManager: McpConnectionManager;
 }
 
+export interface ConversationStrategyOptions {
+  /** Swappable strategies (compaction/request-error/repeat-guard/todo-reminder); defaults to the built-ins. */
+  extensions?: import('./conversationExtensions.js').ConversationExtensionPoints;
+}
+
 /** Compatibility composite; collaborators consume the smaller role interfaces above. */
 export interface ExecuteConversationOptions
   extends ConversationInputOptions,
@@ -85,4 +90,5 @@ export interface ExecuteConversationOptions
     ConversationLifecycleOptions,
     ConversationQueueOptions,
     ConversationPersistenceOptions,
+    ConversationStrategyOptions,
     ConversationRuntimeDependencies {}
