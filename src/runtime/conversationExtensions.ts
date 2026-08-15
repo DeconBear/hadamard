@@ -1,4 +1,4 @@
-import type { ConversationExtensionPoints, HadamardLoopCompactOutcome } from '../types.js';
+import type { ConversationExtensionPoints } from '../types.js';
 import {
   compactHadamardConversationIfNeeded,
   isHadamardPromptTooLongError,
