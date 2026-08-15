@@ -75,9 +75,11 @@ export function renderCodeActHostSdk(
   const reservedNotes: SdkReservedNote[] = [];
   const sortedTools = [...tools].sort((left, right) => left.name.localeCompare(right.name));
   const sanitizedCounts = countDynamicMethodNames(sortedTools);
+  const visibleTools = sortedTools.filter((tool) => tool.name !== 'CodeCell' && tool.name !== 'run_code');
+  const untypedCount = visibleTools.filter((tool) => !tool.outputSchema).length;
 
   for (const tool of sortedTools) {
-    if (tool.name === 'CodeCell') continue;
+    if (tool.name === 'CodeCell' || tool.name === 'run_code') continue;
     const fixedMethodName = FIXED_HELPER_METHODS[tool.name];
     if (fixedMethodName) {
       stubs.push({
@@ -129,6 +131,9 @@ export function renderCodeActHostSdk(
     '# A failed host call raises HadamardToolError with a `tool_name` attribute;',
     '# catch it to branch on which tool failed.',
     '# Any tool schema is queryable on demand with hadamard.tool_schema("<ToolName>").',
+    ...(untypedCount > 0
+      ? [`# Degraded typing: ${untypedCount} of ${visibleTools.length} visible tool(s) declare no output schema, so their results are untyped (Any) — treat them as opaque and degrade accordingly.`]
+      : []),
   ].join('\n');
 
   let body = renderStubClass(stubs, reservedNotes, true);

@@ -13,6 +13,7 @@ import type {
 import type { z } from 'zod';
 import type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
 import type { AgentMode, AgentNodeMode } from './runtime/agentExecutionPolicy.js';
+import type { ToolPresentationMode } from './codeact/presentationTypes.js';
 import type { ProjectInstructionMode } from './config/projectSettingsTypes.js';
 export type { HadamardEffort, HadamardRunEffort } from './contracts/runtimeOptions.js';
 export interface LoadedJsonConfigData {
@@ -439,6 +440,8 @@ export interface ResolvedRuntimeConfig {
   maxToolIterations: number;
   /** Upper bound for in-flight parallel tool calls per assistant message. Defaults to 10. */
   maxParallelToolCalls?: number;
+  /** Default tool presentation: native schemas, one stateless run_code wire tool, or both. */
+  toolPresentation: ToolPresentationMode;
   /** Model switched to after repeated overload/rate-limit failures. */
   fallbackModel?: string;
   /** Add a prompt-cache breakpoint to Anthropic requests. Defaults to true. */
@@ -558,6 +561,8 @@ export interface HadamardAgentDefinition {
   model?: string;
   /** Reusable Agent execution mode. Single is intentionally node-only. */
   agentMode?: AgentMode;
+  /** Tool presentation for this agent definition: native schemas, one stateless run_code wire tool, or both. */
+  toolPresentation?: ToolPresentationMode;
   /** Referenced provider/bridge config name (unified store, S1a) — the definition runs on this config's own model client instead of inheriting the session's. */
   bridgeConfig?: string;
   /**
@@ -912,6 +917,8 @@ export interface CreateAgentSdkOptions {
   maxToolIterations?: number;
   /** Upper bound for in-flight parallel tool calls per assistant message. Defaults to 10. */
   maxParallelToolCalls?: number;
+  /** Default tool presentation: native schemas, one stateless run_code wire tool, or both. Defaults to native. */
+  toolPresentation?: ToolPresentationMode;
   fallbackModel?: string;
   promptCachingEnabled?: boolean;
   userId?: string;
@@ -1026,6 +1033,93 @@ export interface HadamardCompactConfig {
    */
   compactPromptMode?: 'hybrid' | 'structured' | 'free';
 }
+// ── ReAct driver swappable strategies (conversation extension points) ──────
+// Defined in the public type barrel so both the engine and runtime
+// contributions can reference them without import cycles.
+
+export interface HadamardLoopCompactContext {
+  model: string;
+  modelApi: ModelApi;
+  compactConfig: HadamardCompactConfig;
+  maxTokens: number;
+  lastRequestInputTokens?: number;
+  tokenEstimateMultiplier?: number;
+  compactWindowPrefixTokens?: number;
+  fixedInputTokens?: number;
+  runKey: string;
+  signal?: AbortSignal;
+  systemPrompt?: string;
+  tools?: unknown[];
+  force?: boolean;
+  summaryInstructions?: string;
+}
+
+export interface HadamardLoopCompactOutcome {
+  messages: MessageParam[];
+  compacted: boolean;
+  tokenEstimateBefore: number;
+  tokenEstimateAfter: number;
+  messagesSummarized: number;
+  preservedMessages: number;
+  clearedToolResults: number;
+  summary?: string;
+  shadowedTokenCount?: number;
+  reason?: 'disabled' | 'threshold_not_met' | 'microcompact' | 'prune' | 'compacted' | 'failed' | 'circuit_breaker_open';
+  consecutiveFailures?: number;
+  error?: string;
+}
+
+export type AutoCompactExtension = (
+  messages: MessageParam[],
+  context: HadamardLoopCompactContext,
+) => Promise<HadamardLoopCompactOutcome>;
+
+export interface RequestErrorContext {
+  error: unknown;
+  model: string;
+  fallbackModel?: string;
+  modelFallbackUsed: boolean;
+  streamInterruptionRetries: number;
+  reactiveCompactAttempted: boolean;
+  modelApi: ModelApi;
+  conversation: MessageParam[];
+  compactConfig: HadamardCompactConfig;
+  systemPrompt: string | undefined;
+  tools: unknown[];
+  maxTokens: number;
+  compactWindowPrefixTokens: number;
+  runKey: string;
+  signal?: AbortSignal;
+}
+
+export type RequestErrorDecision =
+  | { action: 'stream-retry'; retryCount: number; maxRetries: number; backoffMs: number }
+  | { action: 'reactive-compact'; outcome: HadamardLoopCompactOutcome; compactAttempted: true }
+  | { action: 'fallback-model'; toModel: string; compactAttempted?: boolean }
+  | { action: 'rethrow'; compactAttempted?: boolean };
+
+export type RequestErrorExtension = (context: RequestErrorContext) => Promise<RequestErrorDecision>;
+
+export interface ConversationRepeatExtension {
+  record(toolName: string, input: unknown, isError: boolean): { reminder?: string; hardStop?: boolean };
+}
+
+export interface ConversationTodoObservation {
+  toolUseNames: readonly string[];
+  todoToolAvailable: boolean;
+  sessionKey: string;
+}
+
+export interface ConversationTodoReminderExtension {
+  observe(observation: ConversationTodoObservation): string | undefined;
+}
+
+export interface ConversationExtensionPoints {
+  autoCompact?: AutoCompactExtension;
+  requestError?: RequestErrorExtension;
+  repeatCall?: ConversationRepeatExtension;
+  todoReminder?: ConversationTodoReminderExtension;
+}
 
 export type HadamardWorkspaceKind = 'directory' | 'temp' | 'git-worktree';
 
@@ -1079,7 +1173,9 @@ export interface AgentRunOptions {
   /** Per-run tool-iteration cap; overrides the SDK config cap for this run. */
   maxToolIterations?: number;
   /** Per-run override of the ReAct driver's swappable strategies (compaction/request-error/repeat-guard/todo-reminder). */
-  extensions?: import('./runtime/conversationExtensions.js').ConversationExtensionPoints;
+  extensions?: ConversationExtensionPoints;
+  /** Per-run tool presentation: native schemas, one stateless run_code wire tool, or both. */
+  toolPresentation?: ToolPresentationMode;
   /** Restrict the effective default/custom tool catalog to these names. */
   allowedTools?: string[];
   /** Apply Agent filesystem/process confinement for this run. */

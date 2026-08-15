@@ -23,6 +23,7 @@ import { asError, deepClone, nowIso } from './helpers.js';
 import { resolveHadamardPostSamplingHooks, resolveHadamardStopHooks } from '../hooks/hadamardHooks.js';
 import { createBuiltInConversationExtensions } from './conversationExtensions.js';
 import type { ConversationExtensionPoints } from './conversationExtensions.js';
+import { resolveToolPresentation } from '../codeact/toolPresentation.js';
 import {
   getHadamardApiContextManagement,
   prepareHadamardProviderRequestMessages,
@@ -198,8 +199,19 @@ export async function executeConversation(
     options.mcpServers ?? [],
     { signal: options.signal, timeoutMs: options.config.mcpTimeoutMs },
   );
-  const systemPrompt = options.systemPrompt ?? options.config.systemPrompt;
-  const providerTools = resolvedTools.map(tool => tool.providerTool);
+  // Tool presentation (native / PTC / both) decides the wire-level tools; the
+  // execution registry (toolMap) stays complete so host-tool dispatch inside
+  // run_code programs keeps the same permission path as direct calls.
+  const presentation = resolveToolPresentation({
+    mode: options.toolPresentation,
+    resolvedTools,
+    sdkTools: options.tools ?? [],
+  });
+  const providerTools = presentation.providerTools;
+  const baseSystemPrompt = options.systemPrompt ?? options.config.systemPrompt;
+  const systemPrompt = typeof baseSystemPrompt === 'string'
+    ? `${baseSystemPrompt}\n\n${presentation.instructions}`.replace(/\n+$/u, '')
+    : (presentation.instructions || undefined);
   const fixedRequestBreakdown = estimateRequestTokenBreakdown({
     systemPrompt,
     tools: providerTools,

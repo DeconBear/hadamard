@@ -125,6 +125,9 @@ function normalizeAgentProfile(raw: unknown): AgentProfile | null {
   if (raw.agentMode !== undefined) {
     profile.agentMode = parseAgentMode(raw.agentMode, 'Agent profile agentMode');
   }
+  if (raw.toolPresentation === 'native' || raw.toolPresentation === 'ptc' || raw.toolPresentation === 'both') {
+    profile.toolPresentation = raw.toolPresentation;
+  }
   if (typeof raw.description === 'string' && raw.description.trim()) {
     profile.description = raw.description.trim();
   }
@@ -173,6 +176,9 @@ function assertValidAgentProfile(profile: AgentProfile): void {
   }
   if (profile.agentMode !== undefined && !isAgentMode(profile.agentMode)) {
     throw new Error('Agent mode must be react, codeact, or hybrid. Single is only valid on Workflow/Graph nodes.');
+  }
+  if (profile.toolPresentation !== undefined && !['native', 'ptc', 'both'].includes(profile.toolPresentation)) {
+    throw new Error('Tool presentation must be native, ptc, or both.');
   }
 }
 
@@ -350,6 +356,7 @@ export interface SelectableAgent {
   bridgeConfig: string;
   model: string;
   agentMode?: import('../runtime/agentExecutionPolicy.js').AgentMode;
+  toolPresentation?: import('../codeact/presentationTypes.js').ToolPresentationMode;
   /** Runtime metadata inherited from the matching bridge config, when available. */
   runtime?: BridgeRuntime;
   execution?: BridgeExecutionMode;
@@ -381,12 +388,13 @@ export interface SelectableAgent {
   ephemeral?: boolean;
 }
 
-/** Sampling / effort overrides to pass into `session.stream` / `AgentRunOptions`. */
-export function agentProfileRunOverrides(profile: Pick<AgentProfile, 'effort' | 'maxTokens' | 'temperature' | 'topP'> | null | undefined): {
+/** Sampling / effort / presentation overrides to pass into `session.stream` / `AgentRunOptions`. */
+export function agentProfileRunOverrides(profile: Pick<AgentProfile, 'effort' | 'maxTokens' | 'temperature' | 'topP' | 'toolPresentation'> | null | undefined): {
   effort?: HadamardRunEffort;
   maxTokens?: number;
   temperature?: number;
   topP?: number;
+  toolPresentation?: import('../codeact/presentationTypes.js').ToolPresentationMode;
 } {
   if (!profile) return {};
   return {
@@ -394,6 +402,7 @@ export function agentProfileRunOverrides(profile: Pick<AgentProfile, 'effort' | 
     ...(typeof profile.maxTokens === 'number' ? { maxTokens: profile.maxTokens } : {}),
     ...(typeof profile.temperature === 'number' ? { temperature: profile.temperature } : {}),
     ...(typeof profile.topP === 'number' ? { topP: profile.topP } : {}),
+    ...(profile.toolPresentation ? { toolPresentation: profile.toolPresentation } : {}),
   };
 }
 
@@ -472,6 +481,7 @@ export function listSelectableAgents(homeDir?: string): SelectableAgent[] {
       ...selectableAgentMetadata(configsByName.get(profile.bridgeConfig), profile.model),
       source: 'profile',
       ...(profile.agentMode ? { agentMode: profile.agentMode } : {}),
+      ...(profile.toolPresentation ? { toolPresentation: profile.toolPresentation } : {}),
       ...(profile.description ? { description: profile.description } : {}),
       ...(profile.permissionMode ? { permissionMode: profile.permissionMode } : {}),
       ...(profile.systemPromptAppend ? { systemPromptAppend: profile.systemPromptAppend } : {}),
