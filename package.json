@@ -208,6 +208,8 @@
     "bench:runtime": "tsx bench/runtime/run.ts --mode full --output tmp/runtime-benchmark-full.json",
     "bench:runtime:compare": "tsx bench/runtime/compare.ts",
     "bench:codeact:smoke": "tsx bench/codeact/run.ts --output tmp/codeact-benchmark-smoke.json",
+    "bench:ptc-ab:smoke": "tsx bench/ptc-ab/smoke.ts",
+    "bench:ptc-ab": "tsx bench/ptc-ab/run.ts",
     "bench:memory": "tsx bench/memory/run.ts",
     "bench:goal": "tsx bench/goal/run.ts",
     "smoke": "npm run build && tsx scripts/integration-smoke.ts",
