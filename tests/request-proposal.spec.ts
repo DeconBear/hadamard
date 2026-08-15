@@ -99,6 +99,29 @@ describe('requestProposal hook', () => {
       await sdk.close();
     }
   });
+
+  it.each([
+    [{ model: '   ' }, /model/i],
+    [{ effort: 'extreme' }, /effort/i],
+    [{ maxTokens: -1 }, /maxTokens/i],
+    [{ maxTokens: 1.5 }, /maxTokens/i],
+  ] as const)('rejects an invalid proposal before calling the provider: %o', async (proposal, expected) => {
+    const homeDir = await tempDir('hadamard-proposal-home-');
+    const workDir = await tempDir('hadamard-proposal-work-');
+    const sessionDirectory = await tempDir('hadamard-proposal-sessions-');
+    const modelApi = new ProposalModel();
+    const sdk = await createAgentSdk({
+      model: 'test-model', modelApi, homeDir, workDir, sessionDirectory,
+    });
+    try {
+      await expect(sdk.run('Validate the proposal.', {
+        requestProposal: () => proposal as never,
+      })).rejects.toThrow(expected);
+      expect(modelApi.calls).toHaveLength(0);
+    } finally {
+      await sdk.close();
+    }
+  });
 });
 
 describe('plan mode guidance', () => {

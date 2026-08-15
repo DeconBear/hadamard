@@ -26,8 +26,10 @@ export interface HadamardProviderClientOptions {
   baseURL?: string | null;
   timeout?: number;
   maxRetries?: number;
-  /** Resolved per-route retry policy; overrides the default predicate and backoff. */
+  /** Raw retry-policy overrides for direct client consumers. */
   retryPolicy?: HadamardRetryPolicyConfig;
+  /** Already-resolved runtime policy. Takes precedence over retryPolicy/maxRetries. */
+  resolvedRetryPolicy?: ResolvedProviderRetryPolicy;
   fetch?: typeof fetch;
 }
 
@@ -507,7 +509,8 @@ export default class HadamardProviderClient {
 
   constructor(options: HadamardProviderClientOptions = {}) {
     this.fetchImpl = options.fetch ?? fetch;
-    this.retryPolicy = resolveProviderRetryPolicy(options.retryPolicy, options.maxRetries ?? 2);
+    this.retryPolicy = options.resolvedRetryPolicy
+      ?? resolveProviderRetryPolicy(options.retryPolicy, options.maxRetries ?? 2);
     this.maxRetries = this.retryPolicy.maxRetries;
     this.timeoutMs = options.timeout;
     this.apiKey = options.apiKey ?? null;

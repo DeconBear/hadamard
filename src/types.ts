@@ -24,7 +24,7 @@ export interface LoadedJsonConfigData {
 }
 
 export type HadamardSettingsData = LoadedJsonConfigData;
-
+export type NestedToolExecutor = (definition: AgentToolDefinition, input: Record<string, unknown>, options: { toolUseId: string; signal?: AbortSignal }) => Promise<AgentToolCallRecord>;
 export interface ToolExecutionContext {
   signal?: AbortSignal;
   runId: string;
@@ -40,7 +40,7 @@ export interface ToolExecutionContext {
   permissions?: HadamardPermissionRule[];
   classifier?: HadamardToolClassifier;
   approver?: HadamardToolApprover;
-  runtime?: { canUseTool?: HadamardCanUseTool; emit?: (event: AgentEvent) => void };
+  runtime?: { canUseTool?: HadamardCanUseTool; emit?: (event: AgentEvent) => void; executeTool?: NestedToolExecutor };
   hooks?: HadamardHooks;
   modelApi?: ModelApi;
   model?: string;

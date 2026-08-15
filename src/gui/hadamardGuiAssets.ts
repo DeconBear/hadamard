@@ -27072,25 +27072,10 @@ el('sessionCenterBack').addEventListener('click', () => switchProjectView('overv
 el('sessionCenterNew').addEventListener('click', async () => {
   const projectPath = el('sessionCenterProject')?.value || state.snapshot?.workDir;
   if (!projectPath) return;
-  if (state.sessionResumePending) {
-    flashStatus('A conversation switch is already in progress.');
-    return;
-  }
-  const requestSequence = ++sessionResumeSequence;
-  setSessionResumePending(true);
   try {
-    const payload = await sessionCenterAction('create', null, { type: 'user', projectPath });
-    if (requestSequence !== sessionResumeSequence) return;
-    if (!payload?.state?.session?.id) {
-      flashStatus('New chat did not return an active conversation.');
-      return;
-    }
-    delete state.transcriptCache[payload.state.session.id];
-    await activateResumedSession(payload.state, requestSequence);
+    await createNewSession(projectPath);
   } catch (error) {
     flashStatus('New chat failed: ' + (error.message || error));
-  } finally {
-    if (requestSequence === sessionResumeSequence) setSessionResumePending(false);
   }
 });
 for (const id of ['sessionCenterProject', 'sessionCenterType', 'sessionCenterStatus', 'sessionCenterArchived']) {

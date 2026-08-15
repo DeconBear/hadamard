@@ -49,6 +49,7 @@ import {
 import { appendRawTranscript } from './conversationPersistence.js';
 import { enforceToolResultsAggregateBudget } from './toolResultArtifactStore.js';
 import { executeConversationToolUse } from './conversationToolExecutor.js';
+import { resolveHadamardRequestProposal } from './requestProposalPolicy.js';
 import { consumeStream } from './modelStreamConsumer.js';
 import {
   calibrateRequestTokenMultiplier,
@@ -301,25 +302,15 @@ export async function executeConversation(
       });
     }
 
-    // Per-iteration request-config proposal (dsh agent/request equivalent):
-    // hooks may re-route the next request's model/effort/maxTokens mid-run.
-    const proposal = await options.onRequestProposal?.({
-      iteration,
-      model,
-      effort,
+    // Hooks may re-route the next request's model/effort/maxTokens mid-run.
+    const proposedSettings = await resolveHadamardRequestProposal(options.onRequestProposal, {
+      iteration, model, effort,
       maxTokens: maxTokensOverride ?? options.maxTokens ?? options.config.maxTokens,
-      input: promptText,
-      workDir,
+      input: promptText, workDir,
     });
-    if (proposal?.model && proposal.model !== model) {
-      model = proposal.model;
-    }
-    if (proposal?.effort) {
-      effort = proposal.effort;
-    }
-    if (proposal?.maxTokens) {
-      maxTokensOverride = proposal.maxTokens;
-    }
+    model = proposedSettings.model;
+    effort = proposedSettings.effort;
+    if (proposedSettings.maxTokensProposed) maxTokensOverride = proposedSettings.maxTokens;
 
     const useAnthropicContextManagement = isAnthropicAPI(options.config.baseURL);
     // Never rewrite historical tool_result content on the wire. Sliding-window
@@ -851,8 +842,15 @@ export async function executeConversation(
       );
     }
 
-    const runSingleToolUse = (toolUse: ToolUseBlock) =>
-      executeConversationToolUse({
+    const runSingleToolUse = (toolUse: ToolUseBlock) => {
+      emitTrajectory({
+        type: 'tool.call',
+        runId: options.runId,
+        iteration,
+        toolUseId: toolUse.id,
+        name: toolUse.name,
+      });
+      return executeConversationToolUse({
         options,
         iteration,
         toolUse,
@@ -869,6 +867,7 @@ export async function executeConversation(
           options.onSessionWorkDirChange?.(workDir);
         },
       });
+    };
 
     // Execute tool calls under the dsh-style scheduling contract: lazy
     // fail-closed classification, a bounded rolling pool for parallel-safe

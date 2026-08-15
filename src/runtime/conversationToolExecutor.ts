@@ -23,6 +23,7 @@ import {
 } from './conversationLifecycle.js';
 import type { ExecuteConversationOptions } from './conversationPorts.js';
 import { artifactToolExecutionIfLarge } from './toolResultArtifactStore.js';
+import { createLocalToolAdapter } from './tools.js';
 
 export interface ConversationToolExecutionResult {
   record: AgentToolCallRecord;
@@ -167,7 +168,36 @@ export async function executeConversationToolUse(
       permissions: options.permissions,
       classifier: options.classifier,
       approver: options.approver,
-      runtime: { canUseTool: options.canUseTool, emit: options.emit },
+      runtime: {
+        canUseTool: options.canUseTool,
+        emit: options.emit,
+        executeTool: async (definition, input, nested) => {
+          const nestedResult = await executeConversationToolUse({
+            options: {
+              ...options,
+              signal: nested.signal ?? options.signal,
+            },
+            iteration,
+            toolUse: {
+              type: 'tool_use',
+              id: nested.toolUseId,
+              name: definition.name,
+              input,
+            },
+            adapter: createLocalToolAdapter(definition, definition.name, definition.name),
+            workDir,
+            promptText,
+            model,
+            effort,
+            onPermissionDecision: context.onPermissionDecision,
+            onWorkDirChange: nextWorkDir => {
+              workDir = nextWorkDir;
+              context.onWorkDirChange(nextWorkDir);
+            },
+          });
+          return nestedResult.record;
+        },
+      },
       hooks: options.hooks,
       modelApi: options.modelApi,
       model,
@@ -244,6 +274,13 @@ export async function executeConversationToolUse(
     output = { error: normalized.message };
     isError = true;
     content = normalized.message;
+  }
+
+  // Turn-control signals are transactional: a failed tool cannot conclude the
+  // turn or leak context it staged before failing.
+  if (isError) {
+    concludedTurn = false;
+    deferredContexts.length = 0;
   }
 
   const record: AgentToolCallRecord = {

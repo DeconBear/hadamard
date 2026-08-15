@@ -326,6 +326,51 @@ describe('executeConversation tool contract', () => {
     expect(modelApi.calls).toHaveLength(1); // no follow-up request after conclude
   });
 
+  it('discards conclude-turn and deferred context when the tool fails', async () => {
+    const homeDir = await tempDir('hadamard-contract-home-');
+    const workDir = await tempDir('hadamard-contract-work-');
+    const sessionDirectory = await tempDir('hadamard-contract-sessions-');
+    const failingFinish = tool<Record<string, never>, unknown>(
+      {
+        name: 'failing_finish',
+        description: 'Requests completion and then fails.',
+        inputSchema: z.strictObject({}),
+        isConcurrencySafe: () => false,
+      },
+      async (_input, context) => {
+        context.deferAdditionalContext?.({ type: 'text', text: 'MUST_NOT_LEAK' });
+        context.concludeTurn?.();
+        throw new Error('finish failed');
+      },
+    );
+    const modelApi = new QueueModel([
+      [toolUse('tu_failing_finish', 'failing_finish')],
+      [{ type: 'text', text: 'recovered after tool failure' }],
+    ]);
+    const config = await resolveRuntimeConfig({
+      model: 'test-model', modelApi, homeDir, workDir, sessionDirectory,
+    });
+    const mcpManager = new McpConnectionManager({ name: 'test', version: '0' });
+
+    const result = await executeConversation({
+      runId: 'contract-failed-conclude-run',
+      input: 'Try to finish.',
+      model: 'test-model',
+      streaming: false,
+      modelApi,
+      config,
+      mcpManager,
+      tools: [failingFinish],
+      permissionMode: 'bypassPermissions',
+    });
+
+    expect(result.text).toContain('recovered after tool failure');
+    expect(result.toolCalls[0]?.isError).toBe(true);
+    expect(result.toolCalls[0]?.concludesTurn).not.toBe(true);
+    expect(JSON.stringify(result.messages)).not.toContain('MUST_NOT_LEAK');
+    expect(modelApi.calls).toHaveLength(2);
+  });
+
   it('runs an exclusive write as a barrier between parallel reads', async () => {
     const homeDir = await tempDir('hadamard-contract-home-');
     const workDir = await tempDir('hadamard-contract-work-');

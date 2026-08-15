@@ -353,12 +353,12 @@ describe('GUI Project Agent execution view', () => {
   it('serializes new-conversation creation like resume before enabling sends', () => {
     const js = createHadamardGuiClientScript();
     const create = js.slice(
-      js.indexOf('async function performCreateSession(requestSequence)'),
-      js.indexOf('function createNewSession()'),
+      js.indexOf('async function performCreateSession(requestSequence, projectPath)'),
+      js.indexOf('function createNewSession(projectPath)'),
     );
     const entry = js.slice(
-      js.indexOf('function createNewSession()'),
-      js.indexOf('function setDetailConversationDrawer', js.indexOf('function createNewSession()')),
+      js.indexOf('function createNewSession(projectPath)'),
+      js.indexOf('function setDetailConversationDrawer', js.indexOf('function createNewSession(projectPath)')),
     );
     const send = js.slice(
       js.indexOf('async function sendText(text)'),
@@ -367,8 +367,9 @@ describe('GUI Project Agent execution view', () => {
 
     expect(entry).not.toContain('if (state.running)');
     expect(entry).toContain('if (state.sessionResumePending)');
-    expect(entry).toContain('.then(() => performCreateSession(requestSequence))');
+    expect(entry).toContain('.then(() => performCreateSession(requestSequence, projectPath))');
     expect(create).toContain("api('/api/session/new'");
+    expect(create).toContain('body: JSON.stringify(projectPath ? { projectPath } : {})');
     expect(create).toContain('delete state.transcriptCache[nextSessionId]');
     expect(create.indexOf('const snapshot = await res.json()')).toBeLessThan(
       create.indexOf('await activateResumedSession(snapshot, requestSequence)'),

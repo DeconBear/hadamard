@@ -71,15 +71,17 @@ export function renderCodeActHostSdk(
   const maxChars = options.maxChars ?? DEFAULT_MAX_SDK_CHARS;
   const stubs: SdkStub[] = [];
   const reservedNotes: SdkReservedNote[] = [];
+  const sortedTools = [...tools].sort((left, right) => left.name.localeCompare(right.name));
+  const sanitizedCounts = countDynamicMethodNames(sortedTools);
 
-  for (const tool of [...tools].sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const tool of sortedTools) {
     if (tool.name === 'CodeCell') continue;
-    const fixed = FIXED_HELPER_SIGNATURES[tool.name];
-    if (fixed) {
+    const fixedMethodName = FIXED_HELPER_METHODS[tool.name];
+    if (fixedMethodName) {
       stubs.push({
-        methodName: fixed.methodName,
+        methodName: fixedMethodName,
         realName: tool.name,
-        signature: fixed.signature,
+        signature: renderToolSignature(tool, fixedMethodName),
         doc: `${collapseDoc(tool.description)} Host tool: ${tool.name}.`,
       });
       continue;
@@ -92,10 +94,14 @@ export function renderCodeActHostSdk(
       });
       continue;
     }
-    const { params, omitted } = renderParams(tool.inputJsonSchema);
-    const returnType = tool.outputSchema
-      ? jsonSchemaToPythonType(z.toJSONSchema(tool.outputSchema))
-      : 'Any';
+    if ((sanitizedCounts.get(methodName) ?? 0) > 1) {
+      reservedNotes.push({
+        realName: tool.name,
+        note: `# Host tool "${tool.name}" and another host tool share the sanitized Python name ${methodName}; call hadamard.tool("${tool.name}", {...}) with: ${describeSchema(tool.inputJsonSchema)}.`,
+      });
+      continue;
+    }
+    const { omitted } = renderParams(tool.inputJsonSchema);
     const docParts = [collapseDoc(tool.description), `Host tool: ${tool.name}.`];
     if (methodName !== tool.name) docParts.push(`Called as hadamard.${methodName}.`);
     if (omitted.length > 0) {
@@ -104,9 +110,7 @@ export function renderCodeActHostSdk(
     stubs.push({
       methodName,
       realName: tool.name,
-      signature: params.length > 0
-        ? `${methodName}(self, ${params.join(', ')}) -> ${returnType}`
-        : `${methodName}(self) -> ${returnType}`,
+      signature: renderToolSignature(tool, methodName),
       doc: docParts.join(' '),
     });
   }
@@ -174,26 +178,48 @@ function renderStubClass(
   return lines.join('\n');
 }
 
-interface FixedHelper {
-  methodName: string;
-  signature: string;
+/** Fixed kernel helpers whose behavior is wired in the kernel program itself. */
+const FIXED_HELPER_METHODS: Readonly<Record<string, string>> = {
+  Read: 'read',
+  Write: 'write',
+  Grep: 'search',
+};
+
+function renderToolSignature(tool: AgentToolDefinition, methodName: string): string {
+  const { params } = renderParams(tool.inputJsonSchema);
+  const returnType = tool.outputSchema
+    ? jsonSchemaToPythonType(z.toJSONSchema(tool.outputSchema))
+    : 'Any';
+  return params.length > 0
+    ? `${methodName}(self, ${params.join(', ')}) -> ${returnType}`
+    : `${methodName}(self) -> ${returnType}`;
 }
 
-/** Fixed kernel helpers whose behavior is wired in the kernel program itself. */
-const FIXED_HELPER_SIGNATURES: Record<string, FixedHelper> = {
-  Read: {
-    methodName: 'read',
-    signature: 'read(self, file_path: str, offset: int | None = None, limit: int | None = None) -> Any',
-  },
-  Write: {
-    methodName: 'write',
-    signature: 'write(self, file_path: str, content: str) -> Any',
-  },
-  Grep: {
-    methodName: 'search',
-    signature: 'search(self, pattern: str, path: str | None = None) -> Any',
-  },
-};
+function countDynamicMethodNames(tools: readonly AgentToolDefinition[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const tool of tools) {
+    if (tool.name === 'CodeCell' || FIXED_HELPER_METHODS[tool.name]) continue;
+    const methodName = sanitizeCodeActName(tool.name);
+    if (RESERVED_HOST_METHODS.has(methodName)) continue;
+    counts.set(methodName, (counts.get(methodName) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** Build the collision-safe typed-method dispatch map used by the kernel. */
+export function buildCodeActToolNameMap(
+  tools: readonly AgentToolDefinition[],
+): Record<string, string> {
+  const counts = countDynamicMethodNames(tools);
+  const result: Record<string, string> = {};
+  for (const tool of [...tools].sort((left, right) => left.name.localeCompare(right.name))) {
+    if (tool.name === 'CodeCell' || FIXED_HELPER_METHODS[tool.name]) continue;
+    const methodName = sanitizeCodeActName(tool.name);
+    if (RESERVED_HOST_METHODS.has(methodName) || counts.get(methodName) !== 1) continue;
+    result[methodName] = tool.name;
+  }
+  return result;
+}
 
 function collapseDoc(description: string): string {
   const collapsed = description.replace(/\s+/g, ' ').trim().replace(/"""/g, "''\"");
