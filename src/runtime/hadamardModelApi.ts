@@ -1,5 +1,6 @@
 import HadamardProviderClient from '../provider/client.js';
 
+import type { ResolvedProviderRetryPolicy } from '../provider/retryPolicy.js';
 import type { ModelApi, ModelRequest, ModelStreamHandle, ResolvedRuntimeConfig } from '../types.js';
 
 export class HadamardModelApi implements ModelApi {
@@ -58,14 +59,17 @@ function requestHasPromptCacheBreakpoint(
   return JSON.stringify({ tools: body.tools, messages: body.messages }).includes('cache_control');
 }
 
-export function createHadamardModelApi(config: ResolvedRuntimeConfig): ModelApi {
+export function createHadamardModelApi(
+  config: ResolvedRuntimeConfig,
+  retryPolicyOverride?: ResolvedProviderRetryPolicy,
+): ModelApi {
   const client = new HadamardProviderClient({
     apiKey: config.apiKey ?? null,
     authToken: config.authToken ?? null,
     baseURL: config.baseURL ?? null,
     timeout: config.timeoutMs,
     maxRetries: config.maxRetries,
-    resolvedRetryPolicy: config.retryPolicy,
+    resolvedRetryPolicy: retryPolicyOverride ?? config.retryPolicy,
   });
   return new HadamardModelApi(client);
 }
