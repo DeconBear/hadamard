@@ -321,16 +321,12 @@ export type {
 export { InMemoryContributionToolRegistry, contributionRetryPolicyKey, contributionToolRegistryKey } from './contrib/contributionServices.js';
 export type { ContributionToolRegistry } from './contrib/contributionServices.js';
 export { createBuiltInConversationExtensions, createBuiltInConversationExtensionsContribution, conversationExtensionsFactoryKey } from './runtime/conversationExtensions.js';
-export type {
-  AutoCompactExtension,
-  ConversationExtensionPoints,
-  ConversationRepeatExtension,
-  ConversationTodoObservation,
-  ConversationTodoReminderExtension,
-  RequestErrorContext,
-  RequestErrorDecision,
-  RequestErrorExtension,
-} from './runtime/conversationExtensions.js';
+export { ProgrammaticToolRuntime } from './codeact/programmaticToolRuntime.js';
+export { createRunCodeTool, serializePtcResult, RUN_CODE_TOOL_NAME } from './codeact/runCodeTool.js';
+export { resolveToolPresentation } from './codeact/toolPresentation.js';
+export type { ToolPresentationPlan } from './codeact/toolPresentation.js';
+export type { ToolPresentationMode } from './codeact/presentationTypes.js';
+export type { ConversationExtensionPoints } from './runtime/conversationExtensions.js';
 export { activateRuntimeContribution, isRuntimeContributionManifest } from './contrib/contributionLoader.js';
 export type { ActivateRuntimeContributionOptions, RuntimeContributionManifest } from './contrib/contributionLoader.js';
 export {

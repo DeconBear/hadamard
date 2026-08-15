@@ -3,6 +3,8 @@ import type {
   HadamardCompactBoundaryMetadata,
   HadamardCompactTrigger,
   HadamardCompactConfig,
+  HadamardLoopCompactContext,
+  HadamardLoopCompactOutcome,
   HadamardMicrocompactBoundaryMetadata,
   HadamardSessionCompactResult,
   HadamardSessionMemoryRuntimeState,
@@ -1053,63 +1055,7 @@ function resolvePreserveStartIndex(
   return start;
 }
 
-export interface HadamardLoopCompactContext {
-  model: string;
-  modelApi: ModelApi;
-  compactConfig: HadamardCompactConfig;
-  /** max_tokens reserved for the model response in regular requests. */
-  maxTokens: number;
-  /**
-   * Real input token count reported by the previous provider response. When
-   * available this includes system/tool overhead that the local message-only
-   * estimate cannot see, so it is a better trigger for the next in-loop compact.
-   */
-  lastRequestInputTokens?: number;
-  /**
-   * Rolling calibration derived from provider usage versus local estimates.
-   * This keeps proactive compaction useful immediately after a compact, when
-   * no directly comparable previous request remains.
-   */
-  tokenEstimateMultiplier?: number;
-  /** Baseline tokens carried into a body-after-prefix compact window. */
-  compactWindowPrefixTokens?: number;
-  fixedInputTokens?: number;
-  /** Circuit-breaker key; use the runId so one bad run cannot poison others. */
-  runKey: string;
-  signal?: AbortSignal;
-  /** Main-loop system prompt; replayed as the summary request's system prefix so the auxiliary call reuses the provider KV cache (dsh summarizer shape). */
-  systemPrompt?: string;
-  /** Main-loop provider tool schemas; replayed as the summary request's tool prefix. */
-  tools?: unknown[];
-  /**
-   * Reactive mode: the provider already rejected the request as too long, so
-   * token estimates are known to undercount. Skips threshold checks and goes
-   * all the way to summary compaction even when microcompact alone would
-   * appear sufficient. Only `compactConfig.enabled === false` still disables.
-   */
-  force?: boolean;
-  /**
-   * Per-call summary instructions merged with config-level compactInstructions.
-   * Allows the ReAct loop caller to inject task-specific guidance.
-   */
-  summaryInstructions?: string;
-}
-
-export interface HadamardLoopCompactOutcome {
-  messages: MessageParam[];
-  compacted: boolean;
-  tokenEstimateBefore: number;
-  tokenEstimateAfter: number;
-  messagesSummarized: number;
-  preservedMessages: number;
-  clearedToolResults: number;
-  summary?: string;
-  /** Estimated token count of the content shadowed by this compaction (dsh shadow price). */
-  shadowedTokenCount?: number;
-  reason?: 'disabled' | 'threshold_not_met' | 'microcompact' | 'prune' | 'compacted' | 'failed' | 'circuit_breaker_open';
-  consecutiveFailures?: number;
-  error?: string;
-}
+export type { HadamardLoopCompactContext, HadamardLoopCompactOutcome } from '../types.js';
 
 /**
  * Derive the in-loop auto-compact trigger from the configured context window,

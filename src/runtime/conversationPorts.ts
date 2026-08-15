@@ -80,7 +80,9 @@ export interface ConversationRuntimeDependencies {
 
 export interface ConversationStrategyOptions {
   /** Swappable strategies (compaction/request-error/repeat-guard/todo-reminder); defaults to the built-ins. */
-  extensions?: import('./conversationExtensions.js').ConversationExtensionPoints;
+  extensions?: import('../types.js').ConversationExtensionPoints;
+  /** How tools are presented on the wire: native JSON schemas, one stateless run_code wire tool, or both. */
+  toolPresentation?: import('../codeact/presentationTypes.js').ToolPresentationMode;
 }
 
 /** Compatibility composite; collaborators consume the smaller role interfaces above. */
