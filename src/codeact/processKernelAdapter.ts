@@ -2,13 +2,16 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import { HadamardSdkError } from '../errors.js';
 import {
+  DEFAULT_MAX_PROTOCOL_LINE_BYTES,
   KernelLineDecoder,
   encodeKernelMessage,
   type KernelInboundMessage,
+  type KernelOutboundMessage,
 } from './kernelProtocol.js';
 import { PYTHON_KERNEL_PROGRAM } from './pythonKernelProgram.js';
 import type {
   CodeActBackendStatus,
+  CodeActHostRpcResponse,
   CodeActKernel,
   CodeActKernelAdapter,
   CodeActKernelStartOptions,
@@ -25,6 +28,7 @@ export interface KernelProcessInvocation {
 
 interface ActiveExecution {
   request: CodeCellExecutionRequest;
+  startedClock: number;
   stdout: string;
   stderr: string;
   artifacts: CodeCellExecutionResult['artifacts'];
@@ -136,28 +140,44 @@ class JsonLineProcessKernel implements CodeActKernel {
     if (this.active) {
       throw new HadamardSdkError('CodeAct kernel already has an active cell.', 'CODEACT_KERNEL_BUSY');
     }
+    if (request.signal?.aborted) {
+      return {
+        executionId: request.executionId,
+        sessionId: this.sessionId,
+        generation: this.generation,
+        status: 'interrupted',
+        stdout: '',
+        stderr: '',
+        artifacts: [],
+        durationMs: 0,
+        stateLost: true,
+        failureKind: 'interrupt',
+        error: 'CodeCell execution was aborted before dispatch.',
+      };
+    }
     return new Promise<CodeCellExecutionResult>((resolve) => {
-      const timer = setTimeout(() => {
-        this.finishActive({
-          status: 'failed',
-          error: `CodeCell timed out after ${request.timeoutMs}ms. Kernel state was lost.`,
-          durationMs: request.timeoutMs,
-          stateLost: true,
-          failureKind: 'timeout',
-        });
-        this.child.kill();
-      }, request.timeoutMs);
       const active: ActiveExecution = {
         request,
+        startedClock: Date.now(),
         stdout: '',
         stderr: '',
         artifacts: [],
         outputBytes: 0,
         outputLimit: false,
         resolve,
-        timer,
+        timer: undefined as unknown as ReturnType<typeof setTimeout>,
         settled: false,
       };
+      active.timer = setTimeout(() => {
+        void this.settleActive(active, {
+          status: 'failed',
+          error: `CodeCell timed out after ${request.timeoutMs}ms. Kernel state was lost.`,
+          durationMs: request.timeoutMs,
+          stateLost: true,
+          failureKind: 'timeout',
+        }, { abortFirst: new HadamardSdkError(`CodeCell timed out after ${request.timeoutMs}ms.`) });
+        this.child.kill();
+      }, request.timeoutMs);
       if (request.signal) {
         active.abortListener = () => { void this.interrupt(request.executionId); };
         request.signal.addEventListener('abort', active.abortListener, { once: true });
@@ -176,14 +196,15 @@ class JsonLineProcessKernel implements CodeActKernel {
   }
 
   async interrupt(executionId: string): Promise<boolean> {
-    if (!this.active || this.active.request.executionId !== executionId || this.active.settled) return false;
-    this.finishActive({
+    const active = this.active;
+    if (!active || active.request.executionId !== executionId || active.settled) return false;
+    await this.settleActive(active, {
       status: 'interrupted',
       error: 'CodeCell execution was interrupted. Kernel state was lost.',
-      durationMs: 0,
+      durationMs: Date.now() - active.startedClock,
       stateLost: true,
       failureKind: 'interrupt',
-    });
+    }, { abortFirst: new HadamardSdkError('CodeCell execution was interrupted.') });
     this.child.kill();
     return true;
   }
@@ -222,24 +243,42 @@ class JsonLineProcessKernel implements CodeActKernel {
     const active = this.active;
     if (!active || message.executionId !== active.request.executionId || active.settled) return;
     if (message.type === 'stream') {
-      active.outputBytes += Buffer.byteLength(message.delta);
-      if (active.outputBytes > this.options.maxOutputBytes && !active.outputLimit) {
-        active.outputLimit = true;
-      }
+      // Capture the display-bounded text first so a hard budget stop still
+      // carries the partial stream it observed.
       if (message.stream === 'stdout') {
         active.stdout = appendLimited(active.stdout, message.delta, this.options.maxOutputChars);
       } else {
         active.stderr = appendLimited(active.stderr, message.delta, this.options.maxOutputChars);
       }
+      this.accountOutput(active, Buffer.byteLength(message.delta));
+      if (active.settled) return;
       active.request.onDelta?.(message.stream, message.delta);
       return;
     }
     if (message.type === 'host_rpc') {
+      this.accountOutput(active, Buffer.byteLength(JSON.stringify(message.request)));
+      if (active.settled) return;
       void this.handleHostRpc(active, message);
       return;
     }
     if (message.type === 'result') {
-      this.finishActive({
+      if (message.failureKind === 'output-limit') {
+        // Kernel-side precheck rejected an oversized payload: one unique
+        // output-limit failure, never a protocol error or a completed cell.
+        void this.settleActive(active, {
+          status: 'failed',
+          error: message.error ?? 'CodeCell output exceeded the protocol payload limit.',
+          durationMs: message.durationMs,
+          stateLost: true,
+          failureKind: 'output-limit',
+          outputLimit: true,
+        }, { abortFirst: new HadamardSdkError('CodeCell output exceeded the protocol payload limit.') });
+        this.child.kill();
+        return;
+      }
+      this.accountOutput(active, Buffer.byteLength(JSON.stringify(message)));
+      if (active.settled) return;
+      void this.settleActive(active, {
         status: message.ok ? 'completed' : 'failed',
         result: message.result,
         error: message.error,
@@ -254,7 +293,7 @@ class JsonLineProcessKernel implements CodeActKernel {
     active: ActiveExecution,
     message: Extract<KernelInboundMessage, { type: 'host_rpc' }>,
   ): Promise<void> {
-    const response: import('./types.js').CodeActHostRpcResponse = active.request.hostRpc
+    const response: CodeActHostRpcResponse = active.request.hostRpc
       ? await active.request.hostRpc.dispatch(message.request).catch(error => ({
           id: message.request.id,
           ok: false,
@@ -263,57 +302,105 @@ class JsonLineProcessKernel implements CodeActKernel {
       : { id: message.request.id, ok: false, error: `Host RPC method ${message.request.method} is unavailable.` };
     if (response.artifact) active.artifacts.push(response.artifact);
     if (!active.settled) {
-      this.write({
-        v: 1,
-        type: 'host_rpc_result',
-        executionId: message.executionId,
-        response,
-      });
+      this.writeHostRpcResult(active, message.executionId, response);
     }
   }
 
-  private finishActive(
-    partial: Pick<CodeCellExecutionResult, 'status' | 'durationMs'>
-      & Partial<CodeCellExecutionResult>,
+  /** Write a host RPC response, shrinking any payload that would breach the decoder's single-line limit. */
+  private writeHostRpcResult(
+    active: ActiveExecution,
+    executionId: string,
+    response: CodeActHostRpcResponse,
   ): void {
-    const active = this.active;
-    if (!active || active.settled) return;
+    let line = encodeKernelMessage({ v: 1, type: 'host_rpc_result', executionId, response });
+    if (Buffer.byteLength(line, 'utf8') > DEFAULT_MAX_PROTOCOL_LINE_BYTES) {
+      line = encodeKernelMessage({
+        v: 1,
+        type: 'host_rpc_result',
+        executionId,
+        response: {
+          id: response.id,
+          ok: false,
+          error: `Host RPC response exceeded the protocol line limit of ${DEFAULT_MAX_PROTOCOL_LINE_BYTES} bytes.`,
+        },
+      });
+    }
+    this.accountOutput(active, Buffer.byteLength(line, 'utf8'));
+    if (!active.settled) this.writeLine(line);
+  }
+
+  private accountOutput(active: ActiveExecution, bytes: number): void {
+    active.outputBytes += bytes;
+    if (active.outputBytes > this.options.maxOutputBytes && !active.outputLimit) {
+      active.outputLimit = true;
+      void this.settleActive(active, {
+        status: 'failed',
+        error: `CodeCell output exceeded the ${this.options.maxOutputBytes}-byte output budget. Kernel state was lost.`,
+        durationMs: Date.now() - active.startedClock,
+        stateLost: true,
+        failureKind: 'output-limit',
+        outputLimit: true,
+      }, { abortFirst: new HadamardSdkError('CodeCell output budget exceeded.') });
+      this.child.kill();
+    }
+  }
+
+  /**
+   * The single settlement path: stop new dispatches, abort the per-cell
+   * controller so started nested calls observe the abort, then await their
+   * drain before resolving. The outer tool result is therefore always the
+   * cell's last execution event.
+   */
+  private settleActive(
+    active: ActiveExecution,
+    partial: Pick<CodeCellExecutionResult, 'status' | 'durationMs'> & Partial<CodeCellExecutionResult>,
+    options: { abortFirst?: Error } = {},
+  ): Promise<void> {
+    if (active.settled) return Promise.resolve();
     active.settled = true;
     clearTimeout(active.timer);
     if (active.abortListener) active.request.signal?.removeEventListener('abort', active.abortListener);
-    // Cell-run settlement: stop new host dispatches, abandon queued-unstarted
-    // calls, and drain started ones without blocking the cell result.
-    void active.request.hostRpc?.drain().catch(() => undefined);
-    this.active = undefined;
-    active.resolve({
-      executionId: active.request.executionId,
-      sessionId: this.sessionId,
-      generation: this.generation,
-      stdout: active.stdout,
-      stderr: active.stderr,
-      artifacts: active.artifacts,
-      ...(active.outputLimit ? { outputLimit: true, failureKind: 'output-limit' as const } : {}),
-      ...partial,
-    });
+    const drain = active.request.hostRpc?.drain();
+    if (options.abortFirst) active.request.abort?.(options.abortFirst);
+    return (drain ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => {
+        this.active = undefined;
+        active.resolve({
+          executionId: active.request.executionId,
+          sessionId: this.sessionId,
+          generation: this.generation,
+          stdout: active.stdout,
+          stderr: active.stderr,
+          artifacts: active.artifacts,
+          ...(active.outputLimit ? { outputLimit: true, failureKind: 'output-limit' as const } : {}),
+          ...partial,
+        });
+      });
   }
 
   private onProcessFailure(error: Error): void {
     this.stopped = true;
     this.rejectReady(error);
-    if (this.active && !this.active.settled) {
-      this.finishActive({
+    const active = this.active;
+    if (active && !active.settled) {
+      void this.settleActive(active, {
         status: 'failed',
         error: `${error.message} Kernel state was lost.`,
-        durationMs: 0,
+        durationMs: Date.now() - active.startedClock,
         stateLost: true,
         failureKind: 'kernel-exit',
-      });
+      }, { abortFirst: error });
     }
   }
 
-  private write(message: Parameters<typeof encodeKernelMessage>[0]): void {
+  private write(message: KernelOutboundMessage): void {
+    this.writeLine(encodeKernelMessage(message));
+  }
+
+  private writeLine(line: string): void {
     if (this.child.stdin.destroyed) return;
-    this.child.stdin.write(encodeKernelMessage(message));
+    this.child.stdin.write(line);
   }
 }
 

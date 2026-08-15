@@ -24,7 +24,7 @@ const PYTHON_KEYWORDS = new Set([
 
 /** Fixed HadamardHost methods the kernel already implements directly. */
 export const RESERVED_HOST_METHODS: ReadonlySet<string> = new Set([
-  'call', 'tool', 'artifact', 'read', 'write', 'search',
+  'call', 'tool', 'tool_schema', 'artifact', 'read', 'write', 'search',
 ]);
 
 /** Nesting cap: beyond this a schema node degrades to a broad type. */
@@ -52,11 +52,13 @@ interface SdkStub {
   realName: string;
   signature: string;
   doc: string;
+  purpose: string;
 }
 
 interface SdkReservedNote {
   realName: string;
   note: string;
+  purpose: string;
 }
 
 /**
@@ -83,6 +85,7 @@ export function renderCodeActHostSdk(
         realName: tool.name,
         signature: renderToolSignature(tool, fixedMethodName),
         doc: `${collapseDoc(tool.description)} Host tool: ${tool.name}.`,
+        purpose: oneLinePurpose(tool.description),
       });
       continue;
     }
@@ -91,6 +94,7 @@ export function renderCodeActHostSdk(
       reservedNotes.push({
         realName: tool.name,
         note: `# Host tool "${tool.name}" collides with the reserved ${methodName} helper; call hadamard.tool("${tool.name}", {...}) with: ${describeSchema(tool.inputJsonSchema)}.`,
+        purpose: oneLinePurpose(tool.description),
       });
       continue;
     }
@@ -98,6 +102,7 @@ export function renderCodeActHostSdk(
       reservedNotes.push({
         realName: tool.name,
         note: `# Host tool "${tool.name}" and another host tool share the sanitized Python name ${methodName}; call hadamard.tool("${tool.name}", {...}) with: ${describeSchema(tool.inputJsonSchema)}.`,
+        purpose: oneLinePurpose(tool.description),
       });
       continue;
     }
@@ -112,6 +117,7 @@ export function renderCodeActHostSdk(
       realName: tool.name,
       signature: renderToolSignature(tool, methodName),
       doc: docParts.join(' '),
+      purpose: oneLinePurpose(tool.description),
     });
   }
 
@@ -122,6 +128,7 @@ export function renderCodeActHostSdk(
     '# available for tools without a typed stub.',
     '# A failed host call raises HadamardToolError with a `tool_name` attribute;',
     '# catch it to branch on which tool failed.',
+    '# Any tool schema is queryable on demand with hadamard.tool_schema("<ToolName>").',
   ].join('\n');
 
   let body = renderStubClass(stubs, reservedNotes, true);
@@ -133,17 +140,52 @@ export function renderCodeActHostSdk(
     let size = 0;
     for (const stub of stubs) {
       const line = `    def ${stub.signature}: ...  # ${stub.realName}`;
-      if (size + line.length + 1 > maxChars - 300) break;
+      if (size + line.length + 1 > maxChars - 400) break;
       truncated.push(line);
       size += line.length + 1;
     }
-    const omittedCount = stubs.length - truncated.length + reservedNotes.length;
-    body = [
+    const omittedIndex = [
+      ...stubs.slice(truncated.length).map(stub => ({ name: stub.realName, purpose: stub.purpose })),
+      ...reservedNotes.map(note => ({ name: note.realName, purpose: note.purpose })),
+    ];
+    const lines: string[] = [
       'class HadamardHost:',
       '    """Host-tool bridge (truncated typed surface)."""',
       ...truncated,
-      `    # ${omittedCount} further host tool(s) omitted for prompt budget; use hadamard.tool("<name>", {...}).`,
-    ].join('\n');
+    ];
+    const noteLines = [
+      `    # ${omittedIndex.length} further host tool(s) omitted for prompt budget; the index below keeps every remaining tool discoverable.`,
+      '    # Query any tool schema on demand with hadamard.tool_schema("<ToolName>").',
+    ];
+    const budget = Math.max(0, maxChars - lines.join('\n').length - noteLines.join('\n').length - 2);
+    const indexLines: string[] = [];
+    let used = 0;
+    for (const entry of omittedIndex) {
+      const line = `    # ${entry.name} — ${entry.purpose}`;
+      if (used + line.length + 1 > budget) break;
+      indexLines.push(line);
+      used += line.length + 1;
+    }
+    const rest = omittedIndex.slice(indexLines.length).map(entry => entry.name);
+    if (rest.length > 0) {
+      // Discovery floor: every remaining name stays visible in a compact
+      // budget-exempt index (names are short; the cap protects against
+      // doc/schema blowup, which is the actual prompt-flooding risk).
+      const prefix = '    # Compact name index: ';
+      let current = prefix;
+      for (const name of rest) {
+        const piece = (current === prefix ? '' : ', ') + name;
+        if (current.length + piece.length > 96) {
+          indexLines.push(current);
+          current = `    # ${name}`;
+        } else {
+          current += piece;
+        }
+      }
+      indexLines.push(current);
+      indexLines.push('    # (schema on demand: hadamard.tool_schema("<name>"))');
+    }
+    body = [...lines, ...noteLines, ...indexLines].join('\n');
   }
   if (body.length === 0) return '';
   return `${header}\n${body}`;
@@ -224,6 +266,12 @@ export function buildCodeActToolNameMap(
 function collapseDoc(description: string): string {
   const collapsed = description.replace(/\s+/g, ' ').trim().replace(/"""/g, "''\"");
   return collapsed.length > MAX_DOC_CHARS ? `${collapsed.slice(0, MAX_DOC_CHARS - 3)}...` : collapsed;
+}
+
+/** Compact one-line purpose for the truncated-discovery index. */
+function oneLinePurpose(description: string): string {
+  const collapsed = description.replace(/\s+/g, ' ').trim();
+  return collapsed.length > 90 ? `${collapsed.slice(0, 87)}...` : collapsed;
 }
 
 function describeSchema(schema: unknown): string {

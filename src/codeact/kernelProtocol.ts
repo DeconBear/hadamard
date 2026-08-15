@@ -17,6 +17,8 @@ export type KernelInboundMessage =
       error?: string;
       durationMs: number;
       resourceUsage?: Record<string, number>;
+      /** Set when the kernel-side prechecks rejected an oversized protocol payload: maps to a single output-limit failure, never a protocol error. */
+      failureKind?: 'output-limit';
     };
 
 export type KernelOutboundMessage =
@@ -89,7 +91,8 @@ export function parseKernelInboundMessage(line: string): KernelInboundMessage {
     && typeof value.executionId === 'string'
     && typeof value.ok === 'boolean'
     && isFiniteNumber(value.durationMs)
-    && (value.error === undefined || typeof value.error === 'string')) return value as KernelInboundMessage;
+    && (value.error === undefined || typeof value.error === 'string')
+    && (value.failureKind === undefined || value.failureKind === 'output-limit')) return value as KernelInboundMessage;
   throw new KernelProtocolError(`Unsupported kernel message type or payload: ${value.type}.`);
 }
 

@@ -122,4 +122,31 @@ describe('CodeActSubdispatchScheduler', () => {
     await harness.scheduler.drain();
     await expect(harness.scheduler.schedule(request('late', 'read'))).rejects.toThrow(/run is over/);
   });
+
+  it('drain waits for in-flight audit emissions before resolving', async () => {
+    const events: ToolCodeDispatchEvent[] = [];
+    let emitSettled = false;
+    const scheduler = new CodeActSubdispatchScheduler({
+      maxParallel: 1,
+      rootCallId: 'cell-1',
+      classify: () => true,
+      dispatch: async (request) => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return ok(request.id, 'x');
+      },
+      onEvent: async (event) => {
+        events.push(structuredClone(event));
+        if (event.phase === 'settle') {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          emitSettled = true;
+        }
+      },
+    });
+    const first = scheduler.schedule(request('a', 'read'));
+    await first;
+    await scheduler.drain();
+    // The outer result can only land after the settle audit event completed.
+    expect(emitSettled).toBe(true);
+    expect(events.filter((event) => event.phase === 'settle')).toHaveLength(1);
+  });
 });

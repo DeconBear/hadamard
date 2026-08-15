@@ -111,7 +111,11 @@ export class CodeActService {
       code: input.code,
       workDir: input.context.cwd,
       timeoutMs: input.timeoutMs ?? this.settings.executionTimeoutMs,
-      signal: input.context.signal,
+      // The per-cell controller (not the raw run signal) is the kernel's
+      // settlement authority: aborting the controller interrupts the kernel
+      // AND the nested host tools started from this cell.
+      signal: executionContext.signal,
+      abort: reason => cellController.abort(reason),
       hostRpc: dispatcher.handler(),
       toolNameMap,
       onDelta: (stream, delta) => this.emit({
