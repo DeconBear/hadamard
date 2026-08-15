@@ -58,9 +58,11 @@ describe('managed plugin runtime', () => {
       'computer_use',
       'kimi_webbridge',
       'browser_use',
-      'TavilySearch',
-      'ExaSearch',
     ]));
+    // TavilySearch/ExaSearch moved out of this switch: they mount as runtime
+    // contributions (see contribution-host tests).
+    expect(names).not.toContain('TavilySearch');
+    expect(names).not.toContain('ExaSearch');
     expect(names.some(name => name.startsWith('github_'))).toBe(false);
     expect(names.some(name => name.startsWith('computer_') && name !== 'computer_use')).toBe(false);
     expect(names.some(name => name.startsWith('browser_') && name !== 'browser_use')).toBe(false);
@@ -69,10 +71,8 @@ describe('managed plugin runtime', () => {
       'github',
       'playwright',
     ]));
-    expect(runtime.tools).toHaveLength(6);
+    expect(runtime.tools).toHaveLength(4);
     expect(JSON.stringify(runtime.tools.map(item => item.inputJsonSchema))).not.toContain('qwen-secret');
-    expect(JSON.stringify(runtime.tools.map(item => item.inputJsonSchema))).not.toContain('tvly-secret');
-    expect(JSON.stringify(runtime.tools.map(item => item.inputJsonSchema))).not.toContain('exa-secret');
     await runtime.close();
   });
 
