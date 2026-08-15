@@ -24,11 +24,36 @@ SEND_LOCK = threading.Lock()
 RPC_PENDING = {}
 RPC_PENDING_LOCK = threading.Lock()
 COMMAND_QUEUE = None
+MAX_PROTOCOL_LINE_BYTES = 1_000_000
+OUTPUT_LIMIT_HIT = False
+
+def serialize_message(message):
+    return json.dumps(message, ensure_ascii=False, separators=(",", ":"))
 
 def send(message):
     with SEND_LOCK:
-        PROTOCOL_OUT.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
+        PROTOCOL_OUT.write(serialize_message(message) + "\n")
         PROTOCOL_OUT.flush()
+
+def send_checked(message):
+    payload = serialize_message(message)
+    if len(payload.encode("utf-8", errors="replace")) > MAX_PROTOCOL_LINE_BYTES:
+        return False
+    with SEND_LOCK:
+        PROTOCOL_OUT.write(payload + "\n")
+        PROTOCOL_OUT.flush()
+    return True
+
+def fit_envelope(envelope):
+    payload = serialize_message(envelope)
+    if len(payload.encode("utf-8", errors="replace")) <= MAX_PROTOCOL_LINE_BYTES:
+        return envelope
+    # A payload over the protocol line limit is a budget failure, never a protocol crash.
+    return {"v": 1, "type": "result", "executionId": envelope.get("executionId", "unknown"),
+            "ok": False,
+            "error": "CodeCell output exceeded the protocol payload limit of %d bytes." % MAX_PROTOCOL_LINE_BYTES,
+            "durationMs": envelope.get("durationMs", 0),
+            "failureKind": "output-limit"}
 
 def drain_stream(read_fd, stream_name, execution_id):
     with os.fdopen(read_fd, "rb", buffering=0) as source:
@@ -83,14 +108,20 @@ class HadamardToolError(RuntimeError):
 NAMESPACE["HadamardToolError"] = HadamardToolError
 
 def host_call(method, input_value=None):
-    global RPC_SEQUENCE
+    global RPC_SEQUENCE, OUTPUT_LIMIT_HIT
     with RPC_PENDING_LOCK:
         RPC_SEQUENCE += 1
         request_id = str(RPC_SEQUENCE)
         holder = {"event": threading.Event(), "response": None}
         RPC_PENDING[request_id] = holder
-    send({"v": 1, "type": "host_rpc", "executionId": CURRENT_EXECUTION,
-          "request": {"id": request_id, "method": method, "input": input_value}})
+    message = {"v": 1, "type": "host_rpc", "executionId": CURRENT_EXECUTION,
+               "request": {"id": request_id, "method": method, "input": input_value}}
+    if not send_checked(message):
+        with RPC_PENDING_LOCK:
+            RPC_PENDING.pop(request_id, None)
+        OUTPUT_LIMIT_HIT = True
+        raise RuntimeError(
+            "Host RPC payload exceeded the protocol line limit of %d bytes." % MAX_PROTOCOL_LINE_BYTES)
     holder["event"].wait()
     response = holder.get("response")
     if response is None:
@@ -175,6 +206,11 @@ class HadamardHost:
             raise
         except RuntimeError as error:
             raise HadamardToolError(name, str(error)) from error
+    def tool_schema(self, name):
+        try:
+            return host_call("tool.schema", {"name": name})
+        except RuntimeError as error:
+            raise HadamardToolError(name, str(error)) from error
     def parallel(self, callables, max_workers=8):
         return parallel(callables, max_workers=max_workers)
     def read(self, file_path, offset=None, limit=None, **kwargs):
@@ -231,11 +267,13 @@ def resource_usage():
         return {}
 
 def execute(execution_id, code, tool_name_map=None):
-    global CURRENT_EXECUTION
+    global CURRENT_EXECUTION, OUTPUT_LIMIT_HIT
     CURRENT_EXECUTION = execution_id
     NAMESPACE["TOOL_NAME_MAP"] = tool_name_map or {}
+    OUTPUT_LIMIT_HIT = False
     started = time.monotonic()
     capture = begin_capture(execution_id)
+    envelope = None
     try:
         tree = ast.parse(code, mode="exec")
         last_value = None
@@ -253,13 +291,22 @@ def execute(execution_id, code, tool_name_map=None):
                     "durationMs": int((time.monotonic() - started) * 1000),
                     "resourceUsage": resource_usage()}
     except BaseException:
-        envelope = {"v": 1, "type": "result", "executionId": execution_id, "ok": False,
-                    "error": traceback.format_exc(limit=20),
-                    "durationMs": int((time.monotonic() - started) * 1000),
-                    "resourceUsage": resource_usage()}
+        if OUTPUT_LIMIT_HIT:
+            envelope = {"v": 1, "type": "result", "executionId": execution_id, "ok": False,
+                        "error": "CodeCell output exceeded the protocol payload limit of %d bytes." % MAX_PROTOCOL_LINE_BYTES,
+                        "durationMs": int((time.monotonic() - started) * 1000),
+                        "failureKind": "output-limit"}
+        else:
+            envelope = {"v": 1, "type": "result", "executionId": execution_id, "ok": False,
+                        "error": traceback.format_exc(limit=20),
+                        "durationMs": int((time.monotonic() - started) * 1000),
+                        "resourceUsage": resource_usage()}
     finally:
         end_capture(capture)
-        send(envelope)
+        if envelope is not None:
+            if OUTPUT_LIMIT_HIT:
+                envelope["failureKind"] = "output-limit"
+            send(fit_envelope(envelope))
         CURRENT_EXECUTION = None
 
 COMMAND_QUEUE = queue.Queue()

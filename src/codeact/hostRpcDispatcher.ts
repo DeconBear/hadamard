@@ -77,11 +77,21 @@ export class CodeActHostRpcDispatcher {
   async dispatch(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse> {
     try {
       if (request.method === 'artifact.put') return await this.putArtifact(request);
+      if (request.method === 'tool.schema') return this.toolSchema(request);
       if (request.method === 'tool.call') return await this.callTool(request);
       return { id: request.id, ok: false, error: `Host RPC method ${request.method} is not allowed.` };
     } catch (error) {
       return { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  /** On-demand schema lookup so a truncated typed SDK can still recover full discovery. */
+  private toolSchema(request: CodeActHostRpcRequest): CodeActHostRpcResponse {
+    const input = asRecord(request.input);
+    const name = requiredString(input.name, 'tool name');
+    const definition = this.tools.get(name);
+    if (!definition) return { id: request.id, ok: false, error: `Host tool ${name} is not available.` };
+    return { id: request.id, ok: true, result: { name: definition.name, inputJsonSchema: definition.inputJsonSchema } };
   }
 
   private async putArtifact(request: CodeActHostRpcRequest): Promise<CodeActHostRpcResponse> {
