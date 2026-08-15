@@ -22,6 +22,22 @@ import {
   createManagedActionSkill,
 } from '../plugins/managedPluginSkills.js';
 import { createManagedPluginRuntime } from '../plugins/managedPluginRuntime.js';
+import {
+  createExaSearchContribution,
+  createRequestRetryPolicyContribution,
+  createTavilySearchContribution,
+} from '../plugins/managedContributions.js';
+import { HadamardContributionHost } from '../contrib/contributionHost.js';
+import {
+  InMemoryContributionToolRegistry,
+  contributionRetryPolicyKey,
+  contributionToolRegistryKey,
+} from '../contrib/contributionServices.js';
+import {
+  conversationExtensionsFactoryKey,
+  createBuiltInConversationExtensionsContribution,
+} from './conversationExtensions.js';
+import type { ConversationExtensionPoints } from './conversationExtensions.js';
 import { resolveHadamardSettingsStore } from '../config/hadamardSettingsStore.js';
 import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
 import {
@@ -803,6 +819,7 @@ export class HadamardAgentClient {
     taskWorktreeCoordinator?: TaskWorktreeCoordinator,
     externalAgentRunner?: CreateAgentSdkOptions['externalAgentRunner'],
     private readonly runtimeClosers: ReadonlyArray<() => Promise<void>> = [],
+    private readonly contributionHost?: HadamardContributionHost,
   ) {
     this.externalAgentRunner = externalAgentRunner ?? runExternalAgentOnce;
     this.sessionManager = new SessionManager(this.store, sessionManagerConfig);
@@ -1131,11 +1148,30 @@ export class HadamardAgentClient {
     const backgroundTaskStore = new BackgroundTaskStore(config.sessionDirectory);
     const mailboxStore = new MailboxStore(config.sessionDirectory);
     const teammateStore = new TeammateStore(config.sessionDirectory);
+    // Runtime contribution host: global tool registry + pilot contributions
+    // (read-only search providers and the cross-cutting retry policy) assemble
+    // through the contribution seam, not the central managed-plugin switch.
+    const contributionHost = new HadamardContributionHost();
+    const contributionTools = new InMemoryContributionToolRegistry();
+    contributionHost.registerService(contributionToolRegistryKey, contributionTools);
+    let managedSettings: Record<string, unknown> = {};
+    if (options.managedPlugins !== false) {
+      managedSettings = isRecord(options.managedPlugins)
+        ? options.managedPlugins
+        : (await resolveHadamardSettingsStore({ homeDir: config.homeDir })).raw;
+    }
+    await contributionHost.loadMany([
+      createRequestRetryPolicyContribution(config.retryPolicy),
+      createBuiltInConversationExtensionsContribution(),
+      createTavilySearchContribution(managedSettings),
+      createExaSearchContribution(managedSettings),
+    ]);
+    const contributedRetryPolicy = contributionHost.getService(contributionRetryPolicyKey);
     const modelApi =
       options.modelApi ??
       (config.provider === 'openai'
-        ? createOpenaiModelApi(config)
-        : createHadamardModelApi(config));
+        ? createOpenaiModelApi(config, contributedRetryPolicy)
+        : createHadamardModelApi(config, contributedRetryPolicy));
     const mcpManager = new McpConnectionManager({
       name: config.clientName,
       version: config.clientVersion,
@@ -1208,14 +1244,14 @@ export class HadamardAgentClient {
     ];
     const runtimeClosers: Array<() => Promise<void>> = [];
     if (options.managedPlugins !== false) {
-      const managedSettings = isRecord(options.managedPlugins)
-        ? options.managedPlugins
-        : (await resolveHadamardSettingsStore({ homeDir: config.homeDir })).raw;
       const managedRuntime = createManagedPluginRuntime(managedSettings, { cwd: config.workDir });
       defaultTools.push(...managedRuntime.tools);
       skillDefinitions.push(...managedRuntime.skills);
       runtimeClosers.push(managedRuntime.close);
     }
+    // Tools contributed through the runtime contribution host (search providers).
+    defaultTools.push(...contributionTools.list());
+    runtimeClosers.push(() => contributionHost.dispose());
     if (options.computerUse) {
       const computerUseOptions: CreateHadamardComputerUseOptions =
         typeof options.computerUse === 'object' ? options.computerUse : {};
@@ -1323,6 +1359,7 @@ export class HadamardAgentClient {
       taskWorktreeCoordinator,
       options.externalAgentRunner,
       runtimeClosers,
+      contributionHost,
     );
     const interruptedTasks = await client.backgroundTaskManager.reconcileInterruptedTasks();
     await client.reconcileInterruptedAgentExecutions(interruptedTasks);
@@ -3137,6 +3174,10 @@ export class HadamardAgentClient {
           approver: options.approver ?? this.defaultApprover,
           canUseTool: options.canUseTool,
           hooks: augmentations?.hooks,
+          // Swappable strategies: per-run override first, then the runtime
+          // contribution host's factory, then the engine's built-ins.
+          extensions: (options.extensions as ConversationExtensionPoints | undefined)
+            ?? this.contributionHost?.getService(conversationExtensionsFactoryKey)?.(),
           drainQueuedInputs,
           drainFollowUpInputs,
           streaming,

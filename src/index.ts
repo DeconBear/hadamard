@@ -303,6 +303,36 @@ export * from './plugins/pluginLoader.js';
 export * from './plugins/pluginRegistryClient.js';
 export * from './plugins/pluginTrustStore.js';
 export * from './plugins/pluginManager.js';
+export { HadamardContributionHost, defineContributionServiceKey, topoSortContributions } from './contrib/contributionHost.js';
+export type {
+  ContributionApplyContext,
+  ContributionDisposer,
+  ContributionEvent,
+  ContributionEventBus,
+  ContributionEventListener,
+  ContributionHandle,
+  ContributionLoadOptions,
+  ContributionScopeName,
+  ContributionServiceKey,
+  ContributionServiceRegistry,
+  ContributionWaterfallListener,
+  HadamardRuntimeContribution,
+} from './contrib/contributionHost.js';
+export { InMemoryContributionToolRegistry, contributionRetryPolicyKey, contributionToolRegistryKey } from './contrib/contributionServices.js';
+export type { ContributionToolRegistry } from './contrib/contributionServices.js';
+export { createBuiltInConversationExtensions, createBuiltInConversationExtensionsContribution, conversationExtensionsFactoryKey } from './runtime/conversationExtensions.js';
+export type {
+  AutoCompactExtension,
+  ConversationExtensionPoints,
+  ConversationRepeatExtension,
+  ConversationTodoObservation,
+  ConversationTodoReminderExtension,
+  RequestErrorContext,
+  RequestErrorDecision,
+  RequestErrorExtension,
+} from './runtime/conversationExtensions.js';
+export { activateRuntimeContribution, isRuntimeContributionManifest } from './contrib/contributionLoader.js';
+export type { ActivateRuntimeContributionOptions, RuntimeContributionManifest } from './contrib/contributionLoader.js';
 export {
   HadamardSdkError,
   HadamardProviderApiError,
