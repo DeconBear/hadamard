@@ -361,7 +361,7 @@ export class SessionCatalog {
         this.options.activity,
       );
     }
-    const projectPath = this.assertRegisteredProject(input.projectPath);
+    const projectPath = this.resolveRegisteredProjectPath(input.projectPath);
     const root = getHadamardProjectSessionDirectory(projectPath, this.options.homeDir);
     const store = new SessionStore(root);
     const manager = type === 'assistant-project';
@@ -448,13 +448,14 @@ export class SessionCatalog {
     }
     return {
       root: getHadamardProjectSessionDirectory(
-        this.assertRegisteredProject(locator.projectPath),
+        this.resolveRegisteredProjectPath(locator.projectPath),
         this.options.homeDir,
       ),
     };
   }
 
-  private assertRegisteredProject(projectPath?: string): string {
+  /** Resolve a project only when it belongs to this catalog's registered scope. */
+  resolveRegisteredProjectPath(projectPath?: string): string {
     if (!projectPath?.trim()) throw new Error('A registered projectPath is required.');
     const resolved = path.resolve(projectPath);
     if (!this.registeredProjectKeys.has(normalizePath(resolved))) {

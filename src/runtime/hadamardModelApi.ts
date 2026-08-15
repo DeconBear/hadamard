@@ -65,7 +65,7 @@ export function createHadamardModelApi(config: ResolvedRuntimeConfig): ModelApi 
     baseURL: config.baseURL ?? null,
     timeout: config.timeoutMs,
     maxRetries: config.maxRetries,
-    retryPolicy: config.retryPolicy,
+    resolvedRetryPolicy: config.retryPolicy,
   });
   return new HadamardModelApi(client);
 }

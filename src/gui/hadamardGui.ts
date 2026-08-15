@@ -3613,6 +3613,17 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     });
   }
 
+  async function createNewGuiChat(projectPath?: unknown): Promise<Record<string, unknown>> {
+    assertSessionNavigationAllowed();
+    if (projectPath !== undefined && typeof projectPath !== 'string') throw new Error('projectPath must be a string.');
+    const candidatePath = typeof projectPath === 'string' ? projectPath : workDir;
+    const requestedPath = (await createSessionCenterCatalog()).resolveRegisteredProjectPath(candidatePath);
+    if (normalizeFsPath(requestedPath) !== normalizeFsPath(workDir)) await switchProject(requestedPath, { remember: false });
+    await replaceGuiSession(await createGuiSession({ model: options.model, permissionMode }));
+    await restoreSessionRuntimeSelection();
+    return state();
+  }
+
   async function selectAssistantCatalogItem(
     item: import('../storage/sessionCatalog.js').SessionCatalogItem,
   ): Promise<void> {
@@ -7635,12 +7646,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       else session.followUp(input);
       return { active: true, pendingInputCount: session.pendingInputCount };
     },
-    createSession: () => enqueueServerSessionResume(async () => {
-      assertSessionNavigationAllowed();
-      await replaceGuiSession(await createGuiSession({ model: options.model, permissionMode }));
-      await restoreSessionRuntimeSelection();
-      return state();
-    }),
+    createSession: req => enqueueServerSessionResume(async () =>
+      createNewGuiChat((await readJson(req)).projectPath)),
     resumeSession: req => enqueueServerSessionResume(async () => {
       assertSessionNavigationAllowed();
       const body = await readJson(req);
@@ -10280,6 +10287,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           }
           const runAction = () => enqueueServerSessionResume(async () => {
             if (action === 'open' || action === 'create') assertSessionNavigationAllowed();
+            if (action === 'create' && (body.type === undefined || body.type === 'user')) return { ok: true, state: await createNewGuiChat(body.projectPath) };
             const catalog = await createSessionCenterCatalog();
             const item = await catalog.action({
               action: action as import('../storage/sessionCatalog.js').SessionCatalogAction,

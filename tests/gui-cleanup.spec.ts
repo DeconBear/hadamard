@@ -30,6 +30,48 @@ async function createWorkspace(root: string, name: string): Promise<string> {
 }
 
 describe('GUI session cleanup', () => {
+  it('creates a new draft from Session Center without trying to resume it', async () => {
+    const root = await tempDir('hadamard-gui-session-center-create-');
+    const homeDir = path.join(root, 'home');
+    const workDir = await createWorkspace(root, 'work');
+    const configPath = path.join(homeDir, '.hadamard', 'settings.json');
+    await mkdir(path.dirname(configPath), { recursive: true });
+    await writeFile(configPath, JSON.stringify({
+      env: {
+        HADAMARD_PROVIDER: 'openai',
+        HADAMARD_API_KEY: 'test-key',
+        HADAMARD_BASE_URL: 'http://127.0.0.1:1/v1',
+        HADAMARD_MODEL: 'test-model',
+      },
+    }), 'utf8');
+    const server = await startHadamardGuiServer({
+      workDir, homeDir, configPath, host: '127.0.0.1',
+      port: 45000 + Math.floor(Math.random() * 10_000),
+    });
+    try {
+      const before = await fetch(`${server.url}api/state`, {
+        headers: { 'x-hadamard-token': server.token },
+      }).then(response => response.json()) as { session: { id: string } };
+      const response = await fetch(`${server.url}api/session/new`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-hadamard-token': server.token,
+        },
+        body: JSON.stringify({ projectPath: workDir }),
+      });
+      const created = await response.json() as { session?: { id?: string }; error?: string };
+
+      expect(response.status, created.error).toBe(200);
+      expect(created.session?.id).toBeTruthy();
+      expect(created.session?.id).not.toBe(before.session.id);
+      const store = new SessionStore(getHadamardProjectSessionDirectory(workDir, homeDir));
+      expect(await store.list()).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+
   it('closes promptly when a renderer connection is still open', async () => {
     const root = await tempDir('hadamard-gui-close-');
     const homeDir = path.join(root, 'home');

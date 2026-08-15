@@ -1109,6 +1109,34 @@ describe('loop compact prune and cache-reusing summaries', () => {
     expect(JSON.stringify(outcome.messages)).toContain('[Old tool result content cleared]');
   });
 
+  it('reports a no-op when prune mode has no eligible tool result', async () => {
+    const modelApi = new MockModelApi({});
+    const messages: MessageParam[] = [
+      { role: 'user', content: 'x'.repeat(1_200) },
+      { role: 'assistant', content: [{ type: 'text', text: 'y'.repeat(1_200) }] },
+      { role: 'user', content: 'latest' },
+    ];
+    const outcome = await compactHadamardConversationIfNeeded(messages, {
+      model: 'test-model',
+      modelApi,
+      compactConfig: baseCompactConfig({
+        autoCompactThresholdTokens: 1,
+        loopCompactPruneToolResults: true,
+        microcompactEnabled: true,
+        preserveRecentMessages: 1,
+      }),
+      maxTokens: 256,
+      runKey: 'prune-no-op-run',
+    });
+
+    expect(outcome.compacted).toBe(false);
+    expect(outcome.reason).toBe('threshold_not_met');
+    expect(outcome.clearedToolResults).toBe(0);
+    expect(outcome.messagesSummarized).toBe(0);
+    expect(outcome.shadowedTokenCount).toBeUndefined();
+    expect(outcome.messages).toEqual(messages);
+  });
+
   it('replays the main system/tools prefix in the summary request and sends real messages', async () => {
     const modelApi = new MockModelApi({
       create: () => makeMessage([{ type: 'text', text: 'CACHE_REUSE_SUMMARY' }]),

@@ -148,7 +148,9 @@ describe('executeConversation trajectory and repair', () => {
     expect(kinds[0]).toBe('run.started');
     expect(kinds).toContain('request.started');
     expect(kinds).toContain('assistant.message');
+    expect(kinds).toContain('tool.call');
     expect(kinds).toContain('tool.result');
+    expect(kinds.indexOf('tool.call')).toBeLessThan(kinds.indexOf('tool.result'));
     expect(kinds.at(-1)).toBe('run.completed');
     // Monotonic per-run seqs.
     const seqs = events.map(event => event.seq);
