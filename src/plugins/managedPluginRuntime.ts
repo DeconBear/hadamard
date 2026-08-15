@@ -1,6 +1,5 @@
-import { realpathSync, statSync, existsSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { homedir } from 'node:os';
 
 import { z } from 'zod';
 
@@ -36,8 +35,6 @@ import {
   buildMeshGenConfigFromStored,
   createMeshGenTool,
 } from './meshGenPlugin.js';
-import { createExaSearchTool } from '../tools/exaSearch.js';
-import { createTavilySearchTool } from '../tools/tavilySearch.js';
 import { hasMediaGenSecret } from './mediaGenProfiles.js';
 import {
   createGitHubCliSkill,
@@ -192,23 +189,8 @@ export function createManagedPluginRuntime(
     closers.push(() => runtime.session.close());
   }
 
-  const tavily = readStoredManagedPluginConfig(raw, 'tavily');
-  if (tavily.enabled === true && searchCredentialAvailable('tavily', stringValue(tavily.apiKey))) {
-    enabledPluginIds.push('tavily');
-    tools.push(createTavilySearchTool({
-      apiKey: stringValue(tavily.apiKey) || undefined,
-      timeoutMs: numberValue(tavily.timeoutMs),
-    }));
-  }
-
-  const exa = readStoredManagedPluginConfig(raw, 'exa');
-  if (exa.enabled === true && searchCredentialAvailable('exa', stringValue(exa.apiKey))) {
-    enabledPluginIds.push('exa');
-    tools.push(createExaSearchTool({
-      apiKey: stringValue(exa.apiKey) || undefined,
-      timeoutMs: numberValue(exa.timeoutMs),
-    }));
-  }
+  // Tavily/Exa search providers are runtime contributions now
+  // (see managedContributions.ts); they no longer live in this switch.
 
   const imageGen = readStoredManagedPluginConfig(raw, 'image-gen');
   if (imageGen.enabled === true && hasMediaGenSecret(imageGen, 'image')) {
@@ -417,23 +399,4 @@ function stringArray(value: unknown): string[] | undefined {
     : undefined;
 }
 
-function searchCredentialAvailable(
-  pluginId: 'tavily' | 'exa',
-  configuredKey: string,
-): boolean {
-  if (configuredKey.trim()) return true;
-  if (pluginId === 'tavily') {
-    if (process.env.TAVILY_API_KEY?.trim()) return true;
-    try {
-      return existsSync(path.join(homedir(), '.tavily', 'config.json'));
-    } catch {
-      return false;
-    }
-  }
-  if (process.env.EXA_API_KEY?.trim()) return true;
-  try {
-    return existsSync(path.join(homedir(), '.exa', 'config.json'));
-  } catch {
-    return false;
-  }
-}
+// searchCredentialAvailable moved to managedContributions.ts (runtime contributions).
