@@ -177,16 +177,20 @@ class HadamardHost:
             raise HadamardToolError(name, str(error)) from error
     def parallel(self, callables, max_workers=8):
         return parallel(callables, max_workers=max_workers)
-    def read(self, file_path, offset=None, limit=None):
+    def read(self, file_path, offset=None, limit=None, **kwargs):
         input_value = {"file_path": file_path}
         if offset is not None: input_value["offset"] = offset
         if limit is not None: input_value["limit"] = limit
+        input_value.update({key: value for key, value in kwargs.items() if value is not None})
         return self.tool("Read", input_value)
-    def write(self, file_path, content):
-        return self.tool("Write", {"file_path": file_path, "content": content})
-    def search(self, pattern, path=None):
+    def write(self, file_path, content, **kwargs):
+        input_value = {"file_path": file_path, "content": content}
+        input_value.update({key: value for key, value in kwargs.items() if value is not None})
+        return self.tool("Write", input_value)
+    def search(self, pattern, path=None, **kwargs):
         input_value = {"pattern": pattern}
         if path is not None: input_value["path"] = path
+        input_value.update({key: value for key, value in kwargs.items() if value is not None})
         return self.tool("Grep", input_value)
     def artifact(self, name, content, media_type="text/plain"):
         return host_call("artifact.put", {"name": name, "content": content, "mediaType": media_type})

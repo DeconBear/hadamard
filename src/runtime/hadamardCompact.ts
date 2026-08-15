@@ -1211,22 +1211,21 @@ export async function compactHadamardConversationIfNeeded(
   // summary call entirely. Defaults off because it rewrites historical
   // tool_result content and breaks automatic prefix caches.
   if (config.loopCompactPruneToolResults === true) {
+    if (microcompacted.clearedCount === 0) return { ...unchanged, reason: 'threshold_not_met' };
     // Stage 1 already cleared the old tool_result content; the pruned array
     // becomes the live conversation without a summary call.
     const nextMessages = microcompacted.messages;
+    const tokenEstimateAfter = Math.ceil(estimateHadamardConversationTokens(nextMessages)
+      * tokenEstimateMultiplier);
     return {
       messages: nextMessages,
       compacted: true,
       tokenEstimateBefore,
-      tokenEstimateAfter: Math.ceil(
-        estimateHadamardConversationTokens(nextMessages) * tokenEstimateMultiplier,
-      ),
-      messagesSummarized: messagesToSummarize.length,
-      preservedMessages: messagesToKeep.length,
+      tokenEstimateAfter,
+      messagesSummarized: 0,
+      preservedMessages: nextMessages.length,
       clearedToolResults: microcompacted.clearedCount,
-      shadowedTokenCount: Math.ceil(
-        estimateHadamardConversationTokens(messagesToSummarize) * tokenEstimateMultiplier,
-      ),
+      shadowedTokenCount: Math.max(tokenEstimateBefore - tokenEstimateAfter, 0),
       reason: 'prune',
     };
   }

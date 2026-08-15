@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { tool } from '../src/index.js';
 import {
+  buildCodeActToolNameMap,
   DEFAULT_MAX_SDK_CHARS,
   jsonSchemaToPythonType,
   renderCodeActHostSdk,
@@ -26,7 +27,7 @@ const probeTools = () => [
   makeTool('type', z.strictObject({ x: z.string() }), 'Keyword-named tool.'),
 ];
 
-const golden = "# Typed host-tool stubs reachable from CodeCell code through the global\n# `hadamard` object. Signatures are authoritative for parameter names; every\n# method dispatches the matching host tool, and `hadamard.tool(\"<name>\", {...})` stays\n# available for tools without a typed stub.\n# A failed host call raises HadamardToolError with a `tool_name` attribute;\n# catch it to branch on which tool failed.\nclass HadamardHost:\n    \"\"\"Host-tool bridge (typed surface).\"\"\"\n\n    def bad_tool(self) -> Any:\n        \"\"\"Tool with an invalid identifier param. Host tool: bad-tool. Called as hadamard.bad_tool. Not keyword-accessible (invalid Python identifiers): not-valid.\"\"\"\n        ...\n\n    def search(self, pattern: str, path: str | None = None) -> Any:\n        \"\"\"Search file contents with a ripgrep regular expression. Host tool: Grep.\"\"\"\n        ...\n\n    def read(self, file_path: str, offset: int | None = None, limit: int | None = None) -> Any:\n        \"\"\"Read a UTF-8 text file. Host tool: Read.\"\"\"\n        ...\n\n    def type_(self, x: str) -> Any:\n        \"\"\"Keyword-named tool. Host tool: type. Called as hadamard.type_.\"\"\"\n        ...\n\n    def weather_lookup(self, city: str, units: Literal['c'] | Literal['f'] | None = None, tags: list[str] | None = None) -> Any:\n        \"\"\"Look up current weather. Host tool: weather_lookup.\"\"\"\n        ...";
+const golden = "# Typed host-tool stubs reachable from CodeCell code through the global\n# `hadamard` object. Signatures are authoritative for parameter names; every\n# method dispatches the matching host tool, and `hadamard.tool(\"<name>\", {...})` stays\n# available for tools without a typed stub.\n# A failed host call raises HadamardToolError with a `tool_name` attribute;\n# catch it to branch on which tool failed.\nclass HadamardHost:\n    \"\"\"Host-tool bridge (typed surface).\"\"\"\n\n    def bad_tool(self) -> Any:\n        \"\"\"Tool with an invalid identifier param. Host tool: bad-tool. Called as hadamard.bad_tool. Not keyword-accessible (invalid Python identifiers): not-valid.\"\"\"\n        ...\n\n    def search(self, pattern: str, path: str | None = None, include: str | None = None) -> Any:\n        \"\"\"Search file contents with a ripgrep regular expression. Host tool: Grep.\"\"\"\n        ...\n\n    def read(self, file_path: str, offset: int | None = None) -> Any:\n        \"\"\"Read a UTF-8 text file. Host tool: Read.\"\"\"\n        ...\n\n    def type_(self, x: str) -> Any:\n        \"\"\"Keyword-named tool. Host tool: type. Called as hadamard.type_.\"\"\"\n        ...\n\n    def weather_lookup(self, city: str, units: Literal['c'] | Literal['f'] | None = None, tags: list[str] | None = None) -> Any:\n        \"\"\"Look up current weather. Host tool: weather_lookup.\"\"\"\n        ...";
 
 describe('renderCodeActHostSdk', () => {
   it('renders byte-stable typed stubs for a fixed tool set', () => {
@@ -42,6 +43,26 @@ describe('renderCodeActHostSdk', () => {
     expect(sdk).not.toContain('def artifact(');
     expect(sdk).toContain('collides with the reserved artifact helper');
     expect(sdk).toContain('hadamard.tool("artifact", {...})');
+  });
+
+  it('omits sanitized-name collisions from both typed stubs and dispatch map', () => {
+    const tools = [
+      makeTool('foo-bar', z.strictObject({ value: z.string() })),
+      makeTool('foo_bar', z.strictObject({ count: z.number() })),
+    ];
+    const sdk = renderCodeActHostSdk(tools);
+    const map = buildCodeActToolNameMap(tools);
+
+    expect(sdk).not.toContain('def foo_bar(');
+    expect(sdk).toContain('share the sanitized Python name foo_bar');
+    expect(sdk).toContain('hadamard.tool("foo-bar", {...})');
+    expect(sdk).toContain('hadamard.tool("foo_bar", {...})');
+    expect(map).not.toHaveProperty('foo_bar');
+  });
+
+  it('derives fixed-helper signatures from the registered tool schema', () => {
+    const sdk = renderCodeActHostSdk(probeTools());
+    expect(sdk).toContain('def search(self, pattern: str, path: str | None = None, include: str | None = None)');
   });
 
   it('folds docstrings when the body exceeds the budget', () => {

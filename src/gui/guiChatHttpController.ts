@@ -18,7 +18,7 @@ export interface GuiChatHttpControllerPort {
     active: boolean;
     pendingInputCount: number;
   };
-  createSession(): Promise<unknown>;
+  createSession(req: IncomingMessage): Promise<unknown>;
   resumeSession(req: IncomingMessage): Promise<{ status: number; error?: string; state?: unknown }>;
   resolvePermission(
     id: string,
@@ -72,9 +72,9 @@ export function registerGuiChatHttpController(
     });
   });
 
-  router.route('POST', '/api/session/new', async (_req, res) => {
+  router.route('POST', '/api/session/new', async (req, res) => {
     try {
-      json(res, 200, await port.createSession());
+      json(res, 200, await port.createSession(req));
     } catch (error) {
       const mapped = port.mutationError(error);
       json(res, mapped.status, mapped.body);

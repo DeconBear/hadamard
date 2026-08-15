@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { AgentEvent, AgentToolDefinition, ToolExecutionContext } from '../types.js';
 import { CodeActArtifactRecorder, hashCodeCellSource } from './codeActArtifacts.js';
-import { RESERVED_HOST_METHODS, sanitizeCodeActName } from './codeActSdk.js';
+import { buildCodeActToolNameMap } from './codeActSdk.js';
 import { buildCodeActEnvironment, assertCodeActBackend, resolveCodeActSettings } from './codeActPolicy.js';
 import { ContainerKernelAdapter } from './containerKernelAdapter.js';
 import { CodeActHostRpcDispatcher } from './hostRpcDispatcher.js';
@@ -71,7 +71,15 @@ export class CodeActService {
     const executionId = input.context.toolUseId ?? randomUUID();
     const sourceHash = hashCodeCellSource(input.code);
     const startedAt = new Date().toISOString();
-    this.activeContexts.set(sessionId, input.context);
+    const cellController = new AbortController();
+    const abortCell = () => cellController.abort(input.context.signal?.reason);
+    if (input.context.signal?.aborted) abortCell();
+    else input.context.signal?.addEventListener('abort', abortCell, { once: true });
+    const executionContext: ToolExecutionContext = {
+      ...input.context,
+      signal: cellController.signal,
+    };
+    this.activeContexts.set(sessionId, executionContext);
     try {
       const lease = await this.pool.acquire(sessionId, input.context.cwd);
       if (lease.lifecycle !== 'reused') {
@@ -90,20 +98,12 @@ export class CodeActService {
       language: input.language,
       sourceHash,
       timestamp: startedAt,
-      }, input.context);
+      }, executionContext);
       const dispatcher = new CodeActHostRpcDispatcher(
-        input.hostTools ?? [], input.context, this.artifacts, sessionId,
+        input.hostTools ?? [], executionContext, this.artifacts, sessionId,
         this.settings.maxParallelSubCalls,
       );
-      // Typed `hadamard.<name>` dispatch map: sanitized method name → real
-      // host tool name (reserved helpers and CodeCell itself are excluded).
-      const toolNameMap: Record<string, string> = {};
-      for (const tool of input.hostTools ?? []) {
-        const methodName = sanitizeCodeActName(tool.name);
-        if (!RESERVED_HOST_METHODS.has(methodName)) {
-          toolNameMap[methodName] = tool.name;
-        }
-      }
+      const toolNameMap = buildCodeActToolNameMap(input.hostTools ?? []);
       const result = await lease.kernel.execute({
       executionId,
       sessionId,
@@ -123,7 +123,7 @@ export class CodeActService {
         stream,
         delta,
         timestamp: new Date().toISOString(),
-      }, input.context),
+      }, executionContext),
       });
       const completedAt = new Date().toISOString();
       const record: CodeCellExecutionRecord = {
@@ -148,11 +148,15 @@ export class CodeActService {
       generation: result.generation,
       result,
       timestamp: completedAt,
-      }, input.context);
+      }, executionContext);
       if (result.stateLost) await this.pool.invalidate(sessionId, result.status);
       else this.pool.touch(sessionId);
       return record;
     } finally {
+      input.context.signal?.removeEventListener('abort', abortCell);
+      if (!cellController.signal.aborted) {
+        cellController.abort(new Error('CodeCell execution settled.'));
+      }
       this.activeContexts.delete(sessionId);
     }
   }

@@ -433,6 +433,7 @@ export function createOpenaiModelApi(config: ResolvedRuntimeConfig): ModelApi {
     baseURL: config.baseURL ?? null,
     timeout: config.timeoutMs,
     maxRetries: config.maxRetries,
+    resolvedRetryPolicy: config.retryPolicy,
   });
   return new OpenaiModelApi(client);
 }

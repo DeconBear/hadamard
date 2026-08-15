@@ -1,8 +1,13 @@
 export const GUI_SESSION_CREATE_CLIENT_SCRIPT = String.raw`
-async function performCreateSession(requestSequence) {
+async function performCreateSession(requestSequence, projectPath) {
   try {
     if (requestSequence !== sessionResumeSequence) return;
-    const res = await api('/api/session/new', { method: 'POST', signal: AbortSignal.timeout(15_000) });
+    const res = await api('/api/session/new', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(projectPath ? { projectPath } : {}),
+      signal: AbortSignal.timeout(15_000),
+    });
     if (requestSequence !== sessionResumeSequence) return;
     if (!res.ok) {
       const message = (await res.text()) || 'Could not create a new conversation.';
@@ -43,7 +48,7 @@ async function performCreateSession(requestSequence) {
     if (requestSequence === sessionResumeSequence) setSessionResumePending(false);
   }
 }
-function createNewSession() {
+function createNewSession(projectPath) {
   if (state.sessionResumePending) {
     flashStatus('A conversation switch is already in progress.');
     return sessionResumeQueue;
@@ -52,7 +57,7 @@ function createNewSession() {
   setSessionResumePending(true);
   const pending = sessionResumeQueue
     .catch(() => undefined)
-    .then(() => performCreateSession(requestSequence));
+    .then(() => performCreateSession(requestSequence, projectPath));
   sessionResumeQueue = pending.catch(() => undefined);
   return pending;
 }

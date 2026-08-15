@@ -4,6 +4,7 @@ import { HadamardProviderApiError } from '../src/errors.js';
 import HadamardProviderClient, { normalizeProviderUsage } from '../src/provider/client.js';
 import OpenaiProviderClient from '../src/provider/openai-client.js';
 import { OpenaiModelApi } from '../src/provider/openai-model-api.js';
+import { resolveProviderRetryPolicy } from '../src/provider/retryPolicy.js';
 import { HadamardModelApi } from '../src/runtime/hadamardModelApi.js';
 
 function makeCompletionResponse(): Response {
@@ -36,6 +37,33 @@ function makeSseResponse(body: string): Response {
 }
 
 describe('OpenaiProviderClient retry behavior', () => {
+  it('preserves a resolved policy that excludes server errors', async () => {
+    let calls = 0;
+    const client = new OpenaiProviderClient({
+      apiKey: 'test-key',
+      baseURL: 'https://example.test/v1',
+      resolvedRetryPolicy: resolveProviderRetryPolicy({
+        mode: 'normal',
+        maxRetries: 2,
+        retryableCodes: ['RATE_LIMIT'],
+        backoff: { initialDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 },
+      }),
+      fetch: async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ error: { message: 'server error' } }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+
+    await expect(client.chat.completions.create({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+    })).rejects.toBeInstanceOf(HadamardProviderApiError);
+    expect(calls).toBe(1);
+  });
+
   it('normalizes exhausted socket termination retries as provider transport errors', async () => {
     let calls = 0;
     const fetchImpl: typeof fetch = async () => {
@@ -234,6 +262,34 @@ describe('provider stream completion validation', () => {
 });
 
 describe('HadamardProviderClient retry behavior', () => {
+  it('preserves a resolved policy that excludes server errors', async () => {
+    let calls = 0;
+    const client = new HadamardProviderClient({
+      apiKey: 'test-key',
+      baseURL: 'https://example.test',
+      resolvedRetryPolicy: resolveProviderRetryPolicy({
+        mode: 'normal',
+        maxRetries: 2,
+        retryableCodes: ['RATE_LIMIT'],
+        backoff: { initialDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 },
+      }),
+      fetch: async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ error: { message: 'server error' } }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+
+    await expect(client.messages.create({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 32,
+    })).rejects.toBeInstanceOf(HadamardProviderApiError);
+    expect(calls).toBe(1);
+  });
+
   it('stops retry backoff immediately when the caller aborts', async () => {
     const controller = new AbortController();
     let calls = 0;
