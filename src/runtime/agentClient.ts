@@ -37,7 +37,7 @@ import {
   conversationExtensionsFactoryKey,
   createBuiltInConversationExtensionsContribution,
 } from './conversationExtensions.js';
-import type { ConversationExtensionPoints } from './conversationExtensions.js';
+import type { ConversationExtensionPoints } from '../types.js';
 import { resolveHadamardSettingsStore } from '../config/hadamardSettingsStore.js';
 import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
 import {
@@ -52,6 +52,9 @@ import { readProjectSettings, type DreamExecutionProfileRef } from '../config/pr
 import { CodeActService } from '../codeact/codeActService.js';
 import { renderCodeActHostSdk } from '../codeact/codeActSdk.js';
 import { createCodeCellTool, CODE_CELL_TOOL_NAME } from '../codeact/codeCellTool.js';
+import { ProgrammaticToolRuntime } from '../codeact/programmaticToolRuntime.js';
+import { createRunCodeTool } from '../codeact/runCodeTool.js';
+import type { ToolPresentationMode } from '../codeact/presentationTypes.js';
 import {
   buildAgentModePrompt,
   filterToolsForExecutionPolicy,
@@ -3000,6 +3003,15 @@ export class HadamardAgentClient {
       goalTools = filterToolsForExecutionPolicy(ordinaryTools, executionPolicy);
     }
 
+    // Tool presentation is orthogonal to the agent mode: PTC/both add the
+    // stateless run_code wire tool (host tools = the ordinary catalog) while
+    // native/codeact/hybrid stay exactly as before.
+    const toolPresentation: ToolPresentationMode = options.toolPresentation ?? this.config.toolPresentation;
+    if (toolPresentation !== 'native') {
+      const ptcRuntime = new ProgrammaticToolRuntime({ ...projectSettings.codeAct, enabled: true });
+      goalTools.push(createRunCodeTool({ service: ptcRuntime, hostTools: ordinaryTools }));
+    }
+
     goalTools = await applyResolvedToolDescriptions(goalTools, {
       workDir,
       permissionMode: options.permissionMode ?? this.defaultPermissionMode,
@@ -3178,6 +3190,7 @@ export class HadamardAgentClient {
           // contribution host's factory, then the engine's built-ins.
           extensions: (options.extensions as ConversationExtensionPoints | undefined)
             ?? this.contributionHost?.getService(conversationExtensionsFactoryKey)?.(),
+          toolPresentation,
           drainQueuedInputs,
           drainFollowUpInputs,
           streaming,
