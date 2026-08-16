@@ -372,7 +372,20 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       if (error instanceof Error && error.message.includes('No Hadamard credential')) {
         // First-run onboarding: guide the user through creating ~/.hadamard/settings.json.
         await onboardTuiCredentials(options.configPath);
-        // After saving, retry SDK creation.
+        // Bug fix: reload the just-written settings file before retrying.
+        // The credential check reads the module-level loaded config, which
+        // startup never set (the file did not exist yet), so skipping this
+        // reload made the retry fail again and re-show onboarding forever.
+        try {
+          if (options.configPath) {
+            await loadJsonConfigFile(options.configPath);
+          } else {
+            await loadDefaultHadamardSettings();
+          }
+        } catch {
+          // Keep the original error path if the reload itself fails.
+        }
+        // After saving and reloading, retry SDK creation.
         continue;
       }
       throw error;
