@@ -10483,6 +10483,7 @@ function collectProjectSettingsBody() {
   return {
     workMode,
     agentMode: el('projectAgentMode')?.value || 'react',
+    toolPresentation: el('projectToolPresentation')?.value === 'ptc' || el('projectToolPresentation')?.value === 'both' ? el('projectToolPresentation')?.value : undefined,
     codeAct: {
       backend: el('projectCodeActBackend')?.value === 'container' ? 'container' : 'process',
       securityMode: el('projectCodeActSecurity')?.value === 'enforce' ? 'enforce' : 'trusted',
@@ -10544,7 +10545,7 @@ function wireProjectSettingsPanel() {
   panel.addEventListener('change', (event) => {
     const target = event.target;
     if (!target || !target.id) return;
-    if (target.id === 'projectWorkModeCoding' || target.id === 'projectWorkModeDaily' || target.id === 'projectAgentMode' || target.id.startsWith('projectCodeAct') || target.id === 'projectInstructionMode' || target.id.startsWith('projectCompact') || target.id.startsWith('projectDurableMemory') || target.id === 'projectAutoDream' || target.id === 'projectDreamProfile' || target.id === 'projectDreamEffort' || target.id === 'projectDailyDreamTime') {
+    if (target.id === 'projectWorkModeCoding' || target.id === 'projectWorkModeDaily' || target.id === 'projectAgentMode' || target.id === 'projectToolPresentation' || target.id.startsWith('projectCodeAct') || target.id === 'projectInstructionMode' || target.id.startsWith('projectCompact') || target.id.startsWith('projectDurableMemory') || target.id === 'projectAutoDream' || target.id === 'projectDreamProfile' || target.id === 'projectDreamEffort' || target.id === 'projectDailyDreamTime') {
       scheduleProjectSettingsSave();
     }
   });
@@ -10576,6 +10577,7 @@ async function mountProjectSettingsPanel(force) {
     if (coding) coding.checked = settings.workMode !== 'daily';
     if (daily) daily.checked = settings.workMode === 'daily';
     if (el('projectAgentMode')) el('projectAgentMode').value = settings.agentMode || 'react';
+    if (el('projectToolPresentation')) el('projectToolPresentation').value = settings.toolPresentation || 'native';
     if (el('projectCodeActBackend')) el('projectCodeActBackend').value = settings.codeAct?.backend === 'container' ? 'container' : 'process';
     if (el('projectCodeActSecurity')) el('projectCodeActSecurity').value = settings.codeAct?.securityMode === 'enforce' ? 'enforce' : 'trusted';
     state.projectPromptPolicy = { customPrompt: settings.customPrompt || '', projectRules: settings.projectRules || '' };
@@ -13232,6 +13234,7 @@ function renderProjectDetail() {
     + '<h2>Agent execution</h2>'
     + '<p class="muted">The default applies when a Session, saved Agent, or Workflow/Graph node does not override it. Choose CodeAct or Hybrid when the session needs Python CodeCell execution.</p>'
     + '<label class="settings-row"><span><strong>Default agent mode for new sessions</strong><small>ReAct uses ordinary tools; CodeAct uses persistent Python CodeCell; Hybrid exposes both.</small></span><select id="projectAgentMode"><option value="react">ReAct</option><option value="codeact">CodeAct</option><option value="hybrid">Hybrid</option></select></label>'
+    + '<label class="settings-row"><span><strong>Tool presentation</strong><small>Native sends every tool schema directly; PTC exposes a single run_code program (Python kernel; set the CodeAct PTC backend to worker-thread for zero dependencies); Both offers both.</small></span><select id="projectToolPresentation"><option value="native">Native</option><option value="ptc">PTC</option><option value="both">Both</option></select></label>'
     + '<label class="settings-row"><span><strong>CodeAct backend</strong><small>Process is trusted-only; Container provides stronger isolation.</small></span><select id="projectCodeActBackend"><option value="process">Process (trusted only)</option><option value="container">Container</option></select></label>'
     + '<label class="settings-row"><span><strong>Security mode</strong><small>Enforce fails closed unless strong container isolation is available.</small></span><select id="projectCodeActSecurity"><option value="trusted">Trusted</option><option value="enforce">Enforce isolation</option></select></label>'
     + '</div>'

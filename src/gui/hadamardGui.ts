@@ -5151,6 +5151,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         });
       }
       case 'mode': return [{ type: 'command.result', title: 'Agent mode', text: `current: ${currentAgentMode()}. Use the Agent mode selector in the composer to change it.` }];
+      case 'presentation': return [{ type: 'command.result', title: 'Tool presentation', text: `Configure how tools are presented (Native / PTC / Both) in Project settings → Agent execution → Tool presentation.` }];
       case 'document': return [{ type: 'command.result', title: 'Document', text: 'Open the Project Document workspace to choose DESIGN, PLAN, MEMORY, or RULES.' }];
       case 'permissions':
         return args
@@ -9085,6 +9086,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         projectRules: typeof body.projectRules === 'string' ? body.projectRules : undefined,
         agentMode: body.agentMode === 'react' || body.agentMode === 'codeact' || body.agentMode === 'hybrid'
           ? body.agentMode
+          : undefined,
+        toolPresentation: body.toolPresentation === 'native' || body.toolPresentation === 'ptc' || body.toolPresentation === 'both'
+          ? body.toolPresentation
           : undefined,
         codeAct: body.codeAct && typeof body.codeAct === 'object'
           ? body.codeAct as ProjectSettings['codeAct']
