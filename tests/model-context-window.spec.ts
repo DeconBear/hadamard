@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   STANDARD_CONTEXT_WINDOWS,
+  isSelectableContextWindowTokens,
   clampContextWindowTokens,
   formatContextWindowTokens,
   modelContextWindowOptions,
@@ -47,6 +48,11 @@ describe('model context-window selection', () => {
       1_000_000,
       2_000_000,
     ]);
+  });
+
+  it('rejects direct context values above the selectable 2m ceiling', () => {
+    expect(isSelectableContextWindowTokens(parseContextWindowTokens('2m'))).toBe(true);
+    expect(isSelectableContextWindowTokens(parseContextWindowTokens('2.1m'))).toBe(false);
   });
 
   it('resolves metadata for the selected config model', () => {

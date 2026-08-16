@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { startHadamardGuiServer } from '../src/gui/hadamardGui.js';
+import { writeBridgeConfigs } from '../src/parity/bridgeConfigs.js';
 
 const tempDirs: string[] = [];
 
@@ -180,7 +181,48 @@ describe('GUI runtime local config reuse', () => {
     }
   });
 
-  it('persists the bridge-mode gate from the Bridge settings panel', async () => {
+  it('keeps bridge mode off until it is explicitly enabled in the Bridge tab', async () => {
+    const root = await tempRoot('hadamard-gui-bridge-default-off-');
+    const userHome = path.join(root, 'home');
+    const workDir = path.join(root, 'work');
+    await mkdir(workDir, { recursive: true });
+    await mkdir(path.join(userHome, '.hadamard'), { recursive: true });
+    const settingsPath = path.join(userHome, '.hadamard', 'settings.json');
+    await writeFile(settingsPath, JSON.stringify({
+      HADAMARD_PROVIDER: 'openai',
+      HADAMARD_API_KEY: 'test-key',
+    }), 'utf8');
+    writeBridgeConfigs({
+      configs: [{
+        name: 'alternate',
+        runtime: 'hadamard',
+        provider: 'openai',
+        model: 'alternate-model',
+      }],
+    }, path.join(userHome, '.hadamard'));
+
+    const server = await startHadamardGuiServer({
+      workDir,
+      homeDir: userHome,
+      host: '127.0.0.1',
+      port: 45000 + Math.floor(Math.random() * 10000),
+    });
+    try {
+      const before = await api<{ bridgeState: { enabled: boolean } }>(server, '/api/state');
+      expect(before.body.bridgeState.enabled).toBe(false);
+      const activation = await api<{ error?: string }>(server, '/api/bridge/activate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'alternate' }),
+      });
+      expect(activation.status).toBe(409);
+      expect(activation.body.error).toContain('main Bridge tab');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('persists the bridge-mode gate from the main Bridge tab', async () => {
     const root = await tempRoot('hadamard-gui-bridge-gate-');
     const userHome = path.join(root, 'home');
     const workDir = path.join(root, 'work');

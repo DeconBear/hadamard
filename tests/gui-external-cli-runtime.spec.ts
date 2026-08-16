@@ -269,7 +269,7 @@ describe('GUI External CLI runtime', () => {
     const configPath = path.join(root, 'settings.json');
     await mkdir(homeDir, { recursive: true });
     await mkdir(workDir, { recursive: true });
-    await writeFile(configPath, JSON.stringify({ env: {} }), 'utf8');
+    await writeFile(configPath, JSON.stringify({ env: {}, bridge: { enabled: true } }), 'utf8');
     writeBridgeConfigs({
       configs: managedRuntimeProviderCases.map(([runtime, provider]) => ({
         name: `${runtime}-native`,
@@ -351,7 +351,7 @@ describe('GUI External CLI runtime', () => {
     const configPath = path.join(root, 'settings.json');
     await mkdir(homeDir, { recursive: true });
     await mkdir(workDir, { recursive: true });
-    await writeFile(configPath, JSON.stringify({ env: {} }), 'utf8');
+    await writeFile(configPath, JSON.stringify({ env: {}, bridge: { enabled: true } }), 'utf8');
     writeBridgeConfigs({
       configs: [{
         name: 'claude-native',
@@ -587,7 +587,7 @@ describe('GUI External CLI runtime', () => {
     const configPath = path.join(root, 'settings.json');
     await mkdir(homeDir, { recursive: true });
     await mkdir(workDir, { recursive: true });
-    await writeFile(configPath, JSON.stringify({ env: {} }), 'utf8');
+    await writeFile(configPath, JSON.stringify({ env: {}, bridge: { enabled: true } }), 'utf8');
     writeBridgeConfigs({
       configs: [
         {
@@ -736,7 +736,7 @@ describe('GUI External CLI runtime', () => {
     const configPath = path.join(root, 'settings.json');
     await mkdir(homeDir, { recursive: true });
     await mkdir(workDir, { recursive: true });
-    await writeFile(configPath, JSON.stringify({ env: {} }), 'utf8');
+    await writeFile(configPath, JSON.stringify({ env: {}, bridge: { enabled: true } }), 'utf8');
     writeBridgeConfigs({
       configs: [{
         name: 'claude-native',

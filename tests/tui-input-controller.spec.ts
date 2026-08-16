@@ -33,6 +33,7 @@ function createHarness(overrides: {
   const restoreAbandonedRecall = vi.fn();
   let hasQueuedInputs = false;
   const setQueuedConfirm = vi.fn();
+  const discardQueuedInputs = vi.fn();
   const options: TuiInputControllerOptions = {
     editor,
     dialogs: {
@@ -52,6 +53,7 @@ function createHarness(overrides: {
       setRecalledFollowUp,
       restoreAbandonedRecall,
       hasQueuedInputs: () => hasQueuedInputs,
+      discardQueuedInputs,
       setQueuedConfirm,
     },
     completions: {
@@ -78,6 +80,7 @@ function createHarness(overrides: {
     setRunning: (value: boolean) => { running = value; },
     setHasQueuedInputs: (value: boolean) => { hasQueuedInputs = value; },
     setQueuedConfirm,
+    discardQueuedInputs,
   };
 }
 
@@ -197,7 +200,11 @@ describe('TuiInputController', () => {
     expect(harness.abort).toHaveBeenCalledTimes(1);
     expect(harness.setQueuedConfirm).toHaveBeenCalledWith(true);
     expect(harness.editor.text).toBe('queued message');
-    // Enter confirms the send and clears the confirm state.
+    // Enter while the aborted run is still settling must not strand or
+    // duplicate the draft. Once idle, Enter confirms it.
+    harness.controller.handleKey(undefined, { name: 'return' });
+    expect(harness.submit).not.toHaveBeenCalled();
+    harness.setRunning(false);
     harness.controller.handleKey(undefined, { name: 'return' });
     expect(harness.submit).toHaveBeenCalledTimes(1);
     expect(harness.setQueuedConfirm).toHaveBeenLastCalledWith(false);
@@ -212,6 +219,7 @@ describe('TuiInputController', () => {
     harness.setRunning(false);
     harness.controller.handleKey(undefined, { name: 'escape' });
     expect(harness.setQueuedConfirm).toHaveBeenLastCalledWith(false);
+    expect(harness.discardQueuedInputs).toHaveBeenCalledTimes(1);
   });
 
   it('ESC with an empty editor and no queued inputs keeps the plain abort behavior', () => {

@@ -216,6 +216,7 @@ import { resolveEffectiveAgentRunOptions } from './effectiveAgentRunOptions.js';
 import { resolveAgentExecutionPolicy } from './agentExecutionPolicy.js';
 import {
   HadamardSkillsApi,
+  cloneHadamardSkillDefinition,
   getDefaultHadamardBundledSkills,
   loadHadamardSkillDefinitionFile,
   loadHadamardSkillDefinitions,
@@ -224,6 +225,10 @@ import {
   summarizeHadamardSkillDefinition,
 } from './hadamardSkills.js';
 import { loadHadamardExternalSkillDefinitions } from './externalSkillRuntime.js';
+import {
+  refreshDynamicSkillRegistry,
+  type SkillCompositionParts,
+} from './dynamicSkillRegistry.js';
 import {
   HadamardBackgroundTaskManager,
   HadamardBackgroundTasksApi,
@@ -433,19 +438,6 @@ function cloneAgentDefinition(definition: HadamardAgentDefinition): HadamardAgen
     requiredMcpServers: definition.requiredMcpServers
       ? [...definition.requiredMcpServers]
       : undefined,
-  };
-}
-
-function cloneSkillDefinition(definition: HadamardSkillDefinition): HadamardSkillDefinition {
-  return {
-    ...definition,
-    argNames: definition.argNames ? [...definition.argNames] : undefined,
-    metadata: definition.metadata ? deepClone(definition.metadata) : undefined,
-    hooks: cloneHooks(definition.hooks),
-    tools: definition.tools ? [...definition.tools] : undefined,
-    mcpServers: definition.mcpServers ? deepClone(definition.mcpServers) : undefined,
-    allowedTools: definition.allowedTools ? [...definition.allowedTools] : undefined,
-    paths: definition.paths ? [...definition.paths] : undefined,
   };
 }
 
@@ -736,16 +728,6 @@ async function runClientLifecycleHook(
   });
 }
 
-/** Skill registry composition parts retained for live refreshes. */
-export interface SkillCompositionParts {
-  reusedRuntimeSkills: HadamardSkillDefinition[];
-  hadamardCatalogSkills: HadamardSkillDefinition[];
-  pluginSkillDirectories: string[];
-  explicitSkills: HadamardSkillDefinition[];
-  managedSkills: HadamardSkillDefinition[];
-  disableDefaultSkills: boolean;
-}
-
 export class HadamardAgentClient {
   readonly sessions: AgentSessionsApi;
   readonly agents: HadamardAgentsApi;
@@ -783,14 +765,7 @@ export class HadamardAgentClient {
   private readonly externalAgentRunner: NonNullable<CreateAgentSdkOptions['externalAgentRunner']>;
   private readonly skillDefinitions: Map<string, HadamardSkillDefinition>;
   /** Skill composition parts retained so a live refresh can rebuild the registry. */
-  private readonly skillComposition: {
-    reusedRuntimeSkills: HadamardSkillDefinition[];
-    hadamardCatalogSkills: HadamardSkillDefinition[];
-    pluginSkillDirectories: string[];
-    explicitSkills: HadamardSkillDefinition[];
-    managedSkills: HadamardSkillDefinition[];
-    disableDefaultSkills: boolean;
-  };
+  private readonly skillComposition: SkillCompositionParts;
   /** Names of `paths:`-conditional skills activated by touching matching files. */
   private readonly activatedConditionalSkills = new Set<string>();
   private readonly pendingDelegations = new Map<string, PendingDelegationRecord[]>();
@@ -833,12 +808,12 @@ export class HadamardAgentClient {
     agentDefinitions: HadamardAgentDefinition[] = [],
     skillDefinitions: HadamardSkillDefinition[] = [],
     skillComposition: SkillCompositionParts = {
-      reusedRuntimeSkills: [],
-      hadamardCatalogSkills: [],
-      pluginSkillDirectories: [],
+      additionalSkillDirectories: [],
+      directSkills: [],
       explicitSkills: [],
       managedSkills: [],
       disableDefaultSkills: false,
+      loadDefaultSkillDirectories: true,
     },
     defaultPermissionMode?: CreateAgentSdkOptions['permissionMode'],
     defaultPermissions?: CreateAgentSdkOptions['permissions'],
@@ -940,7 +915,7 @@ export class HadamardAgentClient {
       agentDefinitions.map(definition => [definition.name, cloneAgentDefinition(definition)]),
     );
     this.skillDefinitions = new Map(
-      skillDefinitions.map(definition => [definition.name, cloneSkillDefinition(definition)]),
+      skillDefinitions.map(definition => [definition.name, cloneHadamardSkillDefinition(definition)]),
     );
     this.skillComposition = skillComposition;
     this.backgroundTaskManager = new HadamardBackgroundTaskManager(this.backgroundTaskStore);
@@ -1247,33 +1222,29 @@ export class HadamardAgentClient {
         loadDefaultAgentDirectories: options.loadDefaultAgentDirectories,
       }),
     ]);
-    loadedSkills.push(...await Promise.all(pluginBundles.flatMap(bundle => bundle.directSkills)
+    const directSkills = await Promise.all(pluginBundles.flatMap(bundle => bundle.directSkills)
       .map(registration => loadHadamardSkillDefinitionFile({
         ...registration,
         source: 'project',
         loadedFrom: 'skills',
-      }))));
+      })));
+    loadedSkills.push(...directSkills);
     const hadamardCatalogSkills = externalSkills.filter(definition =>
       definition.metadata?.__hadamardExternalSkillProvider === 'hadamard');
     const reusedRuntimeSkills = externalSkills.filter(definition =>
       definition.metadata?.__hadamardExternalSkillProvider !== 'hadamard');
     const skillComposition: SkillCompositionParts = {
-      reusedRuntimeSkills,
-      hadamardCatalogSkills,
-      pluginSkillDirectories: pluginBundles.flatMap(bundle => bundle.skillDirectories),
+      ...(options.externalSkills ? { externalSkills: options.externalSkills } : {}),
+      additionalSkillDirectories: [
+        ...(options.skillDirectories ?? []),
+        ...pluginBundles.flatMap(bundle => bundle.skillDirectories),
+      ],
+      directSkills,
       explicitSkills: options.skills ?? [],
       managedSkills: [],
       disableDefaultSkills: options.disableDefaultSkills === true,
+      loadDefaultSkillDirectories: options.loadDefaultSkillDirectories,
     };
-    const skillDefinitions = externalSkillCatalogEnabled
-      ? [
-          ...reusedRuntimeSkills,
-          ...(options.disableDefaultSkills ? [] : getDefaultHadamardBundledSkills()),
-          ...hadamardCatalogSkills,
-          ...loadedSkills,
-          ...(options.skills ?? []),
-        ]
-      : [...loadedSkills, ...(options.skills ?? [])];
     const agentDefinitions = mergeAgentDefinitions(
       options.disableDefaultAgents === true ? [] : getDefaultHadamardAgents(),
       loadedAgents,
@@ -1288,7 +1259,6 @@ export class HadamardAgentClient {
     if (options.managedPlugins !== false) {
       const managedRuntime = createManagedPluginRuntime(managedSettings, { cwd: config.workDir });
       defaultTools.push(...managedRuntime.tools);
-      skillDefinitions.push(...managedRuntime.skills);
       skillComposition.managedSkills.push(...managedRuntime.skills);
       runtimeClosers.push(managedRuntime.close);
     }
@@ -1320,7 +1290,6 @@ export class HadamardAgentClient {
           sourceTools,
           guidance: ['Focus the intended window before typing or sending keys. Use screenshots to verify visual state.'],
         });
-        skillDefinitions.push(computerUseSkill);
         skillComposition.managedSkills.push(computerUseSkill);
       }
     }
@@ -1348,7 +1317,6 @@ export class HadamardAgentClient {
           sourcePrefix,
           sourceTools: runtime.tools,
         });
-        skillDefinitions.push(playwrightSkill);
         skillComposition.managedSkills.push(playwrightSkill);
         runtimeClosers.push(() => runtime.session.close());
       }
@@ -1379,6 +1347,26 @@ export class HadamardAgentClient {
       toolDefinition.name,
       toolDefinition,
     ])).values()];
+    const orderedSkillDefinitions = externalSkillCatalogEnabled
+      ? [
+          ...reusedRuntimeSkills,
+          ...(options.disableDefaultSkills ? [] : getDefaultHadamardBundledSkills()),
+          ...loadedSkills,
+          ...skillComposition.managedSkills,
+          // Highest automatic-discovery priority: ~/.hadamard/skills.
+          ...hadamardCatalogSkills,
+          // Explicit SDK definitions are the only final override.
+          ...skillComposition.explicitSkills,
+        ]
+      : [
+          ...loadedSkills,
+          ...skillComposition.managedSkills,
+          ...skillComposition.explicitSkills,
+        ];
+    const deduplicatedSkills = [...new Map(orderedSkillDefinitions.map(definition => [
+      definition.name,
+      definition,
+    ])).values()];
     client = new HadamardAgentClient(
       config,
       store,
@@ -1392,7 +1380,7 @@ export class HadamardAgentClient {
       defaultMcpServers,
       options.hooks,
       agentDefinitions,
-      skillDefinitions,
+      deduplicatedSkills,
       skillComposition,
       policyPermissionMode(config.effectivePolicy) ?? options.permissionMode,
       [
@@ -1983,37 +1971,12 @@ export class HadamardAgentClient {
    * can decide whether the tool surface needs re-folding.
    */
   async refreshSkills(): Promise<number> {
-    const refreshed = await loadHadamardSkillDefinitions({
+    return refreshDynamicSkillRegistry({
+      registry: this.skillDefinitions,
+      composition: this.skillComposition,
       homeDir: this.config.homeDir,
       workDir: this.config.workDir,
-      skillDirectories: this.skillComposition.pluginSkillDirectories,
-      disableDefaultSkills: this.skillComposition.disableDefaultSkills,
-      loadDefaultSkillDirectories: true,
     });
-    const ordered = [
-      ...this.skillComposition.reusedRuntimeSkills,
-      ...(this.skillComposition.disableDefaultSkills ? [] : getDefaultHadamardBundledSkills()),
-      ...this.skillComposition.hadamardCatalogSkills,
-      ...refreshed,
-      ...this.skillComposition.explicitSkills,
-      ...this.skillComposition.managedSkills,
-    ];
-    const next = new Map<string, HadamardSkillDefinition>();
-    for (const definition of ordered) {
-      next.set(definition.name, cloneSkillDefinition(definition));
-    }
-    let changes = 0;
-    for (const [name, definition] of next) {
-      const previous = this.skillDefinitions.get(name);
-      if (!previous || previous.description !== definition.description
-        || previous.version !== definition.version) changes += 1;
-    }
-    for (const name of this.skillDefinitions.keys()) {
-      if (!next.has(name)) changes += 1;
-    }
-    this.skillDefinitions.clear();
-    for (const [name, definition] of next) this.skillDefinitions.set(name, definition);
-    return changes;
   }
 
   /**
@@ -2063,7 +2026,7 @@ export class HadamardAgentClient {
 
   getSkillDefinition(skillName: string): HadamardSkillDefinition | undefined {
     const definition = this.skillDefinitions.get(skillName);
-    return definition ? cloneSkillDefinition(definition) : undefined;
+    return definition ? cloneHadamardSkillDefinition(definition) : undefined;
   }
 
   async runSkill(
@@ -3296,8 +3259,7 @@ export class HadamardAgentClient {
           // Dynamic skills: re-scan and re-fold every iteration so skills
           // installed/removed mid-run reach the model on the next request.
           foldToolDescriptions: async () => {
-            const changed = await this.refreshSkills();
-            if (changed === 0) return undefined;
+            await this.refreshSkills();
             goalTools = await applyResolvedToolDescriptions(baseGoalTools, {
               workDir,
               permissionMode: options.permissionMode ?? this.defaultPermissionMode,
@@ -5639,7 +5601,7 @@ export class HadamardAgentClient {
     if (!definition) {
       throw new Error(`No skill definition named "${skillName}" is registered.`);
     }
-    return cloneSkillDefinition(definition);
+    return cloneHadamardSkillDefinition(definition);
   }
 
   private resolveRunWorkDir(options: AgentRunOptions): string {

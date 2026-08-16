@@ -37,6 +37,7 @@ import {
   GUI_SESSION_CREATE_CLIENT_SCRIPT,
 } from './guiSessionClientScript.js';
 import { GUI_DESIGN_CLIENT_SCRIPT } from './guiDesignClientScript.js';
+import { getGuiBridgeContextClientScript } from './guiBridgeContextClientScript.js';
 
 function guiIcon(name: string): string {
   const icons: Record<string, string> = {
@@ -130,6 +131,7 @@ export function createHadamardGuiHtml(): string {
         <button id="navAutomation" class="nav-btn region-nav" data-region="automation" aria-label="Automation" title="Automation"><span class="nav-icon">${guiIcon('automation')}</span><span>Automation</span></button>
         <button id="navPlugins" class="nav-btn region-nav" data-region="plugins" aria-label="Customize" title="Customize"><span class="nav-icon">${guiIcon('plug')}</span><span>Customize</span></button>
         <button id="navDevices" class="nav-btn region-nav" data-region="devices" aria-label="Devices" title="Devices"><span class="nav-icon">${guiIcon('computer')}</span><span>Devices</span></button>
+        <button id="navBridge" class="nav-btn region-nav" data-region="bridge" aria-label="Bridge" title="Bridge"><span class="nav-icon">${guiIcon('model')}</span><span>Bridge</span></button>
       </nav>
       <section class="sidebar-recents" id="sidebarRecents" aria-label="Pinned and recent">
         <div class="sidebar-recents-block" id="sidebarPinnedBlock">
@@ -146,7 +148,6 @@ export function createHadamardGuiHtml(): string {
         </div>
       </section>
       <div class="sidebar-footer">
-        <button id="bridgeBtn" class="nav-btn" aria-label="Bridge" title="Bridge mode"><span class="nav-icon">${guiIcon('plug')}</span><span>Bridge</span></button>
         <button id="settingsBtn" class="nav-btn" aria-label="Settings" title="Settings"><span class="nav-icon">${guiIcon('gear')}</span><span>Settings</span></button>
       </div>
     </aside>
@@ -537,6 +538,32 @@ export function createHadamardGuiHtml(): string {
       </header>
       <div class="region-body devices-region-body" id="regionDevicesBody"></div>
     </section>
+    <section class="region hidden" data-region="bridge" id="regionBridge" aria-label="Bridge">
+      <header class="region-header">
+        <div class="region-titles">
+          <h1>Bridge</h1>
+          <p>Configure and select alternate API or CLI runtimes</p>
+        </div>
+        <div class="region-actions">
+          <button type="button" id="bridgeNewConfig" class="pill-btn primary">+ New config</button>
+        </div>
+      </header>
+      <div class="region-body bridge-region-body">
+        <section class="settings-group">
+          <h2>Bridge mode</h2>
+          <label class="check-row"><input id="bridgeModeEnabled" type="checkbox">Enable bridge mode</label>
+          <p class="muted">Bridge mode routes turns through the provider config selected below. It remains off until explicitly enabled here; disabling it returns to the default Hadamard SDK provider.</p>
+          <p id="bridgeModeStatus" class="muted">Loading bridge state…</p>
+        </section>
+        <section class="settings-group">
+          <div class="settings-group-head"><h2>Configs</h2></div>
+          <p id="settingsPath" class="muted"></p>
+          <p class="muted">The default model from <code>settings.json</code> is listed first. Alternate configs live in <code>bridge-configs.json</code> and can only become active from this Bridge tab while Bridge mode is enabled.</p>
+          <p id="bridgeActive" class="muted">No active provider config — using the default provider.</p>
+          <div id="bridgeConfigsList" class="settings-card-list"></div>
+        </section>
+      </div>
+    </section>
     <aside class="context-rail hidden" id="contextRail" aria-label="Context panel"></aside>
     <div id="railToast" class="rail-toast hidden" role="status" aria-live="polite"></div>
   </div>
@@ -859,7 +886,6 @@ export function createHadamardGuiHtml(): string {
       </section>
       <section>
         <h2>Integrations</h2>
-        <button type="button" class="settings-tab" data-settings-tab="bridge"><span class="settings-icon">${guiIcon('model')}</span>Bridge</button>
         <button type="button" class="settings-tab" data-settings-tab="mcp"><span class="settings-icon">${guiIcon('plug')}</span>MCP servers</button>
       </section>
       <section>
@@ -942,6 +968,7 @@ export function createHadamardGuiHtml(): string {
           <h2>Agents panel</h2>
           <div class="settings-help-row"><span><strong>Show built-in subagents</strong><small>List the bundled subagents (general-purpose, Explore) in the Agents panel Subagents group. Off: only your own agents are shown; the built-ins still work at runtime.</small></span><label class="switch-field"><input type="checkbox" id="settingsShowBuiltInSubagents"></label></div>
         </div>
+        <div class="settings-group">
           <div class="runtime-discovery-head">
             <span><strong>Local runtimes</strong><small>Installation and native login status</small></span>
             <button type="button" id="externalCliAuthRefresh" class="secondary-btn">Check login</button>
@@ -980,25 +1007,6 @@ export function createHadamardGuiHtml(): string {
           <p id="externalCliHistoryStatus" class="muted">History stays on this machine and never reads authentication files.</p>
           <div id="externalCliHistoryList" class="settings-card-list compact"></div>
           <div class="settings-action-row"><button type="button" id="externalCliHistoryMore" class="secondary-btn hidden">Load more</button></div>
-        </div>
-      </section>
-      <section class="settings-panel" data-settings-panel="bridge">
-        <h1>Bridge</h1>
-        <div class="settings-group">
-          <h2>Bridge mode</h2>
-          <label class="check-row"><input id="bridgeModeEnabled" type="checkbox">Enable bridge mode</label>
-          <p class="muted">Bridge mode routes turns through the provider config selected below (Direct API or an external CLI such as Claude Code). Changes here only take effect while this switch is on; disabling it falls back to the default Hadamard SDK provider.</p>
-          <p id="bridgeModeStatus" class="muted">Loading bridge state…</p>
-        </div>
-        <div class="settings-group">
-          <div class="settings-group-head">
-            <h2>Configs</h2>
-            <button type="button" id="bridgeNewConfig" class="primary">+ New config</button>
-          </div>
-          <p id="settingsPath" class="muted"></p>
-          <p class="muted">The default model from <code>settings.json</code> is listed first and is used when nothing else is selected. Other configs live in <code>bridge-configs.json</code>; only configs configured here are usable for bridge mode.</p>
-          <p id="bridgeActive" class="muted">No active provider config — using the default provider.</p>
-          <div id="bridgeConfigsList" class="settings-card-list"></div>
         </div>
       </section>
       <section class="settings-panel" data-settings-panel="appearance">
@@ -1321,6 +1329,8 @@ body[data-theme="dark"] {
 .region-actions .primary { background: var(--bg-surface); color: var(--text-1); border-color: var(--border); font-weight: 600; }
 .region-actions .primary:hover { background: var(--surface-hover); border-color: var(--border-hover); color: var(--text-1); }
 .region-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 18px; display: grid; gap: 10px; align-content: start; }
+.bridge-region-body { grid-template-columns: minmax(0, 760px); justify-content: center; padding: 22px 28px 48px; }
+.bridge-region-body .settings-card-list { max-height: none; }
 #regionPluginsBody { min-height: 0; }
 /* Region list cards (Automation / Plugins). */
 .region-list-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
@@ -8382,49 +8392,7 @@ function pickerTargetFromKey(key) {
   return null;
 }
 
-function pickerConfigModels(config) {
-  const names = [];
-  const add = (value) => {
-    const name = String(value || '').trim();
-    if (name && !names.includes(name)) names.push(name);
-  };
-  add(config?.model);
-  for (const item of config?.models || []) add(item?.name);
-  return names;
-}
-
-function pickerTargetModel(target) {
-  if (target?.kind === 'agent') return target.agent.model;
-  const active = state.snapshot?.bridgeState?.activeConfig;
-  if (active?.name === target?.name && active.model) return active.model;
-  return pickerConfigModels(target?.config)[0] || target?.config?.model || '';
-}
-
-function pickerModelMetadata(target, modelName) {
-  const config = target?.kind === 'agent'
-    ? (state.snapshot?.bridgeState?.configs || []).find(item => item.name === target.agent.bridgeConfig)
-    : target?.config;
-  return (config?.models || []).find(item => item.name === modelName) || null;
-}
-
-function pickerContextOptions(target, modelName) {
-  const metadata = pickerModelMetadata(target, modelName);
-  const limit = Number(metadata?.maxContextWindowTokens || metadata?.contextWindowTokens || 0);
-  const standard = ${JSON.stringify(STANDARD_CONTEXT_WINDOWS)};
-  if (!limit) return standard;
-  return Array.from(new Set([
-    ...standard.filter(value => value <= limit),
-    Number(metadata?.contextWindowTokens || 0),
-    Number(metadata?.maxContextWindowTokens || 0),
-    limit,
-  ].filter(value => value > 0 && value <= limit))).sort((a, b) => a - b);
-}
-
-function formatPickerContextWindow(tokens) {
-  if (tokens >= 1000000 && tokens % 1000000 === 0) return (tokens / 1000000) + 'M';
-  if (tokens >= 1000 && tokens % 1000 === 0) return (tokens / 1000) + 'k';
-  return Number(tokens).toLocaleString();
-}
+${getGuiBridgeContextClientScript(STANDARD_CONTEXT_WINDOWS)}
 
 function renderPickerEffortPopover(targetKey) {
   const pop = el('modelPickerEditPopover');
@@ -8504,16 +8472,29 @@ function renderPickerEffortPopover(targetKey) {
     contextHeading.textContent = 'Context window';
     pop.appendChild(contextHeading);
     const currentContext = Number(state.snapshot?.session?.contextWindowTokens || 0);
+    const contextMetadata = pickerModelMetadata(target, currentModel);
+    const declaredContextLimit = Number(contextMetadata?.maxContextWindowTokens || contextMetadata?.contextWindowTokens || 0);
     for (const tokens of contextOptions) {
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'picker-detail-item';
       const label = document.createElement('span');
       label.className = 'picker-item-label';
-      label.textContent = formatPickerContextWindow(tokens);
+      const exceedsDeclaredLimit = declaredContextLimit > 0 && tokens > declaredContextLimit;
+      label.textContent = formatPickerContextWindow(tokens)
+        + (exceedsDeclaredLimit ? ' · above declared ' + formatPickerContextWindow(declaredContextLimit) : '');
+      if (exceedsDeclaredLimit) {
+        item.title = 'This model declares a ' + formatPickerContextWindow(declaredContextLimit)
+          + ' context window. The provider may reject ' + formatPickerContextWindow(tokens) + '.';
+      }
       item.append(label, makePickerCheck(targetIsActive && currentContext === tokens));
       item.addEventListener('click', (event) => {
         event.stopPropagation();
+        if (exceedsDeclaredLimit && !window.confirm(
+          currentModel + ' declares a ' + formatPickerContextWindow(declaredContextLimit)
+          + ' context window. Selecting ' + formatPickerContextWindow(tokens)
+          + ' may be rejected by the provider. Continue?'
+        )) return;
         void selectPickerTarget(target, currentModel, null, { close: false, contextWindowTokens: tokens });
       });
       pop.appendChild(item);
@@ -8713,8 +8694,9 @@ function appendPickerSection(items, label, targets, activeAgent, activeConfigNam
     item.appendChild(trailing);
     const openTarget = () => {
       if (selectionBlocked) return;
-      if (state.pickerEditingAgent === target.key) closePickerEffortEditor();
-      else openPickerEffortEditor(target.key);
+      // mouseenter may open the detail pane immediately before the click;
+      // clicking the same row must keep it open rather than toggling it shut.
+      if (state.pickerEditingAgent !== target.key) openPickerEffortEditor(target.key);
     };
     item.addEventListener('click', openTarget);
     item.addEventListener('mouseenter', () => {
@@ -15037,7 +15019,7 @@ async function openSurface(kind) {
   await loadState();
   renderSurface(kind);
 }
-// --- App shell: 4-region navigation (plan/UI_PLAN §3). ---
+// --- App shell: primary-region navigation (plan/UI_PLAN §3). ---
 // Regions share the .app flex row with the sidebar. Only the active region
 // is visible; the others carry .hidden. Project is the existing chat workbench
 // (data-region="project" on <main class="chat">); the other three render
@@ -15066,6 +15048,10 @@ async function switchRegion(name) {
   if (name === 'automation') await renderAutomationRegion();
   else if (name === 'plugins') await renderPluginsRegion(state.pluginsView || 'plugins');
   else if (name === 'devices') await renderDevicesRegion();
+  else if (name === 'bridge') {
+    await loadState();
+    renderBridgeConfigs();
+  }
   else if (name === 'team') await renderTeamRegion();
 }
 
@@ -23018,7 +23004,10 @@ function handleEvent(event) {
     renderQueue();
     addMessage('notice', 'batch: queued ' + prompts.length + ' prompts — running in sequence');
   }
-  else if (event.type === 'settings.open') void openSettings(event.tab || 'models').catch(console.error);
+  else if (event.type === 'settings.open') {
+    if (event.tab === 'bridge') void switchRegion('bridge').catch(console.error);
+    else void openSettings(event.tab || 'models').catch(console.error);
+  }
   else if (event.type === 'state') { if (event.state) state.snapshot = event.state; loadState().catch(console.error); }
   else if (event.type === 'done') {
     finalizeAssistant(); state.currentAssistant = null; stopRailPolling(); void refreshRail();
@@ -23659,10 +23648,10 @@ function renderBridgeConfigs() {
   const active = bs.activeConfig;
   const configs = [defaultBridgeConfigView(), ...(bs.configs || [])];
   const modeToggle = el('bridgeModeEnabled');
-  if (modeToggle) modeToggle.checked = bs.enabled !== false;
+  if (modeToggle) modeToggle.checked = bs.enabled === true;
   const statusEl = el('bridgeModeStatus');
   if (statusEl) {
-    const label = bs.enabled === false
+    const label = bs.enabled !== true
       ? 'Bridge mode is OFF — turns use the default Hadamard SDK provider.'
       : active
         ? 'Bridge mode is ON — active config: ' + active.name + (bs.activeModelLabel ? ' (' + bs.activeModelLabel + ')' : '')
@@ -23699,6 +23688,7 @@ function renderBridgeConfigs() {
     p.textContent = [executionLabel, cfg.runtime, authLabel, modelSummary, cfg.apiKeyMasked ? 'key ' + cfg.apiKeyMasked : '', cfg.baseURL].filter(Boolean).join(' · ');
     card.appendChild(p);
     const footer = document.createElement('footer');
+    appendBridgeUseButton(footer, cfg, isActive, bs.enabled === true);
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.textContent = 'Edit';
@@ -25437,7 +25427,7 @@ function showSettingsTab(tab) {
   if (active === 'git') refreshGitSettingsSummary().catch(() => undefined);
   if (active === 'hooks') refreshHooksSettings().catch(() => undefined);
   if (active === 'shortcuts') renderShortcutsPanel();
-  if (active === 'models' || active === 'bridge') renderBridgeConfigs();
+  if (active === 'models') renderBridgeConfigs();
   if (active === 'mcp') renderMcpServers();
   if (active === 'sessions') renderArchived();
 }
@@ -27194,7 +27184,7 @@ el('settingsAutomationWorktreeList').addEventListener('click', () => { runSettin
 el('settingsMcpBtn').addEventListener('click', () => { closeSettings(); openSurface('mcp').catch(console.error); });
 el('mcpCfgAdd').addEventListener('click', () => { addMcpServerConfig().catch(console.error); });
 el('settingsWorktreeBtn').addEventListener('click', () => { closeSettings(); submitText('/worktree list'); });
-  el('bridgeModeEnabled')?.addEventListener('change', async () => {
+el('bridgeModeEnabled')?.addEventListener('change', async () => {
     const enabled = el('bridgeModeEnabled')?.checked === true;
     const res = await api('/api/settings', {
       method: 'POST',
@@ -27207,7 +27197,8 @@ el('settingsWorktreeBtn').addEventListener('click', () => { closeSettings(); sub
       return;
     }
     apiMutationVersion += 1;
-    void loadState();
+    await loadState();
+    renderBridgeConfigs();
   });
 el('bridgeNewConfig').addEventListener('click', () => { openBridgeEditor(null); });
 el('bridgeCfgSave').addEventListener('click', () => { saveBridgeConfig().catch(console.error); });
@@ -27423,7 +27414,6 @@ el('modelPickerFlyout').addEventListener('click', (event) => event.stopPropagati
 el('closeSurfaceBtn').addEventListener('click', closeSurface);
 el('surfaceDrawer').addEventListener('click', (event) => { if (event.target === el('surfaceDrawer')) closeSurface(); });
 el('settingsBtn').addEventListener('click', () => { void openSettings('general').catch(console.error); });
-el('bridgeBtn').addEventListener('click', () => { void openSettings('bridge').catch(console.error); });
 el('credentialHintLink').addEventListener('click', (event) => {
   event.preventDefault();
   void openSettings('models').catch(console.error);

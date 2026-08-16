@@ -7,13 +7,17 @@ import { z } from 'zod';
 
 import { tool } from '../src/index.js';
 import type { AgentToolDefinition, ModelApi, ModelRequest } from '../src/index.js';
-import type { Message, ToolUseBlock } from '../src/provider/types.js';
+import type { Message, MessageParam, ToolUseBlock } from '../src/provider/types.js';
 import { executeConversation } from '../src/runtime/conversationEngine.js';
 import type { ConversationExtensionPoints } from '../src/runtime/conversationExtensions.js';
 import { McpConnectionManager } from '../src/mcp/connectionManager.js';
 import { resolveRuntimeConfig } from '../src/config/resolveRuntimeConfig.js';
 import { HadamardContributionHost } from '../src/contrib/contributionHost.js';
-import { conversationExtensionsFactoryKey, createBuiltInConversationExtensionsContribution } from '../src/runtime/conversationExtensions.js';
+import {
+  conversationExtensionsFactoryKey,
+  createBuiltInConversationExtensions,
+  createBuiltInConversationExtensionsContribution,
+} from '../src/runtime/conversationExtensions.js';
 import type { AgentEvent } from '../src/index.js';
 
 const tempDirs: string[] = [];
@@ -200,6 +204,54 @@ describe('conversation extension points', () => {
 });
 
 describe('conversation extensions contribution', () => {
+  it('retries failed reactive compaction without the newest pairing-safe segment and appends it verbatim', async () => {
+    let compactCalls = 0;
+    const modelApi: ModelApi = {
+      async createMessage() {
+        compactCalls += 1;
+        if (compactCalls === 1) throw new Error('summarizer temporarily rejected the request');
+        return makeMessage([{ type: 'text', text: 'TAIL_SAFE_SUMMARY' }], 'end_turn');
+      },
+      streamMessage(): never { throw new Error('not used'); },
+    };
+    const latest: MessageParam = { role: 'user', content: 'LATEST_USER_MESSAGE_MUST_SURVIVE' };
+    const conversation: MessageParam[] = [
+      { role: 'user', content: 'old request ' + 'x'.repeat(2_000) },
+      { role: 'assistant', content: [{ type: 'text', text: 'old response ' + 'y'.repeat(2_000) }] },
+      { role: 'user', content: 'middle request ' + 'z'.repeat(2_000) },
+      { role: 'assistant', content: [{ type: 'text', text: 'middle response' }] },
+      latest,
+    ];
+    const config = await resolveRuntimeConfig({
+      model: 'test-model',
+      modelApi,
+      compact: { preserveRecentMessages: 2, microcompactEnabled: false },
+    });
+    const decision = await createBuiltInConversationExtensions().requestError({
+      error: new Error('context_length_exceeded: prompt is too long'),
+      model: 'test-model',
+      fallbackModel: undefined,
+      modelFallbackUsed: false,
+      streamInterruptionRetries: 0,
+      reactiveCompactAttempted: false,
+      modelApi,
+      conversation,
+      compactConfig: config.compact,
+      systemPrompt: 'system',
+      tools: [],
+      maxTokens: 256,
+      compactWindowPrefixTokens: 0,
+      runKey: 'tail-safe-recovery',
+      signal: undefined,
+    });
+
+    expect(decision.action).toBe('reactive-compact');
+    if (decision.action !== 'reactive-compact') throw new Error('Expected reactive compact.');
+    expect(compactCalls).toBe(2);
+    expect(decision.outcome.messages.at(-1)).toEqual(latest);
+    expect(JSON.stringify(decision.outcome.messages)).toContain('TAIL_SAFE_SUMMARY');
+  });
+
   it('registers the built-in factory through the contribution host and revokes on dispose', async () => {
     const host = new HadamardContributionHost();
     const handle = await host.load(createBuiltInConversationExtensionsContribution());
@@ -214,4 +266,3 @@ describe('conversation extensions contribution', () => {
     expect(host.getService(conversationExtensionsFactoryKey)).toBeUndefined();
   });
 });
-

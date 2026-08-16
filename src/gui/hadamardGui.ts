@@ -359,6 +359,7 @@ import {
 import {
   formatContextWindowTokens,
   HADAMARD_CONTEXT_WINDOW_METADATA_KEY,
+  isSelectableContextWindowTokens,
   modelContextWindowLimit,
   modelContextWindowOptions,
   parseContextWindowTokens,
@@ -2381,7 +2382,16 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   // buildRouteModelApi and is injected per-run into session.stream({model, modelApi}).
   // Same session → context survives switching bridge↔hadamard. No child process.
   let bridgeMode = false;
-  let bridgeModeEnabled = true;
+  let bridgeModeEnabled = false;
+  const initialBridgeSettings = await resolveHadamardSettingsStore({
+    configPath: options.configPath,
+    homeDir: currentHomeInput(),
+  }).catch(() => undefined);
+  const initialBridgeBlock = isPlainRecord(initialBridgeSettings?.raw)
+    && isPlainRecord(initialBridgeSettings.raw.bridge)
+    ? initialBridgeSettings.raw.bridge
+    : {};
+  bridgeModeEnabled = initialBridgeBlock.enabled === true;
   let activeBridgeConfig: PersistedBridgeConfig | null = null;
   // Set only when the user selected a named picker entry. A plain config/model
   // selection must not inherit sampling overrides from a profile that happens
@@ -3202,7 +3212,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       // Bridge mode gate: only enabled when the persisted switch is on.
       ...(() => {
         const bridgeBlock = isPlainRecord(store?.raw) && isPlainRecord(store.raw.bridge) ? store.raw.bridge : {};
-        bridgeModeEnabled = bridgeBlock.enabled !== false;
+        bridgeModeEnabled = bridgeBlock.enabled === true;
         return {};
       })(),
       settings: {
@@ -4406,6 +4416,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   // it; streamRun injects {model, modelApi} per-run on the SAME session, so
   // context survives switching bridge↔hadamard. No child process anywhere.
   async function activateBridgeConfig(config: PersistedBridgeConfig): Promise<boolean> {
+    if (!bridgeModeEnabled) {
+      throw new GuiRuntimeMutationConflictError(
+        'Bridge mode is disabled. Enable it from the main Bridge tab before selecting a bridge config.',
+      );
+    }
     if (config.execution === 'cli') {
       if (!isManagedExternalCliRuntime(config.runtime)) {
         throw new Error(
@@ -5097,14 +5112,15 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             text: `current: ${currentContextWindow() ? formatContextWindowTokens(currentContextWindow()!) : 'model default'}\nsupported selections: ${available.map(formatContextWindowTokens).join(', ')}\n${limit ? `model limit: ${formatContextWindowTokens(limit)}` : 'model limit: not declared'}`,
           }];
           const tokens = parseContextWindowTokens(requested);
-          if (!tokens || (limit && tokens > limit)) {
-            return [{ type: 'error', message: limit
-              ? `invalid context window: ${requested}; model limit is ${formatContextWindowTokens(limit)}`
-              : `invalid context window: ${requested}` }];
+          if (!isSelectableContextWindowTokens(tokens)) {
+            return [{ type: 'error', message: `invalid context window: ${requested}; choose a value up to 2M` }];
           }
           return runtimeMutationCommand(async () => {
             await session.mergeMetadata({ [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: tokens });
-            return [{ type: 'notice', message: `context window set to: ${formatContextWindowTokens(tokens)}` }];
+            const warning = limit && tokens > limit
+              ? ` Warning: this exceeds the model's declared ${formatContextWindowTokens(limit)} limit; lower it with /model context if the provider rejects the request.`
+              : '';
+            return [{ type: 'notice', message: `context window set to: ${formatContextWindowTokens(tokens)}.${warning}` }];
           });
         }
         if (args === 'custom' || args.startsWith('custom ')) {
@@ -6289,8 +6305,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             'Configs live in ~/.hadamard/bridge-configs.json',
           ].join('\n') }];
         }
-        if (args === 'setup') return [{ type: 'settings.open', tab: 'models' }];
-        if (args === 'config' || args === '') return [{ type: 'settings.open', tab: 'models' }];
+        if (args === 'setup') return [{ type: 'settings.open', tab: 'bridge' }];
+        if (args === 'config' || args === '') return [{ type: 'settings.open', tab: 'bridge' }];
         if (args === 'status') {
           if (!activeBridgeConfig) {
             return [{ type: 'command.result', title: 'Runtime status', text: 'Hadamard SDK default is active.' }];
@@ -6442,7 +6458,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           if (!activeBridgeConfig) return [{ type: 'error', message: 'no active bridge config — /bridge switch <name> first' }];
           return [{ type: 'agent.prompt', text: args.slice(4).trim() }];
         }
-        return [{ type: 'settings.open', tab: 'models' }];
+        return [{ type: 'settings.open', tab: 'bridge' }];
       }
       default:
         return [{ type: 'error', message: `unknown command: /${name}` }];
@@ -8392,25 +8408,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           activeRouter = null;
           routedModelLabel = null;
           await persistSessionRuntimeMetadata();
-          const entry = resolveModelContextEntry(
-            config.model || session.model,
-            readBridgeConfigs(resolveGuiHomeDir()).configs,
-            config,
-          );
           const requestedContextWindow = parseContextWindowTokens(body.contextWindowTokens);
-          const limit = modelContextWindowLimit(entry);
+          if (body.contextWindowTokens !== undefined && !isSelectableContextWindowTokens(requestedContextWindow)) {
+            throw new Error('Context window must be a positive value no greater than 2M.');
+          }
           if (requestedContextWindow) {
-            if (limit && requestedContextWindow > limit) {
-              throw new Error(
-                `Context window exceeds the model limit of ${formatContextWindowTokens(limit)}.`,
-              );
-            }
             await session.mergeMetadata({
               [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: requestedContextWindow,
-            });
-          } else if (limit && currentContextWindow() && currentContextWindow()! > limit) {
-            await session.mergeMetadata({
-              [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: entry?.contextWindowTokens ?? limit,
             });
           }
           const requestedEffort = typeof body.effort === 'string' ? body.effort.trim() : '';
@@ -8491,7 +8495,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         try {
           return json(res, 200, await appUpdater.check());
         } catch (error) {
-          return json(res, 400, {
+          // Remote-check failure is state, not a bad request; let Settings render it quietly.
+          return json(res, 200, {
             ...appUpdater.snapshot(),
             error: error instanceof Error ? error.message : String(error),
           });

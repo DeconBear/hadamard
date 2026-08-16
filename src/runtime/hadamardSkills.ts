@@ -388,6 +388,21 @@ export async function loadHadamardSkillDefinitionFile(options: {
   return definition;
 }
 
+export function cloneHadamardSkillDefinition(
+  definition: HadamardSkillDefinition,
+): HadamardSkillDefinition {
+  return {
+    ...definition,
+    argNames: definition.argNames ? [...definition.argNames] : undefined,
+    metadata: definition.metadata ? deepClone(definition.metadata) : undefined,
+    hooks: definition.hooks ? deepClone(definition.hooks) : undefined,
+    tools: definition.tools ? [...definition.tools] : undefined,
+    mcpServers: definition.mcpServers ? deepClone(definition.mcpServers) : undefined,
+    allowedTools: definition.allowedTools ? [...definition.allowedTools] : undefined,
+    paths: definition.paths ? [...definition.paths] : undefined,
+  };
+}
+
 export async function loadHadamardSkillDefinitions(options: {
   homeDir: string;
   workDir: string;

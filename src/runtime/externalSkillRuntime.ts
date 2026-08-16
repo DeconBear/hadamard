@@ -196,6 +196,13 @@ function resolveConflictingSkill(
     const preferred = variants.find(candidate => candidate.entry.id === preferredId);
     if (preferred) return preferred;
   }
+  // ~/.hadamard/skills is the first automatic discovery priority. A caller's
+  // explicit preferredSkillIds selection still wins, but without one the
+  // Hadamard user copy shadows same-name Claude Code/Codex/Cursor variants.
+  const hadamardUserSkill = variants.filter(candidate =>
+    candidate.origin.sourceId === 'hadamard:user'
+    && candidate.origin.loadedFrom === 'skills');
+  if (hadamardUserSkill.length === 1) return hadamardUserSkill[0];
   const claude = variants.filter(candidate => candidate.origin.provider === 'claude-code');
   if (claude.length === 1) return claude[0];
   const claudeUser = claude.filter(candidate => candidate.origin.scope === 'user');

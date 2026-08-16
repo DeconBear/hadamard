@@ -216,14 +216,16 @@ describe('external skill runtime loading', () => {
     await writeSkill(path.join(hadamardHomeDir, 'skills'), 'shared-hadamard', 'shared', 'Hadamard variant');
     await writeSkill(path.join(osHomeDir, '.codex', 'skills'), 'shared-codex', 'shared', 'Codex variant');
 
-    const unresolved = await loadHadamardExternalSkillDefinitions({
+    const automaticallyResolved = await loadHadamardExternalSkillDefinitions({
       hadamardHomeDir,
       workDir,
       externalSkills: { osHomeDir, env: {} },
     });
-    const variants = unresolved.catalog.skills.filter(skill => skill.name === 'shared');
+    const variants = automaticallyResolved.catalog.skills.filter(skill => skill.name === 'shared');
     expect(variants).toHaveLength(2);
-    expect(unresolved.skippedConflicts).toContainEqual(expect.objectContaining({ name: 'shared' }));
+    expect(automaticallyResolved.skippedConflicts).not.toContainEqual(expect.objectContaining({ name: 'shared' }));
+    expect(automaticallyResolved.definitions.find(skill => skill.name === 'shared')?.description)
+      .toBe('Hadamard variant');
 
     for (const provider of ['hadamard', 'codex'] as const) {
       const selected = variants.find(skill => skill.provider === provider)!;

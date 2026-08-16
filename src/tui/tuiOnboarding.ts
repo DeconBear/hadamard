@@ -1,8 +1,45 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import * as readline from 'node:readline';
 
-import { resolveHadamardHome } from '../index.js';
+import { loadJsonConfigFile } from '../config/loadJsonConfigFile.js';
+import {
+  persistHadamardSettingsStore,
+  resolveHadamardSettingsStore,
+} from '../config/hadamardSettingsStore.js';
+import { isRecord } from '../runtime/helpers.js';
+
+export interface TuiCredentialSettings {
+  provider: string;
+  apiKey: string;
+  baseURL: string;
+  model: string;
+}
+
+export async function saveTuiCredentialSettings(
+  input: TuiCredentialSettings,
+  configPath?: string,
+): Promise<string> {
+  const apiKey = input.apiKey.trim();
+  if (!apiKey) throw new Error('API key cannot be empty.');
+  const store = await resolveHadamardSettingsStore({ configPath });
+  const raw = isRecord(store.raw) ? structuredClone(store.raw) : {};
+  const env = isRecord(raw.env)
+    ? { ...raw.env }
+    : Object.fromEntries(Object.entries(raw).filter(
+        (entry): entry is [string, string] => /^[A-Z0-9_]+$/u.test(entry[0])
+          && typeof entry[1] === 'string',
+      ));
+  env.HADAMARD_API_KEY = apiKey;
+  env.HADAMARD_BASE_URL = input.baseURL.trim() || 'https://api.deepseek.com';
+  env.HADAMARD_MODEL = input.model.trim() || 'deepseek-chat';
+  if (input.provider.trim().toLowerCase() === 'openai') env.HADAMARD_PROVIDER = 'openai';
+  else delete env.HADAMARD_PROVIDER;
+  raw.env = env;
+  await persistHadamardSettingsStore(store.configPath, raw);
+  // Always load the exact file we wrote. On first install there is no prior
+  // module-level config for persistHadamardSettingsStore() to reload.
+  await loadJsonConfigFile(store.configPath);
+  return store.configPath;
+}
 
 export async function onboardTuiCredentials(configPath?: string): Promise<void> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -17,19 +54,11 @@ export async function onboardTuiCredentials(configPath?: string): Promise<void> 
 
   rl.close();
 
-  const resolvedProvider = provider.trim() || 'anthropic';
-  const resolvedBaseURL = baseURL.trim() || 'https://api.deepseek.com';
-  const resolvedModel = model.trim() || 'deepseek-chat';
-  const directory = resolveHadamardHome();
-  const file = configPath ?? path.join(directory, 'settings.json');
-
-  fs.mkdirSync(directory, { recursive: true });
-  const env: Record<string, string> = {
-    HADAMARD_API_KEY: apiKey.trim(),
-    HADAMARD_BASE_URL: resolvedBaseURL,
-    HADAMARD_MODEL: resolvedModel,
-  };
-  if (resolvedProvider === 'openai') env.HADAMARD_PROVIDER = 'openai';
-  fs.writeFileSync(file, JSON.stringify({ env }, null, 2), 'utf-8');
+  const file = await saveTuiCredentialSettings({
+    provider: provider.trim() || 'anthropic',
+    apiKey,
+    baseURL: baseURL.trim() || 'https://api.deepseek.com',
+    model: model.trim() || 'deepseek-chat',
+  }, configPath);
   console.log(`\n  Config saved to ${file}. Starting TUI...\n`);
 }

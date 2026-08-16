@@ -184,14 +184,15 @@ describe('GUI external CLI history API', () => {
     tempDirs.push(root);
     const homeDir = path.join(root, 'home');
     const workDir = path.join(root, 'workspace');
-    await mkdir(path.join(homeDir, '.hadamard'), { recursive: true });
+    await mkdir(homeDir, { recursive: true });
     await mkdir(workDir, { recursive: true });
-    await writeFile(path.join(homeDir, '.hadamard', 'settings.json'), JSON.stringify({
+    await writeFile(path.join(homeDir, 'settings.json'), JSON.stringify({
       env: {
         HADAMARD_PROVIDER: 'openai',
         HADAMARD_API_KEY: 'test-key',
         HADAMARD_MODEL: 'test-model',
       },
+      bridge: { enabled: true },
     }), 'utf8');
     writeBridgeConfigs({
       configs: [
