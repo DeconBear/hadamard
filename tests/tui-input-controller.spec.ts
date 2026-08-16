@@ -31,6 +31,8 @@ function createHarness(overrides: {
   const render = vi.fn();
   const setRecalledFollowUp = vi.fn();
   const restoreAbandonedRecall = vi.fn();
+  let hasQueuedInputs = false;
+  const setQueuedConfirm = vi.fn();
   const options: TuiInputControllerOptions = {
     editor,
     dialogs: {
@@ -49,6 +51,8 @@ function createHarness(overrides: {
       recallFollowUp: () => overrides.recalled,
       setRecalledFollowUp,
       restoreAbandonedRecall,
+      hasQueuedInputs: () => hasQueuedInputs,
+      setQueuedConfirm,
     },
     completions: {
       atCompletions: () => [],
@@ -72,6 +76,8 @@ function createHarness(overrides: {
     selection: () => selection,
     textInput: () => textInput,
     setRunning: (value: boolean) => { running = value; },
+    setHasQueuedInputs: (value: boolean) => { hasQueuedInputs = value; },
+    setQueuedConfirm,
   };
 }
 
@@ -182,5 +188,36 @@ describe('TuiInputController', () => {
     harness.editor.insert('/model');
     harness.controller.handleKey(undefined, { name: 'tab' });
     expect(harness.editor.text).toBe('/model ');
+  });
+
+  it('ESC stops a running task and marks a typed message as awaiting Enter confirmation', () => {
+    const harness = createHarness({ running: true });
+    harness.editor.insert('queued message');
+    harness.controller.handleKey(undefined, { name: 'escape' });
+    expect(harness.abort).toHaveBeenCalledTimes(1);
+    expect(harness.setQueuedConfirm).toHaveBeenCalledWith(true);
+    expect(harness.editor.text).toBe('queued message');
+    // Enter confirms the send and clears the confirm state.
+    harness.controller.handleKey(undefined, { name: 'return' });
+    expect(harness.submit).toHaveBeenCalledTimes(1);
+    expect(harness.setQueuedConfirm).toHaveBeenLastCalledWith(false);
+  });
+
+  it('ESC stops a running task when only session-queued inputs exist, and a second ESC cancels', () => {
+    const harness = createHarness({ running: true });
+    harness.setHasQueuedInputs(true);
+    harness.controller.handleKey(undefined, { name: 'escape' });
+    expect(harness.abort).toHaveBeenCalledTimes(1);
+    expect(harness.setQueuedConfirm).toHaveBeenCalledWith(true);
+    harness.setRunning(false);
+    harness.controller.handleKey(undefined, { name: 'escape' });
+    expect(harness.setQueuedConfirm).toHaveBeenLastCalledWith(false);
+  });
+
+  it('ESC with an empty editor and no queued inputs keeps the plain abort behavior', () => {
+    const harness = createHarness({ running: true });
+    harness.controller.handleKey(undefined, { name: 'escape' });
+    expect(harness.abort).toHaveBeenCalledTimes(1);
+    expect(harness.setQueuedConfirm).not.toHaveBeenCalled();
   });
 });
