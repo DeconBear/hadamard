@@ -250,6 +250,7 @@ export async function executeConversation(
   let tokenEstimateMultiplier = 1;
   let compactWindowPrefixTokens = 0;
   let lastPromptCachePrefixSignature: string | undefined;
+  let lastRequestHeaderKey: string | undefined;
 
   // Turn/step envelope: a step spans one model request plus its tool batch;
   // the previous step closes at the next loop top (or at every return site).
@@ -416,17 +417,32 @@ export async function executeConversation(
       messages: deepClone(preparedMessages.messages.map(stripHadamardMessageProvenance)),
       signal: options.signal,
     };
-    emitTrajectory({
-      type: 'request.header',
-      runId: options.runId,
-      iteration,
-      model,
-      maxTokens: request.max_tokens,
-      ...(effort ? { effort } : {}),
-      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-      ...(request.top_p !== undefined ? { topP: request.top_p } : {}),
-      ...fingerprintRequestHeader(request.system, request.tools as unknown[] | undefined),
-    });
+    // dsh request/header semantics: persist the header only when it changes
+    // (first request or a system/tools/config change). Unchanged iterations
+    // reuse the last recorded header, keeping the durable log compact.
+    const requestHeaderFingerprint = fingerprintRequestHeader(
+      request.system,
+      request.tools as unknown[] | undefined,
+    );
+    // The key covers the model too: a mid-run fallback model switch is a
+    // header change even when system/tools stay identical.
+    const requestHeaderKey = requestHeaderFingerprint.headerKey + ':' + model;
+    const requestHeaderChanged = lastRequestHeaderKey === undefined
+      || lastRequestHeaderKey !== requestHeaderKey;
+    if (requestHeaderChanged) {
+      lastRequestHeaderKey = requestHeaderKey;
+      emitTrajectory({
+        type: 'request.header',
+        runId: options.runId,
+        iteration,
+        model,
+        maxTokens: request.max_tokens,
+        ...(effort ? { effort } : {}),
+        ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+        ...(request.top_p !== undefined ? { topP: request.top_p } : {}),
+        ...requestHeaderFingerprint,
+      });
+    }
     const requestByteLength = getRequestByteLength(request);
     const requestTokenBreakdown = estimateRequestTokenBreakdown({
       systemPrompt,
