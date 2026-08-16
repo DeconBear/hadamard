@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { HadamardSdkError } from '../errors.js';
 import type { AgentToolDefinition, ToolExecutionContext } from '../types.js';
-import { CodeActArtifactRecorder } from './codeActArtifacts.js';
+import { CodeActArtifactRecorder, spillOversizedCellOutput } from './codeActArtifacts.js';
 import { buildCodeActToolNameMap } from './codeActSdk.js';
 import { assertCodeActBackend, assertWorkerThreadPtcBackend, buildCodeActEnvironment, resolveCodeActSettings } from './codeActPolicy.js';
 import { snapshotCodeJsonValue, type CodeJsonValue, type CodeRunFailure } from './codeRuntime.js';
@@ -115,6 +115,14 @@ export class ProgrammaticToolRuntime {
         toolNameMap,
       });
       this.forwardTurnControl(dispatcher, input, result);
+      await spillOversizedCellOutput({
+        artifacts,
+        workDir: input.context.cwd,
+        sessionId,
+        executionId,
+        maxChars: this.settings.maxOutputChars,
+        result,
+      });
       return result;
     } finally {
       if (abortRegistered) input.context.signal?.removeEventListener('abort', abortCell);
@@ -162,6 +170,14 @@ export class ProgrammaticToolRuntime {
       await handler.drain().catch(() => undefined);
       const result = this.convertTypeScriptResult(executionId, sessionId, codeResult, Date.now() - startedClock);
       this.forwardTurnControl(dispatcher, input, result);
+      await spillOversizedCellOutput({
+        artifacts,
+        workDir: input.context.cwd,
+        sessionId,
+        executionId,
+        maxChars: this.settings.maxOutputChars,
+        result,
+      });
       return result;
     } finally {
       if (abortRegistered) input.context.signal?.removeEventListener('abort', abortCell);

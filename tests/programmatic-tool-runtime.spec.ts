@@ -143,6 +143,7 @@ describe('resolveToolPresentation', () => {
     expect(plan.sdk).toContain('def Echo(');
     expect(plan.sdk).not.toContain('def run_code');
     expect(plan.instructions).toContain('fresh, stateless');
+    expect(plan.instructions).toContain('only tool you can call directly');
   });
 
   it('presents every tool plus run_code in both mode', async () => {
@@ -152,6 +153,18 @@ describe('resolveToolPresentation', () => {
     const resolved = await mcpManager.resolveToolAdapters([echoTool(), wire], [], { timeoutMs: 5_000 });
     const plan = resolveToolPresentation({ mode: 'both', resolvedTools: resolved, sdkTools: [echoTool(), wire] });
     expect(plan.providerTools.map((entry) => (entry as { name?: string }).name).sort()).toEqual(['Echo', 'run_code']);
+  });
+
+  it('renders a TypeScript SDK when the run_code transport declares typescript', async () => {
+    const mcpManager = new McpConnectionManager({ name: 'test', version: '0' });
+    const runtime = new ProgrammaticToolRuntime({ enabled: true, ptcBackend: 'worker-thread' });
+    const wire = createRunCodeTool({ service: runtime, hostTools: [echoTool()], language: 'typescript' });
+    const resolved = await mcpManager.resolveToolAdapters([echoTool(), wire], [], { timeoutMs: 5_000 });
+    const plan = resolveToolPresentation({ mode: 'ptc', resolvedTools: resolved, sdkTools: [echoTool(), wire] });
+    expect(plan.sdk).toContain('declare const tools:');
+    expect(plan.sdk).toContain('Echo(');
+    expect(plan.instructions).toContain('TypeScript program');
+    expect(plan.instructions).toContain('ToolCallError');
   });
 
   it('fails closed when ptc mode has no run_code tool registered', async () => {

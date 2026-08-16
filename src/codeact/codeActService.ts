@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { AgentEvent, AgentToolDefinition, ToolExecutionContext } from '../types.js';
-import { CodeActArtifactRecorder, hashCodeCellSource } from './codeActArtifacts.js';
+import { CodeActArtifactRecorder, hashCodeCellSource, spillOversizedCellOutput } from './codeActArtifacts.js';
 import { buildCodeActToolNameMap } from './codeActSdk.js';
 import { buildCodeActEnvironment, assertCodeActBackend, resolveCodeActSettings } from './codeActPolicy.js';
 import { ContainerKernelAdapter } from './containerKernelAdapter.js';
@@ -138,6 +138,16 @@ export class CodeActService {
       startedAt,
       completedAt,
       };
+      // Spill oversized completed output instead of silently truncating:
+      // full text lands in a session artifact with a bounded preview.
+      await spillOversizedCellOutput({
+        artifacts: this.artifacts,
+        workDir: input.context.cwd,
+        sessionId,
+        executionId,
+        maxChars: this.settings.maxOutputChars,
+        result: record,
+      });
       // Forward successful nested tools' turn-control surface (dsh
       // exec.deferContext / exec.concludeTurn): only a completed cell may
       // carry them, mirroring the engine's transactional rule.

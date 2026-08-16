@@ -112,10 +112,10 @@ describe('CodeActService process kernel', () => {
     expect(JSON.stringify(result)).not.toContain('must-not-enter-kernel');
   });
 
-  it('bounds captured output and marks truncation before it reaches history', async () => {
+  it('spills captured output over the display budget into an artifact with a bounded preview', async () => {
     const cwd = await workspace();
-    // Keep the byte budget wide so this stays a pure display-truncation test
-    // (hard budget stops are covered by the output-limit cases).
+    // Keep the byte budget wide so this stays a completed cell whose
+    // oversized stdout is spilled (hard budget stops are covered below).
     const instance = service({ enabled: true, maxOutputChars: 1_000, maxOutputBytes: 40_000 });
     const result = await instance.execute({
       language: 'python',
@@ -123,8 +123,11 @@ describe('CodeActService process kernel', () => {
       context: context(cwd),
     });
     expect(result.status).toBe('completed');
-    expect(result.stdout.length).toBeLessThanOrEqual(1_000);
-    expect(result.stdout).toContain('[output truncated by Hadamard]');
+    expect(result.stdout).toContain('Full cell output stored at:');
+    expect(result.stdout.length).toBeLessThanOrEqual(1_000 + 160);
+    const spill = result.artifacts.find((entry) => entry.name.startsWith('cell-output-'));
+    expect(spill?.path).toBeTruthy();
+    expect((await readFile(spill!.path!, 'utf8')).replace(/\s+/g, '')).toBe('z'.repeat(5_000));
   });
 
   it('routes host tools through the existing permission decision path', async () => {
@@ -470,8 +473,8 @@ describe('CodeActService process kernel', () => {
     expect(result.failureKind).toBe('output-limit');
     expect(result.stateLost).toBe(true);
     expect(result.error).toContain('output budget');
-    expect(result.stdout.length).toBeLessThanOrEqual(1_000);
-    expect(result.stdout).toContain('[output truncated by Hadamard]');
+    expect(result.stdout).toContain('Full cell output stored at:');
+    expect(result.stdout.length).toBeLessThanOrEqual(1_000 + 160);
   });
 
   it('classifies timeout, interrupt, and kernel-exit failure kinds', async () => {
@@ -731,6 +734,26 @@ describe('CodeActService process kernel', () => {
     expect(recovered.status).toBe('completed');
     expect(recovered.result?.value).toBe(42);
     expect(recovered.generation).toBe(invalid.generation);
+  });
+
+  it('spills oversized completed cell output to an artifact with a bounded preview', async () => {
+    const cwd = await workspace();
+    // Display budget 1k chars; byte budget wide so this stays a completed cell.
+    const instance = service({ enabled: true, maxOutputChars: 1_000, maxOutputBytes: 60_000 });
+    const line = 'data line with some padding content ';
+    const result = await instance.execute({
+      language: 'python',
+      code: 'for i in range(300):\n    print("' + line + '" + str(i))',
+      context: context(cwd, { toolUseId: 'spill-cell' }),
+    });
+    expect(result.status).toBe('completed');
+    expect(result.stdout).toContain('Full cell output stored at:');
+    expect(result.stdout.length).toBeLessThanOrEqual(1_200);
+    expect(result.artifacts.length).toBeGreaterThanOrEqual(1);
+    const spill = result.artifacts.find((entry) => entry.name.startsWith('cell-output-'));
+    expect(spill?.path).toBeTruthy();
+    const full = await readFile(spill!.path!, 'utf8');
+    expect(full).toContain('data line with some padding content 299');
   });
 });
 
