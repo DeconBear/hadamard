@@ -86,8 +86,11 @@ async function withConcurrency<T>(items: readonly T[], limit: number, run: (item
 
 function summarizeArm(rows: readonly PtcAbTrialRow[]): PtcAbArmSummary {
   const passed = rows.filter((row) => row.passed).length;
+  // Averages cover only rows that actually produced metrics: an all-zero
+  // failure row (provider error) would otherwise drag token/latency means.
+  const measured = rows.filter((row) => row.error === undefined);
   const average = (pick: (row: PtcAbTrialRow) => number): number =>
-    rows.length === 0 ? 0 : Math.round(rows.reduce((sum, row) => sum + pick(row), 0) / rows.length);
+    measured.length === 0 ? 0 : Math.round(measured.reduce((sum, row) => sum + pick(row), 0) / measured.length);
   return {
     arm: rows[0]?.arm ?? 'native',
     trials: rows.length,
@@ -111,7 +114,9 @@ function decideFamily(rows: readonly PtcAbTrialRow[]): PtcAbFamilyDecision {
     .filter((arm) => arm.arm !== 'native')
     .map((arm) => summarizeArm(rows.filter((row) => row.arm === arm.arm)));
   const recommended: PtcAbArm[] = candidates.filter((candidate) => {
-    const successNotDegraded = candidate.successRate >= baseline.successRate;
+    // A zero-success baseline can never crown an alternative: matching 0%
+    // is not a non-degraded result.
+    const successNotDegraded = baseline.successRate > 0 && candidate.successRate >= baseline.successRate;
     const inputTokensWin = baseline.avgInputTokens > 0
       && candidate.avgInputTokens <= baseline.avgInputTokens * 0.9;
     const latencyWin = baseline.avgDurationMs > 0
@@ -132,6 +137,10 @@ function decideFamily(rows: readonly PtcAbTrialRow[]): PtcAbFamilyDecision {
 }
 
 async function main(): Promise<void> {
+  // Harness isolation: benchmark-internal env must never reach the agent loop.
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith('HADAMARD_BENCH_')) delete process.env[key];
+  }
   const options = parseArgs(process.argv.slice(2));
   const runConfig = runConfigFor(options.provider);
   if (!runConfig.apiKey) {
