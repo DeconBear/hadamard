@@ -320,12 +320,19 @@ function isWithin(root: string, target: string): boolean {
 function terminateProcessTree(pid: number | undefined): void {
   if (!pid) return;
   if (process.platform === 'win32') {
+    // Best-effort tree kill via taskkill. Some hosts (sandboxes, restricted
+    // shells) neuter taskkill silently, so also terminate the root directly
+    // after a short grace window — timeouts and aborts must always settle.
     const killer = spawn('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
       stdio: 'ignore',
       windowsHide: true,
       detached: false,
     });
     killer.unref();
+    const fallback = setTimeout(() => {
+      try { process.kill(pid, 'SIGKILL'); } catch { /* already exited */ }
+    }, 1500);
+    fallback.unref();
     return;
   }
   try {
