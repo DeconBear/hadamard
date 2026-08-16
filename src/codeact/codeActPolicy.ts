@@ -23,6 +23,7 @@ export function resolveCodeActSettings(input: CodeActSettings): ResolvedCodeActS
   return {
     enabled: input.enabled,
     backend: input.backend ?? 'process',
+    ptcBackend: input.ptcBackend ?? input.backend ?? 'process',
     securityMode: input.securityMode ?? 'trusted',
     pythonCommand: input.pythonCommand?.trim() || (process.platform === 'win32' ? 'python' : 'python3'),
     idleTimeoutMs: clampInteger(input.idleTimeoutMs, 60_000, 1_000, 3_600_000),
@@ -91,4 +92,20 @@ function clampInteger(value: number | undefined, fallback: number, min: number, 
 function clampNumber(value: number | undefined, fallback: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, value!));
+}
+
+/**
+ * Assert the worker-thread PTC backend: it is containment, not a security
+ * boundary, so enforce mode (which requires strong isolation) refuses it.
+ */
+export function assertWorkerThreadPtcBackend(settings: ResolvedCodeActSettings): void {
+  if (!settings.enabled) {
+    throw new CodeActConfigurationError('CodeAct is disabled for this project.', 'CODEACT_DISABLED');
+  }
+  if (settings.securityMode === 'enforce') {
+    throw new CodeActConfigurationError(
+      'CodeAct enforce mode requires a strong-isolation container backend; the worker-thread backend is containment only.',
+      'CODEACT_UNSAFE_BACKEND',
+    );
+  }
 }

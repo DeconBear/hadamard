@@ -1,4 +1,4 @@
-﻿import type { Tool as ProviderTool, ToolResultBlockParam } from '../provider/types.js';
+import type { Tool as ProviderTool, ToolResultBlockParam } from '../provider/types.js';
 import { z } from 'zod';
 
 import { ConfigurationError, ToolExecutionError } from '../errors.js';
@@ -48,6 +48,7 @@ export function tool<Input, Output>(
     validateInput: config.validateInput,
     getToolUseSummary: config.getToolUseSummary,
     prompt: config.prompt,
+    codeLanguage: (config as Partial<AgentToolDefinition>).codeLanguage,
   };
 }
 

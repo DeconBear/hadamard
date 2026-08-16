@@ -302,6 +302,8 @@ export interface AgentToolDefinition<Input = any, Output = any> {
   getToolUseSummary?: (input: Input) => string;
   /** Folded into `description` at request time; not also appended to the system prompt. */
   prompt?: (options: ToolPromptOptions) => Promise<string> | string;
+  /** Program language a code-transport tool (run_code) executes; drives the SDK flavor. */
+  codeLanguage?: 'python' | 'typescript';
 }
 
 export interface LocalMcpServerDefinition {
