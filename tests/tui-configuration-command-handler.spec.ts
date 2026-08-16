@@ -25,6 +25,7 @@ function createPort(): TuiConfigurationCommandPort & { output: string[][] } {
     chooseEffort: vi.fn(async () => undefined),
     setEffort: vi.fn(async () => undefined),
     chooseAgentMode: vi.fn(async () => undefined),
+  chooseToolPresentation: vi.fn(async () => undefined),
     currentPermissionMode: () => 'default',
     setPermissionContext: vi.fn(async () => undefined),
     selectItem: vi.fn(async () => undefined),

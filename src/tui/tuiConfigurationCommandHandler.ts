@@ -29,6 +29,7 @@ export interface TuiConfigurationCommandPort {
   chooseEffort(): Promise<void>;
   setEffort(value: string): Promise<void>;
   chooseAgentMode(): Promise<void>;
+  chooseToolPresentation(): Promise<void>;
   currentPermissionMode(): HadamardPermissionMode;
   setPermissionContext(
     mode: HadamardPermissionMode,
@@ -139,6 +140,9 @@ export async function runTuiConfigurationCommand(
       return true;
     case 'mode':
       await port.chooseAgentMode();
+      return true;
+    case 'presentation':
+      await port.chooseToolPresentation();
       return true;
     case 'permissions': {
       const readonlyDeny = ['Bash', 'Write', 'Edit', 'NotebookEdit', 'PowerShell'];

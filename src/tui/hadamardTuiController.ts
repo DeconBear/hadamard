@@ -105,6 +105,7 @@ import {
   readSessionAgentMode,
   sessionAgentModePatch,
 } from '../runtime/agentModeService.js';
+import { readSessionToolPresentation, sessionToolPresentationPatch } from '../codeact/presentationTypes.js';
 import {
   buildModelConfigurationCatalog,
   findModelConfiguration,
@@ -3455,6 +3456,25 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     appendStatic([...formatInfoLine(`effort set to: ${currentEffort() ?? 'auto'}`), '']);
   }
 
+  async function chooseToolPresentation(): Promise<void> {
+    const current = readSessionToolPresentation(session.metadata) ?? projectSettings.toolPresentation ?? 'native';
+    const selected = await selectItems({
+      title: 'Tool presentation',
+      subtitle: `Current: ${current} · Enter confirms`,
+      checkedIds: [current],
+      items: [
+        { id: 'native', label: 'Native', description: 'every tool schema sent directly' },
+        { id: 'ptc', label: 'PTC', description: 'one stateless run_code program + typed SDK (requires CodeAct enabled)' },
+        { id: 'both', label: 'Both', description: 'native tools plus the run_code wire tool' },
+      ],
+    });
+    if (!selected || selected.length === 0) return;
+    const mode = selected[0];
+    if (mode !== 'native' && mode !== 'ptc' && mode !== 'both') return;
+    await session.mergeMetadata(sessionToolPresentationPatch(mode));
+    appendStatic([...formatInfoLine(`tool presentation set to: ${mode}`), '']);
+  }
+
   async function chooseAgentMode(): Promise<void> {
     const current = currentAgentMode();
     const checks = agentModeToChecks(current);
@@ -4021,6 +4041,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         chooseEffort,
         setEffort,
         chooseAgentMode,
+        chooseToolPresentation,
         currentPermissionMode,
         setPermissionContext: (mode, permissions) => session.setPermissionContext({
           mode,
