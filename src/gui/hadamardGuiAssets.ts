@@ -127,11 +127,11 @@ export function createHadamardGuiHtml(): string {
       </div>
       <nav class="primary-nav" aria-label="Primary">
         <button id="navProject" class="nav-btn region-nav active" data-region="project" aria-label="Project" title="Project"><span class="nav-icon">${guiIcon('folder')}</span><span>Project</span></button>
+        <button id="navBridge" class="nav-btn region-nav" data-region="bridge" aria-label="Configuration" title="Configuration"><span class="nav-icon">${guiIcon('model')}</span><span>Configuration</span></button>
         <button id="navTeam" class="nav-btn region-nav" data-region="team" aria-label="Agents" title="Agents"><span class="nav-icon">${guiIcon('team')}</span><span>Agents</span></button>
         <button id="navAutomation" class="nav-btn region-nav" data-region="automation" aria-label="Automation" title="Automation"><span class="nav-icon">${guiIcon('automation')}</span><span>Automation</span></button>
         <button id="navPlugins" class="nav-btn region-nav" data-region="plugins" aria-label="Customize" title="Customize"><span class="nav-icon">${guiIcon('plug')}</span><span>Customize</span></button>
         <button id="navDevices" class="nav-btn region-nav" data-region="devices" aria-label="Devices" title="Devices"><span class="nav-icon">${guiIcon('computer')}</span><span>Devices</span></button>
-        <button id="navBridge" class="nav-btn region-nav" data-region="bridge" aria-label="Bridge" title="Bridge"><span class="nav-icon">${guiIcon('model')}</span><span>Bridge</span></button>
       </nav>
       <section class="sidebar-recents" id="sidebarRecents" aria-label="Pinned and recent">
         <div class="sidebar-recents-block" id="sidebarPinnedBlock">
@@ -538,11 +538,11 @@ export function createHadamardGuiHtml(): string {
       </header>
       <div class="region-body devices-region-body" id="regionDevicesBody"></div>
     </section>
-    <section class="region hidden" data-region="bridge" id="regionBridge" aria-label="Bridge">
+    <section class="region hidden" data-region="bridge" id="regionBridge" aria-label="Configuration">
       <header class="region-header">
         <div class="region-titles">
-          <h1>Bridge</h1>
-          <p>Configure and select alternate API or CLI runtimes</p>
+          <h1>Configuration</h1>
+          <p>Configure models, providers, and local API or CLI runtimes</p>
         </div>
         <div class="region-actions">
           <button type="button" id="bridgeNewConfig" class="pill-btn primary">+ New config</button>
@@ -558,9 +558,17 @@ export function createHadamardGuiHtml(): string {
         <section class="settings-group">
           <div class="settings-group-head"><h2>Configs</h2></div>
           <p id="settingsPath" class="muted"></p>
-          <p class="muted">The default model from <code>settings.json</code> is listed first. Alternate configs live in <code>bridge-configs.json</code> and can only become active from this Bridge tab while Bridge mode is enabled.</p>
+          <p class="muted">The default model from <code>settings.json</code> is listed first. Alternate configs live in <code>bridge-configs.json</code> and can only become active from this Configuration tab while Bridge mode is enabled.</p>
           <p id="bridgeActive" class="muted">No active provider config — using the default provider.</p>
           <div id="bridgeConfigsList" class="settings-card-list"></div>
+        </section>
+        <section class="settings-group">
+          <div class="runtime-discovery-head">
+            <span><strong>Local runtimes</strong><small>Installation and native login status</small></span>
+            <button type="button" id="externalCliAuthRefresh" class="secondary-btn">Check login</button>
+          </div>
+          <p id="externalCliAuthStatus" class="muted">Login reuse is checked by asking each CLI; credentials are never read by Hadamard.</p>
+          <div id="runtimeDiscoveryList" class="settings-card-list compact runtime-list"></div>
         </section>
       </div>
     </section>
@@ -967,14 +975,6 @@ export function createHadamardGuiHtml(): string {
         <div class="settings-group">
           <h2>Agents panel</h2>
           <div class="settings-help-row"><span><strong>Show built-in subagents</strong><small>List the bundled subagents (general-purpose, Explore) in the Agents panel Subagents group. Off: only your own agents are shown; the built-ins still work at runtime.</small></span><label class="switch-field"><input type="checkbox" id="settingsShowBuiltInSubagents"></label></div>
-        </div>
-        <div class="settings-group">
-          <div class="runtime-discovery-head">
-            <span><strong>Local runtimes</strong><small>Installation and native login status</small></span>
-            <button type="button" id="externalCliAuthRefresh" class="secondary-btn">Check login</button>
-          </div>
-          <p id="externalCliAuthStatus" class="muted">Login reuse is checked by asking each CLI; credentials are never read by Hadamard.</p>
-          <div id="runtimeDiscoveryList" class="settings-card-list compact runtime-list"></div>
         </div>
         <div class="settings-group">
           <div class="settings-group-head">
@@ -1489,29 +1489,47 @@ body[data-theme="dark"] {
   .plugin-detail-hero > .plugin-market-action { grid-column: 1 / -1; justify-self: stretch; }
 }
 .region-empty { margin: 24px auto; color: var(--text-2); font-size: 14px; }
-.devices-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
-.device-card { display: grid; gap: 10px; min-width: 0; padding: 15px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); box-shadow: var(--shadow-sm); }
+.devices-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; align-items: start; }
+.device-card { display: grid; gap: 12px; min-width: 0; padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); box-shadow: var(--shadow-sm); align-content: start; }
 .device-card-wide { grid-column: 1 / -1; }
-.device-card h2 { margin: 0; font-size: 14px; color: var(--text-1); }
-.device-card-head, .device-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.device-status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px; background: var(--surface-muted); color: var(--text-2); font-size: 11px; }
+.device-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.device-card-head h2 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text-1); }
+.device-card > p { margin: 0; font-size: 12px; }
+.device-count { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; background: var(--surface-muted); color: var(--text-2); font-size: 11px; font-weight: 600; }
+.device-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.device-actions button { min-height: 30px; padding: 0 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-1); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.device-actions button:hover { border-color: var(--border-active); }
+.device-actions button.primary { background: var(--btn-primary-bg); color: var(--btn-primary-fg); border-color: transparent; font-weight: 600; }
+.device-actions button.primary:hover { filter: brightness(1.06); }
+.device-actions button:disabled { opacity: .6; cursor: default; }
+.device-actions code { margin-right: auto; overflow-wrap: anywhere; }
+.device-status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--surface-muted); color: var(--text-2); font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+.device-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .device-status.online { background: color-mix(in srgb, var(--success, #16845b) 14%, transparent); color: var(--success, #16845b); }
-.device-fields { display: grid; gap: 8px; }
-.device-fields label { display: grid; gap: 4px; color: var(--text-2); font-size: 11px; }
-.device-fields label.device-scope { display: flex; }
-.device-fields input[type="text"], .device-fields input[type="number"] { min-width: 0; width: 100%; }
-.device-scopes { display: flex; flex-wrap: wrap; gap: 6px 10px; }
-.device-scope { display: inline-flex; gap: 5px; align-items: center; color: var(--text-2); font-size: 11px; }
-.device-meta { display: grid; grid-template-columns: minmax(80px, auto) minmax(0, 1fr); gap: 5px 10px; margin: 0; font-size: 11px; }
+.device-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.device-fields label { display: grid; gap: 4px; min-width: 0; color: var(--text-2); font-size: 11px; }
+.device-fields label.full { grid-column: 1 / -1; }
+.device-fields input[type="text"], .device-fields input[type="number"] { min-width: 0; width: 100%; box-sizing: border-box; }
+.device-fields label.device-check-row { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; color: var(--text-2); font-size: 11.5px; cursor: pointer; }
+.device-check-row input { margin: 0; }
+.device-scopes { display: flex; flex-wrap: wrap; gap: 8px; }
+.device-scope { display: inline-flex; gap: 6px; align-items: center; padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-surface); color: var(--text-2); font-size: 11.5px; cursor: pointer; user-select: none; }
+.device-scope:hover { border-color: var(--border-active); }
+.device-scope:has(input:checked) { border-color: var(--brand); color: var(--text-1); background: color-mix(in srgb, var(--brand) 10%, transparent); }
+.device-scope input { margin: 0; accent-color: var(--brand); }
+.device-meta { display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr); gap: 6px 12px; margin: 0; padding: 10px 12px; border-radius: 9px; background: var(--surface-muted); font-size: 11.5px; }
 .device-meta dt { color: var(--text-2); }
-.device-meta dd { margin: 0; color: var(--text-1); overflow-wrap: anywhere; font-family: var(--mono); }
-.device-pairing { display: grid; grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); gap: 16px; align-items: center; }
+.device-meta dd { margin: 0; color: var(--text-1); overflow-wrap: anywhere; font-family: var(--mono); font-size: 11px; }
+.device-subcard { display: grid; gap: 10px; min-width: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-app); }
+.device-subcard .device-card-head h2 { font-size: 12.5px; }
+.device-pairing { display: grid; grid-template-columns: minmax(160px, 200px) minmax(0, 1fr); gap: 18px; align-items: start; padding: 14px; border: 1px dashed var(--border-active); border-radius: 10px; background: var(--surface-muted); }
 .device-pairing > * { min-width: 0; }
-.device-pairing img { width: 100%; max-width: 210px; aspect-ratio: 1; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.device-pairing img { width: 100%; max-width: 200px; aspect-ratio: 1; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.device-pairing-detail { display: grid; gap: 8px; align-content: start; font-size: 12px; }
 .device-pairing code { display: block; max-width: 100%; max-height: 4.5em; overflow: auto; overflow-wrap: anywhere; word-break: break-all; }
-.device-pairing-code { font: 700 26px/1 var(--mono); letter-spacing: .16em; color: var(--text-1); }
+.device-pairing-code { font: 700 28px/1.1 var(--mono); letter-spacing: .18em; color: var(--text-1); }
 .device-error { color: var(--danger, #dc2626); font-size: 12px; }
-@media (max-width: 720px) { .device-pairing { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .device-pairing { grid-template-columns: 1fr; } .device-fields { grid-template-columns: 1fr; } }
 /* --- Project overview (plan/UI_PLAN §4.1): workspace card wall. --- */
 .project-overview { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-surface); }
 .project-overview > .region-header { background: linear-gradient(180deg, var(--bg-surface) 0%, var(--surface-muted) 100%); border-bottom: 1px solid var(--border); box-shadow: 0 1px 0 rgba(255,255,255,.6); }
@@ -15073,7 +15091,9 @@ function deviceNode(tag, className, text) {
 
 function deviceCard(title, wide) {
   const card = deviceNode('section', 'device-card' + (wide ? ' device-card-wide' : ''));
-  card.appendChild(deviceNode('h2', '', title));
+  const head = deviceNode('div', 'device-card-head');
+  head.appendChild(deviceNode('h2', '', title));
+  card.appendChild(head);
   return card;
 }
 
@@ -15201,11 +15221,14 @@ async function renderDevicesRegion(reload) {
   ]);
   grid.appendChild(identityCard);
 
+  const listening = diagnostics.state === 'listening';
   const serverCard = deviceCard('Connection service');
-  const serverHead = deviceNode('div', 'device-card-head');
-  const status = deviceNode('span', 'device-status' + (diagnostics.state === 'listening' ? ' online' : ''), diagnostics.state || 'stopped');
-  serverHead.append(deviceNode('span', 'muted', diagnostics.discovery === 'advertising' ? 'Visible on the local network' : 'Local discovery off'), status);
-  serverCard.appendChild(serverHead);
+  serverCard.querySelector('.device-card-head').appendChild(
+    deviceNode('span', 'device-status' + (listening ? ' online' : ''), listening ? 'Listening' : 'Stopped')
+  );
+  serverCard.appendChild(deviceNode('p', 'muted', diagnostics.discovery === 'advertising'
+    ? 'Visible to other devices on the local network.'
+    : 'Local network discovery is off.'));
   const fields = deviceNode('div', 'device-fields');
   const hostLabel = deviceNode('label', '', 'Bind address');
   const host = document.createElement('input');
@@ -15215,16 +15238,17 @@ async function renderDevicesRegion(reload) {
   const port = document.createElement('input');
   port.type = 'number'; port.min = '0'; port.max = '65535'; port.value = diagnostics.port || 0;
   portLabel.appendChild(port);
-  const advertiseLabel = deviceNode('label', 'device-scope');
+  const advertiseLabel = deviceNode('label', 'device-check-row');
   const advertise = document.createElement('input'); advertise.type = 'checkbox';
   advertiseLabel.append(advertise, document.createTextNode('Advertise with mDNS on this LAN'));
-  const advertiseAddressLabel = deviceNode('label', '', 'Advertised IP address');
+  const advertiseAddressLabel = deviceNode('label', 'full', 'Advertised IP address');
   const advertiseAddress = document.createElement('input'); advertiseAddress.type = 'text'; advertiseAddress.placeholder = '192.168.1.20';
   advertiseAddressLabel.appendChild(advertiseAddress);
   fields.append(hostLabel, portLabel, advertiseLabel, advertiseAddressLabel);
   serverCard.appendChild(fields);
   const serverActions = deviceNode('div', 'device-actions');
-  if (diagnostics.state === 'listening') {
+  if (diagnostics.url) serverActions.appendChild(deviceNode('code', 'muted', diagnostics.url));
+  if (listening) {
     serverActions.appendChild(deviceAction('Stop service', 'secondary-btn', async function () {
       await deviceApi('/api/devices/stop', { method: 'POST' });
       state.devicePairing = null;
@@ -15241,7 +15265,6 @@ async function renderDevicesRegion(reload) {
       await renderDevicesRegion();
     }));
   }
-  if (diagnostics.url) serverActions.prepend(deviceNode('code', 'muted', diagnostics.url));
   serverCard.appendChild(serverActions);
   if (diagnostics.lastError) serverCard.appendChild(deviceNode('p', 'device-error', diagnostics.lastError));
   grid.appendChild(serverCard);
@@ -15250,14 +15273,16 @@ async function renderDevicesRegion(reload) {
   pairingCard.appendChild(deviceNode('p', 'muted', 'Start the service, select the minimum permissions needed, then scan this one-time QR code on the phone. Confirm the six-digit code on both devices.'));
   const pairingScopes = deviceScopePicker(['session:browse'], 'pair');
   pairingCard.appendChild(pairingScopes);
-  pairingCard.appendChild(deviceAction('Create one-time pairing QR', 'primary', async function () {
+  const pairingActions = deviceNode('div', 'device-actions');
+  pairingActions.appendChild(deviceAction('Create one-time pairing QR', 'primary', async function () {
     state.devicePairing = await deviceApi('/api/devices/pairing', { method: 'POST', body: { scopes: selectedDeviceScopes(pairingScopes) } });
     await renderDevicesRegion(false);
   }));
+  pairingCard.appendChild(pairingActions);
   if (state.devicePairing) {
     const pair = deviceNode('div', 'device-pairing');
     const image = document.createElement('img'); image.src = state.devicePairing.qrDataUrl; image.alt = 'Device Link pairing QR code';
-    const detail = deviceNode('div', 'device-fields');
+    const detail = deviceNode('div', 'device-pairing-detail');
     detail.append(
       deviceNode('span', 'muted', 'Confirmation code'),
       deviceNode('strong', 'device-pairing-code', state.devicePairing.offer?.confirmationCode || ''),
@@ -15271,15 +15296,23 @@ async function renderDevicesRegion(reload) {
 
   const devices = Array.isArray(data.devices) ? data.devices : [];
   const pairedCard = deviceCard('Paired devices', true);
+  pairedCard.querySelector('.device-card-head').appendChild(
+    deviceNode('span', 'device-count', devices.length + ' paired')
+  );
   if (!devices.length) pairedCard.appendChild(deviceNode('p', 'muted', 'No phones have been paired yet.'));
   devices.forEach(function (device, index) {
-    const card = deviceCard(device.name || 'Unnamed device');
+    const card = deviceNode('article', 'device-subcard');
+    const head = deviceNode('div', 'device-card-head');
+    head.append(
+      deviceNode('h2', '', device.name || 'Unnamed device'),
+      deviceNode('span', 'device-status' + (device.revokedAt ? '' : ' online'), device.revokedAt ? 'Revoked' : 'Trusted')
+    );
+    card.appendChild(head);
     appendDeviceMeta(card, [
       ['Device ID', device.deviceId],
       ['TLS fingerprint', device.certificateFingerprint],
       ['Paired', device.pairedAt ? new Date(device.pairedAt).toLocaleString() : '—'],
-      ['Last seen', device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : 'Never'],
-      ['State', device.revokedAt ? 'Revoked' : 'Trusted']
+      ['Last seen', device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : 'Never']
     ]);
     const picker = deviceScopePicker(device.scopes || [], 'paired-' + index);
     card.appendChild(picker);
@@ -15303,16 +15336,20 @@ async function renderDevicesRegion(reload) {
   grid.appendChild(pairedCard);
 
   const discoveryCard = deviceCard('Nearby computers', true);
-  discoveryCard.appendChild(deviceAction('Scan local network', 'secondary-btn', async function () {
+  const discoveryActions = deviceNode('div', 'device-actions');
+  discoveryActions.appendChild(deviceAction('Scan local network', 'secondary-btn', async function () {
     const result = await deviceApi('/api/devices/discover?timeoutMs=1200');
     state.deviceDiscoveries = result.devices || [];
     await renderDevicesRegion(false);
   }));
+  discoveryCard.appendChild(discoveryActions);
   if (!state.deviceDiscoveries.length) discoveryCard.appendChild(deviceNode('p', 'muted', 'No discovery scan results. Direct IP pairing remains available.'));
   state.deviceDiscoveries.forEach(function (device) {
-    appendDeviceMeta(discoveryCard, [
+    const found = deviceNode('article', 'device-subcard');
+    appendDeviceMeta(found, [
       ['Name', device.name], ['Address', device.host + ':' + device.port], ['Device ID', device.deviceId], ['TLS fingerprint', device.certificateFingerprint]
     ]);
+    discoveryCard.appendChild(found);
   });
   grid.appendChild(discoveryCard);
   body.appendChild(grid);
