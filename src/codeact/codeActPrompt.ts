@@ -11,6 +11,7 @@ export interface AgentModePromptCapabilities {
 export function buildAgentModePrompt(
   policy: AgentExecutionPolicy,
   capabilities: AgentModePromptCapabilities = {},
+  presentation: 'native' | 'ptc' | 'both' = 'native',
 ): string {
   if (policy.turnPolicy === 'single') {
     if (policy.actionSpace === 'none') {
@@ -22,8 +23,17 @@ export function buildAgentModePrompt(
       'After that result, produce the final answer immediately. Do not start another tool call.',
     ].join('\n');
   }
+  // Under the ptc presentation the wire carries only run_code, so
+  // code-cell/hybrid guidance would name tools the model cannot call and
+  // duplicate the SDK the presentation instructions already carry.
+  if (presentation === 'ptc') return '';
+  // Under 'both' the presentation instructions own the SDK section; keep
+  // the mode guidance but drop the duplicate host SDK.
+  const effective = presentation === 'both'
+    ? { ...capabilities, hostSdk: undefined }
+    : capabilities;
   if (policy.actionSpace === 'code-cell') {
-    return codeCellInstructions(capabilities);
+    return codeCellInstructions(effective);
   }
   if (policy.actionSpace === 'hybrid') {
     return [
@@ -31,7 +41,7 @@ export function buildAgentModePrompt(
       'Use ordinary JSON tools for deterministic metadata, permission-sensitive filesystem actions, external services, and one-step host operations.',
       'Use CodeCell for loops, data transformations, mathematical work, experiments, and multi-step computation.',
       'Prefer ordinary structured calls before CodeCell when both would mutate the same state in one action group.',
-      codeCellInstructions(capabilities),
+      codeCellInstructions(effective),
     ].join('\n\n');
   }
   return '';

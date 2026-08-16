@@ -54,6 +54,18 @@ export function resolveToolPresentation(options: {
   }
   const sdkTools = options.sdkTools.filter((tool) => tool.name !== CODE_CELL_TOOL_NAME && tool.name !== RUN_CODE_TOOL_NAME);
   const sdk = renderCodeActHostSdk(sdkTools);
+  // MCP adapters are not AgentToolDefinitions, so run_code programs cannot
+  // dispatch them through the host RPC surface. Under ptc (wire = run_code
+  // only) that would make them silently unreachable: fail loud instead.
+  const mcpNames = options.resolvedTools
+    .filter((tool) => tool.provider === 'mcp')
+    .map((tool) => tool.publicName);
+  if (mode === 'ptc' && mcpNames.length > 0) {
+    throw new HadamardSdkError(
+      `Tool presentation 'ptc' cannot expose MCP tools through the run_code transport (${mcpNames.join(', ')}); use 'both' or 'native' so MCP tools stay reachable as direct calls.`,
+      'PTC_MCP_UNREACHABLE',
+    );
+  }
   const providerTools = mode === 'ptc'
     ? [wire.providerTool]
     : [
@@ -67,11 +79,16 @@ export function resolveToolPresentation(options: {
     providerTools,
     wireToolName: RUN_CODE_TOOL_NAME,
     sdk,
-    instructions: buildPtcInstructions(mode, sdk, sdkTools.length),
+    instructions: buildPtcInstructions(mode, sdk, sdkTools.length, mcpNames),
   };
 }
 
-function buildPtcInstructions(mode: 'ptc' | 'both', sdk: string, toolCount: number): string {
+function buildPtcInstructions(
+  mode: 'ptc' | 'both',
+  sdk: string,
+  toolCount: number,
+  mcpNames: string[],
+): string {
   const intro = mode === 'ptc'
     ? [
         'Tools are presented through a single run_code wire tool: instead of emitting many JSON tool calls, compose multiple tool calls inside one Python program.',
@@ -85,10 +102,13 @@ function buildPtcInstructions(mode: 'ptc' | 'both', sdk: string, toolCount: numb
     : '';
   return [
     intro,
-    'Each run_code call executes in a fresh, stateless environment: no variables survive between calls, and programs cannot read files or state from earlier calls except through host tools.',
+    'Each run_code call executes in a fresh, stateless interpreter: no variables or imports survive between calls. Programs share the environment trust of the configured CodeAct backend (process backend: full access; container backend: restricted).',
     'Only stdout (print) and the final expression value are returned to the model; intermediate tool results stay inside the program, so filter large outputs before returning.',
     'A failed host call raises HadamardToolError with a tool_name attribute; catch it to branch on which tool failed.',
     'Host tool calls inside a program go through the same permission checks as direct tool calls.',
+    ...(mcpNames.length > 0
+      ? [`MCP tools (${mcpNames.join(', ')}) are direct-call only: they cannot be invoked inside run_code programs.`]
+      : []),
     ...(sdkBlock ? [sdkBlock] : []),
   ].join('\n');
 }

@@ -16,6 +16,8 @@ export type PtcAbFamily =
 export interface PtcAbCase {
   id: string;
   family: PtcAbFamily;
+  /** Runtime under test (harness rule: every case declares its runtimeTarget). */
+  runtimeTarget: 'clean-sdk';
   prompt: string;
   setup(workDir: string): Promise<void>;
   grader(workDir: string): Promise<{ passed: boolean; detail: string }>;
