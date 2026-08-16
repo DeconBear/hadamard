@@ -1,6 +1,7 @@
 import { HadamardSdkError } from '../errors.js';
 import type { AgentToolDefinition, ResolvedToolAdapter } from '../types.js';
 import { renderCodeActHostSdk } from './codeActSdk.js';
+import { renderTsHostSdk } from './tsSdkRenderer.js';
 import { CODE_CELL_TOOL_NAME } from './codeCellTool.js';
 import { RUN_CODE_TOOL_NAME } from './runCodeTool.js';
 
@@ -53,7 +54,14 @@ export function resolveToolPresentation(options: {
     );
   }
   const sdkTools = options.sdkTools.filter((tool) => tool.name !== CODE_CELL_TOOL_NAME && tool.name !== RUN_CODE_TOOL_NAME);
-  const sdk = renderCodeActHostSdk(sdkTools);
+  // Language-aware SDK: the registered run_code transport declares which
+  // program language its backend executes, so the SDK text and the wire
+  // schema flavor always agree.
+  const wireDefinition = options.sdkTools.find((tool) => tool.name === RUN_CODE_TOOL_NAME);
+  const codeLanguage = wireDefinition?.codeLanguage === 'typescript' ? 'typescript' : 'python';
+  const sdk = codeLanguage === 'typescript'
+    ? renderTsHostSdk(sdkTools)
+    : renderCodeActHostSdk(sdkTools);
   // MCP adapters are not AgentToolDefinitions, so run_code programs cannot
   // dispatch them through the host RPC surface. Under ptc (wire = run_code
   // only) that would make them silently unreachable: fail loud instead.
@@ -79,7 +87,7 @@ export function resolveToolPresentation(options: {
     providerTools,
     wireToolName: RUN_CODE_TOOL_NAME,
     sdk,
-    instructions: buildPtcInstructions(mode, sdk, sdkTools.length, mcpNames),
+    instructions: buildPtcInstructions(mode, sdk, sdkTools.length, mcpNames, codeLanguage),
   };
 }
 
@@ -88,10 +96,14 @@ function buildPtcInstructions(
   sdk: string,
   toolCount: number,
   mcpNames: string[],
+  codeLanguage: 'python' | 'typescript',
 ): string {
+  const programNote = codeLanguage === 'typescript'
+    ? 'one TypeScript program'
+    : 'one Python program';
   const intro = mode === 'ptc'
     ? [
-        'Tools are presented through a single run_code wire tool: instead of emitting many JSON tool calls, compose multiple tool calls inside one Python program.',
+        `Tools are presented through a single run_code wire tool: instead of emitting many JSON tool calls, compose multiple tool calls inside ${programNote}.`,
         `The typed SDK below declares the ${toolCount} visible host tool(s).`,
       ].join('\n')
     : [
@@ -103,8 +115,12 @@ function buildPtcInstructions(
   return [
     intro,
     'Each run_code call executes in a fresh, stateless interpreter: no variables or imports survive between calls. Programs share the environment trust of the configured CodeAct backend (process backend: full access; container backend: restricted).',
-    'Only stdout (print) and the final expression value are returned to the model; intermediate tool results stay inside the program, so filter large outputs before returning.',
-    'A failed host call raises HadamardToolError with a tool_name attribute; catch it to branch on which tool failed.',
+    ...(codeLanguage === 'typescript'
+      ? ['Only console output and the top-level return value are returned to the model; intermediate tool results stay inside the program, so filter large outputs before returning.']
+      : ['Only stdout (print) and the final expression value are returned to the model; intermediate tool results stay inside the program, so filter large outputs before returning.']),
+    ...(codeLanguage === 'typescript'
+      ? ['A failed host call rejects with ToolCallError carrying the tool name on toolName; catch it to branch on which tool failed.']
+      : ['A failed host call raises HadamardToolError with a tool_name attribute; catch it to branch on which tool failed.']),
     'Host tool calls inside a program go through the same permission checks as direct tool calls.',
     ...(mcpNames.length > 0
       ? [`MCP tools (${mcpNames.join(', ')}) are direct-call only: they cannot be invoked inside run_code programs.`]
