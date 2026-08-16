@@ -2381,6 +2381,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   // buildRouteModelApi and is injected per-run into session.stream({model, modelApi}).
   // Same session → context survives switching bridge↔hadamard. No child process.
   let bridgeMode = false;
+  let bridgeModeEnabled = true;
   let activeBridgeConfig: PersistedBridgeConfig | null = null;
   // Set only when the user selected a named picker entry. A plain config/model
   // selection must not inherit sampling overrides from a profile that happens
@@ -3198,6 +3199,12 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       agents,
       agentDefinitions,
       plugins: heavy.plugins,
+      // Bridge mode gate: only enabled when the persisted switch is on.
+      ...(() => {
+        const bridgeBlock = isPlainRecord(store?.raw) && isPlainRecord(store.raw.bridge) ? store.raw.bridge : {};
+        bridgeModeEnabled = bridgeBlock.enabled !== false;
+        return {};
+      })(),
       settings: {
         configPath: store?.configPath ?? null,
         provider: env.HADAMARD_PROVIDER ?? sdk?.config.provider ?? 'anthropic',
@@ -3229,6 +3236,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       },
       bridgeState: {
         mode: bridgeMode,
+        enabled: bridgeModeEnabled,
         activeConfig: activeBridgeConfig
           ? {
               name: activeBridgeConfig.name,
@@ -3399,6 +3407,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     // Bridge settings: write per-provider paths + default provider.
     if (isPlainRecord(body.bridge)) {
       raw.bridge = { ...(isPlainRecord(raw.bridge) ? raw.bridge : {}), ...body.bridge };
+      if (typeof body.bridge.enabled === 'boolean') {
+        bridgeModeEnabled = body.bridge.enabled;
+        if (!bridgeModeEnabled) disableBridge();
+      }
     }
 
     if (isPlainRecord(body.browser)) {
@@ -4308,7 +4320,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     try {
       let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi']; effort?: HadamardRunEffort } | undefined;
       const configActive = !!activeBridgeConfig;
-      if (activeRouter && !bridgeMode && !configActive) {
+      const effectiveBridgeMode = bridgeMode && bridgeModeEnabled;
+      if (activeRouter && !effectiveBridgeMode && !configActive) {
         const decision = await resolveRoutedRun(activeRouter, input, runAbort.signal, {
           projectDir: workDir,
           homeDir: resolveGuiHomeDir(),
@@ -4316,10 +4329,10 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         routed = { model: decision.model, modelApi: decision.modelApi, effort: decision.effort };
       }
       const effectiveAgentOptions = currentEffectiveAgentRunOptions();
-      const hadamardModel = (!bridgeMode && activeBridgeConfig?.runtime === 'hadamard')
+      const hadamardModel = (!effectiveBridgeMode && activeBridgeConfig?.runtime === 'hadamard')
         ? (activeBridgeConfig.model || undefined)
         : undefined;
-      const stream = bridgeMode && activeBridgeModelApi
+      const stream = effectiveBridgeMode && activeBridgeModelApi
         ? session.stream(expandImageRefs(input, workDir), {
             ...effectiveAgentOptions,
             signal: withAgentRunTimeout(runAbort.signal),

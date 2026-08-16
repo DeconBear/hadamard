@@ -858,6 +858,7 @@ export function createHadamardGuiHtml(): string {
       </section>
       <section>
         <h2>Integrations</h2>
+        <button type="button" class="settings-tab" data-settings-tab="bridge"><span class="settings-icon">${guiIcon('model')}</span>Bridge</button>
         <button type="button" class="settings-tab" data-settings-tab="mcp"><span class="settings-icon">${guiIcon('plug')}</span>MCP servers</button>
       </section>
       <section>
@@ -940,17 +941,6 @@ export function createHadamardGuiHtml(): string {
           <h2>Agents panel</h2>
           <div class="settings-help-row"><span><strong>Show built-in subagents</strong><small>List the bundled subagents (general-purpose, Explore) in the Agents panel Subagents group. Off: only your own agents are shown; the built-ins still work at runtime.</small></span><label class="switch-field"><input type="checkbox" id="settingsShowBuiltInSubagents"></label></div>
         </div>
-        <div class="settings-group">
-          <div class="settings-group-head">
-            <h2>Configs</h2>
-            <button type="button" id="bridgeNewConfig" class="primary">+ New config</button>
-          </div>
-          <p id="settingsPath" class="muted"></p>
-<p class="muted">The default model from <code>settings.json</code> is listed first and is used when nothing else is selected. Other configs live in <code>~/.hadamard/bridge-configs.json</code>. Choose <strong>External CLI</strong> to reuse a CLI login, or <strong>Direct API</strong> to call a provider through Hadamard.</p>
-          <p id="bridgeActive" class="muted">No active provider config — using the default provider.</p>
-          <div id="bridgeConfigsList" class="settings-card-list"></div>
-        </div>
-        <div class="settings-group">
           <div class="runtime-discovery-head">
             <span><strong>Local runtimes</strong><small>Installation and native login status</small></span>
             <button type="button" id="externalCliAuthRefresh" class="secondary-btn">Check login</button>
@@ -989,6 +979,25 @@ export function createHadamardGuiHtml(): string {
           <p id="externalCliHistoryStatus" class="muted">History stays on this machine and never reads authentication files.</p>
           <div id="externalCliHistoryList" class="settings-card-list compact"></div>
           <div class="settings-action-row"><button type="button" id="externalCliHistoryMore" class="secondary-btn hidden">Load more</button></div>
+        </div>
+      </section>
+      <section class="settings-panel" data-settings-panel="bridge">
+        <h1>Bridge</h1>
+        <div class="settings-group">
+          <h2>Bridge mode</h2>
+          <label class="check-row"><input id="bridgeModeEnabled" type="checkbox">Enable bridge mode</label>
+          <p class="muted">Bridge mode routes turns through the provider config selected below (Direct API or an external CLI such as Claude Code). Changes here only take effect while this switch is on; disabling it falls back to the default Hadamard SDK provider.</p>
+          <p id="bridgeModeStatus" class="muted">Loading bridge state…</p>
+        </div>
+        <div class="settings-group">
+          <div class="settings-group-head">
+            <h2>Configs</h2>
+            <button type="button" id="bridgeNewConfig" class="primary">+ New config</button>
+          </div>
+          <p id="settingsPath" class="muted"></p>
+          <p class="muted">The default model from <code>settings.json</code> is listed first and is used when nothing else is selected. Other configs live in <code>bridge-configs.json</code>; only configs configured here are usable for bridge mode.</p>
+          <p id="bridgeActive" class="muted">No active provider config — using the default provider.</p>
+          <div id="bridgeConfigsList" class="settings-card-list"></div>
         </div>
       </section>
       <section class="settings-panel" data-settings-panel="appearance">
@@ -23648,6 +23657,17 @@ function renderBridgeConfigs() {
   const bs = (state.snapshot && state.snapshot.bridgeState) || {};
   const active = bs.activeConfig;
   const configs = [defaultBridgeConfigView(), ...(bs.configs || [])];
+  const modeToggle = el('bridgeModeEnabled');
+  if (modeToggle) modeToggle.checked = bs.enabled !== false;
+  const statusEl = el('bridgeModeStatus');
+  if (statusEl) {
+    const label = bs.enabled === false
+      ? 'Bridge mode is OFF — turns use the default Hadamard SDK provider.'
+      : active
+        ? 'Bridge mode is ON — active config: ' + active.name + (bs.activeModelLabel ? ' (' + bs.activeModelLabel + ')' : '')
+        : 'Bridge mode is ON but no config is active — using the default provider.';
+    statusEl.textContent = label;
+  }
   renderRuntimeDiscovery();
   renderAgentProfiles();
   populateExternalCliRunConfigs();
@@ -25416,7 +25436,7 @@ function showSettingsTab(tab) {
   if (active === 'git') refreshGitSettingsSummary().catch(() => undefined);
   if (active === 'hooks') refreshHooksSettings().catch(() => undefined);
   if (active === 'shortcuts') renderShortcutsPanel();
-  if (active === 'models') renderBridgeConfigs();
+  if (active === 'models' || active === 'bridge') renderBridgeConfigs();
   if (active === 'mcp') renderMcpServers();
   if (active === 'sessions') renderArchived();
 }
@@ -27173,6 +27193,21 @@ el('settingsAutomationWorktreeList').addEventListener('click', () => { runSettin
 el('settingsMcpBtn').addEventListener('click', () => { closeSettings(); openSurface('mcp').catch(console.error); });
 el('mcpCfgAdd').addEventListener('click', () => { addMcpServerConfig().catch(console.error); });
 el('settingsWorktreeBtn').addEventListener('click', () => { closeSettings(); submitText('/worktree list'); });
+  el('bridgeModeEnabled')?.addEventListener('change', async () => {
+    const enabled = el('bridgeModeEnabled')?.checked === true;
+    const res = await api('/api/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ bridge: { enabled } }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (el('bridgeModeStatus')) el('bridgeModeStatus').textContent = 'Failed to save bridge mode: ' + (data.error || res.status);
+      return;
+    }
+    apiMutationVersion += 1;
+    void loadState();
+  });
 el('bridgeNewConfig').addEventListener('click', () => { openBridgeEditor(null); });
 el('bridgeCfgSave').addEventListener('click', () => { saveBridgeConfig().catch(console.error); });
 el('bridgeCfgReset').addEventListener('click', () => { closeBridgeEditor(); });
