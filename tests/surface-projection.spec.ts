@@ -206,13 +206,12 @@ describe('durable surface projection', () => {
     const headers = harness.events.filter(
       (event): event is Extract<TrajectoryEvent, { type: 'request.header' }> => event.type === 'request.header',
     );
-    expect(headers).toHaveLength(2);
-    for (let index = 0; index < headers.length; index += 1) {
-      const header = headers[index]!;
-      const call = harness.modelApi.calls[index]!;
-      expect(header.model).toBe('test-model');
-      // The header event must verify against the exact request the engine sent.
-      expect(header.headerKey).toBe(fingerprintRequestHeader(call.system, call.tools as unknown[] | undefined).headerKey);
+    // dsh request/header semantics: one durable header event until the
+    // system/tools/model header actually changes.
+    expect(headers).toHaveLength(1);
+    const header = headers[0]!;
+    expect(header.model).toBe('test-model');
+    for (const call of harness.modelApi.calls) {
       expect(headerFingerprintMatches(
         { systemHash: header.systemHash, toolsHash: header.toolsHash, headerKey: header.headerKey },
         call.system,
