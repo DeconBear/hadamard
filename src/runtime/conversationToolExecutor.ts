@@ -16,14 +16,9 @@ import { decideHadamardToolPermission } from './hadamardPermissions.js';
 import { asError, deepClone, nowIso } from './helpers.js';
 import { ensureNotAborted } from './modelRequestPolicy.js';
 import { markExplicitSafetyApproval } from './safetyChecks.js';
-import {
-  hasLifecycleBlock,
-  lifecycleBlockReason,
-  runTypedLifecycleHooks,
-} from './conversationLifecycle.js';
 import type { ExecuteConversationOptions } from './conversationPorts.js';
-import { artifactToolExecutionIfLarge } from './toolResultArtifactStore.js';
-import { createLocalToolAdapter } from './tools.js';
+import { createBuiltInToolPolicyPipeline, type ToolPolicyCall } from './toolPolicyPipeline.js';
+import { createLocalToolAdapter, textFromToolResultContent } from './tools.js';
 
 export interface ConversationToolExecutionResult {
   record: AgentToolCallRecord;
@@ -87,60 +82,27 @@ export async function executeConversationToolUse(
         : `No tool named "${toolUse.name}" is currently registered.`;
       throw new ToolExecutionError(toolUse.name, unknownToolMessage);
     }
-    const preToolOutputs = await runTypedLifecycleHooks(
-      options,
-      'PreToolUse',
-      { iteration, input: toolUse.input },
-      toolUse.name,
-    );
-    if (hasLifecycleBlock(preToolOutputs)) {
-      throw new ToolExecutionError(toolUse.name, lifecycleBlockReason('PreToolUse', preToolOutputs));
-    }
-    const permissionDecision = await decideHadamardToolPermission({
-      mode: options.permissionMode ?? 'default',
-      rules: options.permissions ?? [],
-      classifier: options.classifier,
-      approver: options.approver,
-      canUseTool: options.canUseTool,
-      adapter: {
-        isReadOnly: adapter.isReadOnly as ((input?: unknown) => boolean) | undefined,
-        isDestructive: adapter.isDestructive as ((input?: unknown) => boolean) | undefined,
-        isPlanReadOnly: adapter.isPlanReadOnly as ((input?: unknown) => boolean) | undefined,
-        requiresUserInteraction: adapter.requiresUserInteraction,
-        checkPermissions: adapter.checkPermissions,
-      },
-      runId: options.runId,
-      sessionId: options.sessionId,
-      workDir,
+    // Composable per-tool policy pipeline: ordered pre listeners with
+    // monotonic deny (permission is the LAST built-in listener, so no
+    // policy can widen what an earlier one refused).
+    const pipeline = options.toolPolicy
+      ?? options.toolPolicyFactory?.(options)
+      ?? createBuiltInToolPolicyPipeline(options);
+    const policyCall: ToolPolicyCall = {
+      iteration,
+      toolUseId: toolUse.id,
       toolName: adapter.sourceName,
       publicName: toolUse.name,
+      input: toolUse.input,
+      adapter,
+      workDir,
       prompt: promptText,
-      toolInput: toolUse.input,
-      iteration,
-    });
-    permissionBehavior = permissionDecision.behavior;
-    context.onPermissionDecision(permissionDecision);
-    options.emit?.({
-      type: 'tool.permission',
-      runId: options.runId,
-      iteration,
-      decision: permissionDecision,
-      timestamp: permissionDecision.timestamp,
-    });
-    const permissionHookOutputs = await runTypedLifecycleHooks(
-      options,
-      'PermissionDecision',
-      { iteration, decision: permissionDecision },
-      toolUse.name,
-    );
-    if (hasLifecycleBlock(permissionHookOutputs)) {
-      throw new ToolExecutionError(
-        toolUse.name,
-        lifecycleBlockReason('PermissionDecision', permissionHookOutputs),
-      );
-    }
-    if (permissionDecision.behavior === 'deny') {
-      throw new ToolExecutionError(toolUse.name, permissionDecision.reason);
+      onPermissionDecision: context.onPermissionDecision,
+    };
+    const preState = await pipeline.runPre(policyCall);
+    permissionBehavior = preState.decision?.behavior;
+    if (preState.behavior === 'deny') {
+      throw new ToolExecutionError(toolUse.name, preState.reason ?? 'Denied by tool policy.');
     }
     const onProgress: ToolCallProgress | undefined = options.emit
       ? progress => options.emit?.({
@@ -152,8 +114,8 @@ export async function executeConversationToolUse(
           timestamp: nowIso(),
         })
       : undefined;
-    const executionInput = permissionDecision.updatedInput !== undefined
-      ? permissionDecision.updatedInput
+    const executionInput = preState.updatedInput !== undefined
+      ? preState.updatedInput
       : toolUse.input;
     const executionContext: ToolExecutionContext = {
       signal: undefined as AbortSignal | undefined,
@@ -232,7 +194,7 @@ export async function executeConversationToolUse(
         executionInput,
         markExplicitSafetyApproval(
           { ...executionContext, signal },
-          permissionDecision.source === 'approver',
+          preState.explicitApproval === true || preState.decision?.source === 'approver',
         ),
         onProgress,
       ),
@@ -245,22 +207,24 @@ export async function executeConversationToolUse(
         context.onWorkDirChange(workDir);
       }
     }
-    const artifactMaxChars = Math.min(
-      adapter.maxResultSizeChars ?? Number.POSITIVE_INFINITY,
-      options.config.compact.toolResultArtifactMaxChars ?? 80_000,
-    );
-    const modelFacingExecution = await artifactToolExecutionIfLarge(execution, {
-      runId: options.runId,
-      iteration,
-      toolUseId: toolUse.id,
-      toolName: toolUse.name,
-      workDir,
-      maxChars: artifactMaxChars,
-    });
-    outputText = modelFacingExecution.text;
+    // Post stage: waterfall over the settled execution (spill shaping +
+    // PostToolUse hooks as the built-in listeners).
+    policyCall.executionInput = executionInput;
+    const postDecision = await pipeline.runPost(policyCall, execution);
+    if (postDecision.kind === 'block') {
+      throw new ToolExecutionError(toolUse.name, postDecision.reason);
+    }
+    outputText = textFromToolResultContent(postDecision.content as ToolResultBlockParam['content']);
     output = execution.rawOutput;
     isError = execution.isError ?? false;
-    content = modelFacingExecution.content;
+    content = postDecision.content as ToolResultBlockParam['content'];
+    if (postDecision.additionalContexts) {
+      for (const policyContext of postDecision.additionalContexts) {
+        if (policyContext && typeof policyContext.text === 'string') {
+          deferredContexts.push({ type: 'text', text: policyContext.text });
+        }
+      }
+    }
     concludedTurn = concludedTurn || execution.concludesTurn === true;
     if (execution.additionalContexts) {
       for (const context of execution.additionalContexts) {
@@ -268,15 +232,6 @@ export async function executeConversationToolUse(
           deferredContexts.push({ type: 'text', text: context.text });
         }
       }
-    }
-    const postToolOutputs = await runTypedLifecycleHooks(
-      options,
-      'PostToolUse',
-      { iteration, input: executionInput, output: execution.rawOutput, isError },
-      toolUse.name,
-    );
-    if (hasLifecycleBlock(postToolOutputs)) {
-      throw new ToolExecutionError(toolUse.name, lifecycleBlockReason('PostToolUse', postToolOutputs));
     }
   } catch (error) {
     const normalized = error instanceof ToolExecutionError
