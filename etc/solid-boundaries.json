@@ -17,7 +17,7 @@
     "runtime/hadamardCompact.ts": { "maxLines": 1403, "reason": "Existing compact engine debt; in-loop compact preserves the latest project-instruction reminder, prices shadowed spans, and supports prune mode plus cache-reusing summary requests." },
     "storage-v2/sqliteStorage.ts": { "maxLines": 1232, "reason": "SQLite infrastructure adapter with segregated public stores." },
     "tui/hadamardTuiController.ts": { "maxLines": 4948, "reason": "TUI composition/state root; session-scoped model context selection uses shared parsing and model-catalog metadata." },
-    "types.ts": { "maxLines": 3561, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, a per-run context-window override, the tool scheduling/CodeAct contract surface, retry policy, request proposals, compaction shadow pricing, the per-run conversation-extension override, the orthogonal tool-presentation mode, and the ReAct driver's swappable-strategy interfaces (cycle-free home for the extension-point types)." }
+    "types.ts": { "maxLines": 3570, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, a per-run context-window override, the tool scheduling/CodeAct contract surface, retry policy, request proposals, compaction shadow pricing, the per-run conversation-extension override, the orthogonal tool-presentation mode, the ReAct driver's swappable-strategy interfaces, and the nested-tool-execution result (CodeAct turn-control forwarding contract)." }
   },
   "interfaces": {
     "config/agentProfiles.ts#SelectableAgent": { "maxMembers": 29, "reason": "Compatibility DTO extended with the reusable Agent execution mode and the orthogonal tool presentation." },
