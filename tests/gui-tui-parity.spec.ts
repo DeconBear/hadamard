@@ -120,6 +120,19 @@ describe('TUI and GUI parity', () => {
     expect(createHadamardGuiHtml()).toContain('id="sessionCenterList"');
   });
 
+  it('keeps every Settings navigation item paired with a non-empty panel', () => {
+    const html = createHadamardGuiHtml();
+    const tabs = [...html.matchAll(/data-settings-tab="([^"]+)"/gu)].map(match => match[1]);
+    const panels = [...html.matchAll(/data-settings-panel="([^"]+)"/gu)].map(match => match[1]);
+    expect(new Set(tabs)).toEqual(new Set(panels));
+    for (const panel of panels) {
+      expect(html).toMatch(new RegExp(
+        `data-settings-panel="${panel}"[^>]*>[\\s\\S]*?<h1>[^<]+</h1>`,
+        'u',
+      ));
+    }
+  });
+
   it('renders GUI shell controls for the interactive surface', () => {
     const html = createHadamardGuiHtml();
     const css = createHadamardGuiStyles();
@@ -375,16 +388,19 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('defaultBridgeConfigView');
     expect(js).toContain('editingDefaultBridgeConfig');
     expect(js).toContain("setField('bridgeCfgApiKey', cfg ? (cfg.apiKey || '') : '')");
-    // Dedicated Bridge settings panel: bridge-mode switch + configs managed here.
-    expect(html).toContain('id="bridgeBtn"');
-    expect(js).toContain("el('bridgeBtn')");
-    expect(html).toContain('data-settings-tab="bridge"');
-    expect(html).toContain('data-settings-panel="bridge"');
-    expect(html).toContain('<h1>Bridge</h1>');
+    // Dedicated first-level Bridge region: bridge-mode switch + configs live outside Settings.
+    expect(html).toContain('id="navBridge"');
+    expect(html).toContain('data-region="bridge" id="regionBridge"');
+    expect(html).not.toContain('id="bridgeBtn"');
+    expect(html).not.toContain('data-settings-tab="bridge"');
+    expect(html).not.toContain('data-settings-panel="bridge"');
     expect(html).toContain('id="bridgeModeEnabled"');
     expect(html).toContain('id="bridgeModeStatus"');
     expect(js).toContain('{ bridge: { enabled } }');
-    expect(js).toContain("if (active === 'models' || active === 'bridge') renderBridgeConfigs();");
+    expect(js).toContain("else if (name === 'bridge')");
+    expect(js).toContain('2000000');
+    expect(js).toContain('above declared');
+    expect(js).toContain('may be rejected by the provider. Continue?');
     expect(js).toContain('/api/hooks');
     expect(js).toContain('refreshHooksSettings');
     expect(js).toContain('openTypedHookEditor');

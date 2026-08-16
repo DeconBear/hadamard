@@ -115,6 +115,7 @@ import {
 import {
   formatContextWindowTokens,
   HADAMARD_CONTEXT_WINDOW_METADATA_KEY,
+  isSelectableContextWindowTokens,
   modelContextWindowLimit,
   modelContextWindowOptions,
   parseContextWindowTokens,
@@ -372,20 +373,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       if (error instanceof Error && error.message.includes('No Hadamard credential')) {
         // First-run onboarding: guide the user through creating ~/.hadamard/settings.json.
         await onboardTuiCredentials(options.configPath);
-        // Bug fix: reload the just-written settings file before retrying.
-        // The credential check reads the module-level loaded config, which
-        // startup never set (the file did not exist yet), so skipping this
-        // reload made the retry fail again and re-show onboarding forever.
-        try {
-          if (options.configPath) {
-            await loadJsonConfigFile(options.configPath);
-          } else {
-            await loadDefaultHadamardSettings();
-          }
-        } catch {
-          // Keep the original error path if the reload itself fails.
-        }
-        // After saving and reloading, retry SDK creation.
+        // onboardTuiCredentials persists, reloads, and validates the exact
+        // settings path before returning. Retry with the fresh config.
         continue;
       }
       throw error;
@@ -608,8 +597,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const limit = modelContextWindowLimit(entry);
     const available = modelContextWindowOptions(entry);
     let selected = value ? parseContextWindowTokens(value) : undefined;
-    if (value && !selected) {
-      appendStatic([...formatErrorLine(`Invalid context window: ${value}.`), '']);
+    if (value && !isSelectableContextWindowTokens(selected)) {
+      appendStatic([...formatErrorLine(`Invalid context window: ${value}. Choose a value up to 2M.`), '']);
       return;
     }
     if (!value) {
@@ -4832,12 +4821,12 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       // first step boundary).
       if (queuedConfirmActive && !running && session.pendingInputCount > 0) {
         queuedConfirmActive = false;
-        const followUp = session.cancelLatestFollowUp();
-        if (followUp) {
-          void startRun(followUp);
+        const queuedInput = session.takeNextPendingInput();
+        if (queuedInput) {
+          void startRun(queuedInput);
           return;
         }
-        void startRun('Continue the previous task.');
+        renderDynamic();
         return;
       }
       restoreRecalledFollowUpIfAbandoned();
@@ -4902,6 +4891,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       shutdown: () => { void shutdown(0); },
       submit: mode => { void submit(mode); },
       hasQueuedInputs: () => session.pendingInputCount > 0,
+      discardQueuedInputs: () => { session.discardPendingInputs(); },
       setQueuedConfirm: value => {
         queuedConfirmActive = value;
         renderDynamic();

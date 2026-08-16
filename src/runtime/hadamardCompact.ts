@@ -1152,28 +1152,7 @@ export async function compactHadamardConversationIfNeeded(
   if (messagesToSummarize.length === 0 || baseMessagesToKeep.length === 0) {
     return { ...unchanged, reason: 'threshold_not_met' };
   }
-  // Last-resort tail preservation (reactive recovery, issue-5 fallback):
-  // when the preserved tail alone would still overflow the request budget,
-  // carve the NEWEST messages out (pairing-safe), compact the older range,
-  // then append the carved messages verbatim at the end — the latest
-  // context is never lost and the middle still shrinks.
-  let messagesToKeep = baseMessagesToKeep;
-  let latestMessages: MessageParam[] = [];
-  if (context.force && baseMessagesToKeep.length > 1) {
-    const keepBudget = Math.max(1, Math.floor(context.maxTokens / 2));
-    let carveStart = baseMessagesToKeep.length;
-    while (carveStart > 1) {
-      const kept = baseMessagesToKeep.slice(0, carveStart);
-      if (estimateHadamardConversationTokens(kept) * tokenEstimateMultiplier <= keepBudget) break;
-      const next = pairingSafeCarveStart(baseMessagesToKeep, carveStart);
-      if (next === carveStart) break;
-      carveStart = next;
-    }
-    if (carveStart < baseMessagesToKeep.length) {
-      latestMessages = baseMessagesToKeep.slice(carveStart);
-      messagesToKeep = baseMessagesToKeep.slice(0, carveStart);
-    }
-  }
+  const messagesToKeep = baseMessagesToKeep;
 
   // Model-free prune mode (opt-in): clear old tool_result content and skip the
   // summary call entirely. Defaults off because it rewrites historical
@@ -1276,7 +1255,6 @@ export async function compactHadamardConversationIfNeeded(
     buildPostCompactSummaryMessage(summary, context.force ? 'reactive' : 'auto'),
     ...(projectInstruction ? [projectInstruction] : []),
     ...messagesToKeep,
-    ...latestMessages,
   ];
   return {
     messages: nextMessages,
@@ -1367,42 +1345,4 @@ export function isHadamardPromptTooLongError(error: unknown): boolean {
 
   const normalized = error.message.toLowerCase();
   return PROMPT_TOO_LONG_PATTERNS.some(pattern => normalized.includes(pattern));
-}
-
-/**
- * Compute a pairing-safe carve boundary for the tail-preserving fallback:
- * the carved suffix must contain every tool_use referenced by its own
- * tool_results, so the appended verbatim segment never breaks pairing.
- */
-function pairingSafeCarveStart(keep: readonly MessageParam[], start: number): number {
-  let boundary = start;
-  while (boundary > 1) {
-    const candidate = keep[boundary - 1];
-    if (candidate?.role === 'user' && Array.isArray(candidate.content)) {
-      const referencedIds = new Set<string>();
-      for (const block of candidate.content) {
-        const toolResult = block as { type?: string; tool_use_id?: string };
-        if (toolResult.type === 'tool_result' && typeof toolResult.tool_use_id === 'string') {
-          referencedIds.add(toolResult.tool_use_id);
-        }
-      }
-      const carved = keep.slice(boundary);
-      const carvedHas = (id: string): boolean => carved.some(
-        message => message.role === 'assistant'
-          && Array.isArray(message.content)
-          && message.content.some(block => (block as { type?: string }).type === 'tool_use'
-            && (block as { id?: string }).id === id),
-      );
-      // A tool_result whose tool_use is still in the kept part must pull
-      // that tool_use into the carve (engine ordering: one message back).
-      if ([...referencedIds].some((id) => !carvedHas(id))) {
-        boundary -= 1;
-        continue;
-      }
-    }
-    // Move at least the boundary message into the carved suffix.
-    boundary -= 1;
-    return boundary;
-  }
-  return boundary;
 }
