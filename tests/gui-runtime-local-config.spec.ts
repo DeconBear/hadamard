@@ -216,7 +216,7 @@ describe('GUI runtime local config reuse', () => {
         body: JSON.stringify({ name: 'alternate' }),
       });
       expect(activation.status).toBe(409);
-      expect(activation.body.error).toContain('main Bridge tab');
+      expect(activation.body.error).toContain('main Configuration tab');
     } finally {
       await server.close();
     }
