@@ -191,6 +191,22 @@ export class AgentSession {
     return this.followUpInputs.pop();
   }
 
+  /** Consume the next queued input when an interrupted interactive run restarts. */
+  takeNextPendingInput(): string | undefined {
+    return this.steeringInputs.shift()
+      ?? this.followUpInputs.shift()
+      ?? this.injectInputs.shift();
+  }
+
+  /** Discard every unsent interactive input after explicit user confirmation. */
+  discardPendingInputs(): number {
+    const count = this.pendingInputCount;
+    this.steeringInputs.length = 0;
+    this.followUpInputs.length = 0;
+    this.injectInputs.length = 0;
+    return count;
+  }
+
   /** @internal Runtime bridge for the conversation engine. */
   drainSteeringInputs(): string[] {
     return this.steeringInputs.splice(0);

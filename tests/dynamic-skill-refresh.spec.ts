@@ -112,5 +112,37 @@ describe('dynamic skill injection', () => {
       await sdk.close();
     }
   });
-});
 
+  it('rescans external runtime directories on every iteration', async () => {
+    const root = await workspace();
+    const homeDir = path.join(root, 'home');
+    const claudeSkillsDir = path.join(homeDir, '.claude', 'skills');
+    const modelApi = new MockModelApi();
+    let sawClaudeSkill = false;
+    modelApi.onSecond = (request) => {
+      sawClaudeSkill = JSON.stringify(request.tools).includes('claude-live');
+    };
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      homeDir,
+      sessionDirectory: path.join(root, 'sessions-external'),
+      workDir: root,
+      modelApi,
+      externalSkills: { osHomeDir: homeDir, env: {} },
+    });
+    const addSkillTool = tool(
+      { name: 'add_skill', description: 'Installs a Claude skill.', inputSchema: z.strictObject({}) },
+      async () => {
+        await writeSkill(claudeSkillsDir, 'claude-live', 'Live Claude skill.');
+        return 'installed';
+      },
+    );
+    try {
+      await sdk.run('Install an external skill.', { tools: [addSkillTool] });
+      expect(sawClaudeSkill).toBe(true);
+      expect(sdk.skills.getMetadata('claude-live')?.description).toBe('Live Claude skill.');
+    } finally {
+      await sdk.close();
+    }
+  });
+});

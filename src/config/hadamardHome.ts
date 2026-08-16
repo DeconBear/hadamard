@@ -203,6 +203,7 @@ function hasHadamardDataRootMarker(root: string): boolean {
     return Boolean(
       record.env ||
       record.gui ||
+      record.bridge ||
       Object.keys(record).some(key => key.startsWith('HADAMARD_') || key.startsWith('ACTOVIQ_')),
     );
   } catch {

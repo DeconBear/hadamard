@@ -15,6 +15,12 @@ export const STANDARD_CONTEXT_WINDOWS = [
   2_000_000,
 ] as const;
 
+export const MAX_SELECTABLE_CONTEXT_WINDOW_TOKENS = 2_000_000;
+
+export function isSelectableContextWindowTokens(tokens: number | undefined): tokens is number {
+  return tokens !== undefined && tokens <= MAX_SELECTABLE_CONTEXT_WINDOW_TOKENS;
+}
+
 export function parseContextWindowTokens(value: unknown): number | undefined {
   if (typeof value === 'number') {
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
