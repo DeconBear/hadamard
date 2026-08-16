@@ -104,6 +104,7 @@ function buildPtcInstructions(
   const intro = mode === 'ptc'
     ? [
         `Tools are presented through a single run_code wire tool: instead of emitting many JSON tool calls, compose multiple tool calls inside ${programNote}.`,
+        'run_code is the only tool you can call directly — a direct call naming any other tool fails. Reach every tool the SDK declares below from inside a run_code program.',
         `The typed SDK below declares the ${toolCount} visible host tool(s).`,
       ].join('\n')
     : [
