@@ -55,7 +55,7 @@ import { CodeActService } from '../codeact/codeActService.js';
 import { renderCodeActHostSdk } from '../codeact/codeActSdk.js';
 import { createCodeCellTool, CODE_CELL_TOOL_NAME } from '../codeact/codeCellTool.js';
 import { createFilteredRunCodeTool } from '../codeact/programmaticToolRuntime.js';
-import type { ToolPresentationMode } from '../codeact/presentationTypes.js';
+import { readSessionToolPresentation, type ToolPresentationMode } from '../codeact/presentationTypes.js';
 import {
   buildAgentModePrompt,
   filterToolsForExecutionPolicy,
@@ -3006,7 +3006,10 @@ export class HadamardAgentClient {
       goalTools = filterToolsForExecutionPolicy(ordinaryTools, executionPolicy);
     }
 
-    const toolPresentation: ToolPresentationMode = options.toolPresentation ?? this.config.toolPresentation;
+    const toolPresentation: ToolPresentationMode = options.toolPresentation
+      ?? readSessionToolPresentation(session?.metadata)
+      ?? projectSettings.toolPresentation
+      ?? this.config.toolPresentation;
     if (toolPresentation !== 'native') {
       // PTC/both add the stateless run_code wire tool under the project
       // CodeAct security policy and the same allow/deny filtering.

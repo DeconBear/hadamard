@@ -20,6 +20,7 @@ export const HADAMARD_INTERACTIVE_COMMANDS: Record<string, string> = {
   model: 'Select a model or configure its provider',
   effort: 'Select the reasoning effort',
   mode: 'Select ReAct, CodeAct, or Hybrid execution',
+  presentation: 'Select how tools are presented: Native, PTC (run_code program), or Both',
   permissions: 'Show or set the permission mode',
   plan: 'Enter, review, approve, or revise the current plan',
   rewind: 'Rewind the conversation by N messages',

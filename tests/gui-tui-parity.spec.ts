@@ -86,6 +86,7 @@ describe('TUI and GUI parity', () => {
       'model',
       'effort',
       'mode',
+      'presentation',
       'permissions',
       'plan',
       'rewind',
