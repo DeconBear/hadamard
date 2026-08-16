@@ -146,6 +146,7 @@ export function createHadamardGuiHtml(): string {
         </div>
       </section>
       <div class="sidebar-footer">
+        <button id="bridgeBtn" class="nav-btn" aria-label="Bridge" title="Bridge mode"><span class="nav-icon">${guiIcon('plug')}</span><span>Bridge</span></button>
         <button id="settingsBtn" class="nav-btn" aria-label="Settings" title="Settings"><span class="nav-icon">${guiIcon('gear')}</span><span>Settings</span></button>
       </div>
     </aside>
@@ -27422,6 +27423,7 @@ el('modelPickerFlyout').addEventListener('click', (event) => event.stopPropagati
 el('closeSurfaceBtn').addEventListener('click', closeSurface);
 el('surfaceDrawer').addEventListener('click', (event) => { if (event.target === el('surfaceDrawer')) closeSurface(); });
 el('settingsBtn').addEventListener('click', () => { void openSettings('general').catch(console.error); });
+el('bridgeBtn').addEventListener('click', () => { void openSettings('bridge').catch(console.error); });
 el('credentialHintLink').addEventListener('click', (event) => {
   event.preventDefault();
   void openSettings('models').catch(console.error);
