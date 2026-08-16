@@ -10,4 +10,7 @@ export * from './codeActService.js';
 export * from './codeCellTool.js';
 export * from './codeActPrompt.js';
 export * from './codeActSdk.js';
+export * from './codeRuntime.js';
+export * from './workerThreadCodeRuntime.js';
+export * from './tsSdkRenderer.js';
 
