@@ -277,7 +277,11 @@ describe('reactive compact on prompt-too-long provider errors', () => {
 
       expect(recoveryError).toBeInstanceOf(Error);
       expect((recoveryError as Error).message).toContain('Session compact persistence failed.');
-      expect((recoveryError as Error).cause).toBeInstanceOf(HadamardProviderApiError);
+      // The engine now enriches context-length rejections with actionable
+      // guidance (issue-5); the original provider error stays the deep cause.
+      const cause = (recoveryError as Error).cause as { code?: string; cause?: unknown } | undefined;
+      expect(cause?.code).toBe('CONTEXT_LENGTH_MISMATCH');
+      expect(cause?.cause).toBeInstanceOf(HadamardProviderApiError);
       const execution = await sdk.executions.getSnapshot(session.id);
       expect(execution?.nodes).toEqual([
         expect.objectContaining({

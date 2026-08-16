@@ -17,19 +17,20 @@ describe('model context-window selection', () => {
     expect(formatContextWindowTokens(128_000)).toBe('128k');
   });
 
-  it('offers only values within the model declared maximum', () => {
+  it('offers the full standard range up to 2m with an advisory (not enforced) limit', () => {
     const options = modelContextWindowOptions({
       name: 'model-x',
       contextWindowTokens: 128_000,
       maxContextWindowTokens: 256_000,
     });
-    expect(options).toContain(128_000);
-    expect(options).toContain(256_000);
-    expect(options.every(value => value <= 256_000)).toBe(true);
+    expect(options).toEqual(STANDARD_CONTEXT_WINDOWS);
+    expect(options.at(-1)).toBe(2_000_000);
+    // A selection above the declared limit is kept (the provider reports
+    // a context-length mismatch the UI turns into guidance).
     expect(clampContextWindowTokens(1_000_000, {
       name: 'model-x',
       maxContextWindowTokens: 256_000,
-    })).toBe(256_000);
+    })).toBe(1_000_000);
   });
 
   it('offers the GUI picker choices when model metadata is not declared', () => {
