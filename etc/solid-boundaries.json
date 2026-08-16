@@ -28,7 +28,7 @@
     "storage/sessionCatalog.ts#SessionCatalogItem": { "maxMembers": 21, "reason": "Session catalog compatibility DTO." },
     "team/teamRuntime.ts#RunMemberOptions": { "maxMembers": 23, "reason": "Internal orchestration options extended with the resolved Agent execution mode." },
     "types.ts#CreateToolOptions": { "maxMembers": 23, "reason": "Public compatibility options." },
-    "types.ts#AgentToolDefinition": { "maxMembers": 26, "reason": "Public compatibility contract." },
+    "types.ts#AgentToolDefinition": { "maxMembers": 27, "reason": "Public compatibility contract; carries the code-transport language marker driving the run_code SDK flavor." },
     "types.ts#ResolvedRuntimeConfig": { "maxMembers": 39, "reason": "Public resolved-config snapshot extended with the parallel tool-call bound, the provider retry policy, and the default tool presentation." },
     "types.ts#HadamardAgentDefinition": { "maxMembers": 39, "reason": "Public persisted agent definition extended with project-instruction inherit/omit policy and the orthogonal tool presentation." },
     "types.ts#HadamardAgentDefinitionSummary": { "maxMembers": 27, "reason": "Public summary DTO extended with reusable Agent mode." },

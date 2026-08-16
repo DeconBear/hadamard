@@ -674,7 +674,7 @@ describe('CodeActService process kernel', () => {
         inputSchema: z.strictObject({}),
         isReadOnly: () => true,
       },
-      async () => { throw new Error('boom'); },
+      async (): Promise<{ error: string }> => { throw new Error('boom'); },
     );
     const deferred: { type: 'text'; text: string }[] = [];
     let concluded = false;

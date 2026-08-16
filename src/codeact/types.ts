@@ -2,6 +2,8 @@ import type { AgentToolDefinition, ToolExecutionContext } from '../types.js';
 
 export type CodeActLanguage = 'python';
 export type CodeActBackend = 'process' | 'container';
+/** Stateless run_code backend selector: the kernel backends plus the zero-dependency worker thread. */
+export type CodeActPtcBackend = CodeActBackend | 'worker-thread';
 export type CodeActSecurityMode = 'trusted' | 'enforce';
 
 /** Orthogonal cell-run failure kinds (dsh CodeRunFailure equivalent): the error is a result field, never a rejection. */
@@ -10,6 +12,8 @@ export type CodeRunFailureKind = 'exception' | 'timeout' | 'interrupt' | 'kernel
 export interface CodeActSettings {
   enabled: boolean;
   backend?: CodeActBackend;
+  /** Backend for the stateless run_code transport; defaults to `backend` when unset. */
+  ptcBackend?: CodeActPtcBackend;
   securityMode?: CodeActSecurityMode;
   pythonCommand?: string;
   idleTimeoutMs?: number;
@@ -28,6 +32,7 @@ export interface CodeActSettings {
 export interface ResolvedCodeActSettings {
   enabled: boolean;
   backend: CodeActBackend;
+  ptcBackend: CodeActPtcBackend;
   securityMode: CodeActSecurityMode;
   pythonCommand: string;
   idleTimeoutMs: number;
