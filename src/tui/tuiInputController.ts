@@ -30,6 +30,8 @@ export interface TuiInputRunPort {
   submit(mode?: ActiveInputMode): void;
   /** Whether queued messages exist in the session (steering/follow-up/inject). */
   hasQueuedInputs(): boolean;
+  /** Discard queued inputs after the user presses ESC again. */
+  discardQueuedInputs(): void;
   /**
    * Toggle the "stopped, queued message awaiting confirmation" state.
    * The frame renders a persistent hint while it is active.
@@ -236,6 +238,7 @@ export class TuiInputController {
         } else if (this.queuedConfirm) {
           this.queuedConfirm = false;
           run.setQueuedConfirm(false);
+          run.discardQueuedInputs();
           editor.clear();
           completions.setMenuSelected(0);
           run.restoreAbandonedRecall();
@@ -274,6 +277,13 @@ export class TuiInputController {
     const name = key.name ?? '';
     switch (name) {
       case 'return':
+        // ESC has requested cancellation, but the run has not settled yet.
+        // Keep the confirmation state so an early Enter cannot strand or
+        // duplicate queued input while `running` is still true.
+        if (this.queuedConfirm && run.isRunning()) {
+          view.render();
+          return;
+        }
         if (key.shift) {
           if (run.isRunning()) run.submit('steer');
           else editor.insert('\n');
@@ -306,6 +316,7 @@ export class TuiInputController {
           // Second ESC cancels the queued confirmation and clears the editor.
           this.queuedConfirm = false;
           run.setQueuedConfirm(false);
+          run.discardQueuedInputs();
           editor.clear();
           completions.setMenuSelected(0);
           run.restoreAbandonedRecall();

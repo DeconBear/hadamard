@@ -35,6 +35,15 @@ describe('hadamardHome', () => {
     expect(resolveHadamardHome(path.join(home, '.hadamard'))).toBe(path.join(home, '.hadamard'));
   });
 
+  it('recognizes a settings-only Bridge data root', async () => {
+    const dataRoot = await tempRoot('hadamard-home-bridge-settings-');
+    await writeFile(path.join(dataRoot, 'settings.json'), JSON.stringify({
+      bridge: { enabled: true },
+    }), 'utf8');
+
+    expect(resolveHadamardHome(dataRoot)).toBe(path.resolve(dataRoot));
+  });
+
   it('uses HADAMARD_HOME as a direct data root', async () => {
     const dataRoot = await tempRoot('hadamard-home-env-');
     process.env.HADAMARD_HOME = dataRoot;

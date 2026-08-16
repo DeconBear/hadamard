@@ -132,7 +132,11 @@ describe('GUI agent profile API', () => {
     const root = await tempRoot('hadamard-gui-agent-activate-');
     const homeDir = path.join(root, 'home');
     const workDir = path.join(root, 'work');
+    await mkdir(homeDir, { recursive: true });
     await mkdir(workDir, { recursive: true });
+    await writeFile(path.join(homeDir, 'settings.json'), JSON.stringify({
+      bridge: { enabled: true },
+    }), 'utf8');
     addBridgeConfig({
       name: 'deepseek',
       runtime: 'hadamard',
@@ -198,6 +202,7 @@ describe('GUI agent profile API', () => {
         HADAMARD_BASE_URL: 'http://127.0.0.1:1/v1',
         HADAMARD_MODEL: 'model-default',
       },
+      bridge: { enabled: true },
     }), 'utf8');
     addBridgeConfig({
       name: 'codex-runtime',
