@@ -52,8 +52,7 @@ import { readProjectSettings, type DreamExecutionProfileRef } from '../config/pr
 import { CodeActService } from '../codeact/codeActService.js';
 import { renderCodeActHostSdk } from '../codeact/codeActSdk.js';
 import { createCodeCellTool, CODE_CELL_TOOL_NAME } from '../codeact/codeCellTool.js';
-import { ProgrammaticToolRuntime } from '../codeact/programmaticToolRuntime.js';
-import { createRunCodeTool } from '../codeact/runCodeTool.js';
+import { createFilteredRunCodeTool } from '../codeact/programmaticToolRuntime.js';
 import type { ToolPresentationMode } from '../codeact/presentationTypes.js';
 import {
   buildAgentModePrompt,
@@ -104,7 +103,7 @@ import { McpConnectionManager } from '../mcp/connectionManager.js';
 import { PluginLoader } from '../plugins/pluginLoader.js';
 import { PluginPackageStore } from '../plugins/pluginPackageStore.js';
 import { PluginTrustStore } from '../plugins/pluginTrustStore.js';
-import { RunAbortedError, SessionNotFoundError } from '../errors.js';
+import { HadamardSdkError, RunAbortedError, SessionNotFoundError } from '../errors.js';
 import { AgentExecutionStore } from '../storage/agentExecutionStore.js';
 import { BackgroundTaskStore } from '../storage/backgroundTaskStore.js';
 import { MailboxStore } from '../storage/mailboxStore.js';
@@ -3003,13 +3002,17 @@ export class HadamardAgentClient {
       goalTools = filterToolsForExecutionPolicy(ordinaryTools, executionPolicy);
     }
 
-    // Tool presentation is orthogonal to the agent mode: PTC/both add the
-    // stateless run_code wire tool (host tools = the ordinary catalog) while
-    // native/codeact/hybrid stay exactly as before.
     const toolPresentation: ToolPresentationMode = options.toolPresentation ?? this.config.toolPresentation;
     if (toolPresentation !== 'native') {
-      const ptcRuntime = new ProgrammaticToolRuntime({ ...projectSettings.codeAct, enabled: true });
-      goalTools.push(createRunCodeTool({ service: ptcRuntime, hostTools: ordinaryTools }));
+      // PTC/both add the stateless run_code wire tool under the project
+      // CodeAct security policy and the same allow/deny filtering.
+      const runCodeTool = createFilteredRunCodeTool({
+        settings: projectSettings.codeAct,
+        hostTools: ordinaryTools,
+        allowedTools: options.__hadamardAllowedTools ?? options.allowedTools,
+        disallowedTools: [...(options.__hadamardDisallowedTools ?? []), ...workspaceProcessDenylist],
+      });
+      if (runCodeTool) goalTools.push(runCodeTool);
     }
 
     goalTools = await applyResolvedToolDescriptions(goalTools, {
@@ -3034,7 +3037,7 @@ export class HadamardAgentClient {
           hostSdk: executionPolicy.actionSpace === 'code-cell' || executionPolicy.actionSpace === 'hybrid'
             ? renderCodeActHostSdk(ordinaryTools)
             : undefined,
-        }),
+        }, toolPresentation),
       ],
     );
 

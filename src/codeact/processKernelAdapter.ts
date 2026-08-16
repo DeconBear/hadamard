@@ -150,7 +150,7 @@ class JsonLineProcessKernel implements CodeActKernel {
         stderr: '',
         artifacts: [],
         durationMs: 0,
-        stateLost: true,
+        stateLost: false,
         failureKind: 'interrupt',
         error: 'CodeCell execution was aborted before dispatch.',
       };
@@ -278,6 +278,10 @@ class JsonLineProcessKernel implements CodeActKernel {
       }
       this.accountOutput(active, Buffer.byteLength(JSON.stringify(message)));
       if (active.settled) return;
+      // dsh settlement semantics: the run-scoped abort fires when the run
+      // settles for ANY reason, so a stray in-flight sub-dispatch is aborted
+      // instead of being awaited up to toolTimeoutMs or orphaned (its
+      // host_rpc response would be dropped once the active settles).
       void this.settleActive(active, {
         status: message.ok ? 'completed' : 'failed',
         result: message.result,
@@ -285,7 +289,7 @@ class JsonLineProcessKernel implements CodeActKernel {
         durationMs: message.durationMs,
         resourceUsage: message.resourceUsage,
         ...(message.ok ? {} : { failureKind: 'exception' as const }),
-      });
+      }, { abortFirst: new HadamardSdkError('CodeCell execution settled.') });
     }
   }
 

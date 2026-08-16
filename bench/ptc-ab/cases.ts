@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, stat, readdir } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { PtcAbArmConfig, PtcAbCase } from './types.js';
@@ -32,6 +32,7 @@ export const PTC_AB_CASES: readonly PtcAbCase[] = [
   {
     id: 'serial-dependency',
     family: 'serial-dependency',
+    runtimeTarget: 'clean-sdk',
     prompt: 'Read the file input.txt (one number per line), compute the sum of all numbers, then write the sum as a single integer to output.txt. Do not write anything else into output.txt.',
     setup: async (workDir) => {
       await write(workDir, 'input.txt', '3\n5\n9\n17\n');
@@ -44,6 +45,7 @@ export const PTC_AB_CASES: readonly PtcAbCase[] = [
   {
     id: 'parallel-reads',
     family: 'parallel-reads',
+    runtimeTarget: 'clean-sdk',
     prompt: 'The files a.txt, b.txt, and c.txt each contain one integer. Read all three and write their product as a single integer to product.txt.',
     setup: async (workDir) => {
       await write(workDir, 'a.txt', '7');
@@ -58,6 +60,7 @@ export const PTC_AB_CASES: readonly PtcAbCase[] = [
   {
     id: 'large-result-filtering',
     family: 'large-result-filtering',
+    runtimeTarget: 'clean-sdk',
     prompt: 'The file big.txt has thousands of lines; exactly one contains the text MARKER. Find that line and write ONLY that exact line to found.txt. Do not copy the whole file anywhere.',
     setup: async (workDir) => {
       const lines: string[] = [];
@@ -74,6 +77,7 @@ export const PTC_AB_CASES: readonly PtcAbCase[] = [
   {
     id: 'permission-denial',
     family: 'permission-denial',
+    runtimeTarget: 'clean-sdk',
     prompt: 'Create a file named result.txt containing exactly the text hello-world. The Bash tool is disabled for this task, so use the file tools instead.',
     setup: async () => undefined,
     grader: async (workDir) => ({
@@ -84,6 +88,7 @@ export const PTC_AB_CASES: readonly PtcAbCase[] = [
   {
     id: 'tool-failure-recovery',
     family: 'tool-failure-recovery',
+    runtimeTarget: 'clean-sdk',
     prompt: 'Try to read the file missing-xyz.txt (it does not exist and the attempt will fail). After observing the failure, write exactly the text RECOVERED to recovered.txt.',
     setup: async () => undefined,
     grader: async (workDir) => ({
@@ -94,7 +99,8 @@ export const PTC_AB_CASES: readonly PtcAbCase[] = [
   {
     id: 'mutating-barrier',
     family: 'mutating-barrier',
-    prompt: 'Append the letter A to order.txt, then append the letter B to order.txt, strictly one command at a time in that order. The final file must contain exactly AB with no newline.',
+    runtimeTarget: 'clean-sdk',
+    prompt: 'Append the letter A to order.txt, then append the letter B to order.txt (A before B). The final file must contain exactly AB with no newline.',
     setup: async (workDir) => {
       await write(workDir, 'order.txt', '');
     },
@@ -106,6 +112,7 @@ export const PTC_AB_CASES: readonly PtcAbCase[] = [
   {
     id: 'context-compaction',
     family: 'context-compaction',
+    runtimeTarget: 'clean-sdk',
     prompt: 'There are five files: fact-1.txt .. fact-5.txt. Each contains padding followed by a FACT at the very end. Read them all, collect the five facts, and write them one per line in file order to facts.txt.',
     setup: async (workDir) => {
       const facts = ['FACT-ALPHA', 'FACT-BRAVO', 'FACT-CHARLIE', 'FACT-DELTA', 'FACT-ECHO'];
@@ -125,22 +132,5 @@ export const PTC_AB_CASES: readonly PtcAbCase[] = [
 
 export function caseMaxToolIterations(testCase: PtcAbCase): number {
   return testCase.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
-}
-
-export async function caseWorkspaceHasFiles(workDir: string): Promise<string[]> {
-  try {
-    const entries = await readdir(workDir);
-    return entries;
-  } catch {
-    return [];
-  }
-}
-
-export async function caseFileSize(workDir: string, name: string): Promise<number> {
-  try {
-    return (await stat(path.join(workDir, name))).size;
-  } catch {
-    return -1;
-  }
 }
 
