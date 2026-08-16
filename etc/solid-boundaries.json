@@ -3,7 +3,7 @@
   "files": {
     "goal/projectGoalStore.ts": { "maxLines": 1013, "reason": "Existing project-goal store debt." },
     "gui/hadamardGui.ts": { "maxLines": 11045, "reason": "GUI composition root; bridge-mode enabled gate guards router/config run paths and is exposed in bridgeState." },
-    "gui/hadamardGuiAssets.ts": { "maxLines": 27550, "reason": "Byte-stable embedded GUI renderer; dedicated Bridge settings panel hosts the bridge-mode toggle and config list." },
+    "gui/hadamardGuiAssets.ts": { "maxLines": 27575, "reason": "Byte-stable embedded GUI renderer; Configuration region (renamed from Bridge) hosts bridge mode, configs, and local runtime discovery; Devices region uses the reworked card layout." },
     "gui/transcript/clientBundle.ts": { "maxLines": 1127, "reason": "Byte-stable transcript client bundle." },
     "manager/assistantGlobalTools.ts": { "maxLines": 1149, "reason": "Compatibility factory; new domains belong in providers." },
     "parity/bridgeProviders.ts": { "maxLines": 1400, "reason": "Existing compatibility adapter debt." },

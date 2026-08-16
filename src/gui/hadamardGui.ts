@@ -4418,7 +4418,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   async function activateBridgeConfig(config: PersistedBridgeConfig): Promise<boolean> {
     if (!bridgeModeEnabled) {
       throw new GuiRuntimeMutationConflictError(
-        'Bridge mode is disabled. Enable it from the main Bridge tab before selecting a bridge config.',
+        'Bridge mode is disabled. Enable it from the main Configuration tab before selecting a bridge config.',
       );
     }
     if (config.execution === 'cli') {
