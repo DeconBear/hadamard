@@ -5,7 +5,7 @@ export type CodeActBackend = 'process' | 'container';
 export type CodeActSecurityMode = 'trusted' | 'enforce';
 
 /** Orthogonal cell-run failure kinds (dsh CodeRunFailure equivalent): the error is a result field, never a rejection. */
-export type CodeRunFailureKind = 'exception' | 'timeout' | 'interrupt' | 'kernel-exit' | 'output-limit';
+export type CodeRunFailureKind = 'exception' | 'timeout' | 'interrupt' | 'kernel-exit' | 'output-limit' | 'invalid-output';
 
 export interface CodeActSettings {
   enabled: boolean;

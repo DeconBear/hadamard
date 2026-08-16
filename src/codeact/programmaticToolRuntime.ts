@@ -87,7 +87,7 @@ export class ProgrammaticToolRuntime {
         this.settings.maxParallelSubCalls,
       );
       const toolNameMap = buildCodeActToolNameMap(input.hostTools ?? []);
-      return await kernel.execute({
+      const result = await kernel.execute({
         executionId,
         sessionId,
         language: 'python',
@@ -99,6 +99,13 @@ export class ProgrammaticToolRuntime {
         hostRpc: dispatcher.handler(),
         toolNameMap,
       });
+      if (result.status === 'completed') {
+        for (const nestedContext of dispatcher.takeDeferredContexts()) {
+          input.context.deferAdditionalContext?.(nestedContext);
+        }
+        if (dispatcher.turnConcluded) input.context.concludeTurn?.();
+      }
+      return result;
     } finally {
       if (abortRegistered) input.context.signal?.removeEventListener('abort', abortCell);
       // Fresh environment per run: stop the kernel even on failure so no

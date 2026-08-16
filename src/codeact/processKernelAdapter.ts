@@ -262,6 +262,18 @@ class JsonLineProcessKernel implements CodeActKernel {
       return;
     }
     if (message.type === 'result') {
+      if (message.failureKind === 'invalid-output') {
+        // Classified non-JSON completion: the cell failed but the kernel
+        // namespace stays intact, so settle without killing the process.
+        void this.settleActive(active, {
+          status: 'failed',
+          error: message.error ?? 'CodeCell completion value was not lossless JSON.',
+          durationMs: message.durationMs,
+          stateLost: false,
+          failureKind: 'invalid-output',
+        }, { abortFirst: new HadamardSdkError('CodeCell execution settled.') });
+        return;
+      }
       if (message.failureKind === 'output-limit') {
         // Kernel-side precheck rejected an oversized payload: one unique
         // output-limit failure, never a protocol error or a completed cell.

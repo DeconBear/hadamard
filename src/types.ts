@@ -25,7 +25,14 @@ export interface LoadedJsonConfigData {
 }
 
 export type HadamardSettingsData = LoadedJsonConfigData;
-export type NestedToolExecutor = (definition: AgentToolDefinition, input: Record<string, unknown>, options: { toolUseId: string; signal?: AbortSignal }) => Promise<AgentToolCallRecord>;
+export interface NestedToolExecutionResult {
+  record: AgentToolCallRecord;
+  /** Model-facing context a successful nested tool deferred for the next step (dsh exec.deferContext forwarding). */
+  additionalContexts?: { type: 'text'; text: string }[];
+  /** A successful nested tool requested the agent turn to conclude (dsh exec.concludeTurn forwarding). */
+  concludesTurn?: boolean;
+}
+export type NestedToolExecutor = (definition: AgentToolDefinition, input: Record<string, unknown>, options: { toolUseId: string; signal?: AbortSignal }) => Promise<NestedToolExecutionResult>;
 export interface ToolExecutionContext {
   signal?: AbortSignal;
   runId: string;

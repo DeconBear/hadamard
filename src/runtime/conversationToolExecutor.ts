@@ -195,7 +195,16 @@ export async function executeConversationToolUse(
               context.onWorkDirChange(nextWorkDir);
             },
           });
-          return nestedResult.record;
+          // Forward the full nested outcome: the CodeAct host dispatcher
+          // aggregates deferred contexts and turn-conclude markers up to
+          // the outer cell (dsh exec.deferContext/concludeTurn semantics).
+          return {
+            record: nestedResult.record,
+            ...(nestedResult.additionalContexts && nestedResult.additionalContexts.length > 0
+              ? { additionalContexts: nestedResult.additionalContexts }
+              : {}),
+            ...(nestedResult.concludesTurn === true ? { concludesTurn: true } : {}),
+          };
         },
       },
       hooks: options.hooks,

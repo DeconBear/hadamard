@@ -105,6 +105,13 @@ class HadamardToolError(RuntimeError):
         super().__init__(message)
         self.tool_name = tool_name
 
+class InvalidOutputError(RuntimeError):
+    def __init__(self, repr_text):
+        super().__init__(
+            "Completion value is not lossless JSON; convert it (e.g. to dict/list/str) before returning. Repr: "
+            + repr_text[:400])
+        self.repr_text = repr_text
+
 NAMESPACE["HadamardToolError"] = HadamardToolError
 
 def host_call(method, input_value=None):
@@ -254,7 +261,10 @@ def structured(value):
         json.dumps(value)
         return {"type": value_type, "value": value, "repr": repr(value)}
     except Exception:
-        return {"type": value_type, "repr": repr(value)}
+        # dsh invalid-output semantics: a completion value that cannot cross
+        # the lossless-JSON boundary fails the cell instead of silently
+        # degrading to a repr the model never asked for.
+        raise InvalidOutputError(repr(value))
 
 def resource_usage():
     try:
@@ -290,6 +300,14 @@ def execute(execution_id, code, tool_name_map=None):
                     "result": structured(last_value),
                     "durationMs": int((time.monotonic() - started) * 1000),
                     "resourceUsage": resource_usage()}
+    except InvalidOutputError as error:
+        # A non-JSON completion value is a classified cell failure, not a
+        # kernel crash: the namespace stays intact for the next cell.
+        envelope = {"v": 1, "type": "result", "executionId": execution_id, "ok": False,
+                    "error": str(error),
+                    "durationMs": int((time.monotonic() - started) * 1000),
+                    "resourceUsage": resource_usage(),
+                    "failureKind": "invalid-output"}
     except BaseException:
         if OUTPUT_LIMIT_HIT:
             envelope = {"v": 1, "type": "result", "executionId": execution_id, "ok": False,
@@ -304,7 +322,7 @@ def execute(execution_id, code, tool_name_map=None):
     finally:
         end_capture(capture)
         if envelope is not None:
-            if OUTPUT_LIMIT_HIT:
+            if OUTPUT_LIMIT_HIT and envelope.get("failureKind") != "invalid-output":
                 envelope["failureKind"] = "output-limit"
             send(fit_envelope(envelope))
         CURRENT_EXECUTION = None
