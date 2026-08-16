@@ -11,10 +11,8 @@
  *
  * @module src/runtime/toolPolicyPipeline
  */
-import { ToolExecutionError } from '../errors.js';
 import type { ToolResultBlockParam } from '../provider/types.js';
 import type {
-  AgentEvent,
   HadamardPermissionDecision,
   ResolvedToolAdapter,
   ResolvedToolExecutionResult,
