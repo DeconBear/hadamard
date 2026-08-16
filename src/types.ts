@@ -1214,6 +1214,12 @@ export interface AgentRunOptions {
    * turn against the active one.
    */
   drainFollowUpInputs?: () => string[];
+  /**
+   * Injected step context (dsh inject target): delivered at the NEXT step
+   * boundary with the tool results, and never keeps the turn alive on its
+   * own (no wake).
+   */
+  drainInjectInputs?: () => string[] | Promise<string[]>;
   /** Override the runtime working directory for this run. */
   workDir?: string;
   /** When parent is in a worktree, inherit the worktree directory. Default: true. */

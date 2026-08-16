@@ -60,6 +60,12 @@ export interface ConversationLifecycleOptions {
 export interface ConversationQueueOptions {
   drainQueuedInputs?: () => string[] | Promise<string[]>;
   drainFollowUpInputs?: () => string[];
+  /**
+   * Injected step context (dsh inject target): delivered at the NEXT step
+   * boundary inside the tool-results user message, and — unlike steering —
+   * never keeps a turn alive on its own (no wake).
+   */
+  drainInjectInputs?: () => string[] | Promise<string[]>;
 }
 
 export interface ConversationPersistenceOptions {
