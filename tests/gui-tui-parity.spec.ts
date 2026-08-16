@@ -375,6 +375,14 @@ describe('TUI and GUI parity', () => {
     expect(js).toContain('defaultBridgeConfigView');
     expect(js).toContain('editingDefaultBridgeConfig');
     expect(js).toContain("setField('bridgeCfgApiKey', cfg ? (cfg.apiKey || '') : '')");
+    // Dedicated Bridge settings panel: bridge-mode switch + configs managed here.
+    expect(html).toContain('data-settings-tab="bridge"');
+    expect(html).toContain('data-settings-panel="bridge"');
+    expect(html).toContain('<h1>Bridge</h1>');
+    expect(html).toContain('id="bridgeModeEnabled"');
+    expect(html).toContain('id="bridgeModeStatus"');
+    expect(js).toContain('{ bridge: { enabled } }');
+    expect(js).toContain("if (active === 'models' || active === 'bridge') renderBridgeConfigs();");
     expect(js).toContain('/api/hooks');
     expect(js).toContain('refreshHooksSettings');
     expect(js).toContain('openTypedHookEditor');
