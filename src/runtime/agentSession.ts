@@ -1,4 +1,4 @@
-﻿import type { MessageParam } from '../provider/types.js';
+import type { MessageParam } from '../provider/types.js';
 
 import type {
   AgentRunOptions,
@@ -91,11 +91,13 @@ interface AgentSessionBindings {
 export interface PendingAgentInputs {
   steering: readonly string[];
   followUps: readonly string[];
+  injects: readonly string[];
 }
 
 export class AgentSession {
   private readonly steeringInputs: string[] = [];
   private readonly followUpInputs: string[] = [];
+  private readonly injectInputs: string[] = [];
 
   constructor(
     private readonly bindings: AgentSessionBindings,
@@ -132,13 +134,14 @@ export class AgentSession {
   }
 
   get pendingInputCount(): number {
-    return this.steeringInputs.length + this.followUpInputs.length;
+    return this.steeringInputs.length + this.followUpInputs.length + this.injectInputs.length;
   }
 
   get pendingInputs(): PendingAgentInputs {
     return {
       steering: [...this.steeringInputs],
       followUps: [...this.followUpInputs],
+      injects: [...this.injectInputs],
     };
   }
 
@@ -171,6 +174,18 @@ export class AgentSession {
     this.followUpInputs.push(normalized);
   }
 
+  /**
+   * Queue step-boundary context (dsh inject target): delivered with the
+   * next tool-results message, and never keeps the turn alive on its own.
+   */
+  inject(input: string): void {
+    const normalized = input.trim();
+    if (!normalized) {
+      throw new Error('Injected input cannot be empty.');
+    }
+    this.injectInputs.push(normalized);
+  }
+
   /** Remove the newest queued follow-up so an interactive editor can recall it. */
   cancelLatestFollowUp(): string | undefined {
     return this.followUpInputs.pop();
@@ -184,6 +199,11 @@ export class AgentSession {
   /** @internal Runtime bridge for the conversation engine. */
   drainFollowUpInputs(): string[] {
     return this.followUpInputs.splice(0);
+  }
+
+  /** @internal Runtime bridge for the conversation engine. */
+  drainInjectInputs(): string[] {
+    return this.injectInputs.splice(0);
   }
 
   async send(

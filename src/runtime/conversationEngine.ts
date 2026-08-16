@@ -1169,6 +1169,8 @@ export async function executeConversation(
     // the same user message as the tool results, so the model sees them on
     // the very next request (mirrors Claude Code's queued-command attachments).
     const queuedInputs = (await options.drainQueuedInputs?.()) ?? [];
+    // dsh inject target: step-boundary context that never wakes the turn.
+    const injectedInputs = (await options.drainInjectInputs?.()) ?? [];
 
     // RestoreCheckpoint may have rewritten the durable transcript during this
     // tool batch. Adopt that snapshot and stop the turn so mid-run persistence
@@ -1254,6 +1256,10 @@ export async function executeConversation(
         ...queuedInputs.map((text) => ({
           type: 'text' as const,
           text: `[User message sent while you were working — factor it into your current task]\n${text}`,
+        })),
+        ...injectedInputs.map((text) => ({
+          type: 'text' as const,
+          text: `[Injected context for the next step]\n${text}`,
         })),
       ],
     };

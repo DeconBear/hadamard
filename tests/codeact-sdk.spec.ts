@@ -118,6 +118,17 @@ describe('renderCodeActHostSdk', () => {
   it('uses the declared default budget', () => {
     expect(DEFAULT_MAX_SDK_CHARS).toBe(24_000);
   });
+
+  it('keeps plan-mode exit reachable from inside run_code programs (C6)', () => {
+    // Under plan mode + ptc the wire carries only run_code; the SDK must
+    // keep ExitPlanMode (and EnterPlanMode) callable from inside programs.
+    const sdk = renderCodeActHostSdk([
+      makeTool('EnterPlanMode', z.strictObject({}), 'Enter plan mode.'),
+      makeTool('ExitPlanMode', z.strictObject({ plan: z.string() }), 'Present a plan.'),
+    ]);
+    expect(sdk).toContain('def ExitPlanMode(');
+    expect(sdk).toContain('def EnterPlanMode(');
+  });
 });
 
 describe('jsonSchemaToPythonType', () => {

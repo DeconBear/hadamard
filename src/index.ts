@@ -321,6 +321,8 @@ export type {
 export { InMemoryContributionToolRegistry, contributionRetryPolicyKey, contributionToolRegistryKey } from './contrib/contributionServices.js';
 export type { ContributionToolRegistry } from './contrib/contributionServices.js';
 export type { ExecuteConversationOptions } from './runtime/conversationPorts.js';
+export { codeDispatchFormatterKey, createCodeDispatchTranscriptContribution, defaultCodeDispatchTranscriptFormatter } from './runtime/codeDispatchTranscript.js';
+export type { CodeDispatchTranscriptFormatter, CodeDispatchTranscriptPayload } from './runtime/codeDispatchTranscript.js';
 export { createBuiltInConversationExtensions, createBuiltInConversationExtensionsContribution, conversationExtensionsFactoryKey } from './runtime/conversationExtensions.js';
 export { ToolPolicyPipeline, createBuiltInToolPolicyPipeline, createBuiltInToolPolicyContribution, toolPolicyFactoryKey } from './runtime/toolPolicyPipeline.js';
 export type { ToolPolicyCall, ToolPostPolicyDecision, ToolPostPolicyListener, ToolPrePolicyListener, ToolPrePolicyState } from './runtime/toolPolicyPipeline.js';

@@ -400,9 +400,9 @@ describe('session steering and follow-up queues', () => {
       session.steer('immediate');
       const snapshot = session.pendingInputs;
 
-      expect(snapshot).toEqual({ steering: ['immediate'], followUps: ['first', 'second'] });
+      expect(snapshot).toEqual({ steering: ['immediate'], followUps: ['first', 'second'], injects: [] });
       expect(session.cancelLatestFollowUp()).toBe('second');
-      expect(session.pendingInputs).toEqual({ steering: ['immediate'], followUps: ['first'] });
+      expect(session.pendingInputs).toEqual({ steering: ['immediate'], followUps: ['first'], injects: [] });
       expect(snapshot.followUps).toEqual(['first', 'second']);
     } finally {
       await sdk.close();
@@ -479,6 +479,73 @@ describe('session steering and follow-up queues', () => {
       expect(result.text).toContain('Follow-up complete');
       expect(sawFollowUp).toBe(true);
       expect(session.pendingInputCount).toBe(0);
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('delivers injected step context with the next tool results (dsh inject target)', async () => {
+    const sessionDirectory = await createSessionDirectory();
+    let sawInject = false;
+    const modelApi = new MockModelApi({
+      create: (request, index) => {
+        if (index === 0) {
+          return makeMessage(
+            [{ type: 'tool_use', id: 'toolu_inject', name: 'inject_tool', input: {} }],
+            'tool_use',
+          );
+        }
+        sawInject = JSON.stringify(request.messages).includes('[Injected context for the next step]');
+        return makeMessage([{ type: 'text', text: 'Injection applied.' }]);
+      },
+    });
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      modelApi,
+    });
+    const session = await sdk.createSession({ title: 'inject' });
+    const injectTool = tool(
+      {
+        name: 'inject_tool',
+        description: 'Queues injected context while a tool is active.',
+        inputSchema: z.strictObject({}),
+      },
+      async () => {
+        session.inject('background context');
+        return 'tool complete';
+      },
+    );
+
+    try {
+      const result = await session.send('Run the inject tool.', { tools: [injectTool] });
+      expect(result.text).toContain('Injection applied');
+      expect(sawInject).toBe(true);
+      expect(session.pendingInputCount).toBe(0);
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('never wakes a natural stop for injected context (no-tool run keeps it pending)', async () => {
+    const sessionDirectory = await createSessionDirectory();
+    const modelApi = new MockModelApi({
+      create: () => makeMessage([{ type: 'text', text: 'Plain answer.' }]),
+    });
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      modelApi,
+    });
+    const session = await sdk.createSession({ title: 'inject-no-wake' });
+    session.inject('context that must not wake the turn');
+
+    try {
+      const result = await session.send('Answer plainly.');
+      expect(result.text).toContain('Plain answer');
+      // The turn stopped naturally; the inject stays queued for the next
+      // step boundary instead of prolonging the run.
+      expect(session.pendingInputs.injects).toEqual(['context that must not wake the turn']);
     } finally {
       await sdk.close();
     }

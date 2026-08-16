@@ -38,6 +38,7 @@ import {
   createBuiltInConversationExtensionsContribution,
 } from './conversationExtensions.js';
 import { createBuiltInToolPolicyContribution, toolPolicyFactoryKey } from './toolPolicyPipeline.js';
+import { codeDispatchFormatterKey, createCodeDispatchTranscriptContribution, defaultCodeDispatchTranscriptFormatter } from './codeDispatchTranscript.js';
 import type { ConversationExtensionPoints } from '../types.js';
 import { resolveHadamardSettingsStore } from '../config/hadamardSettingsStore.js';
 import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
@@ -1167,6 +1168,7 @@ export class HadamardAgentClient {
       createRequestRetryPolicyContribution(config.retryPolicy),
       createBuiltInConversationExtensionsContribution(),
       createBuiltInToolPolicyContribution(),
+      createCodeDispatchTranscriptContribution(),
       createTavilySearchContribution(managedSettings),
       createExaSearchContribution(managedSettings),
     ]);
@@ -3100,6 +3102,12 @@ export class HadamardAgentClient {
             ...(options.drainFollowUpInputs?.() ?? []),
           ]
         : undefined;
+    const drainInjectInputs = options.drainInjectInputs || liveSession
+      ? async () => [
+          ...(liveSession?.drainInjectInputs() ?? []),
+          ...((await options.drainInjectInputs?.()) ?? []),
+        ]
+      : undefined;
 
     let checkpointSession = session ? deepClone(session) : undefined;
     let fileCheckpointStarted = false;
@@ -3199,6 +3207,7 @@ export class HadamardAgentClient {
           toolPresentation,
           drainQueuedInputs,
           drainFollowUpInputs,
+          drainInjectInputs,
           streaming,
           emit: (event: AgentEvent) => {
             this.executions.recordRuntimeEvent(executionIdentity, event);
@@ -3206,21 +3215,16 @@ export class HadamardAgentClient {
             if (event.type === 'tool.code_dispatch') {
               // Structured sub-dispatch audit record: appended to the raw
               // transcript only; the model-visible history still carries just
-              // the outer CodeCell result.
+              // the outer CodeCell result. The formatter is a contribution
+              // seam (dsh tools/code-dispatch-log shape) so a policy can
+              // replace the log copy without touching the program value.
+              const dispatchFormatter = this.contributionHost?.getService(codeDispatchFormatterKey)
+                ?? defaultCodeDispatchTranscriptFormatter;
               transcriptMessages.push({
                 role: 'user',
                 content: [{
                   type: 'text',
-                  text: JSON.stringify({
-                    kind: 'code-dispatch',
-                    rootCallId: event.rootCallId,
-                    subCallId: event.subCallId,
-                    name: event.name,
-                    phase: event.phase,
-                    isError: event.isError ?? false,
-                    ...(event.summary !== undefined ? { summary: event.summary } : {}),
-                    timestamp: event.timestamp,
-                  }),
+                  text: dispatchFormatter({ runId, iteration: event.iteration, event }),
                 }],
               });
             }
