@@ -320,7 +320,10 @@ export type {
 } from './contrib/contributionHost.js';
 export { InMemoryContributionToolRegistry, contributionRetryPolicyKey, contributionToolRegistryKey } from './contrib/contributionServices.js';
 export type { ContributionToolRegistry } from './contrib/contributionServices.js';
+export type { ExecuteConversationOptions } from './runtime/conversationPorts.js';
 export { createBuiltInConversationExtensions, createBuiltInConversationExtensionsContribution, conversationExtensionsFactoryKey } from './runtime/conversationExtensions.js';
+export { ToolPolicyPipeline, createBuiltInToolPolicyPipeline, createBuiltInToolPolicyContribution, toolPolicyFactoryKey } from './runtime/toolPolicyPipeline.js';
+export type { ToolPolicyCall, ToolPostPolicyDecision, ToolPostPolicyListener, ToolPrePolicyListener, ToolPrePolicyState } from './runtime/toolPolicyPipeline.js';
 export { ProgrammaticToolRuntime } from './codeact/programmaticToolRuntime.js';
 export { createRunCodeTool, serializePtcResult, RUN_CODE_TOOL_NAME } from './codeact/runCodeTool.js';
 export { resolveToolPresentation } from './codeact/toolPresentation.js';
