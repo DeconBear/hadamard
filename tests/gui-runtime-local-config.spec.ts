@@ -179,4 +179,56 @@ describe('GUI runtime local config reuse', () => {
       await server.close();
     }
   });
+
+  it('persists the bridge-mode gate from the Bridge settings panel', async () => {
+    const root = await tempRoot('hadamard-gui-bridge-gate-');
+    const userHome = path.join(root, 'home');
+    const workDir = path.join(root, 'work');
+    await mkdir(workDir, { recursive: true });
+    await mkdir(path.join(userHome, '.hadamard'), { recursive: true });
+    const settingsPath = path.join(userHome, '.hadamard', 'settings.json');
+    await writeFile(settingsPath, JSON.stringify({
+      HADAMARD_PROVIDER: 'openai',
+      HADAMARD_API_KEY: 'test-key',
+      bridge: { enabled: true },
+    }), 'utf8');
+
+    const port = 45000 + Math.floor(Math.random() * 10000);
+    const server = await startHadamardGuiServer({
+      workDir,
+      homeDir: userHome,
+      host: '127.0.0.1',
+      port,
+    });
+
+    try {
+      const before = await api<{ bridgeState: { enabled: boolean } }>(server, '/api/state');
+      expect(before.status).toBe(200);
+      expect(before.body.bridgeState.enabled).toBe(true);
+
+      const off = await api<Record<string, unknown>>(server, '/api/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bridge: { enabled: false } }),
+      });
+      expect(off.status).toBe(200);
+      const afterOff = await api<{ bridgeState: { enabled: boolean } }>(server, '/api/state');
+      expect(afterOff.body.bridgeState.enabled).toBe(false);
+      const savedOff = JSON.parse(await readFile(settingsPath, 'utf8')) as { bridge: { enabled: boolean } };
+      expect(savedOff.bridge.enabled).toBe(false);
+
+      const on = await api<Record<string, unknown>>(server, '/api/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bridge: { enabled: true } }),
+      });
+      expect(on.status).toBe(200);
+      const afterOn = await api<{ bridgeState: { enabled: boolean } }>(server, '/api/state');
+      expect(afterOn.body.bridgeState.enabled).toBe(true);
+      const savedOn = JSON.parse(await readFile(settingsPath, 'utf8')) as { bridge: { enabled: boolean } };
+      expect(savedOn.bridge.enabled).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
 });
