@@ -15,7 +15,7 @@ import {
   createHadamardCoreTools,
   renderCodeActHostSdk,
 } from '../../src/index.js';
-import type { AgentEvent } from '../../src/index.js';
+import type { AgentEvent, AgentRunOptions, AgentRunResult } from '../../src/index.js';
 import { PTC_AB_CASES, caseMaxToolIterations } from './cases.js';
 import type { PtcAbArmConfig, PtcAbCase, PtcAbTrialRow } from './types.js';
 
@@ -29,6 +29,17 @@ export interface PtcAbRunConfig {
   modelApi?: import('../../src/index.js').ModelApi;
   /** Factory form so a smoke model can learn the isolated trial workspace path. */
   modelApiFactory?: (workDir: string) => import('../../src/index.js').ModelApi;
+}
+
+/** Wire SDK size for one arm: native presents raw schemas, codeact/ptc present the generated SDK. */
+function armSdkChars(
+  arm: PtcAbArmConfig,
+  tools: ReturnType<typeof createHadamardCoreTools>,
+): number {
+  const presentsNative = arm.agentMode !== 'codeact' && arm.toolPresentation === 'native';
+  return presentsNative
+    ? JSON.stringify(tools.map((entry) => entry.inputJsonSchema)).length
+    : renderCodeActHostSdk(tools).length;
 }
 
 export async function runPtcAbTrial(options: {
@@ -45,10 +56,18 @@ export async function runPtcAbTrial(options: {
   const workDir = path.join(trialRoot, 'workspace');
   const homeDir = path.join(trialRoot, 'home');
   const sessionDirectory = path.join(trialRoot, 'sessions');
+  // Hoisted metric inputs: a mid-trial provider failure still reports the
+  // partial metrics recorded before the failure (harness guideline).
+  const events: AgentEvent[] = [];
+  let tools: ReturnType<typeof createHadamardCoreTools> = [];
+  let sdk: Awaited<ReturnType<typeof createAgentSdk>> | undefined;
+  let result: AgentRunResult | undefined;
+  let sdkChars = 0;
   try {
     await cp(options.sourceWorkspace, workDir, { recursive: true });
-    const tools = createHadamardCoreTools({ cwd: workDir });
-    const sdk = await createAgentSdk({
+    tools = createHadamardCoreTools({ cwd: workDir });
+    sdkChars = armSdkChars(options.arm, tools);
+    sdk = await createAgentSdk({
       workDir,
       homeDir,
       sessionDirectory,
@@ -62,37 +81,34 @@ export async function runPtcAbTrial(options: {
       maxTokens: options.runConfig.maxTokens,
       toolPresentation: options.arm.toolPresentation,
       permissionMode: 'bypassPermissions',
-      permissions: options.testCase.family === 'permission-denial'
-        ? [{ toolName: 'Bash', behavior: 'deny' }]
-        : [],
       tools,
       ...(options.testCase.contextWindowTokens !== undefined
         ? { contextWindowTokens: options.testCase.contextWindowTokens }
         : {}),
     });
-    const events: AgentEvent[] = [];
-    const stream = sdk.stream(options.testCase.prompt, {
+    // The permission-denial family disables Bash at the tool registry via
+    // the internal run option: permission deny rules are unreachable under
+    // bypassPermissions, which is the only mode a deterministic local
+    // harness can run unattended.
+    const streamOptions: AgentRunOptions & { __hadamardDisallowedTools?: string[] } = {
       permissionMode: 'bypassPermissions',
-      permissions: options.testCase.family === 'permission-denial'
-        ? [{ toolName: 'Bash', behavior: 'deny' }]
-        : [],
       maxToolIterations: caseMaxToolIterations(options.testCase),
       agentMode: options.arm.agentMode ?? 'react',
       toolPresentation: options.arm.toolPresentation,
-    });
+      ...(options.testCase.family === 'permission-denial'
+        ? { __hadamardDisallowedTools: ['Bash'] }
+        : {}),
+    };
+    const stream = sdk.stream(options.testCase.prompt, streamOptions as AgentRunOptions);
     const collector = (async () => {
       for await (const event of stream) events.push(event);
     })();
-    const result = await stream.result;
+    result = await stream.result;
     await collector;
-    await sdk.close();
     const requestStarted = events.find(
       (event): event is Extract<AgentEvent, { type: 'request.started' }> => event.type === 'request.started',
     );
     const dispatchCount = events.filter((event) => event.type === 'tool.code_dispatch').length;
-    const sdkChars = options.arm.toolPresentation === 'native'
-      ? JSON.stringify(tools.map((entry) => entry.inputJsonSchema)).length
-      : renderCodeActHostSdk(tools).length;
     const inputTokens = result.usage?.input_tokens ?? 0;
     const outputTokens = result.usage?.output_tokens ?? 0;
     const cacheReadTokens = result.usage?.cache_read_input_tokens ?? 0;
@@ -135,6 +151,10 @@ export async function runPtcAbTrial(options: {
     }
     return row;
   } catch (error) {
+    // Rebuild partial metrics from whatever the failed run already recorded.
+    const requestStarted = events.find(
+      (event): event is Extract<AgentEvent, { type: 'request.started' }> => event.type === 'request.started',
+    );
     return {
       provider: options.runConfig.provider,
       model: options.runConfig.model,
@@ -145,20 +165,24 @@ export async function runPtcAbTrial(options: {
       passed: false,
       detail: 'run error',
       durationMs: Date.now() - started,
-      requestCount: 0,
-      toolCallCount: 0,
-      toolErrors: 0,
-      codeDispatchCount: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      promptCacheHitTokens: 0,
-      fixedSystemToolTokens: 0,
-      sdkChars: 0,
-      answerLength: 0,
+      requestCount: result?.requests.length ?? 0,
+      toolCallCount: result?.toolCalls.length ?? 0,
+      toolErrors: result?.toolCalls.filter((call) => call.isError).length ?? 0,
+      codeDispatchCount: events.filter((event) => event.type === 'tool.code_dispatch').length,
+      inputTokens: result?.usage?.input_tokens ?? 0,
+      outputTokens: result?.usage?.output_tokens ?? 0,
+      cacheReadTokens: result?.usage?.cache_read_input_tokens ?? 0,
+      promptCacheHitTokens: result?.usage?.cache_read_input_tokens ?? 0,
+      fixedSystemToolTokens: requestStarted
+        ? (requestStarted.systemTokenEstimate ?? 0) + (requestStarted.toolTokenEstimate ?? 0)
+        : 0,
+      sdkChars,
+      answerLength: result?.text.length ?? 0,
       error: error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error),
     };
   } finally {
+    // A close failure must never wipe an otherwise completed trial.
+    if (sdk) await sdk.close().catch(() => undefined);
     await rm(trialRoot, { recursive: true, force: true }).catch(() => undefined);
   }
 }
