@@ -736,6 +736,16 @@ async function runClientLifecycleHook(
   });
 }
 
+/** Skill registry composition parts retained for live refreshes. */
+export interface SkillCompositionParts {
+  reusedRuntimeSkills: HadamardSkillDefinition[];
+  hadamardCatalogSkills: HadamardSkillDefinition[];
+  pluginSkillDirectories: string[];
+  explicitSkills: HadamardSkillDefinition[];
+  managedSkills: HadamardSkillDefinition[];
+  disableDefaultSkills: boolean;
+}
+
 export class HadamardAgentClient {
   readonly sessions: AgentSessionsApi;
   readonly agents: HadamardAgentsApi;
@@ -772,6 +782,15 @@ export class HadamardAgentClient {
   /** External-CLI delegation runner (injectable for tests via CreateAgentSdkOptions). */
   private readonly externalAgentRunner: NonNullable<CreateAgentSdkOptions['externalAgentRunner']>;
   private readonly skillDefinitions: Map<string, HadamardSkillDefinition>;
+  /** Skill composition parts retained so a live refresh can rebuild the registry. */
+  private readonly skillComposition: {
+    reusedRuntimeSkills: HadamardSkillDefinition[];
+    hadamardCatalogSkills: HadamardSkillDefinition[];
+    pluginSkillDirectories: string[];
+    explicitSkills: HadamardSkillDefinition[];
+    managedSkills: HadamardSkillDefinition[];
+    disableDefaultSkills: boolean;
+  };
   /** Names of `paths:`-conditional skills activated by touching matching files. */
   private readonly activatedConditionalSkills = new Set<string>();
   private readonly pendingDelegations = new Map<string, PendingDelegationRecord[]>();
@@ -813,6 +832,14 @@ export class HadamardAgentClient {
     private readonly hooks?: HadamardHooks,
     agentDefinitions: HadamardAgentDefinition[] = [],
     skillDefinitions: HadamardSkillDefinition[] = [],
+    skillComposition: SkillCompositionParts = {
+      reusedRuntimeSkills: [],
+      hadamardCatalogSkills: [],
+      pluginSkillDirectories: [],
+      explicitSkills: [],
+      managedSkills: [],
+      disableDefaultSkills: false,
+    },
     defaultPermissionMode?: CreateAgentSdkOptions['permissionMode'],
     defaultPermissions?: CreateAgentSdkOptions['permissions'],
     defaultClassifier?: HadamardToolClassifier,
@@ -915,6 +942,7 @@ export class HadamardAgentClient {
     this.skillDefinitions = new Map(
       skillDefinitions.map(definition => [definition.name, cloneSkillDefinition(definition)]),
     );
+    this.skillComposition = skillComposition;
     this.backgroundTaskManager = new HadamardBackgroundTaskManager(this.backgroundTaskStore);
     this.tasks = new HadamardBackgroundTasksApi(this.backgroundTaskManager);
     this.agents = new HadamardAgentsApi({
@@ -1229,6 +1257,14 @@ export class HadamardAgentClient {
       definition.metadata?.__hadamardExternalSkillProvider === 'hadamard');
     const reusedRuntimeSkills = externalSkills.filter(definition =>
       definition.metadata?.__hadamardExternalSkillProvider !== 'hadamard');
+    const skillComposition: SkillCompositionParts = {
+      reusedRuntimeSkills,
+      hadamardCatalogSkills,
+      pluginSkillDirectories: pluginBundles.flatMap(bundle => bundle.skillDirectories),
+      explicitSkills: options.skills ?? [],
+      managedSkills: [],
+      disableDefaultSkills: options.disableDefaultSkills === true,
+    };
     const skillDefinitions = externalSkillCatalogEnabled
       ? [
           ...reusedRuntimeSkills,
@@ -1253,6 +1289,7 @@ export class HadamardAgentClient {
       const managedRuntime = createManagedPluginRuntime(managedSettings, { cwd: config.workDir });
       defaultTools.push(...managedRuntime.tools);
       skillDefinitions.push(...managedRuntime.skills);
+      skillComposition.managedSkills.push(...managedRuntime.skills);
       runtimeClosers.push(managedRuntime.close);
     }
     // Tools contributed through the runtime contribution host (search providers).
@@ -1274,7 +1311,7 @@ export class HadamardAgentClient {
           sourcePrefix,
           sourceTools,
         }));
-        skillDefinitions.push(createManagedActionSkill({
+        const computerUseSkill = createManagedActionSkill({
           name: 'computer-use',
           description: 'Control the configured desktop through one compact Computer Use dispatcher.',
           whenToUse: 'Use for OS-level desktop interaction that browser automation or shell commands cannot perform.',
@@ -1282,7 +1319,9 @@ export class HadamardAgentClient {
           sourcePrefix,
           sourceTools,
           guidance: ['Focus the intended window before typing or sending keys. Use screenshots to verify visual state.'],
-        }));
+        });
+        skillDefinitions.push(computerUseSkill);
+        skillComposition.managedSkills.push(computerUseSkill);
       }
     }
     if (options.browserUse) {
@@ -1301,14 +1340,16 @@ export class HadamardAgentClient {
           sourcePrefix,
           sourceTools: runtime.tools,
         }));
-        skillDefinitions.push(createManagedActionSkill({
+        const playwrightSkill = createManagedActionSkill({
           name: 'playwright',
           description: 'Navigate, inspect, and interact with a controlled browser through one compact dispatcher.',
           whenToUse: 'Use for deterministic browser automation, page inspection, form interaction, and screenshots.',
           dispatcherName: 'browser_use',
           sourcePrefix,
           sourceTools: runtime.tools,
-        }));
+        });
+        skillDefinitions.push(playwrightSkill);
+        skillComposition.managedSkills.push(playwrightSkill);
         runtimeClosers.push(() => runtime.session.close());
       }
     }
@@ -1352,6 +1393,7 @@ export class HadamardAgentClient {
       options.hooks,
       agentDefinitions,
       skillDefinitions,
+      skillComposition,
       policyPermissionMode(config.effectivePolicy) ?? options.permissionMode,
       [
         ...policyPermissionRules(config.effectivePolicy),
@@ -1932,6 +1974,46 @@ export class HadamardAgentClient {
 
   listSkillDefinitions(): HadamardSkillDefinitionSummary[] {
     return [...this.skillDefinitions.values()].map(summarizeHadamardSkillDefinition);
+  }
+
+  /**
+   * Live-refresh the skill registry from the default directories (with
+   * ~/.hadamard/skills as the first-priority source) plus plugin bundle
+   * roots. Returns the number of added/removed/changed skills so callers
+   * can decide whether the tool surface needs re-folding.
+   */
+  async refreshSkills(): Promise<number> {
+    const refreshed = await loadHadamardSkillDefinitions({
+      homeDir: this.config.homeDir,
+      workDir: this.config.workDir,
+      skillDirectories: this.skillComposition.pluginSkillDirectories,
+      disableDefaultSkills: this.skillComposition.disableDefaultSkills,
+      loadDefaultSkillDirectories: true,
+    });
+    const ordered = [
+      ...this.skillComposition.reusedRuntimeSkills,
+      ...(this.skillComposition.disableDefaultSkills ? [] : getDefaultHadamardBundledSkills()),
+      ...this.skillComposition.hadamardCatalogSkills,
+      ...refreshed,
+      ...this.skillComposition.explicitSkills,
+      ...this.skillComposition.managedSkills,
+    ];
+    const next = new Map<string, HadamardSkillDefinition>();
+    for (const definition of ordered) {
+      next.set(definition.name, cloneSkillDefinition(definition));
+    }
+    let changes = 0;
+    for (const [name, definition] of next) {
+      const previous = this.skillDefinitions.get(name);
+      if (!previous || previous.description !== definition.description
+        || previous.version !== definition.version) changes += 1;
+    }
+    for (const name of this.skillDefinitions.keys()) {
+      if (!next.has(name)) changes += 1;
+    }
+    this.skillDefinitions.clear();
+    for (const [name, definition] of next) this.skillDefinitions.set(name, definition);
+    return changes;
   }
 
   /**
@@ -3022,7 +3104,11 @@ export class HadamardAgentClient {
       if (runCodeTool) goalTools.push(runCodeTool);
     }
 
-    goalTools = await applyResolvedToolDescriptions(goalTools, {
+    // Unfolded snapshot: the per-iteration fold hook re-folds from THIS base
+    // (folding already-folded descriptions never refreshes, because the
+    // folded text is longer than the fresh prompt).
+    const baseGoalTools = goalTools;
+    goalTools = await applyResolvedToolDescriptions(baseGoalTools, {
       workDir,
       permissionMode: options.permissionMode ?? this.defaultPermissionMode,
     });
@@ -3207,6 +3293,17 @@ export class HadamardAgentClient {
           extensions: (options.extensions as ConversationExtensionPoints | undefined)
             ?? this.contributionHost?.getService(conversationExtensionsFactoryKey)?.(),
           toolPolicyFactory: this.contributionHost?.getService(toolPolicyFactoryKey),
+          // Dynamic skills: re-scan and re-fold every iteration so skills
+          // installed/removed mid-run reach the model on the next request.
+          foldToolDescriptions: async () => {
+            const changed = await this.refreshSkills();
+            if (changed === 0) return undefined;
+            goalTools = await applyResolvedToolDescriptions(baseGoalTools, {
+              workDir,
+              permissionMode: options.permissionMode ?? this.defaultPermissionMode,
+            });
+            return goalTools;
+          },
           toolPresentation,
           drainQueuedInputs,
           drainFollowUpInputs,
