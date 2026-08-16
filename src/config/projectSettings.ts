@@ -4,6 +4,7 @@ import path from 'node:path';
 import { getHadamardProjectSessionDirectory } from './projectSessionDirectory.js';
 import type { HadamardRunEffort } from '../contracts/runtimeOptions.js';
 import type { CodeActSettings } from '../codeact/types.js';
+import type { ToolPresentationMode } from '../codeact/presentationTypes.js';
 import {
   isAgentMode,
   type AgentMode,
@@ -35,6 +36,8 @@ export type ProjectSettings = {
   workMode: ProjectWorkMode;
   /** Default execution mode for new/main conversations in this project. */
   agentMode: AgentMode;
+  /** Default tool presentation for this project; absent means the runtime default (native). */
+  toolPresentation?: ToolPresentationMode;
   /** Project-scoped CodeAct capability and backend configuration. */
   codeAct: CodeActSettings;
   customPrompt: string;
@@ -213,6 +216,9 @@ export function normalizeProjectSettings(raw: unknown): ProjectSettings {
       ? raw.workMode
       : DEFAULT_PROJECT_SETTINGS.workMode,
     agentMode: isAgentMode(raw.agentMode) ? raw.agentMode : DEFAULT_PROJECT_SETTINGS.agentMode,
+    ...(raw.toolPresentation === 'native' || raw.toolPresentation === 'ptc' || raw.toolPresentation === 'both'
+      ? { toolPresentation: raw.toolPresentation as ToolPresentationMode }
+      : {}),
     codeAct: normalizeCodeActSettings(raw.codeAct),
     customPrompt: typeof raw.customPrompt === 'string' ? raw.customPrompt : '',
     projectRules: typeof raw.projectRules === 'string' ? raw.projectRules : '',
@@ -308,6 +314,9 @@ export async function writeProjectSettings(
   const next: ProjectSettings = {
     workMode: isProjectWorkMode(patch.workMode) ? patch.workMode : current.workMode,
     agentMode: isAgentMode(patch.agentMode) ? patch.agentMode : current.agentMode,
+    ...(patch.toolPresentation === 'native' || patch.toolPresentation === 'ptc' || patch.toolPresentation === 'both'
+      ? { toolPresentation: patch.toolPresentation as ToolPresentationMode }
+      : {}),
     codeAct: patch.codeAct === undefined
       ? current.codeAct
       : normalizeCodeActSettings({ ...current.codeAct, ...patch.codeAct }),
@@ -330,6 +339,9 @@ export async function writeProjectSettings(
 function normalizeCodeActSettings(value: unknown): CodeActSettings {
   const input = isRecord(value) ? value : {};
   const backend = input.backend === 'container' ? 'container' : 'process';
+  const ptcBackend = input.ptcBackend === 'container' || input.ptcBackend === 'worker-thread'
+    ? input.ptcBackend
+    : 'process';
   const securityMode = input.securityMode === 'enforce' ? 'enforce' : 'trusted';
   const optionalPositiveNumber = (field: string): number | undefined => {
     const candidate = input[field];
@@ -342,6 +354,7 @@ function normalizeCodeActSettings(value: unknown): CodeActSettings {
     // exposes an enable switch: choosing CodeAct/Hybrid is the opt-in.
     enabled: true,
     backend,
+    ...(ptcBackend !== backend ? { ptcBackend } : {}),
     securityMode,
     ...(typeof input.pythonCommand === 'string' && input.pythonCommand.trim()
       ? { pythonCommand: input.pythonCommand.trim() }

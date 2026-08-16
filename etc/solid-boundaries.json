@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "files": {
     "goal/projectGoalStore.ts": { "maxLines": 1013, "reason": "Existing project-goal store debt." },
-    "gui/hadamardGui.ts": { "maxLines": 11023, "reason": "GUI composition root; session-scoped model context selection and prompt-budget display reuse shared model-context helpers." },
+    "gui/hadamardGui.ts": { "maxLines": 11030, "reason": "GUI composition root; session-scoped model context selection and prompt-budget display reuse shared model-context helpers." },
     "gui/hadamardGuiAssets.ts": { "maxLines": 27525, "reason": "Byte-stable embedded GUI renderer; model picker exposes model-declared context-window choices." },
     "gui/transcript/clientBundle.ts": { "maxLines": 1127, "reason": "Byte-stable transcript client bundle." },
     "manager/assistantGlobalTools.ts": { "maxLines": 1149, "reason": "Compatibility factory; new domains belong in providers." },
@@ -16,7 +16,7 @@
     "runtime/externalSkillCatalog.ts": { "maxLines": 1249, "reason": "Existing external skill catalog debt." },
     "runtime/hadamardCompact.ts": { "maxLines": 1403, "reason": "Existing compact engine debt; in-loop compact preserves the latest project-instruction reminder, prices shadowed spans, and supports prune mode plus cache-reusing summary requests." },
     "storage-v2/sqliteStorage.ts": { "maxLines": 1232, "reason": "SQLite infrastructure adapter with segregated public stores." },
-    "tui/hadamardTuiController.ts": { "maxLines": 4948, "reason": "TUI composition/state root; session-scoped model context selection uses shared parsing and model-catalog metadata." },
+    "tui/hadamardTuiController.ts": { "maxLines": 4965, "reason": "TUI composition/state root; session-scoped model context selection uses shared parsing and model-catalog metadata." },
     "types.ts": { "maxLines": 3580, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, a per-run context-window override, the tool scheduling/CodeAct contract surface, retry policy, request proposals, compaction shadow pricing, the per-run conversation-extension override, the orthogonal tool-presentation mode, the ReAct driver's swappable-strategy interfaces, and the nested-tool-execution result (CodeAct turn-control forwarding contract)." }
   },
   "interfaces": {
