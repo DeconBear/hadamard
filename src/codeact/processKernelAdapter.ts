@@ -243,12 +243,13 @@ class JsonLineProcessKernel implements CodeActKernel {
     const active = this.active;
     if (!active || message.executionId !== active.request.executionId || active.settled) return;
     if (message.type === 'stream') {
-      // Capture the display-bounded text first so a hard budget stop still
-      // carries the partial stream it observed.
+      // Capture the full stream (bounded only by the hard byte budget); the
+      // display-size spill at the service layer turns oversized output into
+      // a bounded preview + locator instead of silently dropping the tail.
       if (message.stream === 'stdout') {
-        active.stdout = appendLimited(active.stdout, message.delta, this.options.maxOutputChars);
+        active.stdout += message.delta;
       } else {
-        active.stderr = appendLimited(active.stderr, message.delta, this.options.maxOutputChars);
+        active.stderr += message.delta;
       }
       this.accountOutput(active, Buffer.byteLength(message.delta));
       if (active.settled) return;

@@ -82,7 +82,10 @@ export async function executeConversationToolUse(
   const deferredContexts: { type: 'text'; text: string }[] = [];
   try {
     if (!adapter) {
-      throw new ToolExecutionError(toolUse.name, `No tool named "${toolUse.name}" is currently registered.`);
+      const unknownToolMessage = options.toolPresentation === 'ptc'
+        ? `No tool named "${toolUse.name}" is directly callable: the ptc presentation exposes only run_code. Call this tool from inside a run_code program via the typed SDK instead.`
+        : `No tool named "${toolUse.name}" is currently registered.`;
+      throw new ToolExecutionError(toolUse.name, unknownToolMessage);
     }
     const preToolOutputs = await runTypedLifecycleHooks(
       options,
