@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.18 - 2026-08-16
+
+### Features
+
+- Rename the Bridge tab to Configuration, move it above Agents, and manage local runtime discovery and login checks there
+- Redesign the Devices tab with card headers, status pills, permission scope chips, and clearer pairing and paired-device sections
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.17...v0.4.18
+
 ## v0.4.17 - 2026-08-14
 
 ### Fixes
