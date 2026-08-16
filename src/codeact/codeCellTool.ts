@@ -37,21 +37,19 @@ export function createCodeCellTool(options: CodeActToolOptions): AgentToolDefini
 }
 
 function serializeCodeCellResult(record: CodeCellExecutionRecord): string {
+  // Model-facing projection: host-side bookkeeping (execution/generation/
+  // source hash/record path) stays in the audit record on disk, not in the
+  // prompt (C8: dsh RunCodeOutput.render shape — only the curated outcome).
   return JSON.stringify({
-    executionId: record.executionId,
-    generation: record.generation,
     status: record.status,
     stdout: record.stdout,
     stderr: record.stderr,
     result: record.result,
     error: record.error,
     durationMs: record.durationMs,
-    resourceUsage: record.resourceUsage,
-    artifacts: record.artifacts,
     stateLost: record.stateLost ?? false,
     outputLimit: record.outputLimit ?? false,
     ...(record.failureKind ? { failureKind: record.failureKind } : {}),
-    sourceHash: record.sourceHash,
-    recordPath: record.recordPath,
+    artifacts: record.artifacts,
   }, null, 2);
 }

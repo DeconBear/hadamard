@@ -22,7 +22,7 @@ export class CodeActHostRpcDispatcher {
     private readonly context: ToolExecutionContext,
     private readonly artifacts: CodeActArtifactRecorder,
     private readonly sessionId: string,
-    private readonly maxParallelSubCalls = 8,
+    private readonly maxParallelSubCalls = 10,
   ) {
     for (const tool of tools) {
       this.tools.set(tool.name, tool);

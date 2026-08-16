@@ -39,7 +39,7 @@ export function resolveCodeActSettings(input: CodeActSettings): ResolvedCodeActS
     containerImage: input.containerImage?.trim() || 'python:3.12-alpine',
     containerMemoryMb: clampInteger(input.containerMemoryMb, 512, 64, 32_768),
     containerCpuLimit: clampNumber(input.containerCpuLimit, 1, 0.1, 64),
-    maxParallelSubCalls: clampInteger(input.maxParallelSubCalls, 8, 1, 32),
+    maxParallelSubCalls: clampInteger(input.maxParallelSubCalls, 10, 1, 32),
   };
 }
 
