@@ -38,16 +38,11 @@ export function modelContextWindowLimit(entry: ProviderModelEntry | undefined): 
   return entry?.maxContextWindowTokens ?? entry?.contextWindowTokens;
 }
 
-export function modelContextWindowOptions(entry: ProviderModelEntry | undefined): number[] {
-  const limit = modelContextWindowLimit(entry);
-  if (!limit) return [...STANDARD_CONTEXT_WINDOWS];
-  return [...new Set([
-    ...STANDARD_CONTEXT_WINDOWS.filter(value => value <= limit),
-    entry?.contextWindowTokens,
-    entry?.maxContextWindowTokens,
-    limit,
-  ].filter((value): value is number => typeof value === 'number' && value > 0 && value <= limit))]
-    .sort((left, right) => left - right);
+export function modelContextWindowOptions(_entry: ProviderModelEntry | undefined): number[] {
+  // Every model can select any standard window up to 2m. The declared limit
+  // is ADVISORY (shown as a warning): an unsupported selection fails at the
+  // provider with a clear context-length message instead of being hidden.
+  return [...STANDARD_CONTEXT_WINDOWS];
 }
 
 export function resolveModelContextEntry(
@@ -69,11 +64,13 @@ export function resolveModelContextEntry(
 
 export function clampContextWindowTokens(
   requested: number,
-  entry: ProviderModelEntry | undefined,
+  _entry: ProviderModelEntry | undefined,
 ): number {
-  const normalized = Math.max(1, Math.floor(requested));
-  const limit = modelContextWindowLimit(entry);
-  return limit ? Math.min(normalized, limit) : normalized;
+  // Deliberately NOT clamped to the model limit: the user may select any
+  // standard window (up to 2m) and gets a provider-side error with
+  // guidance when the choice is unsupported (see the request-error
+  // extension's context-length mismatch handling).
+  return Math.max(1, Math.floor(requested));
 }
 
 export function readSessionContextWindow(

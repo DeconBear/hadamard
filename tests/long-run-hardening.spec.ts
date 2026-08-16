@@ -1506,3 +1506,37 @@ describe('prompt cache breakpoints', () => {
     }
   });
 });
+
+describe('context-length mismatch guidance (issue-5)', () => {
+  it('turns a provider context-length rejection into an actionable error', async () => {
+    const sessionDirectory = await createSessionDirectory();
+    const modelApi = new MockModelApi({
+      create: (_request, index) => {
+        if (index === 0) {
+          return makeMessage(
+            [{ type: 'tool_use', id: 'toolu_ctx', name: 'ctx_probe', input: {} }],
+            'tool_use',
+          );
+        }
+        throw new Error('context_length_exceeded: this model maximum context length is 65536 tokens, but you requested 1000000 tokens.');
+      },
+    });
+    const sdk = await createAgentSdk({
+      model: 'test-model',
+      sessionDirectory,
+      modelApi,
+    });
+    const probeTool = tool(
+      { name: 'ctx_probe', description: 'Probe.', inputSchema: z.strictObject({}) },
+      async () => 'probed',
+    );
+    try {
+      await expect(sdk.run('Probe.', { tools: [probeTool] })).rejects.toMatchObject({
+        code: 'CONTEXT_LENGTH_MISMATCH',
+      });
+      await expect(sdk.run('Probe.', { tools: [probeTool] })).rejects.toThrow(/Lower the context length/);
+    } finally {
+      await sdk.close();
+    }
+  });
+});
