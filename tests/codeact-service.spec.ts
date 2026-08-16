@@ -189,17 +189,19 @@ describe('CodeActService process kernel', () => {
           executeTool: async (definition, input, execution) => {
             nestedCalls.push(`${definition.name}:${String((input as { value: string }).value)}:${execution.toolUseId}`);
             return {
-              id: execution.toolUseId,
-              name: definition.name,
-              publicName: definition.name,
-              provider: 'local',
-              input,
-              outputText: 'nested-result',
-              output: { nested: true },
-              isError: false,
-              startedAt: new Date().toISOString(),
-              completedAt: new Date().toISOString(),
-              durationMs: 0,
+              record: {
+                id: execution.toolUseId,
+                name: definition.name,
+                publicName: definition.name,
+                provider: 'local',
+                input,
+                outputText: 'nested-result',
+                output: { nested: true },
+                isError: false,
+                startedAt: new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+                durationMs: 0,
+              },
             };
           },
         },
@@ -236,17 +238,19 @@ describe('CodeActService process kernel', () => {
             execution.signal?.addEventListener('abort', () => {
               nestedAborted = true;
               resolve({
-                id: execution.toolUseId,
-                name: definition.name,
-                publicName: definition.name,
-                provider: 'local',
-                input,
-                outputText: 'aborted',
-                output: { aborted: true },
-                isError: true,
-                startedAt: new Date().toISOString(),
-                completedAt: new Date().toISOString(),
-                durationMs: 0,
+                record: {
+                  id: execution.toolUseId,
+                  name: definition.name,
+                  publicName: definition.name,
+                  provider: 'local',
+                  input,
+                  outputText: 'aborted',
+                  output: { aborted: true },
+                  isError: true,
+                  startedAt: new Date().toISOString(),
+                  completedAt: new Date().toISOString(),
+                  durationMs: 0,
+                },
               });
             }, { once: true });
           }),
@@ -611,6 +615,122 @@ describe('CodeActService process kernel', () => {
     expect(JSON.stringify(invocation)).not.toContain('must-not-pass');
     const containerEnvironment = invocation.args.filter((value, index) => invocation.args[index - 1] === '--env');
     expect(containerEnvironment.some(value => value.startsWith('PATH='))).toBe(false);
+  });
+
+  it('forwards successful nested turn-control (deferred contexts + conclude) to the cell owner', async () => {
+    const cwd = await workspace();
+    const instance = service();
+    const echo = tool(
+      {
+        name: 'Echo',
+        description: 'Echoes a value.',
+        inputSchema: z.strictObject({}),
+        isReadOnly: () => true,
+      },
+      async () => ({ nested: true }),
+    );
+    const deferred: { type: 'text'; text: string }[] = [];
+    let concluded = false;
+    const result = await instance.execute({
+      language: 'python',
+      code: 'hadamard.tool("Echo", {})',
+      context: context(cwd, {
+        runtime: {
+          executeTool: async (definition, input, execution) => ({
+            record: {
+              id: execution.toolUseId,
+              name: definition.name,
+              publicName: definition.name,
+              provider: 'local',
+              input,
+              outputText: 'nested-result',
+              output: { nested: true },
+              isError: false,
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              durationMs: 0,
+            },
+            additionalContexts: [{ type: 'text', text: 'deferred-note' }],
+            concludesTurn: true,
+          }),
+        },
+        deferAdditionalContext: item => { deferred.push(item); },
+        concludeTurn: () => { concluded = true; },
+      }),
+      hostTools: [echo],
+    });
+    expect(result.status).toBe('completed');
+    expect(deferred).toEqual([{ type: 'text', text: 'deferred-note' }]);
+    expect(concluded).toBe(true);
+  });
+
+  it('forwards no turn-control from failed nested calls', async () => {
+    const cwd = await workspace();
+    const instance = service();
+    const failing = tool(
+      {
+        name: 'Failing',
+        description: 'Always fails.',
+        inputSchema: z.strictObject({}),
+        isReadOnly: () => true,
+      },
+      async () => { throw new Error('boom'); },
+    );
+    const deferred: { type: 'text'; text: string }[] = [];
+    let concluded = false;
+    const result = await instance.execute({
+      language: 'python',
+      code: 'hadamard.tool("Failing", {})',
+      context: context(cwd, {
+        runtime: {
+          executeTool: async (definition, input, execution) => ({
+            record: {
+              id: execution.toolUseId,
+              name: definition.name,
+              publicName: definition.name,
+              provider: 'local',
+              input,
+              outputText: 'boom',
+              output: { error: 'boom' },
+              isError: true,
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              durationMs: 0,
+            },
+            additionalContexts: [{ type: 'text', text: 'must-not-leak' }],
+            concludesTurn: true,
+          }),
+        },
+        deferAdditionalContext: item => { deferred.push(item); },
+        concludeTurn: () => { concluded = true; },
+      }),
+      hostTools: [failing],
+    });
+    expect(result.status).toBe('failed');
+    expect(deferred).toEqual([]);
+    expect(concluded).toBe(false);
+  });
+
+  it('classifies a non-JSON completion value as invalid-output and keeps the kernel alive', async () => {
+    const cwd = await workspace();
+    const instance = service();
+    const invalid = await instance.execute({
+      language: 'python',
+      code: '{1, 2, 3}',
+      context: context(cwd, { toolUseId: 'invalid-cell' }),
+    });
+    expect(invalid.status).toBe('failed');
+    expect(invalid.failureKind).toBe('invalid-output');
+    expect(invalid.stateLost).toBe(false);
+    expect(invalid.error).toContain('not lossless JSON');
+    const recovered = await instance.execute({
+      language: 'python',
+      code: '6 * 7',
+      context: context(cwd, { toolUseId: 'recovered-cell', iteration: 2 }),
+    });
+    expect(recovered.status).toBe('completed');
+    expect(recovered.result?.value).toBe(42);
+    expect(recovered.generation).toBe(invalid.generation);
   });
 });
 
