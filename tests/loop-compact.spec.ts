@@ -507,6 +507,42 @@ describe('compactHadamardConversationIfNeeded', () => {
     expect(finalOutcome.compacted).toBe(false);
     expect(attempts).toBe(3);
   });
+
+  it('carves oversized newest messages out, compacts the rest, and appends them verbatim (issue-5 fallback)', async () => {
+    const modelApi = new MockModelApi({
+      create: () => ({
+        id: 'summary-1',
+        type: 'message',
+        role: 'assistant',
+        model: 'test-model',
+        content: [{ type: 'text', text: 'compacted summary' }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: 5 },
+      } as Message),
+    });
+    const big = 'x'.repeat(20_000);
+    const messages: MessageParam[] = [
+      { role: 'user', content: 'first question' },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'tu1', name: 'Read', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: big }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'final answer ' + big }] },
+    ];
+    const outcome = await compactHadamardConversationIfNeeded(messages, {
+      model: 'test-model',
+      modelApi,
+      compactConfig: baseCompactConfig({}),
+      maxTokens: 1_000,
+      runKey: 'run-tail-preserve',
+      force: true,
+    });
+    expect(outcome.compacted).toBe(true);
+    // The newest message survives verbatim at the end; the summary leads.
+    expect(outcome.messages[0]).toMatchObject({ role: 'user' });
+    expect(JSON.stringify(outcome.messages[0])).toContain('compacted summary');
+    expect(outcome.messages.at(-1)).toEqual(messages.at(-1));
+    expect(JSON.stringify(outcome.messages)).toContain('final answer');
+  });
 });
 
 describe('conversation engine in-loop auto-compact', () => {

@@ -608,33 +608,39 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const limit = modelContextWindowLimit(entry);
     const available = modelContextWindowOptions(entry);
     let selected = value ? parseContextWindowTokens(value) : undefined;
-    if (value && (!selected || (limit && selected > limit))) {
-      appendStatic([
-        ...formatErrorLine(limit
-          ? `Invalid context window: ${value}. Model limit is ${formatContextWindowTokens(limit)}.`
-          : `Invalid context window: ${value}.`),
-        '',
-      ]);
+    if (value && !selected) {
+      appendStatic([...formatErrorLine(`Invalid context window: ${value}.`), '']);
       return;
     }
     if (!value) {
       const choice = await selectItem({
         title: 'Context window',
         subtitle: limit
-          ? `${model} · limit ${formatContextWindowTokens(limit)}`
+          ? `${model} · declared ${formatContextWindowTokens(limit)} — selecting above it fails at the provider`
           : `${model} · model limit not declared`,
         searchable: false,
         items: available.map(tokens => ({
           id: String(tokens),
           label: formatContextWindowTokens(tokens),
-          description: tokens === entry?.contextWindowTokens ? 'model default' : 'session limit',
+          description: tokens === entry?.contextWindowTokens
+            ? 'model default'
+            : limit && tokens > limit
+              ? `over declared ${formatContextWindowTokens(limit)} — may fail`
+              : 'session limit',
         })),
       });
       if (!choice) return;
       selected = Number(choice);
     }
     await session.mergeMetadata({ [HADAMARD_CONTEXT_WINDOW_METADATA_KEY]: selected });
-    appendStatic([...formatInfoLine(`context window: ${formatContextWindowTokens(selected!)}`), '']);
+    const overLimit = limit !== undefined && selected !== undefined && selected > limit;
+    appendStatic([
+      ...formatInfoLine(`context window: ${formatContextWindowTokens(selected!)}`),
+      ...(overLimit
+        ? formatInfoLine(`Warning: ${formatContextWindowTokens(selected!)} exceeds the model's declared ${formatContextWindowTokens(limit!)}. If requests fail with a context-length error, lower this with /model context.`)
+        : []),
+      '',
+    ]);
   }
   function clearBridgeSelection(): void {
     bridgeMode = false;

@@ -67,6 +67,7 @@ import {
   getReportedInputTokens,
   getRequestByteLength,
   isAnthropicAPI,
+  isContextLengthMismatchError,
   sleep,
 } from './modelRequestPolicy.js';
 
@@ -661,6 +662,16 @@ export async function executeConversation(
         iteration -= 1;
         iterationReused = true;
         continue;
+      }
+      // Context-length mismatch (issue-5): the selected window is larger
+      // than the model accepts. Surface an actionable error telling the
+      // user to lower the context length instead of a raw provider string.
+      if (isContextLengthMismatchError(error)) {
+        throw new HadamardSdkError(
+          `The selected context window appears larger than the model accepts. Lower the context length (TUI: /model context; GUI: model picker → context window) and retry. Original error: ${asError(error).message}`,
+          'CONTEXT_LENGTH_MISMATCH',
+          { cause: error },
+        );
       }
       throw error;
     }

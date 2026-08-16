@@ -241,3 +241,29 @@ export function isAnthropicAPI(baseURL?: string): boolean {
     return true;
   }
 }
+
+const CONTEXT_LENGTH_MISMATCH_PATTERNS = [
+  'context_length_exceeded',
+  'context length',
+  'maximum context',
+  'max context',
+  'context window',
+  'prompt is too long',
+  'exceeds the maximum',
+  'too many tokens',
+  'token limit exceeded',
+  'input length',
+  '上下文长度',
+  '超过最大',
+] as const;
+
+/**
+ * Detect provider rejections caused by a context-window selection the model
+ * cannot serve. The runtime turns these into a friendly, actionable error
+ * telling the user to lower the configured context length.
+ */
+export function isContextLengthMismatchError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const normalized = error.message.toLowerCase();
+  return CONTEXT_LENGTH_MISMATCH_PATTERNS.some(pattern => normalized.includes(pattern));
+}
