@@ -434,6 +434,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   const flusher = new StreamFlusher(() => screen.width);
 
   let running = false;
+  let queuedConfirmActive = false;
   let commandBusy = false;
   let shuttingDown = false;
   /** Follow-up pulled out of the queue into the editor; restored if abandoned. */
@@ -1333,6 +1334,9 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const lines: string[] = [];
     let promptCursor: { line: number; column: number } | undefined;
     lines.push(...buildStatusLine());
+    if (queuedConfirmActive && !running) {
+      lines.push(...formatInfoLine('Stopped · queued message ready: press Enter to send, ESC to discard.'));
+    }
     if (running && session.pendingInputCount > 0) {
       lines.push(...buildPendingInputPanel());
     }
@@ -4816,6 +4820,20 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const text = value.trim();
     menuSelected = 0;
     if (!text) {
+      // Stopped-task confirmation: with queued messages still pending and
+      // the editor empty, Enter starts a continuation run that delivers
+      // them (follow-ups ride the natural stop, steering/injects ride the
+      // first step boundary).
+      if (queuedConfirmActive && !running && session.pendingInputCount > 0) {
+        queuedConfirmActive = false;
+        const followUp = session.cancelLatestFollowUp();
+        if (followUp) {
+          void startRun(followUp);
+          return;
+        }
+        void startRun('Continue the previous task.');
+        return;
+      }
       restoreRecalledFollowUpIfAbandoned();
       renderDynamic();
       return;
@@ -4877,6 +4895,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       },
       shutdown: () => { void shutdown(0); },
       submit: mode => { void submit(mode); },
+      hasQueuedInputs: () => session.pendingInputCount > 0,
+      setQueuedConfirm: value => {
+        queuedConfirmActive = value;
+        renderDynamic();
+      },
       recallFollowUp: () => recallLatestFollowUp(session),
       setRecalledFollowUp: value => { recalledFollowUp = value; },
       restoreAbandonedRecall: restoreRecalledFollowUpIfAbandoned,

@@ -28,6 +28,13 @@ export interface TuiInputRunPort {
   abort(): boolean;
   shutdown(): void;
   submit(mode?: ActiveInputMode): void;
+  /** Whether queued messages exist in the session (steering/follow-up/inject). */
+  hasQueuedInputs(): boolean;
+  /**
+   * Toggle the "stopped, queued message awaiting confirmation" state.
+   * The frame renders a persistent hint while it is active.
+   */
+  setQueuedConfirm(active: boolean): void;
   recallFollowUp(): string | undefined;
   setRecalledFollowUp(value: string): void;
   restoreAbandonedRecall(): void;
@@ -58,6 +65,8 @@ export interface TuiInputControllerOptions {
 export class TuiInputController {
   private ctrlCCount = 0;
   private ctrlCTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True while a stopped task left the editor (or the session queue) awaiting Enter confirmation. */
+  private queuedConfirm = false;
 
   constructor(private readonly options: TuiInputControllerOptions) {}
 
@@ -219,7 +228,17 @@ export class TuiInputController {
           return;
         }
         if (run.isRunning() && run.abort()) {
-          // Active request interrupted.
+          // Active request interrupted; a typed/queued message awaits Enter.
+          if (!editor.isEmpty() || run.hasQueuedInputs()) {
+            this.queuedConfirm = true;
+            run.setQueuedConfirm(true);
+          }
+        } else if (this.queuedConfirm) {
+          this.queuedConfirm = false;
+          run.setQueuedConfirm(false);
+          editor.clear();
+          completions.setMenuSelected(0);
+          run.restoreAbandonedRecall();
         } else if (!editor.isEmpty()) {
           editor.clear();
           completions.setMenuSelected(0);
@@ -265,6 +284,8 @@ export class TuiInputController {
           break;
         }
         run.submit();
+        this.queuedConfirm = false;
+        run.setQueuedConfirm(false);
         return;
       case 'enter':
         if (key.shift && run.isRunning()) {
@@ -275,7 +296,19 @@ export class TuiInputController {
         break;
       case 'escape':
         if (run.isRunning() && run.abort()) {
-          // Active request interrupted.
+          // Active request interrupted. A message already typed (or queued
+          // in the session) is kept and marked as awaiting confirmation.
+          if (!editor.isEmpty() || run.hasQueuedInputs()) {
+            this.queuedConfirm = true;
+            run.setQueuedConfirm(true);
+          }
+        } else if (this.queuedConfirm) {
+          // Second ESC cancels the queued confirmation and clears the editor.
+          this.queuedConfirm = false;
+          run.setQueuedConfirm(false);
+          editor.clear();
+          completions.setMenuSelected(0);
+          run.restoreAbandonedRecall();
         } else if (!editor.isEmpty()) {
           editor.clear();
           completions.setMenuSelected(0);
