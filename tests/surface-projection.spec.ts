@@ -340,7 +340,7 @@ describe('durable surface projection', () => {
       { name: 'outer_dispatch', description: 'Dispatches a nested tool.', inputSchema: z.strictObject({}), isReadOnly: () => true },
       async (_input, context) => {
         const record = await context.runtime?.executeTool?.(inner, {}, { toolUseId: 'nested-1' });
-        return `nested said: ${String(record?.output ?? '')}`;
+        return `nested said: ${String(record?.record.output ?? '')}`;
       },
     );
     const harness = await buildHarness({

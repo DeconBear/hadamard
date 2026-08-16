@@ -138,6 +138,16 @@ export class CodeActService {
       startedAt,
       completedAt,
       };
+      // Forward successful nested tools' turn-control surface (dsh
+      // exec.deferContext / exec.concludeTurn): only a completed cell may
+      // carry them, mirroring the engine's transactional rule.
+      if (result.status === 'completed') {
+        const nestedContexts = dispatcher.takeDeferredContexts();
+        for (const nestedContext of nestedContexts) {
+          input.context.deferAdditionalContext?.(nestedContext);
+        }
+        if (dispatcher.turnConcluded) input.context.concludeTurn?.();
+      }
       record.recordPath = await this.artifacts.record(input.context.cwd, record);
       const eventType = result.status === 'completed'
         ? 'code_cell.completed'

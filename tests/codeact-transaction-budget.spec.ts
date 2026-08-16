@@ -182,17 +182,19 @@ describe('CodeAct transaction and budget contract', () => {
             execution.signal?.addEventListener('abort', () => {
               nestedAborted = true;
               resolve({
-                id: execution.toolUseId,
-                name: definition.name,
-                publicName: definition.name,
-                provider: 'local',
-                input,
-                outputText: 'aborted',
-                output: { aborted: true },
-                isError: true,
-                startedAt: new Date().toISOString(),
-                completedAt: new Date().toISOString(),
-                durationMs: 0,
+                record: {
+                  id: execution.toolUseId,
+                  name: definition.name,
+                  publicName: definition.name,
+                  provider: 'local',
+                  input,
+                  outputText: 'aborted',
+                  output: { aborted: true },
+                  isError: true,
+                  startedAt: new Date().toISOString(),
+                  completedAt: new Date().toISOString(),
+                  durationMs: 0,
+                },
               });
             }, { once: true });
           }),

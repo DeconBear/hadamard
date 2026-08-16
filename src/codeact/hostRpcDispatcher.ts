@@ -14,6 +14,8 @@ import type {
 
 export class CodeActHostRpcDispatcher {
   private readonly tools = new Map<string, AgentToolDefinition>();
+  private readonly deferredContexts: { type: 'text'; text: string }[] = [];
+  private concludedTurn = false;
 
   constructor(
     tools: readonly AgentToolDefinition[],
@@ -26,6 +28,19 @@ export class CodeActHostRpcDispatcher {
       this.tools.set(tool.name, tool);
       for (const alias of tool.aliases ?? []) this.tools.set(alias, tool);
     }
+  }
+
+  /**
+   * Successful nested calls' deferred contexts and turn-conclude markers,
+   * surfaced to the cell owner after the kernel settles (dsh forwarding).
+   * Only completed cell runs may consume them — a failed cell forwards none.
+   */
+  takeDeferredContexts(): { type: 'text'; text: string }[] {
+    return this.deferredContexts.splice(0);
+  }
+
+  get turnConcluded(): boolean {
+    return this.concludedTurn;
   }
 
   /**
@@ -147,14 +162,21 @@ export class CodeActHostRpcDispatcher {
     const toolUseId = `codeact-host-${randomUUID()}`;
     const nestedExecutor = this.context.runtime?.executeTool;
     if (nestedExecutor) {
-      const record = await nestedExecutor(definition, input, {
+      const nested = await nestedExecutor(definition, input, {
         toolUseId,
         signal: this.context.signal,
       });
-      if (record.isError) {
-        return { id: request.id, ok: false, error: record.outputText || `Host tool ${definition.name} failed.` };
+      if (nested.record.isError) {
+        return { id: request.id, ok: false, error: nested.record.outputText || `Host tool ${definition.name} failed.` };
       }
-      return { id: request.id, ok: true, result: record.output ?? record.outputText };
+      // Forward the successful nested outcome's turn-control surface: the
+      // cell owner aggregates these after settle (dsh exec.deferContext /
+      // exec.concludeTurn). Failed nested calls carry neither (transactional).
+      if (nested.additionalContexts && nested.additionalContexts.length > 0) {
+        this.deferredContexts.push(...nested.additionalContexts);
+      }
+      if (nested.concludesTurn === true) this.concludedTurn = true;
+      return { id: request.id, ok: true, result: nested.record.output ?? nested.record.outputText };
     }
 
     // Standalone CodeActService consumers do not have a conversation runtime.
