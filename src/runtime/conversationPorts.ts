@@ -83,6 +83,10 @@ export interface ConversationStrategyOptions {
   extensions?: import('../types.js').ConversationExtensionPoints;
   /** How tools are presented on the wire: native JSON schemas, one stateless run_code wire tool, or both. */
   toolPresentation?: import('../codeact/presentationTypes.js').ToolPresentationMode;
+  /** Per-run tool policy pipeline (pre/post waterfalls); defaults to the built-ins. */
+  toolPolicy?: ToolPolicyPort;
+  /** Factory resolving the tool policy pipeline for this run (contribution seam). */
+  toolPolicyFactory?: (options: ExecuteConversationOptions) => ToolPolicyPort;
 }
 
 /** Compatibility composite; collaborators consume the smaller role interfaces above. */
@@ -94,3 +98,21 @@ export interface ExecuteConversationOptions
     ConversationPersistenceOptions,
     ConversationStrategyOptions,
     ConversationRuntimeDependencies {}
+/**
+ * Structural port for the per-tool policy pipeline. Declared here (no
+ * imports) so the pipeline module can implement it without a cycle:
+ * conversationPorts stays a leaf of the import graph.
+ */
+export interface ToolPolicyPort {
+  runPre(call: unknown): Promise<{
+    behavior: 'allow' | 'deny' | 'ask';
+    updatedInput?: unknown;
+    reason?: string;
+    decision?: { behavior?: 'allow' | 'deny'; source?: string; updatedInput?: unknown };
+    explicitApproval?: boolean;
+  }>;
+  runPost(call: unknown, execution: unknown): Promise<
+    | { kind: 'accept'; content?: unknown; additionalContexts?: { type: 'text'; text: string }[] }
+    | { kind: 'block'; reason: string }
+  >;
+}

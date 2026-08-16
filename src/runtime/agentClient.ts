@@ -37,6 +37,7 @@ import {
   conversationExtensionsFactoryKey,
   createBuiltInConversationExtensionsContribution,
 } from './conversationExtensions.js';
+import { createBuiltInToolPolicyContribution, toolPolicyFactoryKey } from './toolPolicyPipeline.js';
 import type { ConversationExtensionPoints } from '../types.js';
 import { resolveHadamardSettingsStore } from '../config/hadamardSettingsStore.js';
 import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
@@ -1165,6 +1166,7 @@ export class HadamardAgentClient {
     await contributionHost.loadMany([
       createRequestRetryPolicyContribution(config.retryPolicy),
       createBuiltInConversationExtensionsContribution(),
+      createBuiltInToolPolicyContribution(),
       createTavilySearchContribution(managedSettings),
       createExaSearchContribution(managedSettings),
     ]);
@@ -3193,6 +3195,7 @@ export class HadamardAgentClient {
           // contribution host's factory, then the engine's built-ins.
           extensions: (options.extensions as ConversationExtensionPoints | undefined)
             ?? this.contributionHost?.getService(conversationExtensionsFactoryKey)?.(),
+          toolPolicyFactory: this.contributionHost?.getService(toolPolicyFactoryKey),
           toolPresentation,
           drainQueuedInputs,
           drainFollowUpInputs,
