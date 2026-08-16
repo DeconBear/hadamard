@@ -1,4 +1,4 @@
-﻿import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { MessageParam } from '../provider/types.js';
@@ -407,13 +407,13 @@ export async function loadHadamardSkillDefinitions(options: {
     loadedFrom: HadamardSkillLoadedFrom;
   }> = [];
 
+  const defaultDirectories: Array<{
+    path: string;
+    source: HadamardSkillSource;
+    loadedFrom: HadamardSkillLoadedFrom;
+  }> = [];
   if (options.loadDefaultSkillDirectories !== false) {
-    directories.push(
-      {
-        path: path.join(options.homeDir, 'skills'),
-        source: 'user',
-        loadedFrom: 'skills',
-      },
+    defaultDirectories.push(
       {
         path: path.join(options.workDir, '.hadamard', 'skills'),
         source: 'project',
@@ -431,6 +431,17 @@ export async function loadHadamardSkillDefinitions(options: {
     directories.push({
       path: directory,
       source: 'project',
+      loadedFrom: 'skills',
+    });
+  }
+  directories.push(...defaultDirectories);
+  // User skills load LAST so a same-name skill in ~/.hadamard/skills wins
+  // over every other source (first-priority path: the merge below keeps the
+  // last definition for a name).
+  if (options.loadDefaultSkillDirectories !== false) {
+    directories.push({
+      path: path.join(options.homeDir, 'skills'),
+      source: 'user',
       loadedFrom: 'skills',
     });
   }
