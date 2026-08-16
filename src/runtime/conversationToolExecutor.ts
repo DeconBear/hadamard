@@ -12,7 +12,6 @@ import type {
   ToolCallProgress,
 } from '../types.js';
 import { withDeadline } from './deadline.js';
-import { decideHadamardToolPermission } from './hadamardPermissions.js';
 import { asError, deepClone, nowIso } from './helpers.js';
 import { ensureNotAborted } from './modelRequestPolicy.js';
 import { markExplicitSafetyApproval } from './safetyChecks.js';

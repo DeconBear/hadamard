@@ -105,7 +105,7 @@ import { McpConnectionManager } from '../mcp/connectionManager.js';
 import { PluginLoader } from '../plugins/pluginLoader.js';
 import { PluginPackageStore } from '../plugins/pluginPackageStore.js';
 import { PluginTrustStore } from '../plugins/pluginTrustStore.js';
-import { HadamardSdkError, RunAbortedError, SessionNotFoundError } from '../errors.js';
+import { RunAbortedError, SessionNotFoundError } from '../errors.js';
 import { AgentExecutionStore } from '../storage/agentExecutionStore.js';
 import { BackgroundTaskStore } from '../storage/backgroundTaskStore.js';
 import { MailboxStore } from '../storage/mailboxStore.js';
