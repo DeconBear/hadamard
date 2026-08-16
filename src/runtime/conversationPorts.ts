@@ -93,6 +93,12 @@ export interface ConversationStrategyOptions {
   toolPolicy?: ToolPolicyPort;
   /** Factory resolving the tool policy pipeline for this run (contribution seam). */
   toolPolicyFactory?: (options: ExecuteConversationOptions) => ToolPolicyPort;
+  /**
+   * Per-iteration dynamic tool refresh: returns freshly folded tool
+   * definitions when the tool surface changed (e.g. skills installed
+   * mid-run), or undefined to keep the current wire surface.
+   */
+  foldToolDescriptions?: () => Promise<import('../types.js').AgentToolDefinition[] | undefined>;
 }
 
 /** Compatibility composite; collaborators consume the smaller role interfaces above. */

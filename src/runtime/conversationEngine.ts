@@ -194,35 +194,60 @@ export async function executeConversation(
     }
   }
 
-  const resolvedTools = await options.mcpManager.resolveToolAdapters(
-    options.tools ?? [],
-    options.mcpServers ?? [],
-    { signal: options.signal, timeoutMs: options.config.mcpTimeoutMs },
-  );
   // Tool presentation (native / PTC / both) decides the wire-level tools; the
   // execution registry (toolMap) stays complete so host-tool dispatch inside
   // run_code programs keeps the same permission path as direct calls.
-  const presentation = resolveToolPresentation({
+  // `let`-bound because the per-iteration fold hook can refresh the whole
+  // wire surface (dynamic skills change tool descriptions mid-run).
+  let currentToolDefinitions = options.tools ?? [];
+  let resolvedTools = await options.mcpManager.resolveToolAdapters(
+    currentToolDefinitions,
+    options.mcpServers ?? [],
+    { signal: options.signal, timeoutMs: options.config.mcpTimeoutMs },
+  );
+  let presentation = resolveToolPresentation({
     mode: options.toolPresentation,
     resolvedTools,
-    sdkTools: options.tools ?? [],
+    sdkTools: currentToolDefinitions,
   });
-  const providerTools = presentation.providerTools;
+  let providerTools = presentation.providerTools;
   const baseSystemPrompt = options.systemPrompt ?? options.config.systemPrompt;
-  const systemPrompt = typeof baseSystemPrompt === 'string'
+  let systemPrompt = typeof baseSystemPrompt === 'string'
     ? `${baseSystemPrompt}\n\n${presentation.instructions}`.replace(/\n+$/u, '')
     : (presentation.instructions || undefined);
-  const fixedRequestBreakdown = estimateRequestTokenBreakdown({
+  let fixedRequestBreakdown = estimateRequestTokenBreakdown({
     systemPrompt,
     tools: providerTools,
     messageTokens: 0,
   });
-  const fixedRequestTokens = fixedRequestBreakdown.uncalibratedTokens;
-  const toolMap = new Map<string, (typeof resolvedTools)[number]>();
-  for (const tool of resolvedTools) {
-    toolMap.set(tool.publicName, tool);
-    for (const alias of tool.aliases ?? []) toolMap.set(alias, tool);
-  }
+  let fixedRequestTokens = fixedRequestBreakdown.uncalibratedTokens;
+  let toolMap = buildConversationToolMap(resolvedTools);
+
+  /** Rebuild the wire surface from freshly folded tool definitions. */
+  const refreshWireTools = async (definitions: readonly import('../types.js').AgentToolDefinition[]): Promise<void> => {
+    currentToolDefinitions = definitions as import('../types.js').AgentToolDefinition[];
+    resolvedTools = await options.mcpManager.resolveToolAdapters(
+      currentToolDefinitions,
+      options.mcpServers ?? [],
+      { signal: options.signal, timeoutMs: options.config.mcpTimeoutMs },
+    );
+    presentation = resolveToolPresentation({
+      mode: options.toolPresentation,
+      resolvedTools,
+      sdkTools: currentToolDefinitions,
+    });
+    providerTools = presentation.providerTools;
+    systemPrompt = typeof baseSystemPrompt === 'string'
+      ? `${baseSystemPrompt}\n\n${presentation.instructions}`.replace(/\n+$/u, '')
+      : (presentation.instructions || undefined);
+    fixedRequestBreakdown = estimateRequestTokenBreakdown({
+      systemPrompt,
+      tools: providerTools,
+      messageTokens: 0,
+    });
+    fixedRequestTokens = fixedRequestBreakdown.uncalibratedTokens;
+    toolMap = buildConversationToolMap(resolvedTools);
+  };
   const requestSummaries: AgentRequestSummary[] = [];
   const toolCalls: AgentToolCallRecord[] = [];
   const permissionDecisions: HadamardPermissionDecision[] = [];
@@ -297,6 +322,22 @@ export async function executeConversation(
       });
     }
     iterationReused = false;
+
+    // Dynamic tool surface: skills (and other prompt() sources) change while
+    // a run is live, so the composition root may re-fold descriptions each
+    // iteration. When it returns updated definitions, the whole wire surface
+    // (adapters, presentation, system prompt) rebuilds before the request.
+    if (options.foldToolDescriptions) {
+      try {
+        const foldedTools = await options.foldToolDescriptions();
+        if (foldedTools && foldedTools.length > 0) {
+          await refreshWireTools(foldedTools);
+        }
+      } catch {
+        // A refresh failure must never break the turn: keep the previous
+        // wire surface and let the next iteration try again.
+      }
+    }
 
     // In-loop auto-compact: keep a single long run within the context window
     // by summarizing old turns before each provider request. Mirrors Claude
@@ -1383,5 +1424,17 @@ export async function executeConversation(
       );
     }
   }
+}
+
+/** Complete name→adapter registry (aliases included) for one resolved tool set. */
+function buildConversationToolMap(
+  resolvedTools: readonly import('../types.js').ResolvedToolAdapter[],
+): Map<string, import('../types.js').ResolvedToolAdapter> {
+  const toolMap = new Map<string, import('../types.js').ResolvedToolAdapter>();
+  for (const tool of resolvedTools) {
+    toolMap.set(tool.publicName, tool);
+    for (const alias of tool.aliases ?? []) toolMap.set(alias, tool);
+  }
+  return toolMap;
 }
 
