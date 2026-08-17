@@ -1,0 +1,193 @@
+<resources>
+  <string name="app_name">Hadamard</string>
+
+  <!-- Top bar / shared -->
+  <string name="back">← 返回</string>
+  <string name="mic_permission_denied">麦克风权限被拒绝</string>
+  <string name="title_home">手机伴侣</string>
+  <string name="title_phone">本机</string>
+  <string name="title_computers">已配对的电脑</string>
+  <string name="title_transfers">传输与音频</string>
+  <string name="title_settings">本地设置</string>
+
+  <!-- Permission dialog -->
+  <string name="permission_dialog_title">允许 %1$s？</string>
+  <string name="permission_dialog_workspace">手机工作区 · %1$s</string>
+  <string name="permission_dialog_note">此授权仅对本次调用生效。</string>
+  <string name="permission_allow_once">允许一次</string>
+  <string name="permission_deny">拒绝</string>
+
+  <!-- Home -->
+  <string name="home_hero_title">一个属于这部手机的小智能体。</string>
+  <string name="home_hero_body">本地文件与会话保持独立。仅在需要电脑的实时能力时才配对电脑。</string>
+  <string name="badge_no_shell">无 SHELL</string>
+  <string name="badge_typed_tools">类型化工具</string>
+  <string name="badge_local_first">本地优先</string>
+  <string name="entry_phone_eyebrow">本设备</string>
+  <string name="entry_phone_title">本机</string>
+  <string name="entry_phone_description">%1$d 个本地会话 · 文档、Markdown、PDF/OCR 和简单网页</string>
+  <string name="entry_phone_action">打开手机工作区</string>
+  <string name="entry_computer_eyebrow">设备互联</string>
+  <string name="entry_computer_title">已配对的电脑</string>
+  <string name="entry_computer_empty">尚未配对电脑 · 在局域网发现或扫描签名二维码</string>
+  <string name="entry_computer_paired">已配对 %1$d 台 · 离线时仍可阅读缓存会话</string>
+  <string name="entry_computer_action">管理连接</string>
+  <string name="entry_transfers_eyebrow">产物与音频</string>
+  <string name="entry_transfers_title">传输</string>
+  <string name="entry_transfers_description">%1$d 个已验证收件箱项目 · %2$d 个本地产物</string>
+  <string name="entry_transfers_action">打开传输</string>
+  <string name="home_configure_provider">配置移动端 LLM 提供商</string>
+  <string name="home_provider_configured">提供商 · %1$s</string>
+  <string name="home_offline_label">本机离线能力</string>
+  <string name="home_offline_items">文件 · Markdown · PDF 渲染 · 内置 OCR · 网页预览</string>
+  <string name="home_offline_note">智能体推理需要已配置的端点；本机不内置模型。</string>
+
+  <!-- Phone screen -->
+  <string name="phone_sessions_title">手机会话</string>
+  <string name="phone_sessions_subtitle">独立工作区 · 不回写电脑</string>
+  <string name="phone_new_session">新建</string>
+  <string name="phone_transcript_empty">从一个本地问题开始，或打开一个缓存会话。</string>
+  <string name="phone_readonly_cache">离线缓存 · 只读</string>
+  <string name="phone_copy_to_phone">复制到手机</string>
+  <string name="voice_note_discard">丢弃</string>
+  <string name="action_stop">停止</string>
+  <string name="voice_note_start">语音便签</string>
+  <string name="agent_prompt_label">向手机智能体提问</string>
+  <string name="action_run">运行</string>
+  <string name="role_user">用户</string>
+  <string name="role_assistant">助手</string>
+  <string name="role_tool">工具</string>
+
+  <!-- Transfers screen -->
+  <string name="transfers_inbox_title">已验证收件箱</string>
+  <string name="transfers_inbox_subtitle">下载内容在明确提交到所选工作区之前始终保持应用私有。</string>
+  <string name="transfers_inbox_empty">收件箱为空。</string>
+  <string name="inbox_item_summary">%1$d 字节 · %2$s…</string>
+  <string name="inbox_commit">确认提交到工作区</string>
+  <string name="transfers_outbox_section">已配对电脑发件箱</string>
+  <string name="outbox_refresh">刷新文件</string>
+  <string name="outbox_send">发送文档</string>
+  <string name="outbox_to_inbox">存入收件箱</string>
+  <string name="audio_capture_section">音频采集</string>
+  <string name="audio_capture_note">系统音频回采仅限 Android，需主动开启，且每次都必须重新获得 MediaProjection 授权。来源应用可能会阻止采集。</string>
+  <string name="system_audio_enable">启用系统音频</string>
+  <string name="system_audio_stop">停止系统音频</string>
+  <string name="system_audio_request">请求采集权限</string>
+  <string name="artifacts_section">本地产物</string>
+  <string name="artifact_summary">%1$s · %2$d 字节 · %3$s…</string>
+
+  <!-- Computers screen -->
+  <string name="computers_title">无需第三方服务器即可配对</string>
+  <string name="computers_subtitle">局域网直连使用签名二维码要约、客户端证书和固定证书的 WSS。</string>
+  <string name="scanner_prompt">扫描 Hadamard 桌面端配对二维码</string>
+  <string name="scan_qr">扫码</string>
+  <string name="discover_lan">局域网发现</string>
+  <string name="manual_pairing_label">手动输入 hadamard:// 配对 URI</string>
+  <string name="verify_and_pair">验证并配对</string>
+  <string name="discovered_section">在此局域网发现</string>
+  <string name="discovered_computer_summary">%1$s · %2$s:%3$d</string>
+  <string name="certificate_summary">证书 %1$s…</string>
+  <string name="paired_section">已配对的电脑</string>
+  <string name="paired_empty">暂无已配对的电脑。</string>
+  <string name="revoke">撤销</string>
+  <string name="browse_remote_sessions">浏览远程会话</string>
+  <string name="cache_session">缓存</string>
+  <string name="remote_access_info">不在同一局域网？可在桌面端配置直连地址、SSH 隧道或你自己的中继。没有可达路由时，Hadamard 会将连接报告为不可用。</string>
+
+  <!-- Settings screen -->
+  <string name="settings_provider_title">移动端智能体提供商</string>
+  <string name="settings_provider_subtitle">可手动配置提供商，或扫描桌面端二维码直接导入。</string>
+  <string name="provider_name_label">名称</string>
+  <string name="provider_endpoint_label">HTTPS 端点</string>
+  <string name="provider_model_label">模型</string>
+  <string name="provider_apikey_label">API 密钥 · 存储于 Android Keystore</string>
+  <string name="provider_save">保存到本手机</string>
+  <string name="provider_scan_import">扫码导入桌面端配置</string>
+  <string name="provider_scan_prompt">扫描桌面端设备页显示的提供商二维码</string>
+  <string name="language_section">LANGUAGE / 语言</string>
+  <string name="language_follow_system">跟随系统</string>
+  <string name="language_english">English</string>
+  <string name="language_chinese">中文</string>
+  <string name="workspace_section">移动工作区</string>
+  <string name="workspace_app_private">应用私有工作区</string>
+  <string name="workspace_saf">用户选择的文档目录</string>
+  <string name="workspace_note">智能体只能访问所选的文档目录。绝对路径和未授权的文件夹仍然不可用。</string>
+  <string name="workspace_choose_folder">选择文件夹</string>
+  <string name="workspace_use_app_private">使用应用私有</string>
+  <string name="capability_section">能力边界</string>
+  <string name="capability_included">✓ 类型化文档工具\n✓ SAF 或应用私有存储\n✓ 逐次调用权限提示\n✓ 有限制的 PDF/OCR 与网页读取</string>
+  <string name="capability_excluded">不包含：Shell、任意路径、安装软件包、CodeAct、本地编译或浏览器 DevTools。</string>
+
+  <!-- Session list -->
+  <string name="session_remote_cache">远程缓存</string>
+  <string name="session_this_phone">本机</string>
+
+  <!-- ViewModel status messages -->
+  <string name="new_mobile_session">新的手机会话</string>
+  <string name="status_select_session_first">请先创建或选择一个手机会话</string>
+  <string name="status_configure_provider_first">请先配置移动端 LLM 提供商</string>
+  <string name="status_agent_working">智能体正在本手机上工作</string>
+  <string name="status_run_completed">已完成，共 %1$d 轮 · %2$d 次工具调用</string>
+  <string name="status_agent_run_failed">智能体运行失败</string>
+  <string name="status_run_cancelled">智能体运行已取消；检查点已保留</string>
+  <string name="provider_default_name">移动端提供商</string>
+  <string name="status_provider_saved">提供商已保存到本手机的 Keystore</string>
+  <string name="status_provider_invalid">提供商配置无效</string>
+  <string name="status_provider_qr_invalid">不是有效的 Hadamard 提供商二维码</string>
+  <string name="error_document_tree_content_uri">文档目录必须使用 content URI</string>
+  <string name="status_workspace_saved">移动工作区权限已保存</string>
+  <string name="status_workspace_select_failed">无法选择此文档目录</string>
+  <string name="status_workspace_app_private">正在使用应用私有移动工作区</string>
+  <string name="status_lan_searching">正在搜索此局域网</string>
+  <string name="status_lan_discovery_failed">局域网发现失败</string>
+  <string name="status_lan_discovery_active">局域网发现进行中</string>
+  <string name="status_lan_discovery_stopped">局域网发现已停止</string>
+  <string name="status_pairing_verifying">正在验证签名配对要约</string>
+  <string name="status_paired_with">已与 %1$s 配对</string>
+  <string name="status_pairing_failed">配对失败</string>
+  <string name="status_computer_revoked">已在本手机撤销该电脑</string>
+  <string name="status_session_downloading">正在下载只读会话快照</string>
+  <string name="status_session_cached">远程会话已缓存，可离线阅读</string>
+  <string name="status_session_refresh_failed">远程会话刷新失败</string>
+  <string name="status_sessions_loading">正在从已配对电脑加载会话</string>
+  <string name="status_remote_sessions_available">有 %1$d 个远程会话可用</string>
+  <string name="status_browse_sessions_failed">无法浏览远程会话</string>
+  <string name="status_session_copied">已创建独立的手机副本；不会回写源会话</string>
+  <string name="status_session_copy_failed">会话复制失败</string>
+  <string name="status_outbox_checking">正在检查电脑发件箱</string>
+  <string name="status_files_available">有 %1$d 个文件可用</string>
+  <string name="status_outbox_failed">无法加载电脑发件箱</string>
+  <string name="status_inbox_downloading">正在下载到已验证的手机收件箱</string>
+  <string name="status_inbox_verified">已在收件箱中验证；工作区未改变</string>
+  <string name="status_download_failed">文件下载失败</string>
+  <string name="status_committed">已将 %1$s 提交到所选工作区</string>
+  <string name="status_commit_failed">收件箱提交失败</string>
+  <string name="status_uploading">正在以可续传分块上传</string>
+  <string name="error_only_selected_document">只能发送用户选择的文档</string>
+  <string name="error_document_unavailable">所选文档不可用</string>
+  <string name="error_document_too_large">所选文档超过 32 MiB</string>
+  <string name="status_uploaded">已上传 %1$s；桌面端确认后才会提交到工作区</string>
+  <string name="status_upload_failed">文件上传失败</string>
+  <string name="status_mic_start_failed">无法启动麦克风</string>
+  <string name="artifact_voice_note">语音便签</string>
+  <string name="artifact_voice_transcript">语音转写：%1$s</string>
+  <string name="status_voice_transcription_failed">语音便签已保存；转写失败：%1$s</string>
+  <string name="status_voice_no_provider">语音便签已保存；请配置提供商以进行转写</string>
+  <string name="status_voice_saved">语音便签与转写已保存</string>
+  <string name="status_voice_failed">语音便签失败</string>
+  <string name="status_voice_discarded">语音便签已丢弃；麦克风已停止</string>
+  <string name="status_audio_permission_revoked">音频权限被撤销；采集已立即停止</string>
+  <string name="status_system_audio_enabled">系统音频采集已启用；仍需 MediaProjection 授权</string>
+  <string name="status_system_audio_disabled">系统音频采集已停用</string>
+  <string name="status_system_audio_denied">未授予系统音频权限</string>
+  <string name="error_enable_system_audio_first">请先启用系统音频采集</string>
+  <string name="status_system_capture_active">系统音频回采可见且进行中</string>
+  <string name="status_system_capture_failed">系统音频回采失败</string>
+  <string name="status_system_capture_stopped">系统音频采集已停止</string>
+
+  <!-- Media capture labels -->
+  <string name="media_microphone_off">麦克风已关闭</string>
+  <string name="media_recording_microphone">正在录制麦克风 · 点按「停止」完成</string>
+  <string name="media_stopping_microphone">正在停止麦克风</string>
+  <string name="media_capturing_system">正在采集系统音频 · 点按停止</string>
+</resources>

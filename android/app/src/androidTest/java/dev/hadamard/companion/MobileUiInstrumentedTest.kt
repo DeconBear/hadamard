@@ -37,7 +37,8 @@ class MobileUiInstrumentedTest {
     compose.onNodeWithTag("home-screen").assertIsDisplayed()
     compose.onNodeWithTag("home-screen").performScrollToNode(hasTestTag("open-settings"))
     compose.onNodeWithTag("open-settings").performClick()
-    compose.onNodeWithText("This configuration belongs to the phone. It is never copied from or back to a computer.").assertIsDisplayed()
+    compose.onNodeWithText("Configure the provider manually, or import one from the desktop app by scanning its QR code.").assertIsDisplayed()
+    compose.onNodeWithTag("scan-provider-qr").assertIsDisplayed()
     compose.onNodeWithTag("select-saf-workspace").assertIsDisplayed()
     compose.onNodeWithText("The Agent can access only the selected document tree. Absolute paths and ungranted folders remain unavailable.").assertIsDisplayed()
   }
