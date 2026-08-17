@@ -1,3 +1,193 @@
 <resources>
   <string name="app_name">Hadamard</string>
+
+  <!-- Top bar / shared -->
+  <string name="back">← Back</string>
+  <string name="mic_permission_denied">Microphone permission was denied</string>
+  <string name="title_home">Mobile companion</string>
+  <string name="title_phone">This Phone</string>
+  <string name="title_computers">Paired Computer</string>
+  <string name="title_transfers">Transfers &amp; audio</string>
+  <string name="title_settings">Local settings</string>
+
+  <!-- Permission dialog -->
+  <string name="permission_dialog_title">Allow %1$s?</string>
+  <string name="permission_dialog_workspace">Phone workspace · %1$s</string>
+  <string name="permission_dialog_note">This approval applies to this call only.</string>
+  <string name="permission_allow_once">Allow once</string>
+  <string name="permission_deny">Deny</string>
+
+  <!-- Home -->
+  <string name="home_hero_title">A small agent that belongs to this phone.</string>
+  <string name="home_hero_body">Local files and sessions stay independent. Pair a computer only when you want its live capabilities.</string>
+  <string name="badge_no_shell">NO SHELL</string>
+  <string name="badge_typed_tools">TYPED TOOLS</string>
+  <string name="badge_local_first">LOCAL-FIRST</string>
+  <string name="entry_phone_eyebrow">THIS DEVICE</string>
+  <string name="entry_phone_title">This Phone</string>
+  <string name="entry_phone_description">%1$d local sessions · documents, Markdown, PDF/OCR and simple pages</string>
+  <string name="entry_phone_action">Open phone workspace</string>
+  <string name="entry_computer_eyebrow">DEVICE LINK</string>
+  <string name="entry_computer_title">Paired Computer</string>
+  <string name="entry_computer_empty">No computer paired · discover on LAN or scan a signed QR</string>
+  <string name="entry_computer_paired">%1$d paired · cached sessions remain readable while offline</string>
+  <string name="entry_computer_action">Manage connections</string>
+  <string name="entry_transfers_eyebrow">ARTIFACTS &amp; AUDIO</string>
+  <string name="entry_transfers_title">Transfers</string>
+  <string name="entry_transfers_description">%1$d verified inbox items · %2$d local artifacts</string>
+  <string name="entry_transfers_action">Open transfers</string>
+  <string name="home_configure_provider">Configure mobile LLM provider</string>
+  <string name="home_provider_configured">Provider · %1$s</string>
+  <string name="home_offline_label">OFFLINE ON THIS PHONE</string>
+  <string name="home_offline_items">Files · Markdown · PDF rendering · bundled OCR · page preview</string>
+  <string name="home_offline_note">Agent reasoning needs the configured endpoint; no local model is bundled.</string>
+
+  <!-- Phone screen -->
+  <string name="phone_sessions_title">Phone sessions</string>
+  <string name="phone_sessions_subtitle">Independent workspace · no computer write-back</string>
+  <string name="phone_new_session">New</string>
+  <string name="phone_transcript_empty">Start with a local question or open a cached session.</string>
+  <string name="phone_readonly_cache">Offline cache · read only</string>
+  <string name="phone_copy_to_phone">Copy to phone</string>
+  <string name="voice_note_discard">Discard</string>
+  <string name="action_stop">Stop</string>
+  <string name="voice_note_start">Voice note</string>
+  <string name="agent_prompt_label">Ask the phone Agent</string>
+  <string name="action_run">Run</string>
+  <string name="role_user">USER</string>
+  <string name="role_assistant">ASSISTANT</string>
+  <string name="role_tool">TOOL</string>
+
+  <!-- Transfers screen -->
+  <string name="transfers_inbox_title">Verified inbox</string>
+  <string name="transfers_inbox_subtitle">Downloads remain app-private until you explicitly commit them to the selected workspace.</string>
+  <string name="transfers_inbox_empty">Inbox is empty.</string>
+  <string name="inbox_item_summary">%1$d bytes · %2$s…</string>
+  <string name="inbox_commit">Confirm workspace commit</string>
+  <string name="transfers_outbox_section">PAIRED COMPUTER OUTBOX</string>
+  <string name="outbox_refresh">Refresh files</string>
+  <string name="outbox_send">Send document</string>
+  <string name="outbox_to_inbox">To inbox</string>
+  <string name="audio_capture_section">AUDIO CAPTURE</string>
+  <string name="audio_capture_note">System playback is Android-only, opt-in, and always requires a fresh MediaProjection approval. Source apps may block capture.</string>
+  <string name="system_audio_enable">Enable system audio</string>
+  <string name="system_audio_stop">Stop system audio</string>
+  <string name="system_audio_request">Request capture permission</string>
+  <string name="artifacts_section">LOCAL ARTIFACTS</string>
+  <string name="artifact_summary">%1$s · %2$d bytes · %3$s…</string>
+
+  <!-- Computers screen -->
+  <string name="computers_title">Pair without a third-party server</string>
+  <string name="computers_subtitle">LAN direct uses signed QR offers, client certificates and pinned WSS.</string>
+  <string name="scanner_prompt">Scan the Hadamard desktop pairing QR</string>
+  <string name="scan_qr">Scan QR</string>
+  <string name="discover_lan">Discover LAN</string>
+  <string name="manual_pairing_label">Manual hadamard:// pairing URI</string>
+  <string name="verify_and_pair">Verify and pair</string>
+  <string name="discovered_section">DISCOVERED ON THIS LAN</string>
+  <string name="discovered_computer_summary">%1$s · %2$s:%3$d</string>
+  <string name="certificate_summary">Certificate %1$s…</string>
+  <string name="paired_section">PAIRED COMPUTERS</string>
+  <string name="paired_empty">No paired computers yet.</string>
+  <string name="revoke">Revoke</string>
+  <string name="browse_remote_sessions">Browse remote sessions</string>
+  <string name="cache_session">Cache</string>
+  <string name="remote_access_info">Away from the same LAN? Configure a direct address, SSH tunnel or your own relay on desktop. Without a reachable route, Hadamard reports the connection as unavailable.</string>
+
+  <!-- Settings screen -->
+  <string name="settings_provider_title">Mobile Agent provider</string>
+  <string name="settings_provider_subtitle">Configure the provider manually, or import one from the desktop app by scanning its QR code.</string>
+  <string name="provider_name_label">Name</string>
+  <string name="provider_endpoint_label">HTTPS endpoint</string>
+  <string name="provider_model_label">Model</string>
+  <string name="provider_apikey_label">API key · stored in Android Keystore</string>
+  <string name="provider_save">Save on this phone</string>
+  <string name="provider_scan_import">Import from desktop QR</string>
+  <string name="provider_scan_prompt">Scan the provider QR code shown in the desktop app</string>
+  <string name="language_section">LANGUAGE / 语言</string>
+  <string name="language_follow_system">Follow system</string>
+  <string name="language_english">English</string>
+  <string name="language_chinese">中文</string>
+  <string name="workspace_section">MOBILE WORKSPACE</string>
+  <string name="workspace_app_private">App-private workspace</string>
+  <string name="workspace_saf">User-selected document tree</string>
+  <string name="workspace_note">The Agent can access only the selected document tree. Absolute paths and ungranted folders remain unavailable.</string>
+  <string name="workspace_choose_folder">Choose folder</string>
+  <string name="workspace_use_app_private">Use app-private</string>
+  <string name="capability_section">CAPABILITY BOUNDARY</string>
+  <string name="capability_included">✓ Typed document tools\n✓ SAF or app-private storage\n✓ Per-call permission prompt\n✓ Bounded PDF/OCR and web reads</string>
+  <string name="capability_excluded">Not included: shell, arbitrary paths, package installs, CodeAct, native compilation or browser DevTools.</string>
+
+  <!-- Session list -->
+  <string name="session_remote_cache">REMOTE CACHE</string>
+  <string name="session_this_phone">THIS PHONE</string>
+
+  <!-- ViewModel status messages -->
+  <string name="new_mobile_session">New mobile session</string>
+  <string name="status_select_session_first">Create or select a phone session first</string>
+  <string name="status_configure_provider_first">Configure a mobile LLM provider first</string>
+  <string name="status_agent_working">Agent is working on this phone</string>
+  <string name="status_run_completed">Completed in %1$d turns · %2$d tool calls</string>
+  <string name="status_agent_run_failed">Agent run failed</string>
+  <string name="status_run_cancelled">Agent run cancelled; checkpoint retained</string>
+  <string name="provider_default_name">Mobile provider</string>
+  <string name="status_provider_saved">Provider saved in this phone\'s Keystore</string>
+  <string name="status_provider_invalid">Provider configuration is invalid</string>
+  <string name="status_provider_qr_invalid">Not a valid Hadamard provider QR code</string>
+  <string name="error_document_tree_content_uri">Document tree must use a content URI</string>
+  <string name="status_workspace_saved">Mobile workspace permission saved</string>
+  <string name="status_workspace_select_failed">Could not select this document tree</string>
+  <string name="status_workspace_app_private">Using app-private mobile workspace</string>
+  <string name="status_lan_searching">Searching this LAN</string>
+  <string name="status_lan_discovery_failed">LAN discovery failed</string>
+  <string name="status_lan_discovery_active">LAN discovery active</string>
+  <string name="status_lan_discovery_stopped">LAN discovery stopped</string>
+  <string name="status_pairing_verifying">Verifying signed pairing offer</string>
+  <string name="status_paired_with">Paired with %1$s</string>
+  <string name="status_pairing_failed">Pairing failed</string>
+  <string name="status_computer_revoked">Computer revoked on this phone</string>
+  <string name="status_session_downloading">Downloading a read-only session snapshot</string>
+  <string name="status_session_cached">Remote session cached for offline reading</string>
+  <string name="status_session_refresh_failed">Remote session refresh failed</string>
+  <string name="status_sessions_loading">Loading sessions from paired computer</string>
+  <string name="status_remote_sessions_available">%1$d remote sessions available</string>
+  <string name="status_browse_sessions_failed">Could not browse remote sessions</string>
+  <string name="status_session_copied">Created an independent phone copy; source will not be written back</string>
+  <string name="status_session_copy_failed">Session copy failed</string>
+  <string name="status_outbox_checking">Checking computer outbox</string>
+  <string name="status_files_available">%1$d files available</string>
+  <string name="status_outbox_failed">Could not load computer outbox</string>
+  <string name="status_inbox_downloading">Downloading into verified phone inbox</string>
+  <string name="status_inbox_verified">Verified in inbox; workspace is unchanged</string>
+  <string name="status_download_failed">File download failed</string>
+  <string name="status_committed">Committed %1$s to the selected workspace</string>
+  <string name="status_commit_failed">Inbox commit failed</string>
+  <string name="status_uploading">Uploading with resumable chunks</string>
+  <string name="error_only_selected_document">Only a user-selected document can be sent</string>
+  <string name="error_document_unavailable">Selected document is unavailable</string>
+  <string name="error_document_too_large">Selected document exceeds 32 MiB</string>
+  <string name="status_uploaded">Uploaded %1$s; desktop must confirm before workspace commit</string>
+  <string name="status_upload_failed">File upload failed</string>
+  <string name="status_mic_start_failed">Could not start microphone</string>
+  <string name="artifact_voice_note">Voice note</string>
+  <string name="artifact_voice_transcript">Voice transcript: %1$s</string>
+  <string name="status_voice_transcription_failed">Voice note saved; transcription failed: %1$s</string>
+  <string name="status_voice_no_provider">Voice note saved; configure a provider to transcribe</string>
+  <string name="status_voice_saved">Voice note and transcript saved</string>
+  <string name="status_voice_failed">Voice note failed</string>
+  <string name="status_voice_discarded">Voice note discarded; microphone stopped</string>
+  <string name="status_audio_permission_revoked">Audio permission was revoked; capture stopped immediately</string>
+  <string name="status_system_audio_enabled">System audio capture enabled; MediaProjection approval is still required</string>
+  <string name="status_system_audio_disabled">System audio capture disabled</string>
+  <string name="status_system_audio_denied">System audio permission was not granted</string>
+  <string name="error_enable_system_audio_first">Enable system audio capture first</string>
+  <string name="status_system_capture_active">System playback capture is visible and active</string>
+  <string name="status_system_capture_failed">System playback capture failed</string>
+  <string name="status_system_capture_stopped">System audio capture stopped</string>
+
+  <!-- Media capture labels -->
+  <string name="media_microphone_off">Microphone is off</string>
+  <string name="media_recording_microphone">Recording microphone · tap Stop to finish</string>
+  <string name="media_stopping_microphone">Stopping microphone</string>
+  <string name="media_capturing_system">Capturing system playback · tap Stop</string>
 </resources>
