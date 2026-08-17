@@ -15294,6 +15294,49 @@ async function renderDevicesRegion(reload) {
   }
   grid.appendChild(pairingCard);
 
+  const shareableConfigs = (state.snapshot && state.snapshot.bridgeState && Array.isArray(state.snapshot.bridgeState.configs))
+    ? state.snapshot.bridgeState.configs.filter(function (c) { return c.hasApiKey && c.baseURL && ((c.models || []).length > 0 || c.model); })
+    : [];
+  const shareCard = deviceCard('Share a provider with your phone', true);
+  shareCard.appendChild(deviceNode('p', 'muted', 'Encode a saved model config as a static QR code with its name, base URL, model and API key. Scan it from the provider settings in the phone app to import it. Anyone who scans the code gets the full API key.'));
+  if (!shareableConfigs.length) {
+    shareCard.appendChild(deviceNode('p', 'muted', 'No shareable configs yet. Save a config with a base URL, API key and at least one model in the Configuration tab first.'));
+  } else {
+    const shareRow = deviceNode('div', 'device-actions');
+    const shareSelect = document.createElement('select');
+    shareableConfigs.forEach(function (c) {
+      const opt = document.createElement('option');
+      opt.value = c.name;
+      opt.textContent = c.name + ' · ' + (c.baseURL || '') + ' · ' + ((c.models && c.models[0] && c.models[0].name) || c.model || '');
+      shareSelect.appendChild(opt);
+    });
+    if (state.deviceProviderQr && shareableConfigs.some(function (c) { return c.name === state.deviceProviderQr.name; })) {
+      shareSelect.value = state.deviceProviderQr.name;
+    }
+    shareRow.appendChild(shareSelect);
+    shareRow.appendChild(deviceAction('Generate provider QR', 'primary', async function () {
+      const result = await deviceApi('/api/bridge/provider-qr', { method: 'POST', body: { name: shareSelect.value } });
+      state.deviceProviderQr = { name: shareSelect.value, qrDataUrl: result.qrDataUrl, provider: result.provider };
+      await renderDevicesRegion(false);
+    }));
+    shareCard.appendChild(shareRow);
+    if (state.deviceProviderQr && state.deviceProviderQr.qrDataUrl) {
+      const share = deviceNode('div', 'device-pairing');
+      const image = document.createElement('img'); image.src = state.deviceProviderQr.qrDataUrl; image.alt = 'Provider import QR code';
+      const detail = deviceNode('div', 'device-pairing-detail');
+      const info = state.deviceProviderQr.provider || {};
+      detail.append(
+        deviceNode('strong', '', info.displayName || ''),
+        deviceNode('span', 'muted', info.endpoint || ''),
+        deviceNode('span', 'muted', 'Model: ' + (info.model || '')),
+        deviceNode('code', 'muted', info.apiKeyMasked || '')
+      );
+      share.append(image, detail);
+      shareCard.appendChild(share);
+    }
+  }
+  grid.appendChild(shareCard);
+
   const devices = Array.isArray(data.devices) ? data.devices : [];
   const pairedCard = deviceCard('Paired devices', true);
   pairedCard.querySelector('.device-card-head').appendChild(

@@ -25,17 +25,27 @@ data class AudioCaptureState(
   val visibleLabel: String = "Microphone is off",
 )
 
+/** User-visible capture labels; defaults keep English so existing callers/tests stay valid. */
+data class MediaStrings(
+  val microphoneOff: String = "Microphone is off",
+  val recordingMicrophone: String = "Recording microphone · tap Stop to finish",
+  val stoppingMicrophone: String = "Stopping microphone",
+  val capturingSystemPlayback: String = "Capturing system playback · tap Stop",
+)
+
 class VoiceNoteRecorder(context: Context) {
   private val appContext = context.applicationContext
   private val directory = File(context.filesDir, "voice-notes").apply { mkdirs() }
   private var recorder: MediaRecorder? = null
   private var output: File? = null
+  private var mediaStrings = MediaStrings()
 
   var state: AudioCaptureState = AudioCaptureState()
     private set
 
   @Synchronized
-  fun start(): AudioCaptureState {
+  fun start(strings: MediaStrings = MediaStrings()): AudioCaptureState {
+    mediaStrings = strings
     check(recorder == null) { "A voice note is already recording" }
     val target = File(directory, "voice-${UUID.randomUUID()}.m4a")
     val next = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(appContext) else @Suppress("DEPRECATION") MediaRecorder()
@@ -53,7 +63,7 @@ class VoiceNoteRecorder(context: Context) {
       AudioCaptureKind.VOICE_NOTE,
       AudioCaptureStatus.RECORDING,
       System.currentTimeMillis(),
-      "Recording microphone · tap Stop to finish",
+      strings.recordingMicrophone,
     )
     return state
   }
@@ -61,7 +71,7 @@ class VoiceNoteRecorder(context: Context) {
   @Synchronized
   fun stop(): File {
     val active = recorder ?: error("No voice note is recording")
-    state = state.copy(status = AudioCaptureStatus.STOPPING, visibleLabel = "Stopping microphone")
+    state = state.copy(status = AudioCaptureStatus.STOPPING, visibleLabel = mediaStrings.stoppingMicrophone)
     try {
       active.stop()
     } finally {

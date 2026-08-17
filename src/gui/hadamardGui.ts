@@ -218,6 +218,7 @@ import {
   type PersistedBridgeConfig,
   type ManagedExternalCliRuntime,
 } from '../parity/bridgeConfigs.js';
+import { buildProviderSharePayload, renderProviderShareQrDataUrl } from '../device-link/providerShare.js';
 import {
   externalCliSessionMatchesConfig,
   listExternalCliSessions,
@@ -9834,6 +9835,28 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
               source: local.source,
             }
           : {});
+      }
+      if (req.method === 'POST' && url.pathname === '/api/bridge/provider-qr') {
+        const body = await readJson(req);
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name) return json(res, 400, { error: 'Missing config name.' });
+        const config = findBridgeConfig(name, resolveGuiHomeDir());
+        if (!config) return json(res, 404, { error: 'Config not found: ' + name });
+        try {
+          const payload = buildProviderSharePayload(config);
+          const qrDataUrl = await renderProviderShareQrDataUrl(payload);
+          return json(res, 200, {
+            qrDataUrl,
+            provider: {
+              displayName: payload.displayName,
+              endpoint: payload.endpoint,
+              model: payload.model,
+              apiKeyMasked: maskApiKey(payload.apiKey),
+            },
+          });
+        } catch (error) {
+          return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        }
       }
       if (req.method === 'POST' && url.pathname === '/api/bridge/update-local') {
         try {

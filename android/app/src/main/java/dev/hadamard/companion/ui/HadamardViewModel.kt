@@ -5,12 +5,15 @@ import android.content.Intent
 import android.app.Activity
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.hadamard.companion.HadamardApplication
+import dev.hadamard.companion.R
 import dev.hadamard.companion.agent.MobileAgentLoop
 import dev.hadamard.companion.agent.OpenAiCompatibleProvider
 import dev.hadamard.companion.agent.ProviderConfigStore
+import dev.hadamard.companion.agent.ProviderQrPayload
 import dev.hadamard.companion.capability.MobileCapabilityRegistry
 import dev.hadamard.companion.capability.MobilePermissionBroker
 import dev.hadamard.companion.capability.MobileToolContext
@@ -48,6 +51,7 @@ import dev.hadamard.companion.data.readWithOverflowByte
 import dev.hadamard.companion.media.AudioCaptureState
 import dev.hadamard.companion.media.AudioCaptureKind
 import dev.hadamard.companion.media.AudioCaptureStatus
+import dev.hadamard.companion.media.MediaStrings
 import dev.hadamard.companion.media.OpenAiTranscriptionClient
 import dev.hadamard.companion.media.PcmFileSink
 import dev.hadamard.companion.media.SystemAudioFeatureFlag
@@ -91,6 +95,7 @@ data class MobileUiState(
   val systemAudioEnabled: Boolean = false,
   val status: String? = null,
   val permissionRequest: PermissionRequest? = null,
+  val languageTag: String = "",
 )
 
 class HadamardViewModel(application: Application) : AndroidViewModel(application) {
@@ -119,10 +124,11 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       sessions = app.database.listSessions(),
       pairedComputers = computerStore.list(),
       provider = providerStore.enabled(),
-      workspaceLabel = if (workspace is SafWorkspace) "User-selected document tree" else "App-private workspace",
+      workspaceLabel = res(if (workspace is SafWorkspace) R.string.workspace_saf else R.string.workspace_app_private),
       inbox = inboxStore.list(),
       artifacts = app.database.listArtifacts(),
       systemAudioEnabled = systemAudioFlag.enabled(),
+      languageTag = AppLocale.currentTag(application),
     ),
   )
   val state: StateFlow<MobileUiState> = _state.asStateFlow()
@@ -133,15 +139,38 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
     }
   }
 
+  private fun res(@StringRes id: Int, vararg args: Any): String =
+    AppLocale.strings(getApplication()).getString(id, *args)
+
+  private fun mediaStrings() = MediaStrings(
+    microphoneOff = res(R.string.media_microphone_off),
+    recordingMicrophone = res(R.string.media_recording_microphone),
+    stoppingMicrophone = res(R.string.media_stopping_microphone),
+    capturingSystemPlayback = res(R.string.media_capturing_system),
+  )
+
+  private fun idleAudioCapture() = AudioCaptureState(visibleLabel = res(R.string.media_microphone_off))
+
   fun navigate(screen: MobileScreen) {
     _state.update { it.copy(screen = screen, status = null) }
+  }
+
+  fun setLanguage(tag: String) {
+    AppLocale.setTag(getApplication(), tag)
+    _state.update {
+      it.copy(
+        languageTag = tag,
+        workspaceLabel = res(if (workspace is SafWorkspace) R.string.workspace_saf else R.string.workspace_app_private),
+        audioCapture = if (it.audioCapture.status == AudioCaptureStatus.IDLE) idleAudioCapture() else it.audioCapture,
+      )
+    }
   }
 
   fun createSession() {
     val now = System.currentTimeMillis()
     val session = SessionRecord(
       id = UUID.randomUUID().toString(),
-      title = "New mobile session",
+      title = res(R.string.new_mobile_session),
       createdAt = now,
       updatedAt = now,
       revision = 0,
@@ -162,10 +191,10 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
 
   fun send(prompt: String) {
     if (runningJob != null || prompt.isBlank()) return
-    val sessionId = _state.value.selectedSessionId ?: return setStatus("Create or select a phone session first")
-    val configuration = providerStore.enabled() ?: return setStatus("Configure a mobile LLM provider first")
+    val sessionId = _state.value.selectedSessionId ?: return setStatus(res(R.string.status_select_session_first))
+    val configuration = providerStore.enabled() ?: return setStatus(res(R.string.status_configure_provider_first))
     runningJob = viewModelScope.launch {
-      _state.update { it.copy(isRunning = true, status = "Agent is working on this phone") }
+      _state.update { it.copy(isRunning = true, status = res(R.string.status_agent_working)) }
       runCatching {
         val tools = WorkspaceTools(workspace).all() +
           MarkdownTools(workspace).all() +
@@ -177,8 +206,8 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
           OpenAiCompatibleProvider(configuration, app.credentialVault),
           registry,
         ).run(sessionId, prompt)
-      }.onSuccess { result -> setStatus("Completed in ${result.iterations} turns · ${result.toolCalls} tool calls") }
-        .onFailure { error -> setStatus(error.message ?: "Agent run failed") }
+      }.onSuccess { result -> setStatus(res(R.string.status_run_completed, result.iterations, result.toolCalls)) }
+        .onFailure { error -> setStatus(error.message ?: res(R.string.status_agent_run_failed)) }
       _state.update {
         it.copy(
           isRunning = false,
@@ -193,7 +222,7 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
   fun cancelRun() {
     runningJob?.cancel()
     runningJob = null
-    _state.update { it.copy(isRunning = false, status = "Agent run cancelled; checkpoint retained") }
+    _state.update { it.copy(isRunning = false, status = res(R.string.status_run_cancelled)) }
   }
 
   fun resolvePermission(approved: Boolean) {
@@ -207,20 +236,27 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       if (apiKey.isNotBlank()) app.credentialVault.put(alias, apiKey)
       val configuration = ProviderConfiguration(
         id = "mobile-default",
-        displayName = displayName.trim().ifBlank { "Mobile provider" },
+        displayName = displayName.trim().ifBlank { res(R.string.provider_default_name) },
         endpoint = endpoint.trim(),
         model = model.trim(),
         apiKeyAlias = alias,
         enabled = true,
       )
       providerStore.save(configuration)
-      _state.update { it.copy(provider = configuration, status = "Provider saved in this phone's Keystore") }
-    }.onFailure { setStatus(it.message ?: "Provider configuration is invalid") }
+      _state.update { it.copy(provider = configuration, status = res(R.string.status_provider_saved)) }
+    }.onFailure { setStatus(it.message ?: res(R.string.status_provider_invalid)) }
+  }
+
+  /** Imports a provider scanned from the desktop GUI's static provider QR code. */
+  fun importProviderFromQr(contents: String) {
+    val parsed = runCatching { ProviderQrPayload.parse(contents) }
+      .getOrElse { return setStatus(res(R.string.status_provider_qr_invalid)) }
+    saveProvider(parsed.displayName, parsed.endpoint, parsed.model, parsed.apiKey)
   }
 
   fun selectSafWorkspace(uri: Uri) {
     runCatching {
-      require(uri.scheme == "content") { "Document tree must use a content URI" }
+      require(uri.scheme == "content") { res(R.string.error_document_tree_content_uri) }
       getApplication<Application>().contentResolver.takePersistableUriPermission(
         uri,
         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
@@ -229,27 +265,27 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       getApplication<Application>().getSharedPreferences(WORKSPACE_PREFERENCES, 0)
         .edit().putString(WORKSPACE_URI, uri.toString()).apply()
       workspace = selected
-      _state.update { it.copy(workspaceLabel = "User-selected document tree", status = "Mobile workspace permission saved") }
-    }.onFailure { setStatus(it.message ?: "Could not select this document tree") }
+      _state.update { it.copy(workspaceLabel = res(R.string.workspace_saf), status = res(R.string.status_workspace_saved)) }
+    }.onFailure { setStatus(it.message ?: res(R.string.status_workspace_select_failed)) }
   }
 
   fun useAppPrivateWorkspace() {
     workspace = AppPrivateWorkspace(getApplication())
     getApplication<Application>().getSharedPreferences(WORKSPACE_PREFERENCES, 0).edit().remove(WORKSPACE_URI).apply()
-    _state.update { it.copy(workspaceLabel = "App-private workspace", status = "Using app-private mobile workspace") }
+    _state.update { it.copy(workspaceLabel = res(R.string.workspace_app_private), status = res(R.string.status_workspace_app_private)) }
   }
 
   fun startDiscovery() {
     if (discoveryJob != null) return
-    _state.update { it.copy(discoveredComputers = emptyList(), status = "Searching this LAN") }
+    _state.update { it.copy(discoveredComputers = emptyList(), status = res(R.string.status_lan_searching)) }
     discoveryJob = viewModelScope.launch {
       discovery.discover()
-        .catch { setStatus(it.message ?: "LAN discovery failed") }
+        .catch { setStatus(it.message ?: res(R.string.status_lan_discovery_failed)) }
         .collect { computer ->
           _state.update { state ->
             state.copy(
               discoveredComputers = (state.discoveredComputers.filterNot { it.deviceId == computer.deviceId } + computer),
-              status = "LAN discovery active",
+              status = res(R.string.status_lan_discovery_active),
             )
           }
         }
@@ -259,104 +295,104 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
   fun stopDiscovery() {
     discoveryJob?.cancel()
     discoveryJob = null
-    setStatus("LAN discovery stopped")
+    setStatus(res(R.string.status_lan_discovery_stopped))
   }
 
   fun pair(uri: String) {
     viewModelScope.launch {
-      _state.update { it.copy(status = "Verifying signed pairing offer") }
+      _state.update { it.copy(status = res(R.string.status_pairing_verifying)) }
       runCatching {
         pairingClient.pair(uri, listOf("session:browse", "session:send", "file:transfer"))
       }.onSuccess {
         _state.update { state ->
-          state.copy(pairedComputers = computerStore.list(), status = "Paired with ${it.name}")
+          state.copy(pairedComputers = computerStore.list(), status = res(R.string.status_paired_with, it.name))
         }
-      }.onFailure { setStatus(it.message ?: "Pairing failed") }
+      }.onFailure { setStatus(it.message ?: res(R.string.status_pairing_failed)) }
     }
   }
 
   fun revokeComputer(deviceId: String) {
     computerStore.revoke(deviceId)
     app.trustStore.revoke(deviceId)
-    _state.update { it.copy(pairedComputers = computerStore.list(), status = "Computer revoked on this phone") }
+    _state.update { it.copy(pairedComputers = computerStore.list(), status = res(R.string.status_computer_revoked)) }
   }
 
   fun refreshRemoteSession(deviceId: String, sessionId: String) {
     viewModelScope.launch {
-      _state.update { it.copy(status = "Downloading a read-only session snapshot") }
+      _state.update { it.copy(status = res(R.string.status_session_downloading)) }
       runCatching { remoteCache.refresh(deviceId, sessionId) }
         .onSuccess { session ->
-          _state.update { it.copy(sessions = app.database.listSessions(), status = "Remote session cached for offline reading") }
+          _state.update { it.copy(sessions = app.database.listSessions(), status = res(R.string.status_session_cached)) }
           selectSession(session.id)
         }
-        .onFailure { setStatus(it.message ?: "Remote session refresh failed") }
+        .onFailure { setStatus(it.message ?: res(R.string.status_session_refresh_failed)) }
     }
   }
 
   fun browseRemoteSessions(deviceId: String) {
     viewModelScope.launch {
-      _state.update { it.copy(status = "Loading sessions from paired computer") }
+      _state.update { it.copy(status = res(R.string.status_sessions_loading)) }
       runCatching {
         val result = deviceClient.request(deviceId, "session/list")
         RemoteSessionParser.parse(result)
       }.onSuccess { sessions ->
-        _state.update { it.copy(remoteSessions = it.remoteSessions + (deviceId to sessions), status = "${sessions.size} remote sessions available") }
-      }.onFailure { setStatus(it.message ?: "Could not browse remote sessions") }
+        _state.update { it.copy(remoteSessions = it.remoteSessions + (deviceId to sessions), status = res(R.string.status_remote_sessions_available, sessions.size)) }
+      }.onFailure { setStatus(it.message ?: res(R.string.status_browse_sessions_failed)) }
     }
   }
 
   fun copyRemoteSession(cacheSessionId: String) {
     runCatching { remoteCache.copyToPhone(cacheSessionId) }
-      .onSuccess { selectSession(it.id); setStatus("Created an independent phone copy; source will not be written back") }
-      .onFailure { setStatus(it.message ?: "Session copy failed") }
+      .onSuccess { selectSession(it.id); setStatus(res(R.string.status_session_copied)) }
+      .onFailure { setStatus(it.message ?: res(R.string.status_session_copy_failed)) }
   }
 
   fun refreshRemoteOutbox(deviceId: String) {
     viewModelScope.launch {
-      _state.update { it.copy(status = "Checking computer outbox") }
+      _state.update { it.copy(status = res(R.string.status_outbox_checking)) }
       runCatching { transferClient.remoteOutbox(deviceId) }
-        .onSuccess { items -> _state.update { it.copy(remoteOutbox = it.remoteOutbox + (deviceId to items), status = "${items.size} files available") } }
-        .onFailure { setStatus(it.message ?: "Could not load computer outbox") }
+        .onSuccess { items -> _state.update { it.copy(remoteOutbox = it.remoteOutbox + (deviceId to items), status = res(R.string.status_files_available, items.size)) } }
+        .onFailure { setStatus(it.message ?: res(R.string.status_outbox_failed)) }
     }
   }
 
   fun downloadFromComputer(deviceId: String, manifest: ArtifactManifest) {
     viewModelScope.launch {
-      _state.update { it.copy(status = "Downloading into verified phone inbox") }
+      _state.update { it.copy(status = res(R.string.status_inbox_downloading)) }
       runCatching { transferClient.download(deviceId, manifest) }
-        .onSuccess { _state.update { it.copy(inbox = inboxStore.list(), status = "Verified in inbox; workspace is unchanged") } }
-        .onFailure { setStatus(it.message ?: "File download failed") }
+        .onSuccess { _state.update { it.copy(inbox = inboxStore.list(), status = res(R.string.status_inbox_verified)) } }
+        .onFailure { setStatus(it.message ?: res(R.string.status_download_failed)) }
     }
   }
 
   fun commitInbox(item: MobileInboxItem) {
     viewModelScope.launch {
       runCatching { transferClient.commitAndAcknowledge(item, workspace, confirm = true) }
-        .onSuccess { document -> _state.update { it.copy(inbox = inboxStore.list(), status = "Committed ${document.displayName} to the selected workspace") } }
-        .onFailure { setStatus(it.message ?: "Inbox commit failed") }
+        .onSuccess { document -> _state.update { it.copy(inbox = inboxStore.list(), status = res(R.string.status_committed, document.displayName)) } }
+        .onFailure { setStatus(it.message ?: res(R.string.status_commit_failed)) }
     }
   }
 
   fun uploadToComputer(deviceId: String, uri: Uri) {
     viewModelScope.launch {
-      _state.update { it.copy(status = "Uploading with resumable chunks") }
+      _state.update { it.copy(status = res(R.string.status_uploading)) }
       runCatching {
-        require(uri.scheme == "content") { "Only a user-selected document can be sent" }
+        require(uri.scheme == "content") { res(R.string.error_only_selected_document) }
         val resolver = getApplication<Application>().contentResolver
         val bytes = resolver.openInputStream(uri)?.use { it.readWithOverflowByte((32 * 1_048_576)) }
-          ?: error("Selected document is unavailable")
-        require(bytes.size <= 32 * 1_048_576) { "Selected document exceeds 32 MiB" }
+          ?: error(res(R.string.error_document_unavailable))
+        require(bytes.size <= 32 * 1_048_576) { res(R.string.error_document_too_large) }
         val name = queryDisplayName(uri) ?: "mobile-${System.currentTimeMillis()}.bin"
         transferClient.upload(deviceId, name, resolver.getType(uri) ?: "application/octet-stream", bytes)
-      }.onSuccess { setStatus("Uploaded ${it.name}; desktop must confirm before workspace commit") }
-        .onFailure { setStatus(it.message ?: "File upload failed") }
+      }.onSuccess { setStatus(res(R.string.status_uploaded, it.name)) }
+        .onFailure { setStatus(it.message ?: res(R.string.status_upload_failed)) }
     }
   }
 
   fun startVoiceNote() {
-    runCatching { voiceRecorder.start() }
+    runCatching { voiceRecorder.start(mediaStrings()) }
       .onSuccess { capture -> _state.update { it.copy(audioCapture = capture, status = capture.visibleLabel) } }
-      .onFailure { setStatus(it.message ?: "Could not start microphone") }
+      .onFailure { setStatus(it.message ?: res(R.string.status_mic_start_failed)) }
   }
 
   fun stopVoiceNote() {
@@ -366,7 +402,7 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
         val sessionId = _state.value.selectedSessionId?.takeIf { app.database.session(it)?.readOnly == false }
         val audio = app.artifactStore.put(file.name, "audio/mp4", file.readBytes(), sessionId)
         app.database.upsertArtifact(audio)
-        sessionId?.let { appendArtifactReference(it, "Voice note", audio) }
+        sessionId?.let { appendArtifactReference(it, res(R.string.artifact_voice_note), audio) }
         val provider = providerStore.enabled()
         val transcriptionError = provider?.let {
           runCatching {
@@ -378,7 +414,7 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
               sessionId,
             )
             app.database.upsertArtifact(transcript)
-            sessionId?.let { id -> appendArtifactReference(id, "Voice transcript: ${text.take(240)}", transcript) }
+            sessionId?.let { id -> appendArtifactReference(id, res(R.string.artifact_voice_transcript, text.take(240)), transcript) }
           }.exceptionOrNull()
         }
         file.delete()
@@ -386,25 +422,25 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       }.onSuccess { (_, transcriptionError) ->
         _state.update {
           it.copy(
-            audioCapture = AudioCaptureState(),
+            audioCapture = idleAudioCapture(),
             artifacts = app.database.listArtifacts(),
             transcript = it.selectedSessionId?.let(app.database::messages).orEmpty(),
             status = when {
-              transcriptionError != null -> "Voice note saved; transcription failed: ${transcriptionError.message}"
-              providerStore.enabled() == null -> "Voice note saved; configure a provider to transcribe"
-              else -> "Voice note and transcript saved"
+              transcriptionError != null -> res(R.string.status_voice_transcription_failed, transcriptionError.message ?: "")
+              providerStore.enabled() == null -> res(R.string.status_voice_no_provider)
+              else -> res(R.string.status_voice_saved)
             },
           )
         }
       }.onFailure { error ->
-        _state.update { it.copy(audioCapture = AudioCaptureState(), status = error.message ?: "Voice note failed") }
+        _state.update { it.copy(audioCapture = idleAudioCapture(), status = error.message ?: res(R.string.status_voice_failed)) }
       }
     }
   }
 
   fun cancelVoiceNote() {
     voiceRecorder.cancel()
-    _state.update { it.copy(audioCapture = AudioCaptureState(), status = "Voice note discarded; microphone stopped") }
+    _state.update { it.copy(audioCapture = idleAudioCapture(), status = res(R.string.status_voice_discarded)) }
   }
 
   fun enforceAudioPermission(granted: Boolean) {
@@ -420,19 +456,19 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       }
       else -> Unit
     }
-    _state.update { it.copy(audioCapture = AudioCaptureState(), status = "Audio permission was revoked; capture stopped immediately") }
+    _state.update { it.copy(audioCapture = idleAudioCapture(), status = res(R.string.status_audio_permission_revoked)) }
   }
 
   fun setSystemAudioEnabled(enabled: Boolean) {
     if (!enabled) stopSystemAudio()
     systemAudioFlag.setEnabled(enabled)
-    _state.update { it.copy(systemAudioEnabled = enabled, status = if (enabled) "System audio capture enabled; MediaProjection approval is still required" else "System audio capture disabled") }
+    _state.update { it.copy(systemAudioEnabled = enabled, status = res(if (enabled) R.string.status_system_audio_enabled else R.string.status_system_audio_disabled)) }
   }
 
   fun startSystemAudio(resultCode: Int, data: Intent?) {
-    if (resultCode != Activity.RESULT_OK || data == null) return setStatus("System audio permission was not granted")
+    if (resultCode != Activity.RESULT_OK || data == null) return setStatus(res(R.string.status_system_audio_denied))
     runCatching {
-      require(systemAudioFlag.enabled()) { "Enable system audio capture first" }
+      require(systemAudioFlag.enabled()) { res(R.string.error_enable_system_audio_first) }
       val manager = getApplication<Application>().getSystemService(MediaProjectionManager::class.java)
       val projection = manager.getMediaProjection(resultCode, data)
       val target = File(getApplication<Application>().filesDir, "system-audio-${UUID.randomUUID()}.pcm")
@@ -448,11 +484,11 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       systemAudioSink = sink
       _state.update {
         it.copy(
-          audioCapture = AudioCaptureState(AudioCaptureKind.SYSTEM_PLAYBACK, AudioCaptureStatus.RECORDING, System.currentTimeMillis(), "Capturing system playback · tap Stop"),
-          status = "System playback capture is visible and active",
+          audioCapture = AudioCaptureState(AudioCaptureKind.SYSTEM_PLAYBACK, AudioCaptureStatus.RECORDING, System.currentTimeMillis(), res(R.string.media_capturing_system)),
+          status = res(R.string.status_system_capture_active),
         )
       }
-    }.onFailure { setStatus(it.message ?: "System playback capture failed") }
+    }.onFailure { setStatus(it.message ?: res(R.string.status_system_capture_failed)) }
   }
 
   fun stopSystemAudio() {
@@ -467,7 +503,7 @@ class HadamardViewModel(application: Application) : AndroidViewModel(application
       app.database.upsertArtifact(artifact)
       file.delete()
     } else file?.delete()
-    _state.update { it.copy(audioCapture = AudioCaptureState(), artifacts = app.database.listArtifacts(), status = "System audio capture stopped") }
+    _state.update { it.copy(audioCapture = idleAudioCapture(), artifacts = app.database.listArtifacts(), status = res(R.string.status_system_capture_stopped)) }
   }
 
   fun setStatus(message: String) {
