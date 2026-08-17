@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.19 - 2026-08-17
+
+### Features
+
+- Add GUI provider configuration sharing via QR code, so mobile devices can import provider settings by scanning
+- Add Android app locale support with Simplified Chinese translations and a refreshed app theme
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.18...v0.4.19
+
 ## v0.4.18 - 2026-08-16
 
 ### Features
