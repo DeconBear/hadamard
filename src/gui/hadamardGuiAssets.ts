@@ -7800,6 +7800,10 @@ async function loadState() {
 }
 function applyLoadedState() {
   updateSessionActivityIndicators(state.snapshot);
+  if (state.snapshot.fullAccessWarning) {
+    addSystemEvent('WARNING: ' + state.snapshot.fullAccessWarning);
+    delete state.snapshot.fullAccessWarning;
+  }
   applyPreferences(state.snapshot.settings?.preferences);
   syncDefaultModelOnboarding();
   document.body.dataset.terminalCapable = state.snapshot.terminalCapable ? 'true' : 'false';
@@ -7900,7 +7904,7 @@ function updateConversationSummary() {
     || snap.bridgeState?.activeModelLabel
     || snap.session?.model
     || 'default';
-  el('workspace').textContent = (snap.workDir || '') + ' - ' + model + ' - ' + snap.permissionMode + ' - mode:' + (snap.agentMode || 'react') + ' - effort:' + snap.effort + ' - team:' + (snap.activeTeamName || 'none');
+  el('workspace').textContent = (snap.workDir || '') + ' - ' + model + ' - ' + permissionPresetForValue(permissionSelectValue(snap.permissionMode)).title + ' - mode:' + (snap.agentMode || 'react') + ' - effort:' + snap.effort + ' - team:' + (snap.activeTeamName || 'none');
 }
 async function renderAuxFileEditor(filePath) {
   const view = el('auxView');
