@@ -22,6 +22,7 @@ export function policyPermissionMode(
   return value === 'default'
     || value === 'acceptEdits'
     || value === 'bypassPermissions'
+    || value === 'approveForMe'
     || value === 'plan'
     || value === 'auto'
     ? value
