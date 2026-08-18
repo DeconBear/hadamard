@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "files": {
     "goal/projectGoalStore.ts": { "maxLines": 1013, "reason": "Existing project-goal store debt." },
-    "gui/hadamardGui.ts": { "maxLines": 11068, "reason": "GUI composition root; bridge-mode enabled gate guards router/config run paths and is exposed in bridgeState; Devices region exposes provider QR sharing." },
-    "gui/hadamardGuiAssets.ts": { "maxLines": 27618, "reason": "Byte-stable embedded GUI renderer; Configuration region (renamed from Bridge) hosts bridge mode, configs, and local runtime discovery; Devices region uses the reworked card layout with provider QR share actions." },
-    "gui/transcript/clientBundle.ts": { "maxLines": 1127, "reason": "Byte-stable transcript client bundle." },
+    "gui/hadamardGui.ts": { "maxLines": 11090, "reason": "GUI composition root; bridge-mode enabled gate guards router/config run paths and is exposed in bridgeState; Devices region exposes provider QR sharing." },
+    "gui/hadamardGuiAssets.ts": { "maxLines": 27640, "reason": "Byte-stable embedded GUI renderer; Configuration region (renamed from Bridge) hosts bridge mode, configs, and local runtime discovery; Devices region uses the reworked card layout with provider QR share actions." },
+    "gui/transcript/clientBundle.ts": { "maxLines": 1140, "reason": "Byte-stable transcript client bundle; approval footers hide always-options for safety-critical prompts." },
     "manager/assistantGlobalTools.ts": { "maxLines": 1149, "reason": "Compatibility factory; new domains belong in providers." },
     "parity/bridgeProviders.ts": { "maxLines": 1400, "reason": "Existing compatibility adapter debt." },
     "parity/crushManagedClient.ts": { "maxLines": 1268, "reason": "Existing external CLI adapter debt." },
@@ -17,7 +17,7 @@
     "runtime/hadamardCompact.ts": { "maxLines": 1410, "reason": "Existing compact engine debt; in-loop compact preserves the latest project-instruction reminder, prices shadowed spans, and supports prune mode plus cache-reusing summary requests." },
     "storage-v2/sqliteStorage.ts": { "maxLines": 1232, "reason": "SQLite infrastructure adapter with segregated public stores." },
     "tui/hadamardTuiController.ts": { "maxLines": 5005, "reason": "TUI composition/state root; session-scoped model context selection uses shared parsing and model-catalog metadata." },
-    "types.ts": { "maxLines": 3580, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, a per-run context-window override, the tool scheduling/CodeAct contract surface, retry policy, request proposals, compaction shadow pricing, the per-run conversation-extension override, the orthogonal tool-presentation mode, the ReAct driver's swappable-strategy interfaces, and the nested-tool-execution result (CodeAct turn-control forwarding contract)." }
+    "types.ts": { "maxLines": 3590, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, a per-run context-window override, the tool scheduling/CodeAct contract surface, retry policy, request proposals, compaction shadow pricing, the per-run conversation-extension override, the orthogonal tool-presentation mode, the ReAct driver's swappable-strategy interfaces, and the nested-tool-execution result (CodeAct turn-control forwarding contract)." }
   },
   "interfaces": {
     "config/agentProfiles.ts#SelectableAgent": { "maxMembers": 29, "reason": "Compatibility DTO extended with the reusable Agent execution mode and the orthogonal tool presentation." },

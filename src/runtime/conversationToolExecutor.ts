@@ -193,7 +193,9 @@ export async function executeConversationToolUse(
         executionInput,
         markExplicitSafetyApproval(
           { ...executionContext, signal },
-          preState.explicitApproval === true || preState.decision?.source === 'approver',
+          preState.explicitApproval === true
+            || preState.decision?.source === 'approver'
+            || preState.decision?.safetyCritical === true,
         ),
         onProgress,
       ),

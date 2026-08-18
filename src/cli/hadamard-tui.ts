@@ -15,7 +15,7 @@ import type { HadamardPermissionMode } from '../types.js';
 import { printWelcomeSplash } from '../tui/tuiWelcomeBanner.js';
 import { readPackageVersion } from './version.js';
 
-const PERMISSION_MODES = new Set(['default', 'acceptEdits', 'plan', 'bypassPermissions', 'auto']);
+const PERMISSION_MODES = new Set(['default', 'acceptEdits', 'plan', 'bypassPermissions', 'approveForMe', 'auto']);
 
 function parseArgs(argv: string[]): {
   workDir?: string;
@@ -61,6 +61,14 @@ function parseArgs(argv: string[]): {
 
 const args = parseArgs(process.argv.slice(2));
 
+if (args.permissionMode === 'bypassPermissions') {
+  const { consumeFullAccessWarning } = await import('../config/fullAccessWarning.js');
+  const warning = await consumeFullAccessWarning();
+  if (warning) {
+    process.stderr.write(`WARNING: ${warning}\n\n`);
+  }
+}
+
 if (args.version) {
   process.stdout.write(`${readPackageVersion(import.meta.url)}\n`);
   process.exit(0);
@@ -76,7 +84,7 @@ if (args.help) {
       '',
       'Options:',
       '  --config <path>            Load a specific Hadamard settings JSON file',
-      '  --permission-mode <mode>   default | acceptEdits | plan | bypassPermissions (default)',
+      '  --permission-mode <mode>   default | acceptEdits | plan | approveForMe | bypassPermissions (default)',
       '  --model <model>            Override the configured model',
       '  --resume <session-id>      Resume a stored Clean SDK session',
       '  --continue                 Resume the most recent stored session',

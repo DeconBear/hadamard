@@ -103,18 +103,25 @@ export class TuiInputController {
     const dialog = this.options.dialogs.permission();
     if (!dialog) return;
     const name = key.name ?? '';
+    // safetyCritical dialogs (catastrophic commands) only offer one-time
+    // allow/deny — the always options are intentionally unavailable.
+    const optionCount = dialog.safetyCritical ? 2 : 4;
     if (name === 'up') {
-      dialog.selected = (dialog.selected + 3) % 4;
+      dialog.selected = (dialog.selected + optionCount - 1) % optionCount;
     } else if (name === 'down' || name === 'tab') {
-      dialog.selected = (dialog.selected + 1) % 4;
+      dialog.selected = (dialog.selected + 1) % optionCount;
     } else if (name === 'return' || name === 'enter') {
-      dialog.resolve(dialog.selected === 0 ? 'allow' : dialog.selected === 1 ? 'always' : dialog.selected === 2 ? 'always-user' : 'deny');
+      if (dialog.safetyCritical) {
+        dialog.resolve(dialog.selected === 0 ? 'allow' : 'deny');
+      } else {
+        dialog.resolve(dialog.selected === 0 ? 'allow' : dialog.selected === 1 ? 'always' : dialog.selected === 2 ? 'always-user' : 'deny');
+      }
       return;
     } else if (name === 'y') {
       dialog.resolve('allow');
       return;
     } else if (name === 'a') {
-      dialog.resolve('always');
+      if (!dialog.safetyCritical) dialog.resolve('always');
       return;
     } else if (name === 'n' || name === 'escape' || (name === 'c' && key.ctrl)) {
       dialog.resolve('deny');

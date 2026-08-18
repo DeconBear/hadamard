@@ -108,16 +108,49 @@ export async function decideHadamardToolPermission(
     workDir: input.workDir,
   });
   if (safetyResult.blocked) {
-    const safetyDecision = decision(
+    if (safetyResult.requiresExplicitApproval) {
+      // True full access (Codex --yolo semantics): bypassPermissions runs even
+      // catastrophic commands without prompting. The 'approveForMe' mode below
+      // keeps the manual gate for exactly these commands.
+      if (input.mode === 'bypassPermissions') {
+        // safetyCritical on an allow decision tells the tool executor to treat
+        // the call as explicitly approved (the Bash/PowerShell self-check
+        // honors it), so true full access is not re-blocked downstream.
+        return {
+          ...decision(
+            input,
+            'allow',
+            'Bypass-permissions mode allows tool execution, including destructive commands.',
+            'mode',
+            timestamp,
+          ),
+          safetyCritical: true,
+        };
+      }
+      return resolveHadamardAskPermission(
+        input,
+        {
+          ...decision(
+            input,
+            'deny',
+            safetyResult.reason ?? 'Blocked by safety check.',
+            'mode',
+            timestamp,
+          ),
+          safetyCritical: true,
+        },
+        timestamp,
+      );
+    }
+    // Hard safety denies (protected paths such as .git/.hadamard and shell rc
+    // files) stay in force in every mode as harness self-protection.
+    return decision(
       input,
       'deny',
       safetyResult.reason ?? 'Blocked by safety check.',
       'mode',
       timestamp,
     );
-    return safetyResult.requiresExplicitApproval
-      ? resolveHadamardAskPermission(input, safetyDecision, timestamp)
-      : safetyDecision;
   }
 
   if (input.adapter?.checkPermissions) {
@@ -198,6 +231,19 @@ export async function decideHadamardToolPermission(
       input,
       'allow',
       'Bypass-permissions mode allows tool execution.',
+      'mode',
+      timestamp,
+    );
+  }
+
+  if (input.mode === 'approveForMe') {
+    // Approve-for-me: auto-allow everything that reached this point. Only
+    // catastrophic destructive commands (handled by the safety check above),
+    // explicit rules, and interactive tools still require the user.
+    return decision(
+      input,
+      'allow',
+      'Approve-for-me mode allows tool execution.',
       'mode',
       timestamp,
     );
@@ -431,6 +477,7 @@ async function resolveHadamardAskPermission(
     reason: baseDecision.reason,
     source: baseDecision.source === 'rule' ? 'rule' : 'classifier',
     matchedRule: baseDecision.matchedRule,
+    safetyCritical: baseDecision.safetyCritical,
   });
 
   const resolved = decision(
@@ -444,6 +491,9 @@ async function resolveHadamardAskPermission(
     timestamp,
     baseDecision.matchedRule,
   );
+  if (baseDecision.safetyCritical) {
+    resolved.safetyCritical = true;
+  }
   if (approval?.behavior === 'allow' && approval.updatedInput !== undefined) {
     resolved.updatedInput = approval.updatedInput;
   }

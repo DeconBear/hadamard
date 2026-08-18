@@ -78,6 +78,7 @@ import {
   persistHadamardSettingsStore,
   resolveHadamardSettingsStore,
 } from '../config/hadamardSettingsStore.js';
+import { consumeFullAccessWarning } from '../config/fullAccessWarning.js';
 import {
   readProjectSettings,
   writeProjectSettings,
@@ -879,7 +880,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     session.permissionContext.mode ?? permissionMode;
   const currentExternalCliPermissionMode = (): 'acceptEdits' | 'bypassPermissions' | 'default' | 'plan' => {
     const mode = currentPermissionMode();
-    return mode === 'auto' ? 'default' : mode;
+    return mode === 'auto' || mode === 'approveForMe' ? 'default' : mode;
   };
   const currentEffort = (): HadamardRunEffort | undefined => {
     const stored = session.metadata[SESSION_EFFORT_KEY];
@@ -986,6 +987,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         toolName: context.publicName,
         summary: summarizeForDialog(context.input),
         selected: 0,
+        safetyCritical: context.safetyCritical === true,
         resolve,
       };
       renderDynamic();
@@ -1233,6 +1235,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   function permissionLabel(): string {
     const m = currentPermissionMode();
     if (m === 'bypassPermissions') return 'full-access';
+    if (m === 'approveForMe') return 'approve-for-me';
     if (m === 'acceptEdits') return 'workspace';
     if (m === 'default' && session.permissionContext.permissions.some((p) => p.behavior === 'deny')) return 'read-only';
     return m;
@@ -4967,6 +4970,12 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   screen.start();
   await refreshContextEstimate();
   paintWelcome();
+  if (currentPermissionMode() === 'bypassPermissions') {
+    const fullAccessWarning = await consumeFullAccessWarning();
+    if (fullAccessWarning) {
+      appendStatic([...formatErrorLine(`WARNING: ${fullAccessWarning}`), '']);
+    }
+  }
   paintSessionHistory();
   await restoreSessionRuntimeSelection();
   renderDynamic();

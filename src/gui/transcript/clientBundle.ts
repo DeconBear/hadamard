@@ -323,6 +323,7 @@ export function getTranscriptClientScript(): string {
           state: classifyToolFamily(toolName) === 'question' ? 'awaiting-answer' : 'awaiting-approval',
           input: event.input, hint: toolInputHint(event.input) || String(event.summary || ''),
           collapsed: false, permissionId, permissionSummary: String(event.summary || ''),
+          safetyCritical: event.safetyCritical === true,
         };
         TR.toolIndex.set(toolUseId, TR.parts.length);
         TR.parts.push(target);
@@ -331,6 +332,7 @@ export function getTranscriptClientScript(): string {
         target.state = classifyToolFamily(toolName) === 'question' ? 'awaiting-answer' : 'awaiting-approval';
         target.permissionId = permissionId;
         target.permissionSummary = String(event.summary || '');
+        target.safetyCritical = event.safetyCritical === true;
         if (event.input != null) target.input = event.input;
         target.collapsed = false;
         changed.push(target.id);
@@ -518,12 +520,17 @@ export function getTranscriptClientScript(): string {
       });
       return btn;
     };
-    footer.append(
-      mk('Allow', 'allow', true),
-      mk('Always', 'always', false),
-      mk('Always (user)', 'always-user', false),
-      mk('Deny', 'deny', false),
-    );
+    // Catastrophic commands get one-time buttons only — never rememberable.
+    if (part.safetyCritical) {
+      footer.append(mk('Allow once', 'allow', true), mk('Deny', 'deny', false));
+    } else {
+      footer.append(
+        mk('Allow', 'allow', true),
+        mk('Always', 'always', false),
+        mk('Always (user)', 'always-user', false),
+        mk('Deny', 'deny', false),
+      );
+    }
     card.appendChild(footer);
   }
 

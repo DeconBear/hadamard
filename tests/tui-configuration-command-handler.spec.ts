@@ -64,6 +64,38 @@ describe('runTuiConfigurationCommand', () => {
     expect(port.output.flat().map(stripAnsi).join('\n')).toContain('permissions: Read-only');
   });
 
+  it('applies the approve-for-me preset', async () => {
+    const port = createPort();
+    await runTuiConfigurationCommand('permissions', 'approve-for-me', port);
+
+    expect(port.setPermissionContext).toHaveBeenCalledWith('approveForMe', []);
+    expect(port.output.flat().map(stripAnsi).join('\n')).toContain('permissions: Approve for me');
+  });
+
+  it('warns once before enabling full access', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const home = mkdtempSync(path.join(tmpdir(), 'hadamard-permissions-'));
+    const previousHome = process.env.HADAMARD_HOME;
+    process.env.HADAMARD_HOME = home;
+    try {
+      const first = createPort();
+      await runTuiConfigurationCommand('permissions', 'full', first);
+      const firstOutput = first.output.flat().map(stripAnsi).join('\n');
+      expect(first.setPermissionContext).toHaveBeenCalledWith('bypassPermissions', []);
+      expect(firstOutput).toContain('WARNING:');
+      expect(firstOutput).toContain('Full access runs every command without asking');
+
+      const second = createPort();
+      await runTuiConfigurationCommand('permissions', 'full', second);
+      expect(second.output.flat().map(stripAnsi).join('\n')).not.toContain('WARNING:');
+    } finally {
+      if (previousHome === undefined) delete process.env.HADAMARD_HOME;
+      else process.env.HADAMARD_HOME = previousHome;
+    }
+  });
+
   it('routes model context selection through the shared model command', async () => {
     const port = createPort();
     await runTuiConfigurationCommand('model', 'context 128k', port);

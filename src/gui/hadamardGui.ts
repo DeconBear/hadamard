@@ -453,6 +453,7 @@ const PERMISSION_MODES = new Set<HadamardPermissionMode>([
   'acceptEdits',
   'plan',
   'bypassPermissions',
+  'approveForMe',
   'auto',
 ]);
 
@@ -550,6 +551,8 @@ interface PendingPermission {
   toolName: string;
   summary: string;
   input?: unknown;
+  /** Catastrophic-command approval: one-time allow/deny only, never remembered. */
+  safetyCritical?: boolean;
   resolve: (outcome: {
     decision: 'allow' | 'always' | 'always-user' | 'deny';
     answers?: Record<string, string>;
@@ -657,7 +660,7 @@ function parseDurableIssueContext(value: JsonValue | undefined): GuiDurableIssue
   const storage = requiredString('storage');
   if (!isIssueStorageMode(storage)) throw new Error(`Invalid durable issue storage mode: ${storage}`);
   const permissionMode = requiredString('permissionMode');
-  if (!['default', 'acceptEdits', 'bypassPermissions', 'plan', 'auto'].includes(permissionMode)) {
+  if (!['default', 'acceptEdits', 'bypassPermissions', 'approveForMe', 'plan', 'auto'].includes(permissionMode)) {
     throw new Error(`Invalid durable issue permission mode: ${permissionMode}`);
   }
   const issueNumber = record.issueNumber;
@@ -2975,6 +2978,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         toolName: context.publicName,
         summary: summarizeInput(context.input),
         input: context.input,
+        safetyCritical: context.safetyCritical === true,
         resolve,
       };
       pendingPermissions.set(id, request);
@@ -2984,9 +2988,16 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         toolName: request.toolName,
         summary: request.summary,
         input: context.input,
+        safetyCritical: request.safetyCritical,
       });
     });
     pendingPermissions.delete(id);
+    if (context.safetyCritical) {
+      // Catastrophic commands require a fresh manual decision every time.
+      return pending.decision === 'deny'
+        ? { behavior: 'deny', reason: 'Denied in GUI permission dialog.' }
+        : { behavior: 'allow', reason: 'Approved once (destructive command) in GUI.' };
+    }
     if (pending.decision === 'always' || pending.decision === 'always-user') {
       const state = session.permissionContext;
       const permissions = state.permissions.filter(
@@ -3552,13 +3563,19 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         rules: READONLY_DENY.map(toolName => ({ toolName, behavior: 'deny', source: 'permissions-preset' })),
         label: 'Read-only',
       },
-      workspace: { mode: 'acceptEdits', rules: [], label: 'Workspace access' },
+      'approve-for-me': { mode: 'approveForMe', rules: [], label: 'Approve for me' },
       full: { mode: 'bypassPermissions', rules: [], label: 'Full access' },
     };
     const preset = presets[key];
     if (!preset) return [{ type: 'error', message: `unknown permission preset: ${key}` }];
     await session.setPermissionContext({ mode: preset.mode, permissions: preset.rules, approver });
-    return [{ type: 'notice', message: `permissions: ${preset.label} (${preset.mode})` }];
+    const events: GuiRunEvent[] = [{ type: 'notice', message: `permissions: ${preset.label} (${preset.mode})` }];
+    if (preset.mode === 'bypassPermissions') {
+      const { consumeFullAccessWarning } = await import('../config/fullAccessWarning.js');
+      const warning = await consumeFullAccessWarning(resolveGuiHomeDir());
+      if (warning) events.push({ type: 'error', message: `WARNING: ${warning}` });
+    }
+    return events;
   }
 
   async function runWorkflow(name: string, input?: string): Promise<GuiRunEvent[]> {
@@ -4688,7 +4705,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
 
   function externalCliPermissionMode(): 'acceptEdits' | 'bypassPermissions' | 'default' | 'plan' {
     const mode = currentPermissionMode();
-    return mode === 'auto' ? 'default' : mode;
+    return mode === 'auto' || mode === 'approveForMe' ? 'default' : mode;
   }
 
   type SupportedExternalCliConfig = PersistedBridgeConfig & {

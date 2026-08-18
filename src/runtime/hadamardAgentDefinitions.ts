@@ -100,6 +100,7 @@ function createAgentDefinition(input: {
     'default',
     'acceptEdits',
     'bypassPermissions',
+    'approveForMe',
     'plan',
     'auto',
   ]);

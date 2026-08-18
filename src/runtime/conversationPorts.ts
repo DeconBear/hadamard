@@ -120,7 +120,7 @@ export interface ToolPolicyPort {
     behavior: 'allow' | 'deny' | 'ask';
     updatedInput?: unknown;
     reason?: string;
-    decision?: { behavior?: 'allow' | 'deny'; source?: string; updatedInput?: unknown };
+    decision?: { behavior?: 'allow' | 'deny'; source?: string; updatedInput?: unknown; safetyCritical?: boolean };
     explicitApproval?: boolean;
   }>;
   runPost(call: unknown, execution: unknown): Promise<

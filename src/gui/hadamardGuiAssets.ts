@@ -929,12 +929,12 @@ export function createHadamardGuiHtml(): string {
           <h2>Permissions</h2>
           <div class="settings-row"><span><strong>Default permission</strong><small>Read and edit files in the workspace.</small></span><input id="settingsDefaultPermission" type="checkbox"></div>
           <div class="settings-row"><span><strong>Auto review</strong><small>Auto-accept workspace edits when possible.</small></span><input id="settingsAutoAudit" type="checkbox"></div>
-          <div class="settings-row"><span><strong>Full access</strong><small>Run with bypass permissions for local agent work.</small></span><input id="settingsFullAccess" type="checkbox"></div>
+          <div class="settings-row"><span><strong>Full access</strong><small>No prompts at all — destructive commands included. Use only with full trust.</small></span><input id="settingsFullAccess" type="checkbox"></div>
           <label class="inline-field">Permission preset
             <select id="settingsPermissionPreset">
               <option value="">Keep current</option>
               <option value="full">Full access</option>
-              <option value="workspace">Workspace</option>
+              <option value="approve-for-me">Approve for me</option>
               <option value="read-only">Read-only</option>
             </select>
           </label>
@@ -7596,7 +7596,8 @@ function renderWorkspaceChoices() {
 }
 function permissionSelectValue(mode) {
   if (mode === 'bypassPermissions') return 'full';
-  if (mode === 'acceptEdits') return 'workspace';
+  if (mode === 'approveForMe') return 'approve-for-me';
+  if (mode === 'acceptEdits') return 'approve-for-me';
   return 'read-only';
 }
 const PERMISSION_PRESETS = [
@@ -7607,15 +7608,15 @@ const PERMISSION_PRESETS = [
     icon: 'hand',
   },
   {
-    value: 'workspace',
+    value: 'approve-for-me',
     title: 'Approve for me',
-    description: 'Only ask for approval on risky operations.',
+    description: 'Auto-approve everything except commands that could delete the system, a disk, or this project.',
     icon: 'shield',
   },
   {
     value: 'full',
     title: 'Full access',
-    description: 'Unrestricted access to the network and local files.',
+    description: 'No prompts at all — destructive commands included. Use only with full trust.',
     icon: 'shieldAlert',
   },
 ];
@@ -23201,12 +23202,16 @@ function showNextPermission() {
       toolName: next.toolName,
       summary: next.summary,
       input: next.input,
+      safetyCritical: next.safetyCritical === true,
     });
     el('permissionModal').classList.add('hidden');
     return;
   }
-  el('permissionTool').textContent = next.toolName || '';
+  const safetyCritical = next.safetyCritical === true;
+  el('permissionTool').textContent = (safetyCritical ? 'DESTRUCTIVE COMMAND · ' : '') + (next.toolName || '');
   el('permissionSummary').textContent = next.summary || '(no arguments)';
+  document.querySelectorAll('#permissionModal [data-decision="always"], #permissionModal [data-decision="always-user"]')
+    .forEach(btn => btn.classList.toggle('hidden', safetyCritical));
   el('permissionModal').classList.remove('hidden');
 }
 function setField(id, value) { el(id).value = value == null ? '' : String(value); }
@@ -26806,8 +26811,8 @@ function closeSettings() { el('settingsModal').classList.add('hidden'); }
 function derivePermissionPreset() {
   if (el('settingsPermissionPreset').value) return el('settingsPermissionPreset').value;
   if (el('settingsFullAccess').checked) return 'full';
-  if (el('settingsAutoAudit').checked) return 'workspace';
-  if (el('settingsDefaultPermission').checked) return 'workspace';
+  if (el('settingsAutoAudit').checked) return 'approve-for-me';
+  if (el('settingsDefaultPermission').checked) return 'approve-for-me';
   return '';
 }
 let settingsAutosaveTimer = null;
