@@ -1021,9 +1021,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     await session.setPermissionContext({ mode: 'plan', permissions: [], approver });
   };
 
+  // Mirrors the GUI hook: evaluates the LIVE permission mode so mode switches
+  // via /permissions behave identically on both surfaces.
   const canUseTool: HadamardCanUseTool | undefined =
-    permissionMode === 'default'
-      ? (context) => {
+    (context) => {
+          if (currentPermissionMode() !== 'default') return undefined;
           if (context.publicName === 'Bash') {
             // Auto-allow read-only commands (ls, git status, cat, …) so the
             // default mode isn't a prompt on every harmless call (gap #12 vs
@@ -1039,8 +1041,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             return { behavior: 'ask', reason: `${context.publicName} mutates the workspace.` };
           }
           return undefined;
-        }
-      : undefined;
+        };
 
   // User-configurable PreToolUse hooks from settings.json hooks.PreToolUse[].
   // Lazily reads the live settings so edits are picked up without a restart.
