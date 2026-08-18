@@ -15,6 +15,8 @@ export interface PermissionDialogState {
   toolName: string;
   summary: string;
   selected: number;
+  /** Catastrophic-command approval: offer one-time allow/deny only, no "always". */
+  safetyCritical?: boolean;
   resolve: (outcome: 'allow' | 'always' | 'always-user' | 'deny') => void;
 }
 

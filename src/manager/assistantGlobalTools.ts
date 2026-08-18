@@ -635,7 +635,7 @@ export async function createAssistantGlobalTools(
         bridgeConfig: z.string().optional().describe('Omit (with model) for an inherit-session-model agent'),
         model: z.string().optional(),
         description: z.string().optional(),
-        permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'auto']).optional(),
+        permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'approveForMe', 'plan', 'auto']).optional(),
         effort: z.enum(['auto', 'low', 'medium', 'high', 'max']).optional(),
         maxTokens: z.number().int().positive().optional(),
         temperature: z.number().min(0).max(2).optional(),

@@ -10,6 +10,7 @@ const PERMISSION_MODES = new Set<HadamardPermissionMode>([
   'default',
   'acceptEdits',
   'bypassPermissions',
+  'approveForMe',
   'plan',
   'auto',
 ]);
