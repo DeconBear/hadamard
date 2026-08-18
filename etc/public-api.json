@@ -3960,12 +3960,12 @@
       {
         "name": "HadamardPermissionDecision",
         "kind": "interface",
-        "signature": "export interface HadamardPermissionDecision {\ntoolName: string;\npublicName: string;\nbehavior: 'allow' | 'deny';\nreason: string;\nsource: 'mode' | 'rule' | 'classifier' | 'approver' | 'canUseTool';\nmatchedRule?: string;\ntimestamp: string;\nupdatedInput?: unknown;\n}"
+        "signature": "export interface HadamardPermissionDecision {\ntoolName: string;\npublicName: string;\nbehavior: 'allow' | 'deny';\nreason: string;\nsource: 'mode' | 'rule' | 'classifier' | 'approver' | 'canUseTool';\nmatchedRule?: string;\ntimestamp: string;\nsafetyCritical?: boolean;\nupdatedInput?: unknown;\n}"
       },
       {
         "name": "HadamardPermissionMode",
         "kind": "type",
-        "signature": "export type HadamardPermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'auto';"
+        "signature": "export type HadamardPermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'approveForMe' | 'plan' | 'auto';"
       },
       {
         "name": "HadamardPermissionRule",
@@ -4320,7 +4320,7 @@
       {
         "name": "HadamardToolApprovalContext",
         "kind": "interface",
-        "signature": "export interface HadamardToolApprovalContext extends HadamardToolClassifierContext {\nmode: HadamardPermissionMode;\nproposedBehavior: 'ask';\nreason: string;\nsource: 'rule' | 'classifier';\nmatchedRule?: string;\n}"
+        "signature": "export interface HadamardToolApprovalContext extends HadamardToolClassifierContext {\nmode: HadamardPermissionMode;\nproposedBehavior: 'ask';\nreason: string;\nsource: 'rule' | 'classifier';\nmatchedRule?: string;\nsafetyCritical?: boolean;\n}"
       },
       {
         "name": "HadamardToolApprovalOutcome",
@@ -13746,12 +13746,12 @@
       {
         "name": "HadamardPermissionDecision",
         "kind": "interface",
-        "signature": "export interface HadamardPermissionDecision {\ntoolName: string;\npublicName: string;\nbehavior: 'allow' | 'deny';\nreason: string;\nsource: 'mode' | 'rule' | 'classifier' | 'approver' | 'canUseTool';\nmatchedRule?: string;\ntimestamp: string;\nupdatedInput?: unknown;\n}"
+        "signature": "export interface HadamardPermissionDecision {\ntoolName: string;\npublicName: string;\nbehavior: 'allow' | 'deny';\nreason: string;\nsource: 'mode' | 'rule' | 'classifier' | 'approver' | 'canUseTool';\nmatchedRule?: string;\ntimestamp: string;\nsafetyCritical?: boolean;\nupdatedInput?: unknown;\n}"
       },
       {
         "name": "HadamardPermissionMode",
         "kind": "type",
-        "signature": "export type HadamardPermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'auto';"
+        "signature": "export type HadamardPermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'approveForMe' | 'plan' | 'auto';"
       },
       {
         "name": "HadamardPermissionRule",
@@ -14106,7 +14106,7 @@
       {
         "name": "HadamardToolApprovalContext",
         "kind": "interface",
-        "signature": "export interface HadamardToolApprovalContext extends HadamardToolClassifierContext {\nmode: HadamardPermissionMode;\nproposedBehavior: 'ask';\nreason: string;\nsource: 'rule' | 'classifier';\nmatchedRule?: string;\n}"
+        "signature": "export interface HadamardToolApprovalContext extends HadamardToolClassifierContext {\nmode: HadamardPermissionMode;\nproposedBehavior: 'ask';\nreason: string;\nsource: 'rule' | 'classifier';\nmatchedRule?: string;\nsafetyCritical?: boolean;\n}"
       },
       {
         "name": "HadamardToolApprovalOutcome",
