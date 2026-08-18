@@ -6,6 +6,19 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.20 - 2026-08-18
+
+### Features
+
+- Add an `approve-for-me` permission mode that auto-approves everything except catastrophic commands (system wipe, disk-wide or whole-project deletion), which require explicit manual confirmation each time
+- Make `full access` (`bypassPermissions`) a true full-access mode with a one-time persisted risk warning, matching Codex `--yolo` semantics
+
+### Fixes
+
+- Align TUI and GUI permission behavior with SDK semantics: live permission-mode checks in the TUI, and full-access risk warning display plus friendly mode labels in the GUI
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.19...v0.4.20
+
 ## v0.4.19 - 2026-08-17
 
 ### Features
