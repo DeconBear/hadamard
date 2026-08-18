@@ -143,7 +143,7 @@ describe('interactive CLI convergence', () => {
       if (command === 'permissions') {
         expect(guiCase).toContain('setPermissionPreset(args.toLowerCase()');
         expect(gui).toContain("'read-only': {");
-        expect(gui).toContain("workspace: { mode: 'acceptEdits'");
+        expect(gui).toContain("'approve-for-me': { mode: 'approveForMe'");
         expect(gui).toContain("full: { mode: 'bypassPermissions'");
       }
       for (const subcommand of subcommands) {

@@ -83,6 +83,7 @@ export type HadamardPermissionMode =
   | 'default'
   | 'acceptEdits'
   | 'bypassPermissions'
+  | 'approveForMe'
   | 'plan'
   | 'auto';
 
@@ -115,6 +116,12 @@ export interface HadamardPermissionDecision {
   source: 'mode' | 'rule' | 'classifier' | 'approver' | 'canUseTool';
   matchedRule?: string;
   timestamp: string;
+  /**
+   * Set when the decision concerns a catastrophic destructive command
+   * (system/disk wipe or whole-project deletion). Approver UIs must require
+   * a one-time manual confirmation and hide "always/remember" options.
+   */
+  safetyCritical?: boolean;
   /** When set, the conversation engine executes the tool with this input instead of the model-provided input. */
   updatedInput?: unknown;
 }
@@ -146,6 +153,8 @@ export interface HadamardToolApprovalContext extends HadamardToolClassifierConte
   reason: string;
   source: 'rule' | 'classifier';
   matchedRule?: string;
+  /** When true, the prompt guards a catastrophic destructive command; offer one-time allow/deny only. */
+  safetyCritical?: boolean;
 }
 
 export type HadamardToolApprovalOutcome =

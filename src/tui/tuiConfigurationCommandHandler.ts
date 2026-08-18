@@ -160,7 +160,11 @@ export async function runTuiConfigurationCommand(
           })),
           label: 'Read-only',
         },
-        workspace: { mode: 'acceptEdits', rules: [], label: 'Workspace access' },
+        'approve-for-me': {
+          mode: 'approveForMe',
+          rules: [],
+          label: 'Approve for me',
+        },
         full: { mode: 'bypassPermissions', rules: [], label: 'Full access' },
       };
       let key = args.trim().toLowerCase().replace(/[ _]/g, '-');
@@ -170,8 +174,8 @@ export async function runTuiConfigurationCommand(
           subtitle: `current: ${port.currentPermissionMode()}`,
           items: [
             { id: 'read-only', label: 'Read-only', description: 'Read, search, and web only — deny Write/Edit/Bash/NotebookEdit/PowerShell' },
-            { id: 'workspace', label: 'Workspace access', description: 'Auto-accept edits in the workspace (acceptEdits)' },
-            { id: 'full', label: 'Full access', description: 'No prompts — run any tool (bypassPermissions)' },
+            { id: 'approve-for-me', label: 'Approve for me', description: 'Auto-approve everything except commands that could delete the system, a disk, or this project (approveForMe)' },
+            { id: 'full', label: 'Full access', description: 'No prompts at all — destructive commands included (bypassPermissions)' },
           ],
         });
         if (!choice) return true;
@@ -179,7 +183,7 @@ export async function runTuiConfigurationCommand(
       }
       const preset = presets[key];
       if (!preset) {
-        port.appendStatic([...formatErrorLine(`unknown permission preset: ${key} (read-only | workspace | full)`), '']);
+        port.appendStatic([...formatErrorLine(`unknown permission preset: ${key} (read-only | approve-for-me | full)`), '']);
         return true;
       }
       await port.setPermissionContext(preset.mode, preset.rules);
@@ -187,6 +191,13 @@ export async function runTuiConfigurationCommand(
         ...formatInfoLine(`permissions: ${preset.label} — ${preset.mode}${preset.rules.length ? ` · ${preset.rules.length} deny rules` : ''}`),
         '',
       ]);
+      if (preset.mode === 'bypassPermissions') {
+        const { consumeFullAccessWarning } = await import('../config/fullAccessWarning.js');
+        const warning = await consumeFullAccessWarning();
+        if (warning) {
+          port.appendStatic([...formatErrorLine(`WARNING: ${warning}`), '']);
+        }
+      }
       return true;
     }
     default:

@@ -81,15 +81,20 @@ export function buildTuiPermissionDialog(
   width: number,
 ): string[] {
   const inner = Math.max(width - 4, 8);
-  const options = [
-    'Yes',
-    `Always ${dialog.toolName} (project)`,
-    `Always ${dialog.toolName} (user)`,
-    'No (esc)',
-  ];
+  const options = dialog.safetyCritical
+    ? ['Yes (this once)', 'No (esc)']
+    : [
+        'Yes',
+        `Always ${dialog.toolName} (project)`,
+        `Always ${dialog.toolName} (user)`,
+        'No (esc)',
+      ];
   const lines = [
     boxTop(A.yellow, width),
     boxRow(`${A.bold}Permission required · ${dialog.toolName}${A.reset}`, A.yellow, width),
+    ...(dialog.safetyCritical
+      ? [boxRow(`${A.bold}Destructive command — manual approval is required for this run only.${A.reset}`, A.yellow, width)]
+      : []),
     boxRow(`${A.dim}${truncateToWidth(dialog.summary || '(no arguments)', inner)}${A.reset}`, A.yellow, width),
   ];
   options.forEach((option, index) => {
@@ -97,7 +102,11 @@ export function buildTuiPermissionDialog(
     lines.push(boxRow(selected ? `${A.inverse} ${option} ${A.reset}` : `  ${option}`, A.yellow, width));
   });
   lines.push(boxBottom(A.yellow, width));
-  lines.push(`${A.dim}  y/enter approve · a always (project) · n/esc deny · ↑↓ select${A.reset}`);
+  lines.push(
+    dialog.safetyCritical
+      ? `${A.dim}  y/enter approve once · n/esc deny · ↑↓ select${A.reset}`
+      : `${A.dim}  y/enter approve · a always (project) · n/esc deny · ↑↓ select${A.reset}`,
+  );
   return lines;
 }
 

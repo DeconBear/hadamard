@@ -99,15 +99,25 @@ export function checkSafety(
 
 /**
  * Detect shell commands that can erase a system disk or the active workspace.
- * These commands are never covered by bypass-permissions mode; the permission
- * layer must obtain an explicit approval for the individual invocation.
+ * In 'approveForMe' and default modes the permission layer must obtain an
+ * explicit one-time approval for the individual invocation; only true
+ * full-access (bypassPermissions) runs these without prompting.
  */
 export function detectCatastrophicShellCommand(
   command: string,
   workDir: string,
 ): string | null {
-  const normalized = command.trim();
-  if (!normalized) return null;
+  return detectCatastrophic(command.trim(), workDir, 0);
+}
+
+const MAX_COMMAND_UNWRAP_DEPTH = 8;
+
+function detectCatastrophic(
+  normalized: string,
+  workDir: string,
+  depth: number,
+): string | null {
+  if (!normalized || depth > MAX_COMMAND_UNWRAP_DEPTH) return null;
 
   if (
     /\bmkfs(?:\.[a-z0-9]+)?\b[^\r\n]*(?:\/dev\/(?:sd|hd|nvme|vd)[a-z0-9]*|--all)/iu.test(normalized) ||
@@ -118,7 +128,18 @@ export function detectCatastrophicShellCommand(
   }
 
   for (const segment of normalized.split(/[;&|\r\n]+/u)) {
-    const tokens = tokenizeShellSegment(segment);
+    const tokens = unwrapShellWrappers(tokenizeShellSegment(segment), depth);
+    if (tokens.length === 0) continue;
+
+    // sh/bash/zsh -c "<script>": recursively inspect the inner script so a
+    // hidden `rm -rf /` inside a one-liner cannot evade detection.
+    const shellScript = extractShellDashCScript(tokens);
+    if (shellScript !== null) {
+      const inner = detectCatastrophic(shellScript, workDir, depth + 1);
+      if (inner) return inner;
+      continue;
+    }
+
     const executableIndex = tokens.findIndex(token => isDeleteExecutable(token));
     if (executableIndex < 0) continue;
 
@@ -130,6 +151,54 @@ export function detectCatastrophicShellCommand(
     }
   }
 
+  return null;
+}
+
+/**
+ * Strip leading `sudo` / `env VAR=value ...` wrappers so the real command is
+ * what gets classified (mirrors Codex's command_safety unwrapping).
+ */
+function unwrapShellWrappers(tokens: string[], depth: number): string[] {
+  let result = tokens;
+  let remaining = MAX_COMMAND_UNWRAP_DEPTH - depth;
+  while (remaining > 0 && result.length > 0) {
+    const head = result[0]!.replace(/\\/gu, '/').split('/').at(-1)?.toLowerCase();
+    if (head === 'sudo') {
+      // Skip sudo options such as -u root / -E before the real command.
+      let index = 1;
+      while (index < result.length && /^-/u.test(result[index]!)) {
+        index += result[index] === '-u' || result[index] === '--user' ? 2 : 1;
+      }
+      result = result.slice(index);
+      remaining -= 1;
+      continue;
+    }
+    if (head === 'env') {
+      let index = 1;
+      while (
+        index < result.length &&
+        (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(result[index]!) || /^-/u.test(result[index]!))
+      ) {
+        index += 1;
+      }
+      result = result.slice(index);
+      remaining -= 1;
+      continue;
+    }
+    break;
+  }
+  return result;
+}
+
+function extractShellDashCScript(tokens: string[]): string | null {
+  const head = tokens[0]?.replace(/\\/gu, '/').split('/').at(-1)?.toLowerCase();
+  if (head !== 'sh' && head !== 'bash' && head !== 'zsh') return null;
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token === '-c' || token === '-lc' || token === '-ec') {
+      return tokens[index + 1] ?? null;
+    }
+  }
   return null;
 }
 
@@ -155,6 +224,12 @@ function isCatastrophicDeleteTarget(token: string, workDir: string): boolean {
     return true;
   }
   if (/^(?:\/|\/\*|[a-z]:[\\/]+\*?|%SystemDrive%[\\/]*|\$env:SystemDrive[\\/]*)$/iu.test(raw)) {
+    return true;
+  }
+  // Home-directory wipe (e.g. `rm -rf ~`, `Remove-Item -Recurse -Force $HOME`).
+  if (
+    /^(?:~(?:[\\/]\*?)?|\$(?:\{HOME\}|HOME)(?:[\\/]\*?)?|%USERPROFILE%(?:[\\/]\*?)?|\$env:USERPROFILE(?:[\\/]\*?)?)$/iu.test(raw)
+  ) {
     return true;
   }
 

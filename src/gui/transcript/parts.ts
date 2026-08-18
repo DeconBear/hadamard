@@ -34,6 +34,8 @@ export interface TranscriptToolPart {
   collapsed?: boolean;
   permissionId?: string;
   permissionSummary?: string;
+  /** Catastrophic-command approval: render one-time allow/deny buttons only. */
+  safetyCritical?: boolean;
 }
 
 export interface TranscriptTextPart {
@@ -452,6 +454,7 @@ export function applyGuiEvent(store: TranscriptStore, event: GuiRunEventLike): s
         collapsed: false,
         permissionId,
         permissionSummary: String(event.summary ?? ''),
+        safetyCritical: event.safetyCritical === true,
       };
       store.toolIndex.set(toolUseId, store.parts.length);
       store.parts.push(target);
@@ -461,6 +464,7 @@ export function applyGuiEvent(store: TranscriptStore, event: GuiRunEventLike): s
       target.state = family === 'question' ? 'awaiting-answer' : 'awaiting-approval';
       target.permissionId = permissionId;
       target.permissionSummary = String(event.summary ?? '');
+      target.safetyCritical = event.safetyCritical === true;
       if (event.input != null) target.input = event.input;
       target.collapsed = false;
       changed.push(target.id);
