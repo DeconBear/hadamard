@@ -3157,6 +3157,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         heavyStateCache = heavy;
       }
     }
+    // One-time full-access risk warning (TUI shows the same warning at
+    // startup); consumed and acknowledged on first read, null afterwards.
+    const fullAccessWarning = currentPermissionMode() === 'bypassPermissions'
+      ? await (await import('../config/fullAccessWarning.js')).consumeFullAccessWarning(homeDir)
+      : null;
     const registeredProjectPaths = heavy.projects.flatMap(project => project.workPaths);
     const [allSessions, unregisteredSessions, workflows, teams, routers, skills, agents, agentDefinitions, runtimeDiscovery, scheduledTasks] = await Promise.all([
       listGuiSessions(),
@@ -3195,6 +3200,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       activeWorkPath: workDir,
       session: sessionView(session),
       permissionMode: currentPermissionMode(),
+      fullAccessWarning,
       effort: currentEffort() ?? 'auto',
       agentMode: currentAgentMode(),
       activeTeamName,
