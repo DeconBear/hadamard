@@ -82,7 +82,7 @@ bridge 在 PATH 上找到 `claude`，以 `-p --output-format stream-json --verbo
 > 提示：若你的 PowerShell 当前 shell 已 `ANTHROPIC_API_KEY` 指向 Claude 官方，
 > 且 settings.json 未配凭证，子进程会回退到该值——请把 provider 配置写全。
 
-## 1.2 六大 provider（claude / pi / codex / codewhale / reasonix / crush）
+## 1.2 七大 provider（claude / pi / codex / codewhale / reasonix / crush / cursor）
 
 | Provider | `directCliProvider` | 本机二进制 | 入口 | 协议 |
 |---|---|---|---|---|
@@ -92,6 +92,7 @@ bridge 在 PATH 上找到 `claude`，以 `-p --output-format stream-json --verbo
 | CodeWhale | `'codewhale'` | `codewhale` | `codewhale exec --auto --output-format stream-json …` | stream-json（与 claude 相同） |
 | Reasonix | `'reasonix'` | `reasonix` | `reasonix run [--model] [--effort] <task>` | 纯文本 |
 | Crush | `'crush'` | `crush` | `crush run [--model] [--session] <prompt>` | 纯文本 |
+| Cursor CLI | `'cursor'` | `cursor-agent` | `cursor-agent --trust -p <prompt> --output-format stream-json --stream-partial-output` | stream-json |
 
 ```ts
 const sdk = await createHadamardBridgeSdk({
@@ -102,11 +103,17 @@ const sdk = await createHadamardBridgeSdk({
 ```
 
 **凭证：** claude → `ANTHROPIC_*`；codewhale → ANTHROPIC_*/DEEPSEEK_*；
-reasonix → DEEPSEEK_*；crush → OPENAI_*/ANTHROPIC_*。
+reasonix → DEEPSEEK_*；crush → OPENAI_*/ANTHROPIC_*；cursor → `CURSOR_API_KEY`。
 在 `~/.hadamard/settings.json` 的 `env` 块里直接写对应 provider 的 key。
 
-**Introspection 降级** 适用于 pi/codex/reasonix/crush（启动事件不含 tools/skills 清单）。
-run/stream/session 等生命周期方法六家完整对齐。
+**Cursor 权限映射：** `plan` → `--mode plan`；`default` 不加 `--force`（只提议不落盘）；
+`acceptEdits`/`bypassPermissions` → `--force`；headless 一律带 `--trust`。
+精确续聊用 `--resume <session_id>`（id 来自 `system/init` 或 `result` 事件），
+`--continue` 续最近一次。暂不支持原生 session 文件解析 / `cursor-agent ls` 历史导入。
+认证探测走 `cursor-agent status`，失败保守报 unknown。
+
+**Introspection 降级** 适用于 pi/codex/reasonix/crush/cursor（启动事件不含 tools/skills 清单）。
+run/stream/session 等生命周期方法七家完整对齐。
 
 ## 1.3 环境覆盖与自动检测
 
@@ -179,7 +186,7 @@ const providers = await detectBridgeProviders();
 
 按 provider 的凭证映射：`claude`/`codewhale` → `ANTHROPIC_*`；`pi`/`codex` → `OPENAI_*`
 （baseURL 含 anthropic 时 pi 用 `ANTHROPIC_*`）；`reasonix` → `DEEPSEEK_API_KEY`；
-`crush` → `OPENAI_API_KEY`。实现：`src/parity/bridgeConfigs.ts`（`buildConfigEnv`）。
+`crush` → `OPENAI_API_KEY`；`cursor` → `CURSOR_API_KEY`。实现：`src/parity/bridgeConfigs.ts`（`buildConfigEnv`）。
 
 ## 1.4 问题排查——没有检测到 runtime？
 

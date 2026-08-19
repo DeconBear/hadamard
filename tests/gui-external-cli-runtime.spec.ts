@@ -41,6 +41,7 @@ const managedRuntimeProviderCases = [
   ['codewhale', 'anthropic'],
   ['reasonix', 'openai'],
   ['crush', 'openai'],
+  ['cursor', 'anthropic'],
 ] as const;
 
 class FakeRunStream implements ExternalCliRunStreamLike {
@@ -261,7 +262,7 @@ afterEach(async () => {
 });
 
 describe('GUI External CLI runtime', () => {
-  it('accepts configuration and authentication gates for all six managed runtimes', async () => {
+  it('accepts configuration and authentication gates for all seven managed runtimes', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-gui-runtime-gates-'));
     tempDirs.push(root);
     const homeDir = path.join(root, 'home');
@@ -327,6 +328,7 @@ describe('GUI External CLI runtime', () => {
         'codex',
         'reasonix',
         'crush',
+        'cursor',
       ]);
       expect(auth.body.runtimes.every(item =>
         item.state === 'configured' && item.source === 'native-cli')).toBe(true);
@@ -337,6 +339,7 @@ describe('GUI External CLI runtime', () => {
         'codex',
         'reasonix',
         'crush',
+        'cursor',
       ]);
     } finally {
       await server.close();

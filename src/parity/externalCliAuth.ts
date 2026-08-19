@@ -10,7 +10,8 @@ export type ExternalCliAuthRuntime =
   | 'pi'
   | 'codewhale'
   | 'reasonix'
-  | 'crush';
+  | 'crush'
+  | 'cursor';
 export type ExternalCliAuthState =
   | 'authenticated'
   | 'configured'
@@ -94,6 +95,7 @@ export async function probeExternalCliAuth(
     case 'codewhale': return interpretCodewhaleStatus(result);
     case 'pi': return interpretPiModelCatalog(result);
     case 'crush': return interpretConfiguredProbe(runtime, result, 'Crush native model/provider configuration is available.');
+    case 'cursor': return interpretCursorStatus(result);
     default: return {
       runtime,
       state: 'unknown',
@@ -131,6 +133,7 @@ function authStatusArgs(runtime: Exclude<ExternalCliAuthRuntime, 'reasonix'>): s
     case 'codewhale': return ['auth', 'status'];
     case 'pi': return ['--offline', '--list-models'];
     case 'crush': return ['models'];
+    case 'cursor': return ['status'];
   }
 }
 
@@ -191,6 +194,33 @@ function interpretCodexStatus(result: ExternalCliAuthProbeResult): ExternalCliAu
     state: 'unknown',
     source: 'native-cli',
     message: 'Codex did not return a recognized authentication status.',
+  };
+}
+
+function interpretCursorStatus(result: ExternalCliAuthProbeResult): ExternalCliAuthStatus {
+  const output = (result.stdout + '\n' + result.stderr).toLowerCase();
+  const denied = /(not logged in|login required|unauthenticated|no api key)/u.test(output);
+  if (result.exitCode === 0 && !denied) {
+    return {
+      runtime: 'cursor',
+      state: 'authenticated',
+      source: 'native-cli',
+      message: 'Cursor CLI reports an active native login or API key.',
+    };
+  }
+  if (denied) {
+    return {
+      runtime: 'cursor',
+      state: 'not_authenticated',
+      source: 'native-cli',
+      message: 'Cursor CLI is installed but not logged in.',
+    };
+  }
+  return {
+    runtime: 'cursor',
+    state: 'unknown',
+    source: 'native-cli',
+    message: 'Cursor CLI did not return a recognized authentication status.',
   };
 }
 

@@ -9691,6 +9691,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           probeExternalCliAuth('codex'),
           probeExternalCliAuth('reasonix'),
           probeExternalCliAuth('crush'),
+          probeExternalCliAuth('cursor'),
         ]);
         return json(res, 200, { runtimes });
       }

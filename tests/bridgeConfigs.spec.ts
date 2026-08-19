@@ -29,6 +29,7 @@ const managedRuntimeProviderCases = [
   ['codewhale', 'anthropic'],
   ['reasonix', 'openai'],
   ['crush', 'openai'],
+  ['cursor', 'anthropic'],
 ] as const;
 
 afterEach(async () => {
@@ -198,6 +199,7 @@ describe('managed External CLI runtime gates', () => {
       'codex',
       'reasonix',
       'crush',
+      'cursor',
     ]);
     expect(VALID_RUNTIMES).toEqual([
       'hadamard',
@@ -207,6 +209,7 @@ describe('managed External CLI runtime gates', () => {
       'codex',
       'reasonix',
       'crush',
+      'cursor',
     ]);
     for (const [runtime, provider] of managedRuntimeProviderCases) {
       expect(isManagedExternalCliRuntime(runtime)).toBe(true);
@@ -323,6 +326,7 @@ describe('buildConfigEnv', () => {
     ['pi', 'openai', 'OPENAI_API_KEY'],
     ['reasonix', 'openai', 'DEEPSEEK_API_KEY'],
     ['crush', 'openai', 'CRUSH_OPENAI_API_KEY'],
+    ['cursor', 'anthropic', 'CURSOR_API_KEY'],
   ] as const)(
     'maps a %s CLI API-key override to its child-only credential variable',
     (runtime, provider, credentialVariable) => {
