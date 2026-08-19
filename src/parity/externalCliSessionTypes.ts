@@ -4,7 +4,8 @@ export type ExternalCliRuntime =
   | 'pi'
   | 'codewhale'
   | 'reasonix'
-  | 'crush';
+  | 'crush'
+  | 'cursor';
 
 export type ExternalCliSessionRole = 'user' | 'assistant' | 'system' | 'tool';
 
