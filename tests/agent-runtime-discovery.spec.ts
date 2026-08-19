@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 import {
+  DEFAULT_AGENT_RUNTIME_CANDIDATES,
   detectRuntimeLocalConfig,
   discoverAgentRuntimes,
   updateRuntimeLocalConfig,
@@ -23,6 +24,15 @@ async function makeHome(): Promise<string> {
   tempHomes.push(home);
   return home;
 }
+
+describe('DEFAULT_AGENT_RUNTIME_CANDIDATES', () => {
+  it('probes cursor-agent (never the bare `agent` symlink) for the Cursor runtime', () => {
+    const cursor = DEFAULT_AGENT_RUNTIME_CANDIDATES.find(candidate => candidate.runtime === 'cursor');
+    expect(cursor).toBeDefined();
+    expect(cursor?.commands).toEqual(['cursor-agent']);
+    expect(cursor?.versionArgs).toEqual(['--version']);
+  });
+});
 
 describe('discoverAgentRuntimes', () => {
   it('reports built-in, detected, configured, ready, and missing runtimes', async () => {

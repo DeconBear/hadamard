@@ -2420,7 +2420,7 @@
       {
         "name": "ExternalCliAuthRuntime",
         "kind": "type",
-        "signature": "export type ExternalCliAuthRuntime = 'claude' | 'codex' | 'pi' | 'codewhale' | 'reasonix' | 'crush';"
+        "signature": "export type ExternalCliAuthRuntime = 'claude' | 'codex' | 'pi' | 'codewhale' | 'reasonix' | 'crush' | 'cursor';"
       },
       {
         "name": "ExternalCliAuthState",
@@ -2475,7 +2475,7 @@
       {
         "name": "ExternalCliRuntime",
         "kind": "type",
-        "signature": "export type ExternalCliRuntime = 'claude' | 'codex' | 'pi' | 'codewhale' | 'reasonix' | 'crush';"
+        "signature": "export type ExternalCliRuntime = 'claude' | 'codex' | 'pi' | 'codewhale' | 'reasonix' | 'crush' | 'cursor';"
       },
       {
         "name": "ExternalCliRuntimeManager",
@@ -6320,7 +6320,7 @@
       {
         "name": "RuntimeProviderId",
         "kind": "type",
-        "signature": "export type RuntimeProviderId = 'claude' | 'pi' | 'codex' | 'codewhale' | 'reasonix' | 'crush';"
+        "signature": "export type RuntimeProviderId = 'claude' | 'pi' | 'codex' | 'codewhale' | 'reasonix' | 'crush' | 'cursor';"
       },
       {
         "name": "SANDBOX_POLICY_VERSION",
@@ -12196,7 +12196,7 @@
       {
         "name": "ExternalCliAuthRuntime",
         "kind": "type",
-        "signature": "export type ExternalCliAuthRuntime = 'claude' | 'codex' | 'pi' | 'codewhale' | 'reasonix' | 'crush';"
+        "signature": "export type ExternalCliAuthRuntime = 'claude' | 'codex' | 'pi' | 'codewhale' | 'reasonix' | 'crush' | 'cursor';"
       },
       {
         "name": "ExternalCliAuthState",
@@ -12251,7 +12251,7 @@
       {
         "name": "ExternalCliRuntime",
         "kind": "type",
-        "signature": "export type ExternalCliRuntime = 'claude' | 'codex' | 'pi' | 'codewhale' | 'reasonix' | 'crush';"
+        "signature": "export type ExternalCliRuntime = 'claude' | 'codex' | 'pi' | 'codewhale' | 'reasonix' | 'crush' | 'cursor';"
       },
       {
         "name": "ExternalCliRuntimeManager",
@@ -16181,7 +16181,7 @@
       {
         "name": "RuntimeProviderId",
         "kind": "type",
-        "signature": "export type RuntimeProviderId = 'claude' | 'pi' | 'codex' | 'codewhale' | 'reasonix' | 'crush';"
+        "signature": "export type RuntimeProviderId = 'claude' | 'pi' | 'codex' | 'codewhale' | 'reasonix' | 'crush' | 'cursor';"
       },
       {
         "name": "SANDBOX_POLICY_VERSION",

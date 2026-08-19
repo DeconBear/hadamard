@@ -2619,6 +2619,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         codex: 'Codex',
         reasonix: 'Reasonix',
         crush: 'Crush',
+        cursor: 'Cursor CLI',
       };
       const lines: string[] = [
         `${A.bold}${runtimeLabel[config.runtime]} native conversations${A.reset}`,
@@ -3327,6 +3328,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           pi: { provider: 'openai', label: 'pi' },
           codex: { provider: 'openai', label: 'codex' },
           crush: { provider: 'openai', label: 'crush' },
+          cursor: { provider: 'anthropic', label: 'cursor' },
         };
         const curProvider = draft.provider;
         const curRuntime = draft.runtime;

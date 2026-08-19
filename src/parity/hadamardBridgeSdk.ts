@@ -1,4 +1,4 @@
-﻿import { spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -832,6 +832,7 @@ const PROVIDER_DEFAULT_API_KEY_ENV: Record<string, readonly string[]> = {
   codex: ['OPENAI_API_KEY'],
   crush: ['CRUSH_OPENAI_API_KEY'],
   reasonix: ['DEEPSEEK_API_KEY'],
+  cursor: ['CURSOR_API_KEY'],
 };
 
 const CREDENTIAL_PROVIDER_ENV: Record<string, readonly string[]> = {
@@ -865,6 +866,7 @@ const PROVIDER_NATIVE_AUTH_ENV: Record<string, readonly string[]> = {
   codex: ['CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_API_KEY'],
   crush: ['CRUSH_OPENAI_API_KEY'],
   reasonix: ['DEEPSEEK_API_KEY'],
+  cursor: ['CURSOR_API_KEY'],
 };
 
 const PROVIDER_BASE_URL_ENV: Record<string, string> = {

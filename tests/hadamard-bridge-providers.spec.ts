@@ -9,7 +9,7 @@ import {
   loadJsonConfigFile,
   detectBridgeProviders,
 } from '../src/index.js';
-import { BRIDGE_PROVIDER_CREDENTIALS, claudeProvider, piProvider, codexProvider } from '../src/parity/bridgeProviders.js';
+import { BRIDGE_PROVIDER_CREDENTIALS, claudeProvider, piProvider, codexProvider, cursorProvider } from '../src/parity/bridgeProviders.js';
 
 const tempDirs: string[] = [];
 const fixtureCliPath = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-hadamard-runtime-cli.mjs');
@@ -21,6 +21,7 @@ const providerPathEnvKeys = [
   'HADAMARD_CODEWHALE_PATH',
   'HADAMARD_REASONIX_PATH',
   'HADAMARD_CRUSH_PATH',
+  'HADAMARD_CURSOR_PATH',
 ] as const;
 const originalProviderPaths = new Map(
   providerPathEnvKeys.map(key => [key, process.env[key]] as const),
@@ -156,10 +157,10 @@ describe('Bridge provider: resolveExecutable precedence', () => {
 });
 
 describe('detectBridgeProviders', () => {
-  it('returns entries for all six registered providers', async () => {
+  it('returns entries for all seven registered providers', async () => {
     maskProviderExecutablesAsMissing();
     const results = await detectBridgeProviders();
-    expect(results).toHaveLength(6);
+    expect(results).toHaveLength(7);
 
     for (const entry of results) {
       expect(entry).toHaveProperty('id');
@@ -197,11 +198,11 @@ describe('detectBridgeProviders', () => {
 
     // getDefaultProviderId is used internally by resolveProvider and
     // HadamardBridgeSdkClient.create. The detect API itself doesn't
-    // change — but we confirm settings load correctly (all six entries
+    // change — but we confirm settings load correctly (all seven entries
     // present, regardless of what's on PATH).
     const results = await detectBridgeProviders();
     expect(results.find(r => r.id === 'codex')).toBeDefined();
-    expect(results).toHaveLength(6);
+    expect(results).toHaveLength(7);
   });
 
   it('bounds direct probes and avoids unkillable Windows batch-shim trees', async () => {
@@ -213,7 +214,7 @@ describe('detectBridgeProviders', () => {
     const results = await detectBridgeProviders({ probeTimeoutMs: 750 });
     const elapsedMs = Date.now() - startedAt;
 
-    expect(results).toHaveLength(6);
+    expect(results).toHaveLength(7);
     expect(results.every(result => result.available && result.version === undefined)).toBe(true);
     // Windows batch shims are deliberately not executed because restricted
     // hosts may deny taskkill /T; direct probes on other platforms time out.
@@ -256,12 +257,13 @@ describe('Bridge provider: probeVersion (best-effort)', () => {
 describe('BRIDGE_PROVIDER_CREDENTIALS', () => {
   // Advisory display data only — surfaces which env var each provider's CLI
   // reads so the TUI /bridge board can show credential readiness.
-  it('covers all six providers', () => {
+  it('covers all seven providers', () => {
     expect(Object.keys(BRIDGE_PROVIDER_CREDENTIALS).sort()).toEqual([
       'claude',
       'codewhale',
       'codex',
       'crush',
+      'cursor',
       'pi',
       'reasonix',
     ]);
@@ -273,6 +275,7 @@ describe('BRIDGE_PROVIDER_CREDENTIALS', () => {
     expect(BRIDGE_PROVIDER_CREDENTIALS.pi).toContain('OPENAI_API_KEY');
     expect(BRIDGE_PROVIDER_CREDENTIALS.codex).toContain('OPENAI_API_KEY');
     expect(BRIDGE_PROVIDER_CREDENTIALS.reasonix).toContain('DEEPSEEK_API_KEY');
+    expect(BRIDGE_PROVIDER_CREDENTIALS.cursor).toEqual(['CURSOR_API_KEY']);
   });
 
   it('uses an empty list (honest "unknown") for multi-backend providers', () => {
@@ -682,5 +685,204 @@ describe('Codex exec JSONL normalization', () => {
         },
       })]);
     }
+  });
+});
+
+describe('Cursor direct CLI arguments', () => {
+  it('maps permission modes onto cursor-agent flags and keeps the prompt last', () => {
+    const plan = cursorProvider.buildArgs('plan this', { permissionMode: 'plan' });
+    expect(plan.slice(0, 4)).toEqual(['--trust', '--output-format', 'stream-json', '--stream-partial-output']);
+    expect(plan).toContain('--mode');
+    expect(plan).toContain('plan');
+    expect(plan).not.toContain('--force');
+    expect(plan.slice(-2)).toEqual(['-p', 'plan this']);
+
+    const readOnly = cursorProvider.buildArgs('inspect', { permissionMode: 'default' });
+    expect(readOnly).not.toContain('--force');
+    expect(readOnly).not.toContain('--mode');
+
+    for (const permissionMode of ['acceptEdits', 'bypassPermissions'] as const) {
+      const write = cursorProvider.buildArgs('apply edits', { permissionMode });
+      expect(write).toContain('--force');
+      expect(write).not.toContain('--mode');
+    }
+
+    const forced = cursorProvider.buildArgs('apply edits', { dangerouslySkipPermissions: true });
+    expect(forced).toContain('--force');
+  });
+
+  it('passes --model and resumes via --resume/--continue', () => {
+    const args = cursorProvider.buildArgs('second turn', {
+      model: 'composer-2.5',
+      resume: 'cursor-session-123',
+    });
+    expect(args.slice(args.indexOf('--model'), args.indexOf('--model') + 2))
+      .toEqual(['--model', 'composer-2.5']);
+    expect(args.slice(args.indexOf('--resume'), args.indexOf('--resume') + 2))
+      .toEqual(['--resume', 'cursor-session-123']);
+    expect(args.slice(-2)).toEqual(['-p', 'second turn']);
+
+    const latest = cursorProvider.buildArgs('continue turn', { continueMostRecent: true });
+    expect(latest).toContain('--continue');
+    expect(latest).not.toContain('--resume');
+
+    expect(() => cursorProvider.buildArgs('resume', { resume: '--force' })).toThrow(/session id/i);
+    expect(() => cursorProvider.buildArgs('model', { model: '--force' })).toThrow(/model/i);
+  });
+});
+
+describe('Cursor stream-json normalization', () => {
+  it('maps init, deltas, tool calls, and result with usage', () => {
+    const normalizer = cursorProvider.createNormalizer();
+
+    expect(normalizer.translate({
+      type: 'system',
+      subtype: 'init',
+      cwd: '/workspace',
+      session_id: 'cursor-session-1',
+      model: 'composer-2.5',
+    })).toEqual([expect.objectContaining({
+      type: 'system',
+      subtype: 'init',
+      session_id: 'cursor-session-1',
+      model: 'composer-2.5',
+      cwd: '/workspace',
+    })]);
+
+    // user echoes have no bridge equivalent.
+    expect(normalizer.translate({ type: 'user', message: { role: 'user', content: [] } }))
+      .toEqual([]);
+
+    // A delta (timestamp_ms, no model_call_id) streams as a text delta.
+    expect(normalizer.translate({
+      type: 'assistant',
+      timestamp_ms: 100,
+      message: { role: 'assistant', content: [{ type: 'text', text: 'partial' }] },
+    })).toEqual([expect.objectContaining({
+      type: 'stream_event',
+      session_id: 'cursor-session-1',
+      event: expect.objectContaining({
+        delta: expect.objectContaining({ type: 'text_delta', text: 'partial' }),
+      }),
+    })]);
+
+    // A recap (model_call_id) repeats streamed text and is dropped.
+    expect(normalizer.translate({
+      type: 'assistant',
+      model_call_id: 'call-1',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'partial full recap' }] },
+    })).toEqual([]);
+
+    // tool_call started/completed pairs map to tool_use / tool_result.
+    expect(normalizer.translate({
+      type: 'tool_call',
+      subtype: 'started',
+      tool_call: { writeToolCall: { args: { path: 'README.md' } } },
+    })).toEqual([expect.objectContaining({
+      type: 'assistant',
+      session_id: 'cursor-session-1',
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'cursor-tool-1',
+          name: 'write',
+          input: { path: 'README.md' },
+        }],
+      },
+    })]);
+    expect(normalizer.translate({
+      type: 'tool_call',
+      subtype: 'completed',
+      tool_call: { writeToolCall: { args: { path: 'README.md' }, result: { success: true } } },
+    })).toEqual([expect.objectContaining({
+      type: 'user',
+      session_id: 'cursor-session-1',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'cursor-tool-1',
+          content: JSON.stringify({ success: true }, null, 2),
+          is_error: false,
+        }],
+      },
+    })]);
+
+    // The result event carries duration and token usage.
+    expect(normalizer.translate({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      duration_ms: 1200,
+      result: 'done',
+      session_id: 'cursor-session-1',
+      usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 2, cacheWriteTokens: 1 },
+    })).toEqual([expect.objectContaining({
+      type: 'result',
+      subtype: 'success',
+      session_id: 'cursor-session-1',
+      is_error: false,
+      result: 'done',
+      duration_ms: 1200,
+      input_tokens: 10,
+      output_tokens: 5,
+      cache_read_tokens: 2,
+      cache_write_tokens: 1,
+    })]);
+  });
+
+  it('uses recap text only when no deltas were streamed in the turn', () => {
+    const normalizer = cursorProvider.createNormalizer();
+    normalizer.translate({ type: 'system', subtype: 'init', session_id: 's' });
+
+    // No deltas this turn: the model_call_id recap becomes the assistant text.
+    expect(normalizer.translate({
+      type: 'assistant',
+      model_call_id: 'call-1',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'buffered answer' }] },
+    })).toEqual([expect.objectContaining({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'buffered answer' }] },
+    })]);
+
+    // A delta followed by a recap drops the recap; the next turn's recap is
+    // used again once no new deltas precede it.
+    normalizer.translate({
+      type: 'assistant',
+      timestamp_ms: 1,
+      message: { role: 'assistant', content: [{ type: 'text', text: 'd' }] },
+    });
+    expect(normalizer.translate({
+      type: 'assistant',
+      model_call_id: 'call-2',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'd full' }] },
+    })).toEqual([]);
+    expect(normalizer.translate({
+      type: 'assistant',
+      model_call_id: 'call-3',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'fresh turn' }] },
+    })).toEqual([expect.objectContaining({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'fresh turn' }] },
+    })]);
+  });
+
+  it('maps an error result to an error terminal event', () => {
+    const normalizer = cursorProvider.createNormalizer();
+    normalizer.translate({ type: 'system', subtype: 'init', session_id: 's' });
+    expect(normalizer.translate({
+      type: 'result',
+      subtype: 'error',
+      is_error: true,
+      result: 'cursor usage limit reached',
+      session_id: 's',
+    })).toEqual([expect.objectContaining({
+      type: 'result',
+      subtype: 'error',
+      is_error: true,
+      result: 'cursor usage limit reached',
+      stop_reason: 'error',
+    })]);
   });
 });

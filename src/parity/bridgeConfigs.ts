@@ -44,6 +44,7 @@ export type ModelModality = 'text' | 'multimodal';
  *  `codex`       — Codex API (OpenAI wire protocol)
  *  `reasonix`    — Reasonix API (OpenAI wire protocol)
  *  `crush`       — Crush API (OpenAI wire protocol)
+ *  `cursor`      — Cursor API (Anthropic wire protocol)
  */
 export type BridgeRuntime =
   | 'hadamard'
@@ -52,7 +53,8 @@ export type BridgeRuntime =
   | 'pi'
   | 'codex'
   | 'reasonix'
-  | 'crush';
+  | 'crush'
+  | 'cursor';
 
 export type ManagedExternalCliRuntime = Exclude<BridgeRuntime, 'hadamard'>;
 export const MANAGED_EXTERNAL_CLI_RUNTIMES: readonly ManagedExternalCliRuntime[] = [
@@ -62,6 +64,7 @@ export const MANAGED_EXTERNAL_CLI_RUNTIMES: readonly ManagedExternalCliRuntime[]
   'codex',
   'reasonix',
   'crush',
+  'cursor',
 ];
 
 export function isManagedExternalCliRuntime(
@@ -81,6 +84,8 @@ export function runtimeToProvider(rt: BridgeRuntime): InProcessProvider | null {
     case 'codex':
     case 'crush':
       return 'openai';
+    case 'cursor':
+      return 'anthropic';
     default:
       return null; // hadamard — no separate provider
   }
@@ -142,6 +147,7 @@ const LEGACY_PROVIDER_MIGRATION: Record<string, InProcessProvider> = {
   codex: 'openai',
   reasonix: 'openai',
   crush: 'openai',
+  cursor: 'anthropic',
 };
 
 function migrateProvider(raw: string): InProcessProvider {
@@ -153,7 +159,7 @@ export function getBridgeConfigsPath(homeDir?: string): string {
   return path.join(resolveHadamardHome(homeDir), 'bridge-configs.json');
 }
 
-export const VALID_RUNTIMES: BridgeRuntime[] = ['hadamard', 'claude', 'codewhale', 'pi', 'codex', 'reasonix', 'crush'];
+export const VALID_RUNTIMES: BridgeRuntime[] = ['hadamard', 'claude', 'codewhale', 'pi', 'codex', 'reasonix', 'crush', 'cursor'];
 
 function isValidRuntime(raw: unknown): raw is BridgeRuntime {
   return (VALID_RUNTIMES as string[]).includes(raw as string);
@@ -386,6 +392,10 @@ export function buildConfigEnv(config: PersistedBridgeConfig): Record<string, st
       setIf(crushCredential.replace(/_API_KEY$/u, '_BASE_URL'), config.baseURL);
       break;
     }
+    case 'cursor':
+      // cursor-agent documents CURSOR_API_KEY only; no base-URL override.
+      setIf('CURSOR_API_KEY', config.apiKey);
+      break;
     default:
       break;
   }

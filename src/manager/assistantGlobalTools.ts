@@ -586,7 +586,7 @@ export async function createAssistantGlobalTools(
       description: 'Create or update a provider/bridge config. API key is write-only.',
       inputSchema: z.strictObject({
         name: z.string(),
-        runtime: z.enum(['hadamard', 'claude', 'codewhale', 'pi', 'codex', 'reasonix', 'crush']),
+        runtime: z.enum(['hadamard', 'claude', 'codewhale', 'pi', 'codex', 'reasonix', 'crush', 'cursor']),
         execution: z.enum(['api', 'cli']).optional(),
         authSource: z.enum(['native', 'apiKey']).optional(),
         credentialProvider: z.string().optional(),
