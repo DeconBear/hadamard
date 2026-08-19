@@ -2620,7 +2620,7 @@ export type HadamardBridgeToolsOption = 'default' | 'none' | string[];
  * `-p` stream-json protocol; `pi` and `codex` reuse the same spawn + JSONL
  * pipeline with their own wire protocols.
  */
-export type RuntimeProviderId = 'claude' | 'pi' | 'codex' | 'codewhale' | 'reasonix' | 'crush';
+export type RuntimeProviderId = 'claude' | 'pi' | 'codex' | 'codewhale' | 'reasonix' | 'crush' | 'cursor';
 
 /** Authentication source for an externally launched agent CLI. */
 export type HadamardBridgeAuthSource = 'native' | 'apiKey';

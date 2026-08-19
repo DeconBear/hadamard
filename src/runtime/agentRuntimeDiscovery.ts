@@ -104,6 +104,16 @@ export const DEFAULT_AGENT_RUNTIME_CANDIDATES: AgentRuntimeCandidate[] = [
     versionArgs: ['--version'],
     description: 'OpenAI-compatible Crush runtime.',
   },
+  {
+    id: 'cursor',
+    label: 'Cursor CLI',
+    runtime: 'cursor',
+    // Resolve cursor-agent only: the bare `agent` symlink is too generic and
+    // would false-positive on unrelated tools.
+    commands: ['cursor-agent'],
+    versionArgs: ['--version'],
+    description: 'Anthropic-compatible Cursor agent runtime.',
+  },
 ];
 
 export async function discoverAgentRuntimes(
@@ -251,7 +261,7 @@ export function detectRuntimeLocalConfig(
       configPaths.codexHome ? 'CODEX_HOME/config.toml' : '~/.codex/config.toml',
     );
   }
-  // pi / reasonix / hadamard have no standard local config file to reuse.
+  // pi / reasonix / cursor / hadamard have no standard local config file to reuse.
   return null;
 }
 

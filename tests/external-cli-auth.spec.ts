@@ -123,6 +123,33 @@ describe('external CLI authentication probe', () => {
     expect(status).toMatchObject({ runtime: 'crush', state: 'configured' });
   });
 
+  it('probes Cursor login state through `cursor-agent status`', async () => {
+    const authenticated = await probeExternalCliAuth('cursor', {
+      executable: '/fixture/cursor-agent',
+      runCommand: async (_executable, args) => {
+        expect(args).toEqual(['status']);
+        return { exitCode: 0, stdout: 'Logged in as dev@example.com\n', stderr: '' };
+      },
+    });
+    expect(authenticated).toMatchObject({ runtime: 'cursor', state: 'authenticated' });
+
+    const anonymous = await probeExternalCliAuth('cursor', {
+      executable: '/fixture/cursor-agent',
+      runCommand: async () => ({
+        exitCode: 1,
+        stdout: '',
+        stderr: 'Not logged in',
+      }),
+    });
+    expect(anonymous).toMatchObject({ runtime: 'cursor', state: 'not_authenticated' });
+
+    const unrecognized = await probeExternalCliAuth('cursor', {
+      executable: '/fixture/cursor-agent',
+      runCommand: async () => ({ exitCode: 1, stdout: '', stderr: 'boom' }),
+    });
+    expect(unrecognized).toMatchObject({ runtime: 'cursor', state: 'unknown' });
+  });
+
   it('does not invoke interactive Reasonix setup while probing native auth', async () => {
     let invoked = false;
     const status = await probeExternalCliAuth('reasonix', {

@@ -714,7 +714,7 @@ export function createHadamardGuiHtml(): string {
       <label id="bridgeConfigNameField" class="dialog-field">Config name<input id="bridgeCfgName" autocomplete="off" placeholder="e.g. deepseek-anthropic"></label>
       <div class="two-col">
         <label class="dialog-field">Execution mode<select id="bridgeCfgExecution"><option value="api">Direct API</option><option value="cli">External CLI</option></select></label>
-        <label class="dialog-field">Runtime<select id="bridgeCfgRuntime"><option value="hadamard">Hadamard SDK</option><option value="claude">Claude Code</option><option value="codewhale">CodeWhale</option><option value="pi">Pi</option><option value="codex">Codex CLI</option><option value="reasonix">Reasonix</option><option value="crush">Crush</option></select></label>
+        <label class="dialog-field">Runtime<select id="bridgeCfgRuntime"><option value="hadamard">Hadamard SDK</option><option value="claude">Claude Code</option><option value="codewhale">CodeWhale</option><option value="pi">Pi</option><option value="codex">Codex CLI</option><option value="reasonix">Reasonix</option><option value="crush">Crush</option><option value="cursor">Cursor CLI</option></select></label>
       </div>
       <div id="bridgeAuthenticationFields" class="two-col">
         <label class="dialog-field">Authentication<select id="bridgeCfgAuthSource"><option value="native">Reuse CLI login / config</option><option value="apiKey">API key override</option></select></label>
@@ -24307,10 +24307,10 @@ let editingDefaultBridgeConfig = false;
 let bridgeEditorUsesLocalConfig = false;
 const localRuntimeConfigCache = {};
 // runtime → wire-protocol mapping (mirrors runtimeToProvider in bridgeConfigs.ts)
-const RUNTIME_PROVIDER = { claude:'anthropic', codewhale:'anthropic', reasonix:'openai', pi:'openai', codex:'openai', crush:'openai' };
+const RUNTIME_PROVIDER = { claude:'anthropic', codewhale:'anthropic', reasonix:'openai', pi:'openai', codex:'openai', crush:'openai', cursor:'anthropic' };
 const WRITABLE_LOCAL_RUNTIMES = new Set(['claude', 'codewhale', 'crush', 'codex']);
 const CLI_SUPPORTED_RUNTIMES = new Set([
-  'claude', 'codewhale', 'pi', 'codex', 'reasonix', 'crush',
+  'claude', 'codewhale', 'pi', 'codex', 'reasonix', 'crush', 'cursor',
 ]);
 function toggleCredentialFields() {
   const runtime = el('bridgeCfgRuntime').value;

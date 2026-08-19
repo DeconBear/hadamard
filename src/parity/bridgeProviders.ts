@@ -399,7 +399,7 @@ export function getDefaultProviderId(): RuntimeProviderId {
     const bridge = (raw as { bridge?: unknown }).bridge;
     if (bridge && typeof bridge === 'object') {
       const dp = (bridge as { defaultProvider?: unknown }).defaultProvider;
-      if (dp === 'claude' || dp === 'pi' || dp === 'codex' || dp === 'codewhale' || dp === 'reasonix' || dp === 'crush') return dp;
+      if (dp === 'claude' || dp === 'pi' || dp === 'codex' || dp === 'codewhale' || dp === 'reasonix' || dp === 'crush' || dp === 'cursor') return dp;
     }
   }
   return 'claude';
@@ -413,6 +413,7 @@ export function resolveProvider(id?: RuntimeProviderId): RuntimeProvider {
   if (resolved === 'codewhale') return codewhaleProvider;
   if (resolved === 'reasonix') return reasonixProvider;
   if (resolved === 'crush') return crushProvider;
+  if (resolved === 'cursor') return cursorProvider;
   throw new HadamardBridgeProcessError(`Unknown bridge provider: ${String(resolved)}`);
 }
 
@@ -434,6 +435,7 @@ export async function detectBridgeProviders(
     codewhaleProvider,
     reasonixProvider,
     crushProvider,
+    cursorProvider,
   ];
   return Promise.all(providers.map(async provider => {
     let path: string | undefined;
@@ -1359,6 +1361,241 @@ class CrushProvider extends BaseRuntimeProvider {
   }
 }
 
+// ---------------------------------------------------------------------------
+// cursor provider (cursor-agent stream-json)
+// ---------------------------------------------------------------------------
+
+function validateCursorValue(value: string, label: string): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 512 || normalized.startsWith('-')
+    || /[\u0000-\u001f\u007f]/u.test(normalized)) {
+    throw new HadamardBridgeProcessError(
+      `Cursor ${label} must be a non-option value without control characters.`,
+    );
+  }
+  return normalized;
+}
+
+class CursorProvider extends BaseRuntimeProvider {
+  readonly id = 'cursor' as const;
+  readonly pathBinary = 'cursor-agent';
+  readonly displayName = 'Cursor CLI (cursor-agent)';
+
+  buildArgs(prompt: string, options: HadamardBridgeRunOptions): string[] {
+    // --trust is required headless: without it cursor-agent blocks on the
+    // interactive workspace-trust prompt. Permission modes map onto the
+    // documented flags: plan is a read-only planning mode, default proposes
+    // changes without applying them, and the write-capable modes use --force.
+    const args = ['--trust', '--output-format', 'stream-json', '--stream-partial-output'];
+    const permissionMode = options.permissionMode ?? 'default';
+    if (permissionMode === 'plan') {
+      args.push('--mode', 'plan');
+    } else if (
+      permissionMode === 'acceptEdits'
+      || permissionMode === 'bypassPermissions'
+      || options.dangerouslySkipPermissions === true
+    ) {
+      args.push('--force');
+    }
+    if (options.model) {
+      args.push('--model', validateCursorValue(options.model, 'model'));
+    }
+    if (typeof options.resume === 'string') {
+      args.push('--resume', validateCursorValue(options.resume, 'session id'));
+    } else if (options.resume === true || options.continueMostRecent === true) {
+      args.push('--continue');
+    }
+    // The prompt is the value of -p; keep it last so option parsing above is
+    // never influenced by prompt text.
+    args.push('-p', prompt);
+    return args;
+  }
+
+  buildChildEnv(
+    baseEnv: Record<string, string>,
+    settingsEnv: Record<string, string>,
+    overrides?: Record<string, string>,
+  ): Record<string, string> {
+    // cursor-agent reads CURSOR_API_KEY. Pass Hadamard env through.
+    return { ...baseEnv, ...settingsEnv, ...(overrides ?? {}) };
+  }
+
+  createNormalizer(): BridgeEventNormalizer {
+    return new CursorNormalizer();
+  }
+  suggestedModels(): string[] {
+    return ['auto', 'composer-2.5'];
+  }
+}
+
+function cursorToolCallName(key: string): string {
+  // The tool_call payload is keyed `<toolName>ToolCall` (writeToolCall,
+  // shellToolCall, …); the first key is the tool.
+  return key.replace(/ToolCall$/u, '') || key;
+}
+
+function cursorToolResultContent(call: Record<string, unknown>): string {
+  const value = call.result ?? call.error;
+  if (typeof value === 'string') return value;
+  return value == null ? '' : (JSON.stringify(value, null, 2) ?? '');
+}
+
+class CursorNormalizer implements BridgeEventNormalizer {
+  private sessionId: string | undefined;
+  private model: string | undefined;
+  private cwd: string | undefined;
+  private initEmitted = false;
+  private sawDelta = false;
+  private toolCallSeq = 0;
+  private readonly pendingToolCalls = new Map<string, string>();
+
+  translate(raw: Record<string, unknown>): HadamardBridgeJsonEvent[] {
+    const type = typeof raw.type === 'string' ? raw.type : '';
+
+    if (type === 'system') {
+      if (raw.subtype !== 'init' || this.initEmitted) return [];
+      this.initEmitted = true;
+      this.sessionId = typeof raw.session_id === 'string' ? raw.session_id : this.sessionId;
+      this.model = typeof raw.model === 'string' ? raw.model : this.model;
+      this.cwd = typeof raw.cwd === 'string' ? raw.cwd : this.cwd;
+      const init = bridgeEvent('system', {
+        subtype: 'init',
+        session_id: this.sessionId ?? '',
+        // cursor-agent stream-json carries no tools/skills catalog.
+        tools: [],
+        mcp_servers: [],
+        slash_commands: [],
+        agents: [],
+        skills: [],
+        plugins: [],
+      });
+      if (this.model) init.model = this.model;
+      if (this.cwd) init.cwd = this.cwd;
+      return [init];
+    }
+
+    if (type === 'assistant') return this.translateAssistant(raw);
+    if (type === 'tool_call') return this.translateToolCall(raw);
+    if (type === 'result') return [this.translateResult(raw)];
+
+    // user echoes and anything unrecognized have no bridge equivalent.
+    return [];
+  }
+
+  private translateAssistant(raw: Record<string, unknown>): HadamardBridgeJsonEvent[] {
+    const message = isRecord(raw.message) ? raw.message : undefined;
+    const content = Array.isArray(message?.content) ? message.content : [];
+    const text = content
+      .filter(
+        (block): block is Record<string, unknown> & { text: string } =>
+          isRecord(block) && block.type === 'text' && typeof block.text === 'string',
+      )
+      .map(block => block.text)
+      .join('');
+    if (!text) return [];
+
+    // Incremental deltas carry timestamp_ms and no model_call_id; buffered
+    // flushes before a tool call and turn-end recaps carry model_call_id and
+    // repeat text already streamed. Only a turn with no deltas at all may use
+    // the recap text.
+    if (typeof raw.model_call_id === 'string') {
+      const useRecap = !this.sawDelta;
+      this.sawDelta = false;
+      if (!useRecap) return [];
+      return [bridgeEvent('assistant', {
+        session_id: this.sessionId ?? '',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text }],
+        },
+      })];
+    }
+
+    this.sawDelta = true;
+    return [bridgeEvent('stream_event', {
+      session_id: this.sessionId ?? '',
+      event: {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text },
+      },
+    })];
+  }
+
+  private translateToolCall(raw: Record<string, unknown>): HadamardBridgeJsonEvent[] {
+    const toolCall = isRecord(raw.tool_call) ? raw.tool_call : undefined;
+    if (!toolCall) return [];
+    const key = Object.keys(toolCall)[0];
+    const call = key !== undefined && isRecord(toolCall[key])
+      ? toolCall[key] as Record<string, unknown>
+      : undefined;
+    if (key === undefined || !call) return [];
+    const name = cursorToolCallName(key);
+
+    if (raw.subtype === 'started') {
+      this.toolCallSeq += 1;
+      const id = `cursor-tool-${this.toolCallSeq}`;
+      this.pendingToolCalls.set(name, id);
+      return [bridgeEvent('assistant', {
+        session_id: this.sessionId ?? '',
+        message: {
+          role: 'assistant',
+          content: [{
+            type: 'tool_use',
+            id,
+            name,
+            input: isRecord(call.args) ? call.args : {},
+          }],
+        },
+      })];
+    }
+
+    if (raw.subtype === 'completed') {
+      const id = this.pendingToolCalls.get(name) ?? `cursor-tool-${this.toolCallSeq}`;
+      this.pendingToolCalls.delete(name);
+      return [bridgeEvent('user', {
+        session_id: this.sessionId ?? '',
+        message: {
+          role: 'user',
+          content: [{
+            type: 'tool_result',
+            tool_use_id: id,
+            content: cursorToolResultContent(call),
+            is_error: call.error != null,
+          }],
+        },
+      })];
+    }
+
+    return [];
+  }
+
+  private translateResult(raw: Record<string, unknown>): HadamardBridgeJsonEvent {
+    this.sessionId = typeof raw.session_id === 'string' ? raw.session_id : this.sessionId;
+    const isError = raw.is_error === true || raw.subtype !== 'success';
+    const event = bridgeEvent('result', {
+      subtype: isError ? 'error' : 'success',
+      session_id: this.sessionId ?? '',
+      is_error: isError,
+      result: typeof raw.result === 'string' ? raw.result : '',
+      stop_reason: isError ? 'error' : 'end_turn',
+      num_turns: 1,
+    });
+    if (typeof raw.duration_ms === 'number' && Number.isFinite(raw.duration_ms)) {
+      event.duration_ms = raw.duration_ms;
+    }
+    const usage = isRecord(raw.usage) ? raw.usage : undefined;
+    if (usage) {
+      if (typeof usage.inputTokens === 'number') event.input_tokens = usage.inputTokens;
+      if (typeof usage.outputTokens === 'number') event.output_tokens = usage.outputTokens;
+      if (typeof usage.cacheReadTokens === 'number') event.cache_read_tokens = usage.cacheReadTokens;
+      if (typeof usage.cacheWriteTokens === 'number') event.cache_write_tokens = usage.cacheWriteTokens;
+    }
+    if (this.model) event.model = this.model;
+    return event;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -1369,6 +1606,7 @@ export const codexProvider: RuntimeProvider = new CodexProvider();
 export const codewhaleProvider: RuntimeProvider = new CodewhaleProvider();
 export const reasonixProvider: RuntimeProvider = new ReasonixProvider();
 export const crushProvider: RuntimeProvider = new CrushProvider();
+export const cursorProvider: RuntimeProvider = new CursorProvider();
 
 export const BRIDGE_PROVIDERS: Record<RuntimeProviderId, RuntimeProvider> = {
   claude: claudeProvider,
@@ -1377,6 +1615,7 @@ export const BRIDGE_PROVIDERS: Record<RuntimeProviderId, RuntimeProvider> = {
   codewhale: codewhaleProvider,
   reasonix: reasonixProvider,
   crush: crushProvider,
+  cursor: cursorProvider,
 };
 
 /**
@@ -1396,4 +1635,5 @@ export const BRIDGE_PROVIDER_CREDENTIALS: Record<RuntimeProviderId, string[]> = 
   reasonix: ['DEEPSEEK_API_KEY'],
   codewhale: [],
   crush: [],
+  cursor: ['CURSOR_API_KEY'],
 };

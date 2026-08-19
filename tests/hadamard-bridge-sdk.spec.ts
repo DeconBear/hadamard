@@ -20,6 +20,7 @@ const fakeCodexCliPath = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-
 const fakeCodewhaleCliPath = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-codewhale-cli.mjs');
 const fakeReasonixCliPath = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-reasonix-cli.mjs');
 const fakeCrushCliPath = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-crush-cli.mjs');
+const fakeCursorCliPath = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-cursor-cli.mjs');
 const fakeHangingCliPath = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-hanging-runtime-cli.mjs');
 const originalConfigDir = process.env.HADAMARD_CONFIG_DIR;
 
@@ -1217,6 +1218,155 @@ describe('Hadamard Bridge SDK directCli: codex provider', () => {
       expect(result.isError).toBe(true);
       expect(result.subtype).toBe('error');
       expect(result.text).toContain('codex usage limit reached');
+    } finally {
+      await sdk.close();
+    }
+  });
+});
+
+describe('Hadamard Bridge SDK directCli: cursor provider', () => {
+  it('normalizes the cursor stream-json stream into a bridge result', async () => {
+    const tempDir = await createTempDir('hadamard-runtime-cursor-');
+    const sdk = await createHadamardBridgeSdk({
+      directCli: true,
+      directCliProvider: 'cursor',
+      executable: process.execPath,
+      cliPath: fakeCursorCliPath,
+      workDir: tempDir,
+    });
+
+    try {
+      const result = await sdk.run('hello-cursor');
+      expect(result.text).toBe('cursor:hello-cursor');
+      expect(result.isError).toBe(false);
+      expect(result.sessionId).toBe('cursor-fixture-session');
+      expect(result.initEvent?.type).toBe('system');
+      expect(result.initEvent?.subtype).toBe('init');
+      expect(result.initEvent?.tools).toEqual([]);
+      expect(result.resultEvent?.input_tokens).toBe(10);
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it.each([
+    ['default', false, false],
+    ['plan', false, true],
+    ['acceptEdits', true, false],
+    ['bypassPermissions', true, false],
+  ] as const)(
+    'maps %s permission mode onto --force/--mode plan without widening access',
+    async (permissionMode, force, planMode) => {
+      const tempDir = await createTempDir('hadamard-runtime-cursor-permissions-');
+      const sdk = await createHadamardBridgeSdk({
+        directCli: true,
+        directCliProvider: 'cursor',
+        executable: process.execPath,
+        cliPath: fakeCursorCliPath,
+        workDir: tempDir,
+      });
+      try {
+        const result = await sdk.run('check-permissions', { permissionMode });
+        expect(result.text).toContain('--trust');
+        expect(result.text.includes('--force')).toBe(force);
+        expect(result.text.includes('--mode|plan')).toBe(planMode);
+      } finally {
+        await sdk.close();
+      }
+    },
+  );
+
+  it('normalizes cursor tool_call events into canonical tool events', async () => {
+    const tempDir = await createTempDir('hadamard-runtime-cursor-tools-');
+    const sdk = await createHadamardBridgeSdk({
+      directCli: true,
+      directCliProvider: 'cursor',
+      executable: process.execPath,
+      cliPath: fakeCursorCliPath,
+      workDir: tempDir,
+    });
+
+    try {
+      const result = await sdk.run('exercise-tools');
+      const analysis = analyzeHadamardBridgeEvents(result.events);
+
+      expect(analysis.toolRequests.map(request => ({
+        id: request.id,
+        name: request.name,
+        input: request.input,
+      }))).toEqual([
+        { id: 'cursor-tool-1', name: 'write', input: { path: 'README.md' } },
+        { id: 'cursor-tool-2', name: 'shell', input: { command: 'printf cursor-tool' } },
+      ]);
+      expect(analysis.toolResults.map(toolResult => ({
+        id: toolResult.toolUseId,
+        isError: toolResult.isError,
+      }))).toEqual([
+        { id: 'cursor-tool-1', isError: false },
+        { id: 'cursor-tool-2', isError: false },
+      ]);
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('passes --model through to the cursor child', async () => {
+    const tempDir = await createTempDir('hadamard-runtime-cursor-model-');
+    const sdk = await createHadamardBridgeSdk({
+      directCli: true,
+      directCliProvider: 'cursor',
+      executable: process.execPath,
+      cliPath: fakeCursorCliPath,
+      model: 'composer-2.5',
+      workDir: tempDir,
+    });
+
+    try {
+      const result = await sdk.run('who-am-i');
+      expect(result.text).toBe('cursor:agent:composer-2.5');
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('adopts the native cursor session id and resumes it on the next turn', async () => {
+    const tempDir = await createTempDir('hadamard-runtime-cursor-resume-');
+    const sdk = await createHadamardBridgeSdk({
+      directCli: true,
+      directCliProvider: 'cursor',
+      executable: process.execPath,
+      cliPath: fakeCursorCliPath,
+      workDir: tempDir,
+    });
+
+    try {
+      const session = await sdk.createSession({ title: 'Cursor fixture' });
+      await session.send('first-turn');
+      expect(session.id).toBe('cursor-fixture-session');
+
+      const resumed = await session.send('check-resume');
+      expect(resumed.sessionId).toBe('cursor-fixture-session');
+      expect(resumed.text).toBe('cursor:resume:cursor-fixture-session');
+    } finally {
+      await sdk.close();
+    }
+  });
+
+  it('maps a cursor error result into an error bridge result', async () => {
+    const tempDir = await createTempDir('hadamard-runtime-cursor-fail-');
+    const sdk = await createHadamardBridgeSdk({
+      directCli: true,
+      directCliProvider: 'cursor',
+      executable: process.execPath,
+      cliPath: fakeCursorCliPath,
+      workDir: tempDir,
+    });
+
+    try {
+      const result = await sdk.run('force-fail');
+      expect(result.isError).toBe(true);
+      expect(result.subtype).toBe('error');
+      expect(result.text).toContain('cursor usage limit reached');
     } finally {
       await sdk.close();
     }

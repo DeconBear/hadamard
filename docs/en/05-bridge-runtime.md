@@ -98,9 +98,9 @@ restarts. `credentialProvider` (or a provider prefix in `model`) selects the
 provider-specific variable. Multi-provider Crush model/key overrides require an
 explicit provider and fail closed when it cannot be inferred.
 
-## 1.2. Six providers (claude / pi / codex / codewhale / reasonix / crush)
+## 1.2. Seven providers (claude / pi / codex / codewhale / reasonix / crush / cursor)
 
-The SDK adapter registry, GUI, TUI, and external-runtime manager support all six
+The SDK adapter registry, GUI, TUI, and external-runtime manager support all seven
 providers below. Every runtime can run in the foreground or background, stream
 normalized events, be interrupted, and have its supervised process tree
 reclaimed. History and exact resume use each CLI's native session surface rather
@@ -114,6 +114,7 @@ than replaying an Hadamard transcript into a new API conversation.
 | CodeWhale | `'codewhale'` | `codewhale` | `codewhale exec --output-format stream-json … -- <prompt>` | CodeWhale stream-json |
 | Reasonix | `'reasonix'` | `reasonix` | `reasonix acp [--model …]` (prompt over stdin) | ACP JSON-RPC |
 | Crush | `'crush'` | `crush` | `crush server --host <private-socket>` | HTTP + SSE over a local socket |
+| Cursor CLI | `'cursor'` | `cursor-agent` | `cursor-agent --trust -p <prompt> --output-format stream-json --stream-partial-output` | stream-json |
 
 ```ts
 const sdk = await createHadamardBridgeSdk({
@@ -131,6 +132,7 @@ const sdk = await createHadamardBridgeSdk({
 | CodeWhale | Model and tool lists use native `exec` flags. Default/plan/dontAsk are restricted to a known read-only allowlist. The 0.8.65 CLI cannot represent `acceptEdits` safely, so Hadamard rejects that mode; `--auto` is emitted only for explicit `bypassPermissions`. | Stream metadata contains only a redacted fingerprint. Hadamard correlates it by fingerprint, cwd, and run time only when one native SavedSession matches; it never guesses between ambiguous sessions. Exact `--resume=<id>` and bounded SavedSession history/tool records then use that ID. |
 | Reasonix | The ACP adapter normalizes message, thought, tool, result, permission, and completion records. Model is passed at startup; effort/budget are changed only when the agent advertises matching ACP config options. Permission requests fail closed unless the selected mode explicitly allows them. | Hadamard keeps one ACP child and native session alive for consecutive turns, serializes concurrent prompts, and cancels through `session/cancel`. Exact cross-process resume is used only when the agent advertises `session/load`; Reasonix 0.53 advertises `loadSession: false`, so its persisted transcript remains inspectable but a restart-time resume returns an explicit unsupported-capability error instead of starting a new conversation. Unqualified "continue latest" is rejected. |
 | Crush | Hadamard configures provider/key/base URL/model through the server's workspace endpoints and maps permission requests deterministically (`acceptEdits` allows edit/write/multiedit for the session; default denies; bypass allows). Native model selection is workspace-scoped; isolated API-key settings are profile-global and never mutate the user's native config. | Runs use a fresh private Unix-domain socket or Windows named pipe, never a TCP listener. Exact resume verifies that the server returned the requested session ID. History uses bounded `crush session list/show --json` commands for native and managed-profile stores; the GUI/TUI labels their source separately. Native fork and unqualified "continue latest" are not exposed. |
+| Cursor CLI | Model uses `--model`. Permission modes map onto documented headless flags: `plan` → `--mode plan`, `default` proposes changes without `--force` (read-only-ish), and `acceptEdits`/`bypassPermissions` → `--force`. Every headless run passes `--trust` so the workspace-trust prompt cannot block. Stream-json deltas (`timestamp_ms`, no `model_call_id`) stream as text; turn-end recaps are deduplicated so text is never repeated. | Exact resume uses `--resume <session_id>` with the ID from the `system/init` or `result` event; unqualified continuation uses `--continue`. Native session-file parsing and `cursor-agent ls` history import are not implemented, and no introspection catalog is published (empty, like codex). Auth is probed conservatively via `cursor-agent status`; `CURSOR_API_KEY` is the documented credential variable. |
 
 Reasonix and Crush reject bridge options that their managed protocols cannot
 enforce (for example system-prompt/tool filters or turn limits, and Crush
@@ -141,7 +143,9 @@ different behavior.
 auth status command. Pi only exposes an offline model-catalog probe, so Hadamard
 reports its credential state as `unknown`; catalog availability is not treated
 as proof of a login or API key. Crush's model probe can report configured model
-state but is not proof of a particular OAuth identity. Reasonix currently has no
+state but is not proof of a particular OAuth identity. Cursor's `status` command
+reports a login only when it exits cleanly without a login-required message;
+anything else stays `unknown`. Reasonix currently has no
 non-interactive auth status command, so the UI reports `unknown` and lets the ACP
 run be the source of truth.
 
