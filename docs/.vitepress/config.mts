@@ -44,8 +44,8 @@ const blogSidebar = [
 ];
 
 export default defineConfig({
-  title: 'Hadamard Agent SDK',
-  description: 'Hadamard 1.0 SDK docs for provider-neutral, durable, multi-agent runtimes.',
+  title: 'Hadamard',
+  description: 'Hadamard — agents as an engineering team: one TypeScript runtime for agents, agent teams, and every major agent CLI.',
   base: '/hadamard/',
   cleanUrls: true,
   lastUpdated: true,
