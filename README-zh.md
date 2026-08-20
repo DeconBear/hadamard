@@ -7,7 +7,9 @@
 
 [English](./README.md) | [中文](./README-zh.md)
 
-**Hadamard** 是一个 TypeScript agent SDK 与 agent-team 平台。同一套 runtime 驱动：带工具、skills、会话、记忆与 MCP 的对话式 agent；并行调查、评审与分派的 model team；以及把已安装的 agent CLI（Claude Code、Codex、Cursor、Pi、CodeWhale、Reasonix、Crush）作为子进程管理的 bridge。这套 runtime 同时提供终端 UI 和桌面 GUI。
+如今的 LLM harness 越来越强，但在真实的工程与科研任务上仍难以管理——交付软件、跑 AI4S 流程、训练神经网络与调参实验。上下文溢出、工具调用失控、运行偏离预期，而单个 agent 闭环永远缺少第二意见。
+
+**Hadamard** 的目标是让 Agent 的工程与科研变得可控：引入不同 provider 的多个 agent 相互交流，并行调查、评审与分派，把问题考虑得更加周全。同一套 TypeScript runtime 提供工具、skills、持久会话、记忆与 MCP，并能通过 bridge 把已安装的 agent CLI（Claude Code、Codex、Cursor、Pi、CodeWhale、Reasonix、Crush）作为子进程管理；终端 UI 与桌面 GUI 也构建在这套 runtime 之上。
 
 受 Claude Code、Codex、Deepagents 等项目启发。Hadamard 保持独立，拥有自己的公开 API 与文档。
 
