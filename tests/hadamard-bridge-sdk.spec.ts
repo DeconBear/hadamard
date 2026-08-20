@@ -1295,15 +1295,15 @@ describe('Hadamard Bridge SDK directCli: cursor provider', () => {
         name: request.name,
         input: request.input,
       }))).toEqual([
-        { id: 'cursor-tool-1', name: 'write', input: { path: 'README.md' } },
-        { id: 'cursor-tool-2', name: 'shell', input: { command: 'printf cursor-tool' } },
+        { id: 'call-fixture-0\nfc_write_0', name: 'write', input: { path: 'README.md' } },
+        { id: 'call-fixture-1\nfc_shell_0', name: 'shell', input: { command: 'printf cursor-tool' } },
       ]);
       expect(analysis.toolResults.map(toolResult => ({
         id: toolResult.toolUseId,
         isError: toolResult.isError,
       }))).toEqual([
-        { id: 'cursor-tool-1', isError: false },
-        { id: 'cursor-tool-2', isError: false },
+        { id: 'call-fixture-0\nfc_write_0', isError: false },
+        { id: 'call-fixture-1\nfc_shell_0', isError: false },
       ]);
     } finally {
       await sdk.close();
