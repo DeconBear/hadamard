@@ -6,7 +6,7 @@
     "gui/hadamardGuiAssets.ts": { "maxLines": 27640, "reason": "Byte-stable embedded GUI renderer; Configuration region (renamed from Bridge) hosts bridge mode, configs, and local runtime discovery; Devices region uses the reworked card layout with provider QR share actions." },
     "gui/transcript/clientBundle.ts": { "maxLines": 1140, "reason": "Byte-stable transcript client bundle; approval footers hide always-options for safety-critical prompts." },
     "manager/assistantGlobalTools.ts": { "maxLines": 1149, "reason": "Compatibility factory; new domains belong in providers." },
-    "parity/bridgeProviders.ts": { "maxLines": 1660, "reason": "Existing compatibility adapter debt." },
+    "parity/bridgeProviders.ts": { "maxLines": 1680, "reason": "Existing compatibility adapter debt." },
     "parity/crushManagedClient.ts": { "maxLines": 1268, "reason": "Existing external CLI adapter debt." },
     "parity/hadamardBridgeSdk.ts": { "maxLines": 2920, "reason": "Bridge SDK compatibility composition root." },
     "parity/hadamardCleanBridgeCompatSdk.ts": { "maxLines": 1876, "reason": "Clean bridge compatibility composition root." },

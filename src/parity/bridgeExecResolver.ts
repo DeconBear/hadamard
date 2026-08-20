@@ -6,7 +6,7 @@
  */
 
 import { constants as fsConstants } from 'node:fs';
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
 const IS_WINDOWS = process.platform === 'win32';
@@ -105,6 +105,13 @@ export async function resolveExecutableInvocation(
   const candidates = [...source.matchAll(/%~?dp0%?[\\/]([^"\r\n]+?\.(?:exe|com|cjs|mjs|js))(?=["\s])/giu)];
   const match = candidates.at(-1);
   if (!match?.[1]) {
+    // Not an npm-style shim. The Cursor CLI ships a PowerShell shim that
+    // dispatches to versions/<version>/node.exe versions/<version>/index.js
+    // next to the wrapper; resolve that bundle directly.
+    const bundled = await resolveVersionedNodeBundle(path.dirname(executable), args);
+    if (bundled) {
+      return bundled;
+    }
     throw new Error(
       `Unsupported Windows CLI wrapper: ${executable}. Configure the underlying .exe or JavaScript entry point instead.`,
     );
@@ -133,6 +140,45 @@ export async function resolveExecutableInvocation(
     return { file: nodeExecutable, args: [target, ...args] };
   }
   return { file: target, args };
+}
+
+const VERSIONED_BUNDLE_DIR = /^(\d{4})\.(\d{1,2})\.(\d{1,2})(?:-\d{2}-\d{2}-\d{2})?-[a-f0-9]+$/iu;
+
+/**
+ * Resolve a Cursor-style versioned Node bundle next to a Windows shim:
+ * versions/<YYYY.MM.DD[-HH-MM-SS]-commit>/node.exe plus index.js. Mirrors the
+ * version selection of the vendor PowerShell shim (latest date wins).
+ */
+async function resolveVersionedNodeBundle(
+  shimDir: string,
+  args: string[],
+): Promise<ResolvedExecutableInvocation | undefined> {
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await readdir(path.join(shimDir, 'versions'), { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+
+  const versions = entries
+    .filter(entry => entry.isDirectory())
+    .map(entry => ({ name: entry.name, match: VERSIONED_BUNDLE_DIR.exec(entry.name) }))
+    .filter((candidate): candidate is { name: string; match: RegExpExecArray } => candidate.match !== null)
+    .map(candidate => ({
+      name: candidate.name,
+      key: Number(candidate.match[1]) * 10000 + Number(candidate.match[2]) * 100 + Number(candidate.match[3]),
+    }))
+    .sort((a, b) => b.key - a.key || b.name.localeCompare(a.name));
+
+  for (const version of versions) {
+    const bundleDir = path.join(shimDir, 'versions', version.name);
+    const nodeExecutable = path.join(bundleDir, 'node.exe');
+    const entryPoint = path.join(bundleDir, 'index.js');
+    if (await pathExists(nodeExecutable) && await pathExists(entryPoint)) {
+      return { file: nodeExecutable, args: [entryPoint, ...args] };
+    }
+  }
+  return undefined;
 }
 
 export { IS_WINDOWS };
