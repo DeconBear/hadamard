@@ -2,9 +2,9 @@
 layout: home
 
 hero:
-  name: "Hadamard Agent SDK"
-  text: "Stable contracts for real agent runtimes"
-  tagline: "Build provider-neutral, durable, observable, multi-agent systems with Hadamard 1.0."
+  name: "Hadamard"
+  text: "Agents as an Engineering Team"
+  tagline: "One TypeScript runtime for agents, agent teams, and every major agent CLI — with TUI and GUI included."
   actions:
     - theme: brand
       text: Start with English
@@ -17,10 +17,10 @@ hero:
       link: https://github.com/DeconBear/hadamard
 
 features:
-  - title: Hadamard 1.0 Runtime
+  - title: One Agent Runtime
     details: Compose immutable agents, capability-checked providers, lazy services, durable state, tools, and orchestration around one runtime.
   - title: Bilingual Tutorials
     details: Read full guides in English and Chinese, including step-by-step practical project walkthroughs.
   - title: Migration and Operations
-    details: Follow the architecture plan, 1.0 migration guide, security/failure policy, and JSON-to-SQLite cutover runbook.
+    details: Follow the architecture plan, migration guide, security/failure policy, and JSON-to-SQLite cutover runbook.
 ---
