@@ -32,6 +32,12 @@ Node.js 22.13+ or Node.js 24 is required.
 npm install actoviq-agent-sdk zod
 ```
 
+The `npm install` above is for SDK usage (import from `'actoviq-agent-sdk'`); the CLIs are then available through `npx` (for example `npx hadamard-tui`). To run `hadamard-tui` / `hadamard-gui` / `hadamard` / `actoviq` directly on your PATH, install globally instead:
+
+```bash
+npm install -g actoviq-agent-sdk
+```
+
 Put your provider settings at `~/.hadamard/settings.json` — any Anthropic-compatible or OpenAI-compatible provider works.
 
 ## Quick Start
