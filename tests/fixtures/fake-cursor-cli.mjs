@@ -45,14 +45,26 @@ if (prompt === 'force-fail') {
 }
 
 if (prompt === 'exercise-tools') {
+  // Real cursor-agent events carry a stable call_id on both started and
+  // completed tool_call events; the normalizer pairs them via that id.
+  const writeId = 'call-fixture-0\nfc_write_0';
+  const shellId = 'call-fixture-1\nfc_shell_0';
   emit({
     type: 'tool_call',
     subtype: 'started',
+    call_id: writeId,
+    toolCallId: writeId,
+    model_call_id: 'mc-0',
+    timestamp_ms: 2,
     tool_call: { writeToolCall: { args: { path: 'README.md' } } },
   });
   emit({
     type: 'tool_call',
     subtype: 'completed',
+    call_id: writeId,
+    toolCallId: writeId,
+    model_call_id: 'mc-0',
+    timestamp_ms: 3,
     tool_call: {
       writeToolCall: { args: { path: 'README.md' }, result: { success: true } },
     },
@@ -60,15 +72,23 @@ if (prompt === 'exercise-tools') {
   emit({
     type: 'tool_call',
     subtype: 'started',
+    call_id: shellId,
+    toolCallId: shellId,
+    model_call_id: 'mc-1',
+    timestamp_ms: 4,
     tool_call: { shellToolCall: { args: { command: 'printf cursor-tool' } } },
   });
   emit({
     type: 'tool_call',
     subtype: 'completed',
+    call_id: shellId,
+    toolCallId: shellId,
+    model_call_id: 'mc-1',
+    timestamp_ms: 5,
     tool_call: {
       shellToolCall: {
         args: { command: 'printf cursor-tool' },
-        result: { output: 'cursor-tool' },
+        result: { success: { output: 'cursor-tool' } },
       },
     },
   });
@@ -84,17 +104,21 @@ const text = prompt === 'who-am-i'
         ? `cursor:env:${cursorKey ?? 'none'}`
         : `cursor:${prompt}`;
 
-// Assistant text arrives as timestamped deltas (no model_call_id) followed by
-// a turn-end recap carrying model_call_id; the normalizer must drop the recap
-// so the text is not duplicated.
+// Verified against real cursor-agent 2026.08.11 output: thinking deltas come
+// first, then assistant text as timestamped deltas (no model_call_id), then a
+// turn-end recap carrying NEITHER timestamp_ms NOR model_call_id; the
+// normalizer must drop the recap so the text is not duplicated.
+emit({ type: 'thinking', subtype: 'delta', text: 'thinking...', timestamp_ms: 0, session_id: sessionId });
+emit({ type: 'thinking', subtype: 'completed', timestamp_ms: 0, session_id: sessionId });
 emit({
   type: 'assistant',
   timestamp_ms: 1,
+  session_id: sessionId,
   message: { role: 'assistant', content: [{ type: 'text', text }] },
 });
 emit({
   type: 'assistant',
-  model_call_id: 'call-1',
+  session_id: sessionId,
   message: { role: 'assistant', content: [{ type: 'text', text }] },
 });
 
