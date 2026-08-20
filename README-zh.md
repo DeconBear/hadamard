@@ -32,6 +32,12 @@
 npm install actoviq-agent-sdk zod
 ```
 
+上面的 `npm install` 面向 SDK 用法（`import 'actoviq-agent-sdk'`），命令行需通过 `npx` 调用（如 `npx hadamard-tui`）。若想让 `hadamard-tui` / `hadamard-gui` / `hadamard` / `actoviq` 直接出现在 PATH 上，请改用全局安装：
+
+```bash
+npm install -g actoviq-agent-sdk
+```
+
 将提供商配置放在 `~/.hadamard/settings.json` —— 任意 Anthropic 兼容或 OpenAI 兼容的提供商均可。
 
 ## 快速开始
