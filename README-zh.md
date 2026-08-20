@@ -13,6 +13,13 @@
 
 受 Claude Code、Codex、Deepagents 等项目启发。Hadamard 保持独立，拥有自己的公开 API 与文档。
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-home.png" alt="Hadamard 桌面 GUI——项目总览" width="49%">
+  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-chat.png" alt="Hadamard 桌面 GUI——模型对话" width="49%">
+</p>
+<p align="center"><em>桌面 GUI：项目总览（左）与对话界面（右）。</em></p>
+<!-- TUI 启动截图待补充分入此图组。 -->
+
 > **包名说明：** npm 发布名为 [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk)。产品、仓库、CLI 与配置路径统一为 **Hadamard**（`hadamard-*`、`~/.hadamard`、`.hadamard/`）。
 
 ## 安装
