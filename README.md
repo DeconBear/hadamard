@@ -7,209 +7,71 @@
 
 [English](./README.md) | [Chinese](./README-zh.md)
 
-Documentation site: https://deconbear.github.io/hadamard/
+**Hadamard** is a TypeScript agent SDK and agent-team platform. One runtime powers conversational agents with tools, skills, sessions, memory, and MCP; model teams that investigate, review, and dispatch in parallel; and a bridge that manages installed agent CLIs (Claude Code, Codex, Cursor, Pi, CodeWhale, Reasonix, Crush) as child processes. The same runtime ships with a terminal UI and a desktop GUI.
 
-**Hadamard** (`0.4.x`) is a TypeScript agent SDK and agent-team platform with TUI, GUI, Bridge, and multi-agent collaboration. A future **1.0** line will stabilize package subpath contracts; that surface is **not published yet**.
+Inspired by Claude Code, Codex, Deepagents, and the broader agent ecosystem. Hadamard remains independent with its own public API and documentation.
 
-> **Package name:** the published npm package remains [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk). Product, repo, CLI, and config paths use **Hadamard** (`hadamard-*`, `~/.hadamard`, `.hadamard/`).
-
-> **Note:** The desktop **Agent graph** orchestration UI (visual team / graph editor) is **still under active iteration and optimization** — expect UX and API changes. Prefer `/team`, saved team definitions, and the SDK `createTeam()` / graph runtime for production workflows today. See `CHANGELOG.md`.
-
-Inspired by Claude Code, Codex, Deepagents, and the broader agent ecosystem. Hadamard remains independent with its own public surface and documentation.
-
-## Vision
-
-- **Multi-agent**: subagent delegation (Task tool), panel-analysis teams, reviewer-auditor pairs, dynamic workflows — agents collaborating, not just a single loop.
-- **Multi-runtime state management**: bridge configs have two explicit modes. `Direct API` calls Anthropic/OpenAI-compatible providers in-process; `External CLI` manages installed Claude Code, Codex, Pi, CodeWhale, Reasonix, or Crush runtimes as child processes and preserves native session identities when the CLI protocol exposes them.
-- **Model team collaboration**: leaders dispatch to specialists (`/model router`), panel members investigate in parallel with structured convergence, reviewers report only verifiable issues — teams as first-class tools the agent invokes.
-
-## Highlights
-
-- **Model Team** — `panel-analysis` (parallel investigation + convergence) and `reviewer` (verifiable-issues-only auditor). Runtime-owned member pooling, streamed `TeamEvent`s, per-member provider config, and inherited permission/retry boundaries.
-- **Model Router / Leader-Dispatch** — a leader classifies each turn and dispatches it to the best specialist route (any model/provider), runs normally, and the executor may itself convene a team. Profiles in `~/.hadamard/routers/`.
-- **Dynamic Workflows** — JS script-based orchestration with explicit trust levels: trusted compatibility execution, isolated local-process execution, or a host-supplied remote/container sandbox for adversarial inputs.
-- **Bridge (named runtime configs)** — choose `Direct API` for provider-level reuse, or `External CLI` to launch installed Claude Code, Codex, Pi, CodeWhale, Reasonix, or Crush; reuse each CLI's native login/config, stream normalized tool and assistant events, stop background work, and browse/resume supported native conversations. An explicit key override is injected only into the child and is not written to the CLI's credential store; Pi, CodeWhale, Reasonix, and Crush keep isolated per-config session profiles so that key-mode history survives restarts without reading the native login store.
-- **Desktop GUI (`hadamard-gui`)** — Electron chat UI: streamed transcript, conversation history, command palette, settings, per-tool permission prompts. Security-hardened. Global **Assistant** FAB (Global/Project scope). The visual **Agent graph** orchestration UI is shipping in-progress and continues to be iterated (not a stable product surface yet).
-- **TUI (`hadamard-tui`)** — Terminal UI with 25+ slash commands, Claude Code-style UX: `/team`, `/bridge`, `/plan`, `/hooks`, `/mcp`, `/review`, `/context`, `/cost`, `/doctor`, and more. Live status spinner, scrollback transcript, todo panel, permission dialogs with project/user scope, sub-command autocomplete.
-- **Plan mode + hooks** — `EnterPlanMode`/`ExitPlanMode` tools with plan file; typed command, prompt, or HTTPS lifecycle hooks for session, turn, model, tool, permission, compact, stop, and worktree events. The GUI edits them directly; legacy `PreToolUse`/`PostToolUse`/`SessionStart` shell hooks remain compatible.
-- **Worktree Tools** — `EnterWorktree`/`ExitWorktree` with stack-based cwd, `.worktreeinclude`, PR checkout.
-- **TavilySearch** — AI-optimized web search, pure TypeScript.
-- **Standard Benchmark** — Self-contained framework with DeepSeek judge, HTML dashboard, 4-agent comparison.
-
-## 1.0 SDK architecture
-
-- `core`: immutable `AgentSpec`, canonical input/output items, structured output, guardrails, usage, and run errors.
-- `providers`: capability-checked OpenAI Responses, OpenAI Chat-compatible, and Anthropic adapters behind one `ModelProvider` contract.
-- `runtime`: one `AgentRuntime`, lazy `RuntimeServices`, fixed-stage middleware, tools/policy, bounded streams, checkpoints, interruption, and resume.
-- `node`: tenant-scoped SQLite session/checkpoint/memory/artifact stores and backup-first JSON v1 migration.
-- `events` and `surfaces`: versioned traceable `RunEvent`s plus shared CLI/TUI/GUI/Bridge semantics and redaction.
-- `orchestration`, `workflow`, and `profiles`: agent-as-tool, handoff, durable spawn, graphs/presets, explicit workflow trust, and six composable agent profiles.
-- `compat`: the 0.x root façade and migration adapters, retained throughout the 1.x line.
-
-## Roadmap — toward agent teams
-
-- **Swarm coordination** — mailbox-based inter-agent communication, task queues, shared knowledge graph.
-- **Persistent team memory** — team-scoped context that survives across sessions and member changes.
-- **Cross-runtime session continuity** — resume a bridge runtime's session exactly where you left it, regardless of which config was active.
-- **Model team IDE** — visual team builder, member role editor, team health dashboard.
+> **Package name:** the published npm package is [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk). Product, repo, CLI, and config paths use **Hadamard** (`hadamard-*`, `~/.hadamard`, `.hadamard/`).
 
 ## Install
 
-Node.js 22.13+ or Node.js 24 is required. Node 22.5–22.12 exposes
-`node:sqlite` only behind a process flag and is therefore outside the default
-runtime support contract.
+Node.js 22.13+ or Node.js 24 is required.
 
 ```bash
 npm install actoviq-agent-sdk zod
 ```
 
-For local examples, place your config at:
+Put your provider settings at `~/.hadamard/settings.json` — any Anthropic-compatible or OpenAI-compatible provider works.
 
-```text
-~/.hadamard/settings.json
-```
+## Quick Start
 
-You can also preload a custom JSON file with `loadJsonConfigFile(...)`.
-
-## Quick Start (1.0 runtime)
+### SDK
 
 ```ts
-import type { AgentSpec } from 'actoviq-agent-sdk/core';
-import { ModelRegistry, OpenAIResponsesProvider } from 'actoviq-agent-sdk/providers';
-import { AgentRuntime } from 'actoviq-agent-sdk/runtime';
+import { createAgentSdk, loadDefaultHadamardSettings } from 'actoviq-agent-sdk';
 
-const runtime = new AgentRuntime({
-  models: new ModelRegistry([
-    new OpenAIResponsesProvider({ apiKey: process.env.OPENAI_API_KEY }),
-  ]),
-});
-const agent: AgentSpec = {
-  id: 'concise-chat',
-  name: 'Concise chat',
-  instructions: 'Answer in one short sentence.',
-  model: 'openai-responses:gpt-4.1-mini',
-};
+await loadDefaultHadamardSettings();   // reads ~/.hadamard/settings.json
+const sdk = await createAgentSdk();
 
-try {
-  const result = await runtime.run(agent, 'What is compare-and-swap?');
-  console.log(result.output, result.usage.totalTokens);
-} finally {
-  await runtime.close();
-}
+const result = await sdk.run('What is compare-and-swap?');
+console.log(result.text);
+
+await sdk.close();
 ```
 
-Existing 0.x applications may keep importing `createAgentSdk` from the package root or `/compat`; new applications should use the responsibility subpaths above.
+Run the same example from the repository with `npm run example:hadamard-quickstart`.
 
-The supported differences between the SDK, `hadamard-tui`, and the desktop GUI are defined by the [three-layer product surface policy](./docs/en/08-product-surfaces.md) ([中文](./docs/zh/08-product-surfaces.md)). SDK-only developer parameters are intentional; shared TUI/GUI commands and runtime semantics are parity requirements.
-
-Run the repository examples with:
+### Terminal UI (`hadamard-tui`)
 
 ```bash
-npm run example:hadamard-quickstart
-npm run example:hadamard-agent-helpers
-npm run example:profiles
+npx hadamard-tui [work-dir]
 ```
 
-## CLI / Terminal UI
+Type a message and press Enter — you are chatting with the agent in a Claude Code-style terminal REPL. `/` opens the slash-command menu (`/team`, `/bridge`, `/plan`, `/mcp`, `/doctor`, …). Common flags: `--model`, `--permission-mode`, `--resume <session-id>`, `--continue`.
 
-`hadamard-tui` is the full terminal UI, modeled on Claude Code's REPL design: the transcript prints into native scrollback while a redrawable bottom region hosts the status line, a Claude-style prompt bar, the slash-command menu, and permission dialogs.
+### Desktop GUI (`hadamard-gui`)
 
 ```bash
-npx hadamard-tui [work-dir] [options]
-
-# Options
-#   --config <path>            Load a specific Hadamard settings JSON file
-#   --permission-mode <mode>   default | acceptEdits | plan | bypassPermissions (default)
-#   --model <model>            Override the configured model
-#   --resume <session-id>      Resume a stored Hadamard SDK session
-#   --continue                 Continue the most recently updated session
+npx hadamard-gui [work-dir]
 ```
 
-Features:
+Opens an Electron chat window backed by a localhost-only server — send a message to start your first conversation. The visual Agent graph editor is still iterating; prefer saved teams and `/team` for production workflows.
 
-- **Streaming transcript in native scrollback** — assistant text, `⏺ Tool(args)` calls, and `⎿ ✓/✗` result lines flush into the normal terminal buffer; scrollback and copy/paste work as usual.
-- **Live status line** — spinner, elapsed time, tool count, and the active tool while the agent works, over an always-visible mode line (model · permission · effort · team · bridge · context%) that shows context usage as a percentage of the window and turns yellow then red as it fills.
-- **Claude-style prompt bar** — type `\` then `Enter` (or `Ctrl+J`) for a newline; `↑`/`↓` walk input history; the caret renders inline.
-- **Slash-command menu** — type `/` to open a filtered menu (`↑↓` select, `Tab` complete, `Enter` run). `/resume` opens a searchable project-session picker.
-- **`@` file completion** — type `@` to open a git-aware workspace file picker filtered by the partial path; subsequence fuzzy matching.
-- **Team / workflow / worktree pickers** — `/team` activates a saved Model Team; `/workflows` runs a saved dynamic workflow; `/worktree` enters, exits, or lists git worktrees.
-- **Permission presets + per-tool scope** — `/permissions` switches between read-only/workspace/full/plan presets; always-allow rules persist with project or user scope.
-- **Mid-run steering** — keep typing while the agent works and press `Enter`: the message is queued and injected into the very next model request (shown as `⧗ queued`).
-- **Plan mode + hooks** — `/plan` enters plan mode (`EnterPlanMode`/`ExitPlanMode` tools, plan file); typed lifecycle hooks are configured in the GUI or `settings.json`, while `/hooks` continues to list compatible legacy shell hooks.
-- **Bridge configs** — `/bridge config` manages named API or External CLI profiles for all six managed CLIs. `/bridge status`, `/bridge background`, `/bridge runs`, `/bridge stop`, `/bridge history`, and `/bridge resume` expose the same runtime lifecycle in the TUI and GUI; native history/resume remains subject to each installed CLI's protocol/version support.
-- **Diagnostics + inspection** — `/doctor` checks config health; `/context` inspects the context window; `/cost`/`/usage` track token + spend (per-config breakdown); `/review` reviews the git diff; `/stats` shows session stats.
-- **Context management built in** — the Hadamard SDK auto-compacts long sessions mid-run (full summary compact) and reactively recovers when a provider rejects an oversized prompt; notices surface as ∿ context compacted. History stays **append-only** between turns so automatic prefix caches (e.g. DeepSeek Context Caching) stay hot; Anthropic hosts still get explicit cache_control breakpoints. Oversized tool outputs are artifacted at write time rather than rewriting earlier messages.
-- **MCP management** — `/mcp add`/`/mcp remove` manage stdio + remote HTTP MCP servers, persisted to `~/.hadamard/mcp.json`.
-- **Image attachments** — `@<path>.png` tokens expand into image content blocks (in-process, read as base64).
+## Documentation
 
-The TUI uses the Hadamard SDK runtime defaults (Hadamard settings from `~/.hadamard/settings.json`, core tools, `bypassPermissions`, uncapped tool iterations) and runs against any Anthropic-compatible or OpenAI-compatible provider. `hadamard-tui` is the only interactive terminal agent entry point; the former `hadamard-react` and `hadamard-interactive-agent` entry points were retired after their capabilities were consolidated here.
+- Docs site: https://deconbear.github.io/hadamard/
+- English tutorial: [docs/en/README.md](./docs/en/README.md) · Chinese tutorial: [docs/zh/README.md](./docs/zh/README.md)
+- External CLI bridge guide (provider flags, credentials, `HADAMARD_<PROVIDER>_PATH`): [docs/en/05-bridge-runtime.md](./docs/en/05-bridge-runtime.md)
+- Examples: [hadamard-quickstart.ts](./examples/hadamard-quickstart.ts), [hadamard-workflow.ts](./examples/hadamard-workflow.ts), [hadamard-agent-helpers.ts](./examples/hadamard-agent-helpers.ts)
+- Security policy: [SECURITY.md](./SECURITY.md)
 
-By default, Hadamard SDK sessions are scoped to the current workspace under `~/.hadamard/projects/<workspace-key>`. Explicit `sessionDirectory` settings still take precedence.
-
-Model tiers are provider-neutral aliases. Configure them with `HADAMARD_DEFAULT_MIN_MODEL`, `HADAMARD_DEFAULT_MEDIUM_MODEL`, and `HADAMARD_DEFAULT_MAX_MODEL`, then use `min`, `medium`, or `max` anywhere a model can be selected.
-
-## Desktop GUI (`hadamard-gui`)
-
-A local Electron desktop chat UI for the Hadamard SDK.
+## Development
 
 ```bash
-npx hadamard-gui [work-dir] [options]
-
-# Options
-#   --port <port>              Internal port to bind (default: 4174, auto-fallback if busy)
-#   --config <path>            Load a specific Hadamard settings JSON file
-#   --permission-mode <mode>   default | acceptEdits | plan | bypassPermissions (default)
-#   --model <model>            Override the configured model
-#   --resume <session-id>      Resume a stored session
-#   --continue                 Resume the most recent stored session
+npm run typecheck   # TypeScript checks
+npm test            # Vitest suite
+npm run build       # clean + compile
 ```
-
-It opens an Electron window backed by a localhost-only HTTP server. Features:
-
-- **Streamed transcript** with markdown rendering and copyable code blocks, plus live tool-call cards
-- **Conversation history on resume** — opening or switching a chat replays its stored messages
-- **Shared slash commands**, settings (provider / model / keys / appearance), workspace switching, and empty-chat cleanup
-- **Per-tool permission prompts** (queued so concurrent requests don't collide) and a token-usage readout
-- **Project Documents + Issues** — each Project detail page has `Document` and `Issues` tabs. Issues use the guarded `backlog → todo → in_progress → in_review/blocked → done` lifecycle, support priorities, labels, acceptance criteria, comments, and links back to their worker sessions.
-- **Agent graph orchestration UI** — visual team/graph editor lives in the GUI **Agent** region; **it is still being iterated and optimized** and should not be treated as a finished product surface. Prefer saved teams + `/team` / SDK APIs for stable workflows.
-- **Agent Workflow + Automation** — the Agent region edits validated sequential, branch, and parallel Workflow trees. New Automation tasks select those saved Workflows; historical dynamic-script tasks remain compatible without being reinterpreted.
-- **Custom shortcuts + desktop screenshots** — Settings remaps supported actions, including a cross-platform screenshot action available to the user and agent runtime.
-- **Lifecycle hook editor** — Settings manages typed session, turn, model, tool, permission, compact, stop, and worktree hooks while retaining legacy hook compatibility.
-- **Agent Profiles for issue dispatch** — Settings → Models & routing can bind a named profile to a saved bridge config and model. `/issues start <id> [agent-profile]` asks the Project Manager for a worker brief, starts a linked session without changing the globally active runtime, and requires the worker to report through `IssueReport`.
-- **Movable data root** — Settings → General can copy the complete Hadamard data root to an empty directory, validate it, write the bootstrap pointer, rebuild the SDK/session store, and retain the previous directory for manual cleanup.
-
-**Security model:** the internal API is reachable only from loopback (Host + Origin allowlist, which defeats DNS-rebinding / CSRF) and requires a per-process token; the page ships a strict Content-Security-Policy. Electron runs with `sandbox`, `contextIsolation`, and no `nodeIntegration`.
-
-Hadamard resolves its data root in this order: an explicit SDK `homeDir`, `HADAMARD_HOME`, `~/.hadamard/data-root.json`, then `~/.hadamard`. Project issues default to `<data-root>/projects/<workspace-key>/issues.json`; a project can instead use the protected workspace file `.hadamard/issues.json`.
-
-> `electron` and `bun` are **optional** dependencies — installed only if you use the GUI / bridge runtime. The core SDK does not require them.
->
-> **Bridge env overrides:** `HADAMARD_CLAUDE_PATH`, `HADAMARD_PI_PATH`, … (one per provider) to point the bridge at a specific runtime binary when it's not on `PATH`. See `docs/en/05-bridge-runtime.md`.
-
-## Developer notes
-
-- **Build before launching the CLIs/GUI:** `npm run build` (clean + `tsc`). Type-check only with `npm run typecheck`; run the suite with `npm test -- --run`.
-- **Team behavior is centralized:** extend teams through `src/team/teamRuntime.ts` (`runMemberAgent` / `buildMemberIdentities` / `preflightMember`) rather than duplicating per-mode logic. Observe a run via `team.ask(prompt, signal, { onEvent })` and inspect `result.memberStatuses` / `result.incompleteReason`.
-- **Router profiles are leader/dispatch configs:** a `RouterProfile` is a leader (`routerModel`) + a roster of specialist `routes` (each with `when` and optional `role` / `description`). `BUILT_IN_ROUTER_PROFILES` ships a ready-made `dispatch` profile; a user file of the same name in `.hadamard/routers/` shadows it.
-- Contributor-facing documentation lives in this README and under `docs/`.
-
-## Tutorials
-
-- English tutorial: [docs/en/README.md](./docs/en/README.md)
-- Chinese tutorial: [docs/zh/README.md](./docs/zh/README.md)
-- GitHub Pages docs site:
-  - https://deconbear.github.io/hadamard/
-
-Start with these examples:
-
-- [examples/hadamard-quickstart.ts](./examples/hadamard-quickstart.ts)
-- [examples/hadamard-workflow.ts](./examples/hadamard-workflow.ts)
-- [examples/hadamard-agent-helpers.ts](./examples/hadamard-agent-helpers.ts)
-- [examples/profiles/all-profiles.ts](./examples/profiles/all-profiles.ts)
-
-Architecture and operations:
-
-- [Security policy](./SECURITY.md)
 
 ## Contributing
 
