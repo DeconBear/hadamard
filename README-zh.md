@@ -17,8 +17,10 @@
   <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-home.png" alt="Hadamard 桌面 GUI——项目总览" width="49%">
   <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-chat.png" alt="Hadamard 桌面 GUI——模型对话" width="49%">
 </p>
-<p align="center"><em>桌面 GUI：项目总览（左）与对话界面（右）。</em></p>
-<!-- TUI 启动截图待补充分入此图组。 -->
+<p align="center">
+  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/tui-home.png" alt="Hadamard TUI——终端启动界面" width="90%">
+</p>
+<p align="center"><em>桌面 GUI（上：项目总览与对话界面）和终端 UI（下）。</em></p>
 
 > **包名说明：** npm 发布名为 [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk)。产品、仓库、CLI 与配置路径统一为 **Hadamard**（`hadamard-*`、`~/.hadamard`、`.hadamard/`）。
 
@@ -65,6 +67,16 @@ npx hadamard-gui [工作目录]
 ```
 
 打开 Electron 聊天窗口（仅绑定 localhost 服务）—— 发送一条消息即可开始第一次对话。可视化 Agent graph 编辑器仍在迭代中；生产工作流请优先使用已保存的 team 与 `/team`。
+
+## 演示
+
+50 秒走一遍桌面 GUI：打开会话视图、新建对话、发送问题，观看流式回复、思考指示器与代码渲染。
+
+<p align="center">
+  <video src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.mp4" width="720" controls muted>
+    你的浏览器不支持内嵌视频。
+  </video>
+</p>
 
 ## 文档
 
