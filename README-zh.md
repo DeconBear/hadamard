@@ -70,12 +70,10 @@ npx hadamard-gui [工作目录]
 
 ## 演示
 
-50 秒走一遍桌面 GUI：打开会话视图、新建对话、发送问题，观看流式回复、思考指示器与代码渲染。
+50 秒走一遍桌面 GUI：打开会话视图、新建对话、发送问题，观看流式回复、思考指示器与代码渲染。（[高清 MP4](https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.mp4)）
 
 <p align="center">
-  <video src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.mp4" width="720" controls muted>
-    你的浏览器不支持内嵌视频。
-  </video>
+  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.gif" alt="Hadamard 桌面 GUI 演示——从新建对话到流式回复与代码块" width="90%">
 </p>
 
 ## 文档
