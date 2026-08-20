@@ -6,6 +6,19 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.21 - 2026-08-20
+
+### Features
+
+- Add Cursor CLI (`cursor-agent`) as a seventh managed bridge runtime: stream-json normalization with delta/recap dedupe and tool_call pairing, permission-mode mapping (`--trust`, `--mode plan`, `--force`), `--resume`/`--continue` session support, `CURSOR_API_KEY` credential wiring, `cursor-agent status` auth probing, and GUI/TUI runtime discovery
+- Resolve Cursor's Windows PowerShell shim to its versioned `node.exe` + `index.js` bundle automatically when spawning
+
+### Fixes
+
+- Align the Cursor bridge with real `cursor-agent` 2026.08.11 wire behavior: identify assistant deltas by `timestamp_ms`, drop duplicated turn-end recaps, pair tool_call started/completed via the real `call_id`, read `result.error` for tool failure, and map thinking deltas to `thinking_delta` stream events
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.20...v0.4.21
+
 ## v0.4.20 - 2026-08-18
 
 ### Features
