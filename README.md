@@ -70,12 +70,10 @@ Opens an Electron chat window backed by a localhost-only server — send a messa
 
 ## Demo
 
-A 50-second walkthrough of the desktop GUI: open the Chats view, start a new conversation, ask a question, and watch the streamed reply with the thinking indicator and code rendering.
+A 50-second walkthrough of the desktop GUI: open the Chats view, start a new conversation, ask a question, and watch the streamed reply with the thinking indicator and code rendering. ([Full-resolution MP4](https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.mp4))
 
 <p align="center">
-  <video src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.mp4" width="720" controls muted>
-    Your browser does not support embedded video.
-  </video>
+  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.gif" alt="Hadamard desktop GUI demo — a chat from New chat to a streamed reply with a code block" width="90%">
 </p>
 
 ## Documentation
