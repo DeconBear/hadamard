@@ -13,6 +13,13 @@ LLM harnesses are powerful but hard to manage on real engineering and research w
 
 Inspired by Claude Code, Codex, Deepagents, and the broader agent ecosystem. Hadamard remains independent with its own public API and documentation.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-home.png" alt="Hadamard desktop GUI — projects overview" width="49%">
+  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-chat.png" alt="Hadamard desktop GUI — chat with a model" width="49%">
+</p>
+<p align="center"><em>The desktop GUI: projects overview (left) and a chat session (right).</em></p>
+<!-- A TUI startup screenshot joins this strip once captured. -->
+
 > **Package name:** the published npm package is [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk). Product, repo, CLI, and config paths use **Hadamard** (`hadamard-*`, `~/.hadamard`, `.hadamard/`).
 
 ## Install
