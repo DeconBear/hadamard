@@ -868,6 +868,72 @@ describe('Cursor stream-json normalization', () => {
     })]);
   });
 
+  it('matches the real cursor-agent wire shape (2026.08.11)', () => {
+    const normalizer = cursorProvider.createNormalizer();
+    normalizer.translate({ type: 'system', subtype: 'init', session_id: 's' });
+
+    // thinking deltas stream as thinking_delta events; completed is ignored.
+    expect(normalizer.translate({
+      type: 'thinking', subtype: 'delta', text: 'hmm', timestamp_ms: 1, session_id: 's',
+    })).toEqual([expect.objectContaining({
+      type: 'stream_event',
+      event: expect.objectContaining({
+        delta: expect.objectContaining({ type: 'thinking_delta', thinking: 'hmm' }),
+      }),
+    })]);
+    expect(normalizer.translate({ type: 'thinking', subtype: 'completed', timestamp_ms: 2 }))
+      .toEqual([]);
+
+    // The real recap carries NEITHER timestamp_ms NOR model_call_id and must
+    // be dropped after streamed deltas.
+    normalizer.translate({
+      type: 'assistant',
+      timestamp_ms: 3,
+      message: { role: 'assistant', content: [{ type: 'text', text: 'real' }] },
+    });
+    expect(normalizer.translate({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'real' }] },
+    })).toEqual([]);
+
+    // tool_call events carry a stable call_id used for started/completed pairing.
+    const callId = 'call-abc-0\nfc_def_0';
+    expect(normalizer.translate({
+      type: 'tool_call',
+      subtype: 'started',
+      call_id: callId,
+      toolCallId: callId,
+      model_call_id: 'mc-0',
+      timestamp_ms: 4,
+      tool_call: { readToolCall: { args: { path: 'a.txt' } } },
+    })).toEqual([expect.objectContaining({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: callId, name: 'read', input: { path: 'a.txt' } }],
+      },
+    })]);
+    expect(normalizer.translate({
+      type: 'tool_call',
+      subtype: 'completed',
+      call_id: callId,
+      toolCallId: callId,
+      model_call_id: 'mc-0',
+      timestamp_ms: 5,
+      tool_call: { readToolCall: { args: { path: 'a.txt' }, result: { error: { message: 'denied' } } } },
+    })).toEqual([expect.objectContaining({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [expect.objectContaining({
+          type: 'tool_result',
+          tool_use_id: callId,
+          is_error: true,
+        })],
+      },
+    })]);
+  });
+
   it('maps an error result to an error terminal event', () => {
     const normalizer = cursorProvider.createNormalizer();
     normalizer.translate({ type: 'system', subtype: 'init', session_id: 's' });

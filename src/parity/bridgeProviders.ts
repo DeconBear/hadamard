@@ -1475,6 +1475,7 @@ class CursorNormalizer implements BridgeEventNormalizer {
     }
 
     if (type === 'assistant') return this.translateAssistant(raw);
+    if (type === 'thinking') return this.translateThinking(raw);
     if (type === 'tool_call') return this.translateToolCall(raw);
     if (type === 'result') return [this.translateResult(raw)];
 
@@ -1494,11 +1495,13 @@ class CursorNormalizer implements BridgeEventNormalizer {
       .join('');
     if (!text) return [];
 
-    // Incremental deltas carry timestamp_ms and no model_call_id; buffered
-    // flushes before a tool call and turn-end recaps carry model_call_id and
-    // repeat text already streamed. Only a turn with no deltas at all may use
+    // Incremental deltas carry timestamp_ms and no model_call_id. The
+    // turn-end recap repeats the full text and carries NEITHER field
+    // (verified against cursor-agent 2026.08.11; older docs wrongly claimed
+    // recaps carry model_call_id). Only a turn with no deltas at all may use
     // the recap text.
-    if (typeof raw.model_call_id === 'string') {
+    const isDelta = typeof raw.timestamp_ms === 'number' && typeof raw.model_call_id !== 'string';
+    if (!isDelta) {
       const useRecap = !this.sawDelta;
       this.sawDelta = false;
       if (!useRecap) return [];
@@ -1522,6 +1525,19 @@ class CursorNormalizer implements BridgeEventNormalizer {
     })];
   }
 
+  private translateThinking(raw: Record<string, unknown>): HadamardBridgeJsonEvent[] {
+    // thinking/completed is a bare marker; only deltas carry text.
+    if (raw.subtype !== 'delta' || typeof raw.text !== 'string' || !raw.text) return [];
+    return [bridgeEvent('stream_event', {
+      session_id: this.sessionId ?? '',
+      event: {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'thinking_delta', thinking: raw.text },
+      },
+    })];
+  }
+
   private translateToolCall(raw: Record<string, unknown>): HadamardBridgeJsonEvent[] {
     const toolCall = isRecord(raw.tool_call) ? raw.tool_call : undefined;
     if (!toolCall) return [];
@@ -1532,10 +1548,16 @@ class CursorNormalizer implements BridgeEventNormalizer {
     if (key === undefined || !call) return [];
     const name = cursorToolCallName(key);
 
+    const callId = typeof raw.call_id === 'string' && raw.call_id
+      ? raw.call_id
+      : typeof raw.toolCallId === 'string' && raw.toolCallId
+        ? raw.toolCallId
+        : undefined;
+
     if (raw.subtype === 'started') {
       this.toolCallSeq += 1;
-      const id = `cursor-tool-${this.toolCallSeq}`;
-      this.pendingToolCalls.set(name, id);
+      const id = callId ?? `cursor-tool-${this.toolCallSeq}`;
+      this.pendingToolCalls.set(callId ?? name, id);
       return [bridgeEvent('assistant', {
         session_id: this.sessionId ?? '',
         message: {
@@ -1551,8 +1573,11 @@ class CursorNormalizer implements BridgeEventNormalizer {
     }
 
     if (raw.subtype === 'completed') {
-      const id = this.pendingToolCalls.get(name) ?? `cursor-tool-${this.toolCallSeq}`;
-      this.pendingToolCalls.delete(name);
+      const mapKey = callId ?? name;
+      const id = this.pendingToolCalls.get(mapKey) ?? `cursor-tool-${this.toolCallSeq}`;
+      this.pendingToolCalls.delete(mapKey);
+      const result = isRecord(call.result) ? call.result : undefined;
+      const failed = call.error != null || result?.error != null;
       return [bridgeEvent('user', {
         session_id: this.sessionId ?? '',
         message: {
@@ -1561,7 +1586,7 @@ class CursorNormalizer implements BridgeEventNormalizer {
             type: 'tool_result',
             tool_use_id: id,
             content: cursorToolResultContent(call),
-            is_error: call.error != null,
+            is_error: failed,
           }],
         },
       })];

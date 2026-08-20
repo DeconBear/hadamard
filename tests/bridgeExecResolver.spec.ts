@@ -56,4 +56,30 @@ describe('resolveExecutableInvocation', () => {
         .rejects.toThrow(/Unsupported Windows CLI wrapper/);
     },
   );
+
+  it.runIf(process.platform === 'win32')(
+    'resolves Cursor-style PowerShell shims to the latest versioned node bundle',
+    async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-shim-'));
+      tempRoots.push(root);
+      const shim = path.join(root, 'cursor-agent.cmd');
+      await writeFile(
+        shim,
+        '@echo off\r\npowershell.exe -NoProfile -File "%~dp0cursor-agent.ps1" %*\r\n',
+        'utf8',
+      );
+      for (const version of ['2025.01.01-deadbeef', '2026.08.11-e8db854']) {
+        const bundleDir = path.join(root, 'versions', version);
+        await mkdir(bundleDir, { recursive: true });
+        await writeFile(path.join(bundleDir, 'node.exe'), '', 'utf8');
+        await writeFile(path.join(bundleDir, 'index.js'), '// entry', 'utf8');
+      }
+      const latest = path.join(root, 'versions', '2026.08.11-e8db854');
+
+      await expect(resolveExecutableInvocation(shim, ['--version'])).resolves.toEqual({
+        file: path.join(latest, 'node.exe'),
+        args: [path.join(latest, 'index.js'), '--version'],
+      });
+    },
+  );
 });
