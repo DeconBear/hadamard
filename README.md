@@ -7,7 +7,9 @@
 
 [English](./README.md) | [Chinese](./README-zh.md)
 
-**Hadamard** is a TypeScript agent SDK and agent-team platform. One runtime powers conversational agents with tools, skills, sessions, memory, and MCP; model teams that investigate, review, and dispatch in parallel; and a bridge that manages installed agent CLIs (Claude Code, Codex, Cursor, Pi, CodeWhale, Reasonix, Crush) as child processes. The same runtime ships with a terminal UI and a desktop GUI.
+LLM harnesses are powerful but hard to manage on real engineering and research work — shipping software, running AI-for-Science (AI4S) pipelines, training neural networks and steering experiments. Contexts overflow, tool calls sprawl, runs drift from the plan, and a single agent loop never gets a second opinion.
+
+**Hadamard** exists to make agent engineering and research controllable. Multiple agents on different providers talk to each other — investigating, reviewing, and dispatching in parallel — so problems get considered more thoroughly. One TypeScript runtime provides tools, skills, durable sessions, memory, and MCP, plus a bridge that manages installed agent CLIs (Claude Code, Codex, Cursor, Pi, CodeWhale, Reasonix, Crush) as child processes; the same runtime ships with a terminal UI and a desktop GUI.
 
 Inspired by Claude Code, Codex, Deepagents, and the broader agent ecosystem. Hadamard remains independent with its own public API and documentation.
 
