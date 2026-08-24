@@ -118,6 +118,13 @@ describe('interactive CLI convergence', () => {
     for (const [command, subcommands] of Object.entries(SUBCOMMANDS)) {
       const tuiCase = tuiCases.get(command)!;
       const guiCase = guiCases.get(command)!;
+      if (command === 'extensions') {
+        // The extension-id subcommands are completed from the shared registry;
+        // both surfaces delegate parsing/toggling to the shared view model.
+        expect(tuiCase, 'TUI /extensions delegates its argument').toContain('port.extensionsCommand(args)');
+        expect(guiCase, 'GUI /extensions delegates its argument').toContain('runExtensionsCommandView(sdk.builtInExtensions, args)');
+        continue;
+      }
       if (command === 'plugin' || command === 'rules') {
         expect(tuiCase, `TUI /${command} delegates its argument`).toContain(
           command === 'plugin'

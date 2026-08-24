@@ -28,7 +28,7 @@ export class LanguageServerRegistry {
 
   async capabilities(): Promise<LanguageServerCapability[]> {
     return Promise.all(this.definitions.map(async definition => {
-      const available = await commandAvailable(definition.command);
+      const available = await probeLanguageServerCommand(definition.command);
       return {
         id: definition.id,
         languages: [...definition.languages],
@@ -39,7 +39,7 @@ export class LanguageServerRegistry {
   }
 }
 
-async function commandAvailable(command: string): Promise<boolean> {
+export async function probeLanguageServerCommand(command: string): Promise<boolean> {
   if (path.isAbsolute(command) || command.includes(path.sep)) {
     return access(command).then(() => true, () => false);
   }

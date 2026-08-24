@@ -201,6 +201,10 @@ export async function resolveRuntimeConfig(
   const sandboxCapabilities = new SandboxExecutor(sandbox).capability;
   const languageServers = options.languageServers
     ?? normalizeLanguageServers(loadedConfig?.raw?.languageServers);
+  const autoDetectLanguageServers = options.autoDetectLanguageServers
+    ?? (typeof loadedConfig?.raw?.autoDetectLanguageServers === 'boolean'
+      ? loadedConfig.raw.autoDetectLanguageServers
+      : true);
   const typedHookConfig = options.typedHooks
     ? { hooks: options.typedHooks, issues: [] }
     : parseTypedHooks(loadedConfig?.raw?.typedHooks);
@@ -364,6 +368,7 @@ export async function resolveRuntimeConfig(
     sandbox,
     sandboxCapabilities,
     languageServers,
+    autoDetectLanguageServers,
     typedHooks: typedHookConfig.hooks,
     autoWorktree:
       policySetting<boolean>(effectivePolicy, 'autoWorktree')

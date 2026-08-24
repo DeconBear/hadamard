@@ -473,6 +473,7 @@ export interface ResolvedRuntimeConfig {
   sandbox: import('./sandbox/types.js').SandboxPolicy;
   sandboxCapabilities: import('./sandbox/types.js').SandboxCapabilityReport;
   languageServers: import('./codeIntel/types.js').LanguageServerDefinition[];
+  autoDetectLanguageServers: boolean;
   typedHooks: import('./hooks/hookTypes.js').TypedHookDefinition[];
   autoWorktree: boolean;
   /** Effective host/user/project/session policy applied to this runtime. */
@@ -974,12 +975,25 @@ export interface CreateAgentSdkOptions {
   browserUse?: boolean | CreateHadamardBrowserUseOptions;
   /** Load managed plugin capabilities from Hadamard settings, or from the supplied settings object. */
   managedPlugins?: boolean | Record<string, unknown>;
+  /**
+   * Built-in extension overrides (see BUILT_IN_EXTENSIONS). Boolean toggles
+   * the enabled state; an object also supplies config, e.g.
+   * `{ security: { enabled: true, protectedPaths: ['secrets/'] } }`. Overrides
+   * win over `extensions.<id>` entries in ~/.hadamard/settings.json.
+   */
+  extensions?: Record<string, boolean | ({ enabled?: boolean } & Record<string, unknown>)>;
   provider?: 'anthropic' | 'openai';
   effort?: HadamardEffort;
   modelApi?: ModelApi;
   sessionManager?: SessionManagerConfig;
   sandbox?: import('./sandbox/policyResolver.js').SandboxPolicyInput;
   languageServers?: import('./codeIntel/types.js').LanguageServerDefinition[];
+  /**
+   * Merge well-known language server presets (TypeScript, Python, Go, Rust)
+   * whose commands are found on PATH under the explicit `languageServers`.
+   * Default true.
+   */
+  autoDetectLanguageServers?: boolean;
   /** Typed lifecycle hooks shared by SDK, GUI, TUI, and CLI runtimes. */
   typedHooks?: import('./hooks/hookTypes.js').TypedHookDefinition[];
   /** Create a durable Session-owned git worktree for new main Sessions. */

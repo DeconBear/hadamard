@@ -43,6 +43,15 @@ export function createCodeIntelligenceTools(
     ),
     tool(
       {
+        name: 'GetHover',
+        description: 'Read hover documentation for a symbol at a source position.',
+        inputSchema: z.strictObject(positionSchema),
+        isReadOnly: () => true,
+      },
+      input => service.hover(input.filePath, input.line, input.character),
+    ),
+    tool(
+      {
         name: 'GetDiagnostics',
         description: 'Read diagnostics published by configured language servers.',
         inputSchema: z.strictObject({ filePath: z.string().optional() }),
