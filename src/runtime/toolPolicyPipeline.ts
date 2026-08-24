@@ -114,12 +114,70 @@ export const toolPolicyFactoryKey = defineContributionServiceKey<
   (options: ExecuteConversationOptions) => ToolPolicyPort
 >('hadamard.toolPolicy');
 
+/**
+ * Registry seam for policy listeners contributed outside the built-in set
+ * (built-in extensions, plugins). The pipeline factory reads it live per run,
+ * so listeners added or removed later take effect on the next run.
+ */
+export interface ToolPolicyListenerRegistry {
+  addPre(listener: ToolPrePolicyListener): void;
+  removePre(listener: ToolPrePolicyListener): boolean;
+  addPost(listener: ToolPostPolicyListener): void;
+  removePost(listener: ToolPostPolicyListener): boolean;
+  pre(): readonly ToolPrePolicyListener[];
+  post(): readonly ToolPostPolicyListener[];
+}
+
+export class InMemoryToolPolicyListenerRegistry implements ToolPolicyListenerRegistry {
+  private readonly preListeners: ToolPrePolicyListener[] = [];
+  private readonly postListeners: ToolPostPolicyListener[] = [];
+
+  addPre(listener: ToolPrePolicyListener): void {
+    if (!this.preListeners.includes(listener)) this.preListeners.push(listener);
+  }
+
+  removePre(listener: ToolPrePolicyListener): boolean {
+    const index = this.preListeners.indexOf(listener);
+    if (index < 0) return false;
+    this.preListeners.splice(index, 1);
+    return true;
+  }
+
+  addPost(listener: ToolPostPolicyListener): void {
+    if (!this.postListeners.includes(listener)) this.postListeners.push(listener);
+  }
+
+  removePost(listener: ToolPostPolicyListener): boolean {
+    const index = this.postListeners.indexOf(listener);
+    if (index < 0) return false;
+    this.postListeners.splice(index, 1);
+    return true;
+  }
+
+  pre(): readonly ToolPrePolicyListener[] {
+    return [...this.preListeners];
+  }
+
+  post(): readonly ToolPostPolicyListener[] {
+    return [...this.postListeners];
+  }
+}
+
+/** Global listener registry the built-in pipeline factory composes into every per-run pipeline. */
+export const toolPolicyListenerRegistryKey = defineContributionServiceKey<ToolPolicyListenerRegistry>(
+  'hadamard.toolPolicyListeners',
+);
+
 /** Built-in contribution: registers the behavior-preserving pipeline factory. */
 export function createBuiltInToolPolicyContribution(): HadamardRuntimeContribution {
   return {
     id: 'hadamard.tool-policy',
     async apply(ctx: ContributionApplyContext) {
-      ctx.services.register(toolPolicyFactoryKey, createBuiltInToolPolicyPipeline);
+      // Optional: tests may load this contribution without the registry.
+      const registry = ctx.services.get(toolPolicyListenerRegistryKey);
+      const factory = (options: ExecuteConversationOptions): ToolPolicyPipeline =>
+        createBuiltInToolPolicyPipeline(options, { pre: registry?.pre(), post: registry?.post() });
+      ctx.services.register(toolPolicyFactoryKey, factory);
       return () => { ctx.services.unregister(toolPolicyFactoryKey); };
     },
   };
@@ -130,8 +188,14 @@ export function createBuiltInToolPolicyContribution(): HadamardRuntimeContributi
  * Default pipeline preserving the current executor behavior exactly:
  * PreToolUse hooks, then the permission decision (with PermissionDecision
  * hooks), then deny stops; post: spill shaping then PostToolUse hooks.
+ * Contributed listeners (`extra`) run before the built-in pre listeners
+ * (monotonic deny: they can only tighten) and after the built-in post
+ * listeners in the waterfall.
  */
-export function createBuiltInToolPolicyPipeline(options: ExecuteConversationOptions): ToolPolicyPipeline {
+export function createBuiltInToolPolicyPipeline(
+  options: ExecuteConversationOptions,
+  extra?: { pre?: readonly ToolPrePolicyListener[]; post?: readonly ToolPostPolicyListener[] },
+): ToolPolicyPipeline {
   const preToolUseListener: ToolPrePolicyListener = async (call, state) => {
     const outputs = await runTypedLifecycleHooks(
       options,
@@ -229,8 +293,8 @@ export function createBuiltInToolPolicyPipeline(options: ExecuteConversationOpti
   };
 
   return new ToolPolicyPipeline(
-    [preToolUseListener, permissionListener],
-    [spillListener, postToolUseListener],
+    [...(extra?.pre ?? []), preToolUseListener, permissionListener],
+    [spillListener, postToolUseListener, ...(extra?.post ?? [])],
   );
 }
 

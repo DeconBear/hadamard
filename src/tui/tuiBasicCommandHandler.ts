@@ -2,6 +2,7 @@ import {
   HADAMARD_INTERACTIVE_COMMANDS,
   interactiveCommandUsage,
 } from '../ui/commandSurface.js';
+import type { CostLedgerSummary } from '../extensions/sessionCostTracker.js';
 import { A } from './ansi.js';
 import { formatInfoLine } from './transcript.js';
 import type { TuiSelectionItem } from './selection.js';
@@ -38,6 +39,8 @@ export interface TuiBasicCommandPort {
   shutdown(): void;
   toolNames(): string[];
   snapshot(): TuiBasicCommandSnapshot;
+  /** Ledger today/total across sessions; null when the costTracker extension is off. */
+  usageLedgerSummary?(): Promise<CostLedgerSummary | null>;
   runGoal(args: string): Promise<string>;
   appendStatic(lines: readonly string[]): void;
 }
@@ -104,6 +107,17 @@ export async function runTuiBasicCommand(
           const star = entry.active ? ` ${A.green}*${A.reset}` : '';
           lines.push(`  ${A.bold}${entry.name}${star}${A.reset}  ${A.dim}${entry.turns} turn${entry.turns === 1 ? '' : 's'}${A.reset}  ${formatTokens(entry.inputTokens)} in · ${formatTokens(entry.outputTokens)} out${entry.cost ? `  ${entry.cost}` : ''}`);
         }
+      }
+      const ledger = port.usageLedgerSummary
+        ? await port.usageLedgerSummary().catch(() => null)
+        : null;
+      if (ledger && ledger.entries > 0) {
+        lines.push(
+          '',
+          `${A.bold}Ledger (all sessions)${A.reset}`,
+          `  ${A.dim}today${A.reset}   ${formatTokens(ledger.today.inputTokens)} in · ${formatTokens(ledger.today.outputTokens)} out · $${ledger.today.costUsd.toFixed(4)}`,
+          `  ${A.dim}total${A.reset}   ${formatTokens(ledger.total.inputTokens)} in · ${formatTokens(ledger.total.outputTokens)} out · $${ledger.total.costUsd.toFixed(4)} · ${ledger.entries} entries`,
+        );
       }
       lines.push('');
       port.appendStatic(lines);

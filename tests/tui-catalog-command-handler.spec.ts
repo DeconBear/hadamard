@@ -29,6 +29,13 @@ function createPort(): TuiCatalogCommandPort & { output: string[][] } {
       items: [{ label: 'plugin-a', description: 'enabled' }],
     })),
     rulesCommand: vi.fn(async () => ({ message: 'rules listed' })),
+    extensionsCommand: vi.fn(async (commandArgs: string) => ({
+      message: commandArgs ? `extensions ${commandArgs}` : 'extensions listed',
+    })),
+    lspCommand: vi.fn(async () => ({
+      message: 'Language servers (1)',
+      items: [{ label: 'typescript', description: 'available · running' }],
+    })),
     appendStatic: lines => output.push([...lines]),
   };
 }
@@ -88,5 +95,33 @@ describe('runTuiCatalogCommand', () => {
     expect(port.rulesCommand).toHaveBeenCalledWith('list');
     expect(output(port)).toContain('plugin-a · enabled');
     expect(output(port)).toContain('rules listed');
+  });
+
+  it('routes extensions list/toggle and lsp status to their port commands', async () => {
+    const port = createPort();
+    expect(await runTuiCatalogCommand('extensions', '', port)).toBe(true);
+    expect(await runTuiCatalogCommand('extensions', 'security on', port)).toBe(true);
+    expect(await runTuiCatalogCommand('lsp', '', port)).toBe(true);
+    expect(port.extensionsCommand).toHaveBeenNthCalledWith(1, '');
+    expect(port.extensionsCommand).toHaveBeenNthCalledWith(2, 'security on');
+    expect(port.lspCommand).toHaveBeenCalledOnce();
+    expect(output(port)).toContain('extensions listed');
+    expect(output(port)).toContain('extensions security on');
+    expect(output(port)).toContain('Language servers (1)');
+    expect(output(port)).toContain('typescript · available · running');
+  });
+
+  it('renders extensions and lsp failures as inline errors', async () => {
+    const port = createPort();
+    port.extensionsCommand = vi.fn(async () => {
+      throw new Error('unknown extension: foo — valid ids: security, filterOutput');
+    });
+    port.lspCommand = vi.fn(async () => {
+      throw new Error('status failed');
+    });
+    await runTuiCatalogCommand('extensions', 'foo on', port);
+    await runTuiCatalogCommand('lsp', '', port);
+    expect(output(port)).toContain('unknown extension: foo — valid ids: security, filterOutput');
+    expect(output(port)).toContain('status failed');
   });
 });

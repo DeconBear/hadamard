@@ -139,6 +139,13 @@ import { addMcpServer, readMcpServerConfig, removeMcpServer } from '../mcp/mcpSe
 import type { ContentBlockParam } from '../provider/types.js';
 import { isReadOnlyBashCommand } from '../runtime/bashClassification.js';
 import { estimateCost } from '../team/pricing.js';
+import { SessionCostTracker, readLedgerSummary } from '../extensions/sessionCostTracker.js';
+import { formatUsageBar, usageBarColorLevel } from '../extensions/usageBar.js';
+import {
+  buildTerminalNotifySequence,
+  formatTaskSettledNotification,
+  resolveTaskNotificationOptions,
+} from '../extensions/taskNotifications.js';
 import { planFilePath, readPlanFile } from '../tools/planMode/PlanModeTools.js';
 import { loadProjectContext } from '../memory/projectContext.js';
 import {
@@ -166,6 +173,8 @@ import {
   type AgentExecutionNodeView,
   type AgentExecutionRootView,
 } from '../ui/agentExecutionView.js';
+import { runExtensionsCommandView } from '../ui/extensionsCommandView.js';
+import { runLspCommandView } from '../ui/lspCommandView.js';
 import { A, truncateToWidth, wrapToWidth } from './ansi.js';
 import { InputEditor } from './editor.js';
 import { discoverHadamardPlugins } from './pluginCatalog.js';
@@ -422,6 +431,27 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   const screen = new TuiScreen(process.stdout);
   const editor = new InputEditor();
   const flusher = new StreamFlusher(() => screen.width);
+
+  // notifications extension: surface background-task completion inline in the
+  // transcript plus terminal bell/OSC. Enablement is read at fire time so
+  // toggling the extension applies to the next settled task.
+  let unsubscribeTaskNotifications: (() => void) | null = null;
+  function subscribeTaskNotifications(): void {
+    unsubscribeTaskNotifications?.();
+    unsubscribeTaskNotifications = sdk.onBackgroundTaskSettled(task => {
+      if (!sdk.builtInExtensions.isEnabled('notifications')) return;
+      const notification = formatTaskSettledNotification(task);
+      appendStatic([...formatInfoLine(
+        notification.body ? `${notification.title} — ${notification.body}` : notification.title,
+      ), '']);
+      const sequence = buildTerminalNotifySequence(
+        notification,
+        resolveTaskNotificationOptions(sdk.builtInExtensions.getConfig('notifications')),
+      );
+      if (sequence) process.stdout.write(sequence);
+    });
+  }
+  subscribeTaskNotifications();
 
   let running = false;
   let queuedConfirmActive = false;
@@ -838,6 +868,10 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalCostUsd: number | null = 0;
+  // costTracker extension: per-model accumulation + durable JSONL ledger at
+  // <homeDir>/usage/cost-ledger.jsonl. Token totals above always count; cost
+  // accumulation and ledger writes are gated on the extension at record time.
+  const costTracker = new SessionCostTracker(sdk.config.homeDir);
   const configUsage = new Map<string, { inputTokens: number; outputTokens: number; turns: number }>();
   function recordUsage(model: string, usage: {
     input_tokens?: number;
@@ -849,8 +883,11 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
     const outT = usage?.output_tokens ?? 0;
     totalInputTokens += inT;
     totalOutputTokens += outT;
-    const cost = estimateCost(model, inT, outT);
-    totalCostUsd = cost === null ? null : (totalCostUsd === null ? cost : totalCostUsd + cost);
+    if (sdk.builtInExtensions.isEnabled('costTracker')) {
+      costTracker.record(model, usage ?? {}, { sessionId: session.id });
+      const cost = estimateCost(model, inT, outT);
+      totalCostUsd = cost === null ? null : (totalCostUsd === null ? cost : totalCostUsd + cost);
+    }
     // Per-config tracking: attribute this turn to the active bridge config.
     if (bridgeMode && activeBridgeConfig) {
       const rec = configUsage.get(activeBridgeConfig.name) ?? { inputTokens: 0, outputTokens: 0, turns: 0 };
@@ -969,6 +1006,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       sdk = nextSdk;
       session = nextSession;
       toolMetadata = nextToolMetadata;
+      subscribeTaskNotifications();
       await restoreSessionRuntimeSelection();
     } catch (error) {
       await nextSdk.close().catch(() => undefined);
@@ -1250,7 +1288,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       ?? 200_000;
     const pct = window > 0 ? Math.min(100, Math.round((used / window) * 100)) : 0;
     const usedK = used >= 1000 ? `${(used / 1000).toFixed(used >= 100_000 ? 0 : 1)}k` : `${used}`;
-    const ctxColor = pct >= 90 ? A.red : pct >= 70 ? A.yellow : A.dim;
+    const ctxColor = usageBarColorLevel(pct) === 'critical' ? A.red : usageBarColorLevel(pct) === 'warn' ? A.yellow : A.dim;
     const modelLabel = activeRouter
       ? `router:${activeRouter.name}${routedModelLabel ? ` → ${routedModelLabel}` : ''}`
       : !bridgeMode && activeBridgeConfig?.runtime === 'hadamard' && bridgeModelLabel
@@ -1263,7 +1301,20 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       ? `team:${activeTeamName}${teamPrefs.autoInvoke ? '' : ' (manual)'}`
       : 'team:none';
     const left = `${modelLabel} · ${permissionLabel()} · mode:${currentAgentMode()} · effort:${currentEffort() ?? 'auto'} · ${teamLabel}${bridgeTag}${goalContextLine()} · `;
-    return `${A.dim}  ${left}${A.reset}${ctxColor}ctx ${pct}% (${usedK})${A.reset}`;
+    // usageBar extension: swap the plain ctx segment for a bar + session
+    // cost/tokens. Read at render time so /extensions toggling is live.
+    const ctxSegment = sdk.builtInExtensions.isEnabled('usageBar')
+      ? formatUsageBar({
+        contextUsedTokens: used,
+        contextWindowTokens: window,
+        ...(sdk.builtInExtensions.isEnabled('costTracker') && totalCostUsd !== null
+          ? { sessionCostUsd: totalCostUsd }
+          : {}),
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      })
+      : `ctx ${pct}% (${usedK})`;
+    return `${A.dim}  ${left}${A.reset}${ctxColor}${ctxSegment}${A.reset}`;
   }
 
   function buildStatusLine(): string[] {
@@ -4093,6 +4144,9 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           bridgeName: bridgeMode ? activeBridgeConfig?.name : undefined,
           planMode: session.permissionContext.mode === 'plan',
         }),
+        usageLedgerSummary: () => sdk.builtInExtensions.isEnabled('costTracker')
+          ? readLedgerSummary(sdk.config.homeDir).catch(() => null)
+          : Promise.resolve(null),
         runGoal: async args => (await sdk.goals.command(session, args)).message,
         appendStatic,
       });
@@ -4770,6 +4824,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             sdk.config.workDir,
           ).execute(commandArgs);
         },
+        extensionsCommand: commandArgs => runExtensionsCommandView(sdk.builtInExtensions, commandArgs),
+        lspCommand: () => runLspCommandView(sdk.codeIntelligence),
         appendStatic,
       })) return;
       appendStatic([...formatErrorLine(`unknown command: /${name} — type /help`), '']);
@@ -4925,6 +4981,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   async function shutdown(code: number): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
+    unsubscribeTaskNotifications?.();
     let exitCode = code;
     if (spinnerTimer) clearInterval(spinnerTimer);
     cancelScheduledDynamicRender();

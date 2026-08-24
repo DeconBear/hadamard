@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { realpath as realpathCallback } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,17 +14,32 @@ import type {
 } from './types.js';
 
 const realpathNative = promisify(realpathCallback.native);
+
+interface OpenDocument {
+  version: number;
+  mtimeMs: number;
+}
+
 interface ServerState {
   definition: LanguageServerDefinition;
   process: LspProcess;
   initialized: Promise<void>;
-  documents: Map<string, number>;
+  documents: Map<string, OpenDocument>;
 }
 
 export interface CodeIntelligenceServiceOptions {
   workDir: string;
   registry: LanguageServerRegistry;
   timeoutMs?: number;
+}
+
+/** Snapshot of one language server for the /lsp status command. */
+export interface LanguageServerStatus {
+  id: string;
+  languages: string[];
+  available: boolean;
+  reason?: string;
+  running: boolean;
 }
 
 export class CodeIntelligenceService {
@@ -57,6 +72,18 @@ export class CodeIntelligenceService {
     });
   }
 
+  async hover(filePath: string, line: number, character: number): Promise<string> {
+    const definition = this.options.registry.forFile(filePath);
+    if (!definition) throw new Error(`No language server is configured for ${path.extname(filePath) || filePath}.`);
+    const state = await this.server(definition);
+    const uri = await this.openDocument(filePath);
+    const raw = await state.process.request<unknown>('textDocument/hover', {
+      textDocument: { uri },
+      position: { line: Math.max(0, line), character: Math.max(0, character) },
+    });
+    return normalizeHover(raw);
+  }
+
   async diagnostics(filePath?: string): Promise<CodeDiagnostic[]> {
     if (filePath) {
       const uri = await this.openDocument(filePath);
@@ -65,7 +92,34 @@ export class CodeIntelligenceService {
     return [...this.diagnosticsByUri.values()].flat().map(item => structuredClone(item));
   }
 
+  /**
+   * Registry capabilities plus live server state for the /lsp command. Running
+   * is reported conservatively (a server entry exists once spawned); a hung
+   * initialize handshake must not block this status call.
+   */
+  async serverStatus(): Promise<LanguageServerStatus[]> {
+    const capabilities = await this.options.registry.capabilities();
+    return capabilities.map(capability => ({
+      id: capability.id,
+      languages: [...capability.languages],
+      available: capability.available,
+      ...(capability.reason ? { reason: capability.reason } : {}),
+      running: this.servers.has(capability.id),
+    }));
+  }
+
   async close(): Promise<void> {
+    for (const state of this.servers.values()) {
+      await state.initialized.catch(() => undefined);
+      for (const uri of state.documents.keys()) {
+        try {
+          state.process.notify('textDocument/didClose', { textDocument: { uri } });
+        } catch {
+          // The server is going away anyway; didClose is best-effort.
+        }
+      }
+      state.documents.clear();
+    }
     await Promise.all([...this.servers.values()].map(state => state.process.dispose()));
     this.servers.clear();
   }
@@ -97,8 +151,10 @@ export class CodeIntelligenceService {
     const state = await this.server(definition);
     const uri = pathToFileURL(absolute).href;
     if (!state.documents.has(uri)) {
+      // Stat before reading so a write racing the open is caught by the next sync.
+      const stats = await stat(absolute).catch(() => undefined);
       const text = await readFile(absolute, 'utf8');
-      state.documents.set(uri, 1);
+      state.documents.set(uri, { version: 1, mtimeMs: stats?.mtimeMs ?? 0 });
       state.process.notify('textDocument/didOpen', {
         textDocument: {
           uri,
@@ -108,7 +164,30 @@ export class CodeIntelligenceService {
         },
       });
     }
+    await this.syncDocument(state, absolute, uri);
     return uri;
+  }
+
+  // Full-document sync: after the agent edits a file, push the new text so the
+  // server never answers from stale content. Deleted files are closed instead.
+  private async syncDocument(state: ServerState, absolute: string, uri: string): Promise<void> {
+    const open = state.documents.get(uri);
+    if (!open) return;
+    const stats = await stat(absolute).catch(() => undefined);
+    if (!stats) {
+      state.documents.delete(uri);
+      this.diagnosticsByUri.delete(uri);
+      state.process.notify('textDocument/didClose', { textDocument: { uri } });
+      return;
+    }
+    if (stats.mtimeMs <= open.mtimeMs) return;
+    const text = await readFile(absolute, 'utf8');
+    open.version += 1;
+    open.mtimeMs = stats.mtimeMs;
+    state.process.notify('textDocument/didChange', {
+      textDocument: { uri, version: open.version },
+      contentChanges: [{ text }],
+    });
   }
 
   private async assertWorkspacePath(filePath: string): Promise<string> {
@@ -236,6 +315,25 @@ function normalizeRange(value: unknown, uri: string): CodeLocation | undefined {
     ...(typeof value.end.line === 'number' ? { endLine: value.end.line } : {}),
     ...(typeof value.end.character === 'number' ? { endCharacter: value.end.character } : {}),
   };
+}
+
+function normalizeHover(value: unknown): string {
+  if (!isRecord(value)) return '';
+  // Spec shape is { contents, range? }; tolerate a bare MarkupContent.
+  return normalizeMarkup('contents' in value ? value.contents : value);
+}
+
+function normalizeMarkup(contents: unknown): string {
+  if (typeof contents === 'string') return contents;
+  if (Array.isArray(contents)) {
+    return contents
+      .map(item => normalizeMarkup(item))
+      .filter(part => part.length > 0)
+      .join('\n\n');
+  }
+  // MarkedString ({ language, value }) and MarkupContent ({ kind, value }).
+  if (isRecord(contents) && typeof contents.value === 'string') return contents.value;
+  return '';
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

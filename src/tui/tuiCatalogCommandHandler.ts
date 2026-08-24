@@ -25,6 +25,8 @@ export interface TuiCatalogCommandPort {
   showPlugins(): Promise<void>;
   pluginCommand(args: string): Promise<TuiCatalogCommandResult>;
   rulesCommand(args: string): Promise<TuiCatalogCommandResult>;
+  extensionsCommand(args: string): Promise<TuiCatalogCommandResult>;
+  lspCommand(): Promise<TuiCatalogCommandResult>;
   appendStatic(lines: readonly string[]): void;
 }
 
@@ -45,7 +47,7 @@ export async function runTuiCatalogCommand(
   args: string,
   port: TuiCatalogCommandPort,
 ): Promise<boolean> {
-  if (name !== 'skills' && name !== 'agents' && name !== 'mcp' && name !== 'hooks' && name !== 'plugins' && name !== 'plugin' && name !== 'rules') return false;
+  if (name !== 'skills' && name !== 'agents' && name !== 'mcp' && name !== 'hooks' && name !== 'plugins' && name !== 'plugin' && name !== 'rules' && name !== 'extensions' && name !== 'lsp') return false;
 
   if (name === 'skills') {
     await port.showSkills();
@@ -121,6 +123,17 @@ export async function runTuiCatalogCommand(
   }
   if (name === 'plugins') {
     await port.showPlugins();
+    return true;
+  }
+  if (name === 'extensions' || name === 'lsp') {
+    try {
+      appendCommandResult(
+        name === 'extensions' ? await port.extensionsCommand(args) : await port.lspCommand(),
+        port,
+      );
+    } catch (error) {
+      port.appendStatic([...formatErrorLine(errorMessage(error)), '']);
+    }
     return true;
   }
   try {

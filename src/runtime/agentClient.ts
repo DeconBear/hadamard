@@ -37,7 +37,20 @@ import {
   conversationExtensionsFactoryKey,
   createBuiltInConversationExtensionsContribution,
 } from './conversationExtensions.js';
-import { createBuiltInToolPolicyContribution, toolPolicyFactoryKey } from './toolPolicyPipeline.js';
+import {
+  createBuiltInToolPolicyContribution,
+  InMemoryToolPolicyListenerRegistry,
+  toolPolicyFactoryKey,
+  toolPolicyListenerRegistryKey,
+} from './toolPolicyPipeline.js';
+import {
+  BuiltInExtensionToggles,
+  createBuiltInExtensionsApi,
+  resolveBuiltInExtensionStates,
+  type BuiltInExtensionsApi,
+} from '../extensions/builtInExtensions.js';
+import { createSecurityPolicyContribution } from '../extensions/securityPolicy.js';
+import { createFilterOutputPolicyContribution } from '../extensions/filterOutputPolicy.js';
 import { codeDispatchFormatterKey, createCodeDispatchTranscriptContribution, defaultCodeDispatchTranscriptFormatter } from './codeDispatchTranscript.js';
 import type { ConversationExtensionPoints } from '../types.js';
 import { resolveHadamardSettingsStore } from '../config/hadamardSettingsStore.js';
@@ -142,6 +155,7 @@ import {
   CodeIntelligenceService,
   createCodeIntelligenceTools,
   LanguageServerRegistry,
+  resolveLanguageServerDefinitions,
 } from '../codeIntel/index.js';
 import { HookRunner } from '../hooks/hookRunner.js';
 import { createPromptHookHandler } from '../hooks/handlers/promptHook.js';
@@ -756,6 +770,8 @@ export class HadamardAgentClient {
   readonly codeIntelligence?: CodeIntelligenceService;
   /** Persistent, project-scoped root/child Agent execution graph. */
   readonly executions: HadamardAgentExecutionsApi;
+  /** Built-in extension states (security guard, output filter, UI stubs) with persisted toggling. */
+  readonly builtInExtensions: BuiltInExtensionsApi;
   private readonly sessionManager: SessionManager;
   private readonly sessionTurnCoordinator = new SessionTurnCoordinator();
   private readonly agentDefinitions: Map<string, HadamardAgentDefinition>;
@@ -778,6 +794,8 @@ export class HadamardAgentClient {
   private readonly codeActServices = new Map<string, CodeActService>();
   private readonly sessionRuntimeOverrides = new Map<string, SessionRuntimeOverrides>();
   private readonly backgroundTaskManager: HadamardBackgroundTaskManager;
+  /** User-facing listeners fired when any background task settles (best-effort). */
+  private readonly backgroundTaskSettledListeners = new Set<(task: HadamardBackgroundTaskRecord) => void>();
   private readonly defaultPermissionMode?: CreateAgentSdkOptions['permissionMode'];
   private readonly defaultPermissions?: CreateAgentSdkOptions['permissions'];
   private readonly defaultClassifier?: HadamardToolClassifier;
@@ -826,6 +844,7 @@ export class HadamardAgentClient {
     externalAgentRunner?: CreateAgentSdkOptions['externalAgentRunner'],
     private readonly runtimeClosers: ReadonlyArray<() => Promise<void>> = [],
     private readonly contributionHost?: HadamardContributionHost,
+    extensionToggles?: BuiltInExtensionToggles,
   ) {
     this.externalAgentRunner = externalAgentRunner ?? runExternalAgentOnce;
     this.sessionManager = new SessionManager(this.store, sessionManagerConfig);
@@ -838,6 +857,10 @@ export class HadamardAgentClient {
     );
     this.auditLog = new AuditLog(path.join(this.config.homeDir, 'policy', 'audit.ndjson'));
     this.executions = new HadamardAgentExecutionsApi(executionStore);
+    this.builtInExtensions = createBuiltInExtensionsApi(
+      extensionToggles ?? new BuiltInExtensionToggles(resolveBuiltInExtensionStates(undefined)),
+      this.config.homeDir,
+    );
     this.checkpoints = new FileCheckpointService({
       storageRoot: path.join(this.config.sessionDirectory, 'file-checkpoints'),
       workspaceRoot: this.config.workDir,
@@ -1080,7 +1103,10 @@ export class HadamardAgentClient {
     if (this.defaultTools.some(tool => tool.name === BASH_TOOL_NAME)) {
       this.replaceDefaultTool(createBashTool({
         backgroundTaskManager: this.backgroundTaskManager,
-        onBackgroundTaskSettled: task => this.enqueueTaskNotification(task),
+        onBackgroundTaskSettled: task => {
+          this.enqueueTaskNotification(task);
+          this.notifyBackgroundTaskSettled(task);
+        },
       }));
     }
     this.replaceDefaultTool(this.createSendMessageTool());
@@ -1161,16 +1187,31 @@ export class HadamardAgentClient {
     const contributionHost = new HadamardContributionHost();
     const contributionTools = new InMemoryContributionToolRegistry();
     contributionHost.registerService(contributionToolRegistryKey, contributionTools);
+    // Registered before any contribution apply runs so the tool-policy factory
+    // and the extension contributions can both resolve it.
+    contributionHost.registerService(toolPolicyListenerRegistryKey, new InMemoryToolPolicyListenerRegistry());
     let managedSettings: Record<string, unknown> = {};
     if (options.managedPlugins !== false) {
       managedSettings = isRecord(options.managedPlugins)
         ? options.managedPlugins
         : (await resolveHadamardSettingsStore({ homeDir: config.homeDir })).raw;
     }
+    // Built-in extension states read from the same settings payload; with
+    // managedPlugins disabled the settings store is read once for extensions.
+    const extensionSettingsRaw = isRecord(options.managedPlugins)
+      ? options.managedPlugins
+      : options.managedPlugins !== false
+        ? managedSettings
+        : (await resolveHadamardSettingsStore({ homeDir: config.homeDir })).raw;
+    const extensionToggles = new BuiltInExtensionToggles(
+      resolveBuiltInExtensionStates(extensionSettingsRaw, options.extensions),
+    );
     await contributionHost.loadMany([
       createRequestRetryPolicyContribution(config.retryPolicy),
       createBuiltInConversationExtensionsContribution(),
       createBuiltInToolPolicyContribution(),
+      createSecurityPolicyContribution(extensionToggles),
+      createFilterOutputPolicyContribution(extensionToggles),
       createCodeDispatchTranscriptContribution(),
       createTavilySearchContribution(managedSettings),
       createExaSearchContribution(managedSettings),
@@ -1367,8 +1408,14 @@ export class HadamardAgentClient {
       definition.name,
       definition,
     ])).values()];
+    // Code intelligence: merge explicit language servers with auto-detected
+    // presets (PATH probe), so LSP tools work out of the box. Async, so it
+    // happens here in create() rather than in the synchronous constructor.
+    const languageServers = await resolveLanguageServerDefinitions(config.languageServers, {
+      autoDetect: config.autoDetectLanguageServers,
+    });
     client = new HadamardAgentClient(
-      config,
+      { ...config, languageServers },
       store,
       executionStore,
       backgroundTaskStore,
@@ -1396,6 +1443,7 @@ export class HadamardAgentClient {
       options.externalAgentRunner,
       runtimeClosers,
       contributionHost,
+      extensionToggles,
     );
     const interruptedTasks = await client.backgroundTaskManager.reconcileInterruptedTasks();
     await client.reconcileInterruptedAgentExecutions(interruptedTasks);
@@ -4618,6 +4666,29 @@ export class HadamardAgentClient {
     }
   }
 
+  /**
+   * Subscribe to background task settlement (completed/failed/cancelled) for
+   * user-facing surfaces. Fires for every settled task — including ad-hoc
+   * tasks without a parent session — independently of the agent-facing
+   * `<task_notification>` enqueue path. Returns an unsubscribe function.
+   */
+  onBackgroundTaskSettled(listener: (task: HadamardBackgroundTaskRecord) => void): () => void {
+    this.backgroundTaskSettledListeners.add(listener);
+    return () => {
+      this.backgroundTaskSettledListeners.delete(listener);
+    };
+  }
+
+  private notifyBackgroundTaskSettled(task: HadamardBackgroundTaskRecord): void {
+    for (const listener of this.backgroundTaskSettledListeners) {
+      try {
+        listener(task);
+      } catch {
+        // Listener errors must never break the settle path.
+      }
+    }
+  }
+
   private drainRuntimeNotifications(sessionId: string): string[] {
     const queued = this.pendingRuntimeNotifications.get(sessionId) ?? [];
     this.pendingRuntimeNotifications.delete(sessionId);
@@ -4733,6 +4804,7 @@ export class HadamardAgentClient {
         onSettled: async task => {
           this.updatePendingDelegation(options.parentSessionId ?? options.parentRunId, task);
           this.enqueueTaskNotification(task);
+          this.notifyBackgroundTaskSettled(task);
           if (task.status === 'completed') {
             await this.tryCompleteExecutionEdge(execution.edge, task.text);
           } else {
@@ -4840,6 +4912,7 @@ export class HadamardAgentClient {
         onSettled: async task => {
           this.updatePendingDelegation(notificationParent, task);
           this.enqueueTaskNotification(task);
+          this.notifyBackgroundTaskSettled(task);
           if (task.status === 'completed' && hasCollaborationEdge) {
             await this.tryCompleteExecutionEdge(execution.edge, task.text);
           } else if (task.status !== 'completed' && hasCollaborationEdge) {
