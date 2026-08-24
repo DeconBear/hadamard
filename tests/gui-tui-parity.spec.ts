@@ -10,6 +10,7 @@ import {
   HADAMARD_GUI_INTERACTIVE_COMMANDS,
   SUBCOMMANDS,
   filterInteractiveCommands,
+  interactiveCommandUsage,
 } from '../src/ui/commandSurface.js';
 import {
   createHadamardGuiClientScript,
@@ -98,9 +99,11 @@ describe('TUI and GUI parity', () => {
       'skills',
       'agents',
       'mcp',
+      'lsp',
       'hooks',
       'plugins',
       'plugin',
+      'extensions',
       'dream',
       'automation',
       'workflows',
@@ -648,6 +651,23 @@ describe('TUI and GUI parity', () => {
     }
     expect(tui).toContain('executeProjectIssue');
     expect(gui).toContain('streamIssueDispatch');
+  });
+
+  it('keeps /extensions and /lsp available in the TUI and GUI', () => {
+    const root = join(import.meta.dirname, '..');
+    expect(SUBCOMMANDS.extensions).toEqual(['security', 'filterOutput', 'costTracker', 'usageBar', 'notifications']);
+    expect(interactiveCommandUsage('extensions')).toContain('on|off');
+    const tui = readTuiSources(root);
+    const gui = readGuiSources(root);
+    // Both surfaces render through the same shared view models.
+    for (const source of [tui, gui]) {
+      expect(source).toContain('runExtensionsCommandView');
+      expect(source).toContain('runLspCommandView');
+    }
+    expect(tui).toContain('extensionsCommand');
+    expect(tui).toContain('lspCommand');
+    expect(gui).toContain("case 'extensions'");
+    expect(gui).toContain("case 'lsp'");
   });
 
   it('keeps /manager chat available in the TUI and GUI (plan §4.6)', () => {

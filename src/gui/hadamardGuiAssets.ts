@@ -271,7 +271,7 @@ export function createHadamardGuiHtml(): string {
           <div class="workbench-chat">
             <section class="pane pane-chat active" id="pane-chat-default">
               <div class="chat-chrome">
-                <section id="statusbar" class="statusbar"></section>
+                <section id="statusbar" class="statusbar"><span id="statusText"></span><span id="usagebar" class="usagebar hidden"></span></section>
                 <div id="squadRoster" class="squad-roster hidden"></div>
               </div>
               <section id="contextBar" class="context-bar hidden"></section>
@@ -3080,6 +3080,9 @@ select { border: 1px solid var(--border); background: var(--bg-surface); color: 
 .statusbar { min-height: 34px; padding: 8px 18px; color: #6b6f75; font-size: 13px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
 .statusbar.running::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 45%, transparent); animation: pulse 1.2s infinite; }
 .statusbar.error::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--err); }
+.usagebar { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11.5px; font-weight: 400; white-space: nowrap; }
+.usagebar.warn { color: var(--warn); }
+.usagebar.critical { color: var(--err); }
 .transcript { flex: 1; overflow: auto; }
 .code-block { position: relative; margin: 10px 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-fg); border-radius: 8px; overflow: auto; border: 1px solid var(--code-border); }
 .code-block code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; }
@@ -6716,7 +6719,8 @@ function flashStatus(message) {
   setTimeout(() => { if (!state.running) setRunStatus(readyLabel()); }, 2600);
 }
 function setRunStatus(message, kind = '') {
-  statusbar.textContent = message || '';
+  const statusText = el('statusText');
+  if (statusText) statusText.textContent = message || '';
   statusbar.classList.toggle('running', kind === 'running');
   statusbar.classList.toggle('error', kind === 'error');
   updateSendButton();
@@ -8057,8 +8061,24 @@ function renderComposerMeta() {
     branchChip.disabled = !isRepo;
   }
 }
+function renderUsageBar() {
+  const bar = el('usagebar');
+  if (!bar) return;
+  const snap = state.snapshot || {};
+  if (!snap.usageBarText) {
+    bar.classList.add('hidden');
+    bar.textContent = '';
+    return;
+  }
+  bar.textContent = snap.usageBarText;
+  bar.title = 'Context / session usage';
+  bar.classList.remove('hidden');
+  bar.classList.toggle('warn', snap.usageBarLevel === 'warn');
+  bar.classList.toggle('critical', snap.usageBarLevel === 'critical');
+}
 function renderStatusExtras() {
   const snap = state.snapshot || {};
+  renderUsageBar();
   const bar = el('contextBar');
   bar.textContent = '';
   const addBadge = (cls, text, title) => {
@@ -13866,12 +13886,13 @@ async function requestRailNotificationPermission() {
 }
 function showRailNotification(note) {
   const text = note?.text || 'Reminder';
+  const title = note?.title || 'Reminder';
   if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-    try { new Notification('Hadamard reminder', { body: text }); } catch { /* ignore */ }
+    try { new Notification(note?.title || 'Hadamard reminder', { body: text }); } catch { /* ignore */ }
   }
   const toast = el('railToast');
   if (!toast) return;
-  toast.innerHTML = '<strong>Reminder</strong>' + escapeHtml(text);
+  toast.innerHTML = '<strong>' + escapeHtml(title) + '</strong> ' + escapeHtml(text);
   toast.classList.remove('hidden');
   clearTimeout(showRailNotification._timer);
   showRailNotification._timer = setTimeout(() => toast.classList.add('hidden'), 8000);
