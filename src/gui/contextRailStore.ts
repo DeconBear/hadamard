@@ -29,6 +29,10 @@ export interface ContextRailNotification {
   text: string;
   remindAt: string;
   firedAt: string;
+  /** Display title; reminders leave it unset and the UI falls back to "Reminder". */
+  title?: string;
+  /** Notification kind (e.g. 'task' for background-task settlements). */
+  kind?: string;
 }
 
 export const EMPTY_CONTEXT_RAIL_STORE: ContextRailStore = { items: [] };
@@ -154,6 +158,23 @@ export class ContextRailReminderScheduler {
     const out = [...this.pending];
     this.pending = [];
     return out;
+  }
+
+  /**
+   * Enqueue a generic (non-reminder) notification, e.g. a background-task
+   * settlement from the notifications extension. Drained like reminders.
+   */
+  enqueueNotification(notification: { title?: string; text: string; kind?: string }): void {
+    const firedAt = new Date().toISOString();
+    this.pending.push({
+      id: `rail-notify-generic-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      itemId: '',
+      text: notification.text,
+      remindAt: firedAt,
+      firedAt,
+      ...(notification.title ? { title: notification.title } : {}),
+      ...(notification.kind ? { kind: notification.kind } : {}),
+    });
   }
 
   async sync(workDir: string, homeDir: string, store: ContextRailStore): Promise<void> {

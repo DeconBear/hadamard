@@ -261,6 +261,9 @@ import {
   type Usage,
 } from '../core/index.js';
 import { estimateCost } from '../team/pricing.js';
+import { SessionCostTracker, readLedgerSummary } from '../extensions/sessionCostTracker.js';
+import { formatUsageBar, usageBarColorLevel, type UsageBarColorLevel } from '../extensions/usageBar.js';
+import { formatTaskSettledNotification } from '../extensions/taskNotifications.js';
 import {
   validateWorkflowSquad,
 } from '../team/workflowSquad.js';
@@ -323,6 +326,8 @@ import {
   createAgentExecutionProjectView,
   createAgentExecutionRootView,
 } from '../ui/agentExecutionView.js';
+import { runExtensionsCommandView } from '../ui/extensionsCommandView.js';
+import { runLspCommandView } from '../ui/lspCommandView.js';
 import { createExternalCliAgentExecutionSnapshots } from './externalCliAgentMonitor.js';
 import {
   ContextRailReminderScheduler,
@@ -2376,6 +2381,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     await railReminderScheduler.sync(targetWorkDir, homeDir, store);
   }
   await syncRailReminders().catch(() => undefined);
+  // notifications extension: push background-task settlements into the rail
+  // notification channel (drained into /api/state and /api/rail-live).
+  // Enablement is checked at fire time so toggling applies immediately.
+  let unsubscribeTaskNotifications: (() => void) | null = null;
+  function subscribeSdkTaskNotifications(): void {
+    unsubscribeTaskNotifications?.();
+    unsubscribeTaskNotifications = sdk?.onBackgroundTaskSettled(task => {
+      if (!sdk?.builtInExtensions.isEnabled('notifications')) return;
+      const notification = formatTaskSettledNotification(task);
+      railReminderScheduler.enqueueNotification({
+        title: notification.title,
+        text: notification.body || notification.title,
+        kind: 'task',
+      });
+    }) ?? null;
+  }
+  subscribeSdkTaskNotifications();
   const pendingPermissions = new Map<string, PendingPermission>();
   // Terminal engine (plan phase 3). node-pty is probed once; terminalCapable
   // tells the renderer whether to show the terminal tab (false hides it even when
@@ -2528,6 +2550,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalCostUsd: number | null = 0;
+  // costTracker extension: per-model accumulation + durable JSONL ledger
+  // (mirrors the TUI). Token totals always count; cost + ledger are gated.
+  const costTracker = new SessionCostTracker(resolveGuiHomeDir());
+  // usageBar extension: live context estimate from the last request.started.
+  let lastContextTokenEstimate: number | undefined;
   const configUsage = new Map<string, { inputTokens: number; outputTokens: number; turns: number }>();
 
   function recordUsage(model: string, usage: { input_tokens?: number; output_tokens?: number } | undefined): void {
@@ -2535,8 +2562,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const outT = usage?.output_tokens ?? 0;
     totalInputTokens += inT;
     totalOutputTokens += outT;
-    const cost = estimateCost(model, inT, outT, resolveGuiHomeDir());
-    totalCostUsd = cost === null ? null : (totalCostUsd === null ? cost : totalCostUsd + cost);
+    if (sdk?.builtInExtensions.isEnabled('costTracker')) {
+      costTracker.record(model, usage ?? {}, { sessionId: session?.id });
+      const cost = estimateCost(model, inT, outT, resolveGuiHomeDir());
+      totalCostUsd = cost === null ? null : (totalCostUsd === null ? cost : totalCostUsd + cost);
+    }
     if (bridgeMode && activeBridgeConfig) {
       const rec = configUsage.get(activeBridgeConfig.name) ?? { inputTokens: 0, outputTokens: 0, turns: 0 };
       rec.inputTokens += inT;
@@ -2550,6 +2580,37 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     if (!cfg?.model) return null;
     const cost = estimateCost(cfg.model, rec.inputTokens, rec.outputTokens, resolveGuiHomeDir());
     return cost !== null ? `$${cost.toFixed(4)}` : null;
+  }
+
+  // usageBar extension: pre-formatted statusbar widget (renderer just paints it).
+  function usageBarState(): {
+    usageBarText?: string;
+    usageBarLevel?: UsageBarColorLevel;
+    contextUsedTokens?: number;
+    contextWindowTokens?: number;
+  } {
+    if (!sdk?.builtInExtensions.isEnabled('usageBar')) return {};
+    const contextWindowTokens = currentContextWindow()
+      ?? sdk.config.compact.contextWindowTokens
+      ?? 200_000;
+    const contextUsedTokens = lastContextTokenEstimate ?? 0;
+    const pct = contextWindowTokens > 0
+      ? Math.min(100, Math.round((contextUsedTokens / contextWindowTokens) * 100))
+      : 0;
+    return {
+      usageBarText: formatUsageBar({
+        contextUsedTokens,
+        contextWindowTokens,
+        ...(sdk.builtInExtensions.isEnabled('costTracker') && totalCostUsd !== null
+          ? { sessionCostUsd: totalCostUsd }
+          : {}),
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      }),
+      usageBarLevel: usageBarColorLevel(pct),
+      contextUsedTokens,
+      contextWindowTokens,
+    };
   }
 
   // The project/plugin/empty-session scans walk every project on disk. Cache them
@@ -2581,6 +2642,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       toolMetadata = await nextSdk.listToolMetadata();
       sdk = nextSdk;
       needsCredentials = false;
+      subscribeSdkTaskNotifications();
       await restoreSessionRuntimeSelection();
     } catch (error) {
       await nextSdk.close().catch(() => undefined);
@@ -3376,6 +3438,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           costUsd: configCost(cfgName, rec),
         })),
       },
+      ...usageBarState(),
       ...liveRunState(),
       terminalCapable,
       railItems: sortContextRailItems(railStore.items),
@@ -5463,6 +5526,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           return [{ type: 'error', message: error instanceof Error ? error.message : String(error) }];
         }
       }
+      case 'extensions': {
+        if (!sdk) return [{ type: 'error', message: 'Extensions require a configured Hadamard provider.' }];
+        try {
+          const result = await runExtensionsCommandView(sdk.builtInExtensions, args);
+          return [
+            { type: 'command.result', title: 'Extensions', text: result.message, items: result.items },
+            ...(args.trim() ? [{ type: 'state' as const }] : []),
+          ];
+        } catch (error) {
+          return [{ type: 'error', message: error instanceof Error ? error.message : String(error) }];
+        }
+      }
+      case 'lsp': {
+        if (!sdk) return [{ type: 'error', message: 'Language server status requires a configured Hadamard provider.' }];
+        const result = await runLspCommandView(sdk.codeIntelligence);
+        return [{ type: 'command.result', title: 'Language servers', text: result.message, items: result.items }];
+      }
       case 'automation': {
         if (args === 'new') {
           return [{ type: 'notice', message: 'Open Automation and select New task.' }];
@@ -6045,6 +6125,17 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             const star = activeBridgeConfig?.name === cfgName ? ' *' : '';
             const cost = configCost(cfgName, rec);
             lines.push(`  ${cfgName}${star} — ${rec.turns} turns, ${(rec.inputTokens + rec.outputTokens).toLocaleString()} tokens${cost ? ', ' + cost : ''}`);
+          }
+        }
+        if (sdk?.builtInExtensions.isEnabled('costTracker')) {
+          const ledger = await readLedgerSummary(resolveGuiHomeDir()).catch(() => null);
+          if (ledger && ledger.entries > 0) {
+            lines.push(
+              '',
+              'Ledger (all sessions):',
+              `  Today: ${(ledger.today.inputTokens + ledger.today.outputTokens).toLocaleString()} tokens, $${ledger.today.costUsd.toFixed(4)}`,
+              `  Total: ${(ledger.total.inputTokens + ledger.total.outputTokens).toLocaleString()} tokens, $${ledger.total.costUsd.toFixed(4)} across ${ledger.entries} entries`,
+            );
           }
         }
         return [{ type: 'command.result', title: 'Usage', text: lines.join('\n') }];
@@ -7187,6 +7278,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       const toolCallInputs = new Map<string, { name: string; input: unknown }>();
       for await (const event of stream) {
         forwardAgentEvent(event, send, runId);
+        if (event.type === 'request.started' && typeof event.requestTokenEstimate === 'number') {
+          lastContextTokenEstimate = event.requestTokenEstimate;
+        }
         if (event.type === 'error') errorEventSeen = true;
         if (event.type === 'tool.call') {
           desc.toolCalls += 1;
