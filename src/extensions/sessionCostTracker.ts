@@ -7,11 +7,19 @@
  *
  * @module src/extensions/sessionCostTracker
  */
+import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { isRecord } from '../runtime/helpers.js';
 import { estimateCost } from '../team/pricing.js';
+import type { UsageSource, UsageStatus } from '../usage/contracts.js';
+import { UsageLedger } from '../usage/usageLedger.js';
+import {
+  legacyCostLedgerPath,
+  usageDatabasePath,
+  UsageQueryService,
+} from '../usage/usageQueryService.js';
 
 export interface SessionCostModelUsage {
   inputTokens: number;
@@ -47,7 +55,21 @@ export interface CostLedgerSummary {
 }
 
 function ledgerPath(homeDir: string): string {
-  return path.join(homeDir, 'usage', 'cost-ledger.jsonl');
+  return legacyCostLedgerPath(homeDir);
+}
+
+export interface SessionCostRecordMeta {
+  sessionId?: string;
+  runId?: string;
+  logicalRequestId?: string;
+  providerId?: string;
+  credentialId?: string;
+  routeId?: string;
+  configurationId?: string;
+  projectId?: string;
+  agentId?: string;
+  source?: UsageSource;
+  status?: UsageStatus;
 }
 
 function count(value: unknown): number {
@@ -73,13 +95,15 @@ export class SessionCostTracker {
   record(
     model: string,
     usage: SessionCostUsage,
-    meta?: { sessionId?: string; runId?: string },
+    meta?: SessionCostRecordMeta,
   ): void {
     const inputTokens = count(usage.input_tokens);
     const outputTokens = count(usage.output_tokens);
     const cacheReadTokens = count(usage.cache_read_input_tokens);
+    const cacheWriteTokens = count(usage.cache_creation_input_tokens);
     // Unknown pricing is not an error: tokens still count, cost stays 0.
-    const costUsd = estimateCost(model, inputTokens, outputTokens, this.homeDir) ?? 0;
+    const estimatedCost = estimateCost(model, inputTokens, outputTokens, this.homeDir);
+    const costUsd = estimatedCost ?? 0;
     this.inputTokens += inputTokens;
     this.outputTokens += outputTokens;
     this.costUsd += costUsd;
@@ -89,19 +113,64 @@ export class SessionCostTracker {
     entry.costUsd += costUsd;
     this.perModel.set(model, entry);
     if (!this.ledger) return;
-    const line = `${JSON.stringify({
-      ts: new Date().toISOString(),
+    const eventId = randomUUID();
+    const timestamp = new Date().toISOString();
+    const requestId = meta?.logicalRequestId ?? meta?.runId ?? eventId;
+    const event = {
+      version: 2 as const,
+      eventId,
+      requestId,
+      correlationId: meta?.sessionId ?? requestId,
+      timestamp,
+      source: meta?.source ?? 'hadamard' as const,
+      status: meta?.status ?? 'succeeded' as const,
+      requestedModel: model,
+      resolvedModel: model,
+      operation: 'generate' as const,
+      ...(meta?.providerId ? { providerId: meta.providerId } : {}),
+      ...(meta?.credentialId ? { credentialId: meta.credentialId } : {}),
+      ...(meta?.routeId ? { routeId: meta.routeId } : {}),
+      ...(meta?.configurationId ? { configurationId: meta.configurationId } : {}),
+      ...(meta?.projectId ? { projectId: meta.projectId } : {}),
+      ...(meta?.agentId ? { agentId: meta.agentId } : {}),
       ...(meta?.sessionId ? { sessionId: meta.sessionId } : {}),
       ...(meta?.runId ? { runId: meta.runId } : {}),
+      usage: {
+        requests: 1,
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
+        reasoningTokens: 0,
+        audioInputTokens: 0,
+        audioOutputTokens: 0,
+        ...(estimatedCost === null ? {} : { costUsd }),
+        accuracy: 'actual' as const,
+      },
+      attempts: [],
+      durationMs: 0,
+      streaming: false,
+    };
+    const line = `${JSON.stringify({
+      ts: timestamp,
       model,
       inputTokens,
       outputTokens,
       cacheReadTokens,
+      cacheWriteTokens,
       costUsd,
+      ...event,
     })}\n`;
     const filePath = ledgerPath(this.homeDir);
     this.ledgerQueue = this.ledgerQueue.then(async () => {
       await mkdir(path.dirname(filePath), { recursive: true });
+      const usageLedger = await UsageLedger.open({ filename: usageDatabasePath(this.homeDir) });
+      try {
+        usageLedger.append(event);
+      } finally {
+        usageLedger.close();
+      }
       await appendFile(filePath, line, 'utf8');
     }).catch(() => undefined);
   }
@@ -125,6 +194,38 @@ export class SessionCostTracker {
  * "today" matches the local calendar date of the entry's `ts`.
  */
 export async function readLedgerSummary(homeDir: string): Promise<CostLedgerSummary> {
+  try {
+    const queryService = await UsageQueryService.open(homeDir);
+    try {
+      const now = new Date();
+      const startOfToday = new Date(now);
+      startOfToday.setHours(0, 0, 0, 0);
+      const [today, total] = [
+        queryService.summary({ from: startOfToday.toISOString() }),
+        queryService.summary(),
+      ];
+      return {
+        today: {
+          inputTokens: today.inputTokens,
+          outputTokens: today.outputTokens,
+          costUsd: today.costUsd ?? 0,
+        },
+        total: {
+          inputTokens: total.inputTokens,
+          outputTokens: total.outputTokens,
+          costUsd: total.costUsd ?? 0,
+        },
+        entries: total.entries,
+      };
+    } finally {
+      queryService.close();
+    }
+  } catch {
+    return readLegacyLedgerSummary(homeDir);
+  }
+}
+
+async function readLegacyLedgerSummary(homeDir: string): Promise<CostLedgerSummary> {
   const summary: CostLedgerSummary = {
     today: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
     total: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
