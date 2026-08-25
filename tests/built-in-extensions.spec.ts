@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   BUILT_IN_EXTENSIONS,
   BuiltInExtensionToggles,
+  createBuiltInExtensionsApi,
   patchBuiltInExtensionSettings,
   resolveBuiltInExtensionStates,
 } from '../src/index.js';
@@ -159,5 +160,17 @@ describe('BuiltInExtensionToggles', () => {
     const snapshot = toggles.snapshot();
     expect(snapshot.find((state) => state.id === 'security')?.enabled).toBe(false);
     expect(snapshot.find((state) => state.id === 'usageBar')?.enabled).toBe(true);
+  });
+
+  it('rolls back a live toggle when persistence fails', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-ext-failure-'));
+    tempDirs.push(root);
+    const blockedHome = path.join(root, 'blocked');
+    await writeFile(blockedHome, 'not a directory', 'utf8');
+    const toggles = new BuiltInExtensionToggles(resolveBuiltInExtensionStates({}));
+    const api = createBuiltInExtensionsApi(toggles, blockedHome);
+
+    await expect(api.setEnabled('security', true)).rejects.toThrow();
+    expect(api.isEnabled('security')).toBe(false);
   });
 });

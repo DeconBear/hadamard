@@ -61,6 +61,27 @@ async function sendSlash(server: HadamardGuiServer, text: string): Promise<GuiEv
     .map(line => JSON.parse(line) as GuiEvent);
 }
 
+async function guiState(server: HadamardGuiServer): Promise<any> {
+  const response = await fetch(`${server.url}api/state`, {
+    headers: { 'x-hadamard-token': server.token },
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
+async function saveSettings(server: HadamardGuiServer, body: Record<string, unknown>): Promise<any> {
+  const response = await fetch(`${server.url}api/settings`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-hadamard-token': server.token,
+    },
+    body: JSON.stringify(body),
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
 function commandResult(events: GuiEvent[]): GuiEvent {
   const result = events.find(event => event.type === 'command.result');
   expect(result, `expected a command.result event in ${JSON.stringify(events)}`).toBeDefined();
@@ -105,6 +126,45 @@ describe('GUI /extensions and /lsp slash commands', () => {
         extensions?: { security?: { enabled?: boolean } };
       };
       expect(persisted.extensions?.security?.enabled).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('projects extension and LSP settings into the GUI and persists UI changes', async () => {
+    const server = await startGui({
+      extensions: { security: { enabled: true, protectedPaths: ['src'] } },
+      autoDetectLanguageServers: false,
+    });
+    try {
+      const initial = await guiState(server);
+      expect(initial.settings.extensions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'security', enabled: true, defaultEnabled: false }),
+        expect.objectContaining({ id: 'usageBar', enabled: true, defaultEnabled: true }),
+      ]));
+      expect(initial.settings.autoDetectLanguageServers).toBe(false);
+
+      const saved = await saveSettings(server, {
+        extensions: {
+          security: { enabled: false },
+          usageBar: { enabled: false },
+          unknown: { enabled: true },
+        },
+        autoDetectLanguageServers: true,
+      });
+      expect(saved.settingsApplyError).toBeUndefined();
+      expect(saved.settings.extensions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'security', enabled: false }),
+        expect.objectContaining({ id: 'usageBar', enabled: false }),
+      ]));
+      expect(saved.settings.autoDetectLanguageServers).toBe(true);
+      expect(saved.usageBarText).toBeUndefined();
+
+      const persisted = JSON.parse(await readFile(server.configPath, 'utf8')) as any;
+      expect(persisted.extensions.security).toEqual({ enabled: false, protectedPaths: ['src'] });
+      expect(persisted.extensions.usageBar.enabled).toBe(false);
+      expect(persisted.extensions.unknown).toBeUndefined();
+      expect(persisted.autoDetectLanguageServers).toBe(true);
     } finally {
       await server.close();
     }

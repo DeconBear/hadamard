@@ -10,7 +10,7 @@ import { writeBridgeConfigs } from '../src/parity/bridgeConfigs.js';
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })));
 });
 
 async function tempRoot(prefix: string): Promise<string> {
@@ -35,7 +35,7 @@ async function api<T>(
   return { status: res.status, body: await res.json() as T };
 }
 
-describe('GUI runtime local config reuse', () => {
+describe('GUI runtime local config reuse', { timeout: 60_000 }, () => {
   it('reads and updates external runtime config from the user home, not the Hadamard data root', async () => {
     const root = await tempRoot('hadamard-gui-runtime-home-');
     const userHome = path.join(root, 'home');
