@@ -261,7 +261,7 @@ import {
   type Usage,
 } from '../core/index.js';
 import { estimateCost } from '../team/pricing.js';
-import { SessionCostTracker, readLedgerSummary } from '../extensions/sessionCostTracker.js';
+import { SessionCostTracker, readLedgerSummary, type SessionCostUsage } from '../extensions/sessionCostTracker.js';
 import { formatUsageBar, usageBarColorLevel, type UsageBarColorLevel } from '../extensions/usageBar.js';
 import { formatTaskSettledNotification } from '../extensions/taskNotifications.js';
 import {
@@ -2561,13 +2561,13 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   let lastContextTokenEstimate: number | undefined;
   const configUsage = new Map<string, { inputTokens: number; outputTokens: number; turns: number }>();
 
-  function recordUsage(model: string, usage: { input_tokens?: number; output_tokens?: number } | undefined): void {
+  function recordUsage(model: string, usage: SessionCostUsage | undefined, runId?: string): void {
     const inT = usage?.input_tokens ?? 0;
     const outT = usage?.output_tokens ?? 0;
     totalInputTokens += inT;
     totalOutputTokens += outT;
     if (sdk?.builtInExtensions.isEnabled('costTracker')) {
-      costTracker.record(model, usage ?? {}, { sessionId: session?.id });
+      costTracker.record(model, usage ?? {}, { sessionId: session?.id, runId, configurationId: activeBridgeConfig?.name, source: bridgeMode ? 'bridge' : 'hadamard' });
       const cost = estimateCost(model, inT, outT, resolveGuiHomeDir());
       totalCostUsd = cost === null ? null : (totalCostUsd === null ? cost : totalCostUsd + cost);
     }
@@ -4325,7 +4325,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       }
       const result = await stream.result;
       desc.status = 'done';
-      recordUsage(desc.model ?? session.model, result.usage as { input_tokens?: number; output_tokens?: number } | undefined);
+      recordUsage(desc.model ?? session.model, result.usage, result.runId);
       return result.text ?? '';
     } catch (error) {
       desc.status = abort.signal.aborted ? 'aborted' : 'error';
@@ -4519,7 +4519,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         events.push({ type: 'command.result', title: `Automation result - ${task.name}`, text });
       }
       const effectiveModel = hadamardModel ?? routed?.model ?? activeBridgeModelApi?.model ?? session.model;
-      recordUsage(effectiveModel, (result as any).usage);
+      recordUsage(effectiveModel, (result as any).usage, (result as any).runId);
       if ((result as any).usage) {
         desc.tokenUsage = {
           input: (result as any).usage.input_tokens ?? 0,
@@ -7373,7 +7373,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         ?? routed?.model
         ?? runBridgeModelApi?.model
         ?? runSession.model;
-      recordUsage(effectiveModel, (result as any).usage);
+      recordUsage(effectiveModel, (result as any).usage, (result as any).runId);
       desc.status = 'done';
       const runUsage = (result as any).usage;
       if (runUsage) desc.tokenUsage = { input: runUsage.input_tokens ?? 0, output: runUsage.output_tokens ?? 0 };
