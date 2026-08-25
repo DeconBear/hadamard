@@ -265,6 +265,10 @@ import { SessionCostTracker, readLedgerSummary } from '../extensions/sessionCost
 import { formatUsageBar, usageBarColorLevel, type UsageBarColorLevel } from '../extensions/usageBar.js';
 import { formatTaskSettledNotification } from '../extensions/taskNotifications.js';
 import {
+  BUILT_IN_EXTENSIONS,
+  resolveBuiltInExtensionStates,
+} from '../extensions/builtInExtensions.js';
+import {
   validateWorkflowSquad,
 } from '../team/workflowSquad.js';
 import { listPlanFiles, planDirFor, planFilePath, readPlanFile } from '../tools/planMode/PlanModeTools.js';
@@ -2633,12 +2637,21 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     try {
       // When recovering from a no-credential state the session is a stub (id: ''),
       // so create a fresh session instead of trying to resume an empty id.
-      session = needsCredentials
-        ? await nextSdk.createSession({ model: options.model, permissionMode })
-        : await nextSdk.resumeSession(session.id, {
-          model: options.model,
-          permissionMode: options.permissionMode,
-        });
+      if (needsCredentials) {
+        session = await nextSdk.createSession({ model: options.model, permissionMode });
+      } else {
+        try {
+          session = await nextSdk.resumeSession(session.id, {
+            model: options.model,
+            permissionMode: options.permissionMode,
+          });
+        } catch (error) {
+          if ((error as { code?: unknown })?.code !== 'SESSION_NOT_FOUND') throw error;
+          // Empty sessions are intentionally not persisted. A settings reload
+          // must still apply immediately while the untouched chat is open.
+          session = await nextSdk.createSession({ model: options.model, permissionMode });
+        }
+      }
       toolMetadata = await nextSdk.listToolMetadata();
       sdk = nextSdk;
       needsCredentials = false;
@@ -3254,6 +3267,9 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       : await listArchivedSessionsForWorkDir(workDir, homeDir);
     const railStore = await readContextRailStore(workDir, homeDir);
     const activeProject = heavy.projects.find(project => project.active);
+    const extensionStates = sdk?.builtInExtensions.list()
+      ?? resolveBuiltInExtensionStates(store?.raw);
+    const extensionStateById = new Map(extensionStates.map(item => [item.id, item]));
     return {
       workDir,
       platform: process.platform,
@@ -3310,6 +3326,23 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         apiKey: env.HADAMARD_API_KEY ?? env.HADAMARD_AUTH_TOKEN ?? '',
         apiKeyMasked: maskApiKey(env.HADAMARD_API_KEY ?? env.HADAMARD_AUTH_TOKEN ?? ''),
         preferences: store ? readGuiPreferences(store.raw) : DEFAULT_GUI_PREFERENCES,
+        extensions: BUILT_IN_EXTENSIONS.map(definition => ({
+          id: definition.id,
+          title: definition.title,
+          description: definition.description,
+          kind: definition.kind,
+          defaultEnabled: definition.defaultEnabled,
+          enabled: extensionStateById.get(definition.id)?.enabled ?? definition.defaultEnabled,
+        })),
+        autoDetectLanguageServers: sdk?.config.autoDetectLanguageServers
+          ?? (typeof store?.raw.autoDetectLanguageServers === 'boolean'
+            ? store.raw.autoDetectLanguageServers
+            : true),
+        languageServers: (sdk?.config.languageServers ?? []).map(server => ({
+          id: server.id,
+          languages: [...server.languages],
+          command: server.command,
+        })),
         browser: readHadamardBrowserSettings(store?.raw ?? {}),
         bridge: store?.raw?.bridge ?? {},
         sandbox: sdk
@@ -3529,6 +3562,24 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
               : undefined,
         allowEvaluate: browserBody.allowEvaluate === true,
       });
+    }
+
+    if (typeof body.autoDetectLanguageServers === 'boolean') {
+      raw.autoDetectLanguageServers = body.autoDetectLanguageServers;
+    }
+
+    if (isPlainRecord(body.extensions)) {
+      const existingExtensions = isPlainRecord(raw.extensions) ? { ...raw.extensions } : {};
+      for (const definition of BUILT_IN_EXTENSIONS) {
+        const requested = body.extensions[definition.id];
+        if (!isPlainRecord(requested) || typeof requested.enabled !== 'boolean') continue;
+        const existingValue = existingExtensions[definition.id];
+        const existing = isPlainRecord(existingValue)
+          ? { ...existingValue }
+          : {};
+        existingExtensions[definition.id] = { ...existing, enabled: requested.enabled };
+      }
+      raw.extensions = existingExtensions;
     }
 
     const preferences = isPlainRecord(body.preferences)

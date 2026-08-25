@@ -204,8 +204,14 @@ export function createBuiltInExtensionsApi(
     isEnabled: (id) => toggles.isEnabled(id),
     getConfig: (id) => toggles.getConfig(id),
     setEnabled: async (id, enabled) => {
+      const previous = toggles.isEnabled(id);
       toggles.setEnabled(id, enabled);
-      await patchBuiltInExtensionSettings(homeDir, id, { enabled });
+      try {
+        await patchBuiltInExtensionSettings(homeDir, id, { enabled });
+      } catch (error) {
+        toggles.setEnabled(id, previous);
+        throw error;
+      }
     },
   };
 }
