@@ -337,6 +337,17 @@ export type { CostLedgerSummary, CostLedgerTotals, SessionCostModelUsage, Sessio
 export { formatTokenCount, formatUsageBar, usageBarColorLevel, usageBarPercent } from './extensions/usageBar.js';
 export type { FormatUsageBarInput, UsageBarColorLevel } from './extensions/usageBar.js';
 export * from './usage/index.js';
+export { ElectronSecretStore } from './keyway/electronSecretStore.js';
+export type { ElectronSafeStoragePort, ElectronSecretStoreOptions } from './keyway/electronSecretStore.js';
+export { createEmbeddedKeyway, loadKeywaySdkModules } from './keyway/embeddedKeyway.js';
+export type { EmbeddedKeyway, EmbeddedKeywayOptions } from './keyway/embeddedKeyway.js';
+export { KeywayModelApi } from './keyway/keywayModelApi.js';
+export type { KeywayModelApiOptions } from './keyway/keywayModelApi.js';
+export { resolveRoutingTargetSelection } from './keyway/routingComposition.js';
+export type { HadamardRoutingTarget, RoutingSelectionInput } from './keyway/routingComposition.js';
+export { HadamardKeywayProviderExecutor, bridgeUsage, keywayDataToMessageStreamEvent, keywayOutputToMessage, probeKeywayNativeTargetAuth, providerUsage } from './keyway/keywayProviderExecutor.js';
+export type { HadamardKeywayProviderExecutorOptions, ManagedModelApiFactory, NativeCliClientFactory, NativeCliClientPort, NativeCliRunStreamPort } from './keyway/keywayProviderExecutor.js';
+export type { KeywayCorePort, KeywayExecutionHandlePort, KeywayExecutionRequestPort, KeywayExecutionResultPort, KeywayExecutionTargetPort, KeywayJson, KeywayManagedTargetPort, KeywayNativeTargetPort, KeywayProviderExecutorPort, KeywayProviderHandlePort, KeywayProviderRequestPort, KeywayProviderResultPort, KeywaySdkModulesPort, KeywaySecretStorePort, KeywayStorePort, KeywayStreamEventPort } from './keyway/keywayPorts.js';
 export { buildTerminalNotifySequence, formatTaskSettledNotification, resolveTaskNotificationOptions } from './extensions/taskNotifications.js';
 export type { TaskNotificationOptions, TaskSettledNotification } from './extensions/taskNotifications.js';
 export { ProgrammaticToolRuntime } from './codeact/programmaticToolRuntime.js';
