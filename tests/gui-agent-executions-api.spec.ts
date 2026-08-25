@@ -16,7 +16,8 @@ import type {
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })));
+  // Windows releases sqlite WAL handles asynchronously; retry the temp-dir rm.
+  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })));
 });
 
 async function tempRoot(prefix: string): Promise<string> {
@@ -245,7 +246,7 @@ function expectNoInternalEventState(value: unknown): void {
   for (const child of Object.values(record)) expectNoInternalEventState(child);
 }
 
-describe('GUI agent execution API', () => {
+describe('GUI agent execution API', { timeout: 60_000 }, () => {
   it('isolates project execution views and keeps agent sessions out of chat lists', async () => {
     const root = await tempRoot('hadamard-gui-agent-executions-');
     const homeDir = path.join(root, 'home');

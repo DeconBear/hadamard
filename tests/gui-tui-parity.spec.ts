@@ -668,6 +668,12 @@ describe('TUI and GUI parity', () => {
     expect(tui).toContain('lspCommand');
     expect(gui).toContain("case 'extensions'");
     expect(gui).toContain("case 'lsp'");
+    const html = createHadamardGuiHtml();
+    expect(html).toContain('data-settings-tab="extensions"');
+    expect(html).toContain('id="settingsExtensionsList"');
+    expect(html).toContain('id="settingsAutoDetectLanguageServers"');
+    expect(createHadamardGuiClientScript()).toContain("renderExtensionSettings(state.snapshot?.settings || {})");
+    expect(createHadamardGuiStyles()).toContain('body.settings-open .manager-shell { display: none; }');
   });
 
   it('keeps /manager chat available in the TUI and GUI (plan §4.6)', () => {
@@ -982,5 +988,55 @@ describe('TUI and GUI parity', () => {
     expect(tui).not.toContain('function buildAgentContext');
     expect(tui).toMatch(/project instructions/i);
     expect(gui).toContain('Project instructions:');
+  });
+});
+
+describe('GUI collapsible shell panels (sidebar + context rail)', () => {
+  it('ships sidebar collapse/expand controls and an overview rail toggle', () => {
+    const html = createHadamardGuiHtml();
+    // Left sidebar: named aside + in-brand collapse button + floating expander.
+    expect(html).toContain('<aside class="sidebar" id="appSidebar">');
+    expect(html).toContain('id="sidebarCollapseBtn"');
+    expect(html).toContain('aria-label="Collapse sidebar"');
+    expect(html).toContain('id="sidebarExpandBtn"');
+    expect(html).toContain('class="sidebar-expand-fab hidden"');
+    expect(html).toContain('aria-label="Expand sidebar"');
+    expect(html).toContain('aria-controls="appSidebar"');
+    // Right context rail: toggle lives in the project overview header actions.
+    expect(html).toContain('id="overviewRailToggleBtn"');
+    expect(html).toContain('aria-controls="contextRail"');
+  });
+
+  it('styles the collapsed sidebar, floating expander, and narrow-screen guards', () => {
+    const css = createHadamardGuiStyles();
+    expect(css).toContain('.sidebar.collapsed { display: none; }');
+    expect(css).toContain('.sidebar-expand-fab { position: absolute;');
+    // The narrow-screen icon-rail design wins over the collapsed class and
+    // hides both shell panel buttons so no dead affordance is shown.
+    expect(css).toContain('.sidebar.collapsed { display: flex; }');
+    expect(css).toContain('.sidebar .sidebar-collapse-btn, .sidebar-expand-fab { display: none; }');
+  });
+
+  it('defaults sidebar expanded and context rail collapsed, both persisted', () => {
+    const js = createHadamardGuiClientScript();
+    // Default state: sidebar expanded, rail collapsed.
+    expect(js).toContain('sidebarCollapsed: false,');
+    expect(js).toContain('railCollapsed: true,');
+    // Restore logic: sidebar collapses only on stored '1'; rail opens only on stored '0'.
+    expect(js).toContain("localStorage.getItem('hadamard.gui.sidebarCollapsed') === '1'");
+    expect(js).toContain("localStorage.getItem('hadamard.gui.railCollapsed') !== '0'");
+    // Persistence on toggle.
+    expect(js).toContain("localStorage.setItem('hadamard.gui.sidebarCollapsed'");
+    expect(js).toContain("localStorage.setItem('hadamard.gui.railCollapsed'");
+    // The rail stays hidden off-overview and now also respects the collapse pref.
+    expect(js).toContain("state.projectView !== 'overview' || state.railCollapsed");
+    // Wiring + startup restoration.
+    expect(js).toContain("el('sidebarCollapseBtn').addEventListener('click', () => setSidebarCollapsed(true))");
+    expect(js).toContain("el('sidebarExpandBtn').addEventListener('click', () => setSidebarCollapsed(false))");
+    expect(js).toContain("el('overviewRailToggleBtn').addEventListener('click', () => setContextRailCollapsed(!state.railCollapsed))");
+    expect(js).toContain('loadSidebarCollapsed();');
+    expect(js).toContain('loadContextRailCollapsed();');
+    // Rail toggle chrome mirrors the drawer pattern (icon follows the action).
+    expect(js).toContain("guiIcon(expanded ? 'panelRight' : 'panelLeft')");
   });
 });

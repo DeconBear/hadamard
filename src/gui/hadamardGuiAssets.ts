@@ -120,10 +120,11 @@ export function createHadamardGuiHtml(): string {
 </head>
 <body>
   <div class="app" id="appView">
-    <aside class="sidebar">
+    <aside class="sidebar" id="appSidebar">
       <div class="brand">
         <span class="brand-mark">${guiIcon('logo')}</span>
         <span class="brand-name">Hadamard</span>
+        <button type="button" id="sidebarCollapseBtn" class="icon-btn sidebar-collapse-btn" aria-label="Collapse sidebar" title="Collapse sidebar" aria-expanded="true" aria-controls="appSidebar">${guiIcon('panelLeft')}</button>
       </div>
       <nav class="primary-nav" aria-label="Primary">
         <button id="navProject" class="nav-btn region-nav active" data-region="project" aria-label="Project" title="Project"><span class="nav-icon">${guiIcon('folder')}</span><span>Project</span></button>
@@ -151,6 +152,7 @@ export function createHadamardGuiHtml(): string {
         <button id="settingsBtn" class="nav-btn" aria-label="Settings" title="Settings"><span class="nav-icon">${guiIcon('gear')}</span><span>Settings</span></button>
       </div>
     </aside>
+    <button type="button" id="sidebarExpandBtn" class="sidebar-expand-fab hidden" aria-label="Expand sidebar" title="Expand sidebar" aria-expanded="false" aria-controls="appSidebar">${guiIcon('panelRight')}</button>
     <main class="chat" data-region="project" id="regionProject">
       <section class="project-overview" id="projectOverview">
         <header class="region-header">
@@ -161,6 +163,7 @@ export function createHadamardGuiHtml(): string {
           <div class="region-actions">
             <button type="button" id="overviewChatsBtn" class="pill-btn">Chats</button>
             <button type="button" id="overviewNewWorkspaceBtn" class="pill-btn">+ New workspace</button>
+            <button type="button" id="overviewRailToggleBtn" class="icon-btn" aria-label="Show panel" title="Show panel" aria-expanded="false" aria-controls="contextRail">${guiIcon('panelLeft')}</button>
           </div>
         </header>
         <div class="overview-toolbar">
@@ -890,6 +893,7 @@ export function createHadamardGuiHtml(): string {
       <section>
         <h2>Agent</h2>
         <button type="button" class="settings-tab" data-settings-tab="capabilities"><span class="settings-icon">${guiIcon('tools')}</span>Capabilities</button>
+        <button type="button" class="settings-tab" data-settings-tab="extensions"><span class="settings-icon">${guiIcon('plug')}</span>Extensions &amp; LSP</button>
         <button type="button" class="settings-tab" data-settings-tab="sessions"><span class="settings-icon">${guiIcon('chat')}</span>Chats</button>
       </section>
       <section>
@@ -1058,6 +1062,19 @@ export function createHadamardGuiHtml(): string {
             <button type="button" id="settingsTeamOff" class="secondary-btn">No agent</button>
           </div>
           <div id="settingsTeamsList" class="settings-card-list"></div>
+        </div>
+      </section>
+      <section class="settings-panel" data-settings-panel="extensions">
+        <h1>Extensions &amp; LSP</h1>
+        <div class="settings-group">
+          <h2>Built-in extensions</h2>
+          <p class="muted">Enable Hadamard-owned runtime and interface features. Changes apply to subsequent runs.</p>
+          <div id="settingsExtensionsList" class="settings-card-list"></div>
+        </div>
+        <div class="settings-group">
+          <h2>Language servers</h2>
+          <div class="settings-help-row"><span><strong>Detect installed language servers automatically</strong><small>Uses supported servers found on PATH when no explicit server with the same id is configured.</small></span><label class="switch-field"><input type="checkbox" id="settingsAutoDetectLanguageServers"></label></div>
+          <div id="settingsLanguageServersList" class="settings-card-list compact"></div>
         </div>
       </section>
       <section class="settings-panel" data-settings-panel="sessions">
@@ -2743,7 +2760,7 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
 .graph-mode-pill { font-size: 11px; font-weight: 600; border-radius: 999px; padding: 3px 10px; background: var(--accent); color: var(--text-2); }
 .graph-unreachable { opacity: .65; }
 .context-rail { width: 320px; flex: 0 0 320px; border-left: 1px solid var(--border); background: var(--bg-app); overflow: auto; padding: 14px; }
-.app { height: 100vh; display: flex; overflow: hidden; border: 1px solid var(--border); background: var(--bg-app); }
+.app { height: 100vh; display: flex; position: relative; overflow: hidden; border: 1px solid var(--border); background: var(--bg-app); }
 .sidebar {
   width: 240px;
   flex: 0 0 240px;
@@ -2754,6 +2771,16 @@ body[data-theme="dark"] .git-diff-line.hunk { color: #d2a8ff; }
   overflow: hidden;
   background: var(--bg-app);
   border-right: 1px solid var(--border);
+}
+.sidebar.collapsed { display: none; }
+.sidebar .sidebar-collapse-btn { margin-left: auto; width: 24px; height: 24px; min-height: 24px; padding: 0; display: inline-grid; place-items: center; color: var(--text-2); }
+.sidebar .sidebar-collapse-btn:hover { color: var(--text-1); }
+.sidebar-expand-fab { position: absolute; top: 12px; left: 12px; z-index: 20; width: 32px; height: 32px; min-height: 32px; padding: 0; display: inline-grid; place-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-2); cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.1); }
+.sidebar-expand-fab:hover { color: var(--text-1); background: var(--surface-hover); }
+.sidebar-expand-fab .ui-icon, .sidebar .sidebar-collapse-btn .ui-icon { width: 15px; height: 15px; }
+@media (min-width: 861px) {
+  .app:has(> .sidebar.collapsed) .region-header,
+  .app:has(> .sidebar.collapsed) .topbar { padding-left: 54px; }
 }
 /* Sidebar is nav + Pinned/Recent only. Chat lists live in the project detail
    conversation sidebar; workspace open uses the overview "+ New workspace". */
@@ -4382,6 +4409,7 @@ body { margin: 0; color: var(--text-1); background: var(--bg-app); }
 .dialog-actions button { border: 1px solid var(--border); border-radius: 8px; min-height: 34px; padding: 0 12px; background: var(--bg-surface); }
 .dialog-actions .primary { background: var(--btn-primary-bg); color: var(--btn-primary-fg); }
 .settings-view { position: fixed; inset: 0; z-index: 20; display: flex; background: var(--bg-sidebar); color: var(--text-1); }
+body.settings-open .manager-shell { display: none; }
 .settings-sidebar {
   width: 240px;
   flex: 0 0 240px;
@@ -4808,6 +4836,8 @@ body[data-density="compact"] .composer-meta { padding: 5px 12px; }
 /* Dark-theme reserves for the new workbench regions (plan/UI_PLAN §2 — U9). */
 @media (max-width: 860px) {
   .sidebar { width: 56px; flex-basis: 56px; padding: 12px 8px; }
+  .sidebar.collapsed { display: flex; }
+  .sidebar .sidebar-collapse-btn, .sidebar-expand-fab { display: none; }
   .sidebar .search, .sidebar-recents, .command-section, .project-section h2, .project-session-list, .sidebar-link, .brand-name { display: none; }
   .sidebar .brand, .sidebar .nav-btn { justify-content: center; padding-left: 0; padding-right: 0; }
   .sidebar .nav-btn > span:not(.nav-icon) { display: none !important; }
@@ -5280,6 +5310,10 @@ const state = {
   gitSidebarWidth: 320,
   detailSidebarWidth: 300,
   detailConversationOpen: true,
+  // App shell panels: the left sidebar defaults expanded, the overview's right
+  // context rail defaults collapsed; both persist to localStorage on toggle.
+  sidebarCollapsed: false,
+  railCollapsed: true,
   conversationListOpen: false,
   conversationListQuery: '',
   sessionUnread: new Set(),
@@ -9164,6 +9198,42 @@ function toggleDetailConversationDrawer() {
     ? sidebar?.classList.contains('mobile-open')
     : !sidebar?.classList.contains('desktop-collapsed');
   setDetailConversationDrawer(!open);
+}
+// --- App shell panels: collapsible left sidebar + right context rail. ---
+function setSidebarCollapsed(collapsed, persist) {
+  state.sidebarCollapsed = Boolean(collapsed);
+  const sidebar = el('appSidebar');
+  const expander = el('sidebarExpandBtn');
+  const toggle = el('sidebarCollapseBtn');
+  sidebar?.classList.toggle('collapsed', state.sidebarCollapsed);
+  expander?.classList.toggle('hidden', !state.sidebarCollapsed);
+  toggle?.setAttribute('aria-expanded', state.sidebarCollapsed ? 'false' : 'true');
+  expander?.setAttribute('aria-expanded', state.sidebarCollapsed ? 'false' : 'true');
+  if (persist !== false) try { localStorage.setItem('hadamard.gui.sidebarCollapsed', state.sidebarCollapsed ? '1' : '0'); } catch { /* optional */ }
+}
+function loadSidebarCollapsed() {
+  let saved = false;
+  try { saved = localStorage.getItem('hadamard.gui.sidebarCollapsed') === '1'; } catch { /* optional */ }
+  setSidebarCollapsed(saved, false);
+}
+function setContextRailCollapsed(collapsed, persist) {
+  state.railCollapsed = Boolean(collapsed);
+  if (persist !== false) try { localStorage.setItem('hadamard.gui.railCollapsed', state.railCollapsed ? '1' : '0'); } catch { /* optional */ }
+  const toggle = el('overviewRailToggleBtn');
+  if (toggle) {
+    const expanded = !state.railCollapsed;
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    toggle.setAttribute('aria-label', expanded ? 'Hide panel' : 'Show panel');
+    toggle.setAttribute('title', expanded ? 'Hide panel' : 'Show panel');
+    toggle.innerHTML = guiIcon(expanded ? 'panelRight' : 'panelLeft');
+  }
+  renderContextRail();
+}
+function loadContextRailCollapsed() {
+  // Default is collapsed: only an explicit '0' reopens the rail on startup.
+  let saved = true;
+  try { saved = localStorage.getItem('hadamard.gui.railCollapsed') !== '0'; } catch { /* optional */ }
+  setContextRailCollapsed(saved, false);
 }
 function runningSessionIds() {
   return new Set((state.snapshot?.runs || []).filter(run => run.status === 'running' && run.sessionId).map(run => run.sessionId));
@@ -13637,7 +13707,7 @@ function renderContextRail() {
   const rail = el('contextRail');
   if (!rail) return;
   rail.textContent = '';
-  if (state.activeRegion !== 'project' || state.projectView !== 'overview') {
+  if (state.activeRegion !== 'project' || state.projectView !== 'overview' || state.railCollapsed) {
     rail.classList.add('hidden');
     return;
   }
@@ -26815,6 +26885,7 @@ async function openSettings(tab = 'general') {
   setChecked('settingsShowRouterProfilesInComposer', preferences.showRouterProfilesInComposer !== false);
   setChecked('settingsUseDefaultModelAsFallback', preferences.useDefaultModelAsFallback !== false);
   setChecked('settingsShowBuiltInSubagents', preferences.showBuiltInSubagents === true);
+  renderExtensionSettings(settings);
   updateFallbackHint();
   const terminalGroup = el('settingsTerminalGroup');
   if (terminalGroup) {
@@ -26829,10 +26900,14 @@ async function openSettings(tab = 'general') {
   renderShortcutsPanel();
   el('settingsStatus').textContent = '';
   renderSettingsCommandPanels();
+  document.body.classList.add('settings-open');
   el('settingsModal').classList.remove('hidden');
   showSettingsTab(tab);
 }
-function closeSettings() { el('settingsModal').classList.add('hidden'); }
+function closeSettings() {
+  el('settingsModal').classList.add('hidden');
+  document.body.classList.remove('settings-open');
+}
 function derivePermissionPreset() {
   if (el('settingsPermissionPreset').value) return el('settingsPermissionPreset').value;
   if (el('settingsFullAccess').checked) return 'full';
@@ -26842,9 +26917,68 @@ function derivePermissionPreset() {
 }
 let settingsAutosaveTimer = null;
 let settingsAutosaveSeq = 0;
+function renderExtensionSettings(settings) {
+  const extensionRoot = el('settingsExtensionsList');
+  if (extensionRoot) {
+    extensionRoot.textContent = '';
+    const extensions = Array.isArray(settings.extensions) ? settings.extensions : [];
+    if (extensions.length === 0) {
+      extensionRoot.innerHTML = '<p class="muted">Built-in extensions are unavailable until the runtime is configured.</p>';
+    } else {
+      extensions.forEach(extension => {
+        const row = document.createElement('div');
+        row.className = 'settings-help-row';
+        const copy = document.createElement('span');
+        const title = document.createElement('strong');
+        title.textContent = extension.title || extension.id;
+        const description = document.createElement('small');
+        const defaultState = extension.defaultEnabled ? 'on' : 'off';
+        description.textContent = (extension.description || '') + ' Default: ' + defaultState + ' · ' + (extension.kind || 'runtime') + '.';
+        copy.append(title, description);
+        const label = document.createElement('label');
+        label.className = 'switch-field';
+        const toggle = document.createElement('input');
+        toggle.type = 'checkbox';
+        toggle.id = 'settingsExtension-' + extension.id;
+        toggle.dataset.extensionId = extension.id;
+        toggle.checked = extension.enabled === true;
+        label.append(toggle);
+        row.append(copy, label);
+        extensionRoot.append(row);
+      });
+    }
+  }
+  setChecked('settingsAutoDetectLanguageServers', settings.autoDetectLanguageServers !== false);
+  const lspRoot = el('settingsLanguageServersList');
+  if (!lspRoot) return;
+  lspRoot.textContent = '';
+  const servers = Array.isArray(settings.languageServers) ? settings.languageServers : [];
+  if (servers.length === 0) {
+    lspRoot.innerHTML = '<p class="muted">No language servers are configured or currently detected.</p>';
+    return;
+  }
+  servers.forEach(server => {
+    const row = document.createElement('div');
+    row.className = 'settings-help-row';
+    const copy = document.createElement('span');
+    const title = document.createElement('strong');
+    title.textContent = server.id || 'Language server';
+    const description = document.createElement('small');
+    description.textContent = [Array.isArray(server.languages) ? server.languages.join(', ') : '', server.command || ''].filter(Boolean).join(' · ');
+    copy.append(title, description);
+    row.append(copy);
+    lspRoot.append(row);
+  });
+}
 function collectSettingsBody() {
+  const extensions = {};
+  document.querySelectorAll('#settingsExtensionsList input[data-extension-id]').forEach(toggle => {
+    extensions[toggle.dataset.extensionId] = { enabled: toggle.checked };
+  });
   return {
     permissionPreset: derivePermissionPreset(),
+    extensions,
+    autoDetectLanguageServers: el('settingsAutoDetectLanguageServers')?.checked !== false,
     preferences: {
       theme: el('settingsTheme').value,
       density: el('settingsDensity').value,
@@ -26877,6 +27011,7 @@ async function persistSettingsNow() {
     if (seq !== settingsAutosaveSeq) return;
     if (!res.ok) {
       if (status) status.textContent = 'Save failed';
+      renderExtensionSettings(state.snapshot?.settings || {});
       addMessage('error', await res.text());
       return;
     }
@@ -26899,6 +27034,7 @@ async function persistSettingsNow() {
   } catch (error) {
     if (seq !== settingsAutosaveSeq) return;
     if (status) status.textContent = 'Save failed';
+    renderExtensionSettings(state.snapshot?.settings || {});
     addMessage('error', error?.message || String(error));
   }
 }
@@ -27192,6 +27328,9 @@ el('detailRemoveWorkPathBtn')?.addEventListener('click', () => {
 });
 el('detailOpenLocationBtn').addEventListener('click', openLocation);
 el('detailConversationsBtn').addEventListener('click', toggleDetailConversationDrawer);
+el('sidebarCollapseBtn').addEventListener('click', () => setSidebarCollapsed(true));
+el('sidebarExpandBtn').addEventListener('click', () => setSidebarCollapsed(false));
+el('overviewRailToggleBtn').addEventListener('click', () => setContextRailCollapsed(!state.railCollapsed));
 el('sessionCenterBack').addEventListener('click', () => switchProjectView('overview'));
 el('sessionCenterNew').addEventListener('click', async () => {
   const projectPath = el('sessionCenterProject')?.value || state.snapshot?.workDir;
@@ -27562,6 +27701,8 @@ el('terminalDockClose').addEventListener('click', () => {
 });
 loadAuxPanelWidth();
 loadSessionIndicatorState();
+loadSidebarCollapsed();
+loadContextRailCollapsed();
 applyAuxPanelWidth(activeWorkbenchLayout().auxWidth);
 applyTerminalDockHeight(activeWorkbenchLayout().terminalHeight);
 bindAuxPanelResize();
