@@ -139,7 +139,7 @@ import { addMcpServer, readMcpServerConfig, removeMcpServer } from '../mcp/mcpSe
 import type { ContentBlockParam } from '../provider/types.js';
 import { isReadOnlyBashCommand } from '../runtime/bashClassification.js';
 import { estimateCost } from '../team/pricing.js';
-import { SessionCostTracker, readLedgerSummary } from '../extensions/sessionCostTracker.js';
+import { SessionCostTracker, readLedgerSummary, type SessionCostUsage } from '../extensions/sessionCostTracker.js';
 import { formatUsageBar, usageBarColorLevel } from '../extensions/usageBar.js';
 import {
   buildTerminalNotifySequence,
@@ -873,18 +873,14 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   // accumulation and ledger writes are gated on the extension at record time.
   const costTracker = new SessionCostTracker(sdk.config.homeDir);
   const configUsage = new Map<string, { inputTokens: number; outputTokens: number; turns: number }>();
-  function recordUsage(model: string, usage: {
-    input_tokens?: number;
-    output_tokens?: number;
-    cache_creation_input_tokens?: number | null;
-    cache_read_input_tokens?: number | null;
-  } | undefined): void {
+  function recordUsage(model: string, usage: SessionCostUsage | undefined, runId?: string): void {
     const inT = usage?.input_tokens ?? 0;
     const outT = usage?.output_tokens ?? 0;
     totalInputTokens += inT;
     totalOutputTokens += outT;
     if (sdk.builtInExtensions.isEnabled('costTracker')) {
-      costTracker.record(model, usage ?? {}, { sessionId: session.id });
+      costTracker.record(model, usage ?? {}, { sessionId: session.id, runId,
+        configurationId: activeBridgeConfig?.name, source: bridgeMode ? 'bridge' : 'hadamard' });
       const cost = estimateCost(model, inT, outT);
       totalCostUsd = cost === null ? null : (totalCostUsd === null ? cost : totalCostUsd + cost);
     }
@@ -1833,7 +1829,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       collapseReasoning();
       // Accumulate token + USD usage for /cost and /usage. The model is the
       // routed model (if a router is active) or the session model. Bridge runs
-      recordUsage(routed?.model ?? activeBridgeModelApi?.model ?? bridgeModelLabel ?? session.model, result.usage);
+      recordUsage(routed?.model ?? activeBridgeModelApi?.model ?? bridgeModelLabel ?? session.model,
+        result.usage, result.runId);
       const rest = flusher.drain();
       if (rest.length > 0) appendStatic(rest);
       if (!flusher.hasContent && result.text && runHadNoStreamedText()) {

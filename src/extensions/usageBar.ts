@@ -15,6 +15,10 @@ export interface FormatUsageBarInput {
   inputTokens?: number;
   /** Session output tokens; segment omitted when undefined. */
   outputTokens?: number;
+  /** Remaining percentage of the most restrictive active budget. */
+  budgetRemainingPercent?: number;
+  /** Budget policy state used for the compact status suffix. */
+  budgetState?: 'ok' | 'warn' | 'critical';
   /** Bar width in cells. Default 10. */
   width?: number;
 }
@@ -71,5 +75,10 @@ export function formatUsageBar(input: FormatUsageBarInput): string {
     tokenSegments.push(`↓${formatTokenCount(input.outputTokens)}`);
   }
   if (tokenSegments.length > 0) segments.push(tokenSegments.join(' '));
+  if (typeof input.budgetRemainingPercent === 'number' && Number.isFinite(input.budgetRemainingPercent)) {
+    const remaining = Math.min(100, Math.max(0, Math.round(input.budgetRemainingPercent)));
+    const marker = input.budgetState === 'critical' ? ' !!' : input.budgetState === 'warn' ? ' !' : '';
+    segments.push(`budget ${remaining}% left${marker}`);
+  }
   return segments.join(' · ');
 }
