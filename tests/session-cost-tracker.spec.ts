@@ -8,6 +8,7 @@ import {
   SessionCostTracker,
   readLedgerSummary,
 } from '../src/extensions/sessionCostTracker.js';
+import { UsageQueryService } from '../src/usage/usageQueryService.js';
 
 const tempDirs: string[] = [];
 
@@ -107,6 +108,18 @@ describe('SessionCostTracker', () => {
     });
     expect(typeof first.ts).toBe('string');
     expect(first.costUsd).toBeCloseTo(1000 / 1_000_000 * 0.15 + 200 / 1_000_000 * 0.6, 9);
+    const queryService = await UsageQueryService.open(homeDir);
+    const [stored] = queryService.events({ sessionId: 'session-1' });
+    queryService.close();
+    expect(stored).toMatchObject({
+      source: 'hadamard',
+      sessionId: 'session-1',
+      runId: 'run-1',
+      usage: {
+        cacheReadTokens: 300,
+        cacheWriteTokens: 0,
+      },
+    });
     const second = JSON.parse(lines[1]!) as Record<string, unknown>;
     expect(second.inputTokens).toBe(0);
     expect(second.sessionId).toBeUndefined();

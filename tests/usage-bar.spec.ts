@@ -64,6 +64,16 @@ describe('formatUsageBar', () => {
     const text = formatUsageBar({ contextUsedTokens: 45, contextWindowTokens: 100, width: 20 });
     expect(text).toBe('ctx [█████████░░░░░░░░░░░] 45% (45)');
   });
+
+  it('shows the active budget state when supplied', () => {
+    const text = formatUsageBar({
+      contextUsedTokens: 45,
+      contextWindowTokens: 100,
+      budgetRemainingPercent: 12,
+      budgetState: 'warn',
+    });
+    expect(text).toBe('ctx [█████░░░░░] 45% (45) · budget 12% left !');
+  });
 });
 
 describe('usageBarColorLevel', () => {
