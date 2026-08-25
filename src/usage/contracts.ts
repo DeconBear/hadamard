@@ -26,6 +26,9 @@ export interface UsageRouteAttempt {
   completedAt: string;
   status: UsageStatus;
   statusCode?: number;
+  retryable?: boolean;
+  latencyMs: number;
+  errorCode?: string;
 }
 
 interface UsageEventRequest {
@@ -45,6 +48,8 @@ interface UsageEventAttribution {
   providerId?: string;
   credentialId?: string;
   routeId?: string;
+  routeAlias?: string;
+  targetId?: string;
   configurationId?: string;
   projectId?: string;
   agentId?: string;
