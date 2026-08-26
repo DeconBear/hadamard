@@ -7,6 +7,7 @@ import { UsageRoutingAdminService } from '../keyway/usageRoutingAdminService.js'
 import { KeywayMigrationService } from '../keyway/keywayMigrationService.js';
 import { readLedgerSummary } from '../extensions/sessionCostTracker.js';
 import { runUsageRoutingCommand } from '../ui/usageRoutingCommand.js';
+import type { ModelApi } from '../types.js';
 
 export class TuiUsageRoutingRuntime {
   private embedded?: EmbeddedKeyway;
@@ -15,6 +16,11 @@ export class TuiUsageRoutingRuntime {
   constructor(
     private readonly homeDir: string,
     private readonly workDir: string,
+    private readonly onRouteSelected?: (selection: {
+      routeAlias: string;
+      model: string;
+      modelApi: ModelApi;
+    }) => Promise<void> | void,
   ) {}
 
   runCommand(
@@ -25,6 +31,7 @@ export class TuiUsageRoutingRuntime {
     return runUsageRoutingCommand(command, args, {
       admin: () => this.admin(),
       promptSecret,
+      activateRoute: reference => this.activateRoute(reference),
     });
   }
 
@@ -67,5 +74,25 @@ export class TuiUsageRoutingRuntime {
       }),
     });
     return this.adminService;
+  }
+
+  private async activateRoute(reference: string): Promise<{ routeAlias: string; model: string }> {
+    const admin = await this.admin();
+    const catalog = await admin.catalog();
+    const route = catalog.routes.find(item => item.id === reference || item.alias === reference);
+    if (!route || !route.enabled) throw new TypeError('Enabled Gateway Route not found.');
+    const candidate = route.candidates.find(item => item.enabled) ?? route.candidates[0];
+    if (!candidate || !this.embedded) throw new TypeError('Gateway Route has no enabled candidate.');
+    const selection = {
+      routeAlias: route.alias,
+      model: candidate.upstreamModel,
+      modelApi: this.embedded.modelApi({
+        routeAlias: route.alias,
+        configurationId: `keyway:${route.id}`,
+        workDir: this.workDir,
+      }),
+    };
+    await this.onRouteSelected?.(selection);
+    return { routeAlias: selection.routeAlias, model: selection.model };
   }
 }

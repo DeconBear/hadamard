@@ -416,7 +416,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           model: options.model,
           permissionMode,
         });
-  const usageRoutingRuntime = new TuiUsageRoutingRuntime(sdk.config.homeDir, sdk.config.workDir);
+  let activeKeywayRouteAlias: string | null = null; const usageRoutingRuntime = new TuiUsageRoutingRuntime(sdk.config.homeDir, sdk.config.workDir, selection => { clearBridgeSelection(); activeRouter = null; routedModelLabel = null; activeBridgeModelApi = { model: selection.model, modelApi: selection.modelApi, maxTokens: 32000 }; bridgeModelLabel = selection.model; bridgeMode = true; activeKeywayRouteAlias = selection.routeAlias; });
   let deviceLinkService: DeviceLinkService | null = null;
   async function getDeviceLinkService(): Promise<DeviceLinkService> {
     deviceLinkService ??= await DeviceLinkService.open({
@@ -667,7 +667,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   function clearBridgeSelection(): void {
     bridgeMode = false;
     activeBridgeConfig = null;
-    activeBridgeModelApi = null;
+    activeBridgeModelApi = null; activeKeywayRouteAlias = null;
     bridgeModelLabel = null;
   }
   async function restoreSessionRuntimeSelection(): Promise<void> {
@@ -1779,7 +1779,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
         // pre-built {model, modelApi} into session.stream — the /model
         // router's proven mechanism for cross-provider routing. Same
         // session → context intact; switching bridge↔hadamard is seamless.
-        statusNote = `bridge:${activeBridgeConfig?.name ?? 'bridge'}`;
+        statusNote = activeKeywayRouteAlias ? `keyway:${activeKeywayRouteAlias}` : `bridge:${activeBridgeConfig?.name ?? 'bridge'}`;
         const stream = session.stream(expandImageRefs(text), {
           systemPrompt,
           ...projectInstructionRunOptions(),
@@ -3006,7 +3006,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
   // via buildRouteModelApi so each turn can inject {model, modelApi} into
   // session.stream (same session, context naturally survives switching).
   async function activateBridgeConfig(config: PersistedBridgeConfig): Promise<boolean> {
-    try {
+    try { activeKeywayRouteAlias = null;
       if (config.execution === 'cli') {
         if (!isManagedExternalCliRuntime(config.runtime)) {
           throw new Error(
@@ -4722,7 +4722,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
             effort: currentEffort() ?? 'auto',
             team: activeTeamName ?? 'none',
             router: activeRouter?.name ?? 'off',
-            bridge: bridgeMode && activeBridgeConfig ? activeBridgeConfig.name : 'off',
+            bridge: activeKeywayRouteAlias ? `keyway:${activeKeywayRouteAlias}` : bridgeMode && activeBridgeConfig ? activeBridgeConfig.name : 'off',
           };
         },
         doctorSnapshot: async () => {

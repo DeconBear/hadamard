@@ -37,6 +37,13 @@ export interface UsageRoutingCatalog {
   }>;
 }
 
+export interface ProviderPresetInstallResult {
+  preset: 'ark-agent-plan';
+  credentialId: string;
+  targetId: string;
+  routeAliases: readonly string[];
+}
+
 export interface UsageRoutingAdminServiceOptions {
   homeDir: string;
   store: KeywayStorePort;
@@ -151,6 +158,52 @@ export class UsageRoutingAdminService {
     const deleted = this.options.store.deleteCredential(id);
     if (deleted) await this.options.secretStore.remove(credential.secretRef);
     return deleted;
+  }
+
+  async installArkAgentPlan(input: Record<string, unknown>): Promise<ProviderPresetInstallResult> {
+    const secret = optionalString(input.secret);
+    const existing = (await this.options.store.listManagedCredentials())
+      .find(item => item.id === 'credential.ark-agent-plan');
+    if (!secret && !existing) throw new TypeError('Ark API key is required for the initial setup.');
+    await this.saveCredential({
+      id: 'credential.ark-agent-plan',
+      providerId: 'ark-agent-plan',
+      label: 'Volcengine Ark Agent Plan',
+      ...(secret ? { secret } : {}),
+      priority: 0,
+      weight: 1,
+      enabled: true,
+    });
+    this.saveTarget({
+      id: 'target.ark-agent-plan',
+      kind: 'managed-api',
+      providerId: 'ark-agent-plan',
+      protocol: 'openai',
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+      enabled: true,
+    });
+    for (const model of ['glm-5.2', 'glm-5.3'] as const) {
+      await this.saveRoute({
+        id: `route.ark-${model}`,
+        alias: `ark-${model}`,
+        mode: 'direct',
+        enabled: true,
+        candidates: [{
+          id: `route.ark-${model}.candidate.1`,
+          targetId: 'target.ark-agent-plan',
+          upstreamModel: model,
+          priority: 0,
+          weight: 1,
+          enabled: true,
+        }],
+      });
+    }
+    return {
+      preset: 'ark-agent-plan',
+      credentialId: 'credential.ark-agent-plan',
+      targetId: 'target.ark-agent-plan',
+      routeAliases: ['ark-glm-5.2', 'ark-glm-5.3'],
+    };
   }
 
   saveTarget(input: Record<string, unknown>): { id: string } {

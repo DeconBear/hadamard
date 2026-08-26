@@ -2432,7 +2432,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   // selection must not inherit sampling overrides from a profile that happens
   // to reference the same model.
   let activeAgentSelectionName: string | null = null;
-  let activeBridgeModelApi: Awaited<ReturnType<typeof buildRouteModelApi>> | null = null;
+  let activeBridgeModelApi: Awaited<ReturnType<typeof buildRouteModelApi>> | null = null; let activeKeywayRouteAlias: string | null = null;
   let bridgeModelLabel: string | null = null;
   const externalCliRuntimeManager = options.externalCliRuntimeManager
     ?? new ExternalCliRuntimeManager();
@@ -3364,7 +3364,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       },
       bridgeState: {
         mode: bridgeMode,
-        enabled: bridgeModeEnabled,
+        enabled: bridgeModeEnabled, activeKeywayRouteAlias,
         activeConfig: activeBridgeConfig
           ? {
               name: activeBridgeConfig.name,
@@ -4473,7 +4473,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     try {
       let routed: { model: string; modelApi: import('../types.js').CreateAgentSdkOptions['modelApi']; effort?: HadamardRunEffort } | undefined;
       const configActive = !!activeBridgeConfig;
-      const effectiveBridgeMode = bridgeMode && bridgeModeEnabled;
+      const effectiveBridgeMode = bridgeMode && (bridgeModeEnabled || Boolean(activeKeywayRouteAlias));
       if (activeRouter && !effectiveBridgeMode && !configActive) {
         const decision = await resolveRoutedRun(activeRouter, input, runAbort.signal, {
           projectDir: workDir,
@@ -4558,7 +4558,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   // activateBridgeConfig pre-builds a ModelApi via buildRouteModelApi and stores
   // it; streamRun injects {model, modelApi} per-run on the SAME session, so
   // context survives switching bridge↔hadamard. No child process anywhere.
-  async function activateBridgeConfig(config: PersistedBridgeConfig): Promise<boolean> {
+  async function activateBridgeConfig(config: PersistedBridgeConfig): Promise<boolean> { activeKeywayRouteAlias = null;
     if (!bridgeModeEnabled) {
       throw new GuiRuntimeMutationConflictError(
         'Bridge mode is disabled. Enable it from the main Configuration tab before selecting a bridge config.',
@@ -4606,7 +4606,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     bridgeMode = false;
     activeBridgeConfig = null;
     activeAgentSelectionName = null;
-    activeBridgeModelApi = null;
+    activeBridgeModelApi = null; activeKeywayRouteAlias = null;
     bridgeModelLabel = null;
     // session context stays intact — switching back to the default provider.
   }
@@ -5185,7 +5185,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const spaceIndex = raw.indexOf(' ');
     const name = (spaceIndex === -1 ? raw.slice(1) : raw.slice(1, spaceIndex)).toLowerCase();
     const args = spaceIndex === -1 ? '' : raw.slice(spaceIndex + 1).trim();
-    const usageRoutingResult = await runGuiUsageRoutingCommand(usageRoutingRuntime.admin, name, args);
+    const usageRoutingResult = await runGuiUsageRoutingCommand(usageRoutingRuntime.admin, name, args, usageRoutingRuntime.activateRoute);
     if (usageRoutingResult) return [usageRoutingResult];
 
     switch (name) {
@@ -7052,7 +7052,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const runWorkDir = workDir;
     const runBridgeMode = bridgeMode;
     const runBridgeConfig = activeBridgeConfig;
-    const runBridgeModelApi = activeBridgeModelApi;
+    const runBridgeModelApi = activeBridgeModelApi; const runKeywayRouteAlias = activeKeywayRouteAlias;
     const runRouter = activeRouter;
     const runAgentOptions = currentEffectiveAgentRunOptions();
     const runTools = currentRunTools();
@@ -7290,8 +7290,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           runWorkDir,
         );
       } else if (runBridgeMode && runBridgeModelApi) {
-        const bridgeName = runBridgeConfig?.name ?? 'bridge';
-        send({ type: 'notice', message: `bridge -> ${bridgeName} (${runBridgeModelApi.model})` });
+        const routeLabel = runKeywayRouteAlias ? `keyway route ${runKeywayRouteAlias}` : `bridge ${runBridgeConfig?.name ?? 'bridge'}`;
+        send({ type: 'notice', message: `${routeLabel} -> ${runBridgeModelApi.model}` });
         stream = runSession.stream(expandImageRefs(input, runWorkDir), {
           ...effectiveAgentOptions,
           signal: withAgentRunTimeout(runAbort.signal),
@@ -7964,7 +7964,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       body: runtimeMutationErrorBody(error),
     }),
   });
-  const usageRoutingRuntime = await createGuiUsageRoutingRuntime({ router: httpRouter, homeDir: resolveGuiHomeDir(), workDir, secretStore: options.keywaySecretStore, admin: options.usageRoutingAdmin });
+  const usageRoutingRuntime = await createGuiUsageRoutingRuntime({ router: httpRouter, homeDir: resolveGuiHomeDir(), workDir, secretStore: options.keywaySecretStore, admin: options.usageRoutingAdmin, onRouteSelected: selection => withRuntimeMutation(async () => { disableBridge(); activeRouter = null; routedModelLabel = null; activeBridgeModelApi = { model: selection.model, modelApi: selection.modelApi, maxTokens: 32000 }; bridgeModelLabel = selection.model; bridgeMode = true; activeKeywayRouteAlias = selection.routeAlias; await persistSessionRuntimeMetadata(); }) });
   function parseDeleteStrategy(raw: unknown): DeleteFallbackStrategy {
     if (!isPlainRecord(raw)) return { type: 'leave' };
     if (raw.type === 'repoint' && typeof raw.target === 'string' && raw.target.trim()) {

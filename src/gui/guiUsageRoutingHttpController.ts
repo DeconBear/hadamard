@@ -9,7 +9,12 @@ export type GuiUsageRoutingPort = Pick<UsageRoutingAdminService,
   | 'saveBudget' | 'deleteBudget'
   | 'gatewayStatus' | 'startGateway' | 'stopGateway'
   | 'previewBridgeMigration' | 'importBridgeMigration'
-  | 'previewPortableMigration' | 'importPortableMigration'>;
+  | 'previewPortableMigration' | 'importPortableMigration'
+  | 'installArkAgentPlan'>;
+
+export interface GuiUsageRoutingSelectionPort {
+  activateRoute(reference: string): Promise<{ routeAlias: string; model: string }>;
+}
 
 function failure(res: Parameters<typeof json>[0], error: unknown): void {
   json(res, error instanceof TypeError ? 400 : 500, {
@@ -17,7 +22,11 @@ function failure(res: Parameters<typeof json>[0], error: unknown): void {
   });
 }
 
-export function registerGuiUsageRoutingHttpController(router: GuiHttpRouter, port: GuiUsageRoutingPort): void {
+export function registerGuiUsageRoutingHttpController(
+  router: GuiHttpRouter,
+  port: GuiUsageRoutingPort,
+  selection?: GuiUsageRoutingSelectionPort,
+): void {
   router.route('GET', '/api/usage-routing/overview', (_req, res, url) => {
     json(res, 200, port.overview(usageFilterFromSearch(url.searchParams)));
   });
@@ -35,6 +44,16 @@ export function registerGuiUsageRoutingHttpController(router: GuiHttpRouter, por
   });
   router.route('POST', '/api/usage-routing/gateway/stop', async (_req, res) => {
     try { json(res, 200, await port.stopGateway()); } catch (error) { failure(res, error); }
+  });
+  router.route('POST', '/api/usage-routing/presets/ark-agent-plan', async (req, res) => {
+    try { json(res, 200, await port.installArkAgentPlan(await readJson(req))); } catch (error) { failure(res, error); }
+  });
+  router.route('POST', /^\/api\/usage-routing\/routes\/[^/]+\/activate$/u, async (_req, res, url) => {
+    try {
+      if (!selection) throw new TypeError('Gateway Route activation is unavailable in this host.');
+      const reference = decodeURIComponent(url.pathname.split('/').at(-2) ?? '');
+      json(res, 200, await selection.activateRoute(reference));
+    } catch (error) { failure(res, error); }
   });
   router.route('GET', '/api/usage-routing/migration/bridge', (_req, res) => {
     try { json(res, 200, port.previewBridgeMigration()); } catch (error) { failure(res, error); }
