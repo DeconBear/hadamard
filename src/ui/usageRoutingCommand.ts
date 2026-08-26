@@ -4,7 +4,7 @@ import type { UsageRoutingAdminService } from '../keyway/usageRoutingAdminServic
 export type UsageRoutingCommandAdminPort = Pick<UsageRoutingAdminService,
   | 'overview' | 'catalog' | 'saveBudget' | 'deleteBudget'
   | 'saveCredential' | 'testCredential'
-  | 'saveRoute' | 'testTarget'
+  | 'saveRoute' | 'testTarget' | 'installArkAgentPlan'
   | 'gatewayStatus' | 'startGateway' | 'stopGateway'
   | 'previewBridgeMigration' | 'importBridgeMigration'
   | 'previewPortableMigration' | 'importPortableMigration'>;
@@ -12,6 +12,7 @@ export type UsageRoutingCommandAdminPort = Pick<UsageRoutingAdminService,
 export interface UsageRoutingCommandPort {
   admin(): Promise<UsageRoutingCommandAdminPort>;
   promptSecret?(label: string): Promise<string | undefined>;
+  activateRoute?(reference: string): Promise<{ routeAlias: string; model: string }>;
 }
 
 /** Shared GUI/TUI command behavior; presentation layers only render returned lines. */
@@ -26,7 +27,7 @@ export async function runUsageRoutingCommand(
   if (name === 'usage') return usageLines(admin, words);
   if (name === 'limits') return limitsLines(admin, words);
   if (name === 'keys') return keysLines(admin, words, port);
-  if (name === 'routes') return routesLines(admin, words);
+  if (name === 'routes') return routesLines(admin, words, port);
   return gatewayLines(admin, words);
 }
 
@@ -111,6 +112,13 @@ async function keysLines(
     const result = await admin.importBridgeMigration();
     return ['Bridge config migration', ...Object.entries(result).map(([key, value]) => `  ${key}  ${String(value)}`)];
   }
+  if (action === 'ark-agent-plan') {
+    if (!port.promptSecret) throw new TypeError('Use Configuration → Usage & Routing → API Keys to save the Ark key.');
+    const secret = await port.promptSecret('Volcengine Ark Agent Plan API key');
+    if (!secret) return ['Ark Agent Plan: unchanged'];
+    const result = await admin.installArkAgentPlan({ secret });
+    return [`Ark Agent Plan: saved (write-only) · routes ${result.routeAliases.join(', ')}`];
+  }
   if (action === 'import-preview' || action === 'import-apply') {
     const filePath = required(words.shift(), 'Keyway export file');
     const result = action === 'import-preview'
@@ -132,7 +140,7 @@ async function keysLines(
     await admin.saveCredential({ ...existing, id, providerId: existing.providerId, enabled: false });
     return [`Credential ${id}: disabled`];
   }
-  if (action !== 'add' && action !== 'rotate') throw new TypeError('Usage: /keys list|add|disable|rotate|test|migrate-preview|migrate-apply|import-preview|import-apply');
+  if (action !== 'add' && action !== 'rotate') throw new TypeError('Usage: /keys list|add|disable|rotate|test|ark-agent-plan|migrate-preview|migrate-apply|import-preview|import-apply');
   if (!port.promptSecret) throw new TypeError('Use Configuration → Usage & Routing → API Keys to save a write-only secret.');
   const providerId = action === 'rotate'
     ? required(existing?.providerId, 'existing credential')
@@ -150,7 +158,11 @@ async function keysLines(
   return [`Credential ${id}: ${action === 'rotate' ? 'rotated' : 'saved'} (write-only)`];
 }
 
-async function routesLines(admin: UsageRoutingCommandAdminPort, words: string[]): Promise<string[]> {
+async function routesLines(
+  admin: UsageRoutingCommandAdminPort,
+  words: string[],
+  port: UsageRoutingCommandPort,
+): Promise<string[]> {
   const action = words.shift() || 'list';
   const catalog = await admin.catalog();
   if (action === 'list') {
@@ -184,7 +196,12 @@ async function routesLines(admin: UsageRoutingCommandAdminPort, words: string[])
     const result = await admin.testCredential(credential.id);
     return [`Route ${route.alias}: ${String(result.state)} via ${target.providerId}`];
   }
-  throw new TypeError('Usage: /routes list|show|test|enable');
+  if (action === 'use') {
+    if (!port.activateRoute) throw new TypeError('Gateway Route activation is unavailable in this host.');
+    const selected = await port.activateRoute(route.alias);
+    return [`Route ${selected.routeAlias}: active in Hadamard (${selected.model})`];
+  }
+  throw new TypeError('Usage: /routes list|show|test|enable|use');
 }
 
 async function gatewayLines(admin: UsageRoutingCommandAdminPort, words: string[]): Promise<string[]> {
