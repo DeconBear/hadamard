@@ -142,10 +142,18 @@ describe('TUI and GUI parity', () => {
 
   it('places Usage & Routing under the main Configuration region', () => {
     const html = createHadamardGuiHtml();
+    const js = createHadamardGuiClientScript();
     expect(html).toContain('id="configurationUsageTab"');
     expect(html).toContain('id="configurationUsagePage"');
     expect(html).toContain('data-configuration-usage-panel');
     expect(html).not.toContain('data-settings-tab="usage-routing"');
+    expect(html).toContain('id="usageGatewayStart"');
+    expect(html).toContain('id="usageBridgeMigrationPreview"');
+    expect(js).toContain('/api/usage-routing/gateway/start');
+    expect(js).toContain('/api/usage-routing/migration/bridge');
+    const gatewayStartHandler = js.slice(js.indexOf("el('usageGatewayStart')"), js.indexOf("el('usageGatewayStop')"));
+    expect(gatewayStartHandler.indexOf('await refreshUsageRouting()'))
+      .toBeLessThan(gatewayStartHandler.indexOf('Client key (shown once)'));
   });
 
   it('renders GUI shell controls for the interactive surface', () => {

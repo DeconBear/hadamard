@@ -4,7 +4,10 @@ import type { UsageRoutingAdminService } from '../keyway/usageRoutingAdminServic
 export type UsageRoutingCommandAdminPort = Pick<UsageRoutingAdminService,
   | 'overview' | 'catalog' | 'saveBudget' | 'deleteBudget'
   | 'saveCredential' | 'testCredential'
-  | 'saveRoute' | 'testTarget'>;
+  | 'saveRoute' | 'testTarget'
+  | 'gatewayStatus' | 'startGateway' | 'stopGateway'
+  | 'previewBridgeMigration' | 'importBridgeMigration'
+  | 'previewPortableMigration' | 'importPortableMigration'>;
 
 export interface UsageRoutingCommandPort {
   admin(): Promise<UsageRoutingCommandAdminPort>;
@@ -94,6 +97,30 @@ async function keysLines(
       ? ['Managed API credentials', ...catalog.credentials.map(credential => `  ${credential.id}  ${credential.providerId} · ${credential.health?.state ?? (credential.secretConfigured ? 'configured' : 'missing')} · priority ${credential.priority}`)]
       : ['Managed API credentials', '  (none; native CLI OAuth remains managed by each CLI)'];
   }
+  if (action === 'migrate-preview') {
+    const preview = admin.previewBridgeMigration();
+    return [
+      'Bridge config migration preview',
+      `  ready    ${preview.ready}`,
+      `  blocked  ${preview.blocked}`,
+      ...preview.items.map(item => `  ${item.configName}  ${item.kind} · ${item.ready ? 'ready' : item.issues.join('; ')}`),
+      '  Native CLI OAuth/session secrets are not read.',
+    ];
+  }
+  if (action === 'migrate-apply') {
+    const result = await admin.importBridgeMigration();
+    return ['Bridge config migration', ...Object.entries(result).map(([key, value]) => `  ${key}  ${String(value)}`)];
+  }
+  if (action === 'import-preview' || action === 'import-apply') {
+    const filePath = required(words.shift(), 'Keyway export file');
+    const result = action === 'import-preview'
+      ? await admin.previewPortableMigration(filePath)
+      : await admin.importPortableMigration(filePath);
+    return [
+      action === 'import-preview' ? 'Keyway import preview' : 'Keyway import',
+      ...Object.entries(result).map(([key, value]) => `  ${key}  ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`),
+    ];
+  }
   const id = required(words.shift(), 'credential id');
   const existing = catalog.credentials.find(item => item.id === id);
   if (action === 'test') {
@@ -105,7 +132,7 @@ async function keysLines(
     await admin.saveCredential({ ...existing, id, providerId: existing.providerId, enabled: false });
     return [`Credential ${id}: disabled`];
   }
-  if (action !== 'add' && action !== 'rotate') throw new TypeError('Usage: /keys list|add|disable|rotate|test');
+  if (action !== 'add' && action !== 'rotate') throw new TypeError('Usage: /keys list|add|disable|rotate|test|migrate-preview|migrate-apply|import-preview|import-apply');
   if (!port.promptSecret) throw new TypeError('Use Configuration → Usage & Routing → API Keys to save a write-only secret.');
   const providerId = action === 'rotate'
     ? required(existing?.providerId, 'existing credential')
@@ -162,18 +189,22 @@ async function routesLines(admin: UsageRoutingCommandAdminPort, words: string[])
 
 async function gatewayLines(admin: UsageRoutingCommandAdminPort, words: string[]): Promise<string[]> {
   const action = words.shift() || 'status';
-  const catalog = await admin.catalog();
-  if (action === 'status') return [
-    'Embedded Keyway gateway',
-    `  targets      ${catalog.targets.length}`,
-    `  credentials  ${catalog.credentials.length}`,
-    `  routes       ${catalog.routes.length}`,
-    '  loopback     stopped (embedded routing remains available)',
-  ];
-  if (action === 'start' || action === 'stop') {
-    return [`Loopback gateway ${action} is unavailable until the optional gateway package is enabled.`];
-  }
+  if (action === 'status') return gatewayStatusLines(admin.gatewayStatus());
+  if (action === 'start') return gatewayStatusLines(await admin.startGateway());
+  if (action === 'stop') return gatewayStatusLines(await admin.stopGateway());
   throw new TypeError('Usage: /gateway status|start|stop');
+}
+
+function gatewayStatusLines(status: Record<string, unknown>): string[] {
+  if (status.running !== true) return ['Embedded Keyway gateway', '  loopback  stopped'];
+  return [
+    'Embedded Keyway gateway',
+    `  loopback  running at ${String(status.url ?? 'unknown')}`,
+    `  auth      ${String(status.authentication ?? 'client-key')}`,
+    ...(typeof status.clientKey === 'string'
+      ? [`  client key (shown once)  ${status.clientKey}`]
+      : []),
+  ];
 }
 
 function tokenize(value: string): string[] {

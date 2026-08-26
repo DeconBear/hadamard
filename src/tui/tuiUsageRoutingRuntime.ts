@@ -4,6 +4,7 @@ import {
   type EmbeddedKeyway,
 } from '../keyway/embeddedKeyway.js';
 import { UsageRoutingAdminService } from '../keyway/usageRoutingAdminService.js';
+import { KeywayMigrationService } from '../keyway/keywayMigrationService.js';
 import { readLedgerSummary } from '../extensions/sessionCostTracker.js';
 import { runUsageRoutingCommand } from '../ui/usageRoutingCommand.js';
 
@@ -58,6 +59,12 @@ export class TuiUsageRoutingRuntime {
       store: this.embedded.store,
       secretStore,
       executor: this.embedded.executor,
+      gateway: this.embedded.gateway,
+      migration: new KeywayMigrationService({
+        homeDir: this.homeDir,
+        store: this.embedded.store,
+        secretStore,
+      }),
     });
     return this.adminService;
   }
