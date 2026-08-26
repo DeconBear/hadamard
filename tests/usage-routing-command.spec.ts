@@ -24,6 +24,13 @@ function admin(): UsageRoutingCommandAdminPort {
     testCredential: vi.fn(async id => ({ id, state: 'healthy', tested: true })),
     saveRoute: vi.fn(async () => ({ id: 'route.chat' })),
     testTarget: vi.fn(async id => ({ id, state: 'authenticated' })),
+    gatewayStatus: vi.fn(() => ({ running: false, authentication: 'client-key' })),
+    startGateway: vi.fn(async () => ({ running: true, url: 'http://127.0.0.1:1234', authentication: 'client-key', clientKey: 'db_sk_once' })),
+    stopGateway: vi.fn(async () => ({ running: false, authentication: 'client-key' })),
+    previewBridgeMigration: vi.fn(() => ({ source: 'bridge-configs' as const, items: [], ready: 0, blocked: 0, oauthSessionSecretsRead: false as const })),
+    importBridgeMigration: vi.fn(async () => ({ imported: 0 })),
+    previewPortableMigration: vi.fn(async () => ({ source: 'keyway-export-v1' as const, counts: {}, secretsIncluded: false as const, issuedKeysRequireRotation: false })),
+    importPortableMigration: vi.fn(async () => ({ imported: 0 })),
   };
 }
 

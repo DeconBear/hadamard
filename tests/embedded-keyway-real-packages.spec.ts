@@ -18,7 +18,7 @@ afterEach(async () => {
 const realPackages = process.env.HADAMARD_KEYWAY_REAL_PACKAGES === '1' ? describe : describe.skip;
 
 realPackages('embedded Keyway real package smoke', () => {
-  it('loads packed core/node modules and routes a managed request into the shared ledger', async () => {
+  it('loads packed modules and routes embedded plus loopback requests into the shared ledger', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-keyway-real-'));
     tempDirs.push(root);
     const homeDir = path.join(root, '.hadamard');
@@ -83,13 +83,59 @@ realPackages('embedded Keyway real package smoke', () => {
           },
         },
       }).result;
+
+      const gateway = await embedded.gateway.start();
+      expect(gateway.clientKey).toMatch(/^db_sk_/u);
+      expect(JSON.stringify(embedded.gateway.status())).not.toContain(gateway.clientKey);
+      expect((await fetch(`${gateway.url}/v1/models`)).status).toBe(401);
+
+      const openAiResponse = await fetch(`${gateway.url}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${gateway.clientKey}`,
+          'content-type': 'application/json',
+          'x-request-id': 'request.gateway.openai',
+          'x-correlation-id': 'correlation.gateway.openai',
+        },
+        body: JSON.stringify({
+          model: 'ark-smoke',
+          messages: [{ role: 'user', content: 'hello through OpenAI' }],
+          max_tokens: 64,
+        }),
+      });
+      expect(openAiResponse.status).toBe(200);
+      expect(openAiResponse.headers.get('x-correlation-id')).toBe('correlation.gateway.openai');
+      await expect(openAiResponse.json()).resolves.toMatchObject({
+        object: 'chat.completion',
+        choices: [{ message: { content: 'real package smoke' } }],
+        usage: { prompt_tokens: 12, completion_tokens: 4 },
+      });
+
+      const anthropicResponse = await fetch(`${gateway.url}/v1/messages`, {
+        method: 'POST',
+        headers: {
+          'x-api-key': gateway.clientKey!,
+          'content-type': 'application/json',
+          'x-request-id': 'request.gateway.anthropic',
+        },
+        body: JSON.stringify({
+          model: 'ark-smoke',
+          messages: [{ role: 'user', content: 'hello through Anthropic' }],
+          max_tokens: 64,
+        }),
+      });
+      await expect(anthropicResponse.json()).resolves.toMatchObject({
+        type: 'message',
+        content: [{ type: 'text', text: 'real package smoke' }],
+        usage: { input_tokens: 12, output_tokens: 4, cache_read_input_tokens: 8 },
+      });
     } finally {
       await embedded.close();
     }
 
     const query = await UsageQueryService.open(homeDir);
     expect(query.summary()).toMatchObject({
-      entries: 1, inputTokens: 12, outputTokens: 4, cacheReadTokens: 8,
+      entries: 3, inputTokens: 36, outputTokens: 12, cacheReadTokens: 24,
     });
     expect(query.events()[0]).toMatchObject({ source: 'keyway', routeId: 'route.ark' });
     query.close();
