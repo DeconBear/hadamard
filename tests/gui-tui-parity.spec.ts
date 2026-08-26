@@ -77,6 +77,10 @@ describe('TUI and GUI parity', () => {
       'devices',
       'cost',
       'usage',
+      'limits',
+      'keys',
+      'routes',
+      'gateway',
       'doctor',
       'batch',
       'goal',
@@ -134,6 +138,14 @@ describe('TUI and GUI parity', () => {
         'u',
       ));
     }
+  });
+
+  it('places Usage & Routing under the main Configuration region', () => {
+    const html = createHadamardGuiHtml();
+    expect(html).toContain('id="configurationUsageTab"');
+    expect(html).toContain('id="configurationUsagePage"');
+    expect(html).toContain('data-configuration-usage-panel');
+    expect(html).not.toContain('data-settings-tab="usage-routing"');
   });
 
   it('renders GUI shell controls for the interactive surface', () => {

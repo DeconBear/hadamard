@@ -339,12 +339,14 @@ export type { FormatUsageBarInput, UsageBarColorLevel } from './extensions/usage
 export * from './usage/index.js';
 export { ElectronSecretStore } from './keyway/electronSecretStore.js';
 export type { ElectronSafeStoragePort, ElectronSecretStoreOptions } from './keyway/electronSecretStore.js';
-export { createEmbeddedKeyway, loadKeywaySdkModules } from './keyway/embeddedKeyway.js';
-export type { EmbeddedKeyway, EmbeddedKeywayOptions } from './keyway/embeddedKeyway.js';
+export { createEmbeddedKeyway, createHeadlessKeywaySecretStore, loadKeywaySdkModules } from './keyway/embeddedKeyway.js';
+export type { EmbeddedKeyway, EmbeddedKeywayOptions, HeadlessKeywaySecretStoreOptions } from './keyway/embeddedKeyway.js';
 export { KeywayModelApi } from './keyway/keywayModelApi.js';
 export type { KeywayModelApiOptions } from './keyway/keywayModelApi.js';
 export { resolveRoutingTargetSelection } from './keyway/routingComposition.js';
 export type { HadamardRoutingTarget, RoutingSelectionInput } from './keyway/routingComposition.js';
+export { UsageRoutingAdminService, usageFilterFromSearch } from './keyway/usageRoutingAdminService.js';
+export type { UsageRoutingAdminServiceOptions, UsageRoutingCatalog, UsageRoutingOverview, UsageTrendPoint } from './keyway/usageRoutingAdminService.js';
 export { HadamardKeywayProviderExecutor, bridgeUsage, keywayDataToMessageStreamEvent, keywayOutputToMessage, probeKeywayNativeTargetAuth, providerUsage } from './keyway/keywayProviderExecutor.js';
 export type { HadamardKeywayProviderExecutorOptions, ManagedModelApiFactory, NativeCliClientFactory, NativeCliClientPort, NativeCliRunStreamPort } from './keyway/keywayProviderExecutor.js';
 export type { KeywayCorePort, KeywayExecutionHandlePort, KeywayExecutionRequestPort, KeywayExecutionResultPort, KeywayExecutionTargetPort, KeywayJson, KeywayManagedTargetPort, KeywayNativeTargetPort, KeywayProviderExecutorPort, KeywayProviderHandlePort, KeywayProviderRequestPort, KeywayProviderResultPort, KeywaySdkModulesPort, KeywaySecretStorePort, KeywayStorePort, KeywayStreamEventPort } from './keyway/keywayPorts.js';
