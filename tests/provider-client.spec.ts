@@ -37,6 +37,33 @@ function makeSseResponse(body: string): Response {
 }
 
 describe('OpenaiProviderClient retry behavior', () => {
+  it('preserves provider-specific versioned and complete chat completion URLs', async () => {
+    const urls: string[] = [];
+    for (const baseURL of [
+      'https://ark.cn-beijing.volces.com/api/plan/v3',
+      'https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions',
+      'https://example.test',
+    ]) {
+      const client = new OpenaiProviderClient({
+        apiKey: 'test-key',
+        baseURL,
+        fetch: async input => {
+          urls.push(String(input));
+          return makeCompletionResponse();
+        },
+      });
+      await client.chat.completions.create({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'hello' }],
+      });
+    }
+    expect(urls).toEqual([
+      'https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions',
+      'https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions',
+      'https://example.test/v1/chat/completions',
+    ]);
+  });
+
   it('preserves a resolved policy that excludes server errors', async () => {
     let calls = 0;
     const client = new OpenaiProviderClient({
@@ -436,6 +463,45 @@ describe('reasoning effort request mapping', () => {
 
     expect(body?.reasoning_effort).toBe('high');
     expect(body?.top_p).toBe(0.7);
+  });
+
+  it('normalizes OpenAI cached prompt tokens for the shared usage ledger', async () => {
+    const api = new OpenaiModelApi(
+      new OpenaiProviderClient({
+        apiKey: 'test-key',
+        baseURL: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+        fetch: async () => new Response(JSON.stringify({
+          id: 'chatcmpl_cache',
+          object: 'chat.completion',
+          created: 0,
+          model: 'glm-5.2',
+          choices: [{
+            index: 0,
+            message: { role: 'assistant', content: 'cached' },
+            finish_reason: 'stop',
+          }],
+          usage: {
+            prompt_tokens: 120,
+            completion_tokens: 4,
+            total_tokens: 124,
+            prompt_tokens_details: { cached_tokens: 96 },
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      }),
+    );
+
+    const message = await api.createMessage({
+      model: 'glm-5.2',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 16,
+    });
+
+    expect(message.usage).toMatchObject({
+      input_tokens: 120,
+      output_tokens: 4,
+      cache_read_input_tokens: 96,
+      prompt_tokens_details: { cached_tokens: 96 },
+    });
   });
 });
 
