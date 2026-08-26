@@ -346,7 +346,7 @@ export type { KeywayModelApiOptions } from './keyway/keywayModelApi.js';
 export { resolveRoutingTargetSelection } from './keyway/routingComposition.js';
 export type { HadamardRoutingTarget, RoutingSelectionInput } from './keyway/routingComposition.js';
 export { UsageRoutingAdminService, usageFilterFromSearch } from './keyway/usageRoutingAdminService.js';
-export type { UsageRoutingAdminServiceOptions, UsageRoutingCatalog, UsageRoutingOverview, UsageTrendPoint } from './keyway/usageRoutingAdminService.js';
+export type { ProviderPresetInstallResult, UsageRoutingAdminServiceOptions, UsageRoutingCatalog, UsageRoutingOverview, UsageTrendPoint } from './keyway/usageRoutingAdminService.js';
 export { KeywayLoopbackGatewayController, loadKeywayGatewayModule } from './keyway/keywayLoopbackGateway.js';
 export type { KeywayLoopbackGatewayControllerOptions, KeywayLoopbackStartResult, KeywayLoopbackStatus } from './keyway/keywayLoopbackGateway.js';
 export { KeywayMigrationService } from './keyway/keywayMigrationService.js';

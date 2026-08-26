@@ -76,6 +76,9 @@ export const usageRoutingHtml = `
         </div>
 
         <div class="usage-routing-page" data-usage-routing-page="keys" hidden>
+          <div class="settings-group"><h2>Volcengine Ark Agent Plan</h2><p class="muted">Save the key in Hadamard's encrypted local Keyway store and add ready-to-use glm-5.2 and glm-5.3 routes. Nothing is written to Codex or an environment variable.</p><div class="usage-admin-grid">
+            <label class="usage-wide">Ark API key<input id="usageArkAgentPlanSecret" type="password" autocomplete="new-password" placeholder="Stored write-only in Hadamard"></label>
+          </div><div class="settings-action-row"><button type="button" id="usageArkAgentPlanInstall" class="primary">Install / rotate Ark models</button></div></div>
           <div class="settings-group"><h2>Managed API credentials</h2><p class="muted">Secrets are write-only and encrypted by the desktop host. Native CLI OAuth/session data is never imported here.</p><div id="usageCredentialList" class="settings-card-list"></div></div>
           <div class="settings-group"><h2>Add or rotate a credential</h2><div class="usage-admin-grid">
             <label>ID<input id="usageCredentialId" autocomplete="off" placeholder="credential.ark.primary"></label>
@@ -354,6 +357,7 @@ function renderUsageCatalog(catalog) {
   for (const route of catalog.routes || []) {
     const candidates = (route.candidates || []).map(candidate => candidate.targetId + ' → ' + candidate.upstreamModel + ' (p' + candidate.priority + ')').join(', ');
     routes.append(usageAdminCard(route.alias, route.mode + ' · ' + candidates, [
+      { label: 'Use in Hadamard', run: async () => { const selected = await usageRoutingJson('/api/usage-routing/routes/' + encodeURIComponent(route.alias) + '/activate', { method: 'POST' }); el('usageRoutingStatus').textContent = 'Hadamard now uses ' + selected.routeAlias + ' (' + selected.model + ').'; } },
       { label: 'Edit', run: () => { el('usageRouteId').value = route.id; el('usageRouteAlias').value = route.alias; el('usageRouteMode').value = route.mode; el('usageRouteCandidates').value = (route.candidates || []).map(candidate => candidate.targetId + ' | ' + candidate.upstreamModel + ' | ' + candidate.priority).join('\\n'); } },
       { label: 'Delete', danger: true, run: () => void usageMutation('/api/usage-routing/routes/' + encodeURIComponent(route.id), 'DELETE') },
     ]));
@@ -440,6 +444,21 @@ el('usageCredentialSave')?.addEventListener('click', () => {
     ...(secret ? { secret } : {}),
     enabled: true,
   }).catch(error => { el('usageRoutingStatus').textContent = error.message || String(error); });
+});
+el('usageArkAgentPlanInstall')?.addEventListener('click', async () => {
+  const secretInput = el('usageArkAgentPlanSecret');
+  const secret = secretInput.value;
+  secretInput.value = '';
+  if (!secret) { el('usageRoutingStatus').textContent = 'Enter the Ark Agent Plan API key.'; return; }
+  try {
+    const result = await usageRoutingJson('/api/usage-routing/presets/ark-agent-plan', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ secret }),
+    });
+    await refreshUsageRouting();
+    el('usageRoutingStatus').textContent = 'Ark models installed in Hadamard: ' + result.routeAliases.join(', ') + '. Select Routes → Use in Hadamard.';
+  } catch (error) { el('usageRoutingStatus').textContent = error.message || String(error); }
 });
 el('usageBridgeMigrationPreview')?.addEventListener('click', async () => {
   try {
