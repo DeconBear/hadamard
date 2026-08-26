@@ -260,6 +260,16 @@
     "ws": "^8.21.3",
     "zod": "^4.1.12"
   },
+  "peerDependencies": {
+    "@keyway-router/core": "0.1.0",
+    "@keyway-router/gateway": "0.1.0",
+    "@keyway-router/node": "0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@keyway-router/core": { "optional": true },
+    "@keyway-router/gateway": { "optional": true },
+    "@keyway-router/node": { "optional": true }
+  },
   "optionalDependencies": {
     "@e2b/desktop": "^2.3.1",
     "@xterm/addon-fit": "^0.11.0",

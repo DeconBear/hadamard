@@ -85,9 +85,15 @@ export const usageRoutingHtml = `
             <label>Weight<input id="usageCredentialWeight" type="number" min="1" value="1"></label>
             <label>New secret<input id="usageCredentialSecret" type="password" autocomplete="new-password" placeholder="Leave blank to keep existing"></label>
           </div><div class="settings-action-row"><button type="button" id="usageCredentialSave" class="primary">Save credential</button></div></div>
+          <div class="settings-group"><h2>Migration</h2><p class="muted">Preview first. Bridge API keys are copied into write-only storage only on Apply; native CLI OAuth/session secrets are never read. KeywayExportV1 files contain metadata and usage, not secrets.</p>
+            <div class="settings-action-row"><button type="button" id="usageBridgeMigrationPreview" class="secondary-btn">Preview bridge configs</button><button type="button" id="usageBridgeMigrationApply" class="secondary-btn">Apply ready configs</button></div>
+            <label class="inline-field">KeywayExportV1 file<input id="usagePortableMigrationFile" autocomplete="off" placeholder="C:\\path\\to\\keyway-export-v1.json"></label>
+            <div class="settings-action-row"><button type="button" id="usagePortableMigrationPreview" class="secondary-btn">Preview file</button><button type="button" id="usagePortableMigrationApply" class="secondary-btn">Import transactionally</button></div>
+          </div>
         </div>
 
         <div class="usage-routing-page" data-usage-routing-page="routes" hidden>
+          <div class="settings-group"><h2>Authenticated loopback gateway</h2><p id="usageGatewayStatus" class="muted">Stopped. Embedded in-process routing remains available.</p><div class="settings-action-row"><button type="button" id="usageGatewayStart" class="secondary-btn">Start</button><button type="button" id="usageGatewayStop" class="secondary-btn">Stop</button></div><p class="muted">Binds to 127.0.0.1 only. A client key is shown once after startup and is never returned by status.</p></div>
           <div class="settings-group"><h2>Execution targets</h2><div id="usageTargetList" class="settings-card-list"></div></div>
           <div class="settings-group"><h2>Add or update a target</h2><div class="usage-admin-grid">
             <label>ID<input id="usageTargetId" autocomplete="off" placeholder="target.ark"></label>
@@ -306,6 +312,11 @@ async function usageMutation(path, method, body) {
 }
 
 function renderUsageCatalog(catalog) {
+  const gateway = catalog.gateway || {};
+  const gatewayStatus = el('usageGatewayStatus');
+  if (gatewayStatus) gatewayStatus.textContent = gateway.running
+    ? 'Running at ' + String(gateway.url || 'unknown') + ' · ' + String(gateway.authentication || 'client-key')
+    : 'Stopped. Embedded in-process routing remains available.';
   const budgets = el('usageBudgetList'); budgets.replaceChildren();
   for (const budget of catalog.budgets || []) {
     const scope = budget.scope?.kind === 'global' ? 'global' : budget.scope?.kind + ':' + budget.scope?.id;
@@ -429,6 +440,51 @@ el('usageCredentialSave')?.addEventListener('click', () => {
     ...(secret ? { secret } : {}),
     enabled: true,
   }).catch(error => { el('usageRoutingStatus').textContent = error.message || String(error); });
+});
+el('usageBridgeMigrationPreview')?.addEventListener('click', async () => {
+  try {
+    const result = await usageRoutingJson('/api/usage-routing/migration/bridge');
+    el('usageRoutingStatus').textContent = 'Bridge migration preview: ' + result.ready + ' ready, ' + result.blocked + ' blocked. Native OAuth/session secrets read: no.';
+  } catch (error) { el('usageRoutingStatus').textContent = error.message || String(error); }
+});
+el('usageBridgeMigrationApply')?.addEventListener('click', async () => {
+  try {
+    const result = await usageRoutingJson('/api/usage-routing/migration/bridge', { method: 'POST' });
+    await refreshUsageRouting();
+    el('usageRoutingStatus').textContent = 'Bridge migration: ' + result.imported + ' imported, ' + result.skipped + ' skipped. Legacy configs remain unchanged.';
+  } catch (error) { el('usageRoutingStatus').textContent = error.message || String(error); }
+});
+for (const action of ['Preview', 'Apply']) {
+  el('usagePortableMigration' + action)?.addEventListener('click', async () => {
+    const filePath = el('usagePortableMigrationFile').value.trim();
+    try {
+      const result = await usageRoutingJson('/api/usage-routing/migration/portable/' + (action === 'Preview' ? 'preview' : 'import'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ filePath }),
+      });
+      if (action === 'Apply') await refreshUsageRouting();
+      el('usageRoutingStatus').textContent = (action === 'Preview' ? 'Import preview: ' : 'Import complete: ') + JSON.stringify(result);
+    } catch (error) { el('usageRoutingStatus').textContent = error.message || String(error); }
+  });
+}
+el('usageGatewayStart')?.addEventListener('click', async () => {
+  try {
+    const result = await usageRoutingJson('/api/usage-routing/gateway/start', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ port: 0 }),
+    });
+    await refreshUsageRouting();
+    el('usageRoutingStatus').textContent = result.clientKey
+      ? 'Gateway started at ' + result.url + '. Client key (shown once): ' + result.clientKey
+      : 'Gateway is already running at ' + result.url + '.';
+  } catch (error) { el('usageRoutingStatus').textContent = error.message || String(error); }
+});
+el('usageGatewayStop')?.addEventListener('click', async () => {
+  try {
+    await usageRoutingJson('/api/usage-routing/gateway/stop', { method: 'POST' });
+    await refreshUsageRouting();
+    el('usageRoutingStatus').textContent = 'Loopback gateway stopped.';
+  } catch (error) { el('usageRoutingStatus').textContent = error.message || String(error); }
 });
 el('usageTargetSave')?.addEventListener('click', () => {
   const kind = el('usageTargetKind').value;
