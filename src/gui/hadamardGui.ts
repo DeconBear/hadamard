@@ -261,7 +261,7 @@ import {
   type Usage,
 } from '../core/index.js';
 import { estimateCost } from '../team/pricing.js';
-import { SessionCostTracker, readLedgerSummary, type SessionCostUsage } from '../extensions/sessionCostTracker.js';
+import { SessionCostTracker, type SessionCostUsage } from '../extensions/sessionCostTracker.js';
 import { formatUsageBar, usageBarColorLevel, type UsageBarColorLevel } from '../extensions/usageBar.js';
 import { formatTaskSettledNotification } from '../extensions/taskNotifications.js';
 import {
@@ -403,9 +403,11 @@ import { registerGuiShellHttpController } from './guiShellHttpController.js';
 import { registerGuiChatHttpController } from './guiChatHttpController.js';
 import { rejectMismatchedGuiSession } from './guiSessionHttpGuard.js';
 import { registerGuiSettingsHttpController } from './guiSettingsHttpController.js';
+import { appendGuiLedgerUsage, createGuiUsageRoutingRuntime, runGuiUsageRoutingCommand, type GuiUsageRoutingPort } from './guiUsageRoutingRuntime.js';
 import { registerGuiTeamHttpController } from './guiTeamHttpController.js';
 import { registerGuiAgentHttpController } from './guiAgentHttpController.js';
 import { registerGuiReferenceHttpController } from './guiReferenceHttpController.js';
+import type { KeywaySecretStorePort } from '../keyway/keywayPorts.js';
 import { registerGuiDesignHttpController } from './guiDesignHttpController.js';
 import { DesignDocumentService } from '../design/designDocumentService.js';
 import { ProjectRuleCatalogService } from '../rules/projectRuleCatalog.js';
@@ -541,6 +543,9 @@ export interface HadamardGuiOptions {
   continueMostRecent?: boolean;
   /** Electron-only update bridge. Browser/dev launches receive a read-only unsupported state. */
   appUpdater?: AppUpdateController;
+  /** Electron injects safeStorage; tests/embedders may inject an admin facade directly. */
+  keywaySecretStore?: KeywaySecretStorePort;
+  usageRoutingAdmin?: GuiUsageRoutingPort;
 }
 
 export interface HadamardGuiServer {
@@ -5180,6 +5185,8 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const spaceIndex = raw.indexOf(' ');
     const name = (spaceIndex === -1 ? raw.slice(1) : raw.slice(1, spaceIndex)).toLowerCase();
     const args = spaceIndex === -1 ? '' : raw.slice(spaceIndex + 1).trim();
+    const usageRoutingResult = await runGuiUsageRoutingCommand(usageRoutingRuntime.admin, name, args);
+    if (usageRoutingResult) return [usageRoutingResult];
 
     switch (name) {
       case 'help':
@@ -6178,17 +6185,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
             lines.push(`  ${cfgName}${star} — ${rec.turns} turns, ${(rec.inputTokens + rec.outputTokens).toLocaleString()} tokens${cost ? ', ' + cost : ''}`);
           }
         }
-        if (sdk?.builtInExtensions.isEnabled('costTracker')) {
-          const ledger = await readLedgerSummary(resolveGuiHomeDir()).catch(() => null);
-          if (ledger && ledger.entries > 0) {
-            lines.push(
-              '',
-              'Ledger (all sessions):',
-              `  Today: ${(ledger.today.inputTokens + ledger.today.outputTokens).toLocaleString()} tokens, $${ledger.today.costUsd.toFixed(4)}`,
-              `  Total: ${(ledger.total.inputTokens + ledger.total.outputTokens).toLocaleString()} tokens, $${ledger.total.costUsd.toFixed(4)} across ${ledger.entries} entries`,
-            );
-          }
-        }
+        await appendGuiLedgerUsage(lines, !!sdk?.builtInExtensions.isEnabled('costTracker'), resolveGuiHomeDir());
         return [{ type: 'command.result', title: 'Usage', text: lines.join('\n') }];
       }
       case 'doctor': {
@@ -7967,6 +7964,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       body: runtimeMutationErrorBody(error),
     }),
   });
+  const usageRoutingRuntime = await createGuiUsageRoutingRuntime({ router: httpRouter, homeDir: resolveGuiHomeDir(), workDir, secretStore: options.keywaySecretStore, admin: options.usageRoutingAdmin });
   function parseDeleteStrategy(raw: unknown): DeleteFallbackStrategy {
     if (!isPlainRecord(raw)) return { type: 'leave' };
     if (raw.type === 'repoint' && typeof raw.target === 'string' && raw.target.trim()) {
@@ -10868,6 +10866,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     await automationScheduler.dispose();
     terminalManager.closeAll();
     await externalCliRuntimeManager.close().catch(() => undefined);
+    await usageRoutingRuntime?.close();
     if (sdk) {
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {

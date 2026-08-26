@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { app, BrowserWindow, dialog, Menu, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, nativeImage, safeStorage, shell } from 'electron';
 import electronUpdater from 'electron-updater';
 
 import {
@@ -18,6 +18,7 @@ import {
   persistHadamardSettingsStore,
 } from '../config/hadamardSettingsStore.js';
 import { resolveHadamardHome } from '../config/hadamardHome.js';
+import { ElectronSecretStore } from '../keyway/electronSecretStore.js';
 import {
   createAppUpdateController,
   createUnsupportedAppUpdateController,
@@ -207,6 +208,10 @@ async function createWindow(): Promise<void> {
   guiServer = await startHadamardGuiServer({
     ...args,
     appUpdater: createDesktopAppUpdater(),
+    keywaySecretStore: new ElectronSecretStore({
+      filePath: path.join(resolveHadamardHome(args.homeDir), 'keyway', 'secrets.safe-storage.json'),
+      safeStorage,
+    }),
   });
   installApplicationMenu();
   const { iconPath, iconImage } = loadWindowIcon();
