@@ -43,6 +43,13 @@ function port(): GuiUsageRoutingPort {
     deleteRoute: vi.fn(() => true),
     saveBudget: vi.fn(body => ({ id: String(body.id) })),
     deleteBudget: vi.fn(() => true),
+    gatewayStatus: vi.fn(() => ({ running: false, authentication: 'client-key' })),
+    startGateway: vi.fn(async () => ({ running: true, url: 'http://127.0.0.1:1234', authentication: 'client-key', clientKey: 'db_sk_once' })),
+    stopGateway: vi.fn(async () => ({ running: false, authentication: 'client-key' })),
+    previewBridgeMigration: vi.fn(() => ({ source: 'bridge-configs' as const, items: [], ready: 0, blocked: 0, oauthSessionSecretsRead: false as const })),
+    importBridgeMigration: vi.fn(async () => ({ imported: 0 })),
+    previewPortableMigration: vi.fn(async () => ({ source: 'keyway-export-v1' as const, counts: {}, secretsIncluded: false as const, issuedKeysRequireRotation: false })),
+    importPortableMigration: vi.fn(async () => ({ imported: 0 })),
   };
 }
 
@@ -78,6 +85,15 @@ describe('GUI Usage & Routing HTTP controller', () => {
     expect(target.saveCredential).toHaveBeenCalledWith(expect.objectContaining({ secret: 'fixture-secret' }));
     expect(target.testCredential).toHaveBeenCalledWith('credential.ark');
     expect(target.deleteCredential).toHaveBeenCalledWith('credential.ark');
+  });
+
+  it('starts and stops the authenticated loopback gateway', async () => {
+    const target = port();
+    const started = await invoke(target, 'POST', '/api/usage-routing/gateway/start', { port: 0 });
+    expect(started.body).toMatchObject({ running: true, authentication: 'client-key' });
+    expect(target.startGateway).toHaveBeenCalledWith(0);
+    await invoke(target, 'POST', '/api/usage-routing/gateway/stop');
+    expect(target.stopGateway).toHaveBeenCalledOnce();
   });
 
   it('maps validation failures to 400 without reflecting request secrets', async () => {

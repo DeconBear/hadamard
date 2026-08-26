@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { UsageFilter, UsagePage, UsageSummary, BudgetPolicy } from '../usage/contracts.js';
 import { UsageQueryService } from '../usage/usageQueryService.js';
 import { probeKeywayNativeTargetAuth } from './keywayProviderExecutor.js';
+import type { KeywayMigrationService } from './keywayMigrationService.js';
 import type {
   KeywayExecutionTargetPort,
   KeywayGatewayRoutePort,
@@ -41,6 +42,12 @@ export interface UsageRoutingAdminServiceOptions {
   store: KeywayStorePort;
   secretStore: KeywaySecretStorePort;
   executor?: KeywayProviderExecutorPort;
+  gateway?: {
+    status(): object;
+    start(port?: number): Promise<object>;
+    stop(): Promise<object>;
+  };
+  migration?: KeywayMigrationService;
   now?: () => Date;
   idFactory?: () => string;
 }
@@ -296,6 +303,40 @@ export class UsageRoutingAdminService {
     if (target.kind === 'managed-api') return { id, state: 'configured', source: 'managed-api' };
     const status = await probeKeywayNativeTargetAuth(target);
     return { id, ...status };
+  }
+
+  gatewayStatus(): Record<string, unknown> {
+    return this.options.gateway ? { ...this.options.gateway.status() } : { running: false, authentication: 'client-key' };
+  }
+
+  async startGateway(port = 0): Promise<Record<string, unknown>> {
+    if (!this.options.gateway) throw new TypeError('The optional Keyway loopback gateway is unavailable.');
+    return { ...(await this.options.gateway.start(port)) };
+  }
+
+  async stopGateway(): Promise<Record<string, unknown>> {
+    if (!this.options.gateway) return this.gatewayStatus();
+    return { ...(await this.options.gateway.stop()) };
+  }
+
+  previewBridgeMigration() {
+    if (!this.options.migration) throw new TypeError('Keyway migration service is unavailable.');
+    return this.options.migration.previewBridgeConfigs();
+  }
+
+  async importBridgeMigration(): Promise<Record<string, unknown>> {
+    if (!this.options.migration) throw new TypeError('Keyway migration service is unavailable.');
+    return this.options.migration.importBridgeConfigs();
+  }
+
+  async previewPortableMigration(filePath: string) {
+    if (!this.options.migration) throw new TypeError('Keyway migration service is unavailable.');
+    return this.options.migration.previewPortableFile(filePath);
+  }
+
+  async importPortableMigration(filePath: string): Promise<Record<string, unknown>> {
+    if (!this.options.migration) throw new TypeError('Keyway migration service is unavailable.');
+    return this.options.migration.importPortableFile(filePath);
   }
 
   close(): void {

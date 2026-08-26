@@ -6,7 +6,10 @@ export type GuiUsageRoutingPort = Pick<UsageRoutingAdminService,
   | 'saveCredential' | 'deleteCredential' | 'testCredential'
   | 'saveTarget' | 'deleteTarget' | 'testTarget'
   | 'saveRoute' | 'deleteRoute'
-  | 'saveBudget' | 'deleteBudget'>;
+  | 'saveBudget' | 'deleteBudget'
+  | 'gatewayStatus' | 'startGateway' | 'stopGateway'
+  | 'previewBridgeMigration' | 'importBridgeMigration'
+  | 'previewPortableMigration' | 'importPortableMigration'>;
 
 function failure(res: Parameters<typeof json>[0], error: unknown): void {
   json(res, error instanceof TypeError ? 400 : 500, {
@@ -22,8 +25,34 @@ export function registerGuiUsageRoutingHttpController(router: GuiHttpRouter, por
     json(res, 200, port.ledger(usageFilterFromSearch(url.searchParams)));
   });
   router.route('GET', '/api/usage-routing/catalog', async (_req, res) => {
-    try { json(res, 200, await port.catalog()); } catch (error) { failure(res, error); }
+    try { json(res, 200, { ...(await port.catalog()), gateway: port.gatewayStatus() }); } catch (error) { failure(res, error); }
   });
+  router.route('POST', '/api/usage-routing/gateway/start', async (req, res) => {
+    try {
+      const body = await readJson(req);
+      json(res, 200, await port.startGateway(typeof body.port === 'number' ? body.port : 0));
+    } catch (error) { failure(res, error); }
+  });
+  router.route('POST', '/api/usage-routing/gateway/stop', async (_req, res) => {
+    try { json(res, 200, await port.stopGateway()); } catch (error) { failure(res, error); }
+  });
+  router.route('GET', '/api/usage-routing/migration/bridge', (_req, res) => {
+    try { json(res, 200, port.previewBridgeMigration()); } catch (error) { failure(res, error); }
+  });
+  router.route('POST', '/api/usage-routing/migration/bridge', async (_req, res) => {
+    try { json(res, 200, await port.importBridgeMigration()); } catch (error) { failure(res, error); }
+  });
+  for (const action of ['preview', 'import'] as const) {
+    router.route('POST', `/api/usage-routing/migration/portable/${action}`, async (req, res) => {
+      try {
+        const body = await readJson(req);
+        if (typeof body.filePath !== 'string' || !body.filePath.trim()) throw new TypeError('filePath is required.');
+        json(res, 200, action === 'preview'
+          ? await port.previewPortableMigration(body.filePath)
+          : await port.importPortableMigration(body.filePath));
+      } catch (error) { failure(res, error); }
+    });
+  }
   for (const [resource, save, remove] of [
     ['credentials', port.saveCredential.bind(port), port.deleteCredential.bind(port)],
     ['targets', async (body: Record<string, unknown>) => port.saveTarget(body), async (id: string) => port.deleteTarget(id)],

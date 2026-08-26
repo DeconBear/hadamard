@@ -4,6 +4,7 @@ import type { ModelApi } from '../types.js';
 import { UsageLedger } from '../usage/usageLedger.js';
 import { usageDatabasePath } from '../usage/usageQueryService.js';
 import { KeywayModelApi, type KeywayModelApiOptions } from './keywayModelApi.js';
+import { KeywayLoopbackGatewayController } from './keywayLoopbackGateway.js';
 import {
   HadamardKeywayProviderExecutor,
   type HadamardKeywayProviderExecutorOptions,
@@ -27,6 +28,7 @@ export interface EmbeddedKeyway {
   core: KeywayCorePort;
   store: KeywayStorePort;
   executor: HadamardKeywayProviderExecutor;
+  gateway: KeywayLoopbackGatewayController;
   modelApi(options: Omit<KeywayModelApiOptions, 'core'>): ModelApi;
   close(): Promise<void>;
 }
@@ -75,14 +77,17 @@ export async function createEmbeddedKeyway(options: EmbeddedKeywayOptions): Prom
         },
       },
     });
+    const gateway = new KeywayLoopbackGatewayController({ core, store });
     return {
       core,
       store,
       executor,
+      gateway,
       modelApi(modelOptions) {
         return new KeywayModelApi({ core, ...modelOptions });
       },
       async close() {
+        await gateway.stop();
         usageLedger.close();
         store.close();
       },

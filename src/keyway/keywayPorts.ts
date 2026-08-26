@@ -146,9 +146,34 @@ export interface KeywayStorePort {
   deleteBudgetPolicy(policyId: string): boolean;
 }
 
+export interface KeywayLoopbackGatewayInstancePort {
+  status(): {
+    running: boolean;
+    host: string;
+    port: number;
+    url: string;
+    authentication: 'client-key' | 'none';
+  };
+  close(): Promise<void>;
+}
+
+export interface KeywayGatewayModulePort {
+  KEYWAY_GATEWAY_VERSION: 1;
+  LoopbackGateway: {
+    start(options: {
+      core: KeywayCorePort;
+      store: KeywayStorePort;
+      clientKeys: readonly string[];
+      host: string;
+      port: number;
+    }): Promise<KeywayLoopbackGatewayInstancePort>;
+  };
+}
+
 export interface KeywaySdkModulesPort {
   core: {
     KEYWAY_CONTRACT_VERSION: 1;
+    assertKeywayExportV1(value: unknown): void;
     createKeywayCore(options: {
       store: unknown;
       secretStore: KeywaySecretStorePort;
@@ -162,5 +187,6 @@ export interface KeywaySdkModulesPort {
     EncryptedFileSecretStore: new (options: { filePath: string; masterKey: Uint8Array }) => KeywaySecretStorePort;
     CompositeSecretStore: new (managed: KeywaySecretStorePort, environment?: KeywaySecretStorePort) => KeywaySecretStorePort;
     decodeMasterKey(value: string): Uint8Array;
+    importKeywayV1(store: KeywayStorePort, value: unknown): Promise<Record<string, number>>;
   };
 }

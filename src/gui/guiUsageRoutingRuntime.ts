@@ -1,6 +1,7 @@
 import { createEmbeddedKeyway, type EmbeddedKeyway } from '../keyway/embeddedKeyway.js';
 import type { KeywaySecretStorePort } from '../keyway/keywayPorts.js';
 import { UsageRoutingAdminService } from '../keyway/usageRoutingAdminService.js';
+import { KeywayMigrationService } from '../keyway/keywayMigrationService.js';
 import { readLedgerSummary } from '../extensions/sessionCostTracker.js';
 import { runUsageRoutingCommand } from '../ui/usageRoutingCommand.js';
 import type { GuiHttpRouter } from './guiHttpRouter.js';
@@ -42,6 +43,12 @@ export async function createGuiUsageRoutingRuntime(
         store: embedded.store,
         secretStore: options.secretStore,
         executor: embedded.executor,
+        gateway: embedded.gateway,
+        migration: new KeywayMigrationService({
+          homeDir: options.homeDir,
+          store: embedded.store,
+          secretStore: options.secretStore,
+        }),
       });
       admin = ownedAdmin;
     } catch (error) {
