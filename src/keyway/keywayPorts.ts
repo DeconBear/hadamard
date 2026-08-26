@@ -22,6 +22,46 @@ export interface KeywayNativeTargetPort {
 
 export type KeywayExecutionTargetPort = KeywayManagedTargetPort | KeywayNativeTargetPort;
 
+export interface KeywayManagedCredentialPort {
+  id: string;
+  providerId: string;
+  secretRef: string;
+  label: string;
+  priority: number;
+  weight: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KeywayCredentialHealthPort {
+  credentialId: string;
+  state: 'unknown' | 'healthy' | 'degraded' | 'circuit-open' | 'disabled';
+  consecutiveFailures: number;
+  lastSuccessAt?: string;
+  lastFailureAt?: string;
+  circuitOpenUntil?: string;
+}
+
+export interface KeywayRouteCandidatePort {
+  id: string;
+  targetId: string;
+  upstreamModel: string;
+  priority: number;
+  weight: number;
+  enabled: boolean;
+}
+
+export interface KeywayGatewayRoutePort {
+  id: string;
+  alias: string;
+  mode: 'direct' | 'priority-failover';
+  candidates: readonly KeywayRouteCandidatePort[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface KeywayProviderRequestPort {
   requestId: string;
   correlationId: string;
@@ -91,6 +131,19 @@ export interface KeywaySecretStorePort {
 
 export interface KeywayStorePort {
   close(): void;
+  saveTarget(target: KeywayExecutionTargetPort): void;
+  listTargets(): Promise<readonly KeywayExecutionTargetPort[]>;
+  deleteTarget(targetId: string): boolean;
+  saveCredential(credential: KeywayManagedCredentialPort): void;
+  listManagedCredentials(providerId?: string): Promise<readonly KeywayManagedCredentialPort[]>;
+  deleteCredential(credentialId: string): boolean;
+  getCredentialHealth(credentialId: string): Promise<KeywayCredentialHealthPort | undefined>;
+  saveRoute(route: KeywayGatewayRoutePort): void;
+  listRoutes(): Promise<readonly KeywayGatewayRoutePort[]>;
+  deleteRoute(routeId: string): boolean;
+  saveBudgetPolicy(policy: import('../usage/contracts.js').BudgetPolicy): void;
+  listManagedBudgetPolicies(): Promise<readonly import('../usage/contracts.js').BudgetPolicy[]>;
+  deleteBudgetPolicy(policyId: string): boolean;
 }
 
 export interface KeywaySdkModulesPort {
@@ -105,5 +158,9 @@ export interface KeywaySdkModulesPort {
   };
   node: {
     SqliteKeywayStore: new (options: { filePath: string }) => KeywayStorePort;
+    EnvironmentSecretStore: new (environment?: NodeJS.ProcessEnv, prefix?: string) => KeywaySecretStorePort;
+    EncryptedFileSecretStore: new (options: { filePath: string; masterKey: Uint8Array }) => KeywaySecretStorePort;
+    CompositeSecretStore: new (managed: KeywaySecretStorePort, environment?: KeywaySecretStorePort) => KeywaySecretStorePort;
+    decodeMasterKey(value: string): Uint8Array;
   };
 }

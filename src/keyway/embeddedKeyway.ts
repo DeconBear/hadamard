@@ -26,8 +26,15 @@ export interface EmbeddedKeywayOptions extends HadamardKeywayProviderExecutorOpt
 export interface EmbeddedKeyway {
   core: KeywayCorePort;
   store: KeywayStorePort;
+  executor: HadamardKeywayProviderExecutor;
   modelApi(options: Omit<KeywayModelApiOptions, 'core'>): ModelApi;
   close(): Promise<void>;
+}
+
+export interface HeadlessKeywaySecretStoreOptions {
+  homeDir: string;
+  environment?: NodeJS.ProcessEnv;
+  modules?: KeywaySdkModulesPort;
 }
 
 /** Loads the independently versioned Keyway TS packages without a Python sidecar. */
@@ -71,6 +78,7 @@ export async function createEmbeddedKeyway(options: EmbeddedKeywayOptions): Prom
     return {
       core,
       store,
+      executor,
       modelApi(modelOptions) {
         return new KeywayModelApi({ core, ...modelOptions });
       },
@@ -84,4 +92,23 @@ export async function createEmbeddedKeyway(options: EmbeddedKeywayOptions): Prom
     store.close();
     throw error;
   }
+}
+
+/**
+ * Headless/TUI policy: env refs are always readable; managed write-only secrets
+ * require an explicit AES-256-GCM master key and are never stored as plaintext.
+ */
+export async function createHeadlessKeywaySecretStore(
+  options: HeadlessKeywaySecretStoreOptions,
+): Promise<KeywaySecretStorePort> {
+  const modules = options.modules ?? await loadKeywaySdkModules();
+  const environment = options.environment ?? process.env;
+  const environmentStore = new modules.node.EnvironmentSecretStore(environment);
+  const masterKey = environment.HADAMARD_KEYWAY_MASTER_KEY?.trim();
+  if (!masterKey) return environmentStore;
+  const managed = new modules.node.EncryptedFileSecretStore({
+    filePath: path.join(options.homeDir, 'keyway', 'secrets.aes-gcm.json'),
+    masterKey: modules.node.decodeMasterKey(masterKey),
+  });
+  return new modules.node.CompositeSecretStore(managed, environmentStore);
 }

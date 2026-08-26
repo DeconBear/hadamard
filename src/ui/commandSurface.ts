@@ -9,7 +9,11 @@ export const HADAMARD_INTERACTIVE_COMMANDS: Record<string, string> = {
   context: 'Show context usage and configure project instruction files',
   devices: 'Pair phones and manage Device Link connections',
   cost: 'Show running token + spend totals',
-  usage: 'Alias for /cost',
+  usage: 'Query the unified token ledger',
+  limits: 'List and manage usage limits',
+  keys: 'Manage write-only provider credentials',
+  routes: 'Inspect and test Gateway Routes',
+  gateway: 'Show or control the embedded gateway',
   doctor: 'Run configuration diagnostics',
   batch: 'Run multiple prompts from a file sequentially',
   goal: 'Set a goal for this chat and run it',
@@ -167,6 +171,10 @@ export const SUBCOMMANDS: Record<string, string[]> = {
   rules: ['list', 'add', 'remove', 'enable', 'disable'],
   memory: ['status', 'list', 'show', 'proposals', 'apply', 'reject'],
   context: ['settings'],
+  limits: ['list', 'set', 'remove'],
+  keys: ['list', 'add', 'disable', 'rotate', 'test'],
+  routes: ['list', 'show', 'test', 'enable'],
+  gateway: ['status', 'start', 'stop'],
   devices: ['status', 'start', 'stop', 'pair', 'scopes', 'revoke', 'discover', 'audit'],
 };
 
@@ -287,6 +295,21 @@ export const SUBCOMMAND_DESCRIPTIONS: Record<string, string> = {
   'devices revoke': 'Revoke a paired device after explicit confirmation',
   'devices discover': 'Discover Device Link computers on the local network',
   'devices audit': 'Show recent Device Link authorization decisions',
+  'limits list': 'List usage limits and enforcement actions',
+  'limits set': 'Create or update a usage limit',
+  'limits remove': 'Remove a usage limit',
+  'keys list': 'List credential metadata and health without secrets',
+  'keys add': 'Add a write-only provider credential',
+  'keys disable': 'Disable a managed provider credential',
+  'keys rotate': 'Replace a credential secret without revealing the old value',
+  'keys test': 'Test a managed provider credential',
+  'routes list': 'List embedded Gateway Routes',
+  'routes show': 'Show route candidates and priorities',
+  'routes test': 'Test a route using its active target',
+  'routes enable': 'Enable a Gateway Route',
+  'gateway status': 'Show embedded routing counts and loopback state',
+  'gateway start': 'Start the optional loopback gateway',
+  'gateway stop': 'Stop the optional loopback gateway',
 };
 
 const COMMAND_USAGES: Record<string, string> = {
@@ -320,6 +343,11 @@ const COMMAND_USAGES: Record<string, string> = {
   bridge: '/bridge [run|background|runs|stop|status|history|resume|switch|model|config|setup|off|help]',
   diff: '/diff [show|apply --confirm]',
   context: '/context [settings [agents|claude|both]]',
+  usage: '/usage [today|7d|30d|all] [--provider <id>] [--model <id>]',
+  limits: '/limits [list|set <id> <scope> <period> <metric> <limit> <action>|remove <id>]',
+  keys: '/keys [list|add <id> <provider>|disable <id>|rotate <id>|test <id>]',
+  routes: '/routes [list|show <id>|test <id>|enable <id>]',
+  gateway: '/gateway [status|start|stop]',
   devices: '/devices [status|start [host] [port] [--advertise <ip>]|stop|pair [scope,...]|scopes <device-id> <scope,...>|revoke <device-id> --confirm|send <device-id> <workspace-relative-path>|outbox <device-id>|discover|audit]',
 };
 

@@ -41,6 +41,7 @@ export interface TuiBasicCommandPort {
   snapshot(): TuiBasicCommandSnapshot;
   /** Ledger today/total across sessions; null when the costTracker extension is off. */
   usageLedgerSummary?(): Promise<CostLedgerSummary | null>;
+  runUsageRoutingCommand?(name: string, args: string): Promise<readonly string[] | undefined>;
   runGoal(args: string): Promise<string>;
   appendStatic(lines: readonly string[]): void;
 }
@@ -89,8 +90,22 @@ export async function runTuiBasicCommand(
     case 'tools':
       port.appendStatic([...formatInfoLine(port.toolNames().join(', ')), '']);
       return true;
-    case 'cost':
-    case 'usage': {
+    case 'usage':
+    case 'limits':
+    case 'keys':
+    case 'routes':
+    case 'gateway': {
+      if (port.runUsageRoutingCommand) {
+        const lines = await port.runUsageRoutingCommand(name, args);
+        if (lines) {
+          port.appendStatic([...lines.flatMap(line => formatInfoLine(line)), '']);
+          return true;
+        }
+      }
+      if (name !== 'usage') return false;
+      // Compatibility fallback when Keyway packages are not installed.
+    }
+    case 'cost': {
       const snapshot = port.snapshot();
       const cost = snapshot.costUsd === null
         ? `${A.dim}(unknown — model lacks pricing; set ~/.hadamard/pricing.json)${A.reset}`

@@ -35,6 +35,7 @@ async function readTuiSources(): Promise<string> {
     readFile(new URL('src/tui/tuiContextCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiCatalogCommandHandler.ts', root), 'utf8'),
     readFile(new URL('src/tui/tuiDeviceLinkCommandHandler.ts', root), 'utf8'),
+    readFile(new URL('src/tui/tuiUsageRoutingRuntime.ts', root), 'utf8'),
   ])).join('\n');
 }
 
@@ -49,6 +50,7 @@ async function readGuiSources(): Promise<string> {
     readFile(new URL('src/gui/guiTeamHttpController.ts', root), 'utf8'),
     readFile(new URL('src/gui/guiAgentHttpController.ts', root), 'utf8'),
     readFile(new URL('src/gui/guiDeviceLinkHttpController.ts', root), 'utf8'),
+    readFile(new URL('src/gui/guiUsageRoutingRuntime.ts', root), 'utf8'),
   ])).join('\n');
 }
 
@@ -96,14 +98,15 @@ describe('interactive CLI convergence', () => {
       readTuiSources(),
       readGuiSources(),
     ]);
+    const sharedUsageCommands = new Set(['limits', 'keys', 'routes', 'gateway']);
 
     const tuiCases = new Map(Object.keys(HADAMARD_INTERACTIVE_COMMANDS).map(command => [
       command,
-      commandCase(tui, 'async function runSlashCommand(raw: string)', '        ', command),
+      sharedUsageCommands.has(command) ? tui : commandCase(tui, 'async function runSlashCommand(raw: string)', '        ', command),
     ]));
     const guiCases = new Map(Object.keys(HADAMARD_GUI_INTERACTIVE_COMMANDS).map(command => [
       command,
-      commandCase(gui, 'async function runSlashCommand(raw: string)', '      ', command),
+      sharedUsageCommands.has(command) ? gui : commandCase(gui, 'async function runSlashCommand(raw: string)', '      ', command),
     ]));
     const browserRouted = new Map([
       ['issues:start', "input.match(/^\\/issues\\s+start"],
@@ -123,6 +126,15 @@ describe('interactive CLI convergence', () => {
         // both surfaces delegate parsing/toggling to the shared view model.
         expect(tuiCase, 'TUI /extensions delegates its argument').toContain('port.extensionsCommand(args)');
         expect(guiCase, 'GUI /extensions delegates its argument').toContain('runExtensionsCommandView(sdk.builtInExtensions, args)');
+        continue;
+      }
+      if (['limits', 'keys', 'routes', 'gateway'].includes(command)) {
+        expect(tui, `TUI /${command} delegates to the shared Usage & Routing command`).toContain(
+          'runUsageRoutingCommand(command, args',
+        );
+        expect(gui, `GUI /${command} delegates to the shared Usage & Routing command`).toContain(
+          'runUsageRoutingCommand(name, args',
+        );
         continue;
       }
       if (command === 'plugin' || command === 'rules') {

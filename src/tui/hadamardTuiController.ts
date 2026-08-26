@@ -139,7 +139,7 @@ import { addMcpServer, readMcpServerConfig, removeMcpServer } from '../mcp/mcpSe
 import type { ContentBlockParam } from '../provider/types.js';
 import { isReadOnlyBashCommand } from '../runtime/bashClassification.js';
 import { estimateCost } from '../team/pricing.js';
-import { SessionCostTracker, readLedgerSummary, type SessionCostUsage } from '../extensions/sessionCostTracker.js';
+import { SessionCostTracker, type SessionCostUsage } from '../extensions/sessionCostTracker.js';
 import { formatUsageBar, usageBarColorLevel } from '../extensions/usageBar.js';
 import {
   buildTerminalNotifySequence,
@@ -175,6 +175,7 @@ import {
 } from '../ui/agentExecutionView.js';
 import { runExtensionsCommandView } from '../ui/extensionsCommandView.js';
 import { runLspCommandView } from '../ui/lspCommandView.js';
+import { TuiUsageRoutingRuntime } from './tuiUsageRoutingRuntime.js';
 import { A, truncateToWidth, wrapToWidth } from './ansi.js';
 import { InputEditor } from './editor.js';
 import { discoverHadamardPlugins } from './pluginCatalog.js';
@@ -415,6 +416,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           model: options.model,
           permissionMode,
         });
+  const usageRoutingRuntime = new TuiUsageRoutingRuntime(sdk.config.homeDir, sdk.config.workDir);
   let deviceLinkService: DeviceLinkService | null = null;
   async function getDeviceLinkService(): Promise<DeviceLinkService> {
     deviceLinkService ??= await DeviceLinkService.open({
@@ -4141,9 +4143,8 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
           bridgeName: bridgeMode ? activeBridgeConfig?.name : undefined,
           planMode: session.permissionContext.mode === 'plan',
         }),
-        usageLedgerSummary: () => sdk.builtInExtensions.isEnabled('costTracker')
-          ? readLedgerSummary(sdk.config.homeDir).catch(() => null)
-          : Promise.resolve(null),
+        ...usageRoutingRuntime.commandPorts(() => sdk.builtInExtensions.isEnabled('costTracker'), async label =>
+          promptText({ title: 'Write-only API key', label, secret: true })),
         runGoal: async args => (await sdk.goals.command(session, args)).message,
         appendStatic,
       });
@@ -5008,6 +5009,7 @@ export async function runHadamardTui(options: HadamardTuiOptions = {}): Promise<
       ...(globalAssistantSdk ? [globalAssistantSdk.close()] : []),
       externalCliRuntimeManager.close(),
       ...[...externalBridgeRuntimes.values()].map(runtime => runtime.client.close()),
+      usageRoutingRuntime.close(),
     ]);
     const cleanupFailures = cleanupResults
       .filter((result): result is PromiseRejectedResult => result.status === 'rejected');

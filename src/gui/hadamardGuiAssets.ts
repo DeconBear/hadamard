@@ -28,6 +28,7 @@ import { PROJECT_STATUSES, PROJECT_STATUS_LABELS } from './projectMeta.js';
 import { renderMarkdown } from './guiMarkdown.js';
 import { detectEditorLanguage, highlightCode } from './guiSyntaxHighlight.js';
 import { getTranscriptClientScript, getTranscriptStyles } from './transcript/index.js';
+import { usageRoutingBindings, usageRoutingClient, usageRoutingConfigurationHeaderHtml, usageRoutingConfigurationPageHtml, usageRoutingHtml, usageRoutingStyles } from './guiUsageRoutingAssets.js';
 import {
   formatContextWindowTokens,
   STANDARD_CONTEXT_WINDOWS,
@@ -542,16 +543,8 @@ export function createHadamardGuiHtml(): string {
       <div class="region-body devices-region-body" id="regionDevicesBody"></div>
     </section>
     <section class="region hidden" data-region="bridge" id="regionBridge" aria-label="Configuration">
-      <header class="region-header">
-        <div class="region-titles">
-          <h1>Configuration</h1>
-          <p>Configure models, providers, and local API or CLI runtimes</p>
-        </div>
-        <div class="region-actions">
-          <button type="button" id="bridgeNewConfig" class="pill-btn primary">+ New config</button>
-        </div>
-      </header>
-      <div class="region-body bridge-region-body">
+      ${usageRoutingConfigurationHeaderHtml}
+      <div class="region-body bridge-region-body" id="configurationModelsPage">
         <section class="settings-group">
           <h2>Bridge mode</h2>
           <label class="check-row"><input id="bridgeModeEnabled" type="checkbox">Enable bridge mode</label>
@@ -574,6 +567,7 @@ export function createHadamardGuiHtml(): string {
           <div id="runtimeDiscoveryList" class="settings-card-list compact runtime-list"></div>
         </section>
       </div>
+      ${usageRoutingConfigurationPageHtml}
     </section>
     <aside class="context-rail hidden" id="contextRail" aria-label="Context panel"></aside>
     <div id="railToast" class="rail-toast hidden" role="status" aria-live="polite"></div>
@@ -1013,6 +1007,7 @@ export function createHadamardGuiHtml(): string {
           <div class="settings-action-row"><button type="button" id="externalCliHistoryMore" class="secondary-btn hidden">Load more</button></div>
         </div>
       </section>
+      ${usageRoutingHtml}
       <section class="settings-panel" data-settings-panel="appearance">
         <h1>Appearance</h1>
         <div class="settings-group two-col">
@@ -4511,6 +4506,7 @@ body.settings-open .manager-shell { display: none; }
   font-size: 12.5px;
   line-height: 1.55;
 }
+${usageRoutingStyles}
 .mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .mode-card {
   min-height: 56px;
@@ -25598,6 +25594,7 @@ function openProjectGitFromSettings() {
   switchProjectView('detail');
   setProjectDetailTab('git');
 }
+${usageRoutingClient}
 function showSettingsTab(tab) {
   const requested = String(tab || 'general');
   const hasTab = !!document.querySelector('.settings-tab[data-settings-tab="' + requested + '"]');
@@ -25610,6 +25607,7 @@ function showSettingsTab(tab) {
   if (active === 'models') renderBridgeConfigs();
   if (active === 'mcp') renderMcpServers();
   if (active === 'sessions') renderArchived();
+  if (active === 'usage-routing') void refreshUsageRouting();
 }
 // ── Assistant widget (global FAB + Global/Project scope) ───
 // Talks to /api/manager/* with scope=global|project. Global uses assistant
@@ -27085,6 +27083,7 @@ document.querySelectorAll('[data-decision]').forEach(button => {
   });
 });
 document.querySelectorAll('.settings-tab').forEach(button => button.addEventListener('click', () => showSettingsTab(button.dataset.settingsTab)));
+${usageRoutingBindings}
 el('composer').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (state.running) {
