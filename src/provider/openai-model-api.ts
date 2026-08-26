@@ -17,6 +17,7 @@ import type {
   OpenaiMessageContentText,
   OpenaiMessageContentImage,
   OpenaiTool,
+  OpenaiUsage,
 } from './openai-types.js';
 import OpenaiProviderClient, { OpenaiProviderMessageStream } from './openai-client.js';
 import type { ResolvedProviderRetryPolicy } from './retryPolicy.js';
@@ -172,12 +173,16 @@ function mapFinishReason(finish: string | null): Message['stop_reason'] {
   }
 }
 
-function mapUsage(usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }): Usage | undefined {
+function mapUsage(usage?: OpenaiUsage): Usage | undefined {
   if (!usage) return undefined;
+  const cacheReadTokens = usage.prompt_tokens_details?.cached_tokens;
   return {
+    ...usage,
     input_tokens: usage.prompt_tokens,
     output_tokens: usage.completion_tokens,
-    ...usage,
+    ...(typeof cacheReadTokens === 'number' && Number.isFinite(cacheReadTokens)
+      ? { cache_read_input_tokens: Math.max(0, cacheReadTokens) }
+      : {}),
   };
 }
 
