@@ -213,6 +213,7 @@
     "bench:memory": "tsx bench/memory/run.ts",
     "bench:goal": "tsx bench/goal/run.ts",
     "smoke": "npm run build && tsx scripts/integration-smoke.ts",
+    "smoke:keyway:ark": "tsx scripts/keyway-ark-live-smoke.ts",
     "example:hadamard-quickstart": "npm run build && tsx examples/hadamard-quickstart.ts",
     "example:hadamard-session": "npm run build && tsx examples/hadamard-session.ts",
     "example:hadamard-stream-loop": "npm run build && tsx examples/hadamard-stream-loop.ts",
