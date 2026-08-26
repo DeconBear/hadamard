@@ -142,12 +142,6 @@ async function runProbe(
         totalTokens: result.usage.totalTokens,
         accuracy: result.usage.accuracy,
       },
-      attempts: result.attempts.map(attempt => ({
-        targetId: attempt.targetId,
-        upstreamModel: attempt.upstreamModel,
-        status: attempt.status,
-        latencyMs: attempt.latencyMs,
-      })),
     };
   } catch (error) {
     return {
@@ -189,12 +183,6 @@ interface ProbeSuccess {
     totalTokens: number;
     accuracy: string;
   };
-  attempts: Array<{
-    targetId: string;
-    upstreamModel: string;
-    status: string;
-    latencyMs: number;
-  }>;
 }
 
 interface ProbeFailure {
