@@ -33,10 +33,10 @@ const DEFAULT_BASE_URL = 'https://api.openai.com';
 
 function normalizeChatUrl(baseURL?: string | null): string {
   const normalized = (baseURL ?? DEFAULT_BASE_URL).replace(/\/+$/u, '');
-  if (/\/v1\/chat\/completions$/iu.test(normalized)) {
+  if (/\/chat\/completions$/iu.test(normalized)) {
     return normalized;
   }
-  if (/\/v1$/iu.test(normalized)) {
+  if (/\/v\d+$/iu.test(normalized)) {
     return `${normalized}/chat/completions`;
   }
   return `${normalized}/v1/chat/completions`;
