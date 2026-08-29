@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
+import { glob } from 'glob';
 
 import { inspectSolidBoundaries } from '../scripts/check-solid-boundaries.mjs';
 
@@ -29,6 +30,20 @@ describe('source architecture', () => {
       { cwd: root },
     );
     expect(JSON.parse(stdout)).toMatchObject({ passed: true, violations: [] });
+  });
+
+  it('keeps embedded Keyway execution independent from the parity runtime', async () => {
+    const root = path.resolve(import.meta.dirname, '..');
+    const files = await glob('**/*.ts', { cwd: path.join(root, 'src', 'keyway'), absolute: true });
+    const violations: string[] = [];
+    for (const file of files) {
+      const source = await readFile(file, 'utf8');
+      const isExplicitLegacyMigration = path.basename(file) === 'keywayMigrationService.ts';
+      if (!isExplicitLegacyMigration && /from\s+['"]\.\.\/parity(?:\/|['"])/u.test(source)) {
+        violations.push(path.relative(root, file));
+      }
+    }
+    expect(violations).toEqual([]);
   });
 
   it('detects newly oversized source files and interfaces', async () => {
