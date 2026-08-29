@@ -66,7 +66,7 @@ export async function createHadamardNativeCliClient(
   if (!isManagedExternalCliRuntime(target.runtime as ManagedExternalCliRuntime)) {
     throw Object.assign(new Error(`Unsupported native CLI runtime: ${target.runtime}`), { retryable: false });
   }
-  if (target.runtime === 'claude' || target.runtime === 'codex') {
+  if (target.runtime === 'claude' || target.runtime === 'codex' || target.runtime === 'cursor') {
     return createNativeCliClient({
       runtime: target.runtime,
       model,
