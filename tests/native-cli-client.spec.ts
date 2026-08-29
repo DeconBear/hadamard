@@ -10,6 +10,7 @@ const temporaryDirectories: string[] = [];
 const fakeCodexCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-codex-cli.mjs');
 const fakeClaudeCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-hadamard-runtime-cli.mjs');
 const fakeCursorCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-cursor-cli.mjs');
+const fakePiCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-pi-cli.mjs');
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(directory =>
@@ -84,6 +85,27 @@ describe('Hadamard-owned native CLI client', () => {
         isError: false,
       });
       expect(result.resultEvent?.input_tokens).toBe(10);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('runs a Keyway Pi target through the owned interactive RPC protocol', async () => {
+    const workDir = await temporaryDirectory('hadamard-owned-pi-');
+    const client = await createHadamardNativeCliClient(
+      { runtime: 'pi' },
+      'openai/gpt-4o-mini',
+      { executable: process.execPath, cliPath: fakePiCli, workDir },
+    );
+    try {
+      const result = await client.stream('who-am-i').result;
+      expect(result).toMatchObject({
+        text: 'pi:agent:gpt-4o-mini',
+        sessionId: 'pi-fixture-session',
+        isError: false,
+        totalCostUsd: 0,
+      });
+      expect(result.initEvent?.model).toBe('gpt-4o-mini');
     } finally {
       await client.close();
     }

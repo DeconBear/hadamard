@@ -66,7 +66,9 @@ export async function createHadamardNativeCliClient(
   if (!isManagedExternalCliRuntime(target.runtime as ManagedExternalCliRuntime)) {
     throw Object.assign(new Error(`Unsupported native CLI runtime: ${target.runtime}`), { retryable: false });
   }
-  if (target.runtime === 'claude' || target.runtime === 'codex' || target.runtime === 'cursor') {
+  const config = target.configId ? findBridgeConfig(target.configId, options.homeDir) : undefined;
+  if (target.runtime === 'claude' || target.runtime === 'codex'
+    || target.runtime === 'cursor' || target.runtime === 'pi') {
     return createNativeCliClient({
       runtime: target.runtime,
       model,
@@ -74,9 +76,10 @@ export async function createHadamardNativeCliClient(
       executable: options.executable,
       cliPath: options.cliPath,
       env: options.env,
+      credentialProvider: config?.credentialProvider,
+      trustProjectResources: config?.trustProjectResources,
     });
   }
-  const config = target.configId ? findBridgeConfig(target.configId, options.homeDir) : undefined;
   return createHadamardBridgeSdk({
     directCli: true,
     directCliProvider: target.runtime as ManagedExternalCliRuntime,
