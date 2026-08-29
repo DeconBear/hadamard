@@ -31,12 +31,6 @@ function admin(): UsageRoutingCommandAdminPort {
     importBridgeMigration: vi.fn(async () => ({ imported: 0 })),
     previewPortableMigration: vi.fn(async () => ({ source: 'keyway-export-v1' as const, counts: {}, secretsIncluded: false as const, issuedKeysRequireRotation: false })),
     importPortableMigration: vi.fn(async () => ({ imported: 0 })),
-    installArkAgentPlan: vi.fn(async () => ({
-      preset: 'ark-agent-plan' as const,
-      credentialId: 'credential.ark-agent-plan',
-      targetId: 'target.ark-agent-plan',
-      routeAliases: ['ark-glm-5.2', 'ark-glm-5.3'],
-    })),
   };
 }
 
@@ -68,14 +62,8 @@ describe('shared Usage & Routing commands', () => {
     expect(JSON.stringify(lines)).not.toContain('write-only-canary');
   });
 
-  it('installs Ark models from masked input and activates a route in Hadamard', async () => {
+  it('activates a generic route in Hadamard', async () => {
     const target = admin();
-    const installLines = await runUsageRoutingCommand('keys', 'ark-agent-plan', {
-      admin: async () => target,
-      promptSecret: async () => 'ark-write-only-canary',
-    });
-    expect(target.installArkAgentPlan).toHaveBeenCalledWith({ secret: 'ark-write-only-canary' });
-    expect(JSON.stringify(installLines)).not.toContain('ark-write-only-canary');
     const activateRoute = vi.fn(async routeAlias => ({ routeAlias, model: 'glm-5.2' }));
     const routeLines = await runUsageRoutingCommand('routes', 'use chat', {
       admin: async () => target,

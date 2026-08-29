@@ -303,7 +303,6 @@ export const SUBCOMMAND_DESCRIPTIONS: Record<string, string> = {
   'keys disable': 'Disable a managed provider credential',
   'keys rotate': 'Replace a credential secret without revealing the old value',
   'keys test': 'Test a managed provider credential',
-  'keys ark-agent-plan': 'Save an Ark key in Hadamard and install glm-5.2/glm-5.3 routes',
   'keys migrate-preview': 'Preview bridge API/native-runtime migration without writing',
   'keys migrate-apply': 'Copy ready bridge configs into embedded Keyway with rollback on failure',
   'keys import-preview': 'Preview a secret-free KeywayExportV1 JSON file',

@@ -51,12 +51,6 @@ function port(): GuiUsageRoutingPort {
     importBridgeMigration: vi.fn(async () => ({ imported: 0 })),
     previewPortableMigration: vi.fn(async () => ({ source: 'keyway-export-v1' as const, counts: {}, secretsIncluded: false as const, issuedKeysRequireRotation: false })),
     importPortableMigration: vi.fn(async () => ({ imported: 0 })),
-    installArkAgentPlan: vi.fn(async () => ({
-      preset: 'ark-agent-plan' as const,
-      credentialId: 'credential.ark-agent-plan',
-      targetId: 'target.ark-agent-plan',
-      routeAliases: ['ark-glm-5.2', 'ark-glm-5.3'],
-    })),
   };
 }
 
@@ -104,24 +98,19 @@ describe('GUI Usage & Routing HTTP controller', () => {
     expect(target.stopGateway).toHaveBeenCalledOnce();
   });
 
-  it('installs Ark routes and activates them in the Hadamard host', async () => {
+  it('activates a generic route in the Hadamard host', async () => {
     const target = port();
     const selection: GuiUsageRoutingSelectionPort = {
       activateRoute: vi.fn(async routeAlias => ({ routeAlias, model: 'glm-5.3' })),
     };
-    const installed = await invoke(target, 'POST', '/api/usage-routing/presets/ark-agent-plan', {
-      secret: 'fixture-secret',
-    });
-    expect(installed.body).toMatchObject({ routeAliases: ['ark-glm-5.2', 'ark-glm-5.3'] });
-    expect(target.installArkAgentPlan).toHaveBeenCalledWith({ secret: 'fixture-secret' });
     const activated = await invoke(
       target,
       'POST',
-      '/api/usage-routing/routes/ark-glm-5.3/activate',
+      '/api/usage-routing/routes/default-chat/activate',
       undefined,
       selection,
     );
-    expect(activated.body).toEqual({ routeAlias: 'ark-glm-5.3', model: 'glm-5.3' });
+    expect(activated.body).toEqual({ routeAlias: 'default-chat', model: 'glm-5.3' });
   });
 
   it('maps validation failures to 400 without reflecting request secrets', async () => {
