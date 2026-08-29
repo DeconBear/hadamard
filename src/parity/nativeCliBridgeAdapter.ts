@@ -19,7 +19,8 @@ export function createNativeCliBridgeDelegate(
   options: CreateHadamardBridgeSdkOptions,
 ): Promise<NativeCliClient> | undefined {
   if ((options.authSource ?? 'native') !== 'native') return undefined;
-  if (provider !== 'claude' && provider !== 'codex' && provider !== 'cursor' && provider !== 'pi') {
+  if (provider !== 'claude' && provider !== 'codewhale' && provider !== 'codex'
+    && provider !== 'cursor' && provider !== 'pi') {
     return undefined;
   }
   return createNativeCliClient({
@@ -29,6 +30,7 @@ export function createNativeCliBridgeDelegate(
     cliPath,
     workDir: options.workDir,
     env: options.env,
+    homeDir: options.homeDir,
     credentialProvider: options.credentialProvider,
     trustProjectResources: options.trustProjectResources,
   });

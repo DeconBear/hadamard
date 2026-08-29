@@ -11,6 +11,11 @@ import type {
   HadamardBridgeRunResult,
 } from '../types.js';
 import { resolveNativeCliExecutable } from './nativeCliAuth.js';
+import {
+  buildCodewhaleArgs,
+  createCodewhaleNormalizer,
+  resolveCodewhaleSessionId,
+} from './nativeCliCodewhaleProtocol.js';
 import { buildCursorArgs, createCursorNormalizer } from './nativeCliCursorProtocol.js';
 import { buildPiArgs, createPiNormalizer } from './nativeCliPiProtocol.js';
 import {
@@ -30,7 +35,7 @@ const HADAMARD_AUTH_ENV_KEYS = new Set([
 ]);
 const SENSITIVE_ENV_KEY = /(?:^|_)(?:API_?KEY|AUTH|COOKIE|CREDENTIALS?|KEY|PASS(?:WORD|WD)?|PRIVATE_KEY|SECRET|TOKEN)(?:$|_)/iu;
 
-export type HadamardOwnedNativeCliRuntime = 'claude' | 'codex' | 'cursor' | 'pi';
+export type HadamardOwnedNativeCliRuntime = 'claude' | 'codewhale' | 'codex' | 'cursor' | 'pi';
 
 export interface HadamardNativeCliClientOptions {
   runtime: HadamardOwnedNativeCliRuntime;
@@ -39,6 +44,7 @@ export interface HadamardNativeCliClientOptions {
   cliPath?: string;
   workDir?: string;
   env?: Record<string, string>;
+  homeDir?: string;
   credentialProvider?: string;
   trustProjectResources?: boolean;
 }
@@ -132,13 +138,7 @@ export class HadamardNativeCliClient implements NativeCliClient {
     if (this.closed) throw new HadamardBridgeProcessError('The native CLI client is closed.');
     if (options.signal?.aborted) throw new RunAbortedError('The native CLI run was aborted before it started.');
 
-    const cliArgs = this.defaults.runtime === 'claude'
-      ? buildClaudeArgs(prompt, options)
-      : this.defaults.runtime === 'codex'
-        ? buildCodexArgs(prompt, options)
-        : this.defaults.runtime === 'cursor'
-          ? buildCursorArgs(prompt, options)
-          : buildPiArgs(prompt, options);
+    const cliArgs = buildRuntimeArgs(this.defaults.runtime, prompt, options);
     const args = this.defaults.cliPath ? [this.defaults.cliPath, ...cliArgs] : cliArgs;
     const invocation = await resolveExecutableInvocation(this.defaults.executable!, args);
     if (this.closed) throw new HadamardBridgeProcessError('The native CLI client is closed.');
@@ -147,15 +147,11 @@ export class HadamardNativeCliClient implements NativeCliClient {
     }
     const environment = nativeChildEnvironment(options.env);
     const secrets = sensitiveValues(environment);
-    const normalizer: NativeCliNormalizer = this.defaults.runtime === 'claude'
-      ? { translate: record => [record as HadamardBridgeJsonEvent] }
-      : this.defaults.runtime === 'codex'
-        ? new CodexNormalizer()
-        : this.defaults.runtime === 'cursor'
-          ? createCursorNormalizer()
-          : createPiNormalizer(prompt, options);
+    const normalizer = createRuntimeNormalizer(this.defaults.runtime, prompt, options);
+    const effectiveWorkDir = path.resolve(options.workDir ?? process.cwd());
+    const runStartedAtMs = Date.now();
     const child = spawn(invocation.file, invocation.args, {
-      cwd: path.resolve(options.workDir ?? process.cwd()),
+      cwd: effectiveWorkDir,
       env: environment,
       stdio: [normalizer.interactive ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -216,6 +212,7 @@ export class HadamardNativeCliClient implements NativeCliClient {
     const assistantMessages: HadamardBridgeJsonEvent[] = [];
     let initEvent: HadamardBridgeJsonEvent | undefined;
     let resultEvent: HadamardBridgeJsonEvent | undefined;
+    let correlatedSessionId: string | undefined;
     let stderr = '';
     let exitCode: number | null = null;
 
@@ -236,6 +233,19 @@ export class HadamardNativeCliClient implements NativeCliClient {
       });
       [stderr, exitCode] = await Promise.all([stderrTask, exitTask, stdoutTask])
         .then(([nextStderr, nextExitCode]) => [nextStderr, nextExitCode]);
+      if (this.defaults.runtime === 'codewhale' && resultEvent) {
+        const correlationHint = nonEmptyString(resultEvent.correlationHint)
+          ?? nonEmptyString(initEvent?.correlationHint);
+        if (correlationHint) correlatedSessionId = await resolveCodewhaleSessionId({
+          correlationHint,
+          cwd: nonEmptyString(initEvent?.cwd) ?? effectiveWorkDir,
+          startedAtMs: runStartedAtMs,
+          finishedAtMs: Date.now(),
+          workDir: effectiveWorkDir,
+          environment,
+          homeDir: this.defaults.homeDir,
+        }).catch(() => undefined);
+      }
     } catch (error) {
       await forceReclaim();
       const normalized = asError(error);
@@ -268,6 +278,7 @@ export class HadamardNativeCliClient implements NativeCliClient {
       text: resultText(resultEvent, assistantMessages),
       sessionId: nonEmptyString(resultEvent.session_id)
         ?? nonEmptyString(initEvent?.session_id)
+        ?? correlatedSessionId
         ?? options.sessionId
         ?? (typeof options.resume === 'string' ? options.resume : ''),
       isError: typeof resultEvent.is_error === 'boolean' ? resultEvent.is_error : false,
@@ -290,6 +301,34 @@ export function createNativeCliClient(
   options: HadamardNativeCliClientOptions,
 ): Promise<HadamardNativeCliClient> {
   return HadamardNativeCliClient.create(options);
+}
+
+function buildRuntimeArgs(
+  runtime: HadamardOwnedNativeCliRuntime,
+  prompt: string,
+  options: HadamardBridgeRunOptions,
+): string[] {
+  switch (runtime) {
+    case 'claude': return buildClaudeArgs(prompt, options);
+    case 'codewhale': return buildCodewhaleArgs(prompt, options);
+    case 'codex': return buildCodexArgs(prompt, options);
+    case 'cursor': return buildCursorArgs(prompt, options);
+    case 'pi': return buildPiArgs(prompt, options);
+  }
+}
+
+function createRuntimeNormalizer(
+  runtime: HadamardOwnedNativeCliRuntime,
+  prompt: string,
+  options: HadamardBridgeRunOptions,
+): NativeCliNormalizer {
+  switch (runtime) {
+    case 'claude': return { translate: record => [record as HadamardBridgeJsonEvent] };
+    case 'codewhale': return createCodewhaleNormalizer();
+    case 'codex': return new CodexNormalizer();
+    case 'cursor': return createCursorNormalizer();
+    case 'pi': return createPiNormalizer(prompt, options);
+  }
 }
 
 function buildClaudeArgs(prompt: string, options: HadamardBridgeRunOptions): string[] {
