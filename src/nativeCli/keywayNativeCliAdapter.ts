@@ -48,6 +48,13 @@ export interface HadamardNativeCliAdapterOptions {
 
 export type { ExternalCliAuthProbeOptions, ExternalCliAuthStatus } from './nativeCliAuth.js';
 
+/** Route model sentinel that delegates model selection to the native CLI configuration. */
+export const NATIVE_CLI_DEFAULT_MODEL = '@cli-default';
+
+export function nativeCliModelOverride(model: string): string | undefined {
+  return model === NATIVE_CLI_DEFAULT_MODEL ? undefined : model;
+}
+
 /** Status-only native auth probe; OAuth/session secrets stay owned by the CLI. */
 export function probeHadamardNativeCliAuth(
   target: HadamardNativeCliTarget,
@@ -71,7 +78,7 @@ export async function createHadamardNativeCliClient(
   const config = target.configId ? findBridgeConfig(target.configId, options.homeDir) : undefined;
   return createNativeCliClient({
     runtime: target.runtime as HadamardOwnedNativeCliRuntime,
-    model,
+    model: nativeCliModelOverride(model),
     homeDir: options.homeDir,
     workDir: options.workDir,
     executable: options.executable,

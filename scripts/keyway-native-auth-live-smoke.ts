@@ -6,9 +6,11 @@ import path from 'node:path';
 import { createEmbeddedKeyway } from '../src/keyway/embeddedKeyway.js';
 import { probeKeywayNativeTargetAuth } from '../src/keyway/keywayProviderExecutor.js';
 import type { KeywayJson, KeywaySecretStorePort } from '../src/keyway/keywayPorts.js';
+import { NATIVE_CLI_DEFAULT_MODEL } from '../src/nativeCli/keywayNativeCliAdapter.js';
 
 const runtime = nativeRuntime(process.env.KEYWAY_NATIVE_RUNTIME?.trim() || 'claude');
-const model = process.env.KEYWAY_NATIVE_MODEL?.trim() || (runtime === 'claude' ? 'sonnet' : 'gpt-5');
+const model = process.env.KEYWAY_NATIVE_MODEL?.trim()
+  || (runtime === 'claude' ? 'sonnet' : NATIVE_CLI_DEFAULT_MODEL);
 const timeoutMs = positiveTimeout(process.env.KEYWAY_NATIVE_TIMEOUT_MS?.trim() || '300000');
 const target = {
   kind: 'native-cli' as const,
