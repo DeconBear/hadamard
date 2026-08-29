@@ -1,9 +1,9 @@
 import { createHadamardBridgeSdk } from '../parity/hadamardBridgeSdk.js';
 import {
   probeExternalCliAuth,
-  type ExternalCliAuthProbeOptions as ParityExternalCliAuthProbeOptions,
-  type ExternalCliAuthStatus as ParityExternalCliAuthStatus,
-} from '../parity/externalCliAuth.js';
+  type ExternalCliAuthProbeOptions,
+  type ExternalCliAuthStatus,
+} from './nativeCliAuth.js';
 import {
   findBridgeConfig,
   isManagedExternalCliRuntime,
@@ -14,6 +14,7 @@ import type {
   HadamardBridgeRunOptions,
   HadamardBridgeRunResult,
 } from '../types.js';
+import { createNativeCliClient } from './nativeCliClient.js';
 
 export interface HadamardNativeCliTarget {
   runtime: string;
@@ -38,10 +39,12 @@ export type NativeCliClientFactory = (
 export interface HadamardNativeCliAdapterOptions {
   homeDir?: string;
   workDir?: string;
+  executable?: string;
+  cliPath?: string;
+  env?: Record<string, string>;
 }
 
-export type ExternalCliAuthProbeOptions = ParityExternalCliAuthProbeOptions;
-export type ExternalCliAuthStatus = ParityExternalCliAuthStatus;
+export type { ExternalCliAuthProbeOptions, ExternalCliAuthStatus } from './nativeCliAuth.js';
 
 /** Status-only native auth probe; OAuth/session secrets stay owned by the CLI. */
 export function probeHadamardNativeCliAuth(
@@ -63,6 +66,16 @@ export async function createHadamardNativeCliClient(
   if (!isManagedExternalCliRuntime(target.runtime as ManagedExternalCliRuntime)) {
     throw Object.assign(new Error(`Unsupported native CLI runtime: ${target.runtime}`), { retryable: false });
   }
+  if (target.runtime === 'claude' || target.runtime === 'codex') {
+    return createNativeCliClient({
+      runtime: target.runtime,
+      model,
+      workDir: options.workDir,
+      executable: options.executable,
+      cliPath: options.cliPath,
+      env: options.env,
+    });
+  }
   const config = target.configId ? findBridgeConfig(target.configId, options.homeDir) : undefined;
   return createHadamardBridgeSdk({
     directCli: true,
@@ -71,6 +84,9 @@ export async function createHadamardNativeCliClient(
     profileName: target.profileName ?? target.configId,
     homeDir: options.homeDir,
     workDir: options.workDir,
+    executable: options.executable,
+    cliPath: options.cliPath,
+    env: options.env,
     model,
     trustProjectResources: config?.trustProjectResources,
   });

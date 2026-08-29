@@ -37,6 +37,11 @@ import { HadamardBridgeProcessError, RunAbortedError } from '../errors.js';
 import { createHadamardMemoryApi, type HadamardMemoryApi } from '../memory/hadamardMemory.js';
 import { AsyncQueue } from '../runtime/asyncQueue.js';
 import { asError, isRecord } from '../runtime/helpers.js';
+import {
+  createNativeCliBridgeDelegate,
+  relayNativeCliRun,
+  type NativeCliClient,
+} from './nativeCliBridgeAdapter.js';
 import type {
   HadamardAgentMetadata,
   HadamardAgentSummary,
@@ -1832,6 +1837,8 @@ export class HadamardBridgeSessionsApi {
   }
 }
 
+const nativeCliClients = new WeakMap<HadamardBridgeSdkClient, NativeCliClient>();
+
 export class HadamardBridgeSdkClient {
   readonly sessions: HadamardBridgeSessionsApi;
   readonly agents: HadamardBridgeAgentsApi;
@@ -1883,11 +1890,14 @@ export class HadamardBridgeSdkClient {
       // cliPath is retained so a node+script pair works too, but left empty for
       // a plain binary executable (real `claude` on PATH).
       const cliPath = options.cliPath ?? '';
-      return new HadamardBridgeSdkClient(executable, cliPath, true, provider, {
+      const nativeCliClient = await createNativeCliBridgeDelegate(provider.id, executable, cliPath, options);
+      const client = new HadamardBridgeSdkClient(executable, cliPath, true, provider, {
         ...options,
         executable: undefined,
         cliPath: undefined,
       });
+      if (nativeCliClient) nativeCliClients.set(client, nativeCliClient);
+      return client;
     }
     const executable = await resolveBunExecutable(options.executable);
     const cliPath = await resolveHadamardRuntimeCliPath(options.cliPath);
@@ -1976,6 +1986,11 @@ export class HadamardBridgeSdkClient {
 
   stream(prompt: string, options: HadamardBridgeRunOptions = {}): HadamardBridgeRunStream {
     const mergedOptions = this.mergeOptions(options);
+    const nativeCliClient = nativeCliClients.get(this);
+    if (nativeCliClient && (mergedOptions.authSource ?? 'native') === 'native') {
+      return new HadamardBridgeRunStream(controller =>
+        relayNativeCliRun(nativeCliClient, prompt, mergedOptions, controller.emit));
+    }
     return new HadamardBridgeRunStream(async controller => {
       return this.execute(prompt, mergedOptions, controller);
     });
@@ -2047,6 +2062,9 @@ export class HadamardBridgeSdkClient {
       && this.reasonixManagedEntryPromises.size === 0
     ) return;
     this.closed = true;
+    const nativeCliClient = nativeCliClients.get(this);
+    await nativeCliClient?.close();
+    nativeCliClients.delete(this);
     const pendingEntries = await Promise.allSettled([
       ...this.reasonixManagedEntryPromises.values(),
     ]);
