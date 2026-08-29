@@ -12,6 +12,7 @@ const fakeClaudeCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-had
 const fakeCodewhaleCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-codewhale-cli.mjs');
 const fakeCursorCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-cursor-cli.mjs');
 const fakePiCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-pi-cli.mjs');
+const fakeReasonixCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-reasonix-cli.mjs');
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(directory =>
@@ -133,6 +134,28 @@ describe('Hadamard-owned native CLI client', () => {
         isError: false,
       });
       expect(result.resultEvent).toMatchObject({ input_tokens: 4 });
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('keeps a Keyway Reasonix target on its owned managed ACP runtime', async () => {
+    const workDir = await temporaryDirectory('hadamard-owned-reasonix-');
+    const client = await createHadamardNativeCliClient(
+      { runtime: 'reasonix' },
+      'fixture/managed',
+      { executable: process.execPath, cliPath: fakeReasonixCli, workDir, homeDir: workDir },
+    );
+    try {
+      const first = await client.stream('runtime-identity').result;
+      const second = await client.stream('runtime-identity').result;
+      const firstIdentity = /pid=(\d+):session=([^:]+):turn=(\d+)/u.exec(first.text);
+      const secondIdentity = /pid=(\d+):session=([^:]+):turn=(\d+)/u.exec(second.text);
+      expect(firstIdentity?.[1]).toBe(secondIdentity?.[1]);
+      expect(firstIdentity?.[2]).toBe('reasonix-fixture-session');
+      expect(firstIdentity?.[3]).toBe('1');
+      expect(secondIdentity?.[3]).toBe('2');
+      expect(second.sessionId).toBe('reasonix-fixture-session');
     } finally {
       await client.close();
     }

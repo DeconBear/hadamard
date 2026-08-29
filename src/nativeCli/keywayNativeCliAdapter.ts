@@ -68,7 +68,8 @@ export async function createHadamardNativeCliClient(
   }
   const config = target.configId ? findBridgeConfig(target.configId, options.homeDir) : undefined;
   if (target.runtime === 'claude' || target.runtime === 'codex'
-    || target.runtime === 'cursor' || target.runtime === 'pi' || target.runtime === 'codewhale') {
+    || target.runtime === 'cursor' || target.runtime === 'pi'
+    || target.runtime === 'codewhale' || target.runtime === 'reasonix') {
     return createNativeCliClient({
       runtime: target.runtime,
       model,
@@ -79,6 +80,7 @@ export async function createHadamardNativeCliClient(
       homeDir: options.homeDir,
       credentialProvider: config?.credentialProvider,
       trustProjectResources: config?.trustProjectResources,
+      profileName: target.profileName ?? target.configId,
     });
   }
   return createHadamardBridgeSdk({

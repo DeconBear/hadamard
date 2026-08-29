@@ -10,6 +10,12 @@ import type {
   HadamardBridgeRunOptions,
   HadamardBridgeRunResult,
 } from '../types.js';
+import type {
+  HadamardNativeCliClientOptions,
+  HadamardOwnedNativeCliRuntime,
+  NativeCliClient,
+  NativeCliRunStream,
+} from './nativeCliContracts.js';
 import { resolveNativeCliExecutable } from './nativeCliAuth.js';
 import {
   buildCodewhaleArgs,
@@ -18,45 +24,24 @@ import {
 } from './nativeCliCodewhaleProtocol.js';
 import { buildCursorArgs, createCursorNormalizer } from './nativeCliCursorProtocol.js';
 import { buildPiArgs, createPiNormalizer } from './nativeCliPiProtocol.js';
+import { nativeChildEnvironment, nativeSensitiveValues } from './nativeCliEnvironment.js';
 import {
   IS_WINDOWS,
   resolveExecutableInvocation,
 } from './nativeCliExecResolver.js';
 import { terminateManagedProcessTree } from './nativeCliProcessTree.js';
+import { createReasonixNativeCliClient } from './reasonixNativeCliClient.js';
 
 const MAX_RETAINED_EVENTS = 1_000;
 const MAX_RETAINED_ASSISTANT_MESSAGES = 128;
 const MAX_STDERR_BYTES = 1024 * 1024;
 const OUTPUT_TRUNCATION_MARKER = '[Hadamard output truncated]\n';
-const HADAMARD_AUTH_ENV_KEYS = new Set([
-  'HADAMARD_API_KEY',
-  'HADAMARD_AUTH_TOKEN',
-  'HADAMARD_BASE_URL',
-]);
-const SENSITIVE_ENV_KEY = /(?:^|_)(?:API_?KEY|AUTH|COOKIE|CREDENTIALS?|KEY|PASS(?:WORD|WD)?|PRIVATE_KEY|SECRET|TOKEN)(?:$|_)/iu;
-
-export type HadamardOwnedNativeCliRuntime = 'claude' | 'codewhale' | 'codex' | 'cursor' | 'pi';
-
-export interface HadamardNativeCliClientOptions {
-  runtime: HadamardOwnedNativeCliRuntime;
-  model?: string;
-  executable?: string;
-  cliPath?: string;
-  workDir?: string;
-  env?: Record<string, string>;
-  homeDir?: string;
-  credentialProvider?: string;
-  trustProjectResources?: boolean;
-}
-
-export interface NativeCliRunStream extends AsyncIterable<HadamardBridgeJsonEvent> {
-  readonly result: Promise<HadamardBridgeRunResult>;
-}
-
-export interface NativeCliClient {
-  stream(prompt: string, options?: HadamardBridgeRunOptions): NativeCliRunStream;
-  close(): Promise<void>;
-}
+export type {
+  HadamardNativeCliClientOptions,
+  HadamardOwnedNativeCliRuntime,
+  NativeCliClient,
+  NativeCliRunStream,
+} from './nativeCliContracts.js';
 
 interface NativeCliNormalizer {
   translate(record: Record<string, unknown>, control?: NativeCliProcessControl): HadamardBridgeJsonEvent[];
@@ -146,7 +131,7 @@ export class HadamardNativeCliClient implements NativeCliClient {
       throw new RunAbortedError('The native CLI run was aborted before it started.');
     }
     const environment = nativeChildEnvironment(options.env);
-    const secrets = sensitiveValues(environment);
+    const secrets = nativeSensitiveValues(environment);
     const normalizer = createRuntimeNormalizer(this.defaults.runtime, prompt, options);
     const effectiveWorkDir = path.resolve(options.workDir ?? process.cwd());
     const runStartedAtMs = Date.now();
@@ -297,9 +282,13 @@ export class HadamardNativeCliClient implements NativeCliClient {
   }
 }
 
-export function createNativeCliClient(
+export async function createNativeCliClient(
   options: HadamardNativeCliClientOptions,
-): Promise<HadamardNativeCliClient> {
+): Promise<NativeCliClient> {
+  if (options.runtime === 'reasonix') {
+    const executable = options.executable ?? await resolveNativeCliExecutable('reasonix');
+    return createReasonixNativeCliClient({ ...options, executable, runtime: 'reasonix' });
+  }
   return HadamardNativeCliClient.create(options);
 }
 
@@ -314,6 +303,7 @@ function buildRuntimeArgs(
     case 'codex': return buildCodexArgs(prompt, options);
     case 'cursor': return buildCursorArgs(prompt, options);
     case 'pi': return buildPiArgs(prompt, options);
+    case 'reasonix': throw new HadamardBridgeProcessError('Reasonix uses its managed ACP runtime.');
   }
 }
 
@@ -328,6 +318,7 @@ function createRuntimeNormalizer(
     case 'codex': return new CodexNormalizer();
     case 'cursor': return createCursorNormalizer();
     case 'pi': return createPiNormalizer(prompt, options);
+    case 'reasonix': throw new HadamardBridgeProcessError('Reasonix uses its managed ACP runtime.');
   }
 }
 
@@ -486,20 +477,6 @@ async function parseJsonLines(
       onEvent(redactEvent(translated, secrets));
     }
   }
-}
-
-function nativeChildEnvironment(overrides: Record<string, string> | undefined): Record<string, string> {
-  const base = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-  );
-  return Object.fromEntries(Object.entries({ ...base, ...overrides })
-    .filter(([key]) => !HADAMARD_AUTH_ENV_KEYS.has(key)));
-}
-
-function sensitiveValues(environment: Record<string, string>): string[] {
-  return Object.entries(environment)
-    .filter(([key, value]) => value.length > 0 && SENSITIVE_ENV_KEY.test(key))
-    .map(([, value]) => value);
 }
 
 function event(type: string, fields: Record<string, unknown>): HadamardBridgeJsonEvent {

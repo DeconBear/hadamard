@@ -52,10 +52,15 @@ describe('source architecture', () => {
       'nativeCliAuth.ts',
       'nativeCliClient.ts',
       'nativeCliCodewhaleProtocol.ts',
+      'nativeCliContracts.ts',
+      'nativeCliEnvironment.ts',
       'nativeCliCursorProtocol.ts',
       'nativeCliExecResolver.ts',
       'nativeCliPiProtocol.ts',
       'nativeCliProcessTree.ts',
+      'reasonixAcpSession.ts',
+      'reasonixManagedClient.ts',
+      'reasonixNativeCliClient.ts',
     ];
     const violations: string[] = [];
     for (const name of ownedFiles) {
