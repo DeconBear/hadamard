@@ -46,6 +46,25 @@ describe('source architecture', () => {
     expect(violations).toEqual([]);
   });
 
+  it('keeps the Hadamard-owned native CLI process core independent from parity', async () => {
+    const root = path.resolve(import.meta.dirname, '..');
+    const ownedFiles = [
+      'nativeCliAuth.ts',
+      'nativeCliClient.ts',
+      'nativeCliExecResolver.ts',
+      'nativeCliProcessTree.ts',
+    ];
+    const violations: string[] = [];
+    for (const name of ownedFiles) {
+      const file = path.join(root, 'src', 'nativeCli', name);
+      const source = await readFile(file, 'utf8');
+      if (/from\s+['"]\.\.\/parity(?:\/|['"])/u.test(source)) {
+        violations.push(path.relative(root, file));
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it('detects newly oversized source files and interfaces', async () => {
     const fixture = await mkdtemp(path.join(os.tmpdir(), 'hadamard-solid-boundary-'));
     try {
