@@ -9,6 +9,7 @@ import { createHadamardNativeCliClient } from '../src/nativeCli/keywayNativeCliA
 const temporaryDirectories: string[] = [];
 const fakeCodexCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-codex-cli.mjs');
 const fakeClaudeCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-hadamard-runtime-cli.mjs');
+const fakeCursorCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-cursor-cli.mjs');
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(directory =>
@@ -63,6 +64,26 @@ describe('Hadamard-owned native CLI client', () => {
       const result = await client.stream('check-native-auth-boundary').result;
       expect(result.initEvent?.env_token).toBe('missing');
       expect(JSON.stringify(result)).not.toContain('must-not-reach-native-cli');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('runs a Keyway Cursor target through the owned stream-json protocol', async () => {
+    const workDir = await temporaryDirectory('hadamard-owned-cursor-');
+    const client = await createHadamardNativeCliClient(
+      { runtime: 'cursor' },
+      'composer-2.5',
+      { executable: process.execPath, cliPath: fakeCursorCli, workDir },
+    );
+    try {
+      const result = await client.stream('hello-cursor').result;
+      expect(result).toMatchObject({
+        text: 'cursor:hello-cursor',
+        sessionId: 'cursor-fixture-session',
+        isError: false,
+      });
+      expect(result.resultEvent?.input_tokens).toBe(10);
     } finally {
       await client.close();
     }
