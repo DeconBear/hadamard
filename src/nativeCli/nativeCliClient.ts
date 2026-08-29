@@ -23,6 +23,7 @@ import {
   resolveCodewhaleSessionId,
 } from './nativeCliCodewhaleProtocol.js';
 import { buildCursorArgs, createCursorNormalizer } from './nativeCliCursorProtocol.js';
+import { createCrushNativeCliClient } from './crushNativeCliClient.js';
 import { buildPiArgs, createPiNormalizer } from './nativeCliPiProtocol.js';
 import { nativeChildEnvironment, nativeSensitiveValues } from './nativeCliEnvironment.js';
 import {
@@ -289,6 +290,10 @@ export async function createNativeCliClient(
     const executable = options.executable ?? await resolveNativeCliExecutable('reasonix');
     return createReasonixNativeCliClient({ ...options, executable, runtime: 'reasonix' });
   }
+  if (options.runtime === 'crush') {
+    const executable = options.executable ?? await resolveNativeCliExecutable('crush');
+    return createCrushNativeCliClient({ ...options, executable, runtime: 'crush' });
+  }
   return HadamardNativeCliClient.create(options);
 }
 
@@ -302,6 +307,7 @@ function buildRuntimeArgs(
     case 'codewhale': return buildCodewhaleArgs(prompt, options);
     case 'codex': return buildCodexArgs(prompt, options);
     case 'cursor': return buildCursorArgs(prompt, options);
+    case 'crush': throw new HadamardBridgeProcessError('Crush uses its managed local runtime.');
     case 'pi': return buildPiArgs(prompt, options);
     case 'reasonix': throw new HadamardBridgeProcessError('Reasonix uses its managed ACP runtime.');
   }
@@ -317,6 +323,7 @@ function createRuntimeNormalizer(
     case 'codewhale': return createCodewhaleNormalizer();
     case 'codex': return new CodexNormalizer();
     case 'cursor': return createCursorNormalizer();
+    case 'crush': throw new HadamardBridgeProcessError('Crush uses its managed local runtime.');
     case 'pi': return createPiNormalizer(prompt, options);
     case 'reasonix': throw new HadamardBridgeProcessError('Reasonix uses its managed ACP runtime.');
   }
