@@ -135,6 +135,19 @@ describe('HadamardKeywayProviderExecutor', () => {
     });
     expect(closed).toBe(true);
   });
+
+  it('rejects unsupported native runtimes before launching a CLI process', async () => {
+    const executor = new HadamardKeywayProviderExecutor();
+    const handle = executor.execute({
+      requestId: 'request-unsupported',
+      correlationId: 'correlation-unsupported',
+      operation: 'generate',
+      target: { kind: 'native-cli', id: 'native-unsupported', runtime: 'unsupported', enabled: true },
+      upstreamModel: 'unknown',
+      payload: { prompt: 'hello' },
+    });
+    await expect(handle.result).rejects.toThrow('Unsupported native CLI runtime: unsupported');
+  });
 });
 
 describe('bridgeUsage', () => {

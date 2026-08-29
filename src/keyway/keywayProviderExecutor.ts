@@ -1,22 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
 import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
-import { createHadamardBridgeSdk } from '../parity/hadamardBridgeSdk.js';
 import {
-  probeExternalCliAuth,
+  createHadamardNativeCliClient,
+  probeHadamardNativeCliAuth,
   type ExternalCliAuthProbeOptions,
   type ExternalCliAuthStatus,
-} from '../parity/externalCliAuth.js';
-import {
-  findBridgeConfig,
-  isManagedExternalCliRuntime,
-  type ManagedExternalCliRuntime,
-} from '../parity/bridgeConfigs.js';
+  type NativeCliClientPort,
+} from '../nativeCli/keywayNativeCliAdapter.js';
 import { createOpenaiModelApi } from '../provider/openai-model-api.js';
 import { createHadamardModelApi } from '../runtime/hadamardModelApi.js';
 import type {
-  HadamardBridgeJsonEvent,
-  HadamardBridgeRunOptions,
   HadamardBridgeRunResult,
   ModelApi,
   ModelRequest,
@@ -40,14 +34,10 @@ export type ManagedModelApiFactory = (
   secret: string,
 ) => Promise<ModelApi>;
 
-export interface NativeCliRunStreamPort extends AsyncIterable<HadamardBridgeJsonEvent> {
-  result: Promise<HadamardBridgeRunResult>;
-}
-
-export interface NativeCliClientPort {
-  stream(prompt: string, options?: HadamardBridgeRunOptions): NativeCliRunStreamPort;
-  close(): Promise<void>;
-}
+export type {
+  NativeCliClientPort,
+  NativeCliRunStreamPort,
+} from '../nativeCli/keywayNativeCliAdapter.js';
 
 export type NativeCliClientFactory = (
   target: KeywayNativeTargetPort,
@@ -66,10 +56,7 @@ export function probeKeywayNativeTargetAuth(
   target: KeywayNativeTargetPort,
   options: ExternalCliAuthProbeOptions = {},
 ): Promise<ExternalCliAuthStatus> {
-  if (!isManagedExternalCliRuntime(target.runtime as ManagedExternalCliRuntime)) {
-    return Promise.reject(new TypeError(`Unsupported native CLI runtime: ${target.runtime}`));
-  }
-  return probeExternalCliAuth(target.runtime as ManagedExternalCliRuntime, options);
+  return probeHadamardNativeCliAuth(target, options);
 }
 
 /** Executes Keyway targets through Hadamard's existing provider and native CLI runtimes. */
@@ -80,7 +67,7 @@ export class HadamardKeywayProviderExecutor implements KeywayProviderExecutorPor
   constructor(options: HadamardKeywayProviderExecutorOptions = {}) {
     this.managedFactory = options.managedModelApiFactory ?? defaultManagedModelApiFactory;
     this.nativeFactory = options.nativeCliClientFactory ?? ((target, model) =>
-      defaultNativeCliClientFactory(target, model, options));
+      createHadamardNativeCliClient(target, model, options));
   }
 
   execute(request: KeywayProviderRequestPort): KeywayProviderHandlePort {
@@ -173,27 +160,6 @@ async function defaultManagedModelApiFactory(
   return target.protocol === 'openai'
     ? createOpenaiModelApi(config)
     : createHadamardModelApi(config);
-}
-
-async function defaultNativeCliClientFactory(
-  target: KeywayNativeTargetPort,
-  model: string,
-  options: HadamardKeywayProviderExecutorOptions,
-): Promise<NativeCliClientPort> {
-  if (!isManagedExternalCliRuntime(target.runtime as ManagedExternalCliRuntime)) {
-    throw Object.assign(new Error(`Unsupported native CLI runtime: ${target.runtime}`), { retryable: false });
-  }
-  const config = target.configId ? findBridgeConfig(target.configId, options.homeDir) : undefined;
-  return createHadamardBridgeSdk({
-    directCli: true,
-    directCliProvider: target.runtime as ManagedExternalCliRuntime,
-    authSource: 'native',
-    profileName: target.profileName ?? target.configId,
-    homeDir: options.homeDir,
-    workDir: options.workDir,
-    model,
-    trustProjectResources: config?.trustProjectResources,
-  });
 }
 
 function managedModelRequest(payload: KeywayJson, model: string, signal: AbortSignal): ModelRequest {
