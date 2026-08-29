@@ -11,6 +11,7 @@ import type {
   HadamardBridgeRunResult,
 } from '../types.js';
 import { resolveNativeCliExecutable } from './nativeCliAuth.js';
+import { buildCursorArgs, createCursorNormalizer } from './nativeCliCursorProtocol.js';
 import {
   IS_WINDOWS,
   resolveExecutableInvocation,
@@ -28,7 +29,7 @@ const HADAMARD_AUTH_ENV_KEYS = new Set([
 ]);
 const SENSITIVE_ENV_KEY = /(?:^|_)(?:API_?KEY|AUTH|COOKIE|CREDENTIALS?|KEY|PASS(?:WORD|WD)?|PRIVATE_KEY|SECRET|TOKEN)(?:$|_)/iu;
 
-export type HadamardOwnedNativeCliRuntime = 'claude' | 'codex';
+export type HadamardOwnedNativeCliRuntime = 'claude' | 'codex' | 'cursor';
 
 export interface HadamardNativeCliClientOptions {
   runtime: HadamardOwnedNativeCliRuntime;
@@ -119,7 +120,9 @@ export class HadamardNativeCliClient implements NativeCliClient {
 
     const cliArgs = this.defaults.runtime === 'claude'
       ? buildClaudeArgs(prompt, options)
-      : buildCodexArgs(prompt, options);
+      : this.defaults.runtime === 'codex'
+        ? buildCodexArgs(prompt, options)
+        : buildCursorArgs(prompt, options);
     const args = this.defaults.cliPath ? [this.defaults.cliPath, ...cliArgs] : cliArgs;
     const invocation = await resolveExecutableInvocation(this.defaults.executable!, args);
     if (this.closed) throw new HadamardBridgeProcessError('The native CLI client is closed.');
@@ -130,7 +133,9 @@ export class HadamardNativeCliClient implements NativeCliClient {
     const secrets = sensitiveValues(environment);
     const normalizer: NativeCliNormalizer = this.defaults.runtime === 'claude'
       ? { translate: record => [record as HadamardBridgeJsonEvent] }
-      : new CodexNormalizer();
+      : this.defaults.runtime === 'codex'
+        ? new CodexNormalizer()
+        : createCursorNormalizer();
     const child = spawn(invocation.file, invocation.args, {
       cwd: path.resolve(options.workDir ?? process.cwd()),
       env: environment,
