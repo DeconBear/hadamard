@@ -5,7 +5,7 @@ import type {
 } from '../types.js';
 
 export type HadamardOwnedNativeCliRuntime =
-  | 'claude' | 'codewhale' | 'codex' | 'cursor' | 'pi' | 'reasonix';
+  | 'claude' | 'codewhale' | 'codex' | 'crush' | 'cursor' | 'pi' | 'reasonix';
 
 export interface HadamardNativeCliClientOptions {
   runtime: HadamardOwnedNativeCliRuntime;

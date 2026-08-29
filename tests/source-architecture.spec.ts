@@ -50,6 +50,8 @@ describe('source architecture', () => {
     const root = path.resolve(import.meta.dirname, '..');
     const ownedFiles = [
       'nativeCliAuth.ts',
+      'crushManagedClient.ts',
+      'crushNativeCliClient.ts',
       'nativeCliClient.ts',
       'nativeCliCodewhaleProtocol.ts',
       'nativeCliContracts.ts',
@@ -71,6 +73,15 @@ describe('source architecture', () => {
       }
     }
     expect(violations).toEqual([]);
+  });
+
+  it('does not route Keyway native targets through the bridge SDK fallback', async () => {
+    const root = path.resolve(import.meta.dirname, '..');
+    const source = await readFile(
+      path.join(root, 'src', 'nativeCli', 'keywayNativeCliAdapter.ts'),
+      'utf8',
+    );
+    expect(source).not.toMatch(/hadamardBridgeSdk|createHadamardBridgeSdk/u);
   });
 
   it('detects newly oversized source files and interfaces', async () => {

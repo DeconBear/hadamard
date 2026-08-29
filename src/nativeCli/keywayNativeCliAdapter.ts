@@ -1,4 +1,3 @@
-import { createHadamardBridgeSdk } from '../parity/hadamardBridgeSdk.js';
 import {
   probeExternalCliAuth,
   type ExternalCliAuthProbeOptions,
@@ -14,7 +13,10 @@ import type {
   HadamardBridgeRunOptions,
   HadamardBridgeRunResult,
 } from '../types.js';
-import { createNativeCliClient } from './nativeCliClient.js';
+import {
+  createNativeCliClient,
+  type HadamardOwnedNativeCliRuntime,
+} from './nativeCliClient.js';
 
 export interface HadamardNativeCliTarget {
   runtime: string;
@@ -67,33 +69,16 @@ export async function createHadamardNativeCliClient(
     throw Object.assign(new Error(`Unsupported native CLI runtime: ${target.runtime}`), { retryable: false });
   }
   const config = target.configId ? findBridgeConfig(target.configId, options.homeDir) : undefined;
-  if (target.runtime === 'claude' || target.runtime === 'codex'
-    || target.runtime === 'cursor' || target.runtime === 'pi'
-    || target.runtime === 'codewhale' || target.runtime === 'reasonix') {
-    return createNativeCliClient({
-      runtime: target.runtime,
-      model,
-      workDir: options.workDir,
-      executable: options.executable,
-      cliPath: options.cliPath,
-      env: options.env,
-      homeDir: options.homeDir,
-      credentialProvider: config?.credentialProvider,
-      trustProjectResources: config?.trustProjectResources,
-      profileName: target.profileName ?? target.configId,
-    });
-  }
-  return createHadamardBridgeSdk({
-    directCli: true,
-    directCliProvider: target.runtime as ManagedExternalCliRuntime,
-    authSource: 'native',
-    profileName: target.profileName ?? target.configId,
+  return createNativeCliClient({
+    runtime: target.runtime as HadamardOwnedNativeCliRuntime,
+    model,
     homeDir: options.homeDir,
     workDir: options.workDir,
     executable: options.executable,
     cliPath: options.cliPath,
     env: options.env,
-    model,
+    credentialProvider: config?.credentialProvider,
     trustProjectResources: config?.trustProjectResources,
+    profileName: target.profileName ?? target.configId,
   });
 }
