@@ -53,6 +53,7 @@ describe('source architecture', () => {
       'nativeCliClient.ts',
       'nativeCliCursorProtocol.ts',
       'nativeCliExecResolver.ts',
+      'nativeCliPiProtocol.ts',
       'nativeCliProcessTree.ts',
     ];
     const violations: string[] = [];
