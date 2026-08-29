@@ -4,7 +4,7 @@ import type { UsageRoutingAdminService } from '../keyway/usageRoutingAdminServic
 export type UsageRoutingCommandAdminPort = Pick<UsageRoutingAdminService,
   | 'overview' | 'catalog' | 'saveBudget' | 'deleteBudget'
   | 'saveCredential' | 'testCredential'
-  | 'saveRoute' | 'testTarget' | 'installArkAgentPlan'
+  | 'saveRoute' | 'testTarget'
   | 'gatewayStatus' | 'startGateway' | 'stopGateway'
   | 'previewBridgeMigration' | 'importBridgeMigration'
   | 'previewPortableMigration' | 'importPortableMigration'>;
@@ -112,13 +112,6 @@ async function keysLines(
     const result = await admin.importBridgeMigration();
     return ['Bridge config migration', ...Object.entries(result).map(([key, value]) => `  ${key}  ${String(value)}`)];
   }
-  if (action === 'ark-agent-plan') {
-    if (!port.promptSecret) throw new TypeError('Use Configuration → Usage & Routing → API Keys to save the Ark key.');
-    const secret = await port.promptSecret('Volcengine Ark Agent Plan API key');
-    if (!secret) return ['Ark Agent Plan: unchanged'];
-    const result = await admin.installArkAgentPlan({ secret });
-    return [`Ark Agent Plan: saved (write-only) · routes ${result.routeAliases.join(', ')}`];
-  }
   if (action === 'import-preview' || action === 'import-apply') {
     const filePath = required(words.shift(), 'Keyway export file');
     const result = action === 'import-preview'
@@ -140,7 +133,7 @@ async function keysLines(
     await admin.saveCredential({ ...existing, id, providerId: existing.providerId, enabled: false });
     return [`Credential ${id}: disabled`];
   }
-  if (action !== 'add' && action !== 'rotate') throw new TypeError('Usage: /keys list|add|disable|rotate|test|ark-agent-plan|migrate-preview|migrate-apply|import-preview|import-apply');
+  if (action !== 'add' && action !== 'rotate') throw new TypeError('Usage: /keys list|add|disable|rotate|test|migrate-preview|migrate-apply|import-preview|import-apply');
   if (!port.promptSecret) throw new TypeError('Use Configuration → Usage & Routing → API Keys to save a write-only secret.');
   const providerId = action === 'rotate'
     ? required(existing?.providerId, 'existing credential')

@@ -618,6 +618,16 @@
         "signature": "export interface BlockGoalInput {\nreason: string;\nturn?: number;\nexpectedRevision?: number;\n}"
       },
       {
+        "name": "BridgeMigrationPreview",
+        "kind": "interface",
+        "signature": "export interface BridgeMigrationPreview {\nsource: 'bridge-configs';\nitems: readonly BridgeMigrationPreviewItem[];\nready: number;\nblocked: number;\noauthSessionSecretsRead: false;\n}"
+      },
+      {
+        "name": "BridgeMigrationPreviewItem",
+        "kind": "interface",
+        "signature": "export interface BridgeMigrationPreviewItem {\nconfigName: string;\nkind: 'managed-api' | 'native-cli';\nready: boolean;\ntargetId: string;\nrouteId: string;\ncredentialId?: string;\ncontainsLegacyApiKey: boolean;\nissues: readonly string[];\n}"
+      },
+      {
         "name": "bridgePromptFromMessageContent",
         "kind": "function",
         "signature": "export declare function bridgePromptFromMessageContent(input: string | MessageParam['content']): string;"
@@ -626,6 +636,76 @@
         "name": "BridgeProviderDetection",
         "kind": "interface",
         "signature": "export interface BridgeProviderDetection {\nid: RuntimeProviderId;\ndisplayName: string;\npath?: string;\navailable: boolean;\nversion?: string;\n}"
+      },
+      {
+        "name": "bridgeUsage",
+        "kind": "function",
+        "signature": "export declare function bridgeUsage(result: HadamardBridgeRunResult): UsageCounters;"
+      },
+      {
+        "name": "BudgetAction",
+        "kind": "type",
+        "signature": "export type BudgetAction = 'warn' | 'deny' | 'fallbackRoute';"
+      },
+      {
+        "name": "BudgetContext",
+        "kind": "interface",
+        "signature": "export interface BudgetContext {\nproviderId?: string;\ncredentialId?: string;\nrouteId?: string;\nmodel?: string;\n}"
+      },
+      {
+        "name": "BudgetDecision",
+        "kind": "interface",
+        "signature": "export interface BudgetDecision {\npolicyId: string;\ndecision: 'allowed' | 'warned' | 'denied' | 'fallback';\nused: number;\nreserved: number;\nrequested: number;\nlimit: number;\nfallbackRouteId?: string;\n}"
+      },
+      {
+        "name": "BudgetMetric",
+        "kind": "type",
+        "signature": "export type BudgetMetric = 'requests' | 'totalTokens' | 'costUsd';"
+      },
+      {
+        "name": "BudgetNotification",
+        "kind": "interface",
+        "signature": "export interface BudgetNotification {\ntitle: string;\nbody: string;\nseverity: 'warning' | 'critical';\ndecision: BudgetDecision;\n}"
+      },
+      {
+        "name": "BudgetPeriod",
+        "kind": "type",
+        "signature": "export type BudgetPeriod = 'daily' | 'monthly' | 'lifetime';"
+      },
+      {
+        "name": "BudgetPolicy",
+        "kind": "interface",
+        "signature": "export interface BudgetPolicy {\nid: string;\nscope: BudgetScope;\nperiod: BudgetPeriod;\nmetric: BudgetMetric;\nlimit: number;\naction: BudgetAction;\nfallbackRouteId?: string;\nenabled: boolean;\n}"
+      },
+      {
+        "name": "BudgetPreflightResult",
+        "kind": "interface",
+        "signature": "export interface BudgetPreflightResult extends BudgetReservationOutcome {\naction: 'allow' | 'deny' | 'fallback';\nfallbackRouteId?: string;\n}"
+      },
+      {
+        "name": "BudgetReservation",
+        "kind": "interface",
+        "signature": "export interface BudgetReservation {\nid: string;\nrequestId: string;\npolicyId: string;\nmetric: BudgetMetric;\nperiodKey: string;\nreserved: number;\ncreatedAt: string;\n}"
+      },
+      {
+        "name": "BudgetReservationOutcome",
+        "kind": "interface",
+        "signature": "export interface BudgetReservationOutcome {\nreservations: readonly BudgetReservation[];\ndecisions: readonly BudgetDecision[];\n}"
+      },
+      {
+        "name": "BudgetScope",
+        "kind": "type",
+        "signature": "export type BudgetScope = {\nkind: 'global';\n} | {\nkind: 'provider';\nid: string;\n} | {\nkind: 'credential';\nid: string;\n} | {\nkind: 'route';\nid: string;\n} | {\nkind: 'model';\nid: string;\n};"
+      },
+      {
+        "name": "BudgetStorePort",
+        "kind": "interface",
+        "signature": "export interface BudgetStorePort {\ntransaction<T>(operation: (transaction: BudgetTransactionPort) => Promise<T>): Promise<T>;\n}"
+      },
+      {
+        "name": "BudgetTransactionPort",
+        "kind": "interface",
+        "signature": "export interface BudgetTransactionPort {\nreserveBudget(requestId: string, estimate: Partial<UsageCounters>, context?: BudgetContext): Promise<BudgetReservationOutcome>;\nreconcileBudget(reservations: readonly BudgetReservation[], usage: UsageCounters): Promise<void>;\n}"
       },
       {
         "name": "buildAgentModePrompt",
@@ -1323,6 +1403,11 @@
         "signature": "export declare function createE2bComputerUseToolkit(options: CreateE2bComputerUseOptions): E2bComputerUseToolkit;"
       },
       {
+        "name": "createEmbeddedKeyway",
+        "kind": "function",
+        "signature": "export declare function createEmbeddedKeyway(options: EmbeddedKeywayOptions): Promise<EmbeddedKeyway>;"
+      },
+      {
         "name": "createEnterWorktreeTool",
         "kind": "function",
         "signature": "export declare function createEnterWorktreeTool(getWorktreeService: () => WorktreeService | undefined): import(\"../types.js\").AgentToolDefinition<{\npath?: string | undefined;\nname?: string | undefined;\nbranch?: string | undefined;\nref?: string | undefined;\ndetach?: boolean | undefined;\npr?: string | undefined;\n}, string>;"
@@ -1496,6 +1581,11 @@
         "name": "createHadamardWebTools",
         "kind": "function",
         "signature": "export declare function createHadamardWebTools(options?: HadamardWebToolsOptions): AgentToolDefinition[];"
+      },
+      {
+        "name": "createHeadlessKeywaySecretStore",
+        "kind": "function",
+        "signature": "export declare function createHeadlessKeywaySecretStore(options: HeadlessKeywaySecretStoreOptions): Promise<KeywaySecretStorePort>;"
       },
       {
         "name": "createImageGenTool",
@@ -2318,6 +2408,31 @@
         "signature": "export interface EffectiveAgentRunOptions {\nagentMode?: AgentMode;\nsystemPrompt?: string;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess: 'workspace' | 'full';\nmaxToolIterations?: number;\ntimeoutMs?: number;\nsubagent: boolean;\n}"
       },
       {
+        "name": "ElectronSafeStoragePort",
+        "kind": "interface",
+        "signature": "export interface ElectronSafeStoragePort {\nisEncryptionAvailable(): boolean;\nencryptString(plainText: string): Buffer;\ndecryptString(encrypted: Buffer): string;\n}"
+      },
+      {
+        "name": "ElectronSecretStore",
+        "kind": "class",
+        "signature": "export declare class ElectronSecretStore implements KeywaySecretStorePort {\nprivate readonly filePath;\nprivate readonly safeStorage;\nprivate writeTail;\nconstructor(options: ElectronSecretStoreOptions);\nput(secretRef: string, value: string): Promise<void>;\nresolve(secretRef: string): Promise<string | undefined>;\nhas(secretRef: string): Promise<boolean>;\nremove(secretRef: string): Promise<void>;\nprivate assertEncryptionAvailable;\nprivate withWrite;\nprivate load;\nprivate save;\n}"
+      },
+      {
+        "name": "ElectronSecretStoreOptions",
+        "kind": "interface",
+        "signature": "export interface ElectronSecretStoreOptions {\nreadonly filePath: string;\nreadonly safeStorage: ElectronSafeStoragePort;\n}"
+      },
+      {
+        "name": "EmbeddedKeyway",
+        "kind": "interface",
+        "signature": "export interface EmbeddedKeyway {\ncore: KeywayCorePort;\nstore: KeywayStorePort;\nexecutor: HadamardKeywayProviderExecutor;\ngateway: KeywayLoopbackGatewayController;\nmodelApi(options: Omit<KeywayModelApiOptions, 'core'>): ModelApi;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "EmbeddedKeywayOptions",
+        "kind": "interface",
+        "signature": "export interface EmbeddedKeywayOptions extends HadamardKeywayProviderExecutorOptions {\nhomeDir: string;\nsecretStore: KeywaySecretStorePort;\nmodules?: KeywaySdkModulesPort;\nkeywayDatabaseFile?: string;\nusageDatabaseFile?: string;\n}"
+      },
+      {
         "name": "EMPTY_PROJECT_PLAN",
         "kind": "value",
         "signature": "EMPTY_PROJECT_PLAN: ProjectPlan"
@@ -2708,6 +2823,11 @@
         "signature": "export interface ForkSessionAtMessageOptions {\ntitle?: string;\nbranchName?: string;\nmetadata?: Record<string, unknown>;\n}"
       },
       {
+        "name": "formatBudgetNotification",
+        "kind": "function",
+        "signature": "export declare function formatBudgetNotification(decision: BudgetDecision): BudgetNotification;"
+      },
+      {
         "name": "formatContextWindowTokens",
         "kind": "function",
         "signature": "export declare function formatContextWindowTokens(tokens: number): string;"
@@ -2795,7 +2915,7 @@
       {
         "name": "FormatUsageBarInput",
         "kind": "interface",
-        "signature": "export interface FormatUsageBarInput {\ncontextUsedTokens: number;\ncontextWindowTokens: number;\nsessionCostUsd?: number;\ninputTokens?: number;\noutputTokens?: number;\nwidth?: number;\n}"
+        "signature": "export interface FormatUsageBarInput {\ncontextUsedTokens: number;\ncontextWindowTokens: number;\nsessionCostUsd?: number;\ninputTokens?: number;\noutputTokens?: number;\nbudgetRemainingPercent?: number;\nbudgetState?: 'ok' | 'warn' | 'critical';\nwidth?: number;\n}"
       },
       {
         "name": "generateReviewSummary",
@@ -3978,6 +4098,16 @@
         "signature": "export interface HadamardInvokedSkillRecord {\nname: string;\nargs?: string;\ncontent: string;\ninvokedAt: string;\nsource: HadamardSkillSource;\nloadedFrom: HadamardSkillLoadedFrom;\ncontext: HadamardSkillContextMode;\nmodel?: string;\nagent?: string;\nskillRoot?: string;\n}"
       },
       {
+        "name": "HadamardKeywayProviderExecutor",
+        "kind": "class",
+        "signature": "export declare class HadamardKeywayProviderExecutor implements KeywayProviderExecutorPort {\nprivate readonly managedFactory;\nprivate readonly nativeFactory;\nconstructor(options?: HadamardKeywayProviderExecutorOptions);\nexecute(request: KeywayProviderRequestPort): KeywayProviderHandlePort;\nprivate executeManaged;\nprivate executeNative;\n}"
+      },
+      {
+        "name": "HadamardKeywayProviderExecutorOptions",
+        "kind": "interface",
+        "signature": "export interface HadamardKeywayProviderExecutorOptions {\nhomeDir?: string;\nworkDir?: string;\nmanagedModelApiFactory?: ManagedModelApiFactory;\nnativeCliClientFactory?: NativeCliClientFactory;\n}"
+      },
+      {
         "name": "HadamardLifecycleEvent",
         "kind": "type",
         "signature": "export type HadamardLifecycleEvent = 'SessionStart' | 'SessionEnd' | 'TurnStart' | 'TurnEnd' | 'ModelRequest' | 'ModelResponse' | 'PreToolUse' | 'PostToolUse' | 'PermissionDecision' | 'Compact' | 'Stop' | 'WorktreeCreate' | 'WorktreeRemove';"
@@ -4151,6 +4281,11 @@
         "name": "HadamardRetryPolicyConfig",
         "kind": "interface",
         "signature": "export interface HadamardRetryPolicyConfig {\nmode: 'normal' | 'always';\nmaxRetries?: number;\nretryableCodes?: string[];\nbackoff?: {\ninitialDelayMs?: number;\nmaxDelayMs?: number;\njitterRatio?: number;\n};\n}"
+      },
+      {
+        "name": "HadamardRoutingTarget",
+        "kind": "type",
+        "signature": "export type HadamardRoutingTarget = {\nkind: 'gateway-route';\nrouteAlias: string;\n} | {\nkind: 'agent-router';\nprofileName: string;\n} | {\nkind: 'model-team';\nteamName: string;\n};"
       },
       {
         "name": "HadamardRunEffort",
@@ -4508,6 +4643,11 @@
         "signature": "export interface HatchHadamardBuddyOptions extends HadamardBuddyOptions {\nname: string;\npersonality: string;\n}"
       },
       {
+        "name": "HeadlessKeywaySecretStoreOptions",
+        "kind": "interface",
+        "signature": "export interface HeadlessKeywaySecretStoreOptions {\nhomeDir: string;\nenvironment?: NodeJS.ProcessEnv;\nmodules?: KeywaySdkModulesPort;\n}"
+      },
+      {
         "name": "HookHandlerAdapter",
         "kind": "type",
         "signature": "export type HookHandlerAdapter = (context: HookHandlerContext) => Promise<Omit<TypedHookOutput, 'hookId' | 'event' | 'durationMs'>>;"
@@ -4778,6 +4918,136 @@
         "signature": "export declare class KernelProtocolError extends HadamardSdkError {\nconstructor(message: string);\n}"
       },
       {
+        "name": "KeywayCorePort",
+        "kind": "interface",
+        "signature": "export interface KeywayCorePort {\nexecute(request: KeywayExecutionRequestPort): KeywayExecutionHandlePort;\n}"
+      },
+      {
+        "name": "keywayDataToMessageStreamEvent",
+        "kind": "function",
+        "signature": "export declare function keywayDataToMessageStreamEvent(value: KeywayJson): MessageStreamEvent | undefined;"
+      },
+      {
+        "name": "KeywayExecutionHandlePort",
+        "kind": "interface",
+        "signature": "export interface KeywayExecutionHandlePort extends AsyncIterable<KeywayStreamEventPort> {\nresult: Promise<KeywayExecutionResultPort>;\ncancel(reason?: unknown): void;\n}"
+      },
+      {
+        "name": "KeywayExecutionRequestPort",
+        "kind": "interface",
+        "signature": "export interface KeywayExecutionRequestPort {\nrequestId: string;\ncorrelationId: string;\nrouteAlias: string;\nrequestedModel: string;\noperation: 'generate' | 'stream';\npayload: KeywayJson;\nestimatedUsage?: Partial<UsageCounters>;\nmetadata?: Readonly<Record<string, KeywayJson>>;\nsignal?: AbortSignal;\n}"
+      },
+      {
+        "name": "KeywayExecutionResultPort",
+        "kind": "interface",
+        "signature": "export interface KeywayExecutionResultPort extends KeywayProviderResultPort {\nrequestId: string;\ncorrelationId: string;\nrouteId: string;\n}"
+      },
+      {
+        "name": "KeywayExecutionTargetPort",
+        "kind": "type",
+        "signature": "export type KeywayExecutionTargetPort = KeywayManagedTargetPort | KeywayNativeTargetPort;"
+      },
+      {
+        "name": "KeywayJson",
+        "kind": "type",
+        "signature": "export type KeywayJson = null | boolean | number | string | KeywayJson[] | {\n[key: string]: KeywayJson;\n};"
+      },
+      {
+        "name": "KeywayLoopbackGatewayController",
+        "kind": "class",
+        "signature": "export declare class KeywayLoopbackGatewayController {\nprivate readonly options;\nprivate gateway?;\nprivate starting?;\nconstructor(options: KeywayLoopbackGatewayControllerOptions);\nstatus(): KeywayLoopbackStatus;\nstart(port?: number): Promise<KeywayLoopbackStartResult>;\nstop(): Promise<KeywayLoopbackStatus>;\nprivate startNew;\n}"
+      },
+      {
+        "name": "KeywayLoopbackGatewayControllerOptions",
+        "kind": "interface",
+        "signature": "export interface KeywayLoopbackGatewayControllerOptions {\ncore: KeywayCorePort;\nstore: KeywayStorePort;\ngatewayModule?: KeywayGatewayModulePort;\n}"
+      },
+      {
+        "name": "KeywayLoopbackStartResult",
+        "kind": "interface",
+        "signature": "export interface KeywayLoopbackStartResult extends KeywayLoopbackStatus {\nclientKey?: string;\nnewlyStarted: boolean;\n}"
+      },
+      {
+        "name": "KeywayLoopbackStatus",
+        "kind": "interface",
+        "signature": "export interface KeywayLoopbackStatus {\nrunning: boolean;\nhost?: string;\nport?: number;\nurl?: string;\nauthentication: 'client-key' | 'none';\n}"
+      },
+      {
+        "name": "KeywayManagedTargetPort",
+        "kind": "interface",
+        "signature": "export interface KeywayManagedTargetPort {\nkind: 'managed-api';\nid: string;\nproviderId: string;\nprotocol: 'openai' | 'anthropic';\nbaseUrl: string;\nenabled: boolean;\n}"
+      },
+      {
+        "name": "KeywayMigrationService",
+        "kind": "class",
+        "signature": "export declare class KeywayMigrationService {\nprivate readonly options;\nconstructor(options: KeywayMigrationServiceOptions);\npreviewBridgeConfigs(): BridgeMigrationPreview;\nimportBridgeConfigs(): Promise<Record<string, unknown>>;\npreviewPortableFile(filePath: string): Promise<PortableMigrationPreview>;\nimportPortableFile(filePath: string): Promise<Record<string, unknown>>;\nprivate applyBridgeConfig;\nprivate capture;\nprivate restore;\n}"
+      },
+      {
+        "name": "KeywayMigrationServiceOptions",
+        "kind": "interface",
+        "signature": "export interface KeywayMigrationServiceOptions {\nhomeDir: string;\nstore: KeywayStorePort;\nsecretStore: KeywaySecretStorePort;\nmodules?: KeywaySdkModulesPort;\nnow?: () => Date;\n}"
+      },
+      {
+        "name": "KeywayModelApi",
+        "kind": "class",
+        "signature": "export declare class KeywayModelApi implements ModelApi {\nprivate readonly options;\nprivate nativeSessionId?;\nconstructor(options: KeywayModelApiOptions);\ncreateMessage(request: ModelRequest): Promise<Message>;\nstreamMessage(request: ModelRequest): ModelStreamHandle;\nprivate start;\nprivate streamEvents;\nprivate finalMessage;\n}"
+      },
+      {
+        "name": "KeywayModelApiOptions",
+        "kind": "interface",
+        "signature": "export interface KeywayModelApiOptions {\ncore: KeywayCorePort;\nrouteAlias: string;\nconfigurationId?: string;\nprojectId?: string;\nagentId?: string;\nsessionId?: string;\nworkDir?: string;\n}"
+      },
+      {
+        "name": "KeywayNativeTargetPort",
+        "kind": "interface",
+        "signature": "export interface KeywayNativeTargetPort {\nkind: 'native-cli';\nid: string;\nruntime: string;\nprofileName?: string;\nconfigId?: string;\nenabled: boolean;\n}"
+      },
+      {
+        "name": "keywayOutputToMessage",
+        "kind": "function",
+        "signature": "export declare function keywayOutputToMessage(output: KeywayJson, model: string): Message;"
+      },
+      {
+        "name": "KeywayProviderExecutorPort",
+        "kind": "interface",
+        "signature": "export interface KeywayProviderExecutorPort {\nexecute(request: KeywayProviderRequestPort): KeywayProviderHandlePort;\n}"
+      },
+      {
+        "name": "KeywayProviderHandlePort",
+        "kind": "interface",
+        "signature": "export interface KeywayProviderHandlePort extends AsyncIterable<KeywayStreamEventPort> {\nresult: Promise<KeywayProviderResultPort>;\ncancel(reason?: unknown): void;\n}"
+      },
+      {
+        "name": "KeywayProviderRequestPort",
+        "kind": "interface",
+        "signature": "export interface KeywayProviderRequestPort {\nrequestId: string;\ncorrelationId: string;\noperation: 'generate' | 'stream';\ntarget: KeywayExecutionTargetPort;\nupstreamModel: string;\ncredential?: {\nid: string;\nsecret: string;\n};\npayload: KeywayJson;\nmetadata?: Readonly<Record<string, KeywayJson>>;\nsignal?: AbortSignal;\n}"
+      },
+      {
+        "name": "KeywayProviderResultPort",
+        "kind": "interface",
+        "signature": "export interface KeywayProviderResultPort {\noutput: KeywayJson;\nusage: UsageCounters;\nstatusCode?: number;\nproviderRequestId?: string;\n}"
+      },
+      {
+        "name": "KeywaySdkModulesPort",
+        "kind": "interface",
+        "signature": "export interface KeywaySdkModulesPort {\ncore: {\nKEYWAY_CONTRACT_VERSION: 1;\nassertKeywayExportV1(value: unknown): void;\ncreateKeywayCore(options: {\nstore: unknown;\nsecretStore: KeywaySecretStorePort;\nexecutor: KeywayProviderExecutorPort;\nusageSink: {\nappend(event: UsageEventV2): Promise<void>;\n};\n}): KeywayCorePort;\n};\nnode: {\nSqliteKeywayStore: new (options: {\nfilePath: string;\n}) => KeywayStorePort;\nEnvironmentSecretStore: new (environment?: NodeJS.ProcessEnv, prefix?: string) => KeywaySecretStorePort;\nEncryptedFileSecretStore: new (options: {\nfilePath: string;\nmasterKey: Uint8Array;\n}) => KeywaySecretStorePort;\nCompositeSecretStore: new (managed: KeywaySecretStorePort, environment?: KeywaySecretStorePort) => KeywaySecretStorePort;\ndecodeMasterKey(value: string): Uint8Array;\nimportKeywayV1(store: KeywayStorePort, value: unknown): Promise<Record<string, number>>;\n};\n}"
+      },
+      {
+        "name": "KeywaySecretStorePort",
+        "kind": "interface",
+        "signature": "export interface KeywaySecretStorePort {\nput(secretRef: string, value: string): Promise<void>;\nresolve(secretRef: string): Promise<string | undefined>;\nhas(secretRef: string): Promise<boolean>;\nremove(secretRef: string): Promise<void>;\n}"
+      },
+      {
+        "name": "KeywayStorePort",
+        "kind": "interface",
+        "signature": "export interface KeywayStorePort {\nclose(): void;\nsaveTarget(target: KeywayExecutionTargetPort): void;\nlistTargets(): Promise<readonly KeywayExecutionTargetPort[]>;\ndeleteTarget(targetId: string): boolean;\nsaveCredential(credential: KeywayManagedCredentialPort): void;\nlistManagedCredentials(providerId?: string): Promise<readonly KeywayManagedCredentialPort[]>;\ndeleteCredential(credentialId: string): boolean;\ngetCredentialHealth(credentialId: string): Promise<KeywayCredentialHealthPort | undefined>;\nsaveRoute(route: KeywayGatewayRoutePort): void;\nlistRoutes(): Promise<readonly KeywayGatewayRoutePort[]>;\ndeleteRoute(routeId: string): boolean;\nsaveBudgetPolicy(policy: import('../usage/contracts.js').BudgetPolicy): void;\nlistManagedBudgetPolicies(): Promise<readonly import('../usage/contracts.js').BudgetPolicy[]>;\ndeleteBudgetPolicy(policyId: string): boolean;\n}"
+      },
+      {
+        "name": "KeywayStreamEventPort",
+        "kind": "type",
+        "signature": "export type KeywayStreamEventPort = {\ntype: 'data';\nvalue: KeywayJson;\n} | {\ntype: 'usage';\nusage: UsageCounters;\n} | {\ntype: 'provider-event';\nvalue: KeywayJson;\n};"
+      },
+      {
         "name": "LANGUAGE_SERVER_PRESETS",
         "kind": "value",
         "signature": "LANGUAGE_SERVER_PRESETS: LanguageServerDefinition[]"
@@ -4801,6 +5071,11 @@
         "name": "LanguageServerStatus",
         "kind": "interface",
         "signature": "export interface LanguageServerStatus {\nid: string;\nlanguages: string[];\navailable: boolean;\nreason?: string;\nrunning: boolean;\n}"
+      },
+      {
+        "name": "legacyCostLedgerPath",
+        "kind": "function",
+        "signature": "export declare function legacyCostLedgerPath(homeDir: string): string;"
       },
       {
         "name": "linuxSandboxCapabilities",
@@ -4938,6 +5213,16 @@
         "signature": "export declare function loadJsonConfigFile(filePathOrOptions: string | LoadJsonConfigFileOptions): Promise<LoadedJsonConfigData>;"
       },
       {
+        "name": "loadKeywayGatewayModule",
+        "kind": "function",
+        "signature": "export declare function loadKeywayGatewayModule(): Promise<KeywayGatewayModulePort>;"
+      },
+      {
+        "name": "loadKeywaySdkModules",
+        "kind": "function",
+        "signature": "export declare function loadKeywaySdkModules(): Promise<KeywaySdkModulesPort>;"
+      },
+      {
         "name": "loadPolicyDocuments",
         "kind": "function",
         "signature": "export declare function loadPolicyDocuments(options: {\nhomeDir: string;\nworkDir: string;\nexplicit?: PolicyDocument[];\n}): Promise<PolicyDocument[]>;"
@@ -5011,6 +5296,11 @@
         "name": "MANAGED_PLUGIN_IDS",
         "kind": "value",
         "signature": "MANAGED_PLUGIN_IDS: readonly [\n\"ocr\",\n\"computer-use\",\n\"github\",\n\"kimi-webbridge\",\n\"playwright\",\n\"tavily\",\n\"exa\",\n\"image-gen\",\n\"video-gen\",\n\"mesh-gen\"\n]"
+      },
+      {
+        "name": "ManagedModelApiFactory",
+        "kind": "type",
+        "signature": "export type ManagedModelApiFactory = (target: KeywayManagedTargetPort, model: string, secret: string) => Promise<ModelApi>;"
       },
       {
         "name": "ManagedOcrConfig",
@@ -5296,6 +5586,21 @@
         "name": "msUntilNextCron",
         "kind": "function",
         "signature": "export declare function msUntilNextCron(expression: string, from?: Date): number;"
+      },
+      {
+        "name": "NativeCliClientFactory",
+        "kind": "type",
+        "signature": "export type NativeCliClientFactory = (target: KeywayNativeTargetPort, model: string) => Promise<NativeCliClientPort>;"
+      },
+      {
+        "name": "NativeCliClientPort",
+        "kind": "interface",
+        "signature": "export interface NativeCliClientPort {\nstream(prompt: string, options?: HadamardBridgeRunOptions): NativeCliRunStreamPort;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "NativeCliRunStreamPort",
+        "kind": "interface",
+        "signature": "export interface NativeCliRunStreamPort extends AsyncIterable<HadamardBridgeJsonEvent> {\nresult: Promise<HadamardBridgeRunResult>;\n}"
       },
       {
         "name": "NestedToolExecutionResult",
@@ -5648,6 +5953,11 @@
         "signature": "PORTABLE_RESERVED_WORDS: ReadonlySet<string>"
       },
       {
+        "name": "PortableMigrationPreview",
+        "kind": "interface",
+        "signature": "export interface PortableMigrationPreview {\nsource: 'keyway-export-v1';\ncounts: Record<string, number>;\nsecretsIncluded: false;\nissuedKeysRequireRotation: boolean;\n}"
+      },
+      {
         "name": "POWERSHELL_TOOL_NAME",
         "kind": "value",
         "signature": "POWERSHELL_TOOL_NAME = \"PowerShell\""
@@ -5676,6 +5986,11 @@
         "name": "probeExternalCliAuth",
         "kind": "function",
         "signature": "export declare function probeExternalCliAuth(runtime: ExternalCliAuthRuntime, options?: ExternalCliAuthProbeOptions): Promise<ExternalCliAuthStatus>;"
+      },
+      {
+        "name": "probeKeywayNativeTargetAuth",
+        "kind": "function",
+        "signature": "export declare function probeKeywayNativeTargetAuth(target: KeywayNativeTargetPort, options?: ExternalCliAuthProbeOptions): Promise<ExternalCliAuthStatus>;"
       },
       {
         "name": "probeLanguageServerCommand",
@@ -5821,6 +6136,11 @@
         "name": "PromptHookEvaluator",
         "kind": "type",
         "signature": "export type PromptHookEvaluator = (prompt: string, input: TypedHookInput, signal: AbortSignal) => Promise<{\nbehavior?: 'continue' | 'block';\nfeedback?: string;\ndata?: Record<string, unknown>;\n}>;"
+      },
+      {
+        "name": "providerUsage",
+        "kind": "function",
+        "signature": "export declare function providerUsage(value: unknown): UsageCounters;"
       },
       {
         "name": "race",
@@ -6288,6 +6608,11 @@
         "signature": "export declare function resolveRoutedRun(profile: RouterProfile, userInput: string, signal?: AbortSignal, options?: {\nhomeDir?: string;\nprojectDir?: string;\n}): Promise<{\nmodel: string;\nmodelApi: ModelApi;\nlabel: string;\ndecision: RouterDecision;\neffort?: HadamardRunEffort;\n}>;"
       },
       {
+        "name": "resolveRoutingTargetSelection",
+        "kind": "function",
+        "signature": "export declare function resolveRoutingTargetSelection(input: RoutingSelectionInput): HadamardRoutingTarget | undefined;"
+      },
+      {
         "name": "resolveRuntimeConfig",
         "kind": "function",
         "signature": "export declare function resolveRuntimeConfig(options?: CreateAgentSdkOptions): Promise<ResolvedRuntimeConfig>;"
@@ -6401,6 +6726,11 @@
         "name": "RouterRoute",
         "kind": "interface",
         "signature": "export interface RouterRoute extends RouterModelRef {\nwhen: string;\nname?: string;\nrole?: string;\ndescription?: string;\neffort?: HadamardRunEffort;\ntarget?: AgentTargetRef;\n}"
+      },
+      {
+        "name": "RoutingSelectionInput",
+        "kind": "interface",
+        "signature": "export interface RoutingSelectionInput {\ngatewayRouteAlias?: string;\nagentRouterProfile?: string;\nmodelTeam?: string;\n}"
       },
       {
         "name": "RuleCommandResult",
@@ -6793,6 +7123,11 @@
         "signature": "export interface SessionCostModelUsage {\ninputTokens: number;\noutputTokens: number;\ncostUsd: number;\n}"
       },
       {
+        "name": "SessionCostRecordMeta",
+        "kind": "interface",
+        "signature": "export interface SessionCostRecordMeta {\nsessionId?: string;\nrunId?: string;\nlogicalRequestId?: string;\nproviderId?: string;\ncredentialId?: string;\nrouteId?: string;\nconfigurationId?: string;\nprojectId?: string;\nagentId?: string;\nsource?: UsageSource;\nstatus?: UsageStatus;\n}"
+      },
+      {
         "name": "SessionCostSnapshot",
         "kind": "interface",
         "signature": "export interface SessionCostSnapshot {\ninputTokens: number;\noutputTokens: number;\ncostUsd: number;\nperModel: Record<string, SessionCostModelUsage>;\n}"
@@ -6800,7 +7135,7 @@
       {
         "name": "SessionCostTracker",
         "kind": "class",
-        "signature": "export declare class SessionCostTracker {\nprivate readonly homeDir;\nprivate inputTokens;\nprivate outputTokens;\nprivate costUsd;\nprivate readonly perModel;\nprivate readonly ledger;\nprivate ledgerQueue;\nconstructor(homeDir: string, opts?: {\nledger?: boolean;\n});\nrecord(model: string, usage: SessionCostUsage, meta?: {\nsessionId?: string;\nrunId?: string;\n}): void;\nsnapshot(): SessionCostSnapshot;\n}"
+        "signature": "export declare class SessionCostTracker {\nprivate readonly homeDir;\nprivate inputTokens;\nprivate outputTokens;\nprivate costUsd;\nprivate readonly perModel;\nprivate readonly ledger;\nprivate ledgerQueue;\nconstructor(homeDir: string, opts?: {\nledger?: boolean;\n});\nrecord(model: string, usage: SessionCostUsage, meta?: SessionCostRecordMeta): void;\nsnapshot(): SessionCostSnapshot;\n}"
       },
       {
         "name": "SessionCostUsage",
@@ -7503,6 +7838,11 @@
         "signature": "export declare function upsertScheduledAutomationTask(workDir: string, input: ScheduledAutomationTaskInput): Promise<ScheduledAutomationTask>;"
       },
       {
+        "name": "UsageAccuracy",
+        "kind": "type",
+        "signature": "export type UsageAccuracy = 'actual' | 'estimated' | 'unknown';"
+      },
+      {
         "name": "usageBarColorLevel",
         "kind": "function",
         "signature": "export declare function usageBarColorLevel(pct: number): UsageBarColorLevel;"
@@ -7516,6 +7856,106 @@
         "name": "usageBarPercent",
         "kind": "function",
         "signature": "export declare function usageBarPercent(usedTokens: number, windowTokens: number): number;"
+      },
+      {
+        "name": "UsageBudgetService",
+        "kind": "class",
+        "signature": "export declare class UsageBudgetService {\nprivate readonly store;\nprivate readonly notify?;\nconstructor(store: BudgetStorePort, notify?: ((notification: BudgetNotification) => void) | undefined);\nreserve(requestId: string, estimate: Partial<UsageCounters>, context?: BudgetContext): Promise<BudgetPreflightResult>;\nreconcile(reservations: readonly BudgetReservation[], usage: UsageCounters): Promise<void>;\n}"
+      },
+      {
+        "name": "UsageCounters",
+        "kind": "interface",
+        "signature": "export interface UsageCounters {\nrequests: number;\ninputTokens: number;\noutputTokens: number;\ntotalTokens: number;\ncacheReadTokens: number;\ncacheWriteTokens: number;\nreasoningTokens: number;\naudioInputTokens: number;\naudioOutputTokens: number;\ncostUsd?: number;\naccuracy: UsageAccuracy;\n}"
+      },
+      {
+        "name": "usageDatabasePath",
+        "kind": "function",
+        "signature": "export declare function usageDatabasePath(homeDir: string): string;"
+      },
+      {
+        "name": "UsageEventV2",
+        "kind": "type",
+        "signature": "export type UsageEventV2 = UsageEventRequest & UsageEventAttribution & UsageEventResult;"
+      },
+      {
+        "name": "UsageFilter",
+        "kind": "interface",
+        "signature": "export interface UsageFilter {\nfrom?: string;\nto?: string;\nsource?: UsageSource;\nstatus?: UsageStatus;\nmodel?: string;\nproviderId?: string;\ncredentialId?: string;\nrouteId?: string;\nconfigurationId?: string;\nprojectId?: string;\nagentId?: string;\nsessionId?: string;\nrunId?: string;\n}"
+      },
+      {
+        "name": "usageFilterFromSearch",
+        "kind": "function",
+        "signature": "export declare function usageFilterFromSearch(search: URLSearchParams): UsagePage;"
+      },
+      {
+        "name": "UsageImportResult",
+        "kind": "interface",
+        "signature": "export interface UsageImportResult {\nimported: number;\nskipped: number;\nmalformed: number;\n}"
+      },
+      {
+        "name": "UsageLedger",
+        "kind": "class",
+        "signature": "export declare class UsageLedger {\nprivate readonly driver;\nprivate constructor();\nstatic open(options: UsageLedgerOptions): Promise<UsageLedger>;\nappend(event: UsageEventV2): boolean;\nquery(page?: UsagePage): UsageEventV2[];\nsummarize(filter?: UsageFilter): UsageSummary;\nimportLegacyJsonl(filename: string): Promise<UsageImportResult>;\nexportJsonl(filename: string, filter?: UsageFilter): Promise<number>;\ndeleteBefore(timestamp: string): number;\nclose(): void;\n}"
+      },
+      {
+        "name": "UsageLedgerOptions",
+        "kind": "interface",
+        "signature": "export interface UsageLedgerOptions {\nfilename: string;\ndriverFactory?: SqliteDriverFactory;\n}"
+      },
+      {
+        "name": "UsagePage",
+        "kind": "interface",
+        "signature": "export interface UsagePage extends UsageFilter {\nlimit?: number;\noffset?: number;\n}"
+      },
+      {
+        "name": "UsageQueryService",
+        "kind": "class",
+        "signature": "export declare class UsageQueryService {\nprivate readonly ledger;\nprivate constructor();\nstatic open(homeDir: string): Promise<UsageQueryService>;\nsummary(filter?: UsageFilter): UsageSummary;\nevents(page?: UsagePage): import(\"./contracts.js\").UsageEventV2[];\nclose(): void;\n}"
+      },
+      {
+        "name": "UsageRouteAttempt",
+        "kind": "interface",
+        "signature": "export interface UsageRouteAttempt {\nattempt: number;\ntargetId: string;\nproviderId?: string;\ncredentialId?: string;\nupstreamModel: string;\nstartedAt: string;\ncompletedAt: string;\nstatus: UsageStatus;\nstatusCode?: number;\nretryable?: boolean;\nlatencyMs: number;\nerrorCode?: string;\n}"
+      },
+      {
+        "name": "UsageRoutingAdminService",
+        "kind": "class",
+        "signature": "export declare class UsageRoutingAdminService {\nprivate readonly usage;\nprivate readonly options;\nprivate constructor();\nstatic open(options: UsageRoutingAdminServiceOptions): Promise<UsageRoutingAdminService>;\noverview(filter?: UsageFilter): UsageRoutingOverview;\nledger(page?: UsagePage): {\nsummary: UsageSummary;\nevents: import(\"../usage/contracts.js\").UsageEventV2[];\n};\ncatalog(): Promise<UsageRoutingCatalog>;\nsaveCredential(input: Record<string, unknown>): Promise<{\nid: string;\n}>;\ndeleteCredential(id: string): Promise<boolean>;\nsaveTarget(input: Record<string, unknown>): {\nid: string;\n};\ndeleteTarget(id: string): boolean;\nsaveRoute(input: Record<string, unknown>): Promise<{\nid: string;\n}>;\ndeleteRoute(id: string): boolean;\nsaveBudget(input: Record<string, unknown>): {\nid: string;\n};\ndeleteBudget(id: string): boolean;\ntestCredential(id: string): Promise<Record<string, unknown>>;\ntestTarget(id: string): Promise<Record<string, unknown>>;\ngatewayStatus(): Record<string, unknown>;\nstartGateway(port?: number): Promise<Record<string, unknown>>;\nstopGateway(): Promise<Record<string, unknown>>;\npreviewBridgeMigration(): import(\"./keywayMigrationService.js\").BridgeMigrationPreview;\nimportBridgeMigration(): Promise<Record<string, unknown>>;\npreviewPortableMigration(filePath: string): Promise<import(\"./keywayMigrationService.js\").PortableMigrationPreview>;\nimportPortableMigration(filePath: string): Promise<Record<string, unknown>>;\nclose(): void;\nprivate now;\nprivate id;\n}"
+      },
+      {
+        "name": "UsageRoutingAdminServiceOptions",
+        "kind": "interface",
+        "signature": "export interface UsageRoutingAdminServiceOptions {\nhomeDir: string;\nstore: KeywayStorePort;\nsecretStore: KeywaySecretStorePort;\nexecutor?: KeywayProviderExecutorPort;\ngateway?: {\nstatus(): object;\nstart(port?: number): Promise<object>;\nstop(): Promise<object>;\n};\nmigration?: KeywayMigrationService;\nnow?: () => Date;\nidFactory?: () => string;\n}"
+      },
+      {
+        "name": "UsageRoutingCatalog",
+        "kind": "interface",
+        "signature": "export interface UsageRoutingCatalog {\ntargets: readonly KeywayExecutionTargetPort[];\nroutes: readonly KeywayGatewayRoutePort[];\nbudgets: readonly BudgetPolicy[];\ncredentials: ReadonlyArray<Omit<KeywayManagedCredentialPort, 'secretRef'> & {\nsecretConfigured: boolean;\nhealth: Awaited<ReturnType<KeywayStorePort['getCredentialHealth']>>;\n}>;\n}"
+      },
+      {
+        "name": "UsageRoutingOverview",
+        "kind": "interface",
+        "signature": "export interface UsageRoutingOverview {\nsummary: UsageSummary;\ntrend: readonly UsageTrendPoint[];\nbyProvider: readonly {\nkey: string;\nrequests: number;\ntokens: number;\ncostUsd: number;\n}[];\nunknownUsageEntries: number;\n}"
+      },
+      {
+        "name": "UsageSource",
+        "kind": "type",
+        "signature": "export type UsageSource = 'hadamard' | 'bridge' | 'keyway' | 'native-cli' | 'import';"
+      },
+      {
+        "name": "UsageStatus",
+        "kind": "type",
+        "signature": "export type UsageStatus = 'succeeded' | 'failed' | 'cancelled' | 'denied';"
+      },
+      {
+        "name": "UsageSummary",
+        "kind": "interface",
+        "signature": "export interface UsageSummary extends UsageCounters {\nentries: number;\n}"
+      },
+      {
+        "name": "UsageTrendPoint",
+        "kind": "interface",
+        "signature": "export interface UsageTrendPoint {\ndate: string;\nrequests: number;\ntokens: number;\ncostUsd: number;\n}"
       },
       {
         "name": "validateAgentProfile",
@@ -10614,6 +11054,16 @@
         "signature": "export interface BlockGoalInput {\nreason: string;\nturn?: number;\nexpectedRevision?: number;\n}"
       },
       {
+        "name": "BridgeMigrationPreview",
+        "kind": "interface",
+        "signature": "export interface BridgeMigrationPreview {\nsource: 'bridge-configs';\nitems: readonly BridgeMigrationPreviewItem[];\nready: number;\nblocked: number;\noauthSessionSecretsRead: false;\n}"
+      },
+      {
+        "name": "BridgeMigrationPreviewItem",
+        "kind": "interface",
+        "signature": "export interface BridgeMigrationPreviewItem {\nconfigName: string;\nkind: 'managed-api' | 'native-cli';\nready: boolean;\ntargetId: string;\nrouteId: string;\ncredentialId?: string;\ncontainsLegacyApiKey: boolean;\nissues: readonly string[];\n}"
+      },
+      {
         "name": "bridgePromptFromMessageContent",
         "kind": "function",
         "signature": "export declare function bridgePromptFromMessageContent(input: string | MessageParam['content']): string;"
@@ -10622,6 +11072,76 @@
         "name": "BridgeProviderDetection",
         "kind": "interface",
         "signature": "export interface BridgeProviderDetection {\nid: RuntimeProviderId;\ndisplayName: string;\npath?: string;\navailable: boolean;\nversion?: string;\n}"
+      },
+      {
+        "name": "bridgeUsage",
+        "kind": "function",
+        "signature": "export declare function bridgeUsage(result: HadamardBridgeRunResult): UsageCounters;"
+      },
+      {
+        "name": "BudgetAction",
+        "kind": "type",
+        "signature": "export type BudgetAction = 'warn' | 'deny' | 'fallbackRoute';"
+      },
+      {
+        "name": "BudgetContext",
+        "kind": "interface",
+        "signature": "export interface BudgetContext {\nproviderId?: string;\ncredentialId?: string;\nrouteId?: string;\nmodel?: string;\n}"
+      },
+      {
+        "name": "BudgetDecision",
+        "kind": "interface",
+        "signature": "export interface BudgetDecision {\npolicyId: string;\ndecision: 'allowed' | 'warned' | 'denied' | 'fallback';\nused: number;\nreserved: number;\nrequested: number;\nlimit: number;\nfallbackRouteId?: string;\n}"
+      },
+      {
+        "name": "BudgetMetric",
+        "kind": "type",
+        "signature": "export type BudgetMetric = 'requests' | 'totalTokens' | 'costUsd';"
+      },
+      {
+        "name": "BudgetNotification",
+        "kind": "interface",
+        "signature": "export interface BudgetNotification {\ntitle: string;\nbody: string;\nseverity: 'warning' | 'critical';\ndecision: BudgetDecision;\n}"
+      },
+      {
+        "name": "BudgetPeriod",
+        "kind": "type",
+        "signature": "export type BudgetPeriod = 'daily' | 'monthly' | 'lifetime';"
+      },
+      {
+        "name": "BudgetPolicy",
+        "kind": "interface",
+        "signature": "export interface BudgetPolicy {\nid: string;\nscope: BudgetScope;\nperiod: BudgetPeriod;\nmetric: BudgetMetric;\nlimit: number;\naction: BudgetAction;\nfallbackRouteId?: string;\nenabled: boolean;\n}"
+      },
+      {
+        "name": "BudgetPreflightResult",
+        "kind": "interface",
+        "signature": "export interface BudgetPreflightResult extends BudgetReservationOutcome {\naction: 'allow' | 'deny' | 'fallback';\nfallbackRouteId?: string;\n}"
+      },
+      {
+        "name": "BudgetReservation",
+        "kind": "interface",
+        "signature": "export interface BudgetReservation {\nid: string;\nrequestId: string;\npolicyId: string;\nmetric: BudgetMetric;\nperiodKey: string;\nreserved: number;\ncreatedAt: string;\n}"
+      },
+      {
+        "name": "BudgetReservationOutcome",
+        "kind": "interface",
+        "signature": "export interface BudgetReservationOutcome {\nreservations: readonly BudgetReservation[];\ndecisions: readonly BudgetDecision[];\n}"
+      },
+      {
+        "name": "BudgetScope",
+        "kind": "type",
+        "signature": "export type BudgetScope = {\nkind: 'global';\n} | {\nkind: 'provider';\nid: string;\n} | {\nkind: 'credential';\nid: string;\n} | {\nkind: 'route';\nid: string;\n} | {\nkind: 'model';\nid: string;\n};"
+      },
+      {
+        "name": "BudgetStorePort",
+        "kind": "interface",
+        "signature": "export interface BudgetStorePort {\ntransaction<T>(operation: (transaction: BudgetTransactionPort) => Promise<T>): Promise<T>;\n}"
+      },
+      {
+        "name": "BudgetTransactionPort",
+        "kind": "interface",
+        "signature": "export interface BudgetTransactionPort {\nreserveBudget(requestId: string, estimate: Partial<UsageCounters>, context?: BudgetContext): Promise<BudgetReservationOutcome>;\nreconcileBudget(reservations: readonly BudgetReservation[], usage: UsageCounters): Promise<void>;\n}"
       },
       {
         "name": "buildAgentModePrompt",
@@ -11334,6 +11854,11 @@
         "signature": "export declare function createE2bComputerUseToolkit(options: CreateE2bComputerUseOptions): E2bComputerUseToolkit;"
       },
       {
+        "name": "createEmbeddedKeyway",
+        "kind": "function",
+        "signature": "export declare function createEmbeddedKeyway(options: EmbeddedKeywayOptions): Promise<EmbeddedKeyway>;"
+      },
+      {
         "name": "createEnterWorktreeTool",
         "kind": "function",
         "signature": "export declare function createEnterWorktreeTool(getWorktreeService: () => WorktreeService | undefined): import(\"../types.js\").AgentToolDefinition<{\npath?: string | undefined;\nname?: string | undefined;\nbranch?: string | undefined;\nref?: string | undefined;\ndetach?: boolean | undefined;\npr?: string | undefined;\n}, string>;"
@@ -11507,6 +12032,11 @@
         "name": "createHadamardWebTools",
         "kind": "function",
         "signature": "export declare function createHadamardWebTools(options?: HadamardWebToolsOptions): AgentToolDefinition[];"
+      },
+      {
+        "name": "createHeadlessKeywaySecretStore",
+        "kind": "function",
+        "signature": "export declare function createHeadlessKeywaySecretStore(options: HeadlessKeywaySecretStoreOptions): Promise<KeywaySecretStorePort>;"
       },
       {
         "name": "createImageGenTool",
@@ -12329,6 +12859,31 @@
         "signature": "export interface EffectiveAgentRunOptions {\nagentMode?: AgentMode;\nsystemPrompt?: string;\npermissionMode?: HadamardPermissionMode;\neffort?: HadamardRunEffort;\nmaxTokens?: number;\ntemperature?: number;\ntopP?: number;\nallowedTools?: string[];\nworkspaceAccess: 'workspace' | 'full';\nmaxToolIterations?: number;\ntimeoutMs?: number;\nsubagent: boolean;\n}"
       },
       {
+        "name": "ElectronSafeStoragePort",
+        "kind": "interface",
+        "signature": "export interface ElectronSafeStoragePort {\nisEncryptionAvailable(): boolean;\nencryptString(plainText: string): Buffer;\ndecryptString(encrypted: Buffer): string;\n}"
+      },
+      {
+        "name": "ElectronSecretStore",
+        "kind": "class",
+        "signature": "export declare class ElectronSecretStore implements KeywaySecretStorePort {\nprivate readonly filePath;\nprivate readonly safeStorage;\nprivate writeTail;\nconstructor(options: ElectronSecretStoreOptions);\nput(secretRef: string, value: string): Promise<void>;\nresolve(secretRef: string): Promise<string | undefined>;\nhas(secretRef: string): Promise<boolean>;\nremove(secretRef: string): Promise<void>;\nprivate assertEncryptionAvailable;\nprivate withWrite;\nprivate load;\nprivate save;\n}"
+      },
+      {
+        "name": "ElectronSecretStoreOptions",
+        "kind": "interface",
+        "signature": "export interface ElectronSecretStoreOptions {\nreadonly filePath: string;\nreadonly safeStorage: ElectronSafeStoragePort;\n}"
+      },
+      {
+        "name": "EmbeddedKeyway",
+        "kind": "interface",
+        "signature": "export interface EmbeddedKeyway {\ncore: KeywayCorePort;\nstore: KeywayStorePort;\nexecutor: HadamardKeywayProviderExecutor;\ngateway: KeywayLoopbackGatewayController;\nmodelApi(options: Omit<KeywayModelApiOptions, 'core'>): ModelApi;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "EmbeddedKeywayOptions",
+        "kind": "interface",
+        "signature": "export interface EmbeddedKeywayOptions extends HadamardKeywayProviderExecutorOptions {\nhomeDir: string;\nsecretStore: KeywaySecretStorePort;\nmodules?: KeywaySdkModulesPort;\nkeywayDatabaseFile?: string;\nusageDatabaseFile?: string;\n}"
+      },
+      {
         "name": "EMPTY_PROJECT_PLAN",
         "kind": "value",
         "signature": "EMPTY_PROJECT_PLAN: ProjectPlan"
@@ -12724,6 +13279,11 @@
         "signature": "export interface ForkSessionAtMessageOptions {\ntitle?: string;\nbranchName?: string;\nmetadata?: Record<string, unknown>;\n}"
       },
       {
+        "name": "formatBudgetNotification",
+        "kind": "function",
+        "signature": "export declare function formatBudgetNotification(decision: BudgetDecision): BudgetNotification;"
+      },
+      {
         "name": "formatContextWindowTokens",
         "kind": "function",
         "signature": "export declare function formatContextWindowTokens(tokens: number): string;"
@@ -12811,7 +13371,7 @@
       {
         "name": "FormatUsageBarInput",
         "kind": "interface",
-        "signature": "export interface FormatUsageBarInput {\ncontextUsedTokens: number;\ncontextWindowTokens: number;\nsessionCostUsd?: number;\ninputTokens?: number;\noutputTokens?: number;\nwidth?: number;\n}"
+        "signature": "export interface FormatUsageBarInput {\ncontextUsedTokens: number;\ncontextWindowTokens: number;\nsessionCostUsd?: number;\ninputTokens?: number;\noutputTokens?: number;\nbudgetRemainingPercent?: number;\nbudgetState?: 'ok' | 'warn' | 'critical';\nwidth?: number;\n}"
       },
       {
         "name": "generateReviewSummary",
@@ -13999,6 +14559,16 @@
         "signature": "export interface HadamardInvokedSkillRecord {\nname: string;\nargs?: string;\ncontent: string;\ninvokedAt: string;\nsource: HadamardSkillSource;\nloadedFrom: HadamardSkillLoadedFrom;\ncontext: HadamardSkillContextMode;\nmodel?: string;\nagent?: string;\nskillRoot?: string;\n}"
       },
       {
+        "name": "HadamardKeywayProviderExecutor",
+        "kind": "class",
+        "signature": "export declare class HadamardKeywayProviderExecutor implements KeywayProviderExecutorPort {\nprivate readonly managedFactory;\nprivate readonly nativeFactory;\nconstructor(options?: HadamardKeywayProviderExecutorOptions);\nexecute(request: KeywayProviderRequestPort): KeywayProviderHandlePort;\nprivate executeManaged;\nprivate executeNative;\n}"
+      },
+      {
+        "name": "HadamardKeywayProviderExecutorOptions",
+        "kind": "interface",
+        "signature": "export interface HadamardKeywayProviderExecutorOptions {\nhomeDir?: string;\nworkDir?: string;\nmanagedModelApiFactory?: ManagedModelApiFactory;\nnativeCliClientFactory?: NativeCliClientFactory;\n}"
+      },
+      {
         "name": "HadamardLifecycleEvent",
         "kind": "type",
         "signature": "export type HadamardLifecycleEvent = 'SessionStart' | 'SessionEnd' | 'TurnStart' | 'TurnEnd' | 'ModelRequest' | 'ModelResponse' | 'PreToolUse' | 'PostToolUse' | 'PermissionDecision' | 'Compact' | 'Stop' | 'WorktreeCreate' | 'WorktreeRemove';"
@@ -14172,6 +14742,11 @@
         "name": "HadamardRetryPolicyConfig",
         "kind": "interface",
         "signature": "export interface HadamardRetryPolicyConfig {\nmode: 'normal' | 'always';\nmaxRetries?: number;\nretryableCodes?: string[];\nbackoff?: {\ninitialDelayMs?: number;\nmaxDelayMs?: number;\njitterRatio?: number;\n};\n}"
+      },
+      {
+        "name": "HadamardRoutingTarget",
+        "kind": "type",
+        "signature": "export type HadamardRoutingTarget = {\nkind: 'gateway-route';\nrouteAlias: string;\n} | {\nkind: 'agent-router';\nprofileName: string;\n} | {\nkind: 'model-team';\nteamName: string;\n};"
       },
       {
         "name": "HadamardRunEffort",
@@ -14529,6 +15104,11 @@
         "signature": "export interface HatchHadamardBuddyOptions extends HadamardBuddyOptions {\nname: string;\npersonality: string;\n}"
       },
       {
+        "name": "HeadlessKeywaySecretStoreOptions",
+        "kind": "interface",
+        "signature": "export interface HeadlessKeywaySecretStoreOptions {\nhomeDir: string;\nenvironment?: NodeJS.ProcessEnv;\nmodules?: KeywaySdkModulesPort;\n}"
+      },
+      {
         "name": "HookHandlerAdapter",
         "kind": "type",
         "signature": "export type HookHandlerAdapter = (context: HookHandlerContext) => Promise<Omit<TypedHookOutput, 'hookId' | 'event' | 'durationMs'>>;"
@@ -14799,6 +15379,136 @@
         "signature": "export declare class KernelProtocolError extends HadamardSdkError {\nconstructor(message: string);\n}"
       },
       {
+        "name": "KeywayCorePort",
+        "kind": "interface",
+        "signature": "export interface KeywayCorePort {\nexecute(request: KeywayExecutionRequestPort): KeywayExecutionHandlePort;\n}"
+      },
+      {
+        "name": "keywayDataToMessageStreamEvent",
+        "kind": "function",
+        "signature": "export declare function keywayDataToMessageStreamEvent(value: KeywayJson): MessageStreamEvent | undefined;"
+      },
+      {
+        "name": "KeywayExecutionHandlePort",
+        "kind": "interface",
+        "signature": "export interface KeywayExecutionHandlePort extends AsyncIterable<KeywayStreamEventPort> {\nresult: Promise<KeywayExecutionResultPort>;\ncancel(reason?: unknown): void;\n}"
+      },
+      {
+        "name": "KeywayExecutionRequestPort",
+        "kind": "interface",
+        "signature": "export interface KeywayExecutionRequestPort {\nrequestId: string;\ncorrelationId: string;\nrouteAlias: string;\nrequestedModel: string;\noperation: 'generate' | 'stream';\npayload: KeywayJson;\nestimatedUsage?: Partial<UsageCounters>;\nmetadata?: Readonly<Record<string, KeywayJson>>;\nsignal?: AbortSignal;\n}"
+      },
+      {
+        "name": "KeywayExecutionResultPort",
+        "kind": "interface",
+        "signature": "export interface KeywayExecutionResultPort extends KeywayProviderResultPort {\nrequestId: string;\ncorrelationId: string;\nrouteId: string;\n}"
+      },
+      {
+        "name": "KeywayExecutionTargetPort",
+        "kind": "type",
+        "signature": "export type KeywayExecutionTargetPort = KeywayManagedTargetPort | KeywayNativeTargetPort;"
+      },
+      {
+        "name": "KeywayJson",
+        "kind": "type",
+        "signature": "export type KeywayJson = null | boolean | number | string | KeywayJson[] | {\n[key: string]: KeywayJson;\n};"
+      },
+      {
+        "name": "KeywayLoopbackGatewayController",
+        "kind": "class",
+        "signature": "export declare class KeywayLoopbackGatewayController {\nprivate readonly options;\nprivate gateway?;\nprivate starting?;\nconstructor(options: KeywayLoopbackGatewayControllerOptions);\nstatus(): KeywayLoopbackStatus;\nstart(port?: number): Promise<KeywayLoopbackStartResult>;\nstop(): Promise<KeywayLoopbackStatus>;\nprivate startNew;\n}"
+      },
+      {
+        "name": "KeywayLoopbackGatewayControllerOptions",
+        "kind": "interface",
+        "signature": "export interface KeywayLoopbackGatewayControllerOptions {\ncore: KeywayCorePort;\nstore: KeywayStorePort;\ngatewayModule?: KeywayGatewayModulePort;\n}"
+      },
+      {
+        "name": "KeywayLoopbackStartResult",
+        "kind": "interface",
+        "signature": "export interface KeywayLoopbackStartResult extends KeywayLoopbackStatus {\nclientKey?: string;\nnewlyStarted: boolean;\n}"
+      },
+      {
+        "name": "KeywayLoopbackStatus",
+        "kind": "interface",
+        "signature": "export interface KeywayLoopbackStatus {\nrunning: boolean;\nhost?: string;\nport?: number;\nurl?: string;\nauthentication: 'client-key' | 'none';\n}"
+      },
+      {
+        "name": "KeywayManagedTargetPort",
+        "kind": "interface",
+        "signature": "export interface KeywayManagedTargetPort {\nkind: 'managed-api';\nid: string;\nproviderId: string;\nprotocol: 'openai' | 'anthropic';\nbaseUrl: string;\nenabled: boolean;\n}"
+      },
+      {
+        "name": "KeywayMigrationService",
+        "kind": "class",
+        "signature": "export declare class KeywayMigrationService {\nprivate readonly options;\nconstructor(options: KeywayMigrationServiceOptions);\npreviewBridgeConfigs(): BridgeMigrationPreview;\nimportBridgeConfigs(): Promise<Record<string, unknown>>;\npreviewPortableFile(filePath: string): Promise<PortableMigrationPreview>;\nimportPortableFile(filePath: string): Promise<Record<string, unknown>>;\nprivate applyBridgeConfig;\nprivate capture;\nprivate restore;\n}"
+      },
+      {
+        "name": "KeywayMigrationServiceOptions",
+        "kind": "interface",
+        "signature": "export interface KeywayMigrationServiceOptions {\nhomeDir: string;\nstore: KeywayStorePort;\nsecretStore: KeywaySecretStorePort;\nmodules?: KeywaySdkModulesPort;\nnow?: () => Date;\n}"
+      },
+      {
+        "name": "KeywayModelApi",
+        "kind": "class",
+        "signature": "export declare class KeywayModelApi implements ModelApi {\nprivate readonly options;\nprivate nativeSessionId?;\nconstructor(options: KeywayModelApiOptions);\ncreateMessage(request: ModelRequest): Promise<Message>;\nstreamMessage(request: ModelRequest): ModelStreamHandle;\nprivate start;\nprivate streamEvents;\nprivate finalMessage;\n}"
+      },
+      {
+        "name": "KeywayModelApiOptions",
+        "kind": "interface",
+        "signature": "export interface KeywayModelApiOptions {\ncore: KeywayCorePort;\nrouteAlias: string;\nconfigurationId?: string;\nprojectId?: string;\nagentId?: string;\nsessionId?: string;\nworkDir?: string;\n}"
+      },
+      {
+        "name": "KeywayNativeTargetPort",
+        "kind": "interface",
+        "signature": "export interface KeywayNativeTargetPort {\nkind: 'native-cli';\nid: string;\nruntime: string;\nprofileName?: string;\nconfigId?: string;\nenabled: boolean;\n}"
+      },
+      {
+        "name": "keywayOutputToMessage",
+        "kind": "function",
+        "signature": "export declare function keywayOutputToMessage(output: KeywayJson, model: string): Message;"
+      },
+      {
+        "name": "KeywayProviderExecutorPort",
+        "kind": "interface",
+        "signature": "export interface KeywayProviderExecutorPort {\nexecute(request: KeywayProviderRequestPort): KeywayProviderHandlePort;\n}"
+      },
+      {
+        "name": "KeywayProviderHandlePort",
+        "kind": "interface",
+        "signature": "export interface KeywayProviderHandlePort extends AsyncIterable<KeywayStreamEventPort> {\nresult: Promise<KeywayProviderResultPort>;\ncancel(reason?: unknown): void;\n}"
+      },
+      {
+        "name": "KeywayProviderRequestPort",
+        "kind": "interface",
+        "signature": "export interface KeywayProviderRequestPort {\nrequestId: string;\ncorrelationId: string;\noperation: 'generate' | 'stream';\ntarget: KeywayExecutionTargetPort;\nupstreamModel: string;\ncredential?: {\nid: string;\nsecret: string;\n};\npayload: KeywayJson;\nmetadata?: Readonly<Record<string, KeywayJson>>;\nsignal?: AbortSignal;\n}"
+      },
+      {
+        "name": "KeywayProviderResultPort",
+        "kind": "interface",
+        "signature": "export interface KeywayProviderResultPort {\noutput: KeywayJson;\nusage: UsageCounters;\nstatusCode?: number;\nproviderRequestId?: string;\n}"
+      },
+      {
+        "name": "KeywaySdkModulesPort",
+        "kind": "interface",
+        "signature": "export interface KeywaySdkModulesPort {\ncore: {\nKEYWAY_CONTRACT_VERSION: 1;\nassertKeywayExportV1(value: unknown): void;\ncreateKeywayCore(options: {\nstore: unknown;\nsecretStore: KeywaySecretStorePort;\nexecutor: KeywayProviderExecutorPort;\nusageSink: {\nappend(event: UsageEventV2): Promise<void>;\n};\n}): KeywayCorePort;\n};\nnode: {\nSqliteKeywayStore: new (options: {\nfilePath: string;\n}) => KeywayStorePort;\nEnvironmentSecretStore: new (environment?: NodeJS.ProcessEnv, prefix?: string) => KeywaySecretStorePort;\nEncryptedFileSecretStore: new (options: {\nfilePath: string;\nmasterKey: Uint8Array;\n}) => KeywaySecretStorePort;\nCompositeSecretStore: new (managed: KeywaySecretStorePort, environment?: KeywaySecretStorePort) => KeywaySecretStorePort;\ndecodeMasterKey(value: string): Uint8Array;\nimportKeywayV1(store: KeywayStorePort, value: unknown): Promise<Record<string, number>>;\n};\n}"
+      },
+      {
+        "name": "KeywaySecretStorePort",
+        "kind": "interface",
+        "signature": "export interface KeywaySecretStorePort {\nput(secretRef: string, value: string): Promise<void>;\nresolve(secretRef: string): Promise<string | undefined>;\nhas(secretRef: string): Promise<boolean>;\nremove(secretRef: string): Promise<void>;\n}"
+      },
+      {
+        "name": "KeywayStorePort",
+        "kind": "interface",
+        "signature": "export interface KeywayStorePort {\nclose(): void;\nsaveTarget(target: KeywayExecutionTargetPort): void;\nlistTargets(): Promise<readonly KeywayExecutionTargetPort[]>;\ndeleteTarget(targetId: string): boolean;\nsaveCredential(credential: KeywayManagedCredentialPort): void;\nlistManagedCredentials(providerId?: string): Promise<readonly KeywayManagedCredentialPort[]>;\ndeleteCredential(credentialId: string): boolean;\ngetCredentialHealth(credentialId: string): Promise<KeywayCredentialHealthPort | undefined>;\nsaveRoute(route: KeywayGatewayRoutePort): void;\nlistRoutes(): Promise<readonly KeywayGatewayRoutePort[]>;\ndeleteRoute(routeId: string): boolean;\nsaveBudgetPolicy(policy: import('../usage/contracts.js').BudgetPolicy): void;\nlistManagedBudgetPolicies(): Promise<readonly import('../usage/contracts.js').BudgetPolicy[]>;\ndeleteBudgetPolicy(policyId: string): boolean;\n}"
+      },
+      {
+        "name": "KeywayStreamEventPort",
+        "kind": "type",
+        "signature": "export type KeywayStreamEventPort = {\ntype: 'data';\nvalue: KeywayJson;\n} | {\ntype: 'usage';\nusage: UsageCounters;\n} | {\ntype: 'provider-event';\nvalue: KeywayJson;\n};"
+      },
+      {
         "name": "LANGUAGE_SERVER_PRESETS",
         "kind": "value",
         "signature": "LANGUAGE_SERVER_PRESETS: LanguageServerDefinition[]"
@@ -14837,6 +15547,11 @@
         "name": "LegacyCompatibilityProjection",
         "kind": "interface",
         "signature": "export interface LegacyCompatibilityProjection {\nreadonly events: readonly AgentEvent[];\nreadonly omitted: readonly {\nsourceEventId: string;\nsemanticType: SurfaceSemanticEvent['type'];\nreason: string;\n}[];\n}"
+      },
+      {
+        "name": "legacyCostLedgerPath",
+        "kind": "function",
+        "signature": "export declare function legacyCostLedgerPath(homeDir: string): string;"
       },
       {
         "name": "LegacyModelApiProvider",
@@ -14999,6 +15714,16 @@
         "signature": "export declare function loadJsonConfigFile(filePathOrOptions: string | LoadJsonConfigFileOptions): Promise<LoadedJsonConfigData>;"
       },
       {
+        "name": "loadKeywayGatewayModule",
+        "kind": "function",
+        "signature": "export declare function loadKeywayGatewayModule(): Promise<KeywayGatewayModulePort>;"
+      },
+      {
+        "name": "loadKeywaySdkModules",
+        "kind": "function",
+        "signature": "export declare function loadKeywaySdkModules(): Promise<KeywaySdkModulesPort>;"
+      },
+      {
         "name": "loadPolicyDocuments",
         "kind": "function",
         "signature": "export declare function loadPolicyDocuments(options: {\nhomeDir: string;\nworkDir: string;\nexplicit?: PolicyDocument[];\n}): Promise<PolicyDocument[]>;"
@@ -15072,6 +15797,11 @@
         "name": "MANAGED_PLUGIN_IDS",
         "kind": "value",
         "signature": "MANAGED_PLUGIN_IDS: readonly [\n\"ocr\",\n\"computer-use\",\n\"github\",\n\"kimi-webbridge\",\n\"playwright\",\n\"tavily\",\n\"exa\",\n\"image-gen\",\n\"video-gen\",\n\"mesh-gen\"\n]"
+      },
+      {
+        "name": "ManagedModelApiFactory",
+        "kind": "type",
+        "signature": "export type ManagedModelApiFactory = (target: KeywayManagedTargetPort, model: string, secret: string) => Promise<ModelApi>;"
       },
       {
         "name": "ManagedOcrConfig",
@@ -15362,6 +16092,21 @@
         "name": "msUntilNextCron",
         "kind": "function",
         "signature": "export declare function msUntilNextCron(expression: string, from?: Date): number;"
+      },
+      {
+        "name": "NativeCliClientFactory",
+        "kind": "type",
+        "signature": "export type NativeCliClientFactory = (target: KeywayNativeTargetPort, model: string) => Promise<NativeCliClientPort>;"
+      },
+      {
+        "name": "NativeCliClientPort",
+        "kind": "interface",
+        "signature": "export interface NativeCliClientPort {\nstream(prompt: string, options?: HadamardBridgeRunOptions): NativeCliRunStreamPort;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "NativeCliRunStreamPort",
+        "kind": "interface",
+        "signature": "export interface NativeCliRunStreamPort extends AsyncIterable<HadamardBridgeJsonEvent> {\nresult: Promise<HadamardBridgeRunResult>;\n}"
       },
       {
         "name": "NestedToolExecutionResult",
@@ -15714,6 +16459,11 @@
         "signature": "PORTABLE_RESERVED_WORDS: ReadonlySet<string>"
       },
       {
+        "name": "PortableMigrationPreview",
+        "kind": "interface",
+        "signature": "export interface PortableMigrationPreview {\nsource: 'keyway-export-v1';\ncounts: Record<string, number>;\nsecretsIncluded: false;\nissuedKeysRequireRotation: boolean;\n}"
+      },
+      {
         "name": "POWERSHELL_TOOL_NAME",
         "kind": "value",
         "signature": "POWERSHELL_TOOL_NAME = \"PowerShell\""
@@ -15742,6 +16492,11 @@
         "name": "probeExternalCliAuth",
         "kind": "function",
         "signature": "export declare function probeExternalCliAuth(runtime: ExternalCliAuthRuntime, options?: ExternalCliAuthProbeOptions): Promise<ExternalCliAuthStatus>;"
+      },
+      {
+        "name": "probeKeywayNativeTargetAuth",
+        "kind": "function",
+        "signature": "export declare function probeKeywayNativeTargetAuth(target: KeywayNativeTargetPort, options?: ExternalCliAuthProbeOptions): Promise<ExternalCliAuthStatus>;"
       },
       {
         "name": "probeLanguageServerCommand",
@@ -15887,6 +16642,11 @@
         "name": "PromptHookEvaluator",
         "kind": "type",
         "signature": "export type PromptHookEvaluator = (prompt: string, input: TypedHookInput, signal: AbortSignal) => Promise<{\nbehavior?: 'continue' | 'block';\nfeedback?: string;\ndata?: Record<string, unknown>;\n}>;"
+      },
+      {
+        "name": "providerUsage",
+        "kind": "function",
+        "signature": "export declare function providerUsage(value: unknown): UsageCounters;"
       },
       {
         "name": "race",
@@ -16364,6 +17124,11 @@
         "signature": "export declare function resolveRoutedRun(profile: RouterProfile, userInput: string, signal?: AbortSignal, options?: {\nhomeDir?: string;\nprojectDir?: string;\n}): Promise<{\nmodel: string;\nmodelApi: ModelApi;\nlabel: string;\ndecision: RouterDecision;\neffort?: HadamardRunEffort;\n}>;"
       },
       {
+        "name": "resolveRoutingTargetSelection",
+        "kind": "function",
+        "signature": "export declare function resolveRoutingTargetSelection(input: RoutingSelectionInput): HadamardRoutingTarget | undefined;"
+      },
+      {
         "name": "resolveRuntimeConfig",
         "kind": "function",
         "signature": "export declare function resolveRuntimeConfig(options?: CreateAgentSdkOptions): Promise<ResolvedRuntimeConfig>;"
@@ -16477,6 +17242,11 @@
         "name": "RouterRoute",
         "kind": "interface",
         "signature": "export interface RouterRoute extends RouterModelRef {\nwhen: string;\nname?: string;\nrole?: string;\ndescription?: string;\neffort?: HadamardRunEffort;\ntarget?: AgentTargetRef;\n}"
+      },
+      {
+        "name": "RoutingSelectionInput",
+        "kind": "interface",
+        "signature": "export interface RoutingSelectionInput {\ngatewayRouteAlias?: string;\nagentRouterProfile?: string;\nmodelTeam?: string;\n}"
       },
       {
         "name": "RuleCommandResult",
@@ -16889,6 +17659,11 @@
         "signature": "export interface SessionCostModelUsage {\ninputTokens: number;\noutputTokens: number;\ncostUsd: number;\n}"
       },
       {
+        "name": "SessionCostRecordMeta",
+        "kind": "interface",
+        "signature": "export interface SessionCostRecordMeta {\nsessionId?: string;\nrunId?: string;\nlogicalRequestId?: string;\nproviderId?: string;\ncredentialId?: string;\nrouteId?: string;\nconfigurationId?: string;\nprojectId?: string;\nagentId?: string;\nsource?: UsageSource;\nstatus?: UsageStatus;\n}"
+      },
+      {
         "name": "SessionCostSnapshot",
         "kind": "interface",
         "signature": "export interface SessionCostSnapshot {\ninputTokens: number;\noutputTokens: number;\ncostUsd: number;\nperModel: Record<string, SessionCostModelUsage>;\n}"
@@ -16896,7 +17671,7 @@
       {
         "name": "SessionCostTracker",
         "kind": "class",
-        "signature": "export declare class SessionCostTracker {\nprivate readonly homeDir;\nprivate inputTokens;\nprivate outputTokens;\nprivate costUsd;\nprivate readonly perModel;\nprivate readonly ledger;\nprivate ledgerQueue;\nconstructor(homeDir: string, opts?: {\nledger?: boolean;\n});\nrecord(model: string, usage: SessionCostUsage, meta?: {\nsessionId?: string;\nrunId?: string;\n}): void;\nsnapshot(): SessionCostSnapshot;\n}"
+        "signature": "export declare class SessionCostTracker {\nprivate readonly homeDir;\nprivate inputTokens;\nprivate outputTokens;\nprivate costUsd;\nprivate readonly perModel;\nprivate readonly ledger;\nprivate ledgerQueue;\nconstructor(homeDir: string, opts?: {\nledger?: boolean;\n});\nrecord(model: string, usage: SessionCostUsage, meta?: SessionCostRecordMeta): void;\nsnapshot(): SessionCostSnapshot;\n}"
       },
       {
         "name": "SessionCostUsage",
@@ -17659,6 +18434,11 @@
         "signature": "export declare function upsertScheduledAutomationTask(workDir: string, input: ScheduledAutomationTaskInput): Promise<ScheduledAutomationTask>;"
       },
       {
+        "name": "UsageAccuracy",
+        "kind": "type",
+        "signature": "export type UsageAccuracy = 'actual' | 'estimated' | 'unknown';"
+      },
+      {
         "name": "usageBarColorLevel",
         "kind": "function",
         "signature": "export declare function usageBarColorLevel(pct: number): UsageBarColorLevel;"
@@ -17672,6 +18452,106 @@
         "name": "usageBarPercent",
         "kind": "function",
         "signature": "export declare function usageBarPercent(usedTokens: number, windowTokens: number): number;"
+      },
+      {
+        "name": "UsageBudgetService",
+        "kind": "class",
+        "signature": "export declare class UsageBudgetService {\nprivate readonly store;\nprivate readonly notify?;\nconstructor(store: BudgetStorePort, notify?: ((notification: BudgetNotification) => void) | undefined);\nreserve(requestId: string, estimate: Partial<UsageCounters>, context?: BudgetContext): Promise<BudgetPreflightResult>;\nreconcile(reservations: readonly BudgetReservation[], usage: UsageCounters): Promise<void>;\n}"
+      },
+      {
+        "name": "UsageCounters",
+        "kind": "interface",
+        "signature": "export interface UsageCounters {\nrequests: number;\ninputTokens: number;\noutputTokens: number;\ntotalTokens: number;\ncacheReadTokens: number;\ncacheWriteTokens: number;\nreasoningTokens: number;\naudioInputTokens: number;\naudioOutputTokens: number;\ncostUsd?: number;\naccuracy: UsageAccuracy;\n}"
+      },
+      {
+        "name": "usageDatabasePath",
+        "kind": "function",
+        "signature": "export declare function usageDatabasePath(homeDir: string): string;"
+      },
+      {
+        "name": "UsageEventV2",
+        "kind": "type",
+        "signature": "export type UsageEventV2 = UsageEventRequest & UsageEventAttribution & UsageEventResult;"
+      },
+      {
+        "name": "UsageFilter",
+        "kind": "interface",
+        "signature": "export interface UsageFilter {\nfrom?: string;\nto?: string;\nsource?: UsageSource;\nstatus?: UsageStatus;\nmodel?: string;\nproviderId?: string;\ncredentialId?: string;\nrouteId?: string;\nconfigurationId?: string;\nprojectId?: string;\nagentId?: string;\nsessionId?: string;\nrunId?: string;\n}"
+      },
+      {
+        "name": "usageFilterFromSearch",
+        "kind": "function",
+        "signature": "export declare function usageFilterFromSearch(search: URLSearchParams): UsagePage;"
+      },
+      {
+        "name": "UsageImportResult",
+        "kind": "interface",
+        "signature": "export interface UsageImportResult {\nimported: number;\nskipped: number;\nmalformed: number;\n}"
+      },
+      {
+        "name": "UsageLedger",
+        "kind": "class",
+        "signature": "export declare class UsageLedger {\nprivate readonly driver;\nprivate constructor();\nstatic open(options: UsageLedgerOptions): Promise<UsageLedger>;\nappend(event: UsageEventV2): boolean;\nquery(page?: UsagePage): UsageEventV2[];\nsummarize(filter?: UsageFilter): UsageSummary;\nimportLegacyJsonl(filename: string): Promise<UsageImportResult>;\nexportJsonl(filename: string, filter?: UsageFilter): Promise<number>;\ndeleteBefore(timestamp: string): number;\nclose(): void;\n}"
+      },
+      {
+        "name": "UsageLedgerOptions",
+        "kind": "interface",
+        "signature": "export interface UsageLedgerOptions {\nfilename: string;\ndriverFactory?: SqliteDriverFactory;\n}"
+      },
+      {
+        "name": "UsagePage",
+        "kind": "interface",
+        "signature": "export interface UsagePage extends UsageFilter {\nlimit?: number;\noffset?: number;\n}"
+      },
+      {
+        "name": "UsageQueryService",
+        "kind": "class",
+        "signature": "export declare class UsageQueryService {\nprivate readonly ledger;\nprivate constructor();\nstatic open(homeDir: string): Promise<UsageQueryService>;\nsummary(filter?: UsageFilter): UsageSummary;\nevents(page?: UsagePage): import(\"./contracts.js\").UsageEventV2[];\nclose(): void;\n}"
+      },
+      {
+        "name": "UsageRouteAttempt",
+        "kind": "interface",
+        "signature": "export interface UsageRouteAttempt {\nattempt: number;\ntargetId: string;\nproviderId?: string;\ncredentialId?: string;\nupstreamModel: string;\nstartedAt: string;\ncompletedAt: string;\nstatus: UsageStatus;\nstatusCode?: number;\nretryable?: boolean;\nlatencyMs: number;\nerrorCode?: string;\n}"
+      },
+      {
+        "name": "UsageRoutingAdminService",
+        "kind": "class",
+        "signature": "export declare class UsageRoutingAdminService {\nprivate readonly usage;\nprivate readonly options;\nprivate constructor();\nstatic open(options: UsageRoutingAdminServiceOptions): Promise<UsageRoutingAdminService>;\noverview(filter?: UsageFilter): UsageRoutingOverview;\nledger(page?: UsagePage): {\nsummary: UsageSummary;\nevents: import(\"../usage/contracts.js\").UsageEventV2[];\n};\ncatalog(): Promise<UsageRoutingCatalog>;\nsaveCredential(input: Record<string, unknown>): Promise<{\nid: string;\n}>;\ndeleteCredential(id: string): Promise<boolean>;\nsaveTarget(input: Record<string, unknown>): {\nid: string;\n};\ndeleteTarget(id: string): boolean;\nsaveRoute(input: Record<string, unknown>): Promise<{\nid: string;\n}>;\ndeleteRoute(id: string): boolean;\nsaveBudget(input: Record<string, unknown>): {\nid: string;\n};\ndeleteBudget(id: string): boolean;\ntestCredential(id: string): Promise<Record<string, unknown>>;\ntestTarget(id: string): Promise<Record<string, unknown>>;\ngatewayStatus(): Record<string, unknown>;\nstartGateway(port?: number): Promise<Record<string, unknown>>;\nstopGateway(): Promise<Record<string, unknown>>;\npreviewBridgeMigration(): import(\"./keywayMigrationService.js\").BridgeMigrationPreview;\nimportBridgeMigration(): Promise<Record<string, unknown>>;\npreviewPortableMigration(filePath: string): Promise<import(\"./keywayMigrationService.js\").PortableMigrationPreview>;\nimportPortableMigration(filePath: string): Promise<Record<string, unknown>>;\nclose(): void;\nprivate now;\nprivate id;\n}"
+      },
+      {
+        "name": "UsageRoutingAdminServiceOptions",
+        "kind": "interface",
+        "signature": "export interface UsageRoutingAdminServiceOptions {\nhomeDir: string;\nstore: KeywayStorePort;\nsecretStore: KeywaySecretStorePort;\nexecutor?: KeywayProviderExecutorPort;\ngateway?: {\nstatus(): object;\nstart(port?: number): Promise<object>;\nstop(): Promise<object>;\n};\nmigration?: KeywayMigrationService;\nnow?: () => Date;\nidFactory?: () => string;\n}"
+      },
+      {
+        "name": "UsageRoutingCatalog",
+        "kind": "interface",
+        "signature": "export interface UsageRoutingCatalog {\ntargets: readonly KeywayExecutionTargetPort[];\nroutes: readonly KeywayGatewayRoutePort[];\nbudgets: readonly BudgetPolicy[];\ncredentials: ReadonlyArray<Omit<KeywayManagedCredentialPort, 'secretRef'> & {\nsecretConfigured: boolean;\nhealth: Awaited<ReturnType<KeywayStorePort['getCredentialHealth']>>;\n}>;\n}"
+      },
+      {
+        "name": "UsageRoutingOverview",
+        "kind": "interface",
+        "signature": "export interface UsageRoutingOverview {\nsummary: UsageSummary;\ntrend: readonly UsageTrendPoint[];\nbyProvider: readonly {\nkey: string;\nrequests: number;\ntokens: number;\ncostUsd: number;\n}[];\nunknownUsageEntries: number;\n}"
+      },
+      {
+        "name": "UsageSource",
+        "kind": "type",
+        "signature": "export type UsageSource = 'hadamard' | 'bridge' | 'keyway' | 'native-cli' | 'import';"
+      },
+      {
+        "name": "UsageStatus",
+        "kind": "type",
+        "signature": "export type UsageStatus = 'succeeded' | 'failed' | 'cancelled' | 'denied';"
+      },
+      {
+        "name": "UsageSummary",
+        "kind": "interface",
+        "signature": "export interface UsageSummary extends UsageCounters {\nentries: number;\n}"
+      },
+      {
+        "name": "UsageTrendPoint",
+        "kind": "interface",
+        "signature": "export interface UsageTrendPoint {\ndate: string;\nrequests: number;\ntokens: number;\ncostUsd: number;\n}"
       },
       {
         "name": "validateAgentProfile",

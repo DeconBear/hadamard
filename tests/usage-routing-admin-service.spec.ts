@@ -200,28 +200,4 @@ describe('UsageRoutingAdminService', () => {
     service.close();
   });
 
-  it('installs Ark Agent Plan models entirely inside Hadamard Keyway storage', async () => {
-    const root = await home();
-    const store = new FakeStore();
-    const secrets = new MemorySecrets();
-    const service = await UsageRoutingAdminService.open({
-      homeDir: root,
-      store,
-      secretStore: secrets,
-      now: () => new Date(timestamp),
-    });
-    const result = await service.installArkAgentPlan({ secret: 'ark-write-only-canary' });
-    expect(result.routeAliases).toEqual(['ark-glm-5.2', 'ark-glm-5.3']);
-    expect(store.targets).toContainEqual(expect.objectContaining({
-      id: 'target.ark-agent-plan',
-      baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
-    }));
-    expect(store.routes.map(route => [route.alias, route.candidates[0]?.upstreamModel])).toEqual([
-      ['ark-glm-5.2', 'glm-5.2'],
-      ['ark-glm-5.3', 'glm-5.3'],
-    ]);
-    expect(await secrets.resolve('secret:credential.ark-agent-plan')).toBe('ark-write-only-canary');
-    expect(JSON.stringify(await service.catalog())).not.toContain('ark-write-only-canary');
-    service.close();
-  });
 });
