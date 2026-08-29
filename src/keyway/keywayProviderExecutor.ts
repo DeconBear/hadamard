@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { resolveRuntimeConfig } from '../config/resolveRuntimeConfig.js';
 import {
   createHadamardNativeCliClient,
+  nativeCliModelOverride,
   probeHadamardNativeCliAuth,
   type ExternalCliAuthProbeOptions,
   type ExternalCliAuthStatus,
@@ -112,9 +113,10 @@ export class HadamardKeywayProviderExecutor implements KeywayProviderExecutorPor
     const client = await this.nativeFactory(target, request.upstreamModel);
     try {
       const resume = optionalString(payload?.resume) ?? optionalString(payload?.sessionId);
+      const model = nativeCliModelOverride(request.upstreamModel);
       const stream = client.stream(prompt, {
         signal,
-        model: request.upstreamModel,
+        ...(model ? { model } : {}),
         ...(optionalString(payload?.workDir) ? { workDir: optionalString(payload?.workDir) } : {}),
         ...(resume ? { sessionId: resume, resume } : {}),
       });
