@@ -11,6 +11,7 @@ const fakeCodexCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-code
 const fakeClaudeCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-hadamard-runtime-cli.mjs');
 const fakeCodewhaleCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-codewhale-cli.mjs');
 const fakeCursorCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-cursor-cli.mjs');
+const fakeCrushCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-crush-cli.mjs');
 const fakePiCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-pi-cli.mjs');
 const fakeReasonixCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-reasonix-cli.mjs');
 
@@ -156,6 +157,26 @@ describe('Hadamard-owned native CLI client', () => {
       expect(firstIdentity?.[3]).toBe('1');
       expect(secondIdentity?.[3]).toBe('2');
       expect(second.sessionId).toBe('reasonix-fixture-session');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('runs a Keyway Crush target over the owned private local transport', async () => {
+    const workDir = await temporaryDirectory('hadamard-owned-crush-');
+    const client = await createHadamardNativeCliClient(
+      { runtime: 'crush' },
+      'openai/gpt-5',
+      { executable: process.execPath, cliPath: fakeCrushCli, workDir },
+    );
+    try {
+      const first = await client.stream('hello-crush').result;
+      const resumed = await client.stream('second-turn', {
+        resume: first.sessionId,
+        sessionId: first.sessionId,
+      }).result;
+      expect(first).toMatchObject({ text: 'crush:hello-crush', sessionId: 'crush-session-1' });
+      expect(resumed).toMatchObject({ text: 'crush:second-turn', sessionId: 'crush-session-1' });
     } finally {
       await client.close();
     }

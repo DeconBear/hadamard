@@ -20,9 +20,8 @@ export function createNativeCliBridgeDelegate(
 ): Promise<NativeCliClient> | undefined {
   if ((options.authSource ?? 'native') !== 'native') return undefined;
   if (provider !== 'claude' && provider !== 'codewhale' && provider !== 'codex'
-    && provider !== 'cursor' && provider !== 'pi' && provider !== 'reasonix') {
-    return undefined;
-  }
+    && provider !== 'crush' && provider !== 'cursor' && provider !== 'pi'
+    && provider !== 'reasonix') return undefined;
   return createNativeCliClient({
     runtime: provider,
     model: options.model,
