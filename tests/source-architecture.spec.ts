@@ -51,6 +51,7 @@ describe('source architecture', () => {
     const ownedFiles = [
       'nativeCliAuth.ts',
       'nativeCliClient.ts',
+      'nativeCliCodewhaleProtocol.ts',
       'nativeCliCursorProtocol.ts',
       'nativeCliExecResolver.ts',
       'nativeCliPiProtocol.ts',

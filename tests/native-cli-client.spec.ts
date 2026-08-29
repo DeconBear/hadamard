@@ -9,6 +9,7 @@ import { createHadamardNativeCliClient } from '../src/nativeCli/keywayNativeCliA
 const temporaryDirectories: string[] = [];
 const fakeCodexCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-codex-cli.mjs');
 const fakeClaudeCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-hadamard-runtime-cli.mjs');
+const fakeCodewhaleCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-codewhale-cli.mjs');
 const fakeCursorCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-cursor-cli.mjs');
 const fakePiCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-pi-cli.mjs');
 
@@ -106,6 +107,32 @@ describe('Hadamard-owned native CLI client', () => {
         totalCostUsd: 0,
       });
       expect(result.initEvent?.model).toBe('gpt-4o-mini');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('correlates a Keyway CodeWhale target with its persisted native session', async () => {
+    const workDir = await temporaryDirectory('hadamard-owned-codewhale-');
+    const codewhaleHome = path.join(workDir, 'codewhale-home');
+    const client = await createHadamardNativeCliClient(
+      { runtime: 'codewhale' },
+      'codewhale-default',
+      {
+        executable: process.execPath,
+        cliPath: fakeCodewhaleCli,
+        workDir,
+        env: { CODEWHALE_HOME: codewhaleHome },
+      },
+    );
+    try {
+      const result = await client.stream('hello-codewhale').result;
+      expect(result).toMatchObject({
+        text: 'codewhale:hello-codewhale',
+        sessionId: 'codewhale-fixture-session',
+        isError: false,
+      });
+      expect(result.resultEvent).toMatchObject({ input_tokens: 4 });
     } finally {
       await client.close();
     }
