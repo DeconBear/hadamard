@@ -12,6 +12,7 @@ import type {
 } from '../types.js';
 import { resolveNativeCliExecutable } from './nativeCliAuth.js';
 import { buildCursorArgs, createCursorNormalizer } from './nativeCliCursorProtocol.js';
+import { buildPiArgs, createPiNormalizer } from './nativeCliPiProtocol.js';
 import {
   IS_WINDOWS,
   resolveExecutableInvocation,
@@ -29,7 +30,7 @@ const HADAMARD_AUTH_ENV_KEYS = new Set([
 ]);
 const SENSITIVE_ENV_KEY = /(?:^|_)(?:API_?KEY|AUTH|COOKIE|CREDENTIALS?|KEY|PASS(?:WORD|WD)?|PRIVATE_KEY|SECRET|TOKEN)(?:$|_)/iu;
 
-export type HadamardOwnedNativeCliRuntime = 'claude' | 'codex' | 'cursor';
+export type HadamardOwnedNativeCliRuntime = 'claude' | 'codex' | 'cursor' | 'pi';
 
 export interface HadamardNativeCliClientOptions {
   runtime: HadamardOwnedNativeCliRuntime;
@@ -38,6 +39,8 @@ export interface HadamardNativeCliClientOptions {
   cliPath?: string;
   workDir?: string;
   env?: Record<string, string>;
+  credentialProvider?: string;
+  trustProjectResources?: boolean;
 }
 
 export interface NativeCliRunStream extends AsyncIterable<HadamardBridgeJsonEvent> {
@@ -50,7 +53,16 @@ export interface NativeCliClient {
 }
 
 interface NativeCliNormalizer {
-  translate(record: Record<string, unknown>): HadamardBridgeJsonEvent[];
+  translate(record: Record<string, unknown>, control?: NativeCliProcessControl): HadamardBridgeJsonEvent[];
+  interactive?: true;
+  start?(control: NativeCliProcessControl): void;
+  abort?(control: NativeCliProcessControl): void;
+  abortGraceMs?: number;
+}
+
+interface NativeCliProcessControl {
+  write(record: Record<string, unknown>): void;
+  endInput(): void;
 }
 
 class NativeCliRunStreamImpl implements NativeCliRunStream {
@@ -97,6 +109,8 @@ export class HadamardNativeCliClient implements NativeCliClient {
       model: options.model ?? this.defaults.model,
       workDir: options.workDir ?? this.defaults.workDir ?? process.cwd(),
       env: { ...this.defaults.env, ...options.env },
+      credentialProvider: options.credentialProvider ?? this.defaults.credentialProvider,
+      trustProjectResources: options.trustProjectResources ?? this.defaults.trustProjectResources,
     };
     return new NativeCliRunStreamImpl(emit => this.execute(prompt, merged, emit));
   }
@@ -122,7 +136,9 @@ export class HadamardNativeCliClient implements NativeCliClient {
       ? buildClaudeArgs(prompt, options)
       : this.defaults.runtime === 'codex'
         ? buildCodexArgs(prompt, options)
-        : buildCursorArgs(prompt, options);
+        : this.defaults.runtime === 'cursor'
+          ? buildCursorArgs(prompt, options)
+          : buildPiArgs(prompt, options);
     const args = this.defaults.cliPath ? [this.defaults.cliPath, ...cliArgs] : cliArgs;
     const invocation = await resolveExecutableInvocation(this.defaults.executable!, args);
     if (this.closed) throw new HadamardBridgeProcessError('The native CLI client is closed.');
@@ -135,11 +151,13 @@ export class HadamardNativeCliClient implements NativeCliClient {
       ? { translate: record => [record as HadamardBridgeJsonEvent] }
       : this.defaults.runtime === 'codex'
         ? new CodexNormalizer()
-        : createCursorNormalizer();
+        : this.defaults.runtime === 'cursor'
+          ? createCursorNormalizer()
+          : createPiNormalizer(prompt, options);
     const child = spawn(invocation.file, invocation.args, {
       cwd: path.resolve(options.workDir ?? process.cwd()),
       env: environment,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [normalizer.interactive ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       windowsHide: true,
       shell: false,
       detached: !IS_WINDOWS,
@@ -150,17 +168,47 @@ export class HadamardNativeCliClient implements NativeCliClient {
       this.reclaims.delete(child);
     });
 
+    let inputEnded = false;
+    child.stdin?.on('error', () => {
+      // Interactive CLIs may close stdin after their terminal response.
+    });
+    const processControl: NativeCliProcessControl = {
+      write: record => {
+        if (inputEnded || !child.stdin || child.stdin.destroyed) return;
+        child.stdin.write(`${JSON.stringify(record)}\n`);
+      },
+      endInput: () => {
+        if (inputEnded) return;
+        inputEnded = true;
+        child.stdin?.end();
+      },
+    };
+
     let aborted = false;
     let termination: Promise<void> | undefined;
-    const reclaim = async () => {
+    let protocolAbortRequested = false;
+    const forceReclaim = async () => {
       termination ??= terminateManagedProcessTree(child);
+      await termination;
+    };
+    const gracefulReclaim = async () => {
+      if (normalizer.abort && !protocolAbortRequested) {
+        protocolAbortRequested = true;
+        normalizer.abort(processControl);
+      }
+      termination ??= normalizer.abort
+        ? (async () => {
+          await new Promise(resolve => setTimeout(resolve, normalizer.abortGraceMs ?? 250));
+          await terminateManagedProcessTree(child);
+        })()
+        : terminateManagedProcessTree(child);
       await termination;
     };
     const abort = () => {
       aborted = true;
-      void reclaim();
+      void gracefulReclaim();
     };
-    this.reclaims.set(child, reclaim);
+    this.reclaims.set(child, gracefulReclaim);
     options.signal?.addEventListener('abort', abort, { once: true });
     if (options.signal?.aborted) abort();
 
@@ -172,7 +220,8 @@ export class HadamardNativeCliClient implements NativeCliClient {
     let exitCode: number | null = null;
 
     try {
-      const stdoutTask = parseJsonLines(child, normalizer, event => {
+      normalizer.start?.(processControl);
+      const stdoutTask = parseJsonLines(child, normalizer, processControl, event => {
         retain(events, structuredClone(event), MAX_RETAINED_EVENTS);
         if (event.type === 'system' && event.subtype === 'init') initEvent = structuredClone(event);
         if (event.type === 'assistant') retain(assistantMessages, structuredClone(event), MAX_RETAINED_ASSISTANT_MESSAGES);
@@ -188,7 +237,7 @@ export class HadamardNativeCliClient implements NativeCliClient {
       [stderr, exitCode] = await Promise.all([stderrTask, exitTask, stdoutTask])
         .then(([nextStderr, nextExitCode]) => [nextStderr, nextExitCode]);
     } catch (error) {
-      await reclaim();
+      await forceReclaim();
       const normalized = asError(error);
       if (aborted || normalized.name === 'AbortError') {
         throw new RunAbortedError('The native CLI run was aborted.', { cause: error });
@@ -375,6 +424,7 @@ class CodexNormalizer implements NativeCliNormalizer {
 async function parseJsonLines(
   child: ReturnType<typeof spawn>,
   normalizer: NativeCliNormalizer,
+  processControl: NativeCliProcessControl,
   onEvent: (event: HadamardBridgeJsonEvent) => void,
   secrets: readonly string[],
 ): Promise<void> {
@@ -393,7 +443,9 @@ async function parseJsonLines(
       );
     }
     if (!isRecord(parsed)) throw new HadamardBridgeProcessError('Native CLI emitted a malformed stream event.');
-    for (const translated of normalizer.translate(parsed)) onEvent(redactEvent(translated, secrets));
+    for (const translated of normalizer.translate(parsed, processControl)) {
+      onEvent(redactEvent(translated, secrets));
+    }
   }
 }
 
