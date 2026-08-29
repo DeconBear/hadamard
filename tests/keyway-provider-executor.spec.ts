@@ -5,6 +5,7 @@ import {
   bridgeUsage,
   probeKeywayNativeTargetAuth,
 } from '../src/keyway/keywayProviderExecutor.js';
+import { NATIVE_CLI_DEFAULT_MODEL } from '../src/nativeCli/keywayNativeCliAdapter.js';
 import type { KeywayProviderRequestPort } from '../src/keyway/keywayPorts.js';
 import type { Message } from '../src/provider/types.js';
 import type { HadamardBridgeRunResult, ModelApi, ModelRequest } from '../src/types.js';
@@ -134,6 +135,31 @@ describe('HadamardKeywayProviderExecutor', () => {
       usage: { requests: 1, totalTokens: 0, accuracy: 'unknown' },
     });
     expect(closed).toBe(true);
+  });
+
+  it('omits the model override when a native route delegates to the CLI default', async () => {
+    const stream = vi.fn(() => ({
+      result: Promise.resolve({
+        text: 'native reply', sessionId: 'native-session-1', isError: false,
+        exitCode: 0, stderr: '', resultEvent: { type: 'result', subtype: 'success' },
+        assistantMessages: [], events: [],
+      } as HadamardBridgeRunResult),
+      async *[Symbol.asyncIterator]() {},
+    }));
+    const executor = new HadamardKeywayProviderExecutor({
+      nativeCliClientFactory: async () => ({ stream, async close() {} }),
+    });
+
+    await executor.execute({
+      requestId: 'request-native-default',
+      correlationId: 'correlation-native-default',
+      operation: 'generate',
+      target: { kind: 'native-cli', id: 'native-codex', runtime: 'codex', enabled: true },
+      upstreamModel: NATIVE_CLI_DEFAULT_MODEL,
+      payload: { prompt: 'hello' },
+    }).result;
+
+    expect(stream).toHaveBeenCalledWith('hello', expect.not.objectContaining({ model: expect.anything() }));
   });
 
   it('rejects unsupported native runtimes before launching a CLI process', async () => {

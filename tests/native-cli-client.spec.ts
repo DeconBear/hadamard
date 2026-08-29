@@ -4,7 +4,10 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createHadamardNativeCliClient } from '../src/nativeCli/keywayNativeCliAdapter.js';
+import {
+  createHadamardNativeCliClient,
+  NATIVE_CLI_DEFAULT_MODEL,
+} from '../src/nativeCli/keywayNativeCliAdapter.js';
 
 const temporaryDirectories: string[] = [];
 const fakeCodexCli = path.resolve(process.cwd(), 'tests', 'fixtures', 'fake-codex-cli.mjs');
@@ -47,6 +50,21 @@ describe('Hadamard-owned native CLI client', () => {
       const resumed = await client.stream('check-resume', { resume: first.sessionId }).result;
       expect(resumed.text).toBe('codex:resume:codex-fixture-thread');
       expect(resumed.sessionId).toBe(first.sessionId);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('lets Codex use its configured default model when the route requests the CLI default', async () => {
+    const workDir = await temporaryDirectory('hadamard-owned-codex-default-');
+    const client = await createHadamardNativeCliClient(
+      { runtime: 'codex' },
+      NATIVE_CLI_DEFAULT_MODEL,
+      { executable: process.execPath, cliPath: fakeCodexCli, workDir },
+    );
+    try {
+      const result = await client.stream('who-am-i').result;
+      expect(result.text).toBe('codex:agent:inherit');
     } finally {
       await client.close();
     }
