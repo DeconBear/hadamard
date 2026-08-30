@@ -1002,6 +1002,19 @@ describe('TUI and GUI parity', () => {
     const launcher = readFileSync(join(root, 'bin', 'hadamard-gui.js'), 'utf8');
     expect(launcher).toContain('const prep = spawnSync(process.execPath, [prepareLauncher]');
     expect(launcher).not.toContain('if (!existsSync(brandedLauncher)) {');
+    expect(launcher).toContain("HADAMARD_GUI_DEVELOPMENT: '1'");
+
+    const electronMain = readFileSync(join(root, 'src', 'gui', 'electronMain.ts'), 'utf8');
+    expect(electronMain).toContain(
+      "process.env.HADAMARD_GUI_DEVELOPMENT === '1'",
+    );
+    expect(electronMain).toContain("? 'com.hadamard.desktop.dev'");
+    expect(electronMain).toContain(": 'com.hadamard.desktop'");
+    expect(electronMain).toContain('app.setAppUserModelId(windowsAppUserModelId)');
+    expect(electronMain.indexOf('app.setAppUserModelId')).toBeLessThan(electronMain.indexOf('app.whenReady()'));
+    expect(electronMain).toContain('window.setAppDetails({');
+    expect(electronMain).toContain('appId: windowsAppUserModelId');
+    expect(electronMain).toContain('appIconPath: iconPath, appIconIndex: 0');
   });
 
   it('keeps project instructions out of system builders and passes the same SDK option', () => {

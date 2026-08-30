@@ -31,10 +31,14 @@ let mainWindow: BrowserWindow | null = null;
 let cleanupInProgress = false;
 let quittingAfterCleanup = false;
 const { autoUpdater } = electronUpdater;
+const windowsAppUserModelId = process.env.HADAMARD_GUI_DEVELOPMENT === '1'
+  ? 'com.hadamard.desktop.dev'
+  : 'com.hadamard.desktop';
 
 if (process.platform === 'win32') {
-  // Set before 'ready'. Use a stable id distinct from electron.exe's default grouping.
-  app.setAppUserModelId('com.hadamard.desktop');
+  // Keep development windows out of an installed shortcut's taskbar group. Otherwise
+  // Windows can reuse the icon cached for an older installed Hadamard executable.
+  app.setAppUserModelId(windowsAppUserModelId);
 }
 
 function executeInFocusedWindow(script: string): void {
@@ -233,6 +237,12 @@ async function createWindow(): Promise<void> {
     },
   });
   mainWindow = window;
+  if (process.platform === 'win32') {
+    window.setAppDetails({
+      appId: windowsAppUserModelId,
+      ...(hasIcon && iconPath ? { appIconPath: iconPath, appIconIndex: 0 } : {}),
+    });
+  }
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
   });
