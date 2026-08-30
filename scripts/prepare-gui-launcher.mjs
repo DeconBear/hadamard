@@ -1,7 +1,9 @@
-// Windows dev launcher: copy electron.exe → Hadamard.exe beside Electron's dist
-// resources (icudtl.dat, resources/, …) and embed assets/hadamard-icon.ico.
-// Windows taskbar icons come from the executable image, not BrowserWindow.setIcon.
-import { copyFileSync, existsSync, statSync } from 'node:fs';
+// Windows dev launcher: copy electron.exe beside Electron's dist resources
+// (icudtl.dat, resources/, …) and embed assets/hadamard-icon.ico. The icon
+// fingerprint in the filename gives Explorer a fresh cache key after a brand
+// icon update; Windows taskbar icons are otherwise sticky by executable path.
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,12 +18,15 @@ if (process.platform !== 'win32') {
 const electronExe = require('electron');
 const distDir = dirname(electronExe);
 const iconIco = join(root, 'assets', 'hadamard-icon.ico');
-const launcher = join(distDir, 'Hadamard.exe');
 
 if (!existsSync(iconIco)) {
   process.stderr.write('prepare-gui-launcher: missing assets/hadamard-icon.ico — run npm run generate:icon\n');
   process.exit(1);
 }
+
+const iconFingerprint = createHash('sha256').update(readFileSync(iconIco)).digest('hex').slice(0, 12);
+const launcherName = `Hadamard-${iconFingerprint}.exe`;
+const launcher = join(distDir, launcherName);
 
 const sources = [electronExe, iconIco];
 const stale = !existsSync(launcher)
@@ -49,7 +54,7 @@ await rcedit(launcher, {
     FileDescription: 'Hadamard',
     ProductName: 'Hadamard',
     CompanyName: 'Hadamard',
-    OriginalFilename: 'Hadamard.exe',
+    OriginalFilename: launcherName,
     InternalName: 'Hadamard',
   },
 });
