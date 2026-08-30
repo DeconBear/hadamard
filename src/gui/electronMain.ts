@@ -31,9 +31,10 @@ let mainWindow: BrowserWindow | null = null;
 let cleanupInProgress = false;
 let quittingAfterCleanup = false;
 const { autoUpdater } = electronUpdater;
-const windowsAppUserModelId = process.env.HADAMARD_GUI_DEVELOPMENT === '1'
-  ? 'com.hadamard.desktop.dev'
-  : 'com.hadamard.desktop';
+const windowsAppUserModelId = process.env.HADAMARD_GUI_APP_USER_MODEL_ID?.trim()
+  || (process.env.HADAMARD_GUI_DEVELOPMENT === '1'
+    ? 'com.hadamard.desktop.dev'
+    : 'com.hadamard.desktop');
 
 function quoteWindowsCommandArgument(value: string): string {
   return `"${value.replaceAll('"', '\\"')}"`;

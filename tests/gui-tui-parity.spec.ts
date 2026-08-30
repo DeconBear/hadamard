@@ -994,10 +994,12 @@ describe('TUI and GUI parity', () => {
     expect(existsSync(join(root, 'assets', 'hadamard-icon.png'))).toBe(true);
     expect(existsSync(join(root, 'assets', 'hadamard-icon.ico'))).toBe(true);
     const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      files?: string[];
       build?: { win?: { icon?: string; signAndEditExecutable?: boolean } };
     };
     expect(packageJson.build?.win?.icon).toBe('assets/hadamard-icon.ico');
     expect(packageJson.build?.win?.signAndEditExecutable).not.toBe(false);
+    expect(packageJson.files).toContain('scripts/prepare-gui-launcher.mjs');
 
     const iconGenerator = readFileSync(join(root, 'scripts', 'generate-gui-icon.mjs'), 'utf8');
     expect(iconGenerator).toContain('const TILE_START = [0x52, 0x52, 0x5b];');
@@ -1010,13 +1012,23 @@ describe('TUI and GUI parity', () => {
     const launcher = readFileSync(join(root, 'bin', 'hadamard-gui.js'), 'utf8');
     expect(launcher).toContain('const prep = spawnSync(process.execPath, [prepareLauncher]');
     expect(launcher).not.toContain('if (!existsSync(brandedLauncher)) {');
+    expect(launcher).toContain("createHash('sha256')");
+    expect(launcher).toContain(".digest('hex').slice(0, 12)");
+    expect(launcher).toContain('launcherName: `Hadamard-${iconFingerprint}.exe`');
     expect(launcher).toContain("HADAMARD_GUI_DEVELOPMENT: '1'");
+    expect(launcher).toContain('HADAMARD_GUI_APP_USER_MODEL_ID: developmentIdentity.appUserModelId');
     expect(launcher).toContain('HADAMARD_GUI_NODE: process.execPath');
+
+    const prepareLauncher = readFileSync(join(root, 'scripts', 'prepare-gui-launcher.mjs'), 'utf8');
+    expect(prepareLauncher).toContain("createHash('sha256')");
+    expect(prepareLauncher).toContain(".digest('hex').slice(0, 12)");
+    expect(prepareLauncher).toContain('const launcherName = `Hadamard-${iconFingerprint}.exe`');
 
     const electronMain = readFileSync(join(root, 'src', 'gui', 'electronMain.ts'), 'utf8');
     expect(electronMain).toContain(
       "process.env.HADAMARD_GUI_DEVELOPMENT === '1'",
     );
+    expect(electronMain).toContain('process.env.HADAMARD_GUI_APP_USER_MODEL_ID?.trim()');
     expect(electronMain).toContain("? 'com.hadamard.desktop.dev'");
     expect(electronMain).toContain(": 'com.hadamard.desktop'");
     expect(electronMain).toContain('app.setAppUserModelId(windowsAppUserModelId)');
