@@ -993,6 +993,15 @@ describe('TUI and GUI parity', () => {
     const root = join(import.meta.dirname, '..');
     expect(existsSync(join(root, 'assets', 'hadamard-icon.png'))).toBe(true);
     expect(existsSync(join(root, 'assets', 'hadamard-icon.ico'))).toBe(true);
+    const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      build?: { win?: { icon?: string; signAndEditExecutable?: boolean } };
+    };
+    expect(packageJson.build?.win?.icon).toBe('assets/hadamard-icon.ico');
+    expect(packageJson.build?.win?.signAndEditExecutable).not.toBe(false);
+
+    const launcher = readFileSync(join(root, 'bin', 'hadamard-gui.js'), 'utf8');
+    expect(launcher).toContain('const prep = spawnSync(process.execPath, [prepareLauncher]');
+    expect(launcher).not.toContain('if (!existsSync(brandedLauncher)) {');
   });
 
   it('keeps project instructions out of system builders and passes the same SDK option', () => {
