@@ -14,16 +14,14 @@ function resolveElectronExecutable() {
   const electronExe = require('electron');
   if (process.platform === 'win32') {
     const brandedLauncher = join(dirname(electronExe), 'Hadamard.exe');
-    if (!existsSync(brandedLauncher)) {
-      const prep = spawnSync(process.execPath, [prepareLauncher], {
-        stdio: process.platform === 'win32' ? 'ignore' : 'inherit',
-        windowsHide: process.platform === 'win32',
-      });
-      if (prep.status !== 0) {
-        process.stderr.write(
-          'Hadamard: branded launcher unavailable; taskbar may show the Electron icon.\n',
-        );
-      }
+    const prep = spawnSync(process.execPath, [prepareLauncher], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    if (prep.status !== 0) {
+      process.stderr.write(
+        'Hadamard: branded launcher could not be refreshed; taskbar may show a stale or Electron icon.\n',
+      );
     }
     if (existsSync(brandedLauncher)) return brandedLauncher;
   }
