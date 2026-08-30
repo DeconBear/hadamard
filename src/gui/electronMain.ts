@@ -260,7 +260,7 @@ async function createWindow(): Promise<void> {
   if (process.platform === 'win32') {
     window.setAppDetails({
       appId: windowsAppUserModelId,
-      ...(hasIcon && iconPath ? { appIconPath: iconPath, appIconIndex: 0 } : {}),
+      ...(hasIcon ? { appIconPath: process.execPath, appIconIndex: 0 } : {}),
       relaunchCommand: getWindowsRelaunchCommand(),
       relaunchDisplayName: 'Hadamard',
     });
