@@ -164,6 +164,7 @@
     "README-zh.md",
     "CHANGELOG.md",
     "SECURITY.md",
+    "scripts/prepare-gui-launcher.mjs",
     "vendor/hadamard-runtime/cli.js"
   ],
   "engines": {
