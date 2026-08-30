@@ -1780,14 +1780,14 @@ body[data-theme="dark"] {
 .project-doc-rich:focus { caret-color: var(--brand); }
 .project-doc-formatbar { display: none; align-items: center; gap: 4px; margin: -30px -38px 24px; padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--bg-surface); overflow-x: auto; position: sticky; top: -30px; z-index: 2; }
 .project-doc-scroll.editing .project-doc-formatbar { display: flex; }
-.project-doc-formatbar button { flex: 0 0 auto; min-width: 30px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; font-weight: 650; }
-.project-doc-formatbar button:hover { background: var(--surface-hover); color: var(--text-1); }
+.project-doc-formatbar button, .project-doc-formatbar select { flex: 0 0 auto; min-width: 30px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; font-weight: 650; } .project-doc-formatbar select { min-width: 50px; padding: 0 20px 0 8px; cursor: pointer; }
+.project-doc-formatbar button:hover, .project-doc-formatbar select:hover { background: var(--surface-hover); color: var(--text-1); } .project-doc-formatbar select:focus-visible { outline: 2px solid var(--border-active); outline-offset: -2px; }
 .project-doc-view.md-prose { font-size: 13px; line-height: 1.9; color: var(--text-1); cursor: text; }
 .project-doc-view.md-prose .design-header { font-size: 12px; letter-spacing: .01em; }
 .project-doc-view.md-prose .md-h:first-child { margin-top: 0; }
 .project-doc-view.md-prose h1.md-h { font-size: 1.2em; font-weight: 650; margin: 1em 0 .45em; line-height: 1.45; color: var(--text-1); }
 .project-doc-view.md-prose h2.md-h { font-size: 1.08em; font-weight: 650; margin: .85em 0 .4em; line-height: 1.45; color: var(--text-1); }
-.project-doc-view.md-prose h3.md-h, .project-doc-view.md-prose h4.md-h { font-size: 1em; font-weight: 650; margin: .7em 0 .32em; line-height: 1.45; color: var(--text-1); }
+.project-doc-view.md-prose h3.md-h, .project-doc-view.md-prose h4.md-h, .project-doc-view.md-prose h5.md-h, .project-doc-view.md-prose h6.md-h { font-size: 1em; font-weight: 650; margin: .7em 0 .32em; line-height: 1.45; color: var(--text-1); }
 .project-doc-view.md-prose p.md-p { margin: 0 0 .8em; }
 .project-doc-view.md-prose p.md-p:last-child { margin-bottom: 0; }
 .project-doc-view.md-prose ul.md-ul, .project-doc-view.md-prose ol.md-ol { margin: .3em 0 .8em; padding-left: 1.25em; }
@@ -10389,9 +10389,9 @@ function richTextToMarkdown(root) {
     if (node.nodeType === Node.TEXT_NODE) return (node.textContent || '').trim();
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
     const tag = node.tagName.toLowerCase();
-    if (/^h[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + inline(node).trim();
+    if ((tag === 'p' || tag === 'div') && node.children.length === 1 && /^(ul|ol)$/i.test(node.firstElementChild?.tagName || '')) return block(node.firstElementChild); if (/^h[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + inline(node).trim();
     if (tag === 'blockquote') return inline(node).trim().split('\\n').map(line => '> ' + line).join('\\n');
-    if (tag === 'pre') return String.fromCharCode(96).repeat(3) + '\\n' + (node.textContent || '').replace(/\\n$/, '') + '\\n' + String.fromCharCode(96).repeat(3);
+    if (tag === 'pre') { const language = node.querySelector(':scope > .code-lang')?.textContent?.trim() || ''; const code = node.querySelector(':scope > code')?.textContent ?? node.textContent ?? ''; return String.fromCharCode(96).repeat(3) + language + '\\n' + code.replace(/\\n$/, '') + '\\n' + String.fromCharCode(96).repeat(3); }
     if (tag === 'hr') return '---';
     if (tag === 'ul' || tag === 'ol') return Array.from(node.children).map((item, index) => {
       const checkbox = item.querySelector(':scope > input[type="checkbox"]');
@@ -10435,7 +10435,7 @@ function runProjectDocFormat(command, value) {
   rich.focus();
   if (command === 'codeBlock') document.execCommand('formatBlock', false, 'pre');
   else if (command === 'blockquote') document.execCommand('formatBlock', false, 'blockquote');
-  else if (command === 'heading') document.execCommand('formatBlock', false, value || 'h2');
+  else if (command === 'heading') document.execCommand('formatBlock', false, value || 'p');
   else if (command === 'link') {
     const href = window.prompt('Link URL', 'https://');
     if (href && /^https?:\\/\\//i.test(href)) document.execCommand('createLink', false, href);
@@ -10450,9 +10450,9 @@ function runProjectDocFormat(command, value) {
   scheduleProjectDocSave();
 }
 function createProjectDocFormatBar() {
-  const bar = document.createElement('div'); bar.className = 'project-doc-formatbar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Markdown formatting');
+  const bar = document.createElement('div'); bar.className = 'project-doc-formatbar'; bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Markdown formatting'); bar.appendChild(createProjectDocHeadingSelect());
   const actions = [
-    ['H2', 'heading', 'h2', 'Heading'], ['B', 'bold', '', 'Bold'], ['I', 'italic', '', 'Italic'], ['S', 'strikeThrough', '', 'Strikethrough'],
+    ['B', 'bold', '', 'Bold'], ['I', 'italic', '', 'Italic'], ['S', 'strikeThrough', '', 'Strikethrough'],
     ['•', 'insertUnorderedList', '', 'Bulleted list'], ['1.', 'insertOrderedList', '', 'Numbered list'], ['☑', 'task', '', 'Task list'],
     ['❝', 'blockquote', '', 'Quote'], ['</>', 'codeBlock', '', 'Code block'], ['↗', 'link', '', 'Link'], ['▧', 'image', '', 'Image'], ['▦', 'table', '', 'Table'],
     ['↶', 'undo', '', 'Undo'], ['↷', 'redo', '', 'Redo'], ['MD', 'source', '', 'Markdown source'],
@@ -13388,7 +13388,7 @@ function renderProjectDetail() {
   docRich.setAttribute('role', 'textbox');
   docRich.setAttribute('aria-multiline', 'true');
   docRich.setAttribute('aria-label', 'Rich text document editor');
-  docRich.addEventListener('input', () => scheduleProjectDocSave());
+  for (const eventName of ['focus', 'input', 'keyup', 'mouseup']) docRich.addEventListener(eventName, () => { if (eventName === 'input') scheduleProjectDocSave(); syncProjectDocHeadingSelect(); });
   docRich.addEventListener('keydown', event => {
     if (event.key === 'Escape') {
       event.preventDefault();
