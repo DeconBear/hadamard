@@ -11,6 +11,7 @@ import {
   splitGitStatus,
   writeWorkspaceFile,
 } from '../src/gui/projectWorkbench.js';
+import { createHadamardGuiClientScript } from '../src/gui/hadamardGuiAssets.js';
 
 describe('projectWorkbench helpers', () => {
   it('splits porcelain status into staged and unstaged', () => {
@@ -196,5 +197,29 @@ describe('projectWorkbench helpers', () => {
     expect(assets).toContain('.git-history-graph');
     expect(assets).toContain('relativeDate');
     expect(assets).toContain('history: false');
+  });
+
+  it('ships a wider auxiliary file pane with Markdown and sandboxed HTML previews', async () => {
+    const assets = await readFile(new URL('../src/gui/hadamardGuiAssets.ts', import.meta.url), 'utf8');
+    const client = createHadamardGuiClientScript();
+    const editor = client.slice(
+      client.indexOf('function workspaceHtmlPreviewDocument'),
+      client.indexOf('function renderComposerMeta'),
+    );
+
+    expect(() => new Function(client)).not.toThrow();
+    expect(client).toContain('const AUX_PANEL_MAX_WIDTH = 1600');
+    expect(client).toContain('const AUX_PRIMARY_MIN_WIDTH = 360');
+    expect(client).toContain('Math.floor(bounds.width - AUX_PRIMARY_MIN_WIDTH)');
+    expect(assets).toMatch(/\.aux-panel[^}]*max-width:\s*min\(82vw, 1600px\)/);
+    expect(editor).toContain("for (const mode of ['source', 'preview'])");
+    expect(editor).toContain("mode === 'source' ? 'Source' : 'Preview'");
+    expect(editor).toContain("previewKind === 'markdown'");
+    expect(editor).toContain("renderMarkdownInto(renderedPreview, editor.value)");
+    expect(editor).toContain("renderedPreview.setAttribute('sandbox', '')");
+    expect(editor).toContain("renderedPreview.setAttribute('referrerpolicy', 'no-referrer')");
+    expect(editor).toContain("script-src 'none'");
+    expect(editor).toContain("connect-src 'none'");
+    expect(editor).toContain("parsed.querySelectorAll('script, iframe, object, embed, base, link, meta[http-equiv]')");
   });
 });
