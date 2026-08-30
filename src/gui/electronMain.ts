@@ -35,6 +35,21 @@ const windowsAppUserModelId = process.env.HADAMARD_GUI_DEVELOPMENT === '1'
   ? 'com.hadamard.desktop.dev'
   : 'com.hadamard.desktop';
 
+function quoteWindowsCommandArgument(value: string): string {
+  return `"${value.replaceAll('"', '\\"')}"`;
+}
+
+function getWindowsRelaunchCommand(): string {
+  const developmentNode = process.env.HADAMARD_GUI_NODE;
+  const guiRoot = process.env.HADAMARD_GUI_ROOT;
+  if (process.env.HADAMARD_GUI_DEVELOPMENT === '1' && developmentNode && guiRoot) {
+    return [developmentNode, path.join(guiRoot, 'bin', 'hadamard-gui.js')]
+      .map(quoteWindowsCommandArgument)
+      .join(' ');
+  }
+  return quoteWindowsCommandArgument(process.execPath);
+}
+
 if (process.platform === 'win32') {
   // Keep development windows out of an installed shortcut's taskbar group. Otherwise
   // Windows can reuse the icon cached for an older installed Hadamard executable.
@@ -227,7 +242,11 @@ async function createWindow(): Promise<void> {
     minHeight: 620,
     title: 'Hadamard',
     backgroundColor: '#f3f3f3',
-    show: true,
+    // Apply the Windows AppUserModelID before the taskbar button is created.
+    // Showing the window here lets Explorer group it with an installed shortcut
+    // before setAppDetails() runs, which can resurrect that shortcut's stale icon.
+    show: false,
+    ...(process.platform === 'win32' ? { skipTaskbar: true } : {}),
     ...(hasIcon ? { icon: iconPath } : {}),
     webPreferences: {
       contextIsolation: true,
@@ -241,6 +260,8 @@ async function createWindow(): Promise<void> {
     window.setAppDetails({
       appId: windowsAppUserModelId,
       ...(hasIcon && iconPath ? { appIconPath: iconPath, appIconIndex: 0 } : {}),
+      relaunchCommand: getWindowsRelaunchCommand(),
+      relaunchDisplayName: 'Hadamard',
     });
   }
   window.on('closed', () => {
@@ -251,6 +272,7 @@ async function createWindow(): Promise<void> {
     window.setIcon(iconPath);
   }
   window.once('ready-to-show', () => {
+    if (process.platform === 'win32') window.setSkipTaskbar(false);
     window.show();
     if (hasIcon && iconPath) window.setIcon(iconPath);
   });
@@ -259,7 +281,10 @@ async function createWindow(): Promise<void> {
     return { action: 'deny' };
   });
   await window.loadURL(guiServer.url);
-  if (!window.isVisible()) window.show();
+  if (!window.isVisible()) {
+    if (process.platform === 'win32') window.setSkipTaskbar(false);
+    window.show();
+  }
 }
 
 app.whenReady().then(() => {
