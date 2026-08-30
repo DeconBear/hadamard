@@ -281,6 +281,36 @@ function designIconButton(id, icon, title, action) {
   control.addEventListener('click', action);
   return control;
 }
+function currentProjectDocBlockStyle() {
+  const rich = el('projectDocRich');
+  const selection = window.getSelection();
+  if (!rich || !selection?.rangeCount || !rich.contains(selection.anchorNode)) return 'p';
+  const anchor = selection.anchorNode.nodeType === Node.ELEMENT_NODE ? selection.anchorNode : selection.anchorNode.parentElement;
+  const block = anchor?.closest?.('h1, h2, h3, h4, h5, h6');
+  return block && rich.contains(block) ? block.tagName.toLowerCase() : 'p';
+}
+function syncProjectDocHeadingSelect() {
+  const select = el('projectDocHeadingSelect');
+  if (select) select.value = currentProjectDocBlockStyle();
+}
+function createProjectDocHeadingSelect() {
+  const select = document.createElement('select'); select.id = 'projectDocHeadingSelect'; select.title = 'Text style'; select.setAttribute('aria-label', 'Text style');
+  for (const [value, label] of [['p', 'T'], ['h1', 'H1'], ['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5'], ['h6', 'H6']]) {
+    const option = document.createElement('option'); option.value = value; option.textContent = label; select.appendChild(option);
+  }
+  let range = null;
+  select.addEventListener('mousedown', () => {
+    syncProjectDocHeadingSelect();
+    const rich = el('projectDocRich'); const selection = window.getSelection();
+    range = rich && selection?.rangeCount && rich.contains(selection.anchorNode) ? selection.getRangeAt(0).cloneRange() : null;
+  });
+  select.addEventListener('change', () => {
+    const rich = el('projectDocRich'); if (rich) rich.focus();
+    if (range) { const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); }
+    runProjectDocFormat('heading', select.value); range = null; syncProjectDocHeadingSelect();
+  });
+  return select;
+}
 function setDesignEntryMode(mode) {
   const next = mode === 'html' ? 'html' : 'markdown';
   if (state.designEntryMode === next) return;
