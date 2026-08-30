@@ -1011,6 +1011,7 @@ describe('TUI and GUI parity', () => {
     expect(launcher).toContain('const prep = spawnSync(process.execPath, [prepareLauncher]');
     expect(launcher).not.toContain('if (!existsSync(brandedLauncher)) {');
     expect(launcher).toContain("HADAMARD_GUI_DEVELOPMENT: '1'");
+    expect(launcher).toContain('HADAMARD_GUI_NODE: process.execPath');
 
     const electronMain = readFileSync(join(root, 'src', 'gui', 'electronMain.ts'), 'utf8');
     expect(electronMain).toContain(
@@ -1023,6 +1024,10 @@ describe('TUI and GUI parity', () => {
     expect(electronMain).toContain('window.setAppDetails({');
     expect(electronMain).toContain('appId: windowsAppUserModelId');
     expect(electronMain).toContain('appIconPath: iconPath, appIconIndex: 0');
+    expect(electronMain).toContain('skipTaskbar: true');
+    expect(electronMain).toContain('relaunchCommand: getWindowsRelaunchCommand()');
+    expect(electronMain).toContain("relaunchDisplayName: 'Hadamard'");
+    expect(electronMain).toContain("window.setSkipTaskbar(false)");
   });
 
   it('keeps project instructions out of system builders and passes the same SDK option', () => {
