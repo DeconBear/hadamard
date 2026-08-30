@@ -999,6 +999,14 @@ describe('TUI and GUI parity', () => {
     expect(packageJson.build?.win?.icon).toBe('assets/hadamard-icon.ico');
     expect(packageJson.build?.win?.signAndEditExecutable).not.toBe(false);
 
+    const iconGenerator = readFileSync(join(root, 'scripts', 'generate-gui-icon.mjs'), 'utf8');
+    expect(iconGenerator).toContain('const TILE_START = [0x52, 0x52, 0x5b];');
+    expect(iconGenerator).toContain('const TILE_END = [0x71, 0x71, 0x7a];');
+    expect(iconGenerator).toContain('const LOGO_STROKE_WIDTH = 1.8;');
+    expect(iconGenerator).toContain('circleStrokeCoverage(');
+    expect(iconGenerator).toContain('[18.3, 4.2]');
+    expect(iconGenerator).not.toContain('diagonal blue → green');
+
     const launcher = readFileSync(join(root, 'bin', 'hadamard-gui.js'), 'utf8');
     expect(launcher).toContain('const prep = spawnSync(process.execPath, [prepareLauncher]');
     expect(launcher).not.toContain('if (!existsSync(brandedLauncher)) {');

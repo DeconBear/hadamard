@@ -1,6 +1,6 @@
 // Generates the Hadamard GUI app icon (assets/hadamard-icon.png) with no external
-// dependencies: it rasterizes the brand mark (node graph + spark on a blue→green
-// rounded tile) into an RGBA buffer and encodes a PNG via zlib. Re-run with
+// dependencies. The geometry and colours mirror guiIcon('logo') and the
+// --avatar-gradient used by the in-app brand mark. Re-run with
 // `node scripts/generate-gui-icon.mjs` after changing the design.
 import zlib from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -40,6 +40,11 @@ function circleCoverage(x, y, cx, cy, radius) {
   return clamp(radius + 0.5 - dist, 0, 1);
 }
 
+function circleStrokeCoverage(x, y, cx, cy, radius, halfWidth) {
+  const dist = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+  return clamp(halfWidth + 0.5 - Math.abs(dist - radius), 0, 1);
+}
+
 function segmentCoverage(x, y, ax, ay, bx, by, halfWidth) {
   const vx = bx - ax;
   const vy = by - ay;
@@ -51,50 +56,81 @@ function segmentCoverage(x, y, ax, ay, bx, by, halfWidth) {
   return clamp(halfWidth + 0.5 - dist, 0, 1);
 }
 
-// 4-point sparkle via a sub-1 superellipse (concave star).
-function starCoverage(x, y, cx, cy, size) {
-  const dx = Math.abs(x + 0.5 - cx);
-  const dy = Math.abs(y + 0.5 - cy);
-  const p = 0.62;
-  const d = Math.pow(Math.pow(dx, p) + Math.pow(dy, p), 1 / p);
-  return clamp(size - d + 0.5, 0, 1);
-}
-
 const C = SIZE / 2;
-const sat = 58;
+const TILE_MARGIN = 16;
+const TILE_RADIUS = 154;
+const TILE_START = [0x52, 0x52, 0x5b];
+const TILE_END = [0x71, 0x71, 0x7a];
+const LOGO_SCALE = 14;
+const LOGO_STROKE_WIDTH = 1.8;
+const logoPoint = ([x, y]) => [C + (x - 12) * LOGO_SCALE, C + (y - 12) * LOGO_SCALE];
+const center = logoPoint([12, 12]);
 const nodes = [
-  [C - sat, C],
-  [C + sat, C],
-  [C, C - sat],
-  [C, C + sat],
+  { center: logoPoint([5, 12]), radius: 1.5 * LOGO_SCALE },
+  { center: logoPoint([19, 12]), radius: 1.5 * LOGO_SCALE },
+  { center: logoPoint([12, 5]), radius: 1.5 * LOGO_SCALE },
+  { center: logoPoint([12, 19]), radius: 1.5 * LOGO_SCALE },
 ];
+const connectors = [
+  [[7.1, 12], [9.6, 12]],
+  [[14.4, 12], [16.9, 12]],
+  [[12, 7.1], [12, 9.6]],
+  [[12, 14.4], [12, 16.9]],
+];
+const sparkPoints = [
+  [18.3, 4.2],
+  [18.9, 5.7],
+  [20.4, 6.3],
+  [18.9, 6.9],
+  [18.3, 8.4],
+  [17.7, 6.9],
+  [16.2, 6.3],
+  [17.7, 5.7],
+].map(logoPoint);
+const strokeHalfWidth = LOGO_STROKE_WIDTH * LOGO_SCALE / 2;
 
 for (let y = 0; y < SIZE; y++) {
   for (let x = 0; x < SIZE; x++) {
-    // Background: diagonal blue → green inside a rounded tile.
-    const tileCov = roundedRectCoverage(x, y, C, C, C - 6, C - 6, 56);
+    // Background: the same zinc diagonal gradient and rounded proportions as
+    // the 28px in-app .brand-mark tile.
+    const tileHalfSize = C - TILE_MARGIN;
+    const tileCov = roundedRectCoverage(x, y, C, C, tileHalfSize, tileHalfSize, TILE_RADIUS);
     if (tileCov > 0) {
-      const t = clamp((x + y) / (SIZE * 2), 0, 1);
-      const r = Math.round(75 + (106 - 75) * t);
-      const g = Math.round(147 + (208 - 147) * t);
-      const b = Math.round(247 + (168 - 247) * t);
+      const gradientSpan = (SIZE - TILE_MARGIN * 2) * 2;
+      const t = clamp((x + y - TILE_MARGIN * 2) / gradientSpan, 0, 1);
+      const r = Math.round(TILE_START[0] + (TILE_END[0] - TILE_START[0]) * t);
+      const g = Math.round(TILE_START[1] + (TILE_END[1] - TILE_START[1]) * t);
+      const b = Math.round(TILE_START[2] + (TILE_END[2] - TILE_START[2]) * t);
       blend(x, y, r, g, b, tileCov);
     }
-    // White connectors (center → satellites, leaving a gap at both ends).
-    let line = 0;
-    for (const [nx, ny] of nodes) {
-      const dirX = Math.sign(nx - C);
-      const dirY = Math.sign(ny - C);
-      line = Math.max(line, segmentCoverage(x, y, C + dirX * 24, C + dirY * 24, nx - dirX * 14, ny - dirY * 14, 4));
+
+    // White 1.8-unit round strokes, matching the SVG's circles and paths.
+    let mark = circleStrokeCoverage(
+      x,
+      y,
+      center[0],
+      center[1],
+      2.4 * LOGO_SCALE,
+      strokeHalfWidth,
+    );
+    for (const node of nodes) {
+      mark = Math.max(
+        mark,
+        circleStrokeCoverage(x, y, node.center[0], node.center[1], node.radius, strokeHalfWidth),
+      );
     }
-    if (line > 0) blend(x, y, 255, 255, 255, line);
-    // White nodes.
-    let node = circleCoverage(x, y, C, C, 16);
-    for (const [nx, ny] of nodes) node = Math.max(node, circleCoverage(x, y, nx, ny, 11));
-    if (node > 0) blend(x, y, 255, 255, 255, node);
-    // White spark, top-right.
-    const spark = starCoverage(x, y, 192, 64, 13);
-    if (spark > 0) blend(x, y, 255, 255, 255, spark);
+    for (const [from, to] of connectors) {
+      const [ax, ay] = logoPoint(from);
+      const [bx, by] = logoPoint(to);
+      mark = Math.max(mark, segmentCoverage(x, y, ax, ay, bx, by, strokeHalfWidth));
+    }
+    for (let i = 0; i < sparkPoints.length; i++) {
+      const from = sparkPoints[i];
+      const to = sparkPoints[(i + 1) % sparkPoints.length];
+      mark = Math.max(mark, segmentCoverage(x, y, from[0], from[1], to[0], to[1], strokeHalfWidth));
+      mark = Math.max(mark, circleCoverage(x, y, from[0], from[1], strokeHalfWidth));
+    }
+    if (mark > 0) blend(x, y, 250, 250, 250, mark);
   }
 }
 
