@@ -2968,7 +2968,7 @@ body[data-sidebar-mode="nav"] .sidebar .sidebar-footer .nav-btn span:not(.nav-ic
 .aux-splitter:hover, .aux-splitter.dragging { background: var(--brand); opacity: .55; }
 .workbench-split.aux-collapsed .aux-splitter,
 .workbench-split.aux-collapsed .aux-splitter { display: none; }
-.aux-panel { flex: 0 0 var(--aux-panel-width, 340px); width: var(--aux-panel-width, 340px); min-width: 240px; max-width: min(70vw, 720px); border-left: 1px solid var(--border); background: var(--bg-surface); display: flex; flex-direction: column; min-height: 0; transition: flex-basis .15s ease, width .15s ease, min-width .15s ease; }
+.aux-panel { flex: 0 0 var(--aux-panel-width, 340px); width: var(--aux-panel-width, 340px); min-width: 240px; max-width: min(82vw, 1600px); border-left: 1px solid var(--border); background: var(--bg-surface); display: flex; flex-direction: column; min-height: 0; transition: flex-basis .15s ease, width .15s ease, min-width .15s ease; }
 .workbench-split.resizing-aux .aux-panel { transition: none; }
 .aux-panel.collapsed { flex: 0 0 40px; width: 40px; min-width: 40px; max-width: 40px; }
 .aux-panel.collapsed .aux-body,
@@ -3039,9 +3039,16 @@ body[data-sidebar-mode="nav"] .sidebar .sidebar-footer .nav-btn span:not(.nav-ic
 .aux-browser-frame-host { flex: 1 1 auto; min-height: 240px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; }
 .aux-browser-frame { display: block; width: 100%; height: 100%; min-height: 240px; border: 0; }
 .aux-file-preview { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-muted); font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: calc(100% - 40px); overflow: auto; }
+.aux-file-editor-head .aux-view-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aux-file-editor-head .files-preview-modes { margin-left: auto; }
 .aux-file-editor-body { display: flex; flex-direction: column; overflow: hidden; }
 .aux-file-editor-path { flex: 0 0 auto; margin: 0 0 8px; font-size: 11.5px; word-break: break-all; }
-.aux-file-editor { flex: 1 1 auto; width: 100%; min-height: 0; resize: none; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--code-bg, var(--bg-app)); color: var(--text-1); font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; overflow: auto; }
+.aux-file-editor-content { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--code-bg, var(--bg-app)); }
+.aux-file-editor { flex: 1 1 auto; width: 100%; min-height: 0; resize: none; border: 0; border-radius: 0; padding: 10px 12px; background: var(--code-bg, var(--bg-app)); color: var(--text-1); font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; overflow: auto; }
+.aux-file-rendered-preview { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; overflow: auto; padding: 16px 18px; background: var(--bg-surface); color: var(--text-1); }
+.aux-file-rendered-preview.md-prose { font-size: 13px; line-height: 1.75; }
+.aux-file-rendered-preview.md-prose .md-h:first-child { margin-top: 0; }
+.aux-file-html-preview { display: block; flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; border: 0; background: #fff; }
 .aux-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aux-path-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .aux-path-bar input { flex: 1; min-width: 0; height: 30px; border: 1px solid var(--border); border-radius: 7px; padding: 0 10px; font-size: 12.5px; background: var(--bg-surface); color: var(--text-1); }
@@ -5286,6 +5293,7 @@ const state = {
   auxView: null,
   auxCollapsed: false,
   auxPanelWidth: 340,
+  auxFileViewMode: 'source',
   terminalDockHeight: 260,
   activeWorkbenchSurface: 'conversation',
   workbenchLayouts: {
@@ -5596,7 +5604,8 @@ function refreshOpenTerminalThemes() {
 const AUX_PANEL_WIDTH_KEY = 'hadamard.gui.auxPanelWidth';
 const WORKBENCH_LAYOUT_KEY = 'hadamard.gui.workbenchLayouts';
 const AUX_PANEL_MIN_WIDTH = 240;
-const AUX_PANEL_MAX_WIDTH = 720;
+const AUX_PANEL_MAX_WIDTH = 1600;
+const AUX_PRIMARY_MIN_WIDTH = 360;
 const TERMINAL_DOCK_MIN_HEIGHT = 160;
 const TERMINAL_DOCK_MAX_HEIGHT = 720;
 
@@ -5723,7 +5732,10 @@ function bindAuxPanelResize() {
     const split = activeWorkbenchSplit();
     if (!split) return;
     const bounds = split.getBoundingClientRect();
-    const maxByViewport = Math.min(AUX_PANEL_MAX_WIDTH, Math.floor(bounds.width * 0.7));
+    const maxByViewport = Math.max(
+      AUX_PANEL_MIN_WIDTH,
+      Math.min(AUX_PANEL_MAX_WIDTH, Math.floor(bounds.width - AUX_PRIMARY_MIN_WIDTH)),
+    );
     const delta = startX - event.clientX; // dragging left widens the right panel
     const next = Math.max(AUX_PANEL_MIN_WIDTH, Math.min(maxByViewport, startWidth + delta));
     applyAuxPanelWidth(next);
@@ -7940,15 +7952,37 @@ function updateConversationSummary() {
     || 'default';
   el('workspace').textContent = (snap.workDir || '') + ' - ' + model + ' - ' + permissionPresetForValue(permissionSelectValue(snap.permissionMode)).title + ' - mode:' + (snap.agentMode || 'react') + ' - effort:' + snap.effort + ' - team:' + (snap.activeTeamName || 'none');
 }
+function workspaceHtmlPreviewDocument(source) {
+  const parsed = new DOMParser().parseFromString(String(source || ''), 'text/html');
+  parsed.querySelectorAll('script, iframe, object, embed, base, link, meta[http-equiv]').forEach(node => node.remove());
+  parsed.querySelectorAll('*').forEach(node => {
+    for (const attribute of [...node.attributes]) {
+      const name = attribute.name.toLowerCase();
+      const value = String(attribute.value || '').trim();
+      if (/^on/i.test(name) || ['srcset', 'action', 'formaction', 'poster', 'data', 'xlink:href'].includes(name)) {
+        node.removeAttribute(attribute.name);
+      } else if (name === 'src' && !/^data:image\\/(?:png|gif|jpe?g|webp|svg\\+xml);/i.test(value)) {
+        node.removeAttribute(attribute.name);
+      } else if (name === 'href' && !value.startsWith('#')) {
+        node.removeAttribute(attribute.name);
+      }
+    }
+  });
+  const meta = parsed.createElement('meta');
+  meta.httpEquiv = 'Content-Security-Policy';
+  meta.content = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'none'; connect-src 'none'; frame-src 'none'; media-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'";
+  parsed.head.prepend(meta);
+  return '<!doctype html>' + parsed.documentElement.outerHTML;
+}
 async function renderAuxFileEditor(filePath) {
   const view = el('auxView');
   if (!view) return;
   view.textContent = '';
   const head = document.createElement('div');
-  head.className = 'aux-view-header';
+  head.className = 'aux-view-header aux-file-editor-head';
   const title = document.createElement('span');
   title.className = 'aux-view-title';
-  title.textContent = filePath.split(/[\\/]/).pop() || 'File';
+  title.textContent = String(filePath || '').replaceAll(String.fromCharCode(92), '/').split('/').pop() || 'File';
   const backBtn = document.createElement('button');
   backBtn.type = 'button';
   backBtn.className = 'pill-btn';
@@ -7983,6 +8017,31 @@ async function renderAuxFileEditor(filePath) {
       body.appendChild(note);
       return;
     }
+    const language = detectEditorLanguage(data.path || filePath);
+    const previewKind = language === 'markdown'
+      ? 'markdown'
+      : /\\.html?$/i.test(String(data.path || filePath)) ? 'html' : null;
+    let viewMode = state.auxFileViewMode === 'preview' ? 'preview' : 'source';
+    const modeButtons = [];
+    if (previewKind) {
+      const modes = document.createElement('div');
+      modes.className = 'files-preview-modes aux-file-preview-modes';
+      modes.setAttribute('role', 'tablist');
+      modes.setAttribute('aria-label', previewKind === 'markdown' ? 'Markdown display mode' : 'HTML display mode');
+      for (const mode of ['source', 'preview']) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'files-preview-mode';
+        button.textContent = mode === 'source' ? 'Source' : 'Preview';
+        button.setAttribute('role', 'tab');
+        button.addEventListener('click', () => applyViewMode(mode));
+        modeButtons.push({ button, mode });
+        modes.appendChild(button);
+      }
+      head.insertBefore(modes, backBtn);
+    }
+    const content = document.createElement('div');
+    content.className = 'aux-file-editor-content';
     const editor = document.createElement('textarea');
     editor.className = 'aux-file-editor';
     editor.value = typeof data.text === 'string' ? data.text : '';
@@ -7990,7 +8049,42 @@ async function renderAuxFileEditor(filePath) {
     editor.spellcheck = false;
     editor.wrap = 'off';
     editor.setAttribute('aria-label', 'File editor');
-    body.appendChild(editor);
+    content.appendChild(editor);
+    let renderedPreview = null;
+    if (previewKind === 'markdown') {
+      renderedPreview = document.createElement('div');
+      renderedPreview.className = 'aux-file-rendered-preview md-prose hidden';
+      renderedPreview.setAttribute('aria-label', 'Markdown preview');
+      content.appendChild(renderedPreview);
+    } else if (previewKind === 'html') {
+      renderedPreview = document.createElement('iframe');
+      renderedPreview.className = 'aux-file-html-preview hidden';
+      renderedPreview.title = 'HTML preview';
+      renderedPreview.setAttribute('sandbox', '');
+      renderedPreview.setAttribute('referrerpolicy', 'no-referrer');
+      content.appendChild(renderedPreview);
+    }
+    body.appendChild(content);
+    function renderCurrentPreview() {
+      if (previewKind === 'markdown' && renderedPreview) {
+        renderMarkdownInto(renderedPreview, editor.value);
+      } else if (previewKind === 'html' && renderedPreview) {
+        renderedPreview.srcdoc = workspaceHtmlPreviewDocument(editor.value);
+      }
+    }
+    function applyViewMode(mode) {
+      viewMode = mode === 'preview' && renderedPreview ? 'preview' : 'source';
+      state.auxFileViewMode = viewMode;
+      editor.classList.toggle('hidden', viewMode !== 'source');
+      if (renderedPreview) renderedPreview.classList.toggle('hidden', viewMode !== 'preview');
+      for (const item of modeButtons) {
+        const active = item.mode === viewMode;
+        item.button.classList.toggle('active', active);
+        item.button.setAttribute('aria-selected', active ? 'true' : 'false');
+        item.button.tabIndex = active ? 0 : -1;
+      }
+      if (viewMode === 'preview') renderCurrentPreview();
+    }
     let savedText = editor.value;
     editor.addEventListener('input', () => { saveBtn.disabled = editor.value === savedText; });
     const save = async () => {
@@ -8019,6 +8113,7 @@ async function renderAuxFileEditor(filePath) {
         void save();
       }
     });
+    applyViewMode(viewMode);
     if (data.truncated) {
       const note = document.createElement('p');
       note.className = 'muted';
