@@ -128,13 +128,16 @@ describe('product RunEvent wiring boundary', () => {
       'utf8',
     );
     const loadIndex = electron.indexOf('await window.loadURL(guiServer.url);');
-    const fallbackIndex = electron.indexOf('if (!window.isVisible()) window.show();');
+    const fallbackIndex = electron.indexOf('if (!window.isVisible()) {');
     expect(loadIndex).toBeGreaterThan(0);
     expect(fallbackIndex).toBeGreaterThan(loadIndex);
     expect(electron).toContain('let mainWindow: BrowserWindow | null = null;');
     expect(electron).toContain('mainWindow = window;');
     expect(electron).toContain('if (mainWindow === window) mainWindow = null;');
-    expect(electron).toContain('show: true,');
-    expect(electron).not.toContain('show: false,');
+    expect(electron).toContain('show: false,');
+    expect(electron).toContain('skipTaskbar: true');
+    expect(electron.indexOf('show: false,')).toBeLessThan(electron.indexOf('window.setAppDetails({'));
+    expect(electron.indexOf('window.setAppDetails({')).toBeLessThan(electron.indexOf("window.once('ready-to-show'"));
+    expect(electron.indexOf('window.setAppDetails({')).toBeLessThan(electron.indexOf('window.setSkipTaskbar(false)'));
   });
 });

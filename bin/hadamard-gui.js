@@ -37,6 +37,7 @@ const child = spawn(electron, [main, ...process.argv.slice(2)], {
     ...process.env,
     HADAMARD_GUI_ROOT: rootDir,
     HADAMARD_GUI_DEVELOPMENT: '1',
+    HADAMARD_GUI_NODE: process.execPath,
   },
   windowsHide: windowsGuiLaunch,
   detached: windowsGuiLaunch,
