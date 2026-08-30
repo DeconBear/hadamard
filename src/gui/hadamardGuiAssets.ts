@@ -202,7 +202,7 @@ export function createHadamardGuiHtml(): string {
             <button type="button" id="detailOpenLocationBtn" class="icon-btn" aria-label="Open workspace folder" title="Open workspace folder">${guiIcon('folder')}</button>
             <button type="button" id="detailNewConversationBtn" class="pill-btn">+ New conversation</button>
             <button type="button" id="detailConversationsBtn" class="icon-btn detail-conversations-toggle" aria-label="Hide conversations" title="Hide conversations" aria-expanded="true" aria-controls="projectDetailSidebar">${guiIcon('panelLeft')}</button>
-            <button type="button" id="detailAuxPanelToggleBtn" class="icon-btn" title="Hide panel" aria-label="Hide panel" aria-pressed="true">${guiIcon('panelRight')}</button>
+            <button type="button" id="detailAuxPanelToggleBtn" class="icon-btn" title="Show panel" aria-label="Show panel" aria-pressed="false">${guiIcon('panelLeft')}</button>
           </div>
         </header>
         <div class="detail-body" id="detailBody"></div>
@@ -5298,7 +5298,7 @@ const state = {
   activeWorkbenchSurface: 'conversation',
   workbenchLayouts: {
     conversation: { auxWidth: 340, terminalHeight: 260, auxView: null, auxCollapsed: false, terminalVisible: false },
-    project: { auxWidth: 340, terminalHeight: 260, auxView: null, auxCollapsed: false, terminalVisible: false },
+    project: { auxWidth: 340, terminalHeight: 260, auxView: null, auxCollapsed: true, terminalVisible: false },
   },
   filesBrowsePath: null,
   browserUrl: 'https://',
@@ -5632,7 +5632,7 @@ function loadAuxPanelWidth() {
       if (Number.isFinite(auxWidth)) state.workbenchLayouts[surface].auxWidth = Math.round(Math.max(AUX_PANEL_MIN_WIDTH, Math.min(AUX_PANEL_MAX_WIDTH, auxWidth)));
       if (Number.isFinite(terminalHeight)) state.workbenchLayouts[surface].terminalHeight = Math.round(Math.max(TERMINAL_DOCK_MIN_HEIGHT, Math.min(TERMINAL_DOCK_MAX_HEIGHT, terminalHeight)));
       if (saved.auxView === null || ['review', 'git', 'browser', 'files'].includes(saved.auxView)) state.workbenchLayouts[surface].auxView = saved.auxView;
-      if (typeof saved.auxCollapsed === 'boolean') state.workbenchLayouts[surface].auxCollapsed = saved.auxCollapsed;
+      if (typeof saved.auxCollapsed === 'boolean' && (surface !== 'project' || parsed.version === 2)) state.workbenchLayouts[surface].auxCollapsed = saved.auxCollapsed;
       if (typeof saved.terminalVisible === 'boolean') state.workbenchLayouts[surface].terminalVisible = saved.terminalVisible;
     }
     const legacy = Number(localStorage.getItem(AUX_PANEL_WIDTH_KEY));
@@ -5643,7 +5643,7 @@ function loadAuxPanelWidth() {
 }
 
 function persistAuxPanelWidth() {
-  try { localStorage.setItem(WORKBENCH_LAYOUT_KEY, JSON.stringify(state.workbenchLayouts)); } catch { /* optional */ }
+  try { localStorage.setItem(WORKBENCH_LAYOUT_KEY, JSON.stringify({ version: 2, ...state.workbenchLayouts })); } catch { /* optional */ }
 }
 
 function applyAuxPanelWidth(width) {
@@ -5697,8 +5697,8 @@ function ensureAuxVisible() {
   persistAuxPanelWidth();
   syncAuxChrome();
 }
-function openAuxView(kind) {
-  ensureAuxVisible();
+function openAuxView(kind, reveal = true) {
+  if (reveal) ensureAuxVisible();
   state.auxView = kind;
   activeWorkbenchLayout().auxView = kind;
   persistAuxPanelWidth();
@@ -11438,7 +11438,7 @@ function mountWorkbenchTools(surface) {
   state.auxCollapsed = layout.auxCollapsed === true;
   applyAuxPanelWidth(layout.auxWidth);
   applyTerminalDockHeight(layout.terminalHeight);
-  if (state.auxView) openAuxView(state.auxView);
+  if (state.auxView) openAuxView(state.auxView, !state.auxCollapsed);
   else showAuxLauncher();
   dock.classList.toggle('hidden', layout.terminalVisible !== true);
   syncAuxChrome();
