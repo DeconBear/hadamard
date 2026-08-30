@@ -305,9 +305,10 @@ function createProjectDocHeadingSelect() {
     range = rich && selection?.rangeCount && rich.contains(selection.anchorNode) ? selection.getRangeAt(0).cloneRange() : null;
   });
   select.addEventListener('change', () => {
+    const requestedStyle = select.value;
     const rich = el('projectDocRich'); if (rich) rich.focus();
     if (range) { const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); }
-    runProjectDocFormat('heading', select.value); range = null; syncProjectDocHeadingSelect();
+    runProjectDocFormat('heading', requestedStyle); range = null; syncProjectDocHeadingSelect();
   });
   return select;
 }
