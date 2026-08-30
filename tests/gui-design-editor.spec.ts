@@ -8,8 +8,20 @@ describe('GUI Design Markdown editor', () => {
 
     expect(script).toContain("select.id = 'projectDocHeadingSelect'");
     expect(script).toContain("[['p', 'T'], ['h1', 'H1'], ['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5'], ['h6', 'H6']]");
-    expect(script).toContain("runProjectDocFormat('heading', select.value)");
+    expect(script).toContain('const requestedStyle = select.value;');
+    expect(script).toContain("runProjectDocFormat('heading', requestedStyle)");
     expect(script).toContain("document.execCommand('formatBlock', false, value || 'p')");
+  });
+
+  it('captures the requested heading before focus synchronizes the selector', () => {
+    const script = createHadamardGuiClientScript();
+    const capture = script.indexOf('const requestedStyle = select.value;');
+    const focus = script.indexOf("const rich = el('projectDocRich'); if (rich) rich.focus();", capture);
+    const format = script.indexOf("runProjectDocFormat('heading', requestedStyle)", focus);
+
+    expect(capture).toBeGreaterThan(-1);
+    expect(focus).toBeGreaterThan(capture);
+    expect(format).toBeGreaterThan(focus);
   });
 
   it('preserves the editor selection and tracks the active block style', () => {
