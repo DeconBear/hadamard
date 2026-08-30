@@ -1035,7 +1035,7 @@ describe('TUI and GUI parity', () => {
     expect(electronMain.indexOf('app.setAppUserModelId')).toBeLessThan(electronMain.indexOf('app.whenReady()'));
     expect(electronMain).toContain('window.setAppDetails({');
     expect(electronMain).toContain('appId: windowsAppUserModelId');
-    expect(electronMain).toContain('appIconPath: iconPath, appIconIndex: 0');
+    expect(electronMain).toContain('appIconPath: process.execPath, appIconIndex: 0');
     expect(electronMain).toContain('skipTaskbar: true');
     expect(electronMain).toContain('relaunchCommand: getWindowsRelaunchCommand()');
     expect(electronMain).toContain("relaunchDisplayName: 'Hadamard'");
