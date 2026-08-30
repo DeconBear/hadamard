@@ -13,6 +13,7 @@ examples/*.local.json
 bench/reports/
 bench/workspaces/
 plan/
+bug/
 AGENTS.md
 CLAUDE.md
 vendor/hadamard-runtime/runtime.bundle.br
