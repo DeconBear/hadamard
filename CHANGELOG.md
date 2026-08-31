@@ -6,6 +6,19 @@ The format is based on Keep a Changelog, with automated updates from GitHub Rele
 
 ## Unreleased
 
+## v0.4.22 - 2026-08-31
+
+### Highlights
+
+- Add the Usage & Routing control center with a unified token/cost ledger, usage budgets, multi-provider credential management, and model-routing controls
+- Embed the Keyway TypeScript routing runtime and gateway, including provider-neutral routing, native CLI adapters, migration support, and Ark model access through Keyway
+- Add built-in cost tracker, usage bar, task notifications, security/filter-output controls, and out-of-box LSP integration across Hadamard's interactive surfaces
+- Improve the Project workspace with collapsible auxiliary panels, wider file previews, and Markdown/HTML source and rendered preview modes
+- Complete the Design editor toolbar and fix title/H1-H6 selection behavior
+- Fix Windows branding and taskbar icon identity, including stale shortcut and icon-cache handling
+
+**Full Changelog**: https://github.com/DeconBear/hadamard/compare/v0.4.21...v0.4.22
+
 ## v0.4.21 - 2026-08-20
 
 ### Features
