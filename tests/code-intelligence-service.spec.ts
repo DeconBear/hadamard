@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promise
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CodeIntelligenceService } from '../src/codeIntel/codeIntelligenceService.js';
 import { LanguageServerRegistry } from '../src/codeIntel/languageServerRegistry.js';
@@ -152,8 +152,10 @@ describe('CodeIntelligenceService', () => {
       await service.definition(file, 0, 0);
       await rm(file);
       await expect(service.diagnostics(file)).resolves.toEqual([]);
-      const notifications = await readNotifications(logPath);
-      expect(notifications.some(entry => entry.method === 'textDocument/didClose')).toBe(true);
+      await vi.waitFor(async () => {
+        const notifications = await readNotifications(logPath);
+        expect(notifications.some(entry => entry.method === 'textDocument/didClose')).toBe(true);
+      });
     } finally {
       await service.close();
     }
