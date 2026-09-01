@@ -84,11 +84,15 @@ export function parseAcpMessage(value: unknown): AcpMessage {
     return { kind: 'notification', method: value.method as string, params: value.params };
   }
   if (hasId && ('result' in value || 'error' in value)) {
+    // JSON-RPC 2.0 forbids a response carrying both result and error; fail closed.
+    if ('result' in value && 'error' in value) {
+      throw new AcpProtocolError(ACP_ERROR_INVALID_REQUEST, 'Response must not carry both result and error.');
+    }
     const response: AcpResponseMessage = { kind: 'response', id: value.id as AcpId };
     if ('error' in value) {
       const error = value.error;
-      if (!isRecord(error) || typeof error.code !== 'number' || typeof error.message !== 'string') {
-        throw new AcpProtocolError(ACP_ERROR_INVALID_REQUEST, 'Response error must carry numeric code and message.');
+      if (!isRecord(error) || typeof error.code !== 'number' || !Number.isFinite(error.code) || typeof error.message !== 'string') {
+        throw new AcpProtocolError(ACP_ERROR_INVALID_REQUEST, 'Response error must carry a finite numeric code and message.');
       }
       response.error = { code: error.code, message: error.message, data: error.data };
     } else {

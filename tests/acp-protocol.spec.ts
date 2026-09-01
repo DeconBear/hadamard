@@ -27,6 +27,11 @@ describe('parseAcpMessage', () => {
       .toEqual({ kind: 'response', id: 'x', result: { ok: true } });
     expect(parseAcpMessage({ jsonrpc: '2.0', id: 'x', error: { code: -32601, message: 'nope' } }))
       .toMatchObject({ kind: 'response', id: 'x', error: { code: -32601 } });
+    // Fail closed on malformed responses (found by hadamard-review E2E).
+    expect(() => parseAcpMessage({ jsonrpc: '2.0', id: 'x', result: {}, error: { code: 1, message: 'm' } }))
+      .toThrowError(AcpProtocolError);
+    expect(() => parseAcpMessage({ jsonrpc: '2.0', id: 'x', error: { code: Number.NaN, message: 'm' } }))
+      .toThrowError(AcpProtocolError);
   });
 
   it('fails closed on malformed messages', () => {
