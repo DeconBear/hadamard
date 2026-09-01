@@ -198,6 +198,15 @@ describe('createAcpToolApprover', () => {
     await expect(failing(context)).resolves.toMatchObject({ behavior: 'deny' });
   });
 
+  it('denies when the client never answers within the permission timeout', async () => {
+    const approver = createAcpToolApprover({
+      sessionId: 's',
+      timeoutMs: 20,
+      channel: { notify: () => undefined, request: () => new Promise(() => { /* never settles */ }) },
+    });
+    await expect(approver(context)).resolves.toMatchObject({ behavior: 'deny' });
+  });
+
   it('sends an ACP-shaped permission request with all four option kinds', async () => {
     let captured: unknown;
     const approver = createAcpToolApprover({

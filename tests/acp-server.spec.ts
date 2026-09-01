@@ -361,4 +361,33 @@ describe('AcpStdioTransport', () => {
     await done;
     await assertion;
   });
+
+  it('never leaks ambient credential environment into protocol frames', async () => {
+    const canary = 'CANARY-SECRET-c4n4ry-t0ken';
+    process.env.HADAMARD_AUTH_TOKEN = canary;
+    process.env.HADAMARD_API_KEY = canary;
+    try {
+      const events: AgentEvent[] = [
+        { type: 'response.text.delta', runId: 'r', iteration: 1, delta: 'hello', snapshot: 'hello', timestamp: 't' },
+        {
+          type: 'tool.call', runId: 'r', iteration: 1, timestamp: 't',
+          call: { id: 'tc-1', name: 'bash', publicName: 'Bash', provider: 'local', input: { command: 'ls' }, startedAt: 't' },
+        },
+      ];
+      const { sdk } = fakeSdk(replayStream(events, runResult('end_turn')));
+      const { input, writes, transport } = harness(sdk);
+      const done = transport.start();
+      input.push(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session/new', params: { cwd: process.cwd() } })}\n`);
+      await vi.waitFor(() => expect(writes.length).toBe(1));
+      const created = written(writes)[0] as { result: { sessionId: string } };
+      input.push(`${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'session/prompt', params: { sessionId: created.result.sessionId, prompt: [{ type: 'text', text: 'go' }] } })}\n`);
+      await vi.waitFor(() => expect(writes.length).toBeGreaterThanOrEqual(3));
+      input.push(null);
+      await done;
+      expect(writes.join('')).not.toContain(canary);
+    } finally {
+      delete process.env.HADAMARD_AUTH_TOKEN;
+      delete process.env.HADAMARD_API_KEY;
+    }
+  });
 });
