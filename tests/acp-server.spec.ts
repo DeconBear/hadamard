@@ -2,7 +2,7 @@ import { Readable, Writable } from 'node:stream';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { AcpServer, AcpStdioTransport } from '../src/acp/index.js';
+import { AcpServer, AcpStdioTransport, CleanAcpEngine } from '../src/acp/index.js';
 import {
   ACP_ERROR_INVALID_PARAMS,
   ACP_ERROR_METHOD_NOT_FOUND,
@@ -96,7 +96,7 @@ async function newSession(server: AcpServer, cwd = process.cwd()) {
 describe('AcpServer', () => {
   it('answers initialize with v1 capabilities and no auth methods', async () => {
     const { sdk } = fakeSdk(replayStream([], runResult('end_turn')));
-    const server = new AcpServer({ sdk });
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
     const response = await server.handleRequest(
       request(1, 'initialize', { protocolVersion: 1, clientCapabilities: {} }),
       CHANNEL,
@@ -113,7 +113,7 @@ describe('AcpServer', () => {
 
   it('creates sessions for absolute cwds and rejects relative ones', async () => {
     const { sdk } = fakeSdk(replayStream([], runResult('end_turn')));
-    const server = new AcpServer({ sdk });
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
     const created = await server.handleRequest(request(1, 'session/new', { cwd: process.cwd() }), CHANNEL);
     expect(created).toMatchObject({ result: { sessionId: 'session-1' } });
     const rejected = await server.handleRequest(request(2, 'session/new', { cwd: 'relative/dir' }), CHANNEL);
@@ -122,7 +122,7 @@ describe('AcpServer', () => {
 
   it('fails closed on unknown methods and unknown sessions', async () => {
     const { sdk } = fakeSdk(replayStream([], runResult('end_turn')));
-    const server = new AcpServer({ sdk });
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
     const unknown = await server.handleRequest(request(1, 'session/load', {}), CHANNEL);
     expect(unknown).toMatchObject({ error: { code: ACP_ERROR_METHOD_NOT_FOUND } });
     const prompt = await server.handleRequest(
@@ -149,7 +149,7 @@ describe('AcpServer', () => {
       { type: 'response.text.delta', runId: 'r', iteration: 1, delta: ' world', snapshot: 'Hello world', timestamp: 't' },
     ];
     const { sdk, session } = fakeSdk(replayStream(events, runResult('end_turn')));
-    const server = new AcpServer({ sdk });
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
     const sessionId = await newSession(server);
     const channel = { notify: vi.fn(), request: vi.fn(async () => ({})) };
 
@@ -178,7 +178,7 @@ describe('AcpServer', () => {
   it('maps maxToolIterationsExceeded to max_turn_requests', async () => {
     const result = { ...runResult(null), maxToolIterationsExceeded: true };
     const { sdk } = fakeSdk(replayStream([], result));
-    const server = new AcpServer({ sdk });
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
     const sessionId = await newSession(server);
     const response = await server.handleRequest(
       request(2, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'spin' }] }),
@@ -190,7 +190,7 @@ describe('AcpServer', () => {
   it('answers an in-flight prompt with cancelled when session/cancel arrives', async () => {
     const stream = cancellableStream();
     const { sdk } = fakeSdk(stream);
-    const server = new AcpServer({ sdk });
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
     const sessionId = await newSession(server);
 
     const promptPromise = server.handleRequest(
@@ -206,7 +206,7 @@ describe('AcpServer', () => {
 
   it('treats cancel of an idle session as a no-op', async () => {
     const { sdk } = fakeSdk(replayStream([], runResult('end_turn')));
-    const server = new AcpServer({ sdk });
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
     await newSession(server);
     await expect(server.handleNotification(
       { kind: 'notification', method: 'session/cancel', params: { sessionId: 'session-1' } },
@@ -227,7 +227,7 @@ describe('AcpServer', () => {
     };
     void failing.result.catch(() => undefined);
     const { sdk } = fakeSdk(failing as unknown as AgentRunStream);
-    const server = new AcpServer({ sdk });
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
     const sessionId = await newSession(server);
     const response = await server.handleRequest(
       request(2, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'boom' }] }),
@@ -247,7 +247,7 @@ describe('AcpStdioTransport', () => {
         callback();
       },
     });
-    const server = new AcpServer({ sdk });
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
     const transport = new AcpStdioTransport(server, input, output, () => undefined);
     return { input, output, writes, server, transport };
   }
