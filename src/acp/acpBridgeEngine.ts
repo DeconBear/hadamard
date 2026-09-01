@@ -2,6 +2,7 @@ import type { HadamardBridgeSdkClient, HadamardBridgeSession } from '../parity/h
 import { createHadamardBridgeSdk } from '../parity/hadamardBridgeSdk.js';
 import type {
   HadamardBridgePermissionMode,
+  HadamardBridgeRunResult,
   HadamardPermissionMode,
   RuntimeProviderId,
 } from '../types.js';
@@ -14,6 +15,7 @@ import type {
   AcpEngineRunResult,
   AcpEngineSession,
   AcpRunHandle,
+  AcpRunMeta,
   AcpRuntimeEngine,
 } from './acpEngine.js';
 import type { AcpSessionUpdateBody, AcpTextContentBlock } from './acpProtocol.js';
@@ -121,7 +123,7 @@ class BridgeAcpEngineSession implements AcpEngineSession {
             `Bridge run failed (subtype: ${runResult.subtype ?? 'unknown'}; exit code: ${runResult.exitCode ?? 'none'}).`,
           );
         }
-        return { stopReason: mapBridgeRunResultToStopReason(runResult) };
+        return { stopReason: mapBridgeRunResultToStopReason(runResult), meta: bridgeRunMeta(runResult) };
       } catch (error) {
         if (abort.signal.aborted || isAbortLikeError(error)) return { stopReason: 'cancelled' };
         throw error;
@@ -143,4 +145,12 @@ async function* mapBridgeEvents(
   for await (const event of stream) {
     yield* mapBridgeJsonEventToAcpUpdates(event);
   }
+}
+
+/** Honest per-turn facts from a bridge run; the CLI reports cost, not token counts. */
+function bridgeRunMeta(result: HadamardBridgeRunResult): AcpRunMeta {
+  const meta: AcpRunMeta = {};
+  if (typeof result.totalCostUsd === 'number') meta.costUsd = result.totalCostUsd;
+  if (typeof result.durationMs === 'number') meta.durationMs = result.durationMs;
+  return meta;
 }
