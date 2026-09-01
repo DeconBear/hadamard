@@ -240,4 +240,26 @@ describe('BridgeAcpEngine', () => {
     await expect(BridgeAcpEngine.create({ runtime: 'crush', workDir: process.cwd() }))
       .rejects.toThrowError(/Bridge runtime "crush" is not available.*Install and log in/s);
   });
+
+  it('reports bridge cost facts on the prompt response when the CLI provides them', async () => {
+    const { engine } = fakeBridgeEngine(() => bridgeStream(
+      [],
+      bridgeResult({ totalCostUsd: 0.0123, durationMs: 4200 }),
+    ));
+    const server = new AcpServer({ engine });
+    const created = await server.handleRequest(request(1, 'session/new', { cwd: process.cwd() }), CHANNEL);
+    const { sessionId } = (created as { result: { sessionId: string } }).result;
+    const response = await server.handleRequest(
+      request(2, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'go' }] }),
+      CHANNEL,
+    );
+    expect(response).toMatchObject({
+      result: {
+        stopReason: 'end_turn',
+        _meta: { hadamard: { engine: 'bridge:claude', costUsd: 0.0123, durationMs: 4200 } },
+      },
+    });
+    const meta = (response as { result: { _meta: { hadamard: Record<string, unknown> } } }).result._meta.hadamard;
+    expect('inputTokens' in meta).toBe(false); // bridge CLIs report no token counts
+  });
 });

@@ -195,6 +195,8 @@ export interface AcpPromptParams {
 
 export interface AcpPromptResult {
   stopReason: AcpStopReason;
+  /** Extension metadata; ACP reserves _meta for implementation-specific data. */
+  _meta?: Record<string, unknown>;
 }
 
 export function parsePromptParams(value: unknown): AcpPromptParams {

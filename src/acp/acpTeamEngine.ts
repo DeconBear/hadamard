@@ -14,6 +14,7 @@ import type {
   AcpEngineRunResult,
   AcpEngineSession,
   AcpRunHandle,
+  AcpRunMeta,
   AcpRuntimeEngine,
 } from './acpEngine.js';
 import type { AcpSessionUpdateBody, AcpTextContentBlock } from './acpProtocol.js';
@@ -111,7 +112,7 @@ class TeamAcpEngineSession implements AcpEngineSession {
           sessionUpdate: 'agent_message_chunk',
           content: { type: 'text', text: teamAnswerText(teamResult) },
         });
-        return { stopReason: 'end_turn' };
+        return { stopReason: 'end_turn', meta: teamRunMeta(teamResult) };
       } catch (error) {
         if (abort.signal.aborted || isAbortLikeError(error)) return { stopReason: 'cancelled' };
         updates.fail(error);
@@ -134,6 +135,20 @@ function teamAnswerText(result: ModelTeamResult): string {
   return result.incompleteReason
     ? `${answer}\n\n[incomplete: ${result.incompleteReason}]`
     : answer;
+}
+
+/** Honest per-turn facts from a team run; estimatedCost stays absent when pricing is unknown. */
+function teamRunMeta(result: ModelTeamResult): AcpRunMeta {
+  const meta: AcpRunMeta = {
+    inputTokens: result.cost.totalInputTokens,
+    outputTokens: result.cost.totalOutputTokens,
+    durationMs: result.durationMs,
+  };
+  if (result.cost.estimatedCost !== null) meta.costUsd = result.cost.estimatedCost;
+  const toolCalls = result.memberStatuses?.reduce((sum, member) => sum + (member.toolCalls ?? 0), 0);
+  if (typeof toolCalls === 'number') meta.toolCalls = toolCalls;
+  if (result.incompleteReason) meta.incompleteReason = result.incompleteReason;
+  return meta;
 }
 
 /** Minimal push-based async iterable bridging callback-style team events. */

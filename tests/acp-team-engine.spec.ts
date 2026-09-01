@@ -84,7 +84,7 @@ describe('TeamAcpEngine', () => {
     });
     const run = session.run([{ type: 'text', text: 'hi' }], CHANNEL);
     await drain(run.events);
-    await expect(run.result).resolves.toEqual({ stopReason: 'end_turn' });
+    await expect(run.result).resolves.toEqual({ stopReason: 'end_turn', meta: expect.any(Object) });
   });
 
   it('fails fast with available teams when the definition is unknown', async () => {
@@ -156,8 +156,44 @@ describe('TeamAcpEngine', () => {
     const run = session.run([{ type: 'text', text: 'hi' }], CHANNEL);
     const updates: Array<{ sessionUpdate: string; content?: { text: string } }> = [];
     for await (const update of run.events) updates.push(update);
-    await expect(run.result).resolves.toEqual({ stopReason: 'end_turn' });
+    await expect(run.result).resolves.toEqual({ stopReason: 'end_turn', meta: expect.any(Object) });
     expect(updates.at(-1)?.content?.text).toContain('[incomplete: member skeptic failed]');
+  });
+
+  it('reports team token totals and member tool calls on the prompt response', async () => {
+    askTeamDefinition.mockResolvedValueOnce(teamResult('answer', {
+      cost: { totalInputTokens: 500, totalOutputTokens: 120, estimatedCost: null, breakdown: [] },
+      durationMs: 900,
+      memberStatuses: [
+        { id: 'researcher', model: 'm1', ok: true, toolCalls: 3, durationMs: 400 },
+        { id: 'skeptic', model: 'm1', ok: true, toolCalls: 2, durationMs: 500 },
+      ],
+    }));
+    const engine = await TeamAcpEngine.create({ team: 'panel-analysis', workDir: process.cwd() });
+    const server = new AcpServer({ engine });
+    const created = await server.handleRequest(request(1, 'session/new', { cwd: process.cwd() }), CHANNEL);
+    const { sessionId } = (created as { result: { sessionId: string } }).result;
+    const response = await server.handleRequest(
+      request(2, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'go' }] }),
+      CHANNEL,
+    );
+    expect(response).toMatchObject({
+      result: {
+        stopReason: 'end_turn',
+        _meta: {
+          hadamard: {
+            engine: 'team:panel-analysis',
+            inputTokens: 500,
+            outputTokens: 120,
+            durationMs: 900,
+            toolCalls: 5,
+          },
+        },
+      },
+    });
+    // estimatedCost was null → costUsd must be absent, never fabricated.
+    const meta = (response as { result: { _meta: { hadamard: Record<string, unknown> } } }).result._meta.hadamard;
+    expect('costUsd' in meta).toBe(false);
   });
 });
 

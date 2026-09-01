@@ -216,6 +216,37 @@ describe('AcpServer', () => {
     )).resolves.toBeUndefined();
   });
 
+  it('reports honest per-turn facts on the prompt response _meta', async () => {
+    const result = {
+      ...runResult('end_turn'),
+      requests: [{
+        iteration: 1, messageId: 'm1', model: 'test-model', stopReason: 'end_turn' as const,
+        text: 'done', createdAt: 't', usage: { input_tokens: 120, output_tokens: 34 },
+      }],
+      toolCalls: [{
+        id: 'tc-1', name: 'read', publicName: 'Read', provider: 'local' as const, input: {},
+        startedAt: 't', outputText: '', isError: false, completedAt: 't', durationMs: 1,
+      }],
+    };
+    const { sdk } = fakeSdk(replayStream([], result));
+    const server = new AcpServer({ engine: new CleanAcpEngine(sdk) });
+    const sessionId = await newSession(server);
+    const response = await server.handleRequest(
+      request(2, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'go' }] }),
+      CHANNEL,
+    );
+    // 'test-model' has no pricing entry, so costUsd must be absent, not estimated.
+    expect(response).toMatchObject({
+      result: {
+        stopReason: 'end_turn',
+        _meta: { hadamard: { engine: 'clean', model: 'test-model', inputTokens: 120, outputTokens: 34, toolCalls: 1 } },
+      },
+    });
+    const meta = (response as { result: { _meta: { hadamard: Record<string, unknown> } } }).result._meta.hadamard;
+    expect('costUsd' in meta).toBe(false);
+    expect('durationMs' in meta).toBe(false); // fake timestamps do not parse
+  });
+
   it('surfaces non-abort run failures as internal JSON-RPC errors', async () => {
     const failing = {
       result: Promise.reject(new Error('provider exploded')),

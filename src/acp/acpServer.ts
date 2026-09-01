@@ -117,7 +117,13 @@ export class AcpServer {
         // The terminal state (including cancel and failure) is carried by
         // run.result below; a failed event stream must not mask it.
       }
-      return await run.result;
+      const outcome = await run.result;
+      // Identity + observability marking on every turn: clients always learn
+      // the real engine; token/cost fields appear only when actually known.
+      return {
+        stopReason: outcome.stopReason,
+        _meta: { hadamard: { engine: this.options.engine.engineId, ...outcome.meta } },
+      };
     } finally {
       handle.activeRun = undefined;
     }
