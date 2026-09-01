@@ -92,6 +92,7 @@
     "hadamard-tui": "./bin/hadamard-tui.js",
     "hadamard-gui": "./bin/hadamard-gui.js",
     "hadamard-app-server": "./bin/hadamard-app-server.js",
+    "hadamard-acp": "./bin/hadamard-acp.js",
     "hadamard-link-runtime": "./bin/hadamard-link-runtime.js",
     "hadamard-relay": "./bin/hadamard-relay.js"
   },

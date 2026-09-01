@@ -3,6 +3,231 @@
   "exports": {
     ".": [
       {
+        "name": "ACP_ERROR_INTERNAL",
+        "kind": "value",
+        "signature": "ACP_ERROR_INTERNAL = -32603"
+      },
+      {
+        "name": "ACP_ERROR_INVALID_PARAMS",
+        "kind": "value",
+        "signature": "ACP_ERROR_INVALID_PARAMS = -32602"
+      },
+      {
+        "name": "ACP_ERROR_INVALID_REQUEST",
+        "kind": "value",
+        "signature": "ACP_ERROR_INVALID_REQUEST = -32600"
+      },
+      {
+        "name": "ACP_ERROR_METHOD_NOT_FOUND",
+        "kind": "value",
+        "signature": "ACP_ERROR_METHOD_NOT_FOUND = -32601"
+      },
+      {
+        "name": "ACP_ERROR_PARSE",
+        "kind": "value",
+        "signature": "ACP_ERROR_PARSE = -32700"
+      },
+      {
+        "name": "ACP_PROTOCOL_VERSION",
+        "kind": "value",
+        "signature": "ACP_PROTOCOL_VERSION = 1"
+      },
+      {
+        "name": "AcpCancelParams",
+        "kind": "interface",
+        "signature": "export interface AcpCancelParams {\nsessionId: string;\n}"
+      },
+      {
+        "name": "AcpClientChannel",
+        "kind": "interface",
+        "signature": "export interface AcpClientChannel {\nnotify(method: string, params: unknown): void;\nrequest(method: string, params: unknown): Promise<unknown>;\n}"
+      },
+      {
+        "name": "acpError",
+        "kind": "function",
+        "signature": "export declare function acpError(id: AcpId | null, code: number, message: string, data?: unknown): AcpErrorResponse;"
+      },
+      {
+        "name": "AcpErrorBody",
+        "kind": "interface",
+        "signature": "export interface AcpErrorBody {\ncode: number;\nmessage: string;\ndata?: unknown;\n}"
+      },
+      {
+        "name": "acpErrorFromException",
+        "kind": "function",
+        "signature": "export declare function acpErrorFromException(id: AcpId | null, error: unknown): AcpErrorResponse;"
+      },
+      {
+        "name": "AcpErrorResponse",
+        "kind": "interface",
+        "signature": "export interface AcpErrorResponse {\njsonrpc: '2.0';\nid: AcpId | null;\nerror: AcpErrorBody;\n}"
+      },
+      {
+        "name": "AcpId",
+        "kind": "type",
+        "signature": "export type AcpId = number | string;"
+      },
+      {
+        "name": "AcpInitializeParams",
+        "kind": "interface",
+        "signature": "export interface AcpInitializeParams {\nprotocolVersion: number;\nclientCapabilities: {\nfs?: {\nreadTextFile?: boolean;\nwriteTextFile?: boolean;\n};\nterminal?: boolean;\n};\nclientInfo?: {\nname: string;\nversion: string;\ntitle?: string;\n};\n}"
+      },
+      {
+        "name": "AcpInitializeResult",
+        "kind": "interface",
+        "signature": "export interface AcpInitializeResult {\nprotocolVersion: number;\nagentCapabilities: {\npromptCapabilities: {\nimage: boolean;\naudio: boolean;\nembeddedContext: boolean;\n};\nloadSession: boolean;\n};\nagentInfo: {\nname: string;\nversion: string;\ntitle?: string;\n};\nauthMethods: [\n];\n}"
+      },
+      {
+        "name": "AcpMessage",
+        "kind": "type",
+        "signature": "export type AcpMessage = AcpRequestMessage | AcpNotificationMessage | AcpResponseMessage;"
+      },
+      {
+        "name": "AcpNewSessionParams",
+        "kind": "interface",
+        "signature": "export interface AcpNewSessionParams {\ncwd: string;\n}"
+      },
+      {
+        "name": "AcpNewSessionResult",
+        "kind": "interface",
+        "signature": "export interface AcpNewSessionResult {\nsessionId: string;\n}"
+      },
+      {
+        "name": "AcpNotificationMessage",
+        "kind": "interface",
+        "signature": "export interface AcpNotificationMessage {\nkind: 'notification';\nmethod: string;\nparams?: unknown;\n}"
+      },
+      {
+        "name": "AcpPermissionOption",
+        "kind": "interface",
+        "signature": "export interface AcpPermissionOption {\noptionId: string;\nname: string;\nkind: AcpPermissionOptionKind;\n}"
+      },
+      {
+        "name": "AcpPermissionOptionKind",
+        "kind": "type",
+        "signature": "export type AcpPermissionOptionKind = 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';"
+      },
+      {
+        "name": "AcpPermissionOutcome",
+        "kind": "type",
+        "signature": "export type AcpPermissionOutcome = {\noutcome: 'selected';\noptionId: string;\n} | {\noutcome: 'cancelled';\n};"
+      },
+      {
+        "name": "AcpPromptParams",
+        "kind": "interface",
+        "signature": "export interface AcpPromptParams {\nsessionId: string;\nprompt: AcpTextContentBlock[];\n}"
+      },
+      {
+        "name": "AcpPromptResult",
+        "kind": "interface",
+        "signature": "export interface AcpPromptResult {\nstopReason: AcpStopReason;\n}"
+      },
+      {
+        "name": "AcpProtocolError",
+        "kind": "class",
+        "signature": "export declare class AcpProtocolError extends Error {\nreadonly code: number;\nreadonly data?: unknown | undefined;\nconstructor(code: number, message: string, data?: unknown | undefined);\n}"
+      },
+      {
+        "name": "AcpRequestMessage",
+        "kind": "interface",
+        "signature": "export interface AcpRequestMessage {\nkind: 'request';\nid: AcpId;\nmethod: string;\nparams?: unknown;\n}"
+      },
+      {
+        "name": "AcpRequestPermissionResult",
+        "kind": "interface",
+        "signature": "export interface AcpRequestPermissionResult {\noutcome: AcpPermissionOutcome;\n}"
+      },
+      {
+        "name": "AcpResponseMessage",
+        "kind": "interface",
+        "signature": "export interface AcpResponseMessage {\nkind: 'response';\nid: AcpId;\nresult?: unknown;\nerror?: {\ncode: number;\nmessage: string;\ndata?: unknown;\n};\n}"
+      },
+      {
+        "name": "acpResult",
+        "kind": "function",
+        "signature": "export declare function acpResult(id: AcpId, result: unknown): AcpResultResponse;"
+      },
+      {
+        "name": "AcpResultResponse",
+        "kind": "interface",
+        "signature": "export interface AcpResultResponse {\njsonrpc: '2.0';\nid: AcpId;\nresult: unknown;\n}"
+      },
+      {
+        "name": "AcpServer",
+        "kind": "class",
+        "signature": "export declare class AcpServer {\nprivate readonly options;\nprivate readonly sessions;\nconstructor(options: AcpServerOptions);\nhandleRequest(request: AcpRequestMessage, channel: AcpClientChannel): Promise<AcpServerResponse>;\nhandleNotification(notification: AcpNotificationMessage): Promise<void>;\nshutdown(reason: string): void;\nprivate dispatch;\nprivate initialize;\nprivate newSession;\nprivate prompt;\n}"
+      },
+      {
+        "name": "AcpServerOptions",
+        "kind": "interface",
+        "signature": "export interface AcpServerOptions {\nsdk: HadamardAgentClient;\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\nagentName?: string;\nagentVersion?: string;\n}"
+      },
+      {
+        "name": "AcpServerResponse",
+        "kind": "type",
+        "signature": "export type AcpServerResponse = AcpResultResponse | AcpErrorResponse;"
+      },
+      {
+        "name": "AcpSessionBridge",
+        "kind": "class",
+        "signature": "export declare class AcpSessionBridge {\nprivate readonly sdk;\nprivate readonly options;\nprivate readonly sessions;\nconstructor(sdk: HadamardAgentClient, options?: AcpSessionBridgeOptions);\ncreate(cwd: string): Promise<AcpSessionHandle>;\nget(sessionId: string): AcpSessionHandle;\ncancel(sessionId: string, reason?: string): boolean;\ncancelAll(reason: string): void;\n}"
+      },
+      {
+        "name": "AcpSessionBridgeOptions",
+        "kind": "interface",
+        "signature": "export interface AcpSessionBridgeOptions {\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
+      },
+      {
+        "name": "AcpSessionHandle",
+        "kind": "interface",
+        "signature": "export interface AcpSessionHandle {\nreadonly id: string;\nreadonly session: AgentSession;\nactiveStream?: AgentRunStream;\n}"
+      },
+      {
+        "name": "AcpSessionUpdateBody",
+        "kind": "type",
+        "signature": "export type AcpSessionUpdateBody = {\nsessionUpdate: 'agent_message_chunk';\ncontent: AcpTextContentBlock;\n} | {\nsessionUpdate: 'agent_thought_chunk';\ncontent: AcpTextContentBlock;\n} | ({\nsessionUpdate: 'tool_call';\ntoolCallId: string;\ntitle: string;\n} & Omit<AcpToolCallUpdate, 'toolCallId'>) | ({\nsessionUpdate: 'tool_call_update';\n} & AcpToolCallUpdate);"
+      },
+      {
+        "name": "AcpSessionUpdateParams",
+        "kind": "interface",
+        "signature": "export interface AcpSessionUpdateParams {\nsessionId: string;\nupdate: AcpSessionUpdateBody;\n}"
+      },
+      {
+        "name": "AcpStdioTransport",
+        "kind": "class",
+        "signature": "export declare class AcpStdioTransport implements AcpClientChannel {\nprivate readonly server;\nprivate readonly input;\nprivate readonly output;\nprivate readonly log;\nprivate readonly pending;\nprivate outgoingCounter;\nconstructor(server: AcpServer, input?: Readable, output?: Writable, log?: (line: string) => void);\nnotify(method: string, params: unknown): void;\nrequest(method: string, params: unknown): Promise<unknown>;\nstart(): Promise<void>;\nprivate dispatchLine;\nprivate write;\n}"
+      },
+      {
+        "name": "AcpStopReason",
+        "kind": "type",
+        "signature": "export type AcpStopReason = 'end_turn' | 'max_tokens' | 'max_turn_requests' | 'refusal' | 'cancelled';"
+      },
+      {
+        "name": "AcpTextContentBlock",
+        "kind": "interface",
+        "signature": "export interface AcpTextContentBlock {\ntype: 'text';\ntext: string;\n}"
+      },
+      {
+        "name": "AcpToolCallKind",
+        "kind": "type",
+        "signature": "export type AcpToolCallKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'other';"
+      },
+      {
+        "name": "AcpToolCallStatus",
+        "kind": "type",
+        "signature": "export type AcpToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';"
+      },
+      {
+        "name": "AcpToolCallUpdate",
+        "kind": "interface",
+        "signature": "export interface AcpToolCallUpdate {\ntoolCallId: string;\ntitle?: string;\nkind?: AcpToolCallKind;\nstatus?: AcpToolCallStatus;\nrawInput?: unknown;\nrawOutput?: unknown;\n}"
+      },
+      {
+        "name": "acpToolKind",
+        "kind": "function",
+        "signature": "export declare function acpToolKind(publicName: string): AcpToolCallKind;"
+      },
+      {
         "name": "activateRuntimeContribution",
         "kind": "function",
         "signature": "export declare function activateRuntimeContribution(packagePath: string, manifest: RuntimeContributionManifest, options?: ActivateRuntimeContributionOptions): Promise<HadamardRuntimeContribution>;"
@@ -1276,6 +1501,11 @@
         "name": "CREATE_GOAL_TOOL_NAME",
         "kind": "value",
         "signature": "CREATE_GOAL_TOOL_NAME = \"CreateGoal\""
+      },
+      {
+        "name": "createAcpToolApprover",
+        "kind": "function",
+        "signature": "export declare function createAcpToolApprover(options: {\nchannel: AcpClientChannel;\nsessionId: string;\n}): HadamardToolApprover;"
       },
       {
         "name": "createAgentExecutionTree",
@@ -4713,6 +4943,11 @@
         "signature": "export declare function invalidateProjectSessionDiscovery(): void;"
       },
       {
+        "name": "isAbortLikeError",
+        "kind": "function",
+        "signature": "export declare function isAbortLikeError(error: unknown): boolean;"
+      },
+      {
         "name": "isAgentMode",
         "kind": "function",
         "signature": "export declare function isAgentMode(value: unknown): value is AgentMode;"
@@ -5388,9 +5623,19 @@
         "signature": "export interface ManagerUpdateContext {\nconversationSummaries?: string;\ngitSummary?: string;\ngithubDigest?: string;\ncurrentPlanJson?: string;\ncurrentDesign?: string;\ncurrentProgress?: string;\ncurrentIssuesJson?: string;\ninstruction?: string;\n}"
       },
       {
+        "name": "mapAgentEventToAcpUpdates",
+        "kind": "function",
+        "signature": "export declare function mapAgentEventToAcpUpdates(event: AgentEvent): AcpSessionUpdateBody[];"
+      },
+      {
         "name": "mapHadamardEnvToAnthropicEnv",
         "kind": "function",
         "signature": "export declare function mapHadamardEnvToAnthropicEnv(sourceEnv: Record<string, string | undefined>): Record<string, string>;"
+      },
+      {
+        "name": "mapRunResultToStopReason",
+        "kind": "function",
+        "signature": "export declare function mapRunResultToStopReason(result: AgentRunResult): AcpStopReason;"
       },
       {
         "name": "matchesWorktreeIncludePattern",
@@ -5718,6 +5963,11 @@
         "signature": "export interface ParallelOptions {\nmaxConcurrency?: number;\nfailFast?: boolean;\nsignal?: AbortSignal;\n}"
       },
       {
+        "name": "parseAcpMessage",
+        "kind": "function",
+        "signature": "export declare function parseAcpMessage(value: unknown): AcpMessage;"
+      },
+      {
         "name": "parseAgentMode",
         "kind": "function",
         "signature": "export declare function parseAgentMode(value: unknown, label?: string): AgentMode;"
@@ -5731,6 +5981,11 @@
         "name": "parseAppServerRequest",
         "kind": "function",
         "signature": "export declare function parseAppServerRequest(value: unknown): AppServerRequest;"
+      },
+      {
+        "name": "parseCancelParams",
+        "kind": "function",
+        "signature": "export declare function parseCancelParams(value: unknown): AcpCancelParams;"
       },
       {
         "name": "parseContextWindowTokens",
@@ -5768,9 +6023,19 @@
         "signature": "export declare function parseHadamardSessionMemoryRuntimeState(metadata?: Record<string, unknown>): HadamardSessionMemoryRuntimeState;"
       },
       {
+        "name": "parseInitializeParams",
+        "kind": "function",
+        "signature": "export declare function parseInitializeParams(value: unknown): AcpInitializeParams;"
+      },
+      {
         "name": "parseKernelInboundMessage",
         "kind": "function",
         "signature": "export declare function parseKernelInboundMessage(line: string): KernelInboundMessage;"
+      },
+      {
+        "name": "parseNewSessionParams",
+        "kind": "function",
+        "signature": "export declare function parseNewSessionParams(value: unknown): AcpNewSessionParams;"
       },
       {
         "name": "parsePluginPackageManifest",
@@ -5788,9 +6053,19 @@
         "signature": "export declare function parseProjectInstructionState(metadata: Record<string, unknown> | undefined): ProjectInstructionStateV1 | undefined;"
       },
       {
+        "name": "parsePromptParams",
+        "kind": "function",
+        "signature": "export declare function parsePromptParams(value: unknown): AcpPromptParams;"
+      },
+      {
         "name": "parseRemoteWorkerMessage",
         "kind": "function",
         "signature": "export declare function parseRemoteWorkerMessage(value: unknown): RemoteWorkerMessage;"
+      },
+      {
+        "name": "parseRequestPermissionResult",
+        "kind": "function",
+        "signature": "export declare function parseRequestPermissionResult(value: unknown): AcpRequestPermissionResult;"
       },
       {
         "name": "parseReviewSummary",
@@ -10429,6 +10704,231 @@
     ],
     "./compat": [
       {
+        "name": "ACP_ERROR_INTERNAL",
+        "kind": "value",
+        "signature": "ACP_ERROR_INTERNAL = -32603"
+      },
+      {
+        "name": "ACP_ERROR_INVALID_PARAMS",
+        "kind": "value",
+        "signature": "ACP_ERROR_INVALID_PARAMS = -32602"
+      },
+      {
+        "name": "ACP_ERROR_INVALID_REQUEST",
+        "kind": "value",
+        "signature": "ACP_ERROR_INVALID_REQUEST = -32600"
+      },
+      {
+        "name": "ACP_ERROR_METHOD_NOT_FOUND",
+        "kind": "value",
+        "signature": "ACP_ERROR_METHOD_NOT_FOUND = -32601"
+      },
+      {
+        "name": "ACP_ERROR_PARSE",
+        "kind": "value",
+        "signature": "ACP_ERROR_PARSE = -32700"
+      },
+      {
+        "name": "ACP_PROTOCOL_VERSION",
+        "kind": "value",
+        "signature": "ACP_PROTOCOL_VERSION = 1"
+      },
+      {
+        "name": "AcpCancelParams",
+        "kind": "interface",
+        "signature": "export interface AcpCancelParams {\nsessionId: string;\n}"
+      },
+      {
+        "name": "AcpClientChannel",
+        "kind": "interface",
+        "signature": "export interface AcpClientChannel {\nnotify(method: string, params: unknown): void;\nrequest(method: string, params: unknown): Promise<unknown>;\n}"
+      },
+      {
+        "name": "acpError",
+        "kind": "function",
+        "signature": "export declare function acpError(id: AcpId | null, code: number, message: string, data?: unknown): AcpErrorResponse;"
+      },
+      {
+        "name": "AcpErrorBody",
+        "kind": "interface",
+        "signature": "export interface AcpErrorBody {\ncode: number;\nmessage: string;\ndata?: unknown;\n}"
+      },
+      {
+        "name": "acpErrorFromException",
+        "kind": "function",
+        "signature": "export declare function acpErrorFromException(id: AcpId | null, error: unknown): AcpErrorResponse;"
+      },
+      {
+        "name": "AcpErrorResponse",
+        "kind": "interface",
+        "signature": "export interface AcpErrorResponse {\njsonrpc: '2.0';\nid: AcpId | null;\nerror: AcpErrorBody;\n}"
+      },
+      {
+        "name": "AcpId",
+        "kind": "type",
+        "signature": "export type AcpId = number | string;"
+      },
+      {
+        "name": "AcpInitializeParams",
+        "kind": "interface",
+        "signature": "export interface AcpInitializeParams {\nprotocolVersion: number;\nclientCapabilities: {\nfs?: {\nreadTextFile?: boolean;\nwriteTextFile?: boolean;\n};\nterminal?: boolean;\n};\nclientInfo?: {\nname: string;\nversion: string;\ntitle?: string;\n};\n}"
+      },
+      {
+        "name": "AcpInitializeResult",
+        "kind": "interface",
+        "signature": "export interface AcpInitializeResult {\nprotocolVersion: number;\nagentCapabilities: {\npromptCapabilities: {\nimage: boolean;\naudio: boolean;\nembeddedContext: boolean;\n};\nloadSession: boolean;\n};\nagentInfo: {\nname: string;\nversion: string;\ntitle?: string;\n};\nauthMethods: [\n];\n}"
+      },
+      {
+        "name": "AcpMessage",
+        "kind": "type",
+        "signature": "export type AcpMessage = AcpRequestMessage | AcpNotificationMessage | AcpResponseMessage;"
+      },
+      {
+        "name": "AcpNewSessionParams",
+        "kind": "interface",
+        "signature": "export interface AcpNewSessionParams {\ncwd: string;\n}"
+      },
+      {
+        "name": "AcpNewSessionResult",
+        "kind": "interface",
+        "signature": "export interface AcpNewSessionResult {\nsessionId: string;\n}"
+      },
+      {
+        "name": "AcpNotificationMessage",
+        "kind": "interface",
+        "signature": "export interface AcpNotificationMessage {\nkind: 'notification';\nmethod: string;\nparams?: unknown;\n}"
+      },
+      {
+        "name": "AcpPermissionOption",
+        "kind": "interface",
+        "signature": "export interface AcpPermissionOption {\noptionId: string;\nname: string;\nkind: AcpPermissionOptionKind;\n}"
+      },
+      {
+        "name": "AcpPermissionOptionKind",
+        "kind": "type",
+        "signature": "export type AcpPermissionOptionKind = 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';"
+      },
+      {
+        "name": "AcpPermissionOutcome",
+        "kind": "type",
+        "signature": "export type AcpPermissionOutcome = {\noutcome: 'selected';\noptionId: string;\n} | {\noutcome: 'cancelled';\n};"
+      },
+      {
+        "name": "AcpPromptParams",
+        "kind": "interface",
+        "signature": "export interface AcpPromptParams {\nsessionId: string;\nprompt: AcpTextContentBlock[];\n}"
+      },
+      {
+        "name": "AcpPromptResult",
+        "kind": "interface",
+        "signature": "export interface AcpPromptResult {\nstopReason: AcpStopReason;\n}"
+      },
+      {
+        "name": "AcpProtocolError",
+        "kind": "class",
+        "signature": "export declare class AcpProtocolError extends Error {\nreadonly code: number;\nreadonly data?: unknown | undefined;\nconstructor(code: number, message: string, data?: unknown | undefined);\n}"
+      },
+      {
+        "name": "AcpRequestMessage",
+        "kind": "interface",
+        "signature": "export interface AcpRequestMessage {\nkind: 'request';\nid: AcpId;\nmethod: string;\nparams?: unknown;\n}"
+      },
+      {
+        "name": "AcpRequestPermissionResult",
+        "kind": "interface",
+        "signature": "export interface AcpRequestPermissionResult {\noutcome: AcpPermissionOutcome;\n}"
+      },
+      {
+        "name": "AcpResponseMessage",
+        "kind": "interface",
+        "signature": "export interface AcpResponseMessage {\nkind: 'response';\nid: AcpId;\nresult?: unknown;\nerror?: {\ncode: number;\nmessage: string;\ndata?: unknown;\n};\n}"
+      },
+      {
+        "name": "acpResult",
+        "kind": "function",
+        "signature": "export declare function acpResult(id: AcpId, result: unknown): AcpResultResponse;"
+      },
+      {
+        "name": "AcpResultResponse",
+        "kind": "interface",
+        "signature": "export interface AcpResultResponse {\njsonrpc: '2.0';\nid: AcpId;\nresult: unknown;\n}"
+      },
+      {
+        "name": "AcpServer",
+        "kind": "class",
+        "signature": "export declare class AcpServer {\nprivate readonly options;\nprivate readonly sessions;\nconstructor(options: AcpServerOptions);\nhandleRequest(request: AcpRequestMessage, channel: AcpClientChannel): Promise<AcpServerResponse>;\nhandleNotification(notification: AcpNotificationMessage): Promise<void>;\nshutdown(reason: string): void;\nprivate dispatch;\nprivate initialize;\nprivate newSession;\nprivate prompt;\n}"
+      },
+      {
+        "name": "AcpServerOptions",
+        "kind": "interface",
+        "signature": "export interface AcpServerOptions {\nsdk: HadamardAgentClient;\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\nagentName?: string;\nagentVersion?: string;\n}"
+      },
+      {
+        "name": "AcpServerResponse",
+        "kind": "type",
+        "signature": "export type AcpServerResponse = AcpResultResponse | AcpErrorResponse;"
+      },
+      {
+        "name": "AcpSessionBridge",
+        "kind": "class",
+        "signature": "export declare class AcpSessionBridge {\nprivate readonly sdk;\nprivate readonly options;\nprivate readonly sessions;\nconstructor(sdk: HadamardAgentClient, options?: AcpSessionBridgeOptions);\ncreate(cwd: string): Promise<AcpSessionHandle>;\nget(sessionId: string): AcpSessionHandle;\ncancel(sessionId: string, reason?: string): boolean;\ncancelAll(reason: string): void;\n}"
+      },
+      {
+        "name": "AcpSessionBridgeOptions",
+        "kind": "interface",
+        "signature": "export interface AcpSessionBridgeOptions {\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
+      },
+      {
+        "name": "AcpSessionHandle",
+        "kind": "interface",
+        "signature": "export interface AcpSessionHandle {\nreadonly id: string;\nreadonly session: AgentSession;\nactiveStream?: AgentRunStream;\n}"
+      },
+      {
+        "name": "AcpSessionUpdateBody",
+        "kind": "type",
+        "signature": "export type AcpSessionUpdateBody = {\nsessionUpdate: 'agent_message_chunk';\ncontent: AcpTextContentBlock;\n} | {\nsessionUpdate: 'agent_thought_chunk';\ncontent: AcpTextContentBlock;\n} | ({\nsessionUpdate: 'tool_call';\ntoolCallId: string;\ntitle: string;\n} & Omit<AcpToolCallUpdate, 'toolCallId'>) | ({\nsessionUpdate: 'tool_call_update';\n} & AcpToolCallUpdate);"
+      },
+      {
+        "name": "AcpSessionUpdateParams",
+        "kind": "interface",
+        "signature": "export interface AcpSessionUpdateParams {\nsessionId: string;\nupdate: AcpSessionUpdateBody;\n}"
+      },
+      {
+        "name": "AcpStdioTransport",
+        "kind": "class",
+        "signature": "export declare class AcpStdioTransport implements AcpClientChannel {\nprivate readonly server;\nprivate readonly input;\nprivate readonly output;\nprivate readonly log;\nprivate readonly pending;\nprivate outgoingCounter;\nconstructor(server: AcpServer, input?: Readable, output?: Writable, log?: (line: string) => void);\nnotify(method: string, params: unknown): void;\nrequest(method: string, params: unknown): Promise<unknown>;\nstart(): Promise<void>;\nprivate dispatchLine;\nprivate write;\n}"
+      },
+      {
+        "name": "AcpStopReason",
+        "kind": "type",
+        "signature": "export type AcpStopReason = 'end_turn' | 'max_tokens' | 'max_turn_requests' | 'refusal' | 'cancelled';"
+      },
+      {
+        "name": "AcpTextContentBlock",
+        "kind": "interface",
+        "signature": "export interface AcpTextContentBlock {\ntype: 'text';\ntext: string;\n}"
+      },
+      {
+        "name": "AcpToolCallKind",
+        "kind": "type",
+        "signature": "export type AcpToolCallKind = 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'other';"
+      },
+      {
+        "name": "AcpToolCallStatus",
+        "kind": "type",
+        "signature": "export type AcpToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';"
+      },
+      {
+        "name": "AcpToolCallUpdate",
+        "kind": "interface",
+        "signature": "export interface AcpToolCallUpdate {\ntoolCallId: string;\ntitle?: string;\nkind?: AcpToolCallKind;\nstatus?: AcpToolCallStatus;\nrawInput?: unknown;\nrawOutput?: unknown;\n}"
+      },
+      {
+        "name": "acpToolKind",
+        "kind": "function",
+        "signature": "export declare function acpToolKind(publicName: string): AcpToolCallKind;"
+      },
+      {
         "name": "activateRuntimeContribution",
         "kind": "function",
         "signature": "export declare function activateRuntimeContribution(packagePath: string, manifest: RuntimeContributionManifest, options?: ActivateRuntimeContributionOptions): Promise<HadamardRuntimeContribution>;"
@@ -11727,6 +12227,11 @@
         "name": "CREATE_GOAL_TOOL_NAME",
         "kind": "value",
         "signature": "CREATE_GOAL_TOOL_NAME = \"CreateGoal\""
+      },
+      {
+        "name": "createAcpToolApprover",
+        "kind": "function",
+        "signature": "export declare function createAcpToolApprover(options: {\nchannel: AcpClientChannel;\nsessionId: string;\n}): HadamardToolApprover;"
       },
       {
         "name": "createAgentExecutionTree",
@@ -15174,6 +15679,11 @@
         "signature": "export declare function invalidateProjectSessionDiscovery(): void;"
       },
       {
+        "name": "isAbortLikeError",
+        "kind": "function",
+        "signature": "export declare function isAbortLikeError(error: unknown): boolean;"
+      },
+      {
         "name": "isAgentMode",
         "kind": "function",
         "signature": "export declare function isAgentMode(value: unknown): value is AgentMode;"
@@ -15889,9 +16399,19 @@
         "signature": "export interface ManagerUpdateContext {\nconversationSummaries?: string;\ngitSummary?: string;\ngithubDigest?: string;\ncurrentPlanJson?: string;\ncurrentDesign?: string;\ncurrentProgress?: string;\ncurrentIssuesJson?: string;\ninstruction?: string;\n}"
       },
       {
+        "name": "mapAgentEventToAcpUpdates",
+        "kind": "function",
+        "signature": "export declare function mapAgentEventToAcpUpdates(event: AgentEvent): AcpSessionUpdateBody[];"
+      },
+      {
         "name": "mapHadamardEnvToAnthropicEnv",
         "kind": "function",
         "signature": "export declare function mapHadamardEnvToAnthropicEnv(sourceEnv: Record<string, string | undefined>): Record<string, string>;"
+      },
+      {
+        "name": "mapRunResultToStopReason",
+        "kind": "function",
+        "signature": "export declare function mapRunResultToStopReason(result: AgentRunResult): AcpStopReason;"
       },
       {
         "name": "matchesWorktreeIncludePattern",
@@ -16224,6 +16744,11 @@
         "signature": "export interface ParallelOptions {\nmaxConcurrency?: number;\nfailFast?: boolean;\nsignal?: AbortSignal;\n}"
       },
       {
+        "name": "parseAcpMessage",
+        "kind": "function",
+        "signature": "export declare function parseAcpMessage(value: unknown): AcpMessage;"
+      },
+      {
         "name": "parseAgentMode",
         "kind": "function",
         "signature": "export declare function parseAgentMode(value: unknown, label?: string): AgentMode;"
@@ -16237,6 +16762,11 @@
         "name": "parseAppServerRequest",
         "kind": "function",
         "signature": "export declare function parseAppServerRequest(value: unknown): AppServerRequest;"
+      },
+      {
+        "name": "parseCancelParams",
+        "kind": "function",
+        "signature": "export declare function parseCancelParams(value: unknown): AcpCancelParams;"
       },
       {
         "name": "parseContextWindowTokens",
@@ -16274,9 +16804,19 @@
         "signature": "export declare function parseHadamardSessionMemoryRuntimeState(metadata?: Record<string, unknown>): HadamardSessionMemoryRuntimeState;"
       },
       {
+        "name": "parseInitializeParams",
+        "kind": "function",
+        "signature": "export declare function parseInitializeParams(value: unknown): AcpInitializeParams;"
+      },
+      {
         "name": "parseKernelInboundMessage",
         "kind": "function",
         "signature": "export declare function parseKernelInboundMessage(line: string): KernelInboundMessage;"
+      },
+      {
+        "name": "parseNewSessionParams",
+        "kind": "function",
+        "signature": "export declare function parseNewSessionParams(value: unknown): AcpNewSessionParams;"
       },
       {
         "name": "parsePluginPackageManifest",
@@ -16294,9 +16834,19 @@
         "signature": "export declare function parseProjectInstructionState(metadata: Record<string, unknown> | undefined): ProjectInstructionStateV1 | undefined;"
       },
       {
+        "name": "parsePromptParams",
+        "kind": "function",
+        "signature": "export declare function parsePromptParams(value: unknown): AcpPromptParams;"
+      },
+      {
         "name": "parseRemoteWorkerMessage",
         "kind": "function",
         "signature": "export declare function parseRemoteWorkerMessage(value: unknown): RemoteWorkerMessage;"
+      },
+      {
+        "name": "parseRequestPermissionResult",
+        "kind": "function",
+        "signature": "export declare function parseRequestPermissionResult(value: unknown): AcpRequestPermissionResult;"
       },
       {
         "name": "parseReviewSummary",

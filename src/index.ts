@@ -407,6 +407,7 @@ export * from './memory/durableMemoryStore.js';
 export * from './config/projectSettings.js';
 export * from './policy/index.js';
 export * from './app-server/index.js';
+export * from './acp/index.js';
 export * from './codeIntel/index.js';
 export * from './worktree/taskWorktreeCoordinator.js';
 export * from './review/index.js';
