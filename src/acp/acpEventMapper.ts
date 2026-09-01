@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentRunResult, HadamardBridgeJsonEvent, HadamardBridgeRunResult } from '../types.js';
+import type { AgentEvent, AgentRunResult, HadamardBridgeJsonEvent, HadamardBridgeRunResult, TeamEvent } from '../types.js';
 import type {
   AcpSessionUpdateBody,
   AcpStopReason,
@@ -162,4 +162,33 @@ function bridgeToolResultText(content: unknown): string {
     .filter(block => block !== null && typeof block === 'object' && (block as { type?: unknown }).type === 'text')
     .map(block => String((block as { text?: unknown }).text ?? ''))
     .join('\n');
+}
+
+// ── Team engine mapping ────────────────────────────────────────────
+
+/**
+ * Translate Hadamard team progress events into ACP session/update bodies.
+ * Each member run appears as a tool_call pair; round/synthesis/edge events
+ * are internal orchestration detail and stay unmapped.
+ */
+export function mapTeamEventToAcpUpdates(event: TeamEvent): AcpSessionUpdateBody[] {
+  switch (event.type) {
+    case 'team.member.started':
+      return [{
+        sessionUpdate: 'tool_call',
+        toolCallId: `team-member:${event.id}:${event.round}`,
+        title: `Team member ${event.id} (${event.model})`,
+        kind: 'other',
+        status: 'in_progress',
+      }];
+    case 'team.member.completed':
+      return [{
+        sessionUpdate: 'tool_call_update',
+        toolCallId: `team-member:${event.id}:${event.round}`,
+        status: event.ok ? 'completed' : 'failed',
+        ...(event.error ? { rawOutput: event.error } : {}),
+      }];
+    default:
+      return [];
+  }
 }

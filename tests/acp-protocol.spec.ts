@@ -233,8 +233,7 @@ describe('parseAcpCliArgs', () => {
   });
 
   it('fails fast on unsupported engines, modes, and unknown arguments', () => {
-    expect(() => parseAcpCliArgs(['--engine', 'team'])).toThrowError(/Unsupported --engine/);
-    expect(() => parseAcpCliArgs(['--engine=hybrid'])).toThrowError(/Unsupported --engine/);
+    expect(() => parseAcpCliArgs(['--engine', 'hybrid'])).toThrowError(/Unsupported --engine/);
     expect(() => parseAcpCliArgs(['--permission-mode', 'yolo'])).toThrowError(/Unsupported --permission-mode/);
     expect(() => parseAcpCliArgs(['--wat'])).toThrowError(/Unknown argument/);
     expect(() => parseAcpCliArgs(['--model'])).toThrowError(/requires a value/);
@@ -245,6 +244,13 @@ describe('parseAcpCliArgs', () => {
     expect(() => parseAcpCliArgs(['--engine', 'bridge', '--runtime', 'bogus']))
       .toThrowError(/Unsupported --runtime/);
     expect(() => parseAcpCliArgs(['--engine', 'clean', '--runtime', 'claude']))
+      .toThrowError(/only applies to --engine bridge/);
+    expect(() => parseAcpCliArgs(['--engine', 'team'])).toThrowError(/requires --team/);
+    expect(parseAcpCliArgs(['--engine', 'team', '--team', 'reviewer']))
+      .toMatchObject({ engine: 'team', team: 'reviewer' });
+    expect(() => parseAcpCliArgs(['--engine', 'clean', '--team', 'reviewer']))
+      .toThrowError(/--team only applies to --engine team/);
+    expect(() => parseAcpCliArgs(['--engine', 'team', '--team', 'x', '--runtime', 'claude']))
       .toThrowError(/only applies to --engine bridge/);
   });
 });
