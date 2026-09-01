@@ -17,6 +17,9 @@ export interface AcpClientChannel {
   request(method: string, params: unknown): Promise<unknown>;
 }
 
+/** Default deadline for a client to answer a permission request. */
+export const ACP_PERMISSION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+
 const PERMISSION_OPTIONS: readonly AcpPermissionOption[] = [
   { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
   { optionId: 'allow-always', name: 'Always allow', kind: 'allow_always' },
@@ -25,6 +28,14 @@ const PERMISSION_OPTIONS: readonly AcpPermissionOption[] = [
 ];
 
 const OPTION_KIND_BY_ID = new Map(PERMISSION_OPTIONS.map(option => [option.optionId, option.kind]));
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('ACP permission request timed out.')), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 /**
  * Bridge Hadamard's per-run approver callback onto ACP
@@ -38,21 +49,26 @@ const OPTION_KIND_BY_ID = new Map(PERMISSION_OPTIONS.map(option => [option.optio
 export function createAcpToolApprover(options: {
   channel: AcpClientChannel;
   sessionId: string;
+  /** Permission request deadline; defaults to {@link ACP_PERMISSION_REQUEST_TIMEOUT_MS}. */
+  timeoutMs?: number;
 }): HadamardToolApprover {
   return async context => {
     let outcomeKind: AcpPermissionOptionKind | 'cancelled';
     try {
-      const raw = await options.channel.request('session/request_permission', {
-        sessionId: options.sessionId,
-        toolCall: {
-          toolCallId: `${context.runId}:${context.iteration}:${context.toolName}`,
-          title: context.publicName,
-          kind: acpToolKind(context.publicName),
-          status: 'pending',
-          rawInput: context.input,
-        },
-        options: PERMISSION_OPTIONS.map(option => ({ ...option })),
-      });
+      const raw = await withTimeout(
+        options.channel.request('session/request_permission', {
+          sessionId: options.sessionId,
+          toolCall: {
+            toolCallId: `${context.runId}:${context.iteration}:${context.toolName}`,
+            title: context.publicName,
+            kind: acpToolKind(context.publicName),
+            status: 'pending',
+            rawInput: context.input,
+          },
+          options: PERMISSION_OPTIONS.map(option => ({ ...option })),
+        }),
+        options.timeoutMs ?? ACP_PERMISSION_REQUEST_TIMEOUT_MS,
+      );
       const parsed = parseRequestPermissionResult(raw);
       if (parsed.outcome.outcome === 'cancelled') {
         outcomeKind = 'cancelled';
