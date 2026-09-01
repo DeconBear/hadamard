@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentRunResult } from '../types.js';
+import type { AgentEvent, AgentRunResult, HadamardBridgeJsonEvent, HadamardBridgeRunResult } from '../types.js';
 import type {
   AcpSessionUpdateBody,
   AcpStopReason,
@@ -96,4 +96,70 @@ export function isAbortLikeError(error: unknown): boolean {
   return error.name === 'RunAbortedError'
     || error.name === 'AbortError'
     || (error as { code?: string }).code === 'RUN_ABORTED';
+}
+
+// ── Bridge engine (external CLI stream-json) mapping ───────────────
+
+/**
+ * Translate one Hadamard bridge stream-json event (Claude Code / Codex /
+ * compatible CLI wire format) into ACP session/update bodies. Only
+ * assistant/user message events carry mappable content; system, result, and
+ * bookkeeping events are dropped.
+ */
+export function mapBridgeJsonEventToAcpUpdates(event: HadamardBridgeJsonEvent): AcpSessionUpdateBody[] {
+  const updates: AcpSessionUpdateBody[] = [];
+  if (event.type !== 'assistant' && event.type !== 'user') return updates;
+  const message = (event as { message?: unknown }).message;
+  if (!message || typeof message !== 'object') return updates;
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return updates;
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+    const record = block as Record<string, unknown>;
+    if (event.type === 'assistant') {
+      if (record.type === 'text' && typeof record.text === 'string' && record.text) {
+        updates.push({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: record.text } });
+      } else if (record.type === 'thinking' && typeof record.thinking === 'string' && record.thinking) {
+        updates.push({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: record.thinking } });
+      } else if (record.type === 'tool_use' && typeof record.id === 'string' && typeof record.name === 'string') {
+        updates.push({
+          sessionUpdate: 'tool_call',
+          toolCallId: record.id,
+          title: record.name,
+          kind: acpToolKind(record.name),
+          status: 'in_progress',
+          rawInput: record.input,
+        });
+      }
+    } else if (record.type === 'tool_result' && typeof record.tool_use_id === 'string') {
+      updates.push({
+        sessionUpdate: 'tool_call_update',
+        toolCallId: record.tool_use_id,
+        status: record.is_error === true ? 'failed' : 'completed',
+        rawOutput: bridgeToolResultText(record.content),
+      });
+    }
+  }
+  return updates;
+}
+
+/** Map a settled bridge run result onto the ACP stop-reason vocabulary. */
+export function mapBridgeRunResultToStopReason(result: HadamardBridgeRunResult): AcpStopReason {
+  switch (result.stopReason ?? result.subtype) {
+    case 'max_tokens':
+      return 'max_tokens';
+    case 'refusal':
+      return 'refusal';
+    default:
+      return 'end_turn';
+  }
+}
+
+function bridgeToolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter(block => block !== null && typeof block === 'object' && (block as { type?: unknown }).type === 'text')
+    .map(block => String((block as { text?: unknown }).text ?? ''))
+    .join('\n');
 }

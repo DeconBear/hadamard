@@ -223,16 +223,28 @@ describe('createAcpToolApprover', () => {
 
 describe('parseAcpCliArgs', () => {
   it('defaults to the clean engine and default permission mode', () => {
-    expect(parseAcpCliArgs([])).toEqual({ engine: 'clean', model: undefined, permissionMode: 'default' });
+    expect(parseAcpCliArgs([])).toEqual({
+      engine: 'clean', runtime: undefined, model: undefined, permissionMode: 'default',
+    });
     expect(parseAcpCliArgs(['--engine', 'clean', '--model=m1', '--permission-mode', 'plan']))
-      .toEqual({ engine: 'clean', model: 'm1', permissionMode: 'plan' });
+      .toEqual({ engine: 'clean', runtime: undefined, model: 'm1', permissionMode: 'plan' });
+    expect(parseAcpCliArgs(['--engine', 'bridge', '--runtime', 'claude']))
+      .toMatchObject({ engine: 'bridge', runtime: 'claude' });
   });
 
   it('fails fast on unsupported engines, modes, and unknown arguments', () => {
-    expect(() => parseAcpCliArgs(['--engine', 'bridge'])).toThrowError(/Unsupported --engine/);
-    expect(() => parseAcpCliArgs(['--engine=team'])).toThrowError(/Unsupported --engine/);
+    expect(() => parseAcpCliArgs(['--engine', 'team'])).toThrowError(/Unsupported --engine/);
+    expect(() => parseAcpCliArgs(['--engine=hybrid'])).toThrowError(/Unsupported --engine/);
     expect(() => parseAcpCliArgs(['--permission-mode', 'yolo'])).toThrowError(/Unsupported --permission-mode/);
     expect(() => parseAcpCliArgs(['--wat'])).toThrowError(/Unknown argument/);
     expect(() => parseAcpCliArgs(['--model'])).toThrowError(/requires a value/);
+  });
+
+  it('validates engine/runtime combinations', () => {
+    expect(() => parseAcpCliArgs(['--engine', 'bridge'])).toThrowError(/requires --runtime/);
+    expect(() => parseAcpCliArgs(['--engine', 'bridge', '--runtime', 'bogus']))
+      .toThrowError(/Unsupported --runtime/);
+    expect(() => parseAcpCliArgs(['--engine', 'clean', '--runtime', 'claude']))
+      .toThrowError(/only applies to --engine bridge/);
   });
 });
