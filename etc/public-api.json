@@ -33,6 +33,11 @@
         "signature": "ACP_ERROR_PARSE = -32700"
       },
       {
+        "name": "ACP_PERMISSION_REQUEST_TIMEOUT_MS",
+        "kind": "value",
+        "signature": "ACP_PERMISSION_REQUEST_TIMEOUT_MS: number"
+      },
+      {
         "name": "ACP_PROTOCOL_VERSION",
         "kind": "value",
         "signature": "ACP_PROTOCOL_VERSION = 1"
@@ -1555,7 +1560,7 @@
       {
         "name": "createAcpToolApprover",
         "kind": "function",
-        "signature": "export declare function createAcpToolApprover(options: {\nchannel: AcpClientChannel;\nsessionId: string;\n}): HadamardToolApprover;"
+        "signature": "export declare function createAcpToolApprover(options: {\nchannel: AcpClientChannel;\nsessionId: string;\ntimeoutMs?: number;\n}): HadamardToolApprover;"
       },
       {
         "name": "createAgentExecutionTree",
@@ -10809,6 +10814,11 @@
         "signature": "ACP_ERROR_PARSE = -32700"
       },
       {
+        "name": "ACP_PERMISSION_REQUEST_TIMEOUT_MS",
+        "kind": "value",
+        "signature": "ACP_PERMISSION_REQUEST_TIMEOUT_MS: number"
+      },
+      {
         "name": "ACP_PROTOCOL_VERSION",
         "kind": "value",
         "signature": "ACP_PROTOCOL_VERSION = 1"
@@ -12356,7 +12366,7 @@
       {
         "name": "createAcpToolApprover",
         "kind": "function",
-        "signature": "export declare function createAcpToolApprover(options: {\nchannel: AcpClientChannel;\nsessionId: string;\n}): HadamardToolApprover;"
+        "signature": "export declare function createAcpToolApprover(options: {\nchannel: AcpClientChannel;\nsessionId: string;\ntimeoutMs?: number;\n}): HadamardToolApprover;"
       },
       {
         "name": "createAgentExecutionTree",
