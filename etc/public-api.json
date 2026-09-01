@@ -50,7 +50,7 @@
       {
         "name": "AcpEngineRunResult",
         "kind": "interface",
-        "signature": "export interface AcpEngineRunResult {\nstopReason: AcpStopReason;\n}"
+        "signature": "export interface AcpEngineRunResult {\nstopReason: AcpStopReason;\nmeta?: AcpRunMeta;\n}"
       },
       {
         "name": "AcpEngineSession",
@@ -135,7 +135,7 @@
       {
         "name": "AcpPromptResult",
         "kind": "interface",
-        "signature": "export interface AcpPromptResult {\nstopReason: AcpStopReason;\n}"
+        "signature": "export interface AcpPromptResult {\nstopReason: AcpStopReason;\n_meta?: Record<string, unknown>;\n}"
       },
       {
         "name": "AcpProtocolError",
@@ -171,6 +171,11 @@
         "name": "AcpRunHandle",
         "kind": "interface",
         "signature": "export interface AcpRunHandle {\nreadonly events: AsyncIterable<AcpSessionUpdateBody>;\nreadonly result: Promise<AcpEngineRunResult>;\ncancel(reason?: string): void;\n}"
+      },
+      {
+        "name": "AcpRunMeta",
+        "kind": "interface",
+        "signature": "export interface AcpRunMeta {\nmodel?: string;\ninputTokens?: number;\noutputTokens?: number;\ncostUsd?: number;\ndurationMs?: number;\ntoolCalls?: number;\nincompleteReason?: string;\n}"
       },
       {
         "name": "AcpRuntimeEngine",
@@ -1146,6 +1151,11 @@
         "name": "CleanAcpEngineOptions",
         "kind": "interface",
         "signature": "export interface CleanAcpEngineOptions {\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
+      },
+      {
+        "name": "cleanRunMeta",
+        "kind": "function",
+        "signature": "export declare function cleanRunMeta(result: AgentRunResult): AcpRunMeta;"
       },
       {
         "name": "clearEdgeBezierUi",
@@ -10816,7 +10826,7 @@
       {
         "name": "AcpEngineRunResult",
         "kind": "interface",
-        "signature": "export interface AcpEngineRunResult {\nstopReason: AcpStopReason;\n}"
+        "signature": "export interface AcpEngineRunResult {\nstopReason: AcpStopReason;\nmeta?: AcpRunMeta;\n}"
       },
       {
         "name": "AcpEngineSession",
@@ -10901,7 +10911,7 @@
       {
         "name": "AcpPromptResult",
         "kind": "interface",
-        "signature": "export interface AcpPromptResult {\nstopReason: AcpStopReason;\n}"
+        "signature": "export interface AcpPromptResult {\nstopReason: AcpStopReason;\n_meta?: Record<string, unknown>;\n}"
       },
       {
         "name": "AcpProtocolError",
@@ -10937,6 +10947,11 @@
         "name": "AcpRunHandle",
         "kind": "interface",
         "signature": "export interface AcpRunHandle {\nreadonly events: AsyncIterable<AcpSessionUpdateBody>;\nreadonly result: Promise<AcpEngineRunResult>;\ncancel(reason?: string): void;\n}"
+      },
+      {
+        "name": "AcpRunMeta",
+        "kind": "interface",
+        "signature": "export interface AcpRunMeta {\nmodel?: string;\ninputTokens?: number;\noutputTokens?: number;\ncostUsd?: number;\ndurationMs?: number;\ntoolCalls?: number;\nincompleteReason?: string;\n}"
       },
       {
         "name": "AcpRuntimeEngine",
@@ -11922,6 +11937,11 @@
         "name": "CleanAcpEngineOptions",
         "kind": "interface",
         "signature": "export interface CleanAcpEngineOptions {\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
+      },
+      {
+        "name": "cleanRunMeta",
+        "kind": "function",
+        "signature": "export declare function cleanRunMeta(result: AgentRunResult): AcpRunMeta;"
       },
       {
         "name": "clearEdgeBezierUi",
