@@ -131,6 +131,8 @@ export interface AcpInitializeResult {
   };
   agentInfo: { name: string; version: string; title?: string };
   authMethods: [];
+  /** Extension metadata; ACP reserves _meta for implementation-specific data. */
+  _meta?: Record<string, unknown>;
 }
 
 export function parseInitializeParams(value: unknown): AcpInitializeParams {

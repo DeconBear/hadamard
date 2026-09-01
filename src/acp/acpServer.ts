@@ -1,5 +1,3 @@
-import type { HadamardAgentClient } from '../runtime/agentClient.js';
-import type { HadamardPermissionMode } from '../types.js';
 import {
   ACP_ERROR_METHOD_NOT_FOUND,
   ACP_PROTOCOL_VERSION,
@@ -16,18 +14,12 @@ import {
   type AcpRequestMessage,
   type AcpServerResponse,
 } from './acpProtocol.js';
-import {
-  isAbortLikeError,
-  mapAgentEventToAcpUpdates,
-  mapRunResultToStopReason,
-} from './acpEventMapper.js';
-import { createAcpToolApprover, type AcpClientChannel } from './acpPermissionBridge.js';
+import type { AcpRuntimeEngine } from './acpEngine.js';
+import type { AcpClientChannel } from './acpPermissionBridge.js';
 import { AcpSessionBridge } from './acpSessionBridge.js';
 
 export interface AcpServerOptions {
-  sdk: HadamardAgentClient;
-  model?: string;
-  permissionMode?: HadamardPermissionMode;
+  engine: AcpRuntimeEngine;
   agentName?: string;
   agentVersion?: string;
 }
@@ -35,17 +27,14 @@ export interface AcpServerOptions {
 /**
  * ACP v1 method dispatch and lifecycle. One server instance serves one
  * client connection; sessions live in the bridge and prompts serialize per
- * session inside the Hadamard runtime (SessionTurnCoordinator), so the
- * transport may dispatch messages concurrently.
+ * session inside the engine runtime, so the transport may dispatch messages
+ * concurrently.
  */
 export class AcpServer {
   private readonly sessions: AcpSessionBridge;
 
   constructor(private readonly options: AcpServerOptions) {
-    this.sessions = new AcpSessionBridge(options.sdk, {
-      model: options.model,
-      permissionMode: options.permissionMode,
-    });
+    this.sessions = new AcpSessionBridge(options.engine);
   }
 
   /** Handle a client request; always resolves to a JSON-RPC response. */
@@ -102,6 +91,9 @@ export class AcpServer {
         title: 'Hadamard Agent Runtime',
       },
       authMethods: [],
+      // Identity marking: report the actual execution engine so clients can
+      // never mistake a bridge run for a Clean SDK run.
+      _meta: { hadamardEngine: this.options.engine.engineId },
     };
   }
 
@@ -114,28 +106,20 @@ export class AcpServer {
   private async prompt(params: unknown, channel: AcpClientChannel): Promise<AcpPromptResult> {
     const parsed = parsePromptParams(params);
     const handle = this.sessions.get(parsed.sessionId);
-    const content = parsed.prompt.map(block => ({ type: 'text' as const, text: block.text }));
-    const stream = handle.session.stream(content, {
-      approver: createAcpToolApprover({ channel, sessionId: handle.id }),
-    });
-    handle.activeStream = stream;
+    const run = handle.session.run(parsed.prompt, channel);
+    handle.activeRun = run;
     try {
-      for await (const event of stream) {
-        for (const update of mapAgentEventToAcpUpdates(event)) {
+      try {
+        for await (const update of run.events) {
           channel.notify('session/update', { sessionId: handle.id, update });
         }
+      } catch {
+        // The terminal state (including cancel and failure) is carried by
+        // run.result below; a failed event stream must not mask it.
       }
-      const result = await stream.result;
-      return { stopReason: mapRunResultToStopReason(result) };
-    } catch (error) {
-      // A cancelled turn must resolve as stopReason cancelled, never as a
-      // JSON-RPC error — DSH maps prompt-stage errors to run failure.
-      if (stream.isCancelled || isAbortLikeError(error)) {
-        return { stopReason: 'cancelled' };
-      }
-      throw error;
+      return await run.result;
     } finally {
-      handle.activeStream = undefined;
+      handle.activeRun = undefined;
     }
   }
 }

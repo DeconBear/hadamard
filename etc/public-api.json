@@ -3,6 +3,11 @@
   "exports": {
     ".": [
       {
+        "name": "ACP_BRIDGE_RUNTIMES",
+        "kind": "value",
+        "signature": "ACP_BRIDGE_RUNTIMES: readonly RuntimeProviderId[]"
+      },
+      {
         "name": "ACP_ERROR_INTERNAL",
         "kind": "value",
         "signature": "ACP_ERROR_INTERNAL = -32603"
@@ -43,6 +48,16 @@
         "signature": "export interface AcpClientChannel {\nnotify(method: string, params: unknown): void;\nrequest(method: string, params: unknown): Promise<unknown>;\n}"
       },
       {
+        "name": "AcpEngineRunResult",
+        "kind": "interface",
+        "signature": "export interface AcpEngineRunResult {\nstopReason: AcpStopReason;\n}"
+      },
+      {
+        "name": "AcpEngineSession",
+        "kind": "interface",
+        "signature": "export interface AcpEngineSession {\nreadonly id: string;\nrun(prompt: AcpTextContentBlock[], channel: AcpClientChannel): AcpRunHandle;\n}"
+      },
+      {
         "name": "acpError",
         "kind": "function",
         "signature": "export declare function acpError(id: AcpId | null, code: number, message: string, data?: unknown): AcpErrorResponse;"
@@ -75,7 +90,7 @@
       {
         "name": "AcpInitializeResult",
         "kind": "interface",
-        "signature": "export interface AcpInitializeResult {\nprotocolVersion: number;\nagentCapabilities: {\npromptCapabilities: {\nimage: boolean;\naudio: boolean;\nembeddedContext: boolean;\n};\nloadSession: boolean;\n};\nagentInfo: {\nname: string;\nversion: string;\ntitle?: string;\n};\nauthMethods: [\n];\n}"
+        "signature": "export interface AcpInitializeResult {\nprotocolVersion: number;\nagentCapabilities: {\npromptCapabilities: {\nimage: boolean;\naudio: boolean;\nembeddedContext: boolean;\n};\nloadSession: boolean;\n};\nagentInfo: {\nname: string;\nversion: string;\ntitle?: string;\n};\nauthMethods: [\n];\n_meta?: Record<string, unknown>;\n}"
       },
       {
         "name": "AcpMessage",
@@ -153,6 +168,16 @@
         "signature": "export interface AcpResultResponse {\njsonrpc: '2.0';\nid: AcpId;\nresult: unknown;\n}"
       },
       {
+        "name": "AcpRunHandle",
+        "kind": "interface",
+        "signature": "export interface AcpRunHandle {\nreadonly events: AsyncIterable<AcpSessionUpdateBody>;\nreadonly result: Promise<AcpEngineRunResult>;\ncancel(reason?: string): void;\n}"
+      },
+      {
+        "name": "AcpRuntimeEngine",
+        "kind": "interface",
+        "signature": "export interface AcpRuntimeEngine {\nreadonly engineId: string;\ncreateSession(cwd: string): Promise<AcpEngineSession>;\nclose(): Promise<void>;\n}"
+      },
+      {
         "name": "AcpServer",
         "kind": "class",
         "signature": "export declare class AcpServer {\nprivate readonly options;\nprivate readonly sessions;\nconstructor(options: AcpServerOptions);\nhandleRequest(request: AcpRequestMessage, channel: AcpClientChannel): Promise<AcpServerResponse>;\nhandleNotification(notification: AcpNotificationMessage): Promise<void>;\nshutdown(reason: string): void;\nprivate dispatch;\nprivate initialize;\nprivate newSession;\nprivate prompt;\n}"
@@ -160,7 +185,7 @@
       {
         "name": "AcpServerOptions",
         "kind": "interface",
-        "signature": "export interface AcpServerOptions {\nsdk: HadamardAgentClient;\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\nagentName?: string;\nagentVersion?: string;\n}"
+        "signature": "export interface AcpServerOptions {\nengine: AcpRuntimeEngine;\nagentName?: string;\nagentVersion?: string;\n}"
       },
       {
         "name": "AcpServerResponse",
@@ -170,17 +195,12 @@
       {
         "name": "AcpSessionBridge",
         "kind": "class",
-        "signature": "export declare class AcpSessionBridge {\nprivate readonly sdk;\nprivate readonly options;\nprivate readonly sessions;\nconstructor(sdk: HadamardAgentClient, options?: AcpSessionBridgeOptions);\ncreate(cwd: string): Promise<AcpSessionHandle>;\nget(sessionId: string): AcpSessionHandle;\ncancel(sessionId: string, reason?: string): boolean;\ncancelAll(reason: string): void;\n}"
-      },
-      {
-        "name": "AcpSessionBridgeOptions",
-        "kind": "interface",
-        "signature": "export interface AcpSessionBridgeOptions {\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
+        "signature": "export declare class AcpSessionBridge {\nprivate readonly engine;\nprivate readonly sessions;\nconstructor(engine: AcpRuntimeEngine);\ncreate(cwd: string): Promise<AcpSessionHandle>;\nget(sessionId: string): AcpSessionHandle;\ncancel(sessionId: string, reason?: string): boolean;\ncancelAll(reason: string): void;\n}"
       },
       {
         "name": "AcpSessionHandle",
         "kind": "interface",
-        "signature": "export interface AcpSessionHandle {\nreadonly id: string;\nreadonly session: AgentSession;\nactiveStream?: AgentRunStream;\n}"
+        "signature": "export interface AcpSessionHandle {\nreadonly id: string;\nreadonly session: AcpEngineSession;\nactiveRun?: AcpRunHandle;\n}"
       },
       {
         "name": "AcpSessionUpdateBody",
@@ -843,6 +863,16 @@
         "signature": "export interface BlockGoalInput {\nreason: string;\nturn?: number;\nexpectedRevision?: number;\n}"
       },
       {
+        "name": "BridgeAcpEngine",
+        "kind": "class",
+        "signature": "export declare class BridgeAcpEngine implements AcpRuntimeEngine {\nprivate readonly client;\nprivate readonly options;\nreadonly engineId: string;\nconstructor(client: HadamardBridgeSdkClient, runtime: RuntimeProviderId, options: {\nmodel?: string;\npermissionMode?: HadamardBridgePermissionMode;\n});\nstatic create(options: BridgeAcpEngineOptions): Promise<BridgeAcpEngine>;\ncreateSession(cwd: string): Promise<AcpEngineSession>;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "BridgeAcpEngineOptions",
+        "kind": "interface",
+        "signature": "export interface BridgeAcpEngineOptions {\nruntime: RuntimeProviderId;\nworkDir: string;\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
+      },
+      {
         "name": "BridgeMigrationPreview",
         "kind": "interface",
         "signature": "export interface BridgeMigrationPreview {\nsource: 'bridge-configs';\nitems: readonly BridgeMigrationPreviewItem[];\nready: number;\nblocked: number;\noauthSessionSecretsRead: false;\n}"
@@ -1106,6 +1136,16 @@
         "name": "classifyRoute",
         "kind": "function",
         "signature": "export declare function classifyRoute(profile: RouterProfile, userInput: string, signal?: AbortSignal, deps?: {\nclassify?: (prompt: string, signal?: AbortSignal) => Promise<string>;\n}): Promise<RouterDecision>;"
+      },
+      {
+        "name": "CleanAcpEngine",
+        "kind": "class",
+        "signature": "export declare class CleanAcpEngine implements AcpRuntimeEngine {\nprivate readonly sdk;\nprivate readonly options;\nreadonly engineId = \"clean\";\nconstructor(sdk: HadamardAgentClient, options?: CleanAcpEngineOptions);\ncreateSession(cwd: string): Promise<AcpEngineSession>;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "CleanAcpEngineOptions",
+        "kind": "interface",
+        "signature": "export interface CleanAcpEngineOptions {\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
       },
       {
         "name": "clearEdgeBezierUi",
@@ -5626,6 +5666,16 @@
         "name": "mapAgentEventToAcpUpdates",
         "kind": "function",
         "signature": "export declare function mapAgentEventToAcpUpdates(event: AgentEvent): AcpSessionUpdateBody[];"
+      },
+      {
+        "name": "mapBridgeJsonEventToAcpUpdates",
+        "kind": "function",
+        "signature": "export declare function mapBridgeJsonEventToAcpUpdates(event: HadamardBridgeJsonEvent): AcpSessionUpdateBody[];"
+      },
+      {
+        "name": "mapBridgeRunResultToStopReason",
+        "kind": "function",
+        "signature": "export declare function mapBridgeRunResultToStopReason(result: HadamardBridgeRunResult): AcpStopReason;"
       },
       {
         "name": "mapHadamardEnvToAnthropicEnv",
@@ -10704,6 +10754,11 @@
     ],
     "./compat": [
       {
+        "name": "ACP_BRIDGE_RUNTIMES",
+        "kind": "value",
+        "signature": "ACP_BRIDGE_RUNTIMES: readonly RuntimeProviderId[]"
+      },
+      {
         "name": "ACP_ERROR_INTERNAL",
         "kind": "value",
         "signature": "ACP_ERROR_INTERNAL = -32603"
@@ -10744,6 +10799,16 @@
         "signature": "export interface AcpClientChannel {\nnotify(method: string, params: unknown): void;\nrequest(method: string, params: unknown): Promise<unknown>;\n}"
       },
       {
+        "name": "AcpEngineRunResult",
+        "kind": "interface",
+        "signature": "export interface AcpEngineRunResult {\nstopReason: AcpStopReason;\n}"
+      },
+      {
+        "name": "AcpEngineSession",
+        "kind": "interface",
+        "signature": "export interface AcpEngineSession {\nreadonly id: string;\nrun(prompt: AcpTextContentBlock[], channel: AcpClientChannel): AcpRunHandle;\n}"
+      },
+      {
         "name": "acpError",
         "kind": "function",
         "signature": "export declare function acpError(id: AcpId | null, code: number, message: string, data?: unknown): AcpErrorResponse;"
@@ -10776,7 +10841,7 @@
       {
         "name": "AcpInitializeResult",
         "kind": "interface",
-        "signature": "export interface AcpInitializeResult {\nprotocolVersion: number;\nagentCapabilities: {\npromptCapabilities: {\nimage: boolean;\naudio: boolean;\nembeddedContext: boolean;\n};\nloadSession: boolean;\n};\nagentInfo: {\nname: string;\nversion: string;\ntitle?: string;\n};\nauthMethods: [\n];\n}"
+        "signature": "export interface AcpInitializeResult {\nprotocolVersion: number;\nagentCapabilities: {\npromptCapabilities: {\nimage: boolean;\naudio: boolean;\nembeddedContext: boolean;\n};\nloadSession: boolean;\n};\nagentInfo: {\nname: string;\nversion: string;\ntitle?: string;\n};\nauthMethods: [\n];\n_meta?: Record<string, unknown>;\n}"
       },
       {
         "name": "AcpMessage",
@@ -10854,6 +10919,16 @@
         "signature": "export interface AcpResultResponse {\njsonrpc: '2.0';\nid: AcpId;\nresult: unknown;\n}"
       },
       {
+        "name": "AcpRunHandle",
+        "kind": "interface",
+        "signature": "export interface AcpRunHandle {\nreadonly events: AsyncIterable<AcpSessionUpdateBody>;\nreadonly result: Promise<AcpEngineRunResult>;\ncancel(reason?: string): void;\n}"
+      },
+      {
+        "name": "AcpRuntimeEngine",
+        "kind": "interface",
+        "signature": "export interface AcpRuntimeEngine {\nreadonly engineId: string;\ncreateSession(cwd: string): Promise<AcpEngineSession>;\nclose(): Promise<void>;\n}"
+      },
+      {
         "name": "AcpServer",
         "kind": "class",
         "signature": "export declare class AcpServer {\nprivate readonly options;\nprivate readonly sessions;\nconstructor(options: AcpServerOptions);\nhandleRequest(request: AcpRequestMessage, channel: AcpClientChannel): Promise<AcpServerResponse>;\nhandleNotification(notification: AcpNotificationMessage): Promise<void>;\nshutdown(reason: string): void;\nprivate dispatch;\nprivate initialize;\nprivate newSession;\nprivate prompt;\n}"
@@ -10861,7 +10936,7 @@
       {
         "name": "AcpServerOptions",
         "kind": "interface",
-        "signature": "export interface AcpServerOptions {\nsdk: HadamardAgentClient;\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\nagentName?: string;\nagentVersion?: string;\n}"
+        "signature": "export interface AcpServerOptions {\nengine: AcpRuntimeEngine;\nagentName?: string;\nagentVersion?: string;\n}"
       },
       {
         "name": "AcpServerResponse",
@@ -10871,17 +10946,12 @@
       {
         "name": "AcpSessionBridge",
         "kind": "class",
-        "signature": "export declare class AcpSessionBridge {\nprivate readonly sdk;\nprivate readonly options;\nprivate readonly sessions;\nconstructor(sdk: HadamardAgentClient, options?: AcpSessionBridgeOptions);\ncreate(cwd: string): Promise<AcpSessionHandle>;\nget(sessionId: string): AcpSessionHandle;\ncancel(sessionId: string, reason?: string): boolean;\ncancelAll(reason: string): void;\n}"
-      },
-      {
-        "name": "AcpSessionBridgeOptions",
-        "kind": "interface",
-        "signature": "export interface AcpSessionBridgeOptions {\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
+        "signature": "export declare class AcpSessionBridge {\nprivate readonly engine;\nprivate readonly sessions;\nconstructor(engine: AcpRuntimeEngine);\ncreate(cwd: string): Promise<AcpSessionHandle>;\nget(sessionId: string): AcpSessionHandle;\ncancel(sessionId: string, reason?: string): boolean;\ncancelAll(reason: string): void;\n}"
       },
       {
         "name": "AcpSessionHandle",
         "kind": "interface",
-        "signature": "export interface AcpSessionHandle {\nreadonly id: string;\nreadonly session: AgentSession;\nactiveStream?: AgentRunStream;\n}"
+        "signature": "export interface AcpSessionHandle {\nreadonly id: string;\nreadonly session: AcpEngineSession;\nactiveRun?: AcpRunHandle;\n}"
       },
       {
         "name": "AcpSessionUpdateBody",
@@ -11554,6 +11624,16 @@
         "signature": "export interface BlockGoalInput {\nreason: string;\nturn?: number;\nexpectedRevision?: number;\n}"
       },
       {
+        "name": "BridgeAcpEngine",
+        "kind": "class",
+        "signature": "export declare class BridgeAcpEngine implements AcpRuntimeEngine {\nprivate readonly client;\nprivate readonly options;\nreadonly engineId: string;\nconstructor(client: HadamardBridgeSdkClient, runtime: RuntimeProviderId, options: {\nmodel?: string;\npermissionMode?: HadamardBridgePermissionMode;\n});\nstatic create(options: BridgeAcpEngineOptions): Promise<BridgeAcpEngine>;\ncreateSession(cwd: string): Promise<AcpEngineSession>;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "BridgeAcpEngineOptions",
+        "kind": "interface",
+        "signature": "export interface BridgeAcpEngineOptions {\nruntime: RuntimeProviderId;\nworkDir: string;\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
+      },
+      {
         "name": "BridgeMigrationPreview",
         "kind": "interface",
         "signature": "export interface BridgeMigrationPreview {\nsource: 'bridge-configs';\nitems: readonly BridgeMigrationPreviewItem[];\nready: number;\nblocked: number;\noauthSessionSecretsRead: false;\n}"
@@ -11817,6 +11897,16 @@
         "name": "classifyRoute",
         "kind": "function",
         "signature": "export declare function classifyRoute(profile: RouterProfile, userInput: string, signal?: AbortSignal, deps?: {\nclassify?: (prompt: string, signal?: AbortSignal) => Promise<string>;\n}): Promise<RouterDecision>;"
+      },
+      {
+        "name": "CleanAcpEngine",
+        "kind": "class",
+        "signature": "export declare class CleanAcpEngine implements AcpRuntimeEngine {\nprivate readonly sdk;\nprivate readonly options;\nreadonly engineId = \"clean\";\nconstructor(sdk: HadamardAgentClient, options?: CleanAcpEngineOptions);\ncreateSession(cwd: string): Promise<AcpEngineSession>;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "CleanAcpEngineOptions",
+        "kind": "interface",
+        "signature": "export interface CleanAcpEngineOptions {\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\n}"
       },
       {
         "name": "clearEdgeBezierUi",
@@ -16402,6 +16492,16 @@
         "name": "mapAgentEventToAcpUpdates",
         "kind": "function",
         "signature": "export declare function mapAgentEventToAcpUpdates(event: AgentEvent): AcpSessionUpdateBody[];"
+      },
+      {
+        "name": "mapBridgeJsonEventToAcpUpdates",
+        "kind": "function",
+        "signature": "export declare function mapBridgeJsonEventToAcpUpdates(event: HadamardBridgeJsonEvent): AcpSessionUpdateBody[];"
+      },
+      {
+        "name": "mapBridgeRunResultToStopReason",
+        "kind": "function",
+        "signature": "export declare function mapBridgeRunResultToStopReason(result: HadamardBridgeRunResult): AcpStopReason;"
       },
       {
         "name": "mapHadamardEnvToAnthropicEnv",
