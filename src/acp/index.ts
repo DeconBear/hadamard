@@ -3,6 +3,7 @@ export * from './acpEventMapper.js';
 export * from './acpPermissionBridge.js';
 export * from './acpEngine.js';
 export * from './acpBridgeEngine.js';
+export * from './acpTeamEngine.js';
 export * from './acpSessionBridge.js';
 export * from './acpServer.js';
 export * from './acpStdioTransport.js';
