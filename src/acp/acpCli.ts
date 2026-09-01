@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+import {
+  createHadamardCoreTools,
+  createAgentSdk,
+  loadDefaultHadamardSettings,
+} from '../index.js';
+import { readPackageVersion } from '../cli/version.js';
+import type { HadamardPermissionMode } from '../types.js';
+import { AcpServer } from './acpServer.js';
+import { AcpStdioTransport } from './acpStdioTransport.js';
+
+export const HADAMARD_ACP_ENGINES = ['clean'] as const;
+export type HadamardAcpEngine = (typeof HADAMARD_ACP_ENGINES)[number];
+
+export interface AcpCliOptions {
+  engine: HadamardAcpEngine;
+  model?: string;
+  permissionMode?: HadamardPermissionMode;
+}
+
+export function parseAcpCliArgs(argv: string[]): AcpCliOptions {
+  const options: { engine?: string; model?: string; permissionMode?: string } = {};
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    const next = () => {
+      const value = argv[++index];
+      if (value === undefined) throw new Error(`${arg} requires a value.`);
+      return value;
+    };
+    if (arg === '--engine') options.engine = next();
+    else if (arg?.startsWith('--engine=')) options.engine = arg.slice('--engine='.length);
+    else if (arg === '--model') options.model = next();
+    else if (arg?.startsWith('--model=')) options.model = arg.slice('--model='.length);
+    else if (arg === '--permission-mode') options.permissionMode = next();
+    else if (arg?.startsWith('--permission-mode=')) options.permissionMode = arg.slice('--permission-mode='.length);
+    else throw new Error(`Unknown argument: ${String(arg)}`);
+  }
+  const engine = options.engine ?? 'clean';
+  // bridge/team engines are planned (plan/DSH_HADAMARD_RUNTIME_PLUGIN_01Sep2026.md
+  // Phase 3+); fail fast rather than silently running a different runtime.
+  if (!(HADAMARD_ACP_ENGINES as readonly string[]).includes(engine)) {
+    throw new Error(
+      `Unsupported --engine "${engine}". Implemented engines: ${HADAMARD_ACP_ENGINES.join(', ')}.`,
+    );
+  }
+  const permissionMode = options.permissionMode ?? 'default';
+  const modes: readonly string[] = ['default', 'acceptEdits', 'bypassPermissions', 'approveForMe', 'plan', 'auto'];
+  if (!modes.includes(permissionMode)) {
+    throw new Error(`Unsupported --permission-mode "${permissionMode}". Expected one of: ${modes.join(', ')}.`);
+  }
+  return {
+    engine: engine as HadamardAcpEngine,
+    model: options.model,
+    permissionMode: permissionMode as HadamardPermissionMode,
+  };
+}
+
+async function main(): Promise<void> {
+  const cli = parseAcpCliArgs(process.argv.slice(2));
+  await loadDefaultHadamardSettings();
+  const workDir = process.cwd();
+  const sdk = await createAgentSdk({
+    workDir,
+    tools: createHadamardCoreTools({ cwd: workDir }),
+    permissionMode: cli.permissionMode,
+    model: cli.model,
+  });
+  const server = new AcpServer({
+    sdk,
+    model: cli.model,
+    permissionMode: cli.permissionMode,
+    agentVersion: readPackageVersion(import.meta.url),
+  });
+  const close = async () => {
+    server.shutdown('hadamard-acp shutting down');
+    await sdk.close();
+  };
+  process.once('SIGINT', () => { void close().finally(() => process.exit(130)); });
+  process.once('SIGTERM', () => { void close().finally(() => process.exit(143)); });
+  try {
+    await new AcpStdioTransport(server).start();
+  } finally {
+    await close();
+  }
+}
+
+const isDirectRun = process.argv[1]?.endsWith('hadamard-acp.js')
+  || process.argv[1]?.endsWith('acpCli.js');
+if (isDirectRun) {
+  main().catch(error => {
+    process.stderr.write(`hadamard-acp: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}
