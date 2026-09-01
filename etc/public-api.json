@@ -5688,6 +5688,11 @@
         "signature": "export declare function mapRunResultToStopReason(result: AgentRunResult): AcpStopReason;"
       },
       {
+        "name": "mapTeamEventToAcpUpdates",
+        "kind": "function",
+        "signature": "export declare function mapTeamEventToAcpUpdates(event: TeamEvent): AcpSessionUpdateBody[];"
+      },
+      {
         "name": "matchesWorktreeIncludePattern",
         "kind": "function",
         "signature": "export declare function matchesPattern(filePath: string, pattern: string): boolean;"
@@ -7816,6 +7821,16 @@
         "name": "TEAM_READ_ONLY_EXPERT_TOOL_NAMES",
         "kind": "value",
         "signature": "TEAM_READ_ONLY_EXPERT_TOOL_NAMES: readonly [\n\"Read\",\n\"Glob\",\n\"Grep\",\n\"WebFetch\",\n\"TavilySearch\"\n]"
+      },
+      {
+        "name": "TeamAcpEngine",
+        "kind": "class",
+        "signature": "export declare class TeamAcpEngine implements AcpRuntimeEngine {\nprivate readonly definition;\nprivate readonly options;\nreadonly engineId: string;\nconstructor(definition: TeamDefinition, options: TeamAcpEngineOptions);\nstatic create(options: TeamAcpEngineOptions): Promise<TeamAcpEngine>;\ncreateSession(cwd: string): Promise<AcpEngineSession>;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "TeamAcpEngineOptions",
+        "kind": "interface",
+        "signature": "export interface TeamAcpEngineOptions {\nteam: string;\nworkDir: string;\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\nhomeDir?: string;\n}"
       },
       {
         "name": "TeamAskOptions",
@@ -16514,6 +16529,11 @@
         "signature": "export declare function mapRunResultToStopReason(result: AgentRunResult): AcpStopReason;"
       },
       {
+        "name": "mapTeamEventToAcpUpdates",
+        "kind": "function",
+        "signature": "export declare function mapTeamEventToAcpUpdates(event: TeamEvent): AcpSessionUpdateBody[];"
+      },
+      {
         "name": "matchesWorktreeIncludePattern",
         "kind": "function",
         "signature": "export declare function matchesPattern(filePath: string, pattern: string): boolean;"
@@ -18737,6 +18757,16 @@
         "name": "TEAM_READ_ONLY_EXPERT_TOOL_NAMES",
         "kind": "value",
         "signature": "TEAM_READ_ONLY_EXPERT_TOOL_NAMES: readonly [\n\"Read\",\n\"Glob\",\n\"Grep\",\n\"WebFetch\",\n\"TavilySearch\"\n]"
+      },
+      {
+        "name": "TeamAcpEngine",
+        "kind": "class",
+        "signature": "export declare class TeamAcpEngine implements AcpRuntimeEngine {\nprivate readonly definition;\nprivate readonly options;\nreadonly engineId: string;\nconstructor(definition: TeamDefinition, options: TeamAcpEngineOptions);\nstatic create(options: TeamAcpEngineOptions): Promise<TeamAcpEngine>;\ncreateSession(cwd: string): Promise<AcpEngineSession>;\nclose(): Promise<void>;\n}"
+      },
+      {
+        "name": "TeamAcpEngineOptions",
+        "kind": "interface",
+        "signature": "export interface TeamAcpEngineOptions {\nteam: string;\nworkDir: string;\nmodel?: string;\npermissionMode?: HadamardPermissionMode;\nhomeDir?: string;\n}"
       },
       {
         "name": "TeamAskOptions",
