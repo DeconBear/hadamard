@@ -45,7 +45,7 @@ function runPtyTest() {
     let resolved = false;
     const done = (result) => { if (resolved) return; resolved = true; clearTimeout(to); try { proc.kill(); } catch (_) {} resolve(result); };
     const to = setTimeout(() => done({ ok: false, err: 'TIMEOUT' }), 6000);
-    proc.onData((d) => { buf += d; });
+    proc.onData((d) => { buf += d; if (buf.includes('SPIKE_OK')) done({ ok: true, err: '' }); });
     proc.onExit(() => {});
     setTimeout(() => proc.write('echo SPIKE_OK' + EOL), 400);
     setTimeout(() => proc.write('exit' + EOL), 1200);
@@ -67,7 +67,17 @@ function runXtermTest() {
       const win = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } });
       win.webContents.on('page-title-updated', (_e, t) => { title = t; });
       win.loadURL('http://127.0.0.1:' + port + '/');
-      setTimeout(() => { try { win.destroy(); } catch (_) {} server.close(); resolve(title); }, 2500);
+      // The renderer reports via document.title only after xterm parses and the
+      // marker lands in the buffer; a fixed window false-fails on loaded CI
+      // runners. Poll for the report with a generous deadline instead.
+      const deadline = Date.now() + 10_000;
+      const poll = setInterval(() => {
+        if (title === null && Date.now() < deadline) return;
+        clearInterval(poll);
+        try { win.destroy(); } catch (_) {}
+        server.close();
+        resolve(title);
+      }, 100);
     });
   });
 }
