@@ -104,7 +104,7 @@ export class ProjectGoalStore {
       SELECT goal_id, objective, status, revision, created_at, updated_at
       FROM goals
       ${options.includeArchived ? '' : 'WHERE archived_at IS NULL'}
-      ORDER BY updated_at DESC
+      ORDER BY updated_at DESC, created_at DESC, rowid DESC
       LIMIT ?
     `).all(Math.max(1, Math.min(options.limit ?? 100, 500)));
     const attachments = this.driver.prepare(
