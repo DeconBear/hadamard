@@ -4,7 +4,7 @@ import { createId } from '../runtime/helpers.js';
 
 const RETRIABLE_FS_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
 
-function isRetriableFsError(error: unknown): boolean {
+export function isRetriableFsError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
   return typeof code === 'string' && RETRIABLE_FS_CODES.has(code);
 }
