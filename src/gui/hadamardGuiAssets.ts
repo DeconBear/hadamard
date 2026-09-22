@@ -887,7 +887,7 @@ export function createHadamardGuiHtml(): string {
       <section>
         <h2>Agent</h2>
         <button type="button" class="settings-tab" data-settings-tab="capabilities"><span class="settings-icon">${guiIcon('tools')}</span>Capabilities</button>
-        <button type="button" class="settings-tab" data-settings-tab="extensions"><span class="settings-icon">${guiIcon('plug')}</span>Extensions &amp; LSP</button>
+        <button type="button" class="settings-tab" data-settings-tab="extensions"><span class="settings-icon">${guiIcon('plug')}</span>Personalization</button>
         <button type="button" class="settings-tab" data-settings-tab="sessions"><span class="settings-icon">${guiIcon('chat')}</span>Chats</button>
       </section>
       <section>
@@ -1060,7 +1060,7 @@ export function createHadamardGuiHtml(): string {
         </div>
       </section>
       <section class="settings-panel" data-settings-panel="extensions">
-        <h1>Extensions &amp; LSP</h1>
+        <h1>Personalization</h1>
         <div class="settings-group">
           <h2>Built-in extensions</h2>
           <p class="muted">Enable Hadamard-owned runtime and interface features. Changes apply to subsequent runs.</p>
