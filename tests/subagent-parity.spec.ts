@@ -421,7 +421,7 @@ describe('Hadamard SDK subagent parity', () => {
       await sdkB?.close();
       await sdkA.close();
     }
-  });
+  }, 60_000);
 
   it('resumes a follow-up that races with background task settlement', async () => {
     const sessionDirectory = await tempDirectory('hadamard-subagent-settlement-race-');

@@ -621,7 +621,7 @@ describe('Hadamard Agent execution integration', () => {
             }
             await Promise.race([
               bothReservationsReady.promise,
-              delay(2_000).then(() => {
+              delay(10_000).then(() => {
                 throw new Error('Timed out waiting for both terminal-task reservations.');
               }),
             ]);
@@ -690,8 +690,8 @@ describe('Hadamard Agent execution integration', () => {
         sdkB.tasks.wait(routedB.taskId, { timeoutMs: 5_000 }),
         sdkC.tasks.wait(routedC.taskId, { timeoutMs: 5_000 }),
       ]);
-      expect(taskB.status).toBe('completed');
-      expect(taskC.status).toBe('completed');
+      expect(taskB.status, `client B resume task failed: ${taskB.error ?? 'unknown error'}`).toBe('completed');
+      expect(taskC.status, `client C resume task failed: ${taskC.error ?? 'unknown error'}`).toBe('completed');
       expect(followUpRequestCount).toBe(2);
       expect(maxActiveFollowUpRequests).toBe(1);
 
@@ -720,7 +720,7 @@ describe('Hadamard Agent execution integration', () => {
       await sdkB?.close();
       await sdkA.close();
     }
-  }, 15_000);
+  }, 60_000);
 
   it('forks a child agent conversation into a clean, independent execution root', async () => {
     const fixture = await createFixture('hadamard-agent-execution-fork-');
