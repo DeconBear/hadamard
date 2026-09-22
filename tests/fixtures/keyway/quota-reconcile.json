@@ -1,0 +1,34 @@
+{
+  "policy": {
+    "id": "budget.monthly",
+    "scope": { "kind": "global" },
+    "period": "monthly",
+    "metric": "totalTokens",
+    "limit": 1000000,
+    "action": "deny",
+    "enabled": true
+  },
+  "reservation": {
+    "id": "reservation.1",
+    "requestId": "request.1",
+    "policyId": "budget.monthly",
+    "metric": "totalTokens",
+    "periodKey": "2026-08",
+    "reserved": 4096,
+    "createdAt": "2026-08-25T00:00:00.000Z"
+  },
+  "actualUsage": {
+    "requests": 1,
+    "inputTokens": 900,
+    "outputTokens": 100,
+    "totalTokens": 1000,
+    "cacheReadTokens": 700,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0,
+    "audioInputTokens": 0,
+    "audioOutputTokens": 0,
+    "costUsd": 0.001,
+    "accuracy": "actual"
+  },
+  "expectedRefund": 3096
+}

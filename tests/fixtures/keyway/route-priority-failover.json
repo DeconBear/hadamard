@@ -1,0 +1,26 @@
+{
+  "id": "route.failover",
+  "alias": "chat-failover",
+  "mode": "priority-failover",
+  "enabled": true,
+  "createdAt": "2026-08-25T00:00:00.000Z",
+  "updatedAt": "2026-08-25T00:00:00.000Z",
+  "candidates": [
+    {
+      "id": "candidate.primary",
+      "targetId": "target.ark-primary",
+      "upstreamModel": "glm-5.2",
+      "priority": 0,
+      "weight": 1,
+      "enabled": true
+    },
+    {
+      "id": "candidate.fallback",
+      "targetId": "target.ark-fallback",
+      "upstreamModel": "glm-5.3",
+      "priority": 1,
+      "weight": 1,
+      "enabled": true
+    }
+  ]
+}

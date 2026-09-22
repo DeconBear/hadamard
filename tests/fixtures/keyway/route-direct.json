@@ -1,0 +1,18 @@
+{
+  "id": "route.direct",
+  "alias": "chat-direct",
+  "mode": "direct",
+  "enabled": true,
+  "createdAt": "2026-08-25T00:00:00.000Z",
+  "updatedAt": "2026-08-25T00:00:00.000Z",
+  "candidates": [
+    {
+      "id": "candidate.glm52",
+      "targetId": "target.ark",
+      "upstreamModel": "glm-5.2",
+      "priority": 0,
+      "weight": 1,
+      "enabled": true
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "openai": {
+    "input": {
+      "prompt_tokens": 120,
+      "completion_tokens": 30,
+      "total_tokens": 150,
+      "prompt_tokens_details": { "cached_tokens": 80 }
+    },
+    "expected": {
+      "inputTokens": 120,
+      "outputTokens": 30,
+      "totalTokens": 150,
+      "cacheReadTokens": 80
+    }
+  },
+  "anthropic": {
+    "input": {
+      "input_tokens": 120,
+      "output_tokens": 30,
+      "cache_read_input_tokens": 80,
+      "cache_creation_input_tokens": 10
+    },
+    "expected": {
+      "inputTokens": 120,
+      "outputTokens": 30,
+      "totalTokens": 150,
+      "cacheReadTokens": 80,
+      "cacheWriteTokens": 10
+    }
+  }
+}

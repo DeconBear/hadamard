@@ -15,10 +15,8 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map(directory => rm(directory, { recursive: true, force: true })));
 });
 
-const realPackages = process.env.HADAMARD_KEYWAY_REAL_PACKAGES === '1' ? describe : describe.skip;
-
-realPackages('embedded Keyway real package smoke', () => {
-  it('loads packed modules and routes embedded plus loopback requests into the shared ledger', async () => {
+describe('embedded Keyway smoke', () => {
+  it('routes embedded plus loopback requests into the shared ledger', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'hadamard-keyway-real-'));
     tempDirs.push(root);
     const homeDir = path.join(root, '.hadamard');
