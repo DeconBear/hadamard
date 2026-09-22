@@ -49,3 +49,6 @@ tmp/
 vendor/hadamard-gui/
 scripts/fix-rebrand-tokens.mjs
 scripts/rebrand-to-hadamard.mjs
+
+# Local playwright-cli debug logs
+.playwright-cli/
