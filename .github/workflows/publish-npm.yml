@@ -32,9 +32,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install electron (for src/gui build)
-        run: npm install --no-save --package-lock=false electron@42.4.1
-
       - name: Validate release tag matches package version
         shell: bash
         run: |
