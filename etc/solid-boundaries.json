@@ -22,6 +22,7 @@
   "interfaces": {
     "config/agentProfiles.ts#SelectableAgent": { "maxMembers": 29, "reason": "Compatibility DTO extended with the reusable Agent execution mode and the orthogonal tool presentation." },
     "issues/issueStore.ts#ProjectIssue": { "maxMembers": 21, "reason": "Persisted issue schema." },
+    "keyway/vendor/core/contracts.ts#UsageEventV2": { "maxMembers": 27, "reason": "Vendored Keyway usage-event schema, versioned upstream (USAGE_EVENT_VERSION = 2)." },
     "runtime-v2/state.ts#SerializedRunState": { "maxMembers": 23, "reason": "Versioned serialized schema." },
     "runtime/agentExecution.ts#AgentExecutionNode": { "maxMembers": 22, "reason": "Versioned execution snapshot DTO." },
     "runtime/externalSkillCatalog.ts#HadamardSkillCatalogEntry": { "maxMembers": 21, "reason": "Catalog compatibility DTO." },
