@@ -45,7 +45,9 @@ if (update) {
   await writeFile(snapshotPath, serialized, 'utf8');
   console.log(`Updated public API snapshot: ${path.relative(root, snapshotPath)}`);
 } else {
-  const expected = await readFile(snapshotPath, 'utf8').catch(() => undefined);
+  // Normalize CRLF checkouts (Windows autocrlf) so the comparison is content-only.
+  const expected = (await readFile(snapshotPath, 'utf8').catch(() => undefined))
+    ?.replaceAll('\r\n', '\n');
   if (expected === undefined) {
     throw new Error('Public API snapshot is missing. Run npm run api:update intentionally.');
   }
