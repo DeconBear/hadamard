@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "exportedAt": "2026-08-25T00:00:00.000Z",
+  "groups": [
+    { "id": "default", "name": "Default Group", "enabled": true }
+  ],
+  "targets": [
+    {
+      "kind": "managed-api",
+      "id": "target.ark",
+      "providerId": "ark",
+      "protocol": "openai",
+      "baseUrl": "https://ark.cn-beijing.volces.com/api/v3",
+      "enabled": true
+    },
+    {
+      "kind": "native-cli",
+      "id": "target.codex-native",
+      "runtime": "codex",
+      "profileName": "default",
+      "enabled": true
+    }
+  ],
+  "credentialMetadata": [],
+  "routes": [],
+  "budgetPolicies": [],
+  "issuedKeys": [],
+  "usageEvents": []
+}

@@ -15,6 +15,8 @@ import type {
   KeywaySecretStorePort,
   KeywayStorePort,
 } from './keywayPorts.js';
+import * as keywayCoreSdk from './vendor/core/index.js';
+import * as keywayNodeSdk from './vendor/node/index.js';
 
 export interface EmbeddedKeywayOptions extends HadamardKeywayProviderExecutorOptions {
   homeDir: string;
@@ -39,22 +41,18 @@ export interface HeadlessKeywaySecretStoreOptions {
   modules?: KeywaySdkModulesPort;
 }
 
-/** Loads the independently versioned Keyway TS packages without a Python sidecar. */
+/**
+ * The Keyway TS SDK is vendored in-tree under `src/keyway/vendor/`, so the
+ * embedded runtime needs no external packages or Python sidecar. The contract
+ * version guard stays so an incompatible vendored bump fails loudly.
+ */
 export async function loadKeywaySdkModules(): Promise<KeywaySdkModulesPort> {
-  const corePackage = '@keyway-router/core';
-  const nodePackage = '@keyway-router/node';
-  try {
-    const [core, node] = await Promise.all([import(corePackage), import(nodePackage)]);
-    if (core.KEYWAY_CONTRACT_VERSION !== 1) {
-      throw new Error(`Unsupported Keyway contract version: ${String(core.KEYWAY_CONTRACT_VERSION)}`);
-    }
-    return { core, node } as unknown as KeywaySdkModulesPort;
-  } catch (error) {
-    throw new Error(
-      'Keyway TS packages are unavailable. Install matching @keyway-router/core and @keyway-router/node versions.',
-      { cause: error },
-    );
+  const core = keywayCoreSdk;
+  const node = keywayNodeSdk;
+  if (core.KEYWAY_CONTRACT_VERSION !== 1) {
+    throw new Error(`Unsupported Keyway contract version: ${String(core.KEYWAY_CONTRACT_VERSION)}`);
   }
+  return { core, node } as unknown as KeywaySdkModulesPort;
 }
 
 export async function createEmbeddedKeyway(options: EmbeddedKeywayOptions): Promise<EmbeddedKeyway> {
