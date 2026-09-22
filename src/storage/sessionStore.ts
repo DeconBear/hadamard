@@ -24,7 +24,7 @@ import {
 } from '../runtime/helpers.js';
 import { extractConversationBrief, extractPreviewFromMessages } from '../runtime/messageUtils.js';
 import { isEmptyUserStoredSession } from './sessionVisibility.js';
-import { writeJsonAtomic } from './atomicJsonWrite.js';
+import { isRetriableFsError, writeJsonAtomic } from './atomicJsonWrite.js';
 import {
   assertSafeStorageSegment,
   joinUnderStorageRoot,
@@ -65,6 +65,11 @@ export class SessionStore {
       try {
         handle = await open(lockPath, 'wx');
       } catch (error) {
+        if (isRetriableFsError(error)) {
+          // Transient Windows lock contention (AV/indexer scanning fresh files).
+          await delay(SESSION_TURN_LOCK_RETRY_MS);
+          continue;
+        }
         const nodeError = error as NodeJS.ErrnoException;
         if (nodeError.code !== 'EEXIST') {
           throw error;
@@ -451,10 +456,11 @@ export class SessionStore {
         handle = await open(lockPath, 'wx');
       } catch (error) {
         const nodeError = error as NodeJS.ErrnoException;
-        if (nodeError.code !== 'EEXIST') {
+        if (nodeError.code === 'EEXIST') {
+          await this.removeStaleLock(lockPath);
+        } else if (!isRetriableFsError(error)) {
           throw error;
         }
-        await this.removeStaleLock(lockPath);
         if (Date.now() >= deadline) {
           throw new SessionDataError(
             sessionId,
@@ -481,7 +487,8 @@ export class SessionStore {
         await rm(lockPath, { force: true });
       }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code !== 'ENOENT' && !isRetriableFsError(error)) {
         throw error;
       }
     }
