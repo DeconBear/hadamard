@@ -8,7 +8,7 @@ import { atomicWrite, safeRead } from '../src/research/safeFiles.js';
 
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return { ...actual, rename: vi.fn(actual.rename), open: vi.fn(actual.open) };
+  return { ...actual, rename: vi.fn(actual.rename), open: vi.fn(actual.open), unlink: vi.fn(actual.unlink) };
 });
 const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
 const roots: string[] = [];
@@ -17,13 +17,14 @@ const codeActs: CodeActService[] = [];
 afterEach(async () => {
   vi.mocked(fs.rename).mockImplementation(actual.rename);
   vi.mocked(fs.open).mockImplementation(actual.open);
+  vi.mocked(fs.unlink).mockImplementation(actual.unlink);
   await Promise.all(services.splice(0).map(service => service.close()));
   await Promise.all(codeActs.splice(0).map(service => service.close()));
   await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true })));
   vi.clearAllMocks();
 });
 function fsError(code: string) { return Object.assign(new Error(`rename ${code}: injected sharing violation`), { code }); }
-async function root() { const result = await fs.mkdtemp(path.join(os.tmpdir(), 'research-persistence-')); roots.push(result); return result; }
+async function root() { const result = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'research-persistence-'))); roots.push(result); return result; }
 async function experiment() {
   const directory = await root();
   const codeAct = new CodeActService({ enabled: true }); codeActs.push(codeAct);
@@ -37,6 +38,49 @@ async function experiment() {
 }
 
 describe('Research atomic persistence under Windows sharing violations', () => {
+  it('waits for exclusive publication to remove its private temporary hardlink before reading', async () => {
+    const directory = await root();
+    await fs.writeFile(path.join(directory, 'other.json'), 'independent');
+    let release!: () => void;
+    let publicationReached!: () => void;
+    const paused = new Promise<void>(resolve => { publicationReached = resolve; });
+    const resume = new Promise<void>(resolve => { release = resolve; });
+    let held = false;
+    vi.mocked(fs.unlink).mockImplementation(async target => {
+      if (!held && String(target).endsWith('.tmp')) {
+        held = true;
+        publicationReached();
+        await resume;
+      }
+      return actual.unlink(target);
+    });
+    const writing = atomicWrite(directory, 'run.json', '{"status":"queued"}', true);
+    await paused;
+    expect((await actual.lstat(path.join(directory, 'run.json'))).nlink).toBe(2);
+    let readerSettled = false;
+    const reading = safeRead(directory, 'run.json', 1024).then(
+      value => { readerSettled = true; return value; },
+      error => { readerSettled = true; return error as Error; },
+    );
+    try {
+      expect((await safeRead(directory, 'other.json', 1024)).toString()).toBe('independent');
+      await new Promise(resolve => setImmediate(resolve));
+      expect(readerSettled).toBe(false);
+    } finally { release(); await writing; }
+    const result = await reading;
+    expect(result).toBeInstanceOf(Buffer);
+    expect(result.toString()).toBe('{"status":"queued"}');
+    expect((await actual.lstat(path.join(directory, 'run.json'))).nlink).toBe(1);
+  });
+
+  it('still rejects an external hardlink instead of treating it as an owned publication', async () => {
+    const directory = await root();
+    const source = path.join(directory, 'source.txt');
+    await fs.writeFile(source, 'private');
+    await fs.link(source, path.join(directory, 'untrusted.txt'));
+    await expect(safeRead(directory, 'untrusted.txt', 1024)).rejects.toMatchObject({ code: 'unsafe_path' });
+  });
+
   it('accepts a regular file descriptor unlinked by atomic replacement after it was opened', async () => {
     const directory = await root();
     const target = path.join(directory, 'run.json');
@@ -66,7 +110,7 @@ describe('Research atomic persistence under Windows sharing violations', () => {
     let attempts = 0;
     vi.mocked(fs.rename).mockImplementation(async (from, to) => {
       if (++attempts < 3) {
-        expect((await safeRead(directory, 'run.json', 1024)).toString()).toBe('{"status":"running"}');
+        expect(await actual.readFile(path.join(directory, 'run.json'), 'utf8')).toBe('{"status":"running"}');
         throw fsError(code);
       }
       await actual.rename(from, to);

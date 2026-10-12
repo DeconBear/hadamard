@@ -44,7 +44,23 @@ export async function safePath(root: string, relative: string, createParents = f
   if (parent !== root && !parent.startsWith(root + path.sep)) throw new ResearchError('Path escaped research root.', 'unsafe_path');
   return current;
 }
+// File publication and intake share a path-scoped barrier. In particular, an
+// exclusive link(temp, target) is not ready for readers until temp is unlinked.
+// The settled tail releases on failure, and unrelated files remain concurrent.
+const fileOperations = new Map<string, Promise<void>>();
+function withFileOperation<T>(root: string, relative: string, action: () => Promise<T>): Promise<T> {
+  const absolute = path.resolve(root, safeRelative(relative));
+  const key = process.platform === 'win32' ? absolute.toLowerCase() : absolute;
+  const result = (fileOperations.get(key) ?? Promise.resolve()).then(action);
+  const settled = result.then(() => undefined, () => undefined);
+  fileOperations.set(key, settled);
+  void settled.then(() => { if (fileOperations.get(key) === settled) fileOperations.delete(key); });
+  return result;
+}
 export async function safeRead(root: string, relative: string, limit: number): Promise<Buffer> {
+  return withFileOperation(root, relative, () => readFileSnapshot(root, relative, limit));
+}
+async function readFileSnapshot(root: string, relative: string, limit: number): Promise<Buffer> {
   const target = await safePath(root, relative);
   const beforeOpen = await lstat(target);
   if (!beforeOpen.isFile() || beforeOpen.isSymbolicLink() || beforeOpen.nlink !== 1) throw new ResearchError(`Only regular, non-linked files are accepted: ${relative}`, 'unsafe_path');
@@ -68,6 +84,9 @@ export async function safeRead(root: string, relative: string, limit: number): P
   } finally { await handle.close(); }
 }
 export async function atomicWrite(root: string, relative: string, bytes: Buffer | string, exclusive = false): Promise<void> {
+  return withFileOperation(root, relative, () => publishFile(root, relative, bytes, exclusive));
+}
+async function publishFile(root: string, relative: string, bytes: Buffer | string, exclusive: boolean): Promise<void> {
   const target = await safePath(root, relative, true);
   const tempRelative = `${path.posix.dirname(relative)}/.${randomUUID()}.tmp`.replace(/^\.\//, '');
   const temp = await safePath(root, tempRelative);
