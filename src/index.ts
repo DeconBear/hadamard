@@ -51,6 +51,7 @@ export {
 export * from './runtime/agentExecutionPolicy.js';
 export * from './runtime/agentModeService.js';
 export * from './design/index.js';
+export * from './research/index.js';
 export {
   createSignedDeviceLinkRequest,
 } from './device-link/authorization.js';

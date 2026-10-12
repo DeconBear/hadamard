@@ -409,6 +409,9 @@ import { registerGuiAgentHttpController } from './guiAgentHttpController.js';
 import { registerGuiReferenceHttpController } from './guiReferenceHttpController.js';
 import type { KeywaySecretStorePort } from '../keyway/keywayPorts.js';
 import { registerGuiDesignHttpController } from './guiDesignHttpController.js';
+import { registerGuiResearchHttpController } from './guiResearchHttpController.js';
+import { createGuiLoopbackGuards } from './guiLoopbackGuards.js';
+import { GuiResearchWorkspaceServices } from './guiResearchWorkspaceServices.js';
 import { DesignDocumentService } from '../design/designDocumentService.js';
 import { ProjectRuleCatalogService } from '../rules/projectRuleCatalog.js';
 import {
@@ -7801,26 +7804,16 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   // the Origin check rejects cross-site browser requests, and the per-process
   // token prevents blind API calls. It is not an OS-level boundary against
   // another process running as the same local user.
-  const loopbackHosts = new Set(['127.0.0.1', 'localhost', '[::1]', '::1', host.toLowerCase()]);
-  const hostHeaderAllowed = (req: IncomingMessage): boolean => {
-    const header = req.headers.host;
-    if (!header) return false;
-    return loopbackHosts.has(header.replace(/:\d+$/, '').toLowerCase());
-  };
-  const originAllowed = (req: IncomingMessage): boolean => {
-    const origin = req.headers.origin;
-    if (!origin) return true; // non-browser clients and same-origin GETs omit Origin
-    try {
-      return loopbackHosts.has(new URL(origin).hostname.toLowerCase());
-    } catch {
-      return false;
-    }
-  };
+  const { hostHeaderAllowed, originAllowed } = createGuiLoopbackGuards(host);
 
   // Probe node-pty once (loads the N-API prebuilt). terminalCapable gates the
   // terminal tab; if the prebuilt is missing the GUI silently hides the pane.
   terminalCapable = await ptyAvailable();
+  const researchServices = new GuiResearchWorkspaceServices(() => ({
+    workspace: workDir, settings: projectSettings.codeAct, changing: runtimeMutationInProgress,
+  }));
   const httpRouter = new GuiHttpRouter();
+  registerGuiResearchHttpController(httpRouter, { service: (workspace, execution) => researchServices.resolve(workspace, execution) });
   registerGuiShellHttpController(httpRouter, authToken);
   registerGuiDesignHttpController(httpRouter, {
     createService: () => new DesignDocumentService(projectPrimaryPath, resolveGuiHomeDir()),
@@ -10863,6 +10856,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     for (const rec of runs.values()) rec.abort.abort();
     runs.clear();
     foregroundRunId = null;
+    await researchServices.close();
     await automationScheduler.dispose();
     terminalManager.closeAll();
     await externalCliRuntimeManager.close().catch(() => undefined);

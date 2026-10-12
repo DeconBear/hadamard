@@ -24,6 +24,10 @@ Inspired by Claude Code, Codex, Deepagents, and the broader agent ecosystem. Had
 
 > **Package name:** the published npm package is [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk). Product, repo, CLI, and config paths use **Hadamard** (`hadamard-*`, `~/.hadamard`, `.hadamard/`).
 
+## Research experiments (MVP)
+
+Project → Research provides immutable experiment manifests, existing CodeAct execution, artifact lineage, independent acceptance checks and explicit reruns. The SDK exposes opt-in agent tools and Goal evidence hooks. Start with the [offline example and limitations](docs/research-agent-mvp.md); [plugin adapters](docs/research-plugin-adapter.md) preserve the existing tool permission boundary.
+
 ## Install
 
 Node.js 22.13+ or Node.js 24 is required.

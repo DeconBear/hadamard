@@ -24,6 +24,10 @@
 
 > **包名说明：** npm 发布名为 [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk)。产品、仓库、CLI 与配置路径统一为 **Hadamard**（`hadamard-*`、`~/.hadamard`、`.hadamard/`）。
 
+## 科研实验（MVP）
+
+Project → Research 提供不可变实验清单、现有 CodeAct 执行、产物溯源、独立验收和显式复跑。SDK 提供可选的 agent 工具与 Goal 证据接线。请先阅读[离线示例与边界](docs/research-agent-mvp.md)及[插件适配契约](docs/research-plugin-adapter.md)；验收通过不等于科学结论成立。
+
 ## 安装
 
 要求 Node.js 22.13+ 或 Node.js 24。

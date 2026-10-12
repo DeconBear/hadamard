@@ -44,6 +44,16 @@ const EXPLORATORY_TOOL_NAMES = new Set([
   'readmcpresource',
 ]);
 
+// Research lifecycle tools report asynchronous operations. Only the independent
+// research settlement hook may contribute validated research evidence.
+const RESEARCH_OPERATION_TOOLS = new Set([
+  'researchlist', 'researchcreate', 'researchrun', 'researchcancel', 'researchstatus', 'researchtextstats',
+]);
+
+function isResearchOperation(name: string): boolean {
+  return RESEARCH_OPERATION_TOOLS.has(name.trim().toLowerCase());
+}
+
 export function decideGoalExecution(
   goal: Goal | null,
   options: DecideGoalExecutionOptions = {},
@@ -299,7 +309,7 @@ function goalUsage(result: AgentRunResult): GoalBudgetConsumption {
 
 function observedToolEvidence(result: AgentRunResult): GoalEvidence[] {
   return result.toolCalls
-    .filter(call => !call.isError)
+    .filter(call => !call.isError && !isResearchOperation(call.publicName || call.name))
     .map(call => ({
       id: `goal-evidence:${call.id}`,
       at: call.completedAt,
@@ -325,7 +335,7 @@ function progressToolEvidence(result: AgentRunResult): GoalEvidence[] {
 
 export function isExploratoryTool(name: string): boolean {
   const normalized = name.trim().toLowerCase();
-  if (EXPLORATORY_TOOL_NAMES.has(normalized)) return true;
+  if (EXPLORATORY_TOOL_NAMES.has(normalized) || isResearchOperation(normalized)) return true;
   // MCP resource readers are exploratory unless they mutate.
   if (normalized.startsWith('mcp__') && /(read|list|get|search|fetch|glob|grep)/u.test(normalized)) {
     return true;

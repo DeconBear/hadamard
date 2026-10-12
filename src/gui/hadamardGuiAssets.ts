@@ -37,6 +37,8 @@ import {
   GUI_SESSION_CENTER_OPEN_CLIENT_SCRIPT,
   GUI_SESSION_CREATE_CLIENT_SCRIPT,
 } from './guiSessionClientScript.js';
+import { GUI_PROJECT_DETAIL_NAVIGATION_CLIENT_SCRIPT } from './guiProjectDetailNavigationClientScript.js';
+import { GUI_RESEARCH_CLIENT_SCRIPT } from './guiResearchClientScript.js';
 import { GUI_DESIGN_CLIENT_SCRIPT } from './guiDesignClientScript.js';
 import { getGuiBridgeContextClientScript } from './guiBridgeContextClientScript.js';
 
@@ -10058,6 +10060,7 @@ function switchProjectView(view) {
   if (view !== 'detail') setDetailConversationDrawer(false);
   if (view !== 'conversation') setConversationListOpen(false);
   if (prev === 'detail' && view !== 'detail') {
+    stopResearchPolling();
     if (state.projectDocDirty) void saveProjectDocNow();
     if (state.projectDocSaveTimer) { clearTimeout(state.projectDocSaveTimer); state.projectDocSaveTimer = null; }
     state.projectDocEditing = false;
@@ -10499,6 +10502,7 @@ function renderProjectDocPreview(content) {
 }
 
 ${GUI_DESIGN_CLIENT_SCRIPT}
+${GUI_RESEARCH_CLIENT_SCRIPT}
 function setProjectDocMode(editing) {
   if (editing && state.projectDocSubTab === 'design' && state.designEntryMode === 'html') {
     state.projectDocEditing = false;
@@ -11382,41 +11386,7 @@ window.addEventListener('resize', () => {
     setDetailConversationDrawer(state.detailConversationOpen);
   }
 });
-function setProjectDetailTab(tab) {
-  const allowed = { document: 1, issues: 1, agents: 1, settings: 1 };
-  const next = allowed[tab] ? tab : 'document';
-  if (state.projectDetailTab === next) {
-    if (next === 'agents') void refreshAgentExecutions(true);
-    else if (next === 'settings') void mountProjectSettingsPanel(false);
-    return;
-  }
-  if (state.projectDetailTab === 'document' && state.projectDocDirty) void saveProjectDocNow();
-  if (state.projectDetailTab === 'settings' && state.projectSettingsDirty) void saveProjectSettingsNow();
-  if (next !== 'agents') stopAgentExecutionPolling();
-  state.projectDetailTab = next;
-  let activeTab = null;
-  document.querySelectorAll('.project-detail-tab').forEach((btn) => {
-    const active = btn.dataset.detailTab === next;
-    btn.classList.toggle('active', active);
-    btn.setAttribute('aria-selected', active ? 'true' : 'false');
-    btn.tabIndex = active ? 0 : -1;
-    if (active) activeTab = btn;
-  });
-  if (activeTab) requestAnimationFrame(revealActiveProjectDetailTab);
-  const panels = {
-    document: el('projectDocumentPanel'),
-    issues: el('projectIssuesPanel'),
-    agents: el('agentExecutionsPanel'),
-    settings: el('projectSettingsPanel'),
-  };
-  for (const key of Object.keys(panels)) {
-    if (panels[key]) panels[key].classList.toggle('hidden', key !== next);
-  }
-  if (next === 'document') void mountProjectDoc(false);
-  else if (next === 'issues') void loadProjectIssues(false);
-  else if (next === 'agents') void refreshAgentExecutions(true);
-  else if (next === 'settings') void mountProjectSettingsPanel(false);
-}
+${GUI_PROJECT_DETAIL_NAVIGATION_CLIENT_SCRIPT}
 function mountWorkbenchTools(surface) {
   const nextSurface = surface === 'project' ? 'project' : 'conversation';
   const split = nextSurface === 'project' ? el('projectDetailWorkbenchSplit') : el('conversationWorkbenchSplit');
@@ -13264,7 +13234,7 @@ async function removeActiveProjectWorkPath() {
 
 function renderProjectDetail() {
   if (state.activeWorkbenchSurface === 'project') mountWorkbenchTools('conversation');
-  if (!['document', 'issues', 'agents', 'settings'].includes(state.projectDetailTab)) state.projectDetailTab = 'document';
+  if (!['document', 'issues', 'agents', 'research', 'settings'].includes(state.projectDetailTab)) state.projectDetailTab = 'document';
   const name = projectNameFromSnapshot();
   const w = state.snapshot?.workDir || '';
   const bc = el('detailBreadcrumb');
@@ -13303,12 +13273,14 @@ function renderProjectDetail() {
     ['document', 'Document'],
     ['issues', 'Issues'],
     ['agents', 'Agent monitor'],
+    ['research', 'Research'],
     ['settings', 'Project settings'],
   ];
   const detailPanelIds = {
     document: 'projectDocumentPanel',
     issues: 'projectIssuesPanel',
     agents: 'agentExecutionsPanel',
+    research: 'projectResearchPanel',
     settings: 'projectSettingsPanel',
   };
   for (const tab of detailTabs) {
@@ -13408,6 +13380,11 @@ function renderProjectDetail() {
   agentsPanel.setAttribute('role', 'tabpanel');
   agentsPanel.setAttribute('aria-labelledby', 'projectTabAgents');
   agentsPanel.setAttribute('data-testid', 'agent-executions-panel');
+  const researchPanel = document.createElement('section');
+  researchPanel.id = 'projectResearchPanel';
+  researchPanel.className = 'project-workbench-panel' + (state.projectDetailTab === 'research' ? '' : ' hidden');
+  researchPanel.setAttribute('role', 'tabpanel');
+  researchPanel.setAttribute('aria-labelledby', 'projectTabResearch');
   const settingsPanel = document.createElement('section');
   settingsPanel.id = 'projectSettingsPanel';
   settingsPanel.className = 'project-workbench-panel project-settings-panel' + (state.projectDetailTab === 'settings' ? '' : ' hidden');
@@ -13461,7 +13438,7 @@ function renderProjectDetail() {
     panel.setAttribute('role', 'tabpanel');
     panel.setAttribute('aria-labelledby', 'projectTab' + tabKey.slice(0, 1).toUpperCase() + tabKey.slice(1));
   }
-  main.append(tabs, docPanel, issuesPanel, agentsPanel, settingsPanel);
+  main.append(tabs, docPanel, issuesPanel, agentsPanel, researchPanel, settingsPanel);
   const sidebar = document.createElement('aside');
   sidebar.className = 'detail-sidebar';
   sidebar.id = 'projectDetailSidebar';
@@ -13526,6 +13503,7 @@ function renderProjectDetail() {
   if (state.projectDetailTab === 'issues') void loadProjectIssues(false);
   else if (state.projectDetailTab === 'agents') void refreshAgentExecutions(true);
   else if (state.projectDetailTab === 'settings') void mountProjectSettingsPanel(false);
+  else if (state.projectDetailTab === 'research') void mountResearchPanel();
   else void mountProjectDoc(false);
 }
 function selectDetailConversation(id) {
@@ -15231,6 +15209,7 @@ async function openSurface(kind) {
 // their content inline here. The surface DRAWER remains for browse-style
 // surfaces (sessions, git, tools, skills, agents, mcp, routers, projects).
 async function switchRegion(name) {
+  if (name !== 'project') stopResearchPolling();
   if (name !== 'project') stopAgentExecutionPolling();
   state.activeRegion = name;
   document.querySelectorAll('[data-region]:not(.region-nav)').forEach((node) => {
@@ -15250,6 +15229,7 @@ async function switchRegion(name) {
   if (name === 'project' && state.projectView === 'detail' && state.projectDetailTab === 'agents') {
     void refreshAgentExecutions(true);
   }
+  if (name === 'project' && state.projectView === 'detail' && state.projectDetailTab === 'research') void mountResearchPanel();
   if (name === 'automation') await renderAutomationRegion();
   else if (name === 'plugins') await renderPluginsRegion(state.pluginsView || 'plugins');
   else if (name === 'devices') await renderDevicesRegion();

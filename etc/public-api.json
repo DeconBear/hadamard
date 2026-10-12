@@ -268,6 +268,11 @@
         "signature": "export interface ActivateRuntimeContributionOptions {\nisTrusted?: (input: {\nid: string;\nversion: string;\ncapabilities: string[];\n}) => boolean | Promise<boolean>;\n}"
       },
       {
+        "name": "adaptResearchPluginTool",
+        "kind": "function",
+        "signature": "export declare function adaptResearchPluginTool<Input, Output>(options: {\nplugin: ResearchPluginDescriptor;\ntool: AgentToolDefinition<Input, Output>;\n}): AgentToolDefinition<Input, ResearchPluginResult<Output>>;"
+      },
+      {
         "name": "addIssueComment",
         "kind": "function",
         "signature": "export declare function addIssueComment(workDir: string, homeDir: string, idOrNumber: string | number, input: {\nbody: string;\nkind?: IssueCommentKind;\nactor?: IssueActor;\n}, mode?: IssueStorageMode): Promise<ProjectIssue | undefined>;"
@@ -1958,6 +1963,16 @@
         "signature": "export declare function createPromptHookHandler(evaluate: PromptHookEvaluator): HookHandlerAdapter;"
       },
       {
+        "name": "createResearchTextStatsTool",
+        "kind": "function",
+        "signature": "export declare function createResearchTextStatsTool(): AgentToolDefinition<{\ntext: string;\n}, ResearchPluginResult<{\ncharacters: number;\nutf8Bytes: number;\nlines: number;\nsha256: string;\n}>>;"
+      },
+      {
+        "name": "createResearchTools",
+        "kind": "function",
+        "signature": "export declare function createResearchTools(service: ResearchService): AgentToolDefinition[];"
+      },
+      {
         "name": "createRunCodeTool",
         "kind": "function",
         "signature": "export declare function createRunCodeTool(options: {\nservice: ProgrammaticToolService;\nhostTools: readonly AgentToolDefinition[];\nlanguage?: RunCodeLanguage;\n}): AgentToolDefinition;"
@@ -3505,7 +3520,7 @@
       {
         "name": "GoalService",
         "kind": "class",
-        "signature": "export declare class GoalService {\nprivate readonly port;\nprivate readonly now;\nconstructor(options: GoalServiceOptions);\nstatic forSession(session: {\nmetadata: Record<string, unknown>;\nmergeMetadata(metadata: Record<string, unknown>): Promise<unknown>;\nmutateMetadata?(mutation: (metadata: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>>;\n}): GoalService;\nread(): Promise<Goal | null>;\ncreate(input: CreateGoalInput): Promise<Goal>;\nclear(): Promise<void>;\nprogress(input: ProgressGoalInput): Promise<GoalMutationResult>;\nplan(input: PlanGoalInput): Promise<GoalMutationResult>;\nbeginWorkItem(workItemId: string): Promise<GoalMutationResult>;\nforceReplan(reason?: string): Promise<GoalMutationResult>;\nretarget(objective: string): Promise<GoalMutationResult>;\nrequestWorkItemUpdate(input: RequestGoalWorkItemUpdateInput): Promise<GoalMutationResult>;\nanswerUserGate(workItemId: string, answer: string): Promise<GoalMutationResult>;\nblock(input: BlockGoalInput): Promise<GoalMutationResult>;\nrequestCompletion(evidence: {\nnote: string;\nevidenceRefs?: string[];\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\ncomplete(evidence: {\nnote: string;\nevidenceRefs?: string[];\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\nsettleTurn(input: SettleGoalTurnInput): Promise<GoalMutationResult>;\ntransition(target: 'paused' | 'active' | 'cancelled'): Promise<GoalTransitionResult>;\nrevise(input: {\nobjective?: string;\ncompletionCriteria?: string;\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\n}"
+        "signature": "export declare class GoalService {\nprivate readonly port;\nprivate readonly now;\nconstructor(options: GoalServiceOptions);\nstatic forSession(session: {\nmetadata: Record<string, unknown>;\nmergeMetadata(metadata: Record<string, unknown>): Promise<unknown>;\nmutateMetadata?(mutation: (metadata: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>>;\n}): GoalService;\nread(): Promise<Goal | null>;\ncreate(input: CreateGoalInput): Promise<Goal>;\nclear(): Promise<void>;\nprogress(input: ProgressGoalInput): Promise<GoalMutationResult>;\nplan(input: PlanGoalInput): Promise<GoalMutationResult>;\nbeginWorkItem(workItemId: string): Promise<GoalMutationResult>;\nforceReplan(reason?: string): Promise<GoalMutationResult>;\nretarget(objective: string): Promise<GoalMutationResult>;\nrequestWorkItemUpdate(input: RequestGoalWorkItemUpdateInput): Promise<GoalMutationResult>;\nanswerUserGate(workItemId: string, answer: string): Promise<GoalMutationResult>;\nblock(input: BlockGoalInput): Promise<GoalMutationResult>;\nrequestCompletion(evidence: {\nnote: string;\nevidenceRefs?: string[];\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\ncomplete(evidence: {\nnote: string;\nevidenceRefs?: string[];\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\nrecordValidationEvidence(input: {\nexpectedGoalCreatedAt: string;\nreceipt: GoalTurnReceipt;\nevidence: GoalEvidence[];\n}): Promise<GoalMutationResult>;\nsettleTurn(input: SettleGoalTurnInput): Promise<GoalMutationResult>;\ntransition(target: 'paused' | 'active' | 'cancelled'): Promise<GoalTransitionResult>;\nrevise(input: {\nobjective?: string;\ncompletionCriteria?: string;\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\n}"
       },
       {
         "name": "GoalServiceOptions",
@@ -6733,6 +6748,121 @@
         "signature": "export interface RequestGoalWorkItemUpdateInput {\nworkItemId: string;\nstatus: 'open' | 'done' | 'deferred' | 'cancelled';\nnote: string;\nevidenceRefs?: string[];\nnoFollowupReason?: string;\nresumeWhen?: string;\nexpectedRevision?: number;\n}"
       },
       {
+        "name": "RESEARCH_TERMINAL_STATES",
+        "kind": "value",
+        "signature": "RESEARCH_TERMINAL_STATES: ReadonlySet<ResearchRunStatus>"
+      },
+      {
+        "name": "ResearchAcceptanceCriterion",
+        "kind": "type",
+        "signature": "export type ResearchAcceptanceCriterion = {\nid: string;\nkind: 'numeric';\nartifact: string;\npath: string;\nexpected: number;\ntolerance: number;\n} | {\nid: string;\nkind: 'file';\nartifact: string;\nminBytes?: number;\nsha256?: string;\n};"
+      },
+      {
+        "name": "ResearchArtifact",
+        "kind": "interface",
+        "signature": "export interface ResearchArtifact {\nid: string;\nrunId: string;\nmanifestId: string;\nmanifestDigest: string;\ncodeDigest: string;\nenvironmentDigest: string;\ninputDigests: string[];\npath: string;\nsha256: string;\nsizeBytes: number;\nmediaType: string;\n}"
+      },
+      {
+        "name": "ResearchBudget",
+        "kind": "interface",
+        "signature": "export interface ResearchBudget {\ntimeoutMs: number;\nmaxArtifactBytes: number;\nmaxRuns: number;\n}"
+      },
+      {
+        "name": "ResearchCriterionResult",
+        "kind": "interface",
+        "signature": "export interface ResearchCriterionResult {\ncriterionId: string;\npassed: boolean;\nreason: string;\nobserved?: number;\nartifactDigest?: string;\n}"
+      },
+      {
+        "name": "ResearchEnvironment",
+        "kind": "interface",
+        "signature": "export interface ResearchEnvironment {\nbackend: CodeActBackend | null;\nsecurityMode: CodeActSecurityMode | null;\nsettingsDigest: string | null;\nruntime: ResearchRuntimeFingerprint | null;\nruntimeDigest: string | null;\nrequiredPythonVersion: string | null;\nlockFiles: ResearchPinnedFile[];\nsha256: string;\n}"
+      },
+      {
+        "name": "ResearchError",
+        "kind": "class",
+        "signature": "export declare class ResearchError extends Error {\nreadonly code: 'invalid_manifest' | 'not_found' | 'conflict' | 'unsafe_path' | 'integrity' | 'unavailable';\nconstructor(message: string, code: 'invalid_manifest' | 'not_found' | 'conflict' | 'unsafe_path' | 'integrity' | 'unavailable');\n}"
+      },
+      {
+        "name": "researchGoalEvidence",
+        "kind": "function",
+        "signature": "export declare function researchGoalEvidence(run: ResearchRun): GoalEvidence;"
+      },
+      {
+        "name": "ResearchInput",
+        "kind": "interface",
+        "signature": "export interface ResearchInput {\npath: string;\n}"
+      },
+      {
+        "name": "ResearchJson",
+        "kind": "type",
+        "signature": "export type ResearchJson = null | boolean | number | string | ResearchJson[] | {\n[key: string]: ResearchJson;\n};"
+      },
+      {
+        "name": "ResearchManifest",
+        "kind": "interface",
+        "signature": "export interface ResearchManifest {\nversion: 1;\nid: string;\ncreatedAt: string;\ntitle: string;\nobjective: string;\ncode: string;\ncodeDigest: string;\ncodeCommit: string | null;\ncodeDirty: boolean | null;\ninputs: ResearchPinnedFile[];\nparameters: Record<string, ResearchJson>;\nseeds: number[];\nacceptanceCriteria: ResearchAcceptanceCriterion[];\nbudget: ResearchBudget;\nenvironment: ResearchEnvironment;\ndigest: string;\n}"
+      },
+      {
+        "name": "ResearchManifestInput",
+        "kind": "interface",
+        "signature": "export interface ResearchManifestInput {\ntitle: string;\nobjective: string;\ncode: string;\ninputs?: ResearchInput[];\nparameters?: Record<string, ResearchJson>;\nseeds?: number[];\nacceptanceCriteria: ResearchAcceptanceCriterion[];\nbudget?: Partial<ResearchBudget>;\nenvironment?: {\nlockFiles?: string[];\npythonVersion?: string;\n};\n}"
+      },
+      {
+        "name": "ResearchPinnedFile",
+        "kind": "interface",
+        "signature": "export interface ResearchPinnedFile {\npath: string;\nsha256: string;\nsizeBytes: number;\n}"
+      },
+      {
+        "name": "ResearchPluginDescriptor",
+        "kind": "interface",
+        "signature": "export interface ResearchPluginDescriptor {\nid: string;\nversion: string;\nadapter: 'builtin' | 'explicit-tool';\n}"
+      },
+      {
+        "name": "ResearchPluginEvidence",
+        "kind": "type",
+        "signature": "export type ResearchPluginEvidence = z.infer<typeof researchPluginEvidenceSchema>;"
+      },
+      {
+        "name": "researchPluginEvidenceSchema",
+        "kind": "value",
+        "signature": "researchPluginEvidenceSchema: z.ZodObject<{\nschemaVersion: z.ZodLiteral<1>;\nkind: z.ZodLiteral<\"tool-output\">;\ntrust: z.ZodLiteral<\"untrusted\">;\nplugin: z.ZodObject<{\nid: z.ZodString;\nversion: z.ZodString;\nadapter: z.ZodEnum<{\nbuiltin: \"builtin\";\n\"explicit-tool\": \"explicit-tool\";\n}>;\n}, z.core.$strict>;\ntoolName: z.ZodString;\nrunId: z.ZodString;\ntoolUseId: z.ZodOptional<z.ZodString>;\ninputSha256: z.ZodString;\noutputSha256: z.ZodString;\n}, z.core.$strict>"
+      },
+      {
+        "name": "ResearchPluginResult",
+        "kind": "interface",
+        "signature": "export interface ResearchPluginResult<Output = JsonValue> {\nvalue: Output;\nevidence: ResearchPluginEvidence;\n}"
+      },
+      {
+        "name": "ResearchRun",
+        "kind": "interface",
+        "signature": "export interface ResearchRun {\nversion: 1;\nid: string;\nmanifestId: string;\nmanifestDigest: string;\nrerunOf: string | null;\nidempotencyKey: string | null;\nsessionId: string;\nownerPid: number;\nownerStartedAt: number;\nstatus: ResearchRunStatus;\ncreatedAt: string;\nstartedAt: string | null;\ncompletedAt: string | null;\nreason: string | null;\nexecution: {\nstatus: 'not_started' | 'running' | 'completed' | 'failed' | 'interrupted';\nexecutionId: string | null;\ndurationMs: number;\nstdout: string;\nstderr: string;\nerror: string | null;\nfailureKind: CodeRunFailureKind | null;\n};\nvalidation: {\nstatus: 'not_run' | 'passed' | 'failed';\ncriteria: ResearchCriterionResult[];\nsummary: string;\n};\nartifacts: ResearchArtifact[];\nruntimeDigest: string | null;\nisolation: 'trusted-only' | 'strong' | 'unavailable';\n}"
+      },
+      {
+        "name": "ResearchRunStatus",
+        "kind": "type",
+        "signature": "export type ResearchRunStatus = 'queued' | 'running' | 'validating' | 'passed' | 'failed' | 'blocked' | 'cancelled' | 'timed_out';"
+      },
+      {
+        "name": "ResearchRuntimeFingerprint",
+        "kind": "interface",
+        "signature": "export interface ResearchRuntimeFingerprint {\npythonVersion: string;\nimplementation: string;\nplatform: string;\npackages: [\nstring,\nstring\n][];\n}"
+      },
+      {
+        "name": "ResearchService",
+        "kind": "class",
+        "signature": "export declare class ResearchService {\nprivate readonly options;\nprivate readonly store;\nprivate initialization?;\nprivate closed;\nprivate closing;\nprivate readonly preparations;\nprivate mutationTail;\nprivate executionTail;\nprivate readonly active;\nconstructor(workspaceRoot: string, options?: ResearchServiceOptions);\ninitialize(): Promise<void>;\nprivate initializeOnce;\nlistManifests(): Promise<ResearchManifest[]>;\ngetManifest(id: string): Promise<ResearchManifest | null>;\nlistRuns(manifestId?: string): Promise<ResearchRun[]>;\ngetRun(id: string): Promise<ResearchRun | null>;\ncreateManifest(input: ResearchManifestInput): Promise<ResearchManifest>;\nprivate createManifestInternal;\nstartRun(manifestId: string, options?: ResearchStartOptions): Promise<ResearchRun>;\nrerun(runId: string, options?: ResearchStartOptions): Promise<ResearchRun>;\nprivate admit;\ncancel(runId: string): Promise<ResearchRun>;\nwaitForRun(runId: string): Promise<ResearchRun>;\nclose(): Promise<void>;\nprivate execute;\nprivate snapshotFiles;\nprivate defaultLockFiles;\nprivate verifyLockFiles;\nprivate probe;\nprivate experimentCode;\nprivate context;\nprivate recordExecution;\nprivate gitProvenance;\nprivate notify;\nprivate mutate;\n}"
+      },
+      {
+        "name": "ResearchServiceOptions",
+        "kind": "interface",
+        "signature": "export interface ResearchServiceOptions {\ncodeAct?: Pick<CodeActService, 'settings' | 'execute' | 'selfCheck' | 'stop'>;\nonRunSettled?: (run: ResearchRun, manifest: ResearchManifest, evidence: GoalEvidence) => void | Promise<void>;\n}"
+      },
+      {
+        "name": "ResearchStartOptions",
+        "kind": "interface",
+        "signature": "export interface ResearchStartOptions {\nidempotencyKey?: string;\n}"
+      },
+      {
         "name": "RESERVED_BINDING_GLOBALS",
         "kind": "value",
         "signature": "RESERVED_BINDING_GLOBALS: ReadonlySet<string>"
@@ -7608,6 +7738,11 @@
         "signature": "export interface SettleGoalTurnInput {\nreceipt: GoalTurnReceipt;\nevidence: GoalEvidence[];\nobservedRefs?: string[];\ncompletionAccepted?: boolean;\nreplan?: {\ntrigger: string;\nfrontierFingerprint: string;\ndeltaRecorded: boolean;\n};\n}"
       },
       {
+        "name": "settleResearchGoalRun",
+        "kind": "function",
+        "signature": "export declare function settleResearchGoalRun(service: GoalService, run: ResearchRun, expectedGoalCreatedAt: string): Promise<void>;"
+      },
+      {
         "name": "shouldIncludeGitHubDigest",
         "kind": "function",
         "signature": "export declare function shouldIncludeGitHubDigest(instruction?: string): boolean;"
@@ -8331,6 +8466,11 @@
         "name": "validateIceServers",
         "kind": "function",
         "signature": "export declare function validateIceServers(servers: RTCIceServer[], requireRelay: boolean): void;"
+      },
+      {
+        "name": "validateResearchArtifacts",
+        "kind": "function",
+        "signature": "export declare function validateResearchArtifacts(manifest: ResearchManifest, run: Pick<ResearchRun, 'id'>, artifactsRoot: string): Promise<{\nartifacts: ResearchArtifact[];\ncriteria: ResearchCriterionResult[];\npassed: boolean;\n}>;"
       },
       {
         "name": "validateTeamGraph",
@@ -11049,6 +11189,11 @@
         "signature": "export interface ActivateRuntimeContributionOptions {\nisTrusted?: (input: {\nid: string;\nversion: string;\ncapabilities: string[];\n}) => boolean | Promise<boolean>;\n}"
       },
       {
+        "name": "adaptResearchPluginTool",
+        "kind": "function",
+        "signature": "export declare function adaptResearchPluginTool<Input, Output>(options: {\nplugin: ResearchPluginDescriptor;\ntool: AgentToolDefinition<Input, Output>;\n}): AgentToolDefinition<Input, ResearchPluginResult<Output>>;"
+      },
+      {
         "name": "addIssueComment",
         "kind": "function",
         "signature": "export declare function addIssueComment(workDir: string, homeDir: string, idOrNumber: string | number, input: {\nbody: string;\nkind?: IssueCommentKind;\nactor?: IssueActor;\n}, mode?: IssueStorageMode): Promise<ProjectIssue | undefined>;"
@@ -12764,6 +12909,16 @@
         "signature": "export declare function createPromptHookHandler(evaluate: PromptHookEvaluator): HookHandlerAdapter;"
       },
       {
+        "name": "createResearchTextStatsTool",
+        "kind": "function",
+        "signature": "export declare function createResearchTextStatsTool(): AgentToolDefinition<{\ntext: string;\n}, ResearchPluginResult<{\ncharacters: number;\nutf8Bytes: number;\nlines: number;\nsha256: string;\n}>>;"
+      },
+      {
+        "name": "createResearchTools",
+        "kind": "function",
+        "signature": "export declare function createResearchTools(service: ResearchService): AgentToolDefinition[];"
+      },
+      {
         "name": "createRunCodeTool",
         "kind": "function",
         "signature": "export declare function createRunCodeTool(options: {\nservice: ProgrammaticToolService;\nhostTools: readonly AgentToolDefinition[];\nlanguage?: RunCodeLanguage;\n}): AgentToolDefinition;"
@@ -14321,7 +14476,7 @@
       {
         "name": "GoalService",
         "kind": "class",
-        "signature": "export declare class GoalService {\nprivate readonly port;\nprivate readonly now;\nconstructor(options: GoalServiceOptions);\nstatic forSession(session: {\nmetadata: Record<string, unknown>;\nmergeMetadata(metadata: Record<string, unknown>): Promise<unknown>;\nmutateMetadata?(mutation: (metadata: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>>;\n}): GoalService;\nread(): Promise<Goal | null>;\ncreate(input: CreateGoalInput): Promise<Goal>;\nclear(): Promise<void>;\nprogress(input: ProgressGoalInput): Promise<GoalMutationResult>;\nplan(input: PlanGoalInput): Promise<GoalMutationResult>;\nbeginWorkItem(workItemId: string): Promise<GoalMutationResult>;\nforceReplan(reason?: string): Promise<GoalMutationResult>;\nretarget(objective: string): Promise<GoalMutationResult>;\nrequestWorkItemUpdate(input: RequestGoalWorkItemUpdateInput): Promise<GoalMutationResult>;\nanswerUserGate(workItemId: string, answer: string): Promise<GoalMutationResult>;\nblock(input: BlockGoalInput): Promise<GoalMutationResult>;\nrequestCompletion(evidence: {\nnote: string;\nevidenceRefs?: string[];\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\ncomplete(evidence: {\nnote: string;\nevidenceRefs?: string[];\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\nsettleTurn(input: SettleGoalTurnInput): Promise<GoalMutationResult>;\ntransition(target: 'paused' | 'active' | 'cancelled'): Promise<GoalTransitionResult>;\nrevise(input: {\nobjective?: string;\ncompletionCriteria?: string;\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\n}"
+        "signature": "export declare class GoalService {\nprivate readonly port;\nprivate readonly now;\nconstructor(options: GoalServiceOptions);\nstatic forSession(session: {\nmetadata: Record<string, unknown>;\nmergeMetadata(metadata: Record<string, unknown>): Promise<unknown>;\nmutateMetadata?(mutation: (metadata: Record<string, unknown>) => Record<string, unknown>): Promise<Record<string, unknown>>;\n}): GoalService;\nread(): Promise<Goal | null>;\ncreate(input: CreateGoalInput): Promise<Goal>;\nclear(): Promise<void>;\nprogress(input: ProgressGoalInput): Promise<GoalMutationResult>;\nplan(input: PlanGoalInput): Promise<GoalMutationResult>;\nbeginWorkItem(workItemId: string): Promise<GoalMutationResult>;\nforceReplan(reason?: string): Promise<GoalMutationResult>;\nretarget(objective: string): Promise<GoalMutationResult>;\nrequestWorkItemUpdate(input: RequestGoalWorkItemUpdateInput): Promise<GoalMutationResult>;\nanswerUserGate(workItemId: string, answer: string): Promise<GoalMutationResult>;\nblock(input: BlockGoalInput): Promise<GoalMutationResult>;\nrequestCompletion(evidence: {\nnote: string;\nevidenceRefs?: string[];\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\ncomplete(evidence: {\nnote: string;\nevidenceRefs?: string[];\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\nrecordValidationEvidence(input: {\nexpectedGoalCreatedAt: string;\nreceipt: GoalTurnReceipt;\nevidence: GoalEvidence[];\n}): Promise<GoalMutationResult>;\nsettleTurn(input: SettleGoalTurnInput): Promise<GoalMutationResult>;\ntransition(target: 'paused' | 'active' | 'cancelled'): Promise<GoalTransitionResult>;\nrevise(input: {\nobjective?: string;\ncompletionCriteria?: string;\nexpectedRevision?: number;\n}): Promise<GoalMutationResult>;\n}"
       },
       {
         "name": "GoalServiceOptions",
@@ -17604,6 +17759,121 @@
         "signature": "export interface RequestGoalWorkItemUpdateInput {\nworkItemId: string;\nstatus: 'open' | 'done' | 'deferred' | 'cancelled';\nnote: string;\nevidenceRefs?: string[];\nnoFollowupReason?: string;\nresumeWhen?: string;\nexpectedRevision?: number;\n}"
       },
       {
+        "name": "RESEARCH_TERMINAL_STATES",
+        "kind": "value",
+        "signature": "RESEARCH_TERMINAL_STATES: ReadonlySet<ResearchRunStatus>"
+      },
+      {
+        "name": "ResearchAcceptanceCriterion",
+        "kind": "type",
+        "signature": "export type ResearchAcceptanceCriterion = {\nid: string;\nkind: 'numeric';\nartifact: string;\npath: string;\nexpected: number;\ntolerance: number;\n} | {\nid: string;\nkind: 'file';\nartifact: string;\nminBytes?: number;\nsha256?: string;\n};"
+      },
+      {
+        "name": "ResearchArtifact",
+        "kind": "interface",
+        "signature": "export interface ResearchArtifact {\nid: string;\nrunId: string;\nmanifestId: string;\nmanifestDigest: string;\ncodeDigest: string;\nenvironmentDigest: string;\ninputDigests: string[];\npath: string;\nsha256: string;\nsizeBytes: number;\nmediaType: string;\n}"
+      },
+      {
+        "name": "ResearchBudget",
+        "kind": "interface",
+        "signature": "export interface ResearchBudget {\ntimeoutMs: number;\nmaxArtifactBytes: number;\nmaxRuns: number;\n}"
+      },
+      {
+        "name": "ResearchCriterionResult",
+        "kind": "interface",
+        "signature": "export interface ResearchCriterionResult {\ncriterionId: string;\npassed: boolean;\nreason: string;\nobserved?: number;\nartifactDigest?: string;\n}"
+      },
+      {
+        "name": "ResearchEnvironment",
+        "kind": "interface",
+        "signature": "export interface ResearchEnvironment {\nbackend: CodeActBackend | null;\nsecurityMode: CodeActSecurityMode | null;\nsettingsDigest: string | null;\nruntime: ResearchRuntimeFingerprint | null;\nruntimeDigest: string | null;\nrequiredPythonVersion: string | null;\nlockFiles: ResearchPinnedFile[];\nsha256: string;\n}"
+      },
+      {
+        "name": "ResearchError",
+        "kind": "class",
+        "signature": "export declare class ResearchError extends Error {\nreadonly code: 'invalid_manifest' | 'not_found' | 'conflict' | 'unsafe_path' | 'integrity' | 'unavailable';\nconstructor(message: string, code: 'invalid_manifest' | 'not_found' | 'conflict' | 'unsafe_path' | 'integrity' | 'unavailable');\n}"
+      },
+      {
+        "name": "researchGoalEvidence",
+        "kind": "function",
+        "signature": "export declare function researchGoalEvidence(run: ResearchRun): GoalEvidence;"
+      },
+      {
+        "name": "ResearchInput",
+        "kind": "interface",
+        "signature": "export interface ResearchInput {\npath: string;\n}"
+      },
+      {
+        "name": "ResearchJson",
+        "kind": "type",
+        "signature": "export type ResearchJson = null | boolean | number | string | ResearchJson[] | {\n[key: string]: ResearchJson;\n};"
+      },
+      {
+        "name": "ResearchManifest",
+        "kind": "interface",
+        "signature": "export interface ResearchManifest {\nversion: 1;\nid: string;\ncreatedAt: string;\ntitle: string;\nobjective: string;\ncode: string;\ncodeDigest: string;\ncodeCommit: string | null;\ncodeDirty: boolean | null;\ninputs: ResearchPinnedFile[];\nparameters: Record<string, ResearchJson>;\nseeds: number[];\nacceptanceCriteria: ResearchAcceptanceCriterion[];\nbudget: ResearchBudget;\nenvironment: ResearchEnvironment;\ndigest: string;\n}"
+      },
+      {
+        "name": "ResearchManifestInput",
+        "kind": "interface",
+        "signature": "export interface ResearchManifestInput {\ntitle: string;\nobjective: string;\ncode: string;\ninputs?: ResearchInput[];\nparameters?: Record<string, ResearchJson>;\nseeds?: number[];\nacceptanceCriteria: ResearchAcceptanceCriterion[];\nbudget?: Partial<ResearchBudget>;\nenvironment?: {\nlockFiles?: string[];\npythonVersion?: string;\n};\n}"
+      },
+      {
+        "name": "ResearchPinnedFile",
+        "kind": "interface",
+        "signature": "export interface ResearchPinnedFile {\npath: string;\nsha256: string;\nsizeBytes: number;\n}"
+      },
+      {
+        "name": "ResearchPluginDescriptor",
+        "kind": "interface",
+        "signature": "export interface ResearchPluginDescriptor {\nid: string;\nversion: string;\nadapter: 'builtin' | 'explicit-tool';\n}"
+      },
+      {
+        "name": "ResearchPluginEvidence",
+        "kind": "type",
+        "signature": "export type ResearchPluginEvidence = z.infer<typeof researchPluginEvidenceSchema>;"
+      },
+      {
+        "name": "researchPluginEvidenceSchema",
+        "kind": "value",
+        "signature": "researchPluginEvidenceSchema: z.ZodObject<{\nschemaVersion: z.ZodLiteral<1>;\nkind: z.ZodLiteral<\"tool-output\">;\ntrust: z.ZodLiteral<\"untrusted\">;\nplugin: z.ZodObject<{\nid: z.ZodString;\nversion: z.ZodString;\nadapter: z.ZodEnum<{\nbuiltin: \"builtin\";\n\"explicit-tool\": \"explicit-tool\";\n}>;\n}, z.core.$strict>;\ntoolName: z.ZodString;\nrunId: z.ZodString;\ntoolUseId: z.ZodOptional<z.ZodString>;\ninputSha256: z.ZodString;\noutputSha256: z.ZodString;\n}, z.core.$strict>"
+      },
+      {
+        "name": "ResearchPluginResult",
+        "kind": "interface",
+        "signature": "export interface ResearchPluginResult<Output = JsonValue> {\nvalue: Output;\nevidence: ResearchPluginEvidence;\n}"
+      },
+      {
+        "name": "ResearchRun",
+        "kind": "interface",
+        "signature": "export interface ResearchRun {\nversion: 1;\nid: string;\nmanifestId: string;\nmanifestDigest: string;\nrerunOf: string | null;\nidempotencyKey: string | null;\nsessionId: string;\nownerPid: number;\nownerStartedAt: number;\nstatus: ResearchRunStatus;\ncreatedAt: string;\nstartedAt: string | null;\ncompletedAt: string | null;\nreason: string | null;\nexecution: {\nstatus: 'not_started' | 'running' | 'completed' | 'failed' | 'interrupted';\nexecutionId: string | null;\ndurationMs: number;\nstdout: string;\nstderr: string;\nerror: string | null;\nfailureKind: CodeRunFailureKind | null;\n};\nvalidation: {\nstatus: 'not_run' | 'passed' | 'failed';\ncriteria: ResearchCriterionResult[];\nsummary: string;\n};\nartifacts: ResearchArtifact[];\nruntimeDigest: string | null;\nisolation: 'trusted-only' | 'strong' | 'unavailable';\n}"
+      },
+      {
+        "name": "ResearchRunStatus",
+        "kind": "type",
+        "signature": "export type ResearchRunStatus = 'queued' | 'running' | 'validating' | 'passed' | 'failed' | 'blocked' | 'cancelled' | 'timed_out';"
+      },
+      {
+        "name": "ResearchRuntimeFingerprint",
+        "kind": "interface",
+        "signature": "export interface ResearchRuntimeFingerprint {\npythonVersion: string;\nimplementation: string;\nplatform: string;\npackages: [\nstring,\nstring\n][];\n}"
+      },
+      {
+        "name": "ResearchService",
+        "kind": "class",
+        "signature": "export declare class ResearchService {\nprivate readonly options;\nprivate readonly store;\nprivate initialization?;\nprivate closed;\nprivate closing;\nprivate readonly preparations;\nprivate mutationTail;\nprivate executionTail;\nprivate readonly active;\nconstructor(workspaceRoot: string, options?: ResearchServiceOptions);\ninitialize(): Promise<void>;\nprivate initializeOnce;\nlistManifests(): Promise<ResearchManifest[]>;\ngetManifest(id: string): Promise<ResearchManifest | null>;\nlistRuns(manifestId?: string): Promise<ResearchRun[]>;\ngetRun(id: string): Promise<ResearchRun | null>;\ncreateManifest(input: ResearchManifestInput): Promise<ResearchManifest>;\nprivate createManifestInternal;\nstartRun(manifestId: string, options?: ResearchStartOptions): Promise<ResearchRun>;\nrerun(runId: string, options?: ResearchStartOptions): Promise<ResearchRun>;\nprivate admit;\ncancel(runId: string): Promise<ResearchRun>;\nwaitForRun(runId: string): Promise<ResearchRun>;\nclose(): Promise<void>;\nprivate execute;\nprivate snapshotFiles;\nprivate defaultLockFiles;\nprivate verifyLockFiles;\nprivate probe;\nprivate experimentCode;\nprivate context;\nprivate recordExecution;\nprivate gitProvenance;\nprivate notify;\nprivate mutate;\n}"
+      },
+      {
+        "name": "ResearchServiceOptions",
+        "kind": "interface",
+        "signature": "export interface ResearchServiceOptions {\ncodeAct?: Pick<CodeActService, 'settings' | 'execute' | 'selfCheck' | 'stop'>;\nonRunSettled?: (run: ResearchRun, manifest: ResearchManifest, evidence: GoalEvidence) => void | Promise<void>;\n}"
+      },
+      {
+        "name": "ResearchStartOptions",
+        "kind": "interface",
+        "signature": "export interface ResearchStartOptions {\nidempotencyKey?: string;\n}"
+      },
+      {
         "name": "RESERVED_BINDING_GLOBALS",
         "kind": "value",
         "signature": "RESERVED_BINDING_GLOBALS: ReadonlySet<string>"
@@ -18499,6 +18769,11 @@
         "signature": "export interface SettleGoalTurnInput {\nreceipt: GoalTurnReceipt;\nevidence: GoalEvidence[];\nobservedRefs?: string[];\ncompletionAccepted?: boolean;\nreplan?: {\ntrigger: string;\nfrontierFingerprint: string;\ndeltaRecorded: boolean;\n};\n}"
       },
       {
+        "name": "settleResearchGoalRun",
+        "kind": "function",
+        "signature": "export declare function settleResearchGoalRun(service: GoalService, run: ResearchRun, expectedGoalCreatedAt: string): Promise<void>;"
+      },
+      {
         "name": "SharedRunEventSurfaceProjector",
         "kind": "class",
         "signature": "export declare class SharedRunEventSurfaceProjector {\nreadonly semanticProjector: RunEventSemanticProjector;\nconstructor(options?: RunEventSemanticProjectorOptions);\nproject(event: RunEvent): SharedSurfaceProjection;\nreset(): void;\n}"
@@ -19282,6 +19557,11 @@
         "name": "validateIceServers",
         "kind": "function",
         "signature": "export declare function validateIceServers(servers: RTCIceServer[], requireRelay: boolean): void;"
+      },
+      {
+        "name": "validateResearchArtifacts",
+        "kind": "function",
+        "signature": "export declare function validateResearchArtifacts(manifest: ResearchManifest, run: Pick<ResearchRun, 'id'>, artifactsRoot: string): Promise<{\nartifacts: ResearchArtifact[];\ncriteria: ResearchCriterionResult[];\npassed: boolean;\n}>;"
       },
       {
         "name": "validateTeamGraph",

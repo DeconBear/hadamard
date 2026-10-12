@@ -546,6 +546,41 @@ export class GoalService {
     return this.requestCompletion(evidence);
   }
 
+  /**
+   * Append trusted asynchronous validation evidence without applying any pending
+   * work-item, completion, or replan requests. The caller pins createdAt at
+   * launch so a replacement Goal cannot receive an old experiment's evidence.
+   */
+  async recordValidationEvidence(input: {
+    expectedGoalCreatedAt: string;
+    receipt: GoalTurnReceipt;
+    evidence: GoalEvidence[];
+  }): Promise<GoalMutationResult> {
+    const at = input.receipt.at || this.now();
+    return updateGoal<GoalMutationResult>(this.port, at, current => {
+      if (!current) return { next: undefined, result: { ok: false, reason: 'not_found', message: 'No goal for validation evidence.' } as const };
+      if (current.createdAt !== input.expectedGoalCreatedAt || current.status !== 'active') {
+        return { next: current, result: { ok: false, reason: 'invalid_transition', message: 'The associated Goal changed or is no longer active.' } as const };
+      }
+      if (current.turnReceipts.some(item => item.id === input.receipt.id)) return { next: current, result: { ok: true, goal: current } as const };
+      const verified = input.evidence.filter(item => item.verified === true);
+      const validated = input.receipt.validation.status === 'passed' && verified.length > 0;
+      const next: Goal = {
+        ...current,
+        evidence: [...current.evidence, ...verified].slice(-EVIDENCE_RETAIN),
+        turnReceipts: [...current.turnReceipts, input.receipt].slice(-TURN_RECEIPT_RETAIN),
+        delivery: {
+          ...current.delivery,
+          validatedTurns: current.delivery.validatedTurns + (validated ? 1 : 0),
+          evidenceItems: current.delivery.evidenceItems + verified.length,
+        },
+        updatedAt: at,
+        revision: current.revision + 1,
+      };
+      return { next, result: { ok: true, goal: next } as const };
+    });
+  }
+
   /** Settle one completed runtime turn and atomically account its usage. */
   async settleTurn(input: SettleGoalTurnInput): Promise<GoalMutationResult> {
     const at = input.receipt.at || this.now();

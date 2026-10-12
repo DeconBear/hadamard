@@ -194,6 +194,7 @@
     "dist:gui": "npm run prepare:xterm && npm run build && electron-builder --publish never",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:research:gui": "npm run build && node scripts/verify-research-gui.mjs",
     "test:gui:e2e": "npm run build && node scripts/verify-gui-runtime-model-chat.mjs",
     "test:gui:external-cli-e2e": "npm run build && node scripts/verify-gui-external-cli-runtime.mjs",
     "test:tui:e2e": "npm run build && node scripts/verify-tui-e2e.mjs",
