@@ -108,6 +108,10 @@ class JsonLineProcessKernel implements CodeActKernel {
     this.exitPromise = new Promise<void>(resolve => {
       child.once('exit', () => resolve());
     });
+    // stdin can emit EPIPE asynchronously after write callbacks and even after
+    // process exit (notably during Windows timeout/shutdown). Keep a listener
+    // for the stream lifetime; child-process error events do not cover it.
+    child.stdin.on('error', error => this.onStdinFailure(error));
     child.stdout.on('data', chunk => this.onStdout(chunk as Buffer));
     child.stderr.on('data', chunk => {
       this.stderrDiagnostic = appendLimited(this.stderrDiagnostic, String(chunk), 16_000);
@@ -415,9 +419,27 @@ class JsonLineProcessKernel implements CodeActKernel {
     this.writeLine(encodeKernelMessage(message));
   }
 
+  private onStdinFailure(error: Error): void {
+    // Settlement is idempotent: a live cell fails, while an already settled
+    // timeout/interrupt/result retains its original classification.
+    this.onProcessFailure(error);
+    if (this.child.exitCode === null && !this.child.killed) this.child.kill();
+  }
+
   private writeLine(line: string): void {
-    if (this.child.stdin.destroyed) return;
-    this.child.stdin.write(line);
+    if (this.child.stdin.destroyed || this.child.stdin.writableEnded) {
+      if (!this.stopped) this.onStdinFailure(new HadamardSdkError(
+        'CodeAct kernel input stream is closed.', 'CODEACT_KERNEL_STDIN_CLOSED',
+      ));
+      return;
+    }
+    try {
+      this.child.stdin.write(line, error => {
+        if (error) this.onStdinFailure(error);
+      });
+    } catch (error) {
+      this.onStdinFailure(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 }
 
