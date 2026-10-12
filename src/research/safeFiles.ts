@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, realpath, rename, unlink, link } from 'node:fs/promises';
 import path from 'node:path';
 import { ResearchError } from './types.js';
+import { isRetriableFsError } from '../storage/atomicJsonWrite.js';
 
 export function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
@@ -50,7 +51,9 @@ export async function safeRead(root: string, relative: string, limit: number): P
   const handle = await open(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
     const stat = await handle.stat();
-    if (!stat.isFile() || stat.nlink !== 1) throw new ResearchError(`Only regular, non-linked files are accepted: ${relative}`, 'unsafe_path');
+    // Atomic replacement may unlink the already-open old inode (nlink=0).
+    // Its descriptor is still a safe immutable snapshot; multiple links are not.
+    if (!stat.isFile() || stat.nlink > 1) throw new ResearchError(`Only regular, non-linked files are accepted: ${relative}`, 'unsafe_path');
     if (stat.size > limit) throw new ResearchError(`File exceeds ${limit} byte budget: ${relative}`, 'invalid_manifest');
     // A bounded read, including files which grow after fstat. Never read an unbounded stream.
     const output = Buffer.alloc(Math.min(stat.size + 1, limit + 1));
@@ -77,7 +80,18 @@ export async function atomicWrite(root: string, relative: string, bytes: Buffer 
     // Recheck directory ancestry immediately before publishing the record.
     await safePath(root, relative);
     if (exclusive) { await link(temp, target); await unlink(temp); }
-    else await rename(temp, target);
+    else {
+      // Windows readers and antivirus scanners can briefly deny replacement.
+      // Keep the same complete temp file and recheck containment on every retry.
+      for (let attempt = 0; ; attempt += 1) {
+        await safePath(root, relative);
+        try { await rename(temp, target); break; }
+        catch (error) {
+          if (attempt >= 7 || !isRetriableFsError(error)) throw error;
+          await new Promise(resolve => setTimeout(resolve, 5 * (attempt + 1)));
+        }
+      }
+    }
   } finally { await unlink(temp).catch(() => undefined); }
 }
 export function isCode(error: unknown, code: string): boolean {

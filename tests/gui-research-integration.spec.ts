@@ -22,14 +22,20 @@ it('executes the offline manifest through the authenticated GUI API, then reruns
     return { status: response.status, body: await response.json() as any };
   };
   const wait = async (id: string): Promise<ResearchRun> => {
-    const deadline = Date.now() + 15000;
+    const startedAt = Date.now();
+    const deadline = startedAt + 15000;
+    let lastRun: ResearchRun | undefined;
     while (Date.now() < deadline) {
       const result = await request(`api/research/run?workspace=${encodeURIComponent(workDir)}&id=${id}`);
-      expect(result.status).toBe(200);
+      expect(result.status, JSON.stringify(result.body)).toBe(200);
+      lastRun = result.body.run;
       if (!['queued', 'running', 'validating'].includes(result.body.run.status)) return result.body.run;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    throw new Error('Research run did not settle within 15 seconds');
+    throw new Error(`Research run did not settle within 15 seconds: ${JSON.stringify({
+      elapsedMs: Date.now() - startedAt, id, status: lastRun?.status, reason: lastRun?.reason,
+      execution: lastRun?.execution, startedAt: lastRun?.startedAt, completedAt: lastRun?.completedAt,
+    })}`);
   };
   try {
     expect((await fetch(`${server.url}api/research?workspace=${encodeURIComponent(workDir)}`)).status).toBe(403);

@@ -46,6 +46,8 @@ export class ResearchService {
   private readonly preparations = new Map<Promise<ResearchManifest>, AbortController>();
   private mutationTail: Promise<unknown> = Promise.resolve();
   private executionTail: Promise<unknown> = Promise.resolve();
+  /** Surface failed terminal writes without pretending the on-disk pending record is still executing. */
+  private readonly unpersistedRuns = new Map<string, ResearchRun>();
   private readonly active = new Map<string, { controller: AbortController; promise: Promise<void>; started: boolean }>();
 
   constructor(workspaceRoot: string, private readonly options: ResearchServiceOptions = {}) {
@@ -72,10 +74,14 @@ export class ResearchService {
   async getManifest(id: string): Promise<ResearchManifest | null> { await this.initialize(); return this.store.getManifest(id); }
   async listRuns(manifestId?: string): Promise<ResearchRun[]> {
     await this.initialize();
-    const runs = await this.store.listRuns();
+    const runs = (await this.store.listRuns()).map(run => structuredClone(this.unpersistedRuns.get(run.id) ?? run));
     return runs.filter(run => !manifestId || run.manifestId === manifestId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
-  async getRun(id: string): Promise<ResearchRun | null> { await this.initialize(); return this.store.getRun(id); }
+  async getRun(id: string): Promise<ResearchRun | null> {
+    await this.initialize();
+    const unpersisted = this.unpersistedRuns.get(id);
+    return unpersisted ? structuredClone(unpersisted) : this.store.getRun(id);
+  }
 
   async createManifest(input: ResearchManifestInput): Promise<ResearchManifest> {
     await this.initialize();
@@ -190,7 +196,7 @@ export class ResearchService {
   }
   async cancel(runId: string): Promise<ResearchRun> {
     await this.initialize();
-    const run = await this.store.getRun(runId);
+    const run = await this.getRun(runId);
     if (!run) throw new ResearchError('Run not found.', 'not_found');
     if (RESEARCH_TERMINAL_STATES.has(run.status)) return run;
     const active = this.active.get(runId);
@@ -203,12 +209,12 @@ export class ResearchService {
     }
     await this.options.codeAct?.stop(run.sessionId);
     await active.promise;
-    return (await this.store.getRun(runId))!;
+    return (await this.getRun(runId))!;
   }
   async waitForRun(runId: string): Promise<ResearchRun> {
     await this.initialize();
     await this.active.get(runId)?.promise;
-    const run = await this.store.getRun(runId);
+    const run = await this.getRun(runId);
     if (!run) throw new ResearchError('Run not found.', 'not_found');
     return run;
   }
@@ -307,7 +313,15 @@ export class ResearchService {
       try { await codeAct?.stop(run.sessionId); }
       catch (error) { run.status = 'blocked'; run.reason = `Kernel cleanup failed: ${error instanceof Error ? error.message : String(error)}`; }
       run.completedAt = new Date().toISOString();
-      await this.store.saveRun(run);
+      try { await this.store.saveRun(run); }
+      catch (error) {
+        // The work has stopped even if durable storage is unavailable. Do not
+        // strand GUI polling on the last queued/running/validating disk record.
+        const outcome = `${run.status}${run.reason ? `: ${run.reason}` : ''}`;
+        run.status = 'blocked';
+        run.reason = `Final run record could not be persisted: ${error instanceof Error ? error.message : String(error)}. Last runtime outcome: ${outcome}. This blocked status is in memory only; reopening recovers the old run as interrupted.`;
+        this.unpersistedRuns.set(run.id, structuredClone(run));
+      }
       await this.notify(run, manifest);
     }
   }
