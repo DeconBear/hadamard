@@ -17,7 +17,12 @@ test('packed npm bundle loads compiled code outside repository with only host de
   const root = await mkdtemp(path.join(tmpdir(), 'dsh-hadamard-packed-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const packed = JSON.parse(execFileSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', root], { cwd: packageRoot, encoding: 'utf8' }))[0];
+  // Windows cannot spawn npm.cmd without a shell (Node blocks .cmd/.bat since the CVE-2024-27980 fix).
+  const packed = JSON.parse(execFileSync(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', root], {
+    cwd: packageRoot,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  }))[0];
   const files = packed.files.map(file => file.path).sort();
   assert.ok(files.includes('dist/index.js'));
   assert.ok(files.includes('dist/index.d.ts'));
@@ -30,7 +35,8 @@ test('packed npm bundle loads compiled code outside repository with only host de
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml');
   const bundle = loadOptionalPatches('dsh', path.join(root, 'package', manifest.dsh.bundle.patch));
   const readme = await readFile(path.join(root, 'package/README.md'), 'utf8');
-  const example = readme.match(/```yaml\n([\s\S]+?)```/)[1]
+  // Tolerate a CRLF checkout: the README is stored LF but Windows checkouts materialize CRLF.
+  const example = readme.match(/```yaml\r?\n([\s\S]+?)```/)[1]
     .replace('/absolute/path/to/workspace', JSON.stringify(path.join(root, 'workspace')))
     .replace('/absolute/path/to/user-home', JSON.stringify(path.join(root, 'home')));
   const profileFile = path.join(root, 'profile.patch.yml');
