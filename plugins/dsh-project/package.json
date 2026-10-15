@@ -1,0 +1,72 @@
+{
+  "name": "dsh-hadamard-project",
+  "version": "0.1.0",
+  "description": "Read-only Hadamard project and issue tools for DeepSeek Harness",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DeconBear/hadamard.git",
+    "directory": "plugins/dsh-project"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "hadamard",
+    "project",
+    "issues"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.5-alpha.2",
+    "@deepseek-ai/dsh-commands": "0.2.1-alpha.3",
+    "@deepseek-ai/dsh-tools": "0.2.1-alpha.3"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-commands": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.5-alpha.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5-alpha.2",
+    "@deepseek-ai/dsh-app-boot": "0.2.1-alpha.3",
+    "@deepseek-ai/dsh-commands": "0.2.1-alpha.3",
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.3",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-alpha.3",
+    "@deepseek-ai/dsh-tools": "0.2.1-alpha.3",
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "typescript": "5.8.3"
+  }
+}
