@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { startHadamardGuiServer } from '../src/gui/hadamardGui.js';
+import { createProjectReader } from '../src/project/projectReader.js';
 import { transitionProjectIssue } from '../src/issues/issueStore.js';
 
 const tempDirs: string[] = [];
@@ -83,13 +84,21 @@ describe('GUI issues API', () => {
       }>(server, 'api/issues', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title: 'Polish project detail UI', status: 'backlog', priority: 'high', labels: ['ui'] }),
+        body: JSON.stringify({ title: 'Polish project detail UI', status: 'backlog', priority: 'high', labels: ['ui'], acceptanceCriteria: ['Preserve existing project workflow'] }),
       });
       expect(created.status).toBe(200);
       expect(created.body.issue.number).toBe(1);
       expect(created.body.issue.status).toBe('backlog');
       expect(created.body.issue.priority).toBe('high');
       expect(created.body.issues).toHaveLength(1);
+      const sharedReader = createProjectReader({ workDir, homeDir });
+      const guiIssues = await api<{ issues: unknown[] }>(server, 'api/issues');
+      expect(await sharedReader.listIssues()).toEqual(guiIssues.body.issues);
+      expect(await sharedReader.getIssue(created.body.issue.id)).toMatchObject({
+        id: created.body.issue.id,
+        status: 'backlog',
+        acceptanceCriteria: ['Preserve existing project workflow'],
+      });
 
       const ready = await api<{
         issue: { id: string; status: string; comments: Array<{ kind: string; toStatus?: string }> };
