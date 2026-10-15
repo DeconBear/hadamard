@@ -1,0 +1,45 @@
+name: DSH project plugin
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/dsh-project/**'
+      - 'src/**'
+      - '.github/workflows/dsh-project-plugin.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/dsh-project/**'
+      - 'src/**'
+      - '.github/workflows/dsh-project-plugin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: DSH contract / Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.19.0', '24']
+    defaults:
+      run:
+        working-directory: plugins/dsh-project
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: plugins/dsh-project/package-lock.json
+      - name: Install pinned plugin dependencies
+        run: npm ci
+      - name: Typecheck adapter and shared core
+        run: npm run typecheck
+      - name: Build and test official DSH registration contract
+        run: npm test
+      - name: Verify distributable package contents
+        run: npm pack --dry-run

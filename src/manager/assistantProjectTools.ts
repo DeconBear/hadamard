@@ -2,6 +2,7 @@ import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 
+import { createProjectReader, countProjectIssues } from '../project/projectReader.js';
 import { getHadamardProjectSessionDirectory } from '../config/projectSessionDirectory.js';
 import { isProjectStatus, readProjectMeta, writeProjectMeta } from '../gui/projectMeta.js';
 import { readWorkspaceNote, writeWorkspaceNote } from '../gui/workspaceNote.js';
@@ -98,12 +99,7 @@ export async function listAssistantProjectBriefs(
     project.status = meta.status;
     const storage: IssueStorageMode = isIssueStorageMode(meta.issueStorage) ? meta.issueStorage : 'home';
     const issues = await listProjectIssues(project.path, homeDir, storage).catch(() => []);
-    project.issueCounts = {
-      total: issues.length,
-      open: issues.filter(issue => issue.status !== 'done' && issue.status !== 'cancelled').length,
-      review: issues.filter(issue => issue.status === 'in_review').length,
-      closed: issues.filter(issue => issue.status === 'done' || issue.status === 'cancelled').length,
-    };
+    project.issueCounts = countProjectIssues(issues);
   }));
   return rows.sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
@@ -179,12 +175,7 @@ export function createAssistantProjectTools(
         },
         designChars: design?.length ?? 0,
         designPreview: design ? design.slice(0, 1200) : null,
-        issueCounts: {
-          total: issues.length,
-          open: issues.filter(issue => issue.status !== 'done' && issue.status !== 'cancelled').length,
-          review: issues.filter(issue => issue.status === 'in_review').length,
-          closed: issues.filter(issue => issue.status === 'done' || issue.status === 'cancelled').length,
-        },
+        issueCounts: countProjectIssues(issues),
         sessionDirectory: getHadamardProjectSessionDirectory(projectPath, context.homeDir),
       };
     },
@@ -216,9 +207,7 @@ export function createAssistantProjectTools(
     },
     async input => {
       const projectPath = await assertKnown(input.projectPath);
-      const meta = await readProjectMeta(projectPath, context.homeDir);
-      const storage: IssueStorageMode = isIssueStorageMode(meta.issueStorage) ? meta.issueStorage : 'home';
-      const rows = await listProjectIssues(projectPath, context.homeDir, storage);
+      const rows = await createProjectReader({ workDir: projectPath, homeDir: context.homeDir }).listIssues();
       return {
         projectPath,
         issues: rows.map(issue => ({

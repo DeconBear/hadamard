@@ -10,6 +10,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { countProjectIssues, readProjectIssueSnapshot } from '../project/projectReader.js';
 import { captureDesktopRegionScreenshot, captureDesktopScreenshot, ScreenshotCancelledError } from '../computer/hadamardComputerUse.js';
 import { tool } from '../runtime/tools.js';
 import { TerminalManager, ptyAvailable, isWindowsTerminalShellPreference, type WindowsTerminalShellPreference } from './terminalManager.js';
@@ -1510,12 +1511,7 @@ async function listKnownProjects(homeDir: string, currentWorkDir: string) {
       homeDir,
       isIssueStorageMode(meta.issueStorage) ? meta.issueStorage : 'home',
     ).catch(() => []);
-    project.issueCounts = {
-      total: issues.length,
-      open: issues.filter(issue => issue.status !== 'done' && issue.status !== 'cancelled').length,
-      review: issues.filter(issue => issue.status === 'in_review').length,
-      closed: issues.filter(issue => issue.status === 'done' || issue.status === 'cancelled').length,
-    };
+    project.issueCounts = countProjectIssues(issues);
   }));
   return rows.sort((left, right) => {
     if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
@@ -7737,8 +7733,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   };
 
   const issuePayload = async (targetPath: string, homeDir: string): Promise<Record<string, unknown>> => {
-    const storage = await issueStorageFor(targetPath, homeDir);
-    const issues = await listProjectIssues(targetPath, homeDir, storage);
+    const { storage, issues } = await readProjectIssueSnapshot({ workDir: targetPath, homeDir });
     return {
       ok: true,
       path: targetPath,
