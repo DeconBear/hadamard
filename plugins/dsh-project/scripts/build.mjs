@@ -24,3 +24,17 @@ await build({
   legalComments: 'none',
 });
 await copyFile(new URL('../.build/types/plugins/dsh-project/src/index.d.ts', import.meta.url), new URL('../dist/index.d.ts', import.meta.url));
+// DSH's browser loader shares React/Cordis; a lazy factory preserves host identities.
+await build({
+  absWorkingDir: root,
+  entryPoints: ['src/client/index.tsx'],
+  outfile: 'dist/client.js',
+  bundle: true,
+  format: 'cjs',
+  platform: 'browser',
+  target: 'es2022',
+  external: ['react', 'react/jsx-runtime'],
+  loader: { '.css': 'text' },
+  banner: { js: 'window.__ModuleLoader__.load({ id: "dsh-hadamard-project", factory: (require) => { var module = { exports: {} }; var exports = module.exports;' },
+  footer: { js: 'return module.exports; } });' },
+});

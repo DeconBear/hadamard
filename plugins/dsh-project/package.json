@@ -1,7 +1,7 @@
 {
   "name": "dsh-hadamard-project",
-  "version": "0.1.0",
-  "description": "Read-only Hadamard project and issue tools for DeepSeek Harness",
+  "version": "0.3.0",
+  "description": "Unified DSH project home with task board, Issues and documents",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -22,6 +22,7 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./client": "./dist/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -32,8 +33,20 @@
     "LICENSE"
   ],
   "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "engines": {
+      "dsh": ">=0.2.1-rc.2"
     }
   },
   "engines": {
@@ -46,27 +59,32 @@
     "prepack": "npm run build"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.5-alpha.2",
-    "@deepseek-ai/dsh-commands": "0.2.1-alpha.3",
-    "@deepseek-ai/dsh-tools": "0.2.1-alpha.3"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-commands": {
-      "optional": true
-    }
+    "@deepseek-ai/cordis": "4.0.5"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "3.18.5-alpha.2"
+    "@deepseek-ai/schemastery": "3.18.5"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.5-alpha.2",
-    "@deepseek-ai/dsh-app-boot": "0.2.1-alpha.3",
-    "@deepseek-ai/dsh-commands": "0.2.1-alpha.3",
-    "@deepseek-ai/dsh-llm": "0.2.1-alpha.3",
-    "@deepseek-ai/dsh-system-prompt": "0.2.1-alpha.3",
-    "@deepseek-ai/dsh-tools": "0.2.1-alpha.3",
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-app-boot": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-layout": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-workspace": "0.2.1-rc.2",
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
     "@types/node": "22.20.5",
+    "@types/react": "18.3.28",
     "esbuild": "0.28.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-markdown": "9.1.0",
     "typescript": "5.8.3"
   }
 }
