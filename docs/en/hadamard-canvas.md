@@ -68,7 +68,7 @@ The workspace stores documents, state and exports:
 
 ## Whiteboard workspace
 
-Interactive canvas controls: **mouse wheel zooms at the pointer**, **middle-drag pans**, Space/Hand pans, and whiteboard pages keep Excalidraw's native wheel/pan behavior.
+Interactive canvas controls: **mouse wheel zooms at the pointer**, **middle-drag pans**, Space/Hand pans. Whiteboard pages use the same wheel-zoom and middle-drag contract, applied to the Excalidraw viewport.
 
 Whiteboard pages are full-workspace surfaces: the Excalidraw canvas fills the entire canvas viewport, while the hcanvas tool rail and page zoom controls are hidden. The full Excalidraw toolbar is available inside this page.
 

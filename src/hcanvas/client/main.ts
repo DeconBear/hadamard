@@ -484,6 +484,25 @@ function bindStaticActions(): void {
     const factor = Math.exp(-event.deltaY * (event.ctrlKey || event.metaKey ? 0.002 : 0.0016));
     setZoomAt(state.zoom * factor, event.clientX, event.clientY);
   }, { passive: false });
+  // Whiteboard pages have their own Excalidraw gesture handling; intercept in capture
+  // phase so hcanvas can provide the same wheel-zoom / middle-drag-pan contract.
+  viewport.addEventListener('wheel', event => {
+    if (activePage()?.mode !== 'whiteboard') return;
+    if (!(event.target as Element).closest('.whiteboard-host')) return;
+    if (!whiteboardApi()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const factor = Math.exp(-event.deltaY * (event.ctrlKey || event.metaKey ? 0.002 : 0.0016));
+    zoomWhiteboardAt(event.clientX, event.clientY, factor);
+  }, { capture: true, passive: false });
+  viewport.addEventListener('pointerdown', event => {
+    if (event.button !== 1 || activePage()?.mode !== 'whiteboard') return;
+    if (!(event.target as Element).closest('.whiteboard-host')) return;
+    if (!whiteboardApi()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    beginWhiteboardPan(event);
+  }, { capture: true });
   window.addEventListener('resize', () => { resizeWhiteboardSurface(); });
 }
 
@@ -713,6 +732,63 @@ function renderDocs(): void {
   }
 }
 
+function whiteboardApi(): { getAppState: () => Record<string, unknown>; updateScene: (scene: Record<string, unknown>) => void } | null {
+  try {
+    const handle = state.whiteboardHandle;
+    if (!handle) return null;
+    const api = handle.getApi() as { getAppState?: () => Record<string, unknown>; updateScene?: (scene: Record<string, unknown>) => void } | undefined;
+    if (!api?.getAppState || !api.updateScene) return null;
+    return { getAppState: api.getAppState, updateScene: api.updateScene };
+  } catch { return null; }
+}
+
+function refreshWhiteboardCursorOverlay(): void {
+  const page = activePage();
+  if (page?.mode === 'whiteboard') requestAnimationFrame(() => positionWhiteboardCursors(page));
+}
+
+function zoomWhiteboardAt(clientX: number, clientY: number, factor: number): void {
+  const api = whiteboardApi();
+  if (!api) return;
+  const app = api.getAppState();
+  const zoom = Number((app.zoom as { value?: number } | undefined)?.value) || 1;
+  const nextZoom = Math.max(0.1, Math.min(3, zoom * factor));
+  if (nextZoom === zoom) return;
+  const offsetLeft = Number(app.offsetLeft) || 0;
+  const offsetTop = Number(app.offsetTop) || 0;
+  const scrollX = Number(app.scrollX) || 0;
+  const scrollY = Number(app.scrollY) || 0;
+  const sceneX = (clientX - offsetLeft) / zoom - scrollX;
+  const sceneY = (clientY - offsetTop) / zoom - scrollY;
+  whiteboardSkipSaveUntil = Date.now() + 250;
+  api.updateScene({ appState: { zoom: { value: nextZoom }, scrollX: (clientX - offsetLeft) / nextZoom - sceneX, scrollY: (clientY - offsetTop) / nextZoom - sceneY } });
+  refreshWhiteboardCursorOverlay();
+}
+
+function beginWhiteboardPan(event: PointerEvent): void {
+  const api = whiteboardApi();
+  if (!api) return;
+  const app = api.getAppState();
+  const zoom = Number((app.zoom as { value?: number } | undefined)?.value) || 1;
+  const start = { x: event.clientX, y: event.clientY, scrollX: Number(app.scrollX) || 0, scrollY: Number(app.scrollY) || 0 };
+  const viewport = el('viewport');
+  viewport.classList.add('panning');
+  try { viewport.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+  const move = (moveEvent: PointerEvent): void => {
+    whiteboardSkipSaveUntil = Date.now() + 250;
+    api.updateScene({ appState: { scrollX: start.scrollX + (moveEvent.clientX - start.x) / zoom, scrollY: start.scrollY + (moveEvent.clientY - start.y) / zoom } });
+    refreshWhiteboardCursorOverlay();
+  };
+  const up = (): void => {
+    viewport.classList.remove('panning');
+    viewport.removeEventListener('pointermove', move);
+    viewport.removeEventListener('pointerup', up);
+    try { viewport.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+  };
+  viewport.addEventListener('pointermove', move);
+  viewport.addEventListener('pointerup', up);
+}
+
 function pageThumbHtml(page: HcPage): string {
   const ratio = Math.min(46 / page.width, 30 / page.height);
   if (page.mode === 'html' && page.html) {
@@ -906,6 +982,7 @@ function selectPage(pageId: string): void {
 }
 
 let stageFrame = 0;
+let whiteboardSkipSaveUntil = 0;
 
 function scheduleStageTransform(): void {
   if (stageFrame) return;
@@ -1106,7 +1183,7 @@ function renderWhiteboardPage(container: HTMLElement, page: HcPage): void {
       theme: 'light',
       onReady: () => { state.whiteboardHydratingUntil = Date.now() + 1500; },
       onChange: (elements: unknown[], appState: Record<string, unknown>, files: Record<string, unknown>) => {
-        if (Date.now() < state.whiteboardHydratingUntil) return;
+        if (Date.now() < state.whiteboardHydratingUntil || Date.now() < whiteboardSkipSaveUntil) return;
         if (whiteboardSaveTimer) clearTimeout(whiteboardSaveTimer);
         whiteboardSaveTimer = setTimeout(() => {
           if (!state.doc || state.activePageId !== pageId) return;
