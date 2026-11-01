@@ -73,7 +73,7 @@ HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
 ## Canvas 页面
 
-块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。Infinite 页可用 **Pen (P)** / **Arrow (A)** 直接绘制原生矢量，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
+块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。Infinite 页可用 **Pen (P)** / **Arrow (A)** / **Eraser (E)** 直接绘制、擦除原生矢量；手绘会平滑成 path，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。**Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** 撤销重做 block 编辑，**Ctrl/Cmd+C/V** 复制粘贴选中 block。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
 
 ## 无限画布与工具栏
 

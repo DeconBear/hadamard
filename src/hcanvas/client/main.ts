@@ -91,7 +91,7 @@ interface UiState {
   presentIndex: number;
   ignoreEventsUntil: number;
   sourceModalOpen: boolean;
-  tool: 'select' | 'hand' | 'pen' | 'arrow';
+  tool: 'select' | 'hand' | 'pen' | 'arrow' | 'eraser';
   showGrid: boolean;
   snap: boolean;
   spaceHeld: boolean;
@@ -339,6 +339,8 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
   state.iframeDoc = null;
   state.iframeElement = null;
   state.fittedPageId = null;
+  undoStack = [];
+  redoStack = [];
   await loadDocs();
   renderAll();
   void syncActive();
@@ -393,6 +395,52 @@ const DEFAULT_VECTOR_STROKE_WIDTH = 2;
 function viewportToWorldPoint(clientX: number, clientY: number): { x: number; y: number } {
   const rect = el('viewport').getBoundingClientRect();
   return { x: (clientX - rect.left - state.panX) / state.zoom, y: (clientY - rect.top - state.panY) / state.zoom };
+}
+
+function blockAtPoint(clientX: number, clientY: number): HcBlock | null {
+  const element = document.elementFromPoint(clientX, clientY) as Element | null;
+  const wrap = element?.closest('.block-wrap[data-block-id]') as HTMLElement | null;
+  const blockId = wrap?.dataset.blockId;
+  if (!blockId) return null;
+  return activePage()?.blocks?.find(block => block.id === blockId) || null;
+}
+
+function beginErase(event: PointerEvent): void {
+  const page = activePage();
+  if (!page || (page.mode !== 'infinite' && page.mode !== 'canvas')) return;
+  const viewport = el('viewport');
+  const erased = new Set<string>();
+  let pending: { x: number; y: number } | null = null;
+  let busy = false;
+  const eraseAt = async (clientX: number, clientY: number): Promise<void> => {
+    if (busy) { pending = { x: clientX, y: clientY }; return; }
+    busy = true;
+    let point: { x: number; y: number } | null = { x: clientX, y: clientY };
+    while (point) {
+      const block = blockAtPoint(point.x, point.y);
+      if (block && !erased.has(block.id)) {
+        erased.add(block.id);
+        state.activeBlockId = state.activeBlockId === block.id ? null : state.activeBlockId;
+        await applyOps([{ op: 'delete_block', pageId: page.id, blockId: block.id } as HcOp], { refreshArtboard: true });
+      }
+      point = pending;
+      pending = null;
+    }
+    busy = false;
+  };
+  viewport.classList.add('erasing');
+  try { viewport.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+  const move = (moveEvent: PointerEvent): void => { if (moveEvent.buttons & 1) void eraseAt(moveEvent.clientX, moveEvent.clientY); };
+  const up = (): void => {
+    viewport.classList.remove('erasing');
+    viewport.removeEventListener('pointermove', move);
+    viewport.removeEventListener('pointerup', up);
+    try { viewport.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+    renderInspector();
+  };
+  void eraseAt(event.clientX, event.clientY);
+  viewport.addEventListener('pointermove', move);
+  viewport.addEventListener('pointerup', up);
 }
 
 function beginVectorDraw(startEvent: PointerEvent): void {
@@ -517,7 +565,7 @@ function bindStaticActions(): void {
     const tool = (event.target as HTMLElement).closest('[data-tool]') as HTMLElement | null;
     if (tool) {
       const next = tool.dataset.tool;
-      state.tool = next === 'hand' || next === 'pen' || next === 'arrow' ? next : 'select';
+      state.tool = next === 'hand' || next === 'pen' || next === 'arrow' || next === 'eraser' ? next : 'select';
       renderToolbarState();
       return;
     }
@@ -533,6 +581,8 @@ function bindStaticActions(): void {
     if (target.closest('#toggleSnap')) { state.snap = !state.snap; renderToolbarState(); toast(state.snap ? 'Snap: 8px' : 'Snap off', 'info'); return; }
     if (target.closest('#shortcutsBtn')) { openShortcutsModal(); }
   });
+  qs<HTMLButtonElement>('#undoBtn')?.addEventListener('click', () => { void undo(); });
+  qs<HTMLButtonElement>('#redoBtn')?.addEventListener('click', () => { void redo(); });
   el('selectionToolbar').addEventListener('click', event => {
     const button = (event.target as HTMLElement).closest('[data-sel-action]') as HTMLElement | null;
     if (!button) return;
@@ -595,6 +645,15 @@ function bindStaticActions(): void {
     const factor = Math.exp(-event.deltaY * (event.ctrlKey || event.metaKey ? 0.002 : 0.0016));
     setZoomAt(state.zoom * factor, event.clientX, event.clientY);
   }, { passive: false });
+  // Eraser removes blocks under the pointer in a drag gesture.
+  viewport.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || state.tool !== 'eraser') return;
+    if (activePage()?.mode !== 'infinite' || state.editing) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    beginErase(event);
+  }, { capture: true });
   // Native vector tools draw above existing blocks, so capture the pointer before
   // block selection/drag handlers can claim it.
   viewport.addEventListener('pointerdown', event => {
@@ -642,10 +701,12 @@ function renderToolbarState(): void {
   const block = activeBlock();
   document.querySelectorAll<HTMLElement>('[data-tool]').forEach(button => {
     button.classList.toggle('active', button.dataset.tool === state.tool);
-    if (button.dataset.tool === 'pen' || button.dataset.tool === 'arrow') button.classList.toggle('disabled', page?.mode !== 'infinite');
+    if (button.dataset.tool === 'pen' || button.dataset.tool === 'arrow' || button.dataset.tool === 'eraser') button.classList.toggle('disabled', page?.mode !== 'infinite');
   });
+  updateHistoryButtons();
   el('viewport').classList.toggle('tool-pen', state.tool === 'pen' && page?.mode === 'infinite');
   el('viewport').classList.toggle('tool-arrow', state.tool === 'arrow' && page?.mode === 'infinite');
+  el('viewport').classList.toggle('tool-eraser', state.tool === 'eraser' && page?.mode === 'infinite');
   el('toggleGrid').classList.toggle('active', state.showGrid);
   el('toggleSnap').classList.toggle('active', state.snap);
   el('infiniteBadge').classList.toggle('hidden', page?.mode !== 'infinite');
@@ -671,6 +732,20 @@ function editActiveBlock(): void {
   else if (block.type === 'markdown' || block.type === 'code' || block.type === 'text') openSourceEditor({ pageId: page.id, blockId: block.id });
   else if (block.type === 'image') openImageModal(block);
   else renderInspector();
+}
+
+async function pasteBlock(): Promise<void> {
+  const page = activePage();
+  if (!page || !clipboardBlock || page.mode === 'html' || page.mode === 'whiteboard') return;
+  const copy: HcBlock = {
+    ...cloneJson(clipboardBlock),
+    id: genId('block'),
+    x: clipboardBlock.x + 28,
+    y: clipboardBlock.y + 28,
+    z: Math.max(0, ...(page.blocks || []).map(block => block.z)) + 1,
+  };
+  const result = await applyOps([{ op: 'add_block', pageId: page.id, block: copy }], { refreshArtboard: true });
+  if (result) { state.activeBlockId = copy.id; renderArtboard(); renderInspector(); renderToolbarState(); }
 }
 
 async function duplicateActiveBlock(): Promise<void> {
@@ -727,7 +802,11 @@ function openShortcutsModal(): void {
     '<kbd>H</kbd><span>Hand / pan tool</span>' +
     '<kbd>Space / Middle drag</kbd><span>Pan canvas</span>' +
     '<kbd>Wheel</kbd><span>Zoom at pointer</span>' +
+    '<kbd>P / A / E</kbd><span>Pen / Arrow / Eraser (Infinite)</span>' +
     '<kbd>1 – 6</kbd><span>Insert HTML / Text / Markdown / Code / Image / Shape</span>' +
+    '<kbd>Ctrl/Cmd + Z</kbd><span>Undo</span>' +
+    '<kbd>Ctrl/Cmd + Shift + Z / Y</kbd><span>Redo</span>' +
+    '<kbd>Ctrl/Cmd + C / V</kbd><span>Copy / paste selected block</span>' +
     '<kbd>Ctrl/Cmd + D</kbd><span>Duplicate selected block</span>' +
     '<kbd>Delete</kbd><span>Delete selected block</span>' +
     '<kbd>Arrow keys</kbd><span>Nudge selected block (Shift = 10px)</span>' +
@@ -754,6 +833,25 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     return;
   }
   if (typing) return;
+  if ((event.key === 'z' || event.key === 'Z') && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    if (event.shiftKey) void redo(); else void undo();
+    return;
+  }
+  if ((event.key === 'y' || event.key === 'Y') && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    void redo();
+    return;
+  }
+  if ((event.key === 'c' || event.key === 'C') && (event.ctrlKey || event.metaKey)) {
+    const block = activeBlock();
+    if (block) { clipboardBlock = cloneJson(block); event.preventDefault(); toast('Block copied', 'info'); }
+    return;
+  }
+  if ((event.key === 'v' || event.key === 'V') && (event.ctrlKey || event.metaKey)) {
+    if (clipboardBlock) { event.preventDefault(); void pasteBlock(); }
+    return;
+  }
   if ((event.key === 'd' || event.key === 'D') && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
     void duplicateActiveBlock();
@@ -763,6 +861,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   if (event.key === 'h' || event.key === 'H') { state.tool = 'hand'; renderToolbarState(); return; }
   if ((event.key === 'p' || event.key === 'P') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'pen'; renderToolbarState(); } return; }
   if ((event.key === 'a' || event.key === 'A') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'arrow'; renderToolbarState(); } return; }
+  if ((event.key === 'e' || event.key === 'E') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'eraser'; renderToolbarState(); } return; }
   if (event.key === 'g' || event.key === 'G') { state.showGrid = !state.showGrid; renderArtboard(); renderToolbarState(); return; }
   if (event.key === 's' || event.key === 'S') { state.snap = !state.snap; renderToolbarState(); return; }
   if (event.key === '?') { openShortcutsModal(); return; }
@@ -1109,6 +1208,10 @@ function selectPage(pageId: string): void {
 
 let stageFrame = 0;
 let whiteboardSkipSaveUntil = 0;
+let undoStack: HcOp[][] = [];
+let redoStack: HcOp[][] = [];
+let applyingHistory = false;
+let clipboardBlock: HcBlock | null = null;
 
 function scheduleStageTransform(): void {
   if (stageFrame) return;
@@ -1704,8 +1807,157 @@ async function persistBlock(block: HcBlock, patch: Partial<HcBlock>): Promise<vo
   renderInspector();
 }
 
-async function applyOps(ops: HcOp[], options: { refreshArtboard?: boolean; actor?: string; silent?: boolean } = {}): Promise<HcDocument | null> {
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function findPageInDoc(doc: HcDocument, pageId: string): HcPage | undefined {
+  return doc.pages.find(page => page.id === pageId);
+}
+
+function inverseOfOp(doc: HcDocument, op: HcOp): HcOp | null {
+  switch (op.op) {
+    case 'add_page': return { op: 'delete_page', pageId: op.page.id };
+    case 'delete_page': {
+      const index = doc.pages.findIndex(page => page.id === op.pageId);
+      const page = doc.pages[index];
+      return page ? { op: 'add_page', page: cloneJson(page), index } : null;
+    }
+    case 'update_page': {
+      const page = findPageInDoc(doc, op.pageId);
+      if (!page) return null;
+      const previous: Record<string, unknown> = {};
+      for (const key of Object.keys(op.patch)) previous[key] = cloneJson((page as unknown as Record<string, unknown>)[key]);
+      return { op: 'update_page', pageId: op.pageId, patch: previous as Partial<HcPage> };
+    }
+    case 'add_block': return { op: 'delete_block', pageId: op.pageId, blockId: op.block.id };
+    case 'delete_block': {
+      const page = findPageInDoc(doc, op.pageId);
+      const index = page?.blocks?.findIndex(block => block.id === op.blockId) ?? -1;
+      const block = index >= 0 ? page?.blocks?.[index] : undefined;
+      return block ? { op: 'add_block', pageId: op.pageId, block: cloneJson(block), index } : null;
+    }
+    case 'update_block': {
+      const page = findPageInDoc(doc, op.pageId);
+      const block = page?.blocks?.find(item => item.id === op.blockId);
+      if (!block) return null;
+      const previous: Record<string, unknown> = {};
+      for (const key of Object.keys(op.patch)) previous[key] = cloneJson((block as unknown as Record<string, unknown>)[key]);
+      return { op: 'update_block', pageId: op.pageId, blockId: op.blockId, patch: previous as Partial<Omit<HcBlock, 'id' | 'type'>> };
+    }
+    case 'set_page_html': {
+      const page = findPageInDoc(doc, op.pageId);
+      if (!page || page.mode !== 'html') return null;
+      return { op: 'set_page_html', pageId: op.pageId, html: page.html || '' };
+    }
+    case 'set_block_html': {
+      const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
+      return block ? { op: 'set_block_html', pageId: op.pageId, blockId: op.blockId, html: block.html || '' } : null;
+    }
+    case 'set_block_text': {
+      const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
+      return block ? { op: 'set_block_text', pageId: op.pageId, blockId: op.blockId, text: block.text || '' } : null;
+    }
+    case 'set_block_markdown': {
+      const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
+      return block ? { op: 'set_block_markdown', pageId: op.pageId, blockId: op.blockId, markdown: block.markdown || '' } : null;
+    }
+    case 'set_block_code': {
+      const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
+      return block ? { op: 'set_block_code', pageId: op.pageId, blockId: op.blockId, code: block.code || '', language: block.language } : null;
+    }
+    case 'reorder_block': return { op: 'reorder_block', pageId: op.pageId, blockId: op.blockId, direction: op.direction === 'up' ? 'down' : 'up' };
+    case 'reorder_page': return { op: 'reorder_page', pageId: op.pageId, direction: op.direction === 'up' ? 'down' : 'up' };
+    default: return null;
+  }
+}
+
+function applyOpLocally(doc: HcDocument, op: HcOp): void {
+  if (op.op === 'add_page') {
+    const index = op.index === undefined ? doc.pages.length : op.index;
+    doc.pages.splice(index, 0, cloneJson(op.page));
+  } else if (op.op === 'delete_page') {
+    doc.pages = doc.pages.filter(page => page.id !== op.pageId);
+  } else if (op.op === 'update_page') {
+    const page = findPageInDoc(doc, op.pageId);
+    if (page) Object.assign(page, cloneJson(op.patch));
+  } else if (op.op === 'add_block') {
+    const page = findPageInDoc(doc, op.pageId);
+    if (page) { page.blocks = page.blocks || []; const index = op.index === undefined ? page.blocks.length : op.index; page.blocks.splice(index, 0, cloneJson(op.block)); }
+  } else if (op.op === 'delete_block') {
+    const page = findPageInDoc(doc, op.pageId);
+    if (page) page.blocks = (page.blocks || []).filter(block => block.id !== op.blockId);
+  } else if (op.op === 'update_block') {
+    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
+    if (block) Object.assign(block, cloneJson(op.patch));
+  } else if (op.op === 'set_page_html') {
+    const page = findPageInDoc(doc, op.pageId);
+    if (page) { page.mode = 'html'; page.html = op.html; delete page.blocks; delete page.scene; }
+  } else if (op.op === 'set_block_html') {
+    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
+    if (block) block.html = op.html;
+  } else if (op.op === 'set_block_text') {
+    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
+    if (block) block.text = op.text;
+  } else if (op.op === 'set_block_markdown') {
+    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
+    if (block) block.markdown = op.markdown;
+  } else if (op.op === 'set_block_code') {
+    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
+    if (block) { block.code = op.code; if (op.language !== undefined) block.language = op.language; }
+  } else if (op.op === 'reorder_block' || op.op === 'reorder_page') {
+    const targetDoc = doc as unknown as Record<string, unknown>;
+    void targetDoc;
+  }
+}
+
+function invertOps(ops: HcOp[]): HcOp[] | null {
   if (!state.doc) return null;
+  const working = cloneJson(state.doc);
+  const inverses: HcOp[] = [];
+  for (const op of ops) {
+    const inverse = inverseOfOp(working, op);
+    if (!inverse) return null;
+    inverses.unshift(inverse);
+    applyOpLocally(working, op);
+  }
+  return inverses;
+}
+
+function updateHistoryButtons(): void {
+  const undoBtn = qs<HTMLButtonElement>('#undoBtn');
+  const redoBtn = qs<HTMLButtonElement>('#redoBtn');
+  if (undoBtn) undoBtn.disabled = undoStack.length === 0;
+  if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+}
+
+async function undo(): Promise<void> {
+  if (!undoStack.length || !state.doc || applyingHistory) return;
+  const ops = undoStack.pop()!;
+  const redoOps = invertOps(ops);
+  applyingHistory = true;
+  const result = await applyOps(ops, { recordHistory: false, refreshArtboard: true });
+  applyingHistory = false;
+  if (!result) { undoStack.push(ops); updateHistoryButtons(); return; }
+  if (redoOps) redoStack.push(redoOps);
+  updateHistoryButtons();
+}
+
+async function redo(): Promise<void> {
+  if (!redoStack.length || !state.doc || applyingHistory) return;
+  const ops = redoStack.pop()!;
+  const undoOps = invertOps(ops);
+  applyingHistory = true;
+  const result = await applyOps(ops, { recordHistory: false, refreshArtboard: true });
+  applyingHistory = false;
+  if (!result) { redoStack.push(ops); updateHistoryButtons(); return; }
+  if (undoOps) undoStack.push(undoOps);
+  updateHistoryButtons();
+}
+
+async function applyOps(ops: HcOp[], options: { refreshArtboard?: boolean; actor?: string; silent?: boolean; recordHistory?: boolean } = {}): Promise<HcDocument | null> {
+  if (!state.doc) return null;
+  const historyInverse = options.recordHistory !== false && options.silent !== true && !applyingHistory ? invertOps(ops) : null;
   state.ignoreEventsUntil = Date.now() + 1600;
   setSaveStatus('Saving…', 'saving');
   try {
@@ -1714,6 +1966,12 @@ async function applyOps(ops: HcOp[], options: { refreshArtboard?: boolean; actor
       body: JSON.stringify({ ops, baseRevision: state.doc.revision, actor: options.actor || 'human' }),
     });
     state.doc = result.doc;
+    if (historyInverse) {
+      undoStack.push(historyInverse);
+      if (undoStack.length > 60) undoStack.shift();
+      redoStack = [];
+      updateHistoryButtons();
+    }
     patchDocSummary(result.doc);
     setSaveStatus('Saved · rev ' + result.doc.revision, 'saved');
     if (options.silent) {

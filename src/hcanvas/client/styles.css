@@ -503,3 +503,6 @@ button { cursor: pointer; }
 .vector-draw-preview { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 99999; }
 #viewport.tool-pen, #viewport.tool-pen * , #viewport.tool-arrow, #viewport.tool-arrow * { cursor: crosshair !important; }
 #viewport.drawing-vector, #viewport.drawing-vector * { cursor: crosshair !important; }
+#viewport.tool-eraser, #viewport.tool-eraser * { cursor: cell !important; }
+#viewport.erasing, #viewport.erasing * { cursor: cell !important; }
+.tool-btn:disabled { opacity: .35; cursor: not-allowed; }

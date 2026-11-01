@@ -11,16 +11,32 @@ export function vectorStroke(block: HcBlock): { color: string; width: number } {
   };
 }
 
+export function freehandPathData(points: Array<{ x: number; y: number }>): string {
+  if (!points.length) return '';
+  if (points.length === 1) return 'M ' + points[0]!.x + ' ' + points[0]!.y + ' L ' + (points[0]!.x + 0.01) + ' ' + points[0]!.y;
+  if (points.length === 2) return 'M ' + points[0]!.x + ' ' + points[0]!.y + ' L ' + points[1]!.x + ' ' + points[1]!.y;
+  let data = 'M ' + points[0]!.x.toFixed(2) + ' ' + points[0]!.y.toFixed(2);
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const current = points[index]!;
+    const next = points[index + 1]!;
+    const midX = (current.x + next.x) / 2;
+    const midY = (current.y + next.y) / 2;
+    data += ' Q ' + current.x.toFixed(2) + ' ' + current.y.toFixed(2) + ' ' + midX.toFixed(2) + ' ' + midY.toFixed(2);
+  }
+  const last = points[points.length - 1]!;
+  data += ' L ' + last.x.toFixed(2) + ' ' + last.y.toFixed(2);
+  return data;
+}
+
 export function vectorSvgMarkup(block: HcBlock): string {
   const width = Math.max(1, block.w);
   const height = Math.max(1, block.h);
   const points = (block.points && block.points.length ? block.points : [{ x: 0, y: 0 }, { x: width, y: height }])
     .map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }));
   const stroke = vectorStroke(block);
-  const common = 'fill="none" stroke="' + attr(stroke.color) + '" stroke-width="' + stroke.width + '" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"';
+  const common = 'fill="none" stroke="' + attr(stroke.color) + '" stroke-width="' + stroke.width + '" stroke-linecap="round" stroke-linejoin="round"';
   if (block.type === 'freehand') {
-    const coords = points.map(point => point.x.toFixed(2) + ',' + point.y.toFixed(2)).join(' ');
-    return '<svg class="block-vector" viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none" aria-hidden="true"><polyline ' + common + ' points="' + coords + '"/></svg>';
+    return '<svg class="block-vector" viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none" aria-hidden="true"><path ' + common + ' d="' + freehandPathData(points) + '"/></svg>';
   }
   const start = points[0]!;
   const end = points[points.length - 1]!;

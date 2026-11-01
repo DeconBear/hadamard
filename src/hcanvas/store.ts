@@ -575,8 +575,25 @@ export class HcStore {
   async saveDocument(doc: HcDocument): Promise<void> {
     const file = this.docPath(doc.id);
     const temp = file + '.' + randomUUID() + '.tmp';
-    await writeFile(temp, JSON.stringify(doc, null, 2), 'utf8');
-    await rename(temp, file);
+    const payload = JSON.stringify(doc, null, 2);
+    await writeFile(temp, payload, 'utf8');
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        await rename(temp, file);
+        return;
+      } catch (error) {
+        lastError = error;
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') break;
+        await new Promise(resolve => setTimeout(resolve, 20 * (attempt + 1)));
+      }
+    }
+    // Windows can transiently lock the destination (indexer/antivirus). Keep a
+    // best-effort fallback so a single rename race cannot lose a user edit.
+    await writeFile(file, payload, 'utf8');
+    await rm(temp, { force: true });
+    if (lastError && !(await readFile(file, 'utf8').catch(() => '')).includes(doc.id)) throw lastError;
   }
 
   async createDoc(input: { title?: string; preset?: HcPagePreset } = {}): Promise<HcDocument> {
