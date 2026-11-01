@@ -130,6 +130,12 @@ function ensureBlock(block: HcBlock): HcBlock {
   if (block.type === 'code' && typeof block.code !== 'string') block.code = 'const answer = 42;';
   if (block.type === 'image' && !block.src) block.src = '';
   if (block.type === 'shape' && !block.shape) block.shape = 'rect';
+  if (block.type === 'freehand' || block.type === 'arrow') {
+    block.points = Array.isArray(block.points)
+      ? block.points.slice(0, 5000).map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }))
+      : block.type === 'arrow' ? [{ x: 0, y: 0 }, { x: block.w, y: block.h }] : [{ x: 0, y: 0 }];
+    if (block.type === 'arrow') block.arrowhead = block.arrowhead === 'none' ? 'none' : 'arrow';
+  }
   return block;
 }
 

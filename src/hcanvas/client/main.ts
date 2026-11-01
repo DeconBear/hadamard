@@ -3,6 +3,7 @@ import { html as htmlLang } from '@codemirror/lang-html';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { marked } from 'marked';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal } from '../types.js';
+import { vectorSvgMarkup } from '../vector.js';
 
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
@@ -90,7 +91,7 @@ interface UiState {
   presentIndex: number;
   ignoreEventsUntil: number;
   sourceModalOpen: boolean;
-  tool: 'select' | 'hand';
+  tool: 'select' | 'hand' | 'pen' | 'arrow';
   showGrid: boolean;
   snap: boolean;
   spaceHeld: boolean;
@@ -386,6 +387,97 @@ async function initialize(): Promise<void> {
   window.addEventListener('beforeunload', () => { if (state.doc) void syncActive(); });
 }
 
+const DEFAULT_VECTOR_STROKE = '#1f2430';
+const DEFAULT_VECTOR_STROKE_WIDTH = 2;
+
+function viewportToWorldPoint(clientX: number, clientY: number): { x: number; y: number } {
+  const rect = el('viewport').getBoundingClientRect();
+  return { x: (clientX - rect.left - state.panX) / state.zoom, y: (clientY - rect.top - state.panY) / state.zoom };
+}
+
+function beginVectorDraw(startEvent: PointerEvent): void {
+  const page = activePage();
+  if (!page || page.mode !== 'infinite') return;
+  const viewport = el('viewport');
+  const artboard = el('artboard');
+  const tool = state.tool === 'pen' ? 'freehand' : 'arrow';
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'vector-draw-preview');
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '100%');
+  const vector = document.createElementNS('http://www.w3.org/2000/svg', tool === 'freehand' ? 'polyline' : 'line');
+  const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  vector.setAttribute('fill', 'none');
+  vector.setAttribute('stroke', DEFAULT_VECTOR_STROKE);
+  vector.setAttribute('stroke-width', String(DEFAULT_VECTOR_STROKE_WIDTH));
+  vector.setAttribute('stroke-linecap', 'round');
+  vector.setAttribute('stroke-linejoin', 'round');
+  head.setAttribute('fill', DEFAULT_VECTOR_STROKE);
+  svg.appendChild(vector);
+  if (tool === 'arrow') svg.appendChild(head);
+  artboard.appendChild(svg);
+  const points: Array<{ x: number; y: number }> = [viewportToWorldPoint(startEvent.clientX, startEvent.clientY)];
+  const paint = (): void => {
+    if (tool === 'freehand') {
+      vector.setAttribute('points', points.map(point => point.x + ',' + point.y).join(' '));
+      return;
+    }
+    const start = points[0]!;
+    const end = points[points.length - 1]!;
+    vector.setAttribute('x1', String(start.x)); vector.setAttribute('y1', String(start.y));
+    vector.setAttribute('x2', String(end.x)); vector.setAttribute('y2', String(end.y));
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (length > 2) {
+      const size = Math.min(16, Math.max(6, length * 0.22));
+      const angle = Math.atan2(end.y - start.y, end.x - start.x);
+      const left = { x: end.x - size * Math.cos(angle - Math.PI / 6), y: end.y - size * Math.sin(angle - Math.PI / 6) };
+      const right = { x: end.x - size * Math.cos(angle + Math.PI / 6), y: end.y - size * Math.sin(angle + Math.PI / 6) };
+      head.setAttribute('points', end.x + ',' + end.y + ' ' + left.x + ',' + left.y + ' ' + right.x + ',' + right.y);
+    } else head.setAttribute('points', '');
+  };
+  paint();
+  viewport.classList.add('drawing-vector');
+  try { viewport.setPointerCapture(startEvent.pointerId); } catch { /* ignore */ }
+  const move = (moveEvent: PointerEvent): void => {
+    const point = viewportToWorldPoint(moveEvent.clientX, moveEvent.clientY);
+    if (tool === 'arrow') points.splice(1, points.length, point);
+    else if (!points.length || Math.hypot(point.x - points[points.length - 1]!.x, point.y - points[points.length - 1]!.y) >= 1.5) points.push(point);
+    paint();
+  };
+  const up = (): void => {
+    viewport.classList.remove('drawing-vector');
+    viewport.removeEventListener('pointermove', move);
+    viewport.removeEventListener('pointerup', up);
+    try { viewport.releasePointerCapture(startEvent.pointerId); } catch { /* ignore */ }
+    svg.remove();
+    if (points.length < 2) return;
+    const xs = points.map(point => point.x);
+    const ys = points.map(point => point.y);
+    const padding = tool === 'arrow' ? 18 : DEFAULT_VECTOR_STROKE_WIDTH + 4;
+    const minX = Math.min(...xs) - padding;
+    const minY = Math.min(...ys) - padding;
+    const maxX = Math.max(...xs) + padding;
+    const maxY = Math.max(...ys) + padding;
+    const block: HcBlock = {
+      id: genId('block'), type: tool, x: Math.round(minX), y: Math.round(minY),
+      w: Math.max(8, Math.round(maxX - minX)), h: Math.max(8, Math.round(maxY - minY)),
+      z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1,
+      name: tool === 'freehand' ? 'Freehand' : 'Arrow',
+      points: points.map(point => ({ x: point.x - Math.floor(minX), y: point.y - Math.floor(minY) })),
+      arrowhead: tool === 'arrow' ? 'arrow' : undefined,
+      style: { stroke: DEFAULT_VECTOR_STROKE, strokeWidth: DEFAULT_VECTOR_STROKE_WIDTH },
+    };
+    state.activeBlockId = block.id;
+    void applyOps([{ op: 'add_block', pageId: page.id, block } as HcOp], { refreshArtboard: true }).then(result => {
+      if (!result) return;
+      renderInspector();
+      renderToolbarState();
+    });
+  };
+  viewport.addEventListener('pointermove', move);
+  viewport.addEventListener('pointerup', up);
+}
+
 function bindStaticActions(): void {
   el('newDocBtn').addEventListener('click', () => openNewDocModal());
   el('newDocMini').addEventListener('click', () => openNewDocModal());
@@ -423,7 +515,12 @@ function bindStaticActions(): void {
   });
   el('toolRail').addEventListener('click', event => {
     const tool = (event.target as HTMLElement).closest('[data-tool]') as HTMLElement | null;
-    if (tool) { state.tool = tool.dataset.tool === 'hand' ? 'hand' : 'select'; renderToolbarState(); return; }
+    if (tool) {
+      const next = tool.dataset.tool;
+      state.tool = next === 'hand' || next === 'pen' || next === 'arrow' ? next : 'select';
+      renderToolbarState();
+      return;
+    }
     const blockButton = (event.target as HTMLElement).closest('[data-block]') as HTMLElement | null;
     if (blockButton) {
       const type = blockButton.dataset.block as HcBlock['type'];
@@ -498,6 +595,16 @@ function bindStaticActions(): void {
     const factor = Math.exp(-event.deltaY * (event.ctrlKey || event.metaKey ? 0.002 : 0.0016));
     setZoomAt(state.zoom * factor, event.clientX, event.clientY);
   }, { passive: false });
+  // Native vector tools draw above existing blocks, so capture the pointer before
+  // block selection/drag handlers can claim it.
+  viewport.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || (state.tool !== 'pen' && state.tool !== 'arrow')) return;
+    if (activePage()?.mode !== 'infinite' || state.editing) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    beginVectorDraw(event);
+  }, { capture: true });
   // Whiteboard pages have their own Excalidraw gesture handling; intercept in capture
   // phase so hcanvas can provide the same wheel-zoom / middle-drag-pan contract.
   viewport.addEventListener('wheel', event => {
@@ -535,7 +642,10 @@ function renderToolbarState(): void {
   const block = activeBlock();
   document.querySelectorAll<HTMLElement>('[data-tool]').forEach(button => {
     button.classList.toggle('active', button.dataset.tool === state.tool);
+    if (button.dataset.tool === 'pen' || button.dataset.tool === 'arrow') button.classList.toggle('disabled', page?.mode !== 'infinite');
   });
+  el('viewport').classList.toggle('tool-pen', state.tool === 'pen' && page?.mode === 'infinite');
+  el('viewport').classList.toggle('tool-arrow', state.tool === 'arrow' && page?.mode === 'infinite');
   el('toggleGrid').classList.toggle('active', state.showGrid);
   el('toggleSnap').classList.toggle('active', state.snap);
   el('infiniteBadge').classList.toggle('hidden', page?.mode !== 'infinite');
@@ -651,6 +761,8 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   }
   if (event.key === 'v' || event.key === 'V') { state.tool = 'select'; renderToolbarState(); return; }
   if (event.key === 'h' || event.key === 'H') { state.tool = 'hand'; renderToolbarState(); return; }
+  if ((event.key === 'p' || event.key === 'P') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'pen'; renderToolbarState(); } return; }
+  if ((event.key === 'a' || event.key === 'A') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'arrow'; renderToolbarState(); } return; }
   if (event.key === 'g' || event.key === 'G') { state.showGrid = !state.showGrid; renderArtboard(); renderToolbarState(); return; }
   if (event.key === 's' || event.key === 'S') { state.snap = !state.snap; renderToolbarState(); return; }
   if (event.key === '?') { openShortcutsModal(); return; }
@@ -1462,6 +1574,8 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
       shape.style.border = String(block.style?.strokeWidth || 1) + 'px solid ' + String(block.style?.stroke || '#a855f7');
       shape.style.borderRadius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 14) + 'px';
       content.appendChild(shape);
+    } else if (block.type === 'freehand' || block.type === 'arrow') {
+      content.innerHTML = vectorSvgMarkup(block);
     }
     wrap.appendChild(content);
     if (!editing) {
@@ -1545,7 +1659,7 @@ function bindResizeHandle(handle: HTMLElement, wrap: HTMLDivElement, block: HcBl
   handle.addEventListener('pointerdown', event => {
     event.stopPropagation();
     event.preventDefault();
-    const start = { x: event.clientX, y: event.clientY, w: block.w, h: block.h };
+    const start = { x: event.clientX, y: event.clientY, w: block.w, h: block.h, points: block.points ? JSON.parse(JSON.stringify(block.points)) as Array<{ x: number; y: number }> : null };
     handle.setPointerCapture(event.pointerId);
     let resizeFrame = 0;
     const paintResize = (): void => {
@@ -1556,6 +1670,7 @@ function bindResizeHandle(handle: HTMLElement, wrap: HTMLDivElement, block: HcBl
       const nextW = Math.max(40, Math.round(start.w + (moveEvent.clientX - start.x) / state.zoom));
       const nextH = Math.max(30, Math.round(start.h + (moveEvent.clientY - start.y) / state.zoom));
       block.w = nextW; block.h = nextH;
+      if (start.points) block.points = start.points.map(point => ({ x: point.x * nextW / start.w, y: point.y * nextH / start.h }));
       if (!resizeFrame) resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; paintResize(); });
     };
     const up = (): void => {
@@ -1563,7 +1678,7 @@ function bindResizeHandle(handle: HTMLElement, wrap: HTMLDivElement, block: HcBl
       handle.removeEventListener('pointerup', up);
       if (resizeFrame) { cancelAnimationFrame(resizeFrame); resizeFrame = 0; }
       paintResize();
-      void persistBlock(block, { w: block.w, h: block.h });
+      void persistBlock(block, { w: block.w, h: block.h, ...(block.points ? { points: block.points } : {}) });
     };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
@@ -1958,6 +2073,10 @@ function renderBlockInspector(): void {
   if (block.type === 'shape' || block.type === 'html' || block.type === 'markdown') {
     html += '<div class="field-row">' + field('blockFill', 'Fill', '<input id="blockFill" type="color" value="' + esc(toHex(String(block.style?.fill || '#f3e8ff'))) + '">') + field('blockStroke', 'Stroke', '<input id="blockStroke" type="color" value="' + esc(toHex(String(block.style?.stroke || '#a855f7'))) + '">') + '</div>';
   }
+  if (block.type === 'freehand' || block.type === 'arrow') {
+    html += '<div class="field-row">' + field('blockStroke', 'Stroke', '<input id="blockStroke" type="color" value="' + esc(toHex(String(block.style?.stroke || block.style?.color || '#1f2430'))) + '">') + field('blockVectorWidth', 'Width', '<input id="blockVectorWidth" type="number" min="1" max="40" value="' + (block.style?.strokeWidth || 2) + '">') + '</div>';
+    if (block.type === 'arrow') html += '<div class="field">' + '<span>Arrowhead</span><select id="blockArrowhead"><option value="arrow"' + ((block.arrowhead ?? 'arrow') === 'arrow' ? ' selected' : '') + '>Arrow</option><option value="none"' + (block.arrowhead === 'none' ? ' selected' : '') + '>None</option></select></div>';
+  }
   html += '</section>';
   root.innerHTML = html;
   bindBlockInspector(block);
@@ -1973,8 +2092,12 @@ function bindBlockInspector(block: HcBlock): void {
   el<HTMLInputElement>('blockName').addEventListener('change', event => { void update({ name: (event.target as HTMLInputElement).value }, false); });
   el<HTMLInputElement>('blockX').addEventListener('change', event => { void update({ x: Number((event.target as HTMLInputElement).value) || 0 }); });
   el<HTMLInputElement>('blockY').addEventListener('change', event => { void update({ y: Number((event.target as HTMLInputElement).value) || 0 }); });
-  el<HTMLInputElement>('blockW').addEventListener('change', event => { void update({ w: Math.max(20, Number((event.target as HTMLInputElement).value) || block.w) }); });
-  el<HTMLInputElement>('blockH').addEventListener('change', event => { void update({ h: Math.max(20, Number((event.target as HTMLInputElement).value) || block.h) }); });
+  const resizeVector = (nextW: number, nextH: number): Partial<HcBlock> => {
+    if ((block.type !== 'freehand' && block.type !== 'arrow') || !block.points?.length) return { w: nextW, h: nextH };
+    return { w: nextW, h: nextH, points: block.points.map(point => ({ x: point.x * nextW / block.w, y: point.y * nextH / block.h })) };
+  };
+  el<HTMLInputElement>('blockW').addEventListener('change', event => { const nextW = Math.max(20, Number((event.target as HTMLInputElement).value) || block.w); void update(resizeVector(nextW, block.h)); });
+  el<HTMLInputElement>('blockH').addEventListener('change', event => { const nextH = Math.max(20, Number((event.target as HTMLInputElement).value) || block.h); void update(resizeVector(block.w, nextH)); });
   qs<HTMLButtonElement>('#blockEditHtmlBtn')?.addEventListener('click', () => enterHtmlEdit(page.id, block.id));
   qs<HTMLButtonElement>('#blockSourceBtn')?.addEventListener('click', () => openSourceEditor({ pageId: page.id, blockId: block.id }));
   qs<HTMLButtonElement>('#blockImageBtn')?.addEventListener('click', () => openImageModal(block));
@@ -1985,10 +2108,14 @@ function bindBlockInspector(block: HcBlock): void {
   const color = qs<HTMLInputElement>('#blockColor');
   const fill = qs<HTMLInputElement>('#blockFill');
   const stroke = qs<HTMLInputElement>('#blockStroke');
+  const vectorWidth = qs<HTMLInputElement>('#blockVectorWidth');
+  const arrowhead = qs<HTMLSelectElement>('#blockArrowhead');
   if (fontSize) fontSize.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fontSize: Number(fontSize.value) || 20 } }); });
   if (color) color.addEventListener('change', () => { void update({ style: { ...(block.style || {}), color: color.value } }); });
   if (fill) fill.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fill: fill.value } }); });
   if (stroke) stroke.addEventListener('change', () => { void update({ style: { ...(block.style || {}), stroke: stroke.value } }); });
+  if (vectorWidth) vectorWidth.addEventListener('change', () => { void update({ style: { ...(block.style || {}), strokeWidth: Math.max(1, Math.min(40, Number(vectorWidth.value) || 2)) } }); });
+  if (arrowhead) arrowhead.addEventListener('change', () => { void update({ arrowhead: arrowhead.value === 'none' ? 'none' : 'arrow' }); });
 }
 
 function relativeTime(iso: string): string {
@@ -2683,7 +2810,7 @@ function renderPresent(): void {
 function renderPresentCanvasHtml(page: HcPage): string {
   let html = '<div style="position:relative;width:100%;height:100%;background:' + esc(page.background) + ';overflow:hidden">';
   for (const block of [...(page.blocks || [])].sort((left, right) => left.z - right.z)) {
-    const style = 'position:absolute;left:' + block.x + 'px;top:' + block.y + 'px;width:' + block.w + 'px;height:' + block.h + 'px;overflow:hidden;border-radius:' + esc(String(block.style?.radius || 0)) + 'px;';
+    const style = 'position:absolute;left:' + block.x + 'px;top:' + block.y + 'px;width:' + block.w + 'px;height:' + block.h + 'px;overflow:' + (block.type === 'freehand' || block.type === 'arrow' ? 'visible' : 'hidden') + ';border-radius:' + esc(String(block.style?.radius || 0)) + 'px;';
     let inner = '';
     if (block.type === 'html') inner = block.html || '';
     else if (block.type === 'text') inner = '<div style="padding:4px;font-size:' + (block.style?.fontSize || 20) + 'px;font-weight:' + (block.style?.fontWeight || 400) + ';color:' + esc(String(block.style?.color || '#1d232e')) + ';white-space:pre-wrap">' + esc(block.text || '') + '</div>';
@@ -2691,6 +2818,7 @@ function renderPresentCanvasHtml(page: HcPage): string {
     else if (block.type === 'code') inner = '<pre style="margin:0;padding:20px;font:12px/1.6 ui-monospace,Consolas,monospace;color:' + esc(String(block.style?.color || '#e2e8f0')) + ';background:' + esc(String(block.style?.fill || '#171923')) + ';white-space:pre-wrap">' + esc(block.code || '') + '</pre>';
     else if (block.type === 'image') inner = block.src ? '<img src="' + esc(block.src) + '" style="width:100%;height:100%;object-fit:cover" />' : '';
     else if (block.type === 'shape') inner = '<div style="width:100%;height:100%;border-radius:' + (block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 14) + 'px') + ';background:' + esc(String(block.style?.fill || '#f3e8ff')) + ';border:1px solid ' + esc(String(block.style?.stroke || '#a855f7')) + '"></div>';
+    else if (block.type === 'freehand' || block.type === 'arrow') inner = vectorSvgMarkup(block);
     html += '<div style="' + style + '">' + inner + '</div>';
   }
   return html + '</div>';

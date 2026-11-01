@@ -10,6 +10,7 @@ import pptxgen from 'pptxgenjs';
 import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 
 import { htmlToPlainDocument } from './html.js';
+import { vectorSvgMarkup } from './vector.js';
 import { extractHtmlLayout, type HtmlLayout } from './htmlLayout.js';
 import type { HcBlock, HcDocument, HcPage } from './types.js';
 
@@ -78,6 +79,9 @@ function renderBlock(block: HcBlock): string {
   if (block.type === 'shape') {
     const radius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 0) + 'px';
     return wrapper + '<div style="width:100%;height:100%;border-radius:' + radius + ';background:' + escapeHtml(String(block.style?.fill || '#e9d5ff')) + ';border:' + String(block.style?.strokeWidth || 1) + 'px solid ' + escapeHtml(String(block.style?.stroke || '#a855f7')) + '"></div></div>';
+  }
+  if (block.type === 'freehand' || block.type === 'arrow') {
+    return wrapper + vectorSvgMarkup(block) + '</div>';
   }
   return wrapper + '</div>';
 }
@@ -499,7 +503,7 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
       const blocks = page.blocks || [];
       const editable = page.mode === 'canvas'
         && blocks.length > 0
-        && !blocks.some(block => block.type === 'html')
+        && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow')
         && !blocks.some(block => block.type === 'image' && /^https?:/i.test(block.src || ''));
       if (editable) {
         addEditableCanvasSlide(pptx as unknown as { addSlide: () => any; ShapeType: { roundRect: string; ellipse: string } }, page, index, 13.333, 7.5);

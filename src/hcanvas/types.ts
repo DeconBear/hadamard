@@ -3,8 +3,13 @@ import { randomUUID } from 'node:crypto';
 export const HCANVAS_SCHEMA = 'hadamard-canvas/1';
 
 export type HcPageMode = 'canvas' | 'html' | 'infinite' | 'whiteboard';
-export type HcBlockType = 'html' | 'text' | 'markdown' | 'code' | 'image' | 'shape';
+export type HcBlockType = 'html' | 'text' | 'markdown' | 'code' | 'image' | 'shape' | 'freehand' | 'arrow';
 export type HcShape = 'rect' | 'ellipse' | 'line';
+
+export interface HcPoint {
+  x: number;
+  y: number;
+}
 
 export interface HcBlockStyle {
   fill?: string;
@@ -45,6 +50,13 @@ export interface HcBlock {
   alt?: string;
   /** shape block */
   shape?: HcShape;
+  /** freehand/arrow points in block-local coordinates */
+  points?: HcPoint[];
+  /** arrow end decoration */
+  arrowhead?: 'arrow' | 'none';
+  /** optional binding ids, reserved for native arrow-to-shape connections */
+  startBinding?: string | null;
+  endBinding?: string | null;
   style?: HcBlockStyle;
 }
 

@@ -3,7 +3,7 @@
 Hadamard Canvas is a standalone, AI-native canvas application. It runs independently from the desktop GUI (`hadamard-gui`) and exposes one document model to humans and agents:
 
 - **HTML pages** are rendered in a sandbox and can be edited directly in place (text, element styles) or through a full HTML/CSS source editor.
-- **Canvas pages** mix HTML, text, Markdown, code, image and shape blocks.
+- **Canvas pages** mix HTML, text, Markdown, code, image, shape, native freehand and arrow blocks.
 - **Agents** read and patch the same document through a small JSON-first CLI; no MCP or browser automation is required.
 
 ## Run it
@@ -78,7 +78,7 @@ The left page rail renders live thumbnails: HTML pages are previewed in a sandbo
 
 ## Page types and local HTML
 
-Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (Excalidraw scene as a full-workspace surface). Canvas/infinite pages use **HTML, text, Markdown, code, image and shape blocks**. Add Page also provides 20 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/Product posters, Infinite canvas and Excalidraw whiteboard.
+Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (Excalidraw scene as a full-workspace surface). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. **Pen (P)** and **Arrow (A)** draw native vectors directly on Infinite pages; they are stored in the document JSON as block points, are resizable, and use stroke color/width from the Inspector. Add Page also provides 20 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/Product posters, Infinite canvas and Excalidraw whiteboard.
 
 Import a local HTML file from the desktop with **Import HTML** in the top bar (max 5MB) or:
 

@@ -87,6 +87,23 @@ describe('hcanvas store', () => {
     expect(accepted.doc.pages.some(page => page.id === 'page_prop')).toBe(true);
   });
 
+  it('persists native freehand and arrow vector blocks', async () => {
+    const store = await makeStore();
+    const doc = await store.readDoc((await store.listDocs())[0]!.id);
+    const page = doc.pages.find(item => item.mode === 'infinite')!;
+    const result = await store.applyOps(doc.id, {
+      baseRevision: doc.revision,
+      actor: 'test',
+      ops: [
+        { op: 'add_block', pageId: page.id, block: { id: 'block_free', type: 'freehand', x: 10, y: 20, w: 100, h: 80, z: 1, points: [{ x: 0, y: 0 }, { x: 100, y: 80 }], style: { stroke: '#1f2430', strokeWidth: 2 } } },
+        { op: 'add_block', pageId: page.id, block: { id: 'block_arrow', type: 'arrow', x: 200, y: 20, w: 120, h: 80, z: 2, points: [{ x: 0, y: 0 }, { x: 120, y: 80 }], arrowhead: 'arrow', style: { stroke: '#1f2430', strokeWidth: 2 } } },
+      ],
+    });
+    const savedPage = result.doc.pages.find(item => item.id === page.id)!;
+    expect(savedPage.blocks?.find(block => block.id === 'block_free')?.points).toEqual([{ x: 0, y: 0 }, { x: 100, y: 80 }]);
+    expect(savedPage.blocks?.find(block => block.id === 'block_arrow')?.arrowhead).toBe('arrow');
+  });
+
   it('tracks agent sessions and presence heartbeats', async () => {
     const store = await makeStore();
     const doc = await store.readDoc((await store.listDocs())[0]!.id);

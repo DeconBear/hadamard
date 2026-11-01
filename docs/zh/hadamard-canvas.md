@@ -3,7 +3,7 @@
 Hadamard Canvas 是独立于桌面 GUI（`hadamard-gui`）的 AI-native 画布应用。人和 agent 操作同一份文档：
 
 - **HTML 页面**：沙箱渲染，可直接在页面上改文字/样式，也可用完整 HTML/CSS 源码编辑器；
-- **Canvas 页面**：可混合 HTML、文本、Markdown、代码、图片、形状块；
+- **Canvas 页面**：可混合 HTML、文本、Markdown、代码、图片、形状、原生手绘与箭头块；
 - **Agent**：通过 JSON-first CLI 读写同一文档，不需要 MCP 或浏览器自动化。
 
 ## 独立桌面应用
@@ -73,7 +73,7 @@ HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
 ## Canvas 页面
 
-块类型：HTML、文本、Markdown、代码、图片、形状。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
+块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。Infinite 页可用 **Pen (P)** / **Arrow (A)** 直接绘制原生矢量，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
 
 ## 无限画布与工具栏
 

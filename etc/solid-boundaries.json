@@ -3,7 +3,7 @@
   "files": {
     "goal/projectGoalStore.ts": { "maxLines": 1013, "reason": "Existing project-goal store debt." },
     "gui/hadamardGui.ts": { "maxLines": 11303, "reason": "GUI composition root; bridge-mode enabled gate guards router/config run paths and is exposed in bridgeState; Devices region exposes provider QR sharing; hosts the usage-bar state payload, background-task settled notification subscription, /extensions + /lsp slash cases, and the Settings projection/persistence for those built-in features." },
-    "hcanvas/client/main.ts": { "maxLines": 2800, "reason": "Standalone browser UI for Hadamard Canvas; bundled by esbuild (excluded from tsc), split later if it grows." },
+    "hcanvas/client/main.ts": { "maxLines": 3200, "reason": "Standalone browser UI for Hadamard Canvas; bundled by esbuild (excluded from tsc), split later if it grows." },
     "gui/hadamardGuiAssets.ts": { "maxLines": 28002, "reason": "Byte-stable embedded GUI renderer; Configuration region (renamed from Bridge) hosts bridge mode, configs, and local runtime discovery; Devices region uses the reworked card layout with provider QR share actions; statusbar carries the usage-bar widget; Settings exposes built-in extension and LSP controls with narrow-window behavior; collapsible left sidebar + default-collapsed context rail; auxiliary workspace files support wider resizing and sandboxed Markdown/HTML previews." },
     "gui/transcript/clientBundle.ts": { "maxLines": 1140, "reason": "Byte-stable transcript client bundle; approval footers hide always-options for safety-critical prompts." },
     "manager/assistantGlobalTools.ts": { "maxLines": 1149, "reason": "Compatibility factory; new domains belong in providers." },
@@ -21,6 +21,10 @@
     "types.ts": { "maxLines": 3599, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, a per-run context-window override, the tool scheduling/CodeAct contract surface, retry policy, request proposals, compaction shadow pricing, the per-run conversation-extension override, the orthogonal tool-presentation mode, the ReAct driver's swappable-strategy interfaces, the nested-tool-execution result (CodeAct turn-control forwarding contract), built-in extension toggles, and LSP auto-detection." }
   },
   "interfaces": {
+    "hcanvas/types.ts#HcBlock": {
+      "maxMembers": 26,
+      "reason": "Native canvas block schema extended with freehand/arrow points, arrowhead and binding ids."
+    },
     "config/agentProfiles.ts#SelectableAgent": { "maxMembers": 29, "reason": "Compatibility DTO extended with the reusable Agent execution mode and the orthogonal tool presentation." },
     "issues/issueStore.ts#ProjectIssue": { "maxMembers": 21, "reason": "Persisted issue schema." },
     "keyway/vendor/core/contracts.ts#UsageEventV2": { "maxMembers": 27, "reason": "Vendored Keyway usage-event schema, versioned upstream (USAGE_EVENT_VERSION = 2)." },
