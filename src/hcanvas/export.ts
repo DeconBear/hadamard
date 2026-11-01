@@ -43,7 +43,7 @@ function blockStyle(block: HcBlock): string {
   if (block.rotation) parts.push('transform:rotate(' + block.rotation + 'deg)');
   if (style.fill && block.type !== 'markdown' && block.type !== 'code' && block.type !== 'image') parts.push('background:' + String(style.fill));
   if (style.radius) parts.push('border-radius:' + style.radius + 'px');
-  if (style.stroke) parts.push('border:' + (style.strokeWidth || 1) + 'px solid ' + style.stroke);
+  if (style.stroke) parts.push('border:' + (style.strokeWidth || 1) + 'px ' + String(style.strokeStyle || 'solid') + ' ' + style.stroke);
   if (style.opacity !== undefined) parts.push('opacity:' + style.opacity);
   return parts.join(';');
 }
@@ -78,7 +78,9 @@ function renderBlock(block: HcBlock): string {
   }
   if (block.type === 'shape') {
     const radius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 0) + 'px';
-    return wrapper + '<div style="width:100%;height:100%;border-radius:' + radius + ';background:' + escapeHtml(String(block.style?.fill || '#e9d5ff')) + ';border:' + String(block.style?.strokeWidth || 1) + 'px solid ' + escapeHtml(String(block.style?.stroke || '#a855f7')) + '"></div></div>';
+    const clip = block.shape === 'diamond' ? ';clip-path:polygon(50% 0, 100% 50%, 50% 100%, 0 50%)' : '';
+    const frame = block.shape === 'frame';
+    return wrapper + '<div style="width:100%;height:100%;border-radius:' + radius + ';background:' + escapeHtml(String(frame ? 'transparent' : (block.style?.fill || '#e9d5ff'))) + ';border:' + String(block.style?.strokeWidth || 1) + 'px ' + String(frame ? 'dashed' : (block.style?.strokeStyle || 'solid')) + ' ' + escapeHtml(String(block.style?.stroke || '#a855f7')) + clip + '"></div></div>';
   }
   if (block.type === 'freehand' || block.type === 'arrow') {
     return wrapper + vectorSvgMarkup(block) + '</div>';

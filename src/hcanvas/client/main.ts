@@ -4,6 +4,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { marked } from 'marked';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal } from '../types.js';
 import { vectorSvgMarkup } from '../vector.js';
+import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
@@ -1443,6 +1444,24 @@ function whiteboardSceneJson(page: HcPage): string {
   return JSON.stringify({ type: 'excalidraw', version: 2, source: 'hcanvas', elements: page.scene?.elements || [], appState: page.scene?.appState || {}, files: page.scene?.files || {} }, null, 2);
 }
 
+async function convertWhiteboardPage(page: HcPage): Promise<void> {
+  if (page.mode !== 'whiteboard') return;
+  const elements = page.scene?.elements || [];
+  if (!elements.length) { toast('This whiteboard has no elements to convert.', 'info'); return; }
+  const nativePage = excalidrawSceneToNativePage({ elements, appState: page.scene?.appState, files: page.scene?.files }, (page.name || 'Whiteboard') + ' · Native');
+  nativePage.background = page.scene?.appState && typeof (page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor === 'string'
+    ? String((page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor)
+    : page.background || '#ffffff';
+  const result = await applyOps([{ op: 'add_page', page: nativePage } as HcOp], { refreshArtboard: false });
+  if (!result) return;
+  state.activePageId = nativePage.id;
+  state.activeBlockId = null;
+  state.tool = 'select';
+  renderAll();
+  void syncActive();
+  toast('Converted to a native Infinite page: ' + (nativePage.blocks?.length || 0) + ' blocks', 'success');
+}
+
 function downloadWhiteboardScene(): void {
   const page = activePage();
   if (!page || page.mode !== 'whiteboard') return;
@@ -1620,6 +1639,8 @@ function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
   wrap.style.width = block.w + 'px';
   wrap.style.height = block.h + 'px';
   wrap.style.zIndex = String(block.z + 1);
+  if (block.rotation) { wrap.style.transform = 'rotate(' + block.rotation + 'deg)'; wrap.style.transformOrigin = 'center center'; }
+  if (block.style?.opacity !== undefined) wrap.style.opacity = String(block.style.opacity);
   return wrap;
 }
 
@@ -1645,6 +1666,7 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
       text.style.color = String(block.style?.color || '#1d232e');
       text.style.fontFamily = String(block.style?.fontFamily || 'Inter, sans-serif');
       text.style.textAlign = String(block.style?.align || 'left');
+      text.style.lineHeight = String(block.style?.lineHeight || 1.25);
       text.textContent = block.text || '';
       content.appendChild(text);
     } else if (block.type === 'markdown') {
@@ -1672,10 +1694,19 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
       content.appendChild(img);
     } else if (block.type === 'shape') {
       const shape = document.createElement('div');
-      shape.className = 'block-shape-box';
-      shape.style.background = String(block.style?.fill || '#f3e8ff');
-      shape.style.border = String(block.style?.strokeWidth || 1) + 'px solid ' + String(block.style?.stroke || '#a855f7');
-      shape.style.borderRadius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 14) + 'px';
+      shape.className = 'block-shape-box' + (block.shape === 'diamond' ? ' shape-diamond' : '') + (block.shape === 'frame' ? ' shape-frame' : '');
+      shape.style.background = block.shape === 'frame' ? 'transparent' : String(block.style?.fill || '#f3e8ff');
+      shape.style.borderWidth = String(block.style?.strokeWidth || 1) + 'px';
+      shape.style.borderStyle = block.shape === 'frame' ? 'dashed' : String(block.style?.strokeStyle || 'solid');
+      shape.style.borderColor = String(block.style?.stroke || '#a855f7');
+      shape.style.borderRadius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || (block.shape === 'frame' ? 8 : 14)) + 'px';
+      if (block.shape === 'diamond') shape.style.clipPath = 'polygon(50% 0, 100% 50%, 50% 100%, 0 50%)';
+      if (block.shape === 'frame') {
+        const label = document.createElement('span');
+        label.className = 'block-frame-label';
+        label.textContent = block.name || 'Frame';
+        shape.appendChild(label);
+      }
       content.appendChild(shape);
     } else if (block.type === 'freehand' || block.type === 'arrow') {
       content.innerHTML = vectorSvgMarkup(block);
@@ -2276,7 +2307,7 @@ function renderPageInspector(): void {
   if (page.mode === 'html') html += '<button id="pageSourceBtn" class="btn tiny">Edit HTML source</button>';
   else if (page.mode !== 'whiteboard') html += '<button id="pageAddHtmlBtn" class="btn tiny">Add HTML block</button><button id="pageAddTextBtn" class="btn tiny">Add text</button>';
   if (page.mode === 'infinite') html += '<button id="pageFitContentBtn" class="btn tiny">Fit content</button>';
-  if (page.mode === 'whiteboard') html += '<button id="pageWhiteboardDownload" class="btn tiny">Download .excalidraw</button>';
+  if (page.mode === 'whiteboard') html += '<button id="pageConvertWhiteboardBtn" class="btn tiny primary">Convert to native Infinite</button><button id="pageWhiteboardDownload" class="btn tiny">Download .excalidraw</button>';
   html += '<button id="pageSaveMasterBtn" class="btn tiny">Save as master</button>';
   html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Excalidraw whiteboard · freehand, shapes, arrows, text' : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
@@ -2305,6 +2336,7 @@ function bindPageInspector(page: HcPage): void {
   qs<HTMLButtonElement>('#pageAddTextBtn')?.addEventListener('click', () => { void addBlock('text'); });
   qs<HTMLButtonElement>('#pageFitContentBtn')?.addEventListener('click', () => fitPage());
   qs<HTMLButtonElement>('#pageWhiteboardDownload')?.addEventListener('click', () => downloadWhiteboardScene());
+  qs<HTMLButtonElement>('#pageConvertWhiteboardBtn')?.addEventListener('click', () => { void convertWhiteboardPage(page); });
   qs<HTMLButtonElement>('#pageSaveMasterBtn')?.addEventListener('click', () => openSaveMasterModal(page));
   qs<HTMLButtonElement>('#pageDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); }); });
 }
@@ -2936,8 +2968,19 @@ async function exportCurrent(format: string, options: { bleedMm?: number; cropMa
   if (!state.doc) return;
   const page = activePage();
   if (format === 'scene') {
-    if (!page || page.mode !== 'whiteboard') { toast('Switch to a whiteboard page to download its scene.', 'error'); return; }
-    downloadWhiteboardScene();
+    if (!page) { toast('Open a page first.', 'error'); return; }
+    if (page.mode === 'whiteboard') { downloadWhiteboardScene(); return; }
+    if (page.mode === 'infinite') {
+      const scene = nativeBlocksToExcalidrawScene(page);
+      const blob = new Blob([JSON.stringify(scene, null, 2)], { type: 'application/vnd.excalidraw+json' });
+      const anchor = document.createElement('a');
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = (page.name || 'infinite').replace(/[^a-z0-9_-]+/gi, '-') + '.excalidraw';
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(anchor.href), 2000);
+      return;
+    }
+    toast('Scene export is available for Infinite and Whiteboard pages.', 'error');
     return;
   }
   if (page?.mode === 'whiteboard' && !['html', 'pdf', 'png', 'pptx', 'pptx-editable'].includes(format)) {
@@ -3068,14 +3111,20 @@ function renderPresent(): void {
 function renderPresentCanvasHtml(page: HcPage): string {
   let html = '<div style="position:relative;width:100%;height:100%;background:' + esc(page.background) + ';overflow:hidden">';
   for (const block of [...(page.blocks || [])].sort((left, right) => left.z - right.z)) {
-    const style = 'position:absolute;left:' + block.x + 'px;top:' + block.y + 'px;width:' + block.w + 'px;height:' + block.h + 'px;overflow:' + (block.type === 'freehand' || block.type === 'arrow' ? 'visible' : 'hidden') + ';border-radius:' + esc(String(block.style?.radius || 0)) + 'px;';
+    const style = 'position:absolute;left:' + block.x + 'px;top:' + block.y + 'px;width:' + block.w + 'px;height:' + block.h + 'px;overflow:' + (block.type === 'freehand' || block.type === 'arrow' ? 'visible' : 'hidden') + ';border-radius:' + esc(String(block.style?.radius || 0)) + 'px;' + (block.rotation ? 'transform:rotate(' + block.rotation + 'deg);' : '') + (block.style?.opacity !== undefined ? 'opacity:' + block.style.opacity + ';' : '');
     let inner = '';
     if (block.type === 'html') inner = block.html || '';
     else if (block.type === 'text') inner = '<div style="padding:4px;font-size:' + (block.style?.fontSize || 20) + 'px;font-weight:' + (block.style?.fontWeight || 400) + ';color:' + esc(String(block.style?.color || '#1d232e')) + ';white-space:pre-wrap">' + esc(block.text || '') + '</div>';
     else if (block.type === 'markdown') inner = '<div style="padding:22px 24px;font:16px/1.6 Inter,sans-serif;color:#334155">' + String(marked.parse(block.markdown || '', { async: false })) + '</div>';
     else if (block.type === 'code') inner = '<pre style="margin:0;padding:20px;font:12px/1.6 ui-monospace,Consolas,monospace;color:' + esc(String(block.style?.color || '#e2e8f0')) + ';background:' + esc(String(block.style?.fill || '#171923')) + ';white-space:pre-wrap">' + esc(block.code || '') + '</pre>';
     else if (block.type === 'image') inner = block.src ? '<img src="' + esc(block.src) + '" style="width:100%;height:100%;object-fit:cover" />' : '';
-    else if (block.type === 'shape') inner = '<div style="width:100%;height:100%;border-radius:' + (block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 14) + 'px') + ';background:' + esc(String(block.style?.fill || '#f3e8ff')) + ';border:1px solid ' + esc(String(block.style?.stroke || '#a855f7')) + '"></div>';
+    else if (block.type === 'shape') {
+      const radius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 14) + 'px';
+      const background = block.shape === 'frame' ? 'transparent' : esc(String(block.style?.fill || '#f3e8ff'));
+      const borderStyle = block.shape === 'frame' ? 'dashed' : String(block.style?.strokeStyle || 'solid');
+      const clip = block.shape === 'diamond' ? 'clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)' : '';
+      inner = '<div style="width:100%;height:100%;border-radius:' + radius + ';background:' + background + ';border:' + String(block.style?.strokeWidth || 1) + 'px ' + borderStyle + ' ' + esc(String(block.style?.stroke || '#a855f7')) + ';' + clip + '"></div>';
+    }
     else if (block.type === 'freehand' || block.type === 'arrow') inner = vectorSvgMarkup(block);
     html += '<div style="' + style + '">' + inner + '</div>';
   }

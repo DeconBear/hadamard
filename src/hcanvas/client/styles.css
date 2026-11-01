@@ -506,3 +506,5 @@ button { cursor: pointer; }
 #viewport.tool-eraser, #viewport.tool-eraser * { cursor: cell !important; }
 #viewport.erasing, #viewport.erasing * { cursor: cell !important; }
 .tool-btn:disabled { opacity: .35; cursor: not-allowed; }
+.block-shape-box.shape-frame { position: relative; }
+.block-frame-label { position: absolute; left: 10px; top: 8px; font: 600 10px/1 Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #8a8276; white-space: nowrap; background: rgba(251,250,247,.9); padding: 3px 5px; border-radius: 4px; pointer-events: none; }

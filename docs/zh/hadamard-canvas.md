@@ -130,6 +130,20 @@ hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor clau
 
 编辑自动保存并做 revision 校验；页面 Inspector 可下载 `.excalidraw`；白板的 HTML/PDF/PNG/PPTX 通过本地打包的 Excalidraw CLI 渲染导出。
 
+### 迁移到原生 Infinite
+
+在白板页 Inspector 点击 **Convert to native Infinite**，会把 Excalidraw 元素转换为原生 Infinite blocks：freehand、箭头及 binding、文本、矩形/椭圆/菱形/frame、旋转/透明度/虚线以及图片 data URL，并打开新页面；原白板保持不变。
+
+CLI 同样支持转换与原生 scene 导入/导出：
+
+```bash
+hcanvas convert-whiteboard <doc> --page <白板页 id> --title "Board · Native"
+hcanvas import-scene ./board.excalidraw <doc> --title "导入画板"
+hcanvas export-scene <doc> --page <infinite 页 id> --out ./exports/board.excalidraw
+```
+
+Infinite 页顶栏 **Export → Excalidraw scene** 也可下载反向兼容文件。暂不支持的原生元素（极少数 embed）会跳过并记录在页面 notes。
+
 ### 多 Agent 实时 Presence
 
 每个 agent 创建一个 session 并心跳；hcanvas 在 **Agent** 页和顶栏显示在线 agent：

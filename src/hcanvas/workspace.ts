@@ -43,6 +43,9 @@ export function workspaceGuide(workspace: string, project: string | null): strin
     '## Import / export\n\n' +
     'hcanvas import ./page.html ' + example + '\n' +
     'hcanvas export ' + example + ' --format pdf --out ./exports/deck.pdf\n' +
+    'hcanvas import-scene ./board.excalidraw ' + example + '\n' +
+    'hcanvas convert-whiteboard ' + example + '\n' +
+    'hcanvas export-scene ' + example + ' --out ./exports/board.excalidraw\n' +
     'hcanvas export ' + example + ' --format pptx\n\n' +
     'Read before writing: always pass the latest revision returned by hcanvas context/read.\n';
 }

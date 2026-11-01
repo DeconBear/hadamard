@@ -34,7 +34,8 @@ export function vectorSvgMarkup(block: HcBlock): string {
   const points = (block.points && block.points.length ? block.points : [{ x: 0, y: 0 }, { x: width, y: height }])
     .map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }));
   const stroke = vectorStroke(block);
-  const common = 'fill="none" stroke="' + attr(stroke.color) + '" stroke-width="' + stroke.width + '" stroke-linecap="round" stroke-linejoin="round"';
+  const dash = block.style?.strokeStyle === 'dashed' ? ' stroke-dasharray="' + (stroke.width * 4 + 4) + ' ' + (stroke.width * 3 + 3) + '"' : block.style?.strokeStyle === 'dotted' ? ' stroke-dasharray="1 ' + (stroke.width * 2 + 2) + '"' : '';
+  const common = 'fill="none" stroke="' + attr(stroke.color) + '" stroke-width="' + stroke.width + '" stroke-linecap="round" stroke-linejoin="round"' + dash;
   if (block.type === 'freehand') {
     return '<svg class="block-vector" viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none" aria-hidden="true"><path ' + common + ' d="' + freehandPathData(points) + '"/></svg>';
   }

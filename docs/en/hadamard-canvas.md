@@ -167,6 +167,20 @@ hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor clau
 
 Edits are autosaved with revision checks. `Download .excalidraw` in the page inspector exports the scene; HTML/PDF/PNG/PPTX export renders whiteboard pages locally through the bundled Excalidraw CLI.
 
+### Migrating a whiteboard to native Infinite
+
+Click **Convert to native Infinite** in a whiteboard page's Inspector. hcanvas converts Excalidraw elements into native Infinite blocks (freehand strokes, arrows and bindings, text, rectangles, ellipses, diamonds, frames, rotated/opacity/dashed elements and image data URLs) and opens the new page. The source whiteboard is left untouched.
+
+The same conversion is available from the CLI, together with native scene import/export:
+
+```bash
+hcanvas convert-whiteboard <doc> --page <whiteboardPageId> --title "Board · Native"
+hcanvas import-scene ./board.excalidraw <doc> --title "Imported board"
+hcanvas export-scene <doc> --page <infinitePageId> --out ./exports/board.excalidraw
+```
+
+Infinite pages also expose **Export → Excalidraw scene** in the top bar. Elements that have no native representation yet (rare embeds) are skipped and reported in the page notes.
+
 ### Multi-agent presence
 
 Create a session per agent and keep it alive; hcanvas shows live actors in the **Agent** tab and as avatars in the top bar:
