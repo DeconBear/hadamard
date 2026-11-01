@@ -1766,8 +1766,8 @@ function renderPageInspector(): void {
   const blocks = page.blocks || [];
   let html = '<section class="inspector-section"><div class="inspector-title">Page</div>';
   html += field('pageName', 'Name', '<input id="pageName" value="' + esc(page.name) + '">');
-  if (page.mode === 'infinite') html += field('pageSurface', 'Surface', '<input readonly value="Infinite · no page bounds">');
-  else if (page.mode === 'whiteboard') html += field('pageSurface', 'Surface', '<input readonly value="Full workspace · Excalidraw">');
+  if (page.mode === 'infinite') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Infinite · no page bounds">');
+  else if (page.mode === 'whiteboard') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Full workspace · Excalidraw">');
   else html += '<div class="field-row">' + field('pageWidth', 'Width', '<input id="pageWidth" type="number" value="' + page.width + '">') + field('pageHeight', 'Height', '<input id="pageHeight" type="number" value="' + page.height + '">') + '</div>';
   html += '<div class="field"><span>Background</span><div class="swatch-row"><input id="pageBgPicker" type="color" value="' + esc(toHex(page.background)) + '"><input id="pageBg" value="' + esc(page.background) + '"></div></div>';
   html += '<div class="field"><span>Mode</span><input readonly value="' + esc(page.mode === 'infinite' ? 'infinite canvas' : page.mode) + '"></div>';
