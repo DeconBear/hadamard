@@ -3,7 +3,6 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
 import { parse } from 'node-html-parser';
 import { marked } from 'marked';
 import pptxgen from 'pptxgenjs';
@@ -11,6 +10,7 @@ import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from 
 
 import { htmlToPlainDocument } from './html.js';
 import { vectorSvgMarkup } from './vector.js';
+import { excalidrawSceneToNativePage } from './sceneBridge.js';
 import { extractHtmlLayout, type HtmlLayout } from './htmlLayout.js';
 import type { HcBlock, HcDocument, HcPage } from './types.js';
 
@@ -103,6 +103,16 @@ function exportPage(page: HcPage): HcPage {
     height: Math.max(480, Math.ceil(maxY - minY) + padding * 2),
     blocks: blocks.map(block => ({ ...block, x: block.x - minX + padding, y: block.y - minY + padding })),
   };
+}
+
+function nativePageFromWhiteboard(page: HcPage): HcPage {
+  if (page.mode !== 'whiteboard') return page;
+  const native = excalidrawSceneToNativePage({ elements: (page.scene?.elements || []) as never[], appState: page.scene?.appState, files: page.scene?.files }, page.name || 'Legacy whiteboard');
+  native.id = page.id;
+  native.name = page.name;
+  native.notes = page.notes;
+  native.background = page.background || native.background;
+  return native;
 }
 
 function renderCanvasPage(page: HcPage): string {
@@ -322,33 +332,6 @@ async function exportDocx(doc: HcDocument, outDir: string, options: { pageId?: s
   return { format: 'docx', path: outPath, pageId: page.id, width: page.width, height: page.height, bytes: buffer.byteLength };
 }
 
-function findExcalidrawCli(): string | null {
-  const candidates = [
-    path.resolve(process.cwd(), 'node_modules', '@excalidraw', 'cli', 'dist', 'main.js'),
-    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'node_modules', '@excalidraw', 'cli', 'dist', 'main.js'),
-  ];
-  return candidates.find(candidate => existsSync(candidate)) ?? null;
-}
-
-async function renderWhiteboardPng(page: HcPage, outPath: string): Promise<void> {
-  const cli = findExcalidrawCli();
-  if (!cli) throw new Error('Excalidraw CLI is not installed; cannot render whiteboard pages.');
-  const scenePath = outPath + '.scene.excalidraw';
-  await writeFile(scenePath, JSON.stringify({
-    type: 'excalidraw', version: 2, source: 'hcanvas',
-    elements: page.scene?.elements || [],
-    appState: { ...(page.scene?.appState || {}), viewBackgroundColor: page.background || '#ffffff' },
-    files: page.scene?.files || {},
-  }), 'utf8');
-  try {
-    await execFileAsync(process.execPath, [cli, 'render', scenePath, '--out', outPath], {
-      timeout: 180000, windowsHide: true, maxBuffer: 16 * 1024 * 1024,
-    });
-  } finally {
-    await rm(scenePath, { force: true });
-  }
-}
-
 async function renderHtmlPagePng(doc: HcDocument, page: HcPage, outPath: string): Promise<void> {
   const browser = findBrowser();
   if (!browser) throw new Error('No Chrome/Edge/Chromium browser found. Set HCANVAS_BROWSER_PATH.');
@@ -361,11 +344,6 @@ async function renderHtmlPagePng(doc: HcDocument, page: HcPage, outPath: string)
   } finally {
     await rm(temp, { force: true });
   }
-}
-
-function whiteboardHtmlFromPng(png: Buffer, page: HcPage): string {
-  const data = png.toString('base64');
-  return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;background:' + escapeHtml(page.background) + ';display:grid;place-items:center;overflow:hidden}img{max-width:100%;max-height:100%;object-fit:contain;display:block}</style></head><body><img alt="' + escapeHtml(page.name) + '" src="data:image/png;base64,' + data + '"></body></html>';
 }
 
 function slideBackground(page: HcPage): string {
@@ -484,7 +462,8 @@ function addEditableCanvasSlide(pptx: { addSlide: () => any; ShapeType: { roundR
 }
 
 async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: string; outPath?: string; editableHtml?: boolean }): Promise<HcExportResult> {
-  const pages = options.pageId ? doc.pages.filter(page => page.id === options.pageId) : doc.pages;
+  const sourcePages = options.pageId ? doc.pages.filter(page => page.id === options.pageId) : doc.pages;
+  const pages = sourcePages.map(page => nativePageFromWhiteboard(page));
   if (!pages.length) throw new Error('No pages to export');
   const safeTitle = (doc.title || 'hadamard-canvas').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 60) || 'hadamard-canvas';
   const outDirAbs = path.resolve(outDir);
@@ -524,8 +503,7 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
         } catch { /* fall through to image */ }
       }
       const imagePath = path.join(workDir, 'page-' + index + '.png');
-      if (page.mode === 'whiteboard') await renderWhiteboardPng(page, imagePath);
-      else await renderHtmlPagePng(doc, page, imagePath);
+      await renderHtmlPagePng(doc, page, imagePath);
       const slide = pptx.addSlide();
       slide.background = { color: slideBackground(page) };
       const slideW = 13.333;
@@ -535,7 +513,7 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
       let height = slideW / pageAspect;
       if (height > slideH) { height = slideH; width = slideH * pageAspect; }
       slide.addImage({ path: imagePath, x: (slideW - width) / 2, y: (slideH - height) / 2, w: width, h: height });
-      const notes = page.notes || (page.mode === 'whiteboard' ? 'Whiteboard page rendered from Excalidraw.' : '');
+      const notes = page.notes || '';
       if (notes) slide.addNotes(notes);
       slide.addText(String(index + 1), { x: slideW - 0.65, y: slideH - 0.35, w: 0.4, h: 0.25, fontSize: 9, color: '8A8276', align: 'right' });
     }
@@ -561,37 +539,8 @@ export async function exportFile(
     const result = await exportPptx(doc, outDir, { ...options, editableHtml: true });
     return { ...result, format: 'pptx-editable' };
   }
-  const page = exportPage(firstPage(doc, options.pageId));
+  const page = exportPage(nativePageFromWhiteboard(firstPage(doc, options.pageId)));
   const safeTitle = (page.name || 'page').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 40) || 'page';
-  if (page.mode === 'whiteboard') {
-    const outPath = path.resolve(options.outPath || path.join(outDir, doc.id + '-' + safeTitle + '.' + format));
-    const imagePath = format === 'png' ? outPath : path.resolve(outDir, '.hc-whiteboard-' + Date.now() + '.png');
-    await renderWhiteboardPng(page, imagePath);
-    if (format === 'png') {
-      const data = await readFile(outPath);
-      return { format, path: outPath, pageId: page.id, width: page.width, height: page.height, bytes: data.byteLength };
-    }
-    const png = await readFile(imagePath);
-    const html = whiteboardHtmlFromPng(png, page);
-    if (format === 'html') {
-      await writeFile(outPath, html, 'utf8');
-      const data = await readFile(outPath);
-      await rm(imagePath, { force: true });
-      return { format, path: outPath, pageId: page.id, width: page.width, height: page.height, bytes: data.byteLength };
-    }
-    const temp = path.resolve(outDir, '.hc-whiteboard-' + Date.now() + '.html');
-    await writeFile(temp, html, 'utf8');
-    try {
-      const browser = findBrowser();
-      if (!browser) throw new Error('No Chrome/Edge/Chromium browser found. Set HCANVAS_BROWSER_PATH.');
-      await runBrowser(browser, ['--headless=new', '--disable-gpu', '--no-pdf-header-footer', '--print-to-pdf=' + outPath, 'file://' + temp.replace(/\\/g, '/')], 90000);
-    } finally {
-      await rm(temp, { force: true });
-      await rm(imagePath, { force: true });
-    }
-    const data = await readFile(outPath);
-    return { format, path: outPath, pageId: page.id, width: page.width, height: page.height, bytes: data.byteLength };
-  }
   if (format === 'html') {
     const html = buildDocumentHtml(doc, options.pageId);
     const outPath = options.outPath || path.join(outDir, doc.id + '-' + safeTitle + '.html');

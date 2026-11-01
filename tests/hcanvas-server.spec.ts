@@ -97,6 +97,9 @@ describe('hcanvas server', () => {
     expect(exported.bytes).toBeGreaterThan(100);
     expect(exported.path).toMatch(/\.html$/);
 
+    const removedExcalidrawAsset = await fetch(server.url.replace(/\/$/, '') + '/gui-canvas/excalidraw.js');
+    expect(removedExcalidrawAsset.status).toBe(404);
+
     const printPdf = await api<{ path: string; bytes: number }>(server, '/api/export', { method: 'POST', body: JSON.stringify({ docId, format: 'pdf', pageId: state.active.pageId, bleedMm: 3, cropMarks: true }) });
     expect(printPdf.bytes).toBeGreaterThan(1000);
     expect(printPdf.path).toMatch(/\.pdf$/);

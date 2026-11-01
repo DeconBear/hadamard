@@ -89,7 +89,7 @@ HTML 页面和 HTML block 在沙箱 iframe 中渲染：
   - `format=pptx-editable` 还会用真实浏览器布局数据，把 HTML 标题、段落、列表、内联标签和卡片背景映射为原生 PowerPoint 文本框/形状；无文本可提取的页面回退为图片；
   - HTML、Infinite、Excalidraw 白板页在默认视觉 deck 中以高保真整页图片嵌入；
   - **+ Page** 提供 Canvas · PPT cover / content 模板；
-  - 白板图片通过本地 Excalidraw CLI 渲染。
+  - Legacy 白板页在图片/PPTX 渲染前会先转换为原生 blocks，不再使用 Excalidraw CLI。
 
 ## 简历与海报
 
@@ -117,7 +117,7 @@ hcanvas masters delete <masterId>
 
 ## Legacy Excalidraw 白板页
 
-旧文档可能仍包含 **Excalidraw whiteboard** 页。新建页面已不再提供此预设；只有打开旧白板时才懒加载 Excalidraw 运行时。内嵌编辑器包含：形状、箭头、自由绘制、文字、图片、frame、手绘风格、图层、缩放/平移、撤销/重做和 Excalidraw 工具栏。场景随文档保存：
+旧文档可能仍包含 **Excalidraw whiteboard** 页。新建页面已不再提供此预设，hcanvas 也不再加载或提供 Excalidraw 运行时。旧白板以只读原生预览显示（形状、箭头、手绘、文本、图片、frame、旋转/透明度/虚线）；点击 **Convert to native Infinite** 后可编辑。原始 scene 仍保存在文档中用于迁移：形状、箭头、自由绘制、文字、图片、frame、手绘风格、图层、缩放/平移、撤销/重做和 Excalidraw 工具栏。场景随文档保存：
 
 ```bash
 hcanvas read <doc> --format scene --page <白板页 id>
@@ -128,7 +128,7 @@ hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor clau
 [{ "op": "set_whiteboard_scene", "pageId": "page_...", "scene": { "elements": [], "appState": {}, "files": {} } }]
 ```
 
-编辑自动保存并做 revision 校验；页面 Inspector 可下载 `.excalidraw`；白板的 HTML/PDF/PNG/PPTX 通过本地打包的 Excalidraw CLI 渲染导出。
+页面 Inspector 可下载原始 `.excalidraw`；白板的 HTML/PDF/PNG/PPTX 导出会先内部转换为原生 blocks，不再依赖 Excalidraw CLI。
 
 ### 迁移到原生 Infinite
 

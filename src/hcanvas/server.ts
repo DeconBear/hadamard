@@ -162,11 +162,6 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         path.resolve(moduleDir, '..', '..', 'dist', 'hcanvas'),
       ];
   const staticDir = staticCandidates.find(candidate => existsSync(path.join(candidate, 'index.html'))) || staticCandidates[0]!;
-  const guiCanvasDir = [
-    path.resolve(process.cwd(), 'dist', 'gui-canvas'),
-    path.resolve(moduleDir, '..', '..', 'gui-canvas'),
-    path.resolve(moduleDir, '..', '..', '..', 'dist', 'gui-canvas'),
-  ].find(candidate => existsSync(path.join(candidate, 'excalidraw.js'))) || path.resolve(process.cwd(), 'dist', 'gui-canvas');
   const indexPath = path.join(staticDir, 'index.html');
   const server = createServer(async (req, res) => {
     try {
@@ -195,27 +190,6 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         };
         html = html.replace('__HCANVAS_BOOT_JSON__', escapeJsonForHtml(boot));
         text(res, 200, html, 'text/html; charset=utf-8');
-        return;
-      }
-      const guiAsset = (() => {
-        if (pathname.startsWith('/gui-canvas/')) return pathname.slice('/gui-canvas/'.length);
-        if (pathname.startsWith('/fonts/') || pathname.startsWith('/locales/') || pathname.startsWith('/data/')) return pathname.slice(1);
-        return null;
-      })();
-      if (guiAsset) {
-        const filePath = path.resolve(guiCanvasDir, guiAsset);
-        if (!filePath.startsWith(path.resolve(guiCanvasDir) + path.sep)) {
-          json(res, 403, { error: 'Forbidden' });
-          return;
-        }
-        try {
-          const info = await stat(filePath);
-          if (!info.isFile()) throw new Error('not a file');
-          res.writeHead(200, { 'content-type': contentType(filePath), 'cache-control': 'public, max-age=3600' });
-          createReadStream(filePath).pipe(res);
-        } catch {
-          json(res, 404, { error: 'Excalidraw asset not found' });
-        }
         return;
       }
       if (pathname.startsWith('/assets/')) {

@@ -66,15 +66,13 @@ The workspace stores documents, state and exports:
 <workspace>/exports/              # HTML/PDF/PNG output
 ```
 
-## Whiteboard workspace
+## Legacy whiteboard preview
 
-Interactive canvas controls: **mouse wheel zooms at the pointer**, **middle-drag pans**, Space/Hand pans. Whiteboard pages use the same wheel-zoom and middle-drag contract, applied to the Excalidraw viewport.
-
-Whiteboard pages are full-workspace surfaces: the Excalidraw canvas fills the entire canvas viewport, while the hcanvas tool rail and page zoom controls are hidden. The full Excalidraw toolbar is available inside this page.
+Whiteboard pages are **legacy read-only pages**. hcanvas renders their stored Excalidraw scene through the native block renderer — no Excalidraw bundle or runtime is loaded or served. The Inspector exposes **Convert to native Infinite**; converted pages become normal editable Infinite pages.
 
 ## Page thumbnails and deck management
 
-The left page rail renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks, and whiteboard pages show a scene placeholder. Hovering a page reveals **move up / move down / duplicate / delete** actions, so a deck can be reordered and duplicated like a slide sorter.
+The left page rail renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks, and legacy whiteboard pages render a native conversion of their scene. Hovering a page reveals **move up / move down / duplicate / delete** actions, so a deck can be reordered and duplicated like a slide sorter.
 
 ## Page types and local HTML
 
@@ -126,7 +124,7 @@ Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas
   - `format=pptx-editable` additionally maps HTML headings, paragraphs, lists, inline labels and background cards to native PowerPoint text boxes/shapes using real browser layout data; pages with no extractable text fall back to images.
   - HTML, infinite and Excalidraw whiteboard pages are embedded as high-fidelity slide images in the default visual deck.
   - Canvas PPT templates (Canvas · PPT cover / content) are in **+ Page**.
-  - Whiteboard images are rendered through the official Excalidraw CLI.
+  - Legacy whiteboard pages are converted to native blocks before image/PPTX rendering; no Excalidraw CLI is used.
 
 ## Résumés and posters
 
@@ -154,7 +152,7 @@ Masters are stored in `<workspace>/masters.json`; applying a master creates a ne
 
 ## Legacy Excalidraw whiteboard pages
 
-Legacy documents may still contain **Excalidraw whiteboard** pages. New pages cannot be created from this preset; the runtime is lazily loaded only when a legacy whiteboard page is opened. The embedded editor provides: shapes, arrows, freehand, text, images, frames, hand-drawn styling, layers, zoom/pan, undo/redo and the Excalidraw toolbar. The page is stored as an Excalidraw scene in the document:
+Legacy documents may still contain **Excalidraw whiteboard** pages. New pages cannot be created from this preset, and hcanvas no longer loads or serves the Excalidraw runtime. A legacy page is shown as a read-only native preview (shapes, arrows, freehand, text, images, frames, rotation, opacity, dashed strokes); use **Convert to native Infinite** to make it editable. The raw scene is still stored in the document for migration:
 
 ```bash
 hcanvas read <doc> --format scene --page <whiteboard-page-id>
@@ -165,7 +163,7 @@ hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor clau
 [{ "op": "set_whiteboard_scene", "pageId": "page_...", "scene": { "elements": [], "appState": {}, "files": {} } }]
 ```
 
-Edits are autosaved with revision checks. `Download .excalidraw` in the page inspector exports the scene; HTML/PDF/PNG/PPTX export renders whiteboard pages locally through the bundled Excalidraw CLI.
+`Download .excalidraw` in the page inspector exports the raw scene. HTML/PDF/PNG/PPTX export converts legacy whiteboard pages to native blocks internally before rendering, so those exports no longer depend on Excalidraw.
 
 ### Migrating a whiteboard to native Infinite
 

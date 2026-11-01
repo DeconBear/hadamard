@@ -510,3 +510,9 @@ button { cursor: pointer; }
 .block-frame-label { position: absolute; left: 10px; top: 8px; font: 600 10px/1 Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #8a8276; white-space: nowrap; background: rgba(251,250,247,.9); padding: 3px 5px; border-radius: 4px; pointer-events: none; }
 .marquee-box { position: absolute; z-index: 99998; border: 1px solid rgba(124,58,237,.85); background: rgba(124,58,237,.08); border-radius: 3px; pointer-events: none; }
 .block-wrap.selected { outline: 2px solid rgba(124,58,237,.9); outline-offset: 3px; border-radius: 6px; }
+.legacy-whiteboard-preview { position: absolute; transform-origin: 0 0; pointer-events: none; }
+.legacy-whiteboard-preview .block-wrap { pointer-events: none !important; }
+.legacy-whiteboard-banner { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 100000; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: rgba(251,250,247,.94); box-shadow: 0 8px 24px rgba(30,25,20,.12); font: 11px/1.3 Inter, sans-serif; color: var(--ink-2); }
+.legacy-whiteboard-banner strong { font-size: 11px; color: var(--ink); text-transform: uppercase; letter-spacing: .08em; }
+.legacy-whiteboard-banner span { color: var(--muted); }
+.legacy-whiteboard-empty { display: grid; place-items: center; height: 100%; color: var(--muted); font: 13px Inter, sans-serif; padding: 40px; text-align: center; }

@@ -98,9 +98,7 @@ interface UiState {
   showGrid: boolean;
   snap: boolean;
   spaceHeld: boolean;
-  whiteboardHandle: { unmount: () => void; getScene: () => { elements: unknown[]; appState: Record<string, unknown>; files: Record<string, unknown> }; updateScene: (scene: Record<string, unknown>) => void; getApi: () => unknown } | null;
-  whiteboardPageId: string | null;
-  whiteboardHydratingUntil: number;
+
 }
 
 interface PageItemCache {
@@ -127,7 +125,6 @@ const state: UiState = {
   copilotMessages: [] as CopilotMessage[], copilotBusy: false, copilotConfigured: null as boolean | null, copilotModel: '',
   presenting: false, presentIndex: 0, ignoreEventsUntil: 0, sourceModalOpen: false,
   tool: 'select', showGrid: true, snap: true, spaceHeld: false,
-  whiteboardHandle: null, whiteboardPageId: null, whiteboardHydratingUntil: 0,
 };
 
 const PAGE_PRESETS: Array<{ id: string; title: string; mode: 'html' | 'canvas' | 'infinite' | 'whiteboard'; width: number; height: number; background: string; hint: string; template?: string }> = [
@@ -376,9 +373,7 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
   await loadDocs();
   renderAll();
   void syncActive();
-  if (result.doc.pages.some(page => page.mode === 'whiteboard')) {
-    setTimeout(() => { void loadExcalidrawScript().catch(() => undefined); }, 1200);
-  }
+
 }
 
 async function initialize(): Promise<void> {
@@ -760,25 +755,6 @@ function bindStaticActions(): void {
     event.stopPropagation();
     beginVectorDraw(event);
   }, { capture: true });
-  // Whiteboard pages have their own Excalidraw gesture handling; intercept in capture
-  // phase so hcanvas can provide the same wheel-zoom / middle-drag-pan contract.
-  viewport.addEventListener('wheel', event => {
-    if (activePage()?.mode !== 'whiteboard') return;
-    if (!(event.target as Element).closest('.whiteboard-host')) return;
-    if (!whiteboardApi()) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const factor = Math.exp(-event.deltaY * (event.ctrlKey || event.metaKey ? 0.002 : 0.0016));
-    zoomWhiteboardAt(event.clientX, event.clientY, factor);
-  }, { capture: true, passive: false });
-  viewport.addEventListener('pointerdown', event => {
-    if (event.button !== 1 || activePage()?.mode !== 'whiteboard') return;
-    if (!(event.target as Element).closest('.whiteboard-host')) return;
-    if (!whiteboardApi()) return;
-    event.preventDefault();
-    event.stopPropagation();
-    beginWhiteboardPan(event);
-  }, { capture: true });
   window.addEventListener('resize', () => { resizeWhiteboardSurface(); });
 }
 
@@ -1115,73 +1091,29 @@ function renderDocs(): void {
   }
 }
 
-function whiteboardApi(): { getAppState: () => Record<string, unknown>; updateScene: (scene: Record<string, unknown>) => void } | null {
-  try {
-    const handle = state.whiteboardHandle;
-    if (!handle) return null;
-    const api = handle.getApi() as { getAppState?: () => Record<string, unknown>; updateScene?: (scene: Record<string, unknown>) => void } | undefined;
-    if (!api?.getAppState || !api.updateScene) return null;
-    return { getAppState: api.getAppState, updateScene: api.updateScene };
-  } catch { return null; }
-}
-
-function refreshWhiteboardCursorOverlay(): void {
-  const page = activePage();
-  if (page?.mode === 'whiteboard') requestAnimationFrame(() => positionWhiteboardCursors(page));
-}
-
-function zoomWhiteboardAt(clientX: number, clientY: number, factor: number): void {
-  const api = whiteboardApi();
-  if (!api) return;
-  const app = api.getAppState();
-  const zoom = Number((app.zoom as { value?: number } | undefined)?.value) || 1;
-  const nextZoom = Math.max(0.1, Math.min(3, zoom * factor));
-  if (nextZoom === zoom) return;
-  const offsetLeft = Number(app.offsetLeft) || 0;
-  const offsetTop = Number(app.offsetTop) || 0;
-  const scrollX = Number(app.scrollX) || 0;
-  const scrollY = Number(app.scrollY) || 0;
-  const sceneX = (clientX - offsetLeft) / zoom - scrollX;
-  const sceneY = (clientY - offsetTop) / zoom - scrollY;
-  whiteboardSkipSaveUntil = Date.now() + 250;
-  api.updateScene({ appState: { zoom: { value: nextZoom }, scrollX: (clientX - offsetLeft) / nextZoom - sceneX, scrollY: (clientY - offsetTop) / nextZoom - sceneY } });
-  refreshWhiteboardCursorOverlay();
-}
-
-function beginWhiteboardPan(event: PointerEvent): void {
-  const api = whiteboardApi();
-  if (!api) return;
-  const app = api.getAppState();
-  const zoom = Number((app.zoom as { value?: number } | undefined)?.value) || 1;
-  const start = { x: event.clientX, y: event.clientY, scrollX: Number(app.scrollX) || 0, scrollY: Number(app.scrollY) || 0 };
-  const viewport = el('viewport');
-  viewport.classList.add('panning');
-  try { viewport.setPointerCapture(event.pointerId); } catch { /* ignore */ }
-  const move = (moveEvent: PointerEvent): void => {
-    whiteboardSkipSaveUntil = Date.now() + 250;
-    api.updateScene({ appState: { scrollX: start.scrollX + (moveEvent.clientX - start.x) / zoom, scrollY: start.scrollY + (moveEvent.clientY - start.y) / zoom } });
-    refreshWhiteboardCursorOverlay();
-  };
-  const up = (): void => {
-    viewport.classList.remove('panning');
-    viewport.removeEventListener('pointermove', move);
-    viewport.removeEventListener('pointerup', up);
-    try { viewport.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
-  };
-  viewport.addEventListener('pointermove', move);
-  viewport.addEventListener('pointerup', up);
-}
-
 function pageThumbHtml(page: HcPage): string {
   const ratio = Math.min(46 / page.width, 30 / page.height);
   if (page.mode === 'html' && page.html) {
     return '<iframe sandbox srcdoc="' + esc(page.html) + '" style="width:' + page.width + 'px;height:' + page.height + 'px;transform:scale(' + ratio + ');transform-origin:top left" tabindex="-1"></iframe>';
   }
-  if (page.mode === 'canvas' || page.mode === 'infinite') {
-    const source = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}</style></head><body>' + renderPresentCanvasHtml(page) + '</body></html>';
-    return '<iframe sandbox srcdoc="' + esc(source) + '" style="width:' + page.width + 'px;height:' + page.height + 'px;transform:scale(' + ratio + ');transform-origin:top left" tabindex="-1"></iframe>';
+  if (page.mode === 'canvas' || page.mode === 'infinite' || page.mode === 'whiteboard') {
+    const native = page.mode === 'whiteboard' ? legacyWhiteboardNativePage(page) : page;
+    const source = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}</style></head><body>' + renderPresentCanvasHtml(exportPageForThumb(native)) + '</body></html>';
+    return '<iframe sandbox srcdoc="' + esc(source) + '" style="width:' + native.width + 'px;height:' + native.height + 'px;transform:scale(' + Math.min(46 / native.width, 30 / native.height) + ');transform-origin:top left" tabindex="-1"></iframe>';
   }
-  return '<div class="page-thumb-placeholder">Whiteboard</div>';
+  return '<div class="page-thumb-placeholder">Page</div>';
+}
+
+function exportPageForThumb(page: HcPage): HcPage {
+  if (page.mode !== 'infinite' && page.mode !== 'whiteboard') return page;
+  const blocks = page.blocks || [];
+  if (!blocks.length) return { ...page, width: 1280, height: 720 };
+  const minX = Math.min(...blocks.map(block => block.x));
+  const minY = Math.min(...blocks.map(block => block.y));
+  const maxX = Math.max(...blocks.map(block => block.x + block.w));
+  const maxY = Math.max(...blocks.map(block => block.y + block.h));
+  const padding = 60;
+  return { ...page, width: Math.max(320, Math.ceil(maxX - minX) + padding * 2), height: Math.max(240, Math.ceil(maxY - minY) + padding * 2), blocks: blocks.map(block => ({ ...block, x: block.x - minX + padding, y: block.y - minY + padding })) };
 }
 
 function duplicatePage(page: HcPage): void {
@@ -1367,7 +1299,6 @@ function selectPage(pageId: string): void {
 }
 
 let stageFrame = 0;
-let whiteboardSkipSaveUntil = 0;
 let undoStack: HcOp[][] = [];
 let redoStack: HcOp[][] = [];
 let applyingHistory = false;
@@ -1442,7 +1373,6 @@ function fitPage(): void {
 }
 
 function renderArtboard(): void {
-  unmountWhiteboard();
   const artboard = el('artboard');
   const viewport = el('viewport');
   const page = activePage();
@@ -1517,86 +1447,42 @@ function resizeWhiteboardSurface(): void {
   }
 }
 
-let excalidrawScriptPromise: Promise<Record<string, unknown>> | null = null;
-let whiteboardSaveTimer: ReturnType<typeof setTimeout> | undefined;
-
-function unmountWhiteboard(): void {
-  if (whiteboardSaveTimer) { clearTimeout(whiteboardSaveTimer); whiteboardSaveTimer = undefined; }
-  if (state.whiteboardHandle) {
-    try { state.whiteboardHandle.unmount(); } catch { /* ignore */ }
-  }
-  state.whiteboardHandle = null;
-  state.whiteboardPageId = null;
-}
-
-function loadExcalidrawScript(): Promise<Record<string, unknown>> {
-  const globalWindow = window as unknown as { HadamardExcalidraw?: Record<string, unknown>; EXCALIDRAW_ASSET_PATH?: string };
-  if (globalWindow.HadamardExcalidraw) return Promise.resolve(globalWindow.HadamardExcalidraw);
-  if (excalidrawScriptPromise) return excalidrawScriptPromise;
-  globalWindow.EXCALIDRAW_ASSET_PATH = '/gui-canvas/';
-  excalidrawScriptPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[data-hc-excalidraw]');
-    if (existing) { reject(new Error('Excalidraw bundle did not initialize')); return; }
-    const script = document.createElement('script');
-    script.src = '/gui-canvas/excalidraw.js';
-    script.dataset.hcExcalidraw = '1';
-    script.onload = () => {
-      if (globalWindow.HadamardExcalidraw) resolve(globalWindow.HadamardExcalidraw);
-      else reject(new Error('Excalidraw global missing'));
-    };
-    script.onerror = () => reject(new Error('Could not load the Excalidraw bundle. Run: npm run build'));
-    document.head.appendChild(script);
-  });
-  return excalidrawScriptPromise;
+function legacyWhiteboardNativePage(page: HcPage): HcPage {
+  const native = excalidrawSceneToNativePage({ elements: (page.scene?.elements || []) as never[], appState: page.scene?.appState, files: page.scene?.files }, page.name || 'Legacy whiteboard');
+  native.id = page.id;
+  native.background = page.scene?.appState && typeof (page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor === 'string'
+    ? String((page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor)
+    : page.background || '#ffffff';
+  return native;
 }
 
 function renderWhiteboardPage(container: HTMLElement, page: HcPage): void {
+  const native = legacyWhiteboardNativePage(page);
+  const blocks = native.blocks || [];
+  if (!blocks.length) {
+    container.innerHTML = '<div class="legacy-whiteboard-empty">This legacy whiteboard is empty. Use <strong>Convert to native Infinite</strong> to start a native page.</div>';
+    return;
+  }
   const host = document.createElement('div');
-  host.className = 'whiteboard-host';
-  host.innerHTML = '<div class="whiteboard-loading"><span class="pulse-dot"></span> Loading Excalidraw whiteboard…</div>';
+  host.className = 'legacy-whiteboard-preview';
+  host.style.width = native.width + 'px';
+  host.style.height = native.height + 'px';
   container.appendChild(host);
-  const pageId = page.id;
-  void loadExcalidrawScript().then(entry => {
-    if (state.activePageId !== pageId) return;
-    host.innerHTML = '';
-    const scene = page.scene || { elements: [], appState: {}, files: {} };
-    state.whiteboardHydratingUntil = Date.now() + 1800;
-    const mount = entry.mount as (element: HTMLElement, options: Record<string, unknown>) => typeof state.whiteboardHandle;
-    const handle = mount(host, {
-      initialData: {
-        elements: scene.elements || [],
-        appState: { ...(scene.appState || {}), viewBackgroundColor: page.background || '#ffffff', collaborators: new Map() },
-        files: scene.files || {},
-        scrollToContent: true,
-      },
-      theme: 'light',
-      onReady: () => { state.whiteboardHydratingUntil = Date.now() + 1500; },
-      onChange: (elements: unknown[], appState: Record<string, unknown>, files: Record<string, unknown>) => {
-        if (Date.now() < state.whiteboardHydratingUntil || Date.now() < whiteboardSkipSaveUntil) return;
-        if (whiteboardSaveTimer) clearTimeout(whiteboardSaveTimer);
-        whiteboardSaveTimer = setTimeout(() => {
-          if (!state.doc || state.activePageId !== pageId) return;
-          const current = activePage();
-          const nextScene = { elements, files, appState: { viewBackgroundColor: current?.background || '#ffffff' } };
-          void applyOps([{ op: 'set_whiteboard_scene', pageId, scene: nextScene } as HcOp], { refreshArtboard: false, actor: 'human', silent: true });
-        }, 900);
-      },
-    });
-    state.whiteboardHandle = handle;
-    state.whiteboardPageId = pageId;
-    (window as unknown as { __hcanvasWhiteboard?: unknown }).__hcanvasWhiteboard = handle;
-    setTimeout(() => {
-      try {
-        const api = handle?.getApi() as { scrollToContent?: (target?: unknown, opts?: unknown) => void } | undefined;
-        const elements = handle?.getScene().elements || [];
-        if (elements.length) api?.scrollToContent?.(elements, { fitToContent: true, animate: false });
-        else api?.scrollToContent?.(undefined, { fitToContent: true, animate: false });
-      } catch { /* optional */ }
-      setTimeout(() => positionWhiteboardCursors(page), 500);
-    }, 350);
-  }).catch(error => {
-    host.innerHTML = '<div class="whiteboard-error">' + esc(error instanceof Error ? error.message : String(error)) + '</div>';
-  });
+  renderCanvasPage(host, native);
+  host.querySelectorAll<HTMLElement>('.block-wrap').forEach(node => { node.style.pointerEvents = 'none'; node.classList.remove('selected'); });
+  const bounds = pageMetrics(native).content || { minX: 0, minY: 0, maxX: native.width, maxY: native.height };
+  const rect = container.getBoundingClientRect();
+  const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
+  const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
+  const scale = Math.min(1, (rect.width - 120) / contentWidth, (rect.height - 140) / contentHeight);
+  host.style.left = ((rect.width - contentWidth * scale) / 2 - bounds.minX * scale) + 'px';
+  host.style.top = ((rect.height - contentHeight * scale) / 2 - bounds.minY * scale) + 'px';
+  host.style.transform = 'scale(' + scale + ')';
+  const banner = document.createElement('div');
+  banner.className = 'legacy-whiteboard-banner';
+  banner.innerHTML = '<strong>Legacy whiteboard preview</strong><span>' + blocks.length + ' native blocks · read-only</span><button type="button" id="legacyConvertBtn" class="btn tiny primary">Convert to native Infinite</button>';
+  container.appendChild(banner);
+  qs<HTMLButtonElement>('#legacyConvertBtn')?.addEventListener('click', () => { void convertWhiteboardPage(page); });
 }
 
 function whiteboardSceneJson(page: HcPage): string {
@@ -1607,7 +1493,7 @@ async function convertWhiteboardPage(page: HcPage): Promise<void> {
   if (page.mode !== 'whiteboard') return;
   const elements = page.scene?.elements || [];
   if (!elements.length) { toast('This whiteboard has no elements to convert.', 'info'); return; }
-  const nativePage = excalidrawSceneToNativePage({ elements, appState: page.scene?.appState, files: page.scene?.files }, (page.name || 'Whiteboard') + ' · Native');
+  const nativePage = excalidrawSceneToNativePage({ elements: elements as never[], appState: page.scene?.appState, files: page.scene?.files }, (page.name || 'Whiteboard') + ' · Native');
   nativePage.background = page.scene?.appState && typeof (page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor === 'string'
     ? String((page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor)
     : page.background || '#ffffff';
@@ -1743,36 +1629,6 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
       });
       container.appendChild(measure);
     }
-  }
-}
-
-function positionWhiteboardCursors(page: HcPage): void {
-  if (page.mode !== 'whiteboard' || !state.whiteboardHandle) return;
-  const overlay = document.querySelector<HTMLElement>('#artboard .agent-cursors');
-  if (!overlay) return;
-  let appState: Record<string, unknown> = {};
-  let elements: Array<Record<string, unknown>> = [];
-  try {
-    const api = state.whiteboardHandle.getApi() as { getAppState?: () => Record<string, unknown>; getSceneElements?: () => Array<Record<string, unknown>> } | undefined;
-    appState = api?.getAppState?.() || {};
-    elements = api?.getSceneElements?.() || (page.scene?.elements as Array<Record<string, unknown>>) || [];
-  } catch { return; }
-  const zoom = Number((appState.zoom as { value?: number } | undefined)?.value) || 1;
-  const scrollX = Number(appState.scrollX) || 0;
-  const scrollY = Number(appState.scrollY) || 0;
-  for (const session of state.presence) {
-    const selection = session.selection?.[0];
-    if (!selection) continue;
-    const element = elements.find(item => item.id === selection);
-    if (!element) continue;
-    const cursor = overlay.querySelector<HTMLElement>('[data-agent-session="' + CSS.escape(session.id) + '"]');
-    if (!cursor) continue;
-    const elementX = Number(element.x) || 0;
-    const elementY = Number(element.y) || 0;
-    const elementW = Number(element.width) || 0;
-    const elementH = Number(element.height) || 0;
-    cursor.style.left = ((elementX + scrollX) * zoom + (elementW * zoom) / 2) + 'px';
-    cursor.style.top = ((elementY + scrollY) * zoom + (elementH * zoom) / 2) + 'px';
   }
 }
 
@@ -2534,7 +2390,7 @@ function renderPageInspector(): void {
   let html = '<section class="inspector-section"><div class="inspector-title">Page</div>';
   html += field('pageName', 'Name', '<input id="pageName" value="' + esc(page.name) + '">');
   if (page.mode === 'infinite') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Infinite · no page bounds">');
-  else if (page.mode === 'whiteboard') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Full workspace · Excalidraw">');
+  else if (page.mode === 'whiteboard') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Legacy preview · native blocks">');
   else html += '<div class="field-row">' + field('pageWidth', 'Width', '<input id="pageWidth" type="number" value="' + page.width + '">') + field('pageHeight', 'Height', '<input id="pageHeight" type="number" value="' + page.height + '">') + '</div>';
   html += '<div class="field"><span>Background</span><div class="swatch-row"><input id="pageBgPicker" type="color" value="' + esc(toHex(page.background)) + '"><input id="pageBg" value="' + esc(page.background) + '"></div></div>';
   html += '<div class="field"><span>Mode</span><input readonly value="' + esc(page.mode === 'infinite' ? 'infinite canvas' : page.mode) + '"></div>';
@@ -2546,10 +2402,10 @@ function renderPageInspector(): void {
   if (page.mode === 'whiteboard') html += '<button id="pageConvertWhiteboardBtn" class="btn tiny primary">Convert to native Infinite</button><button id="pageWhiteboardDownload" class="btn tiny">Download .excalidraw</button>';
   html += '<button id="pageSaveMasterBtn" class="btn tiny">Save as master</button>';
   html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
-  html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Excalidraw whiteboard · freehand, shapes, arrows, text' : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
+  html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Legacy whiteboard · native read-only preview · ' + ((page.scene?.elements || []).length) + ' scene element' + ((page.scene?.elements || []).length === 1 ? '' : 's') : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
   if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Esc exits. The Agent tab exposes the CLI protocol.</div>';
   if (page.mode === 'infinite') html += '<div class="hint-card">Pan with the Hand tool, Space, or middle-drag; zoom with the mouse wheel or the zoom controls. Blocks can be placed anywhere and exports crop to content.</div>';
-  if (page.mode === 'whiteboard') html += '<div class="hint-card"><strong>Legacy whiteboard.</strong> New pages use native Infinite. Convert this page with <strong>Convert to native Infinite</strong> above; the Excalidraw runtime is only loaded for legacy pages. Use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for agent access.</div>';
+  if (page.mode === 'whiteboard') html += '<div class="hint-card"><strong>Legacy whiteboard.</strong> This page is rendered from its Excalidraw scene through the native block renderer — no Excalidraw runtime is loaded. Convert it with <strong>Convert to native Infinite</strong> above; use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for raw scene access.</div>';
   html += '</section>';
   root.innerHTML = html;
   bindPageInspector(page);
@@ -2689,8 +2545,7 @@ async function refreshPresence(): Promise<void> {
     renderPresence();
     if (state.tab === 'agent') renderAgent();
     renderDocs();
-    const page = activePage();
-    if (page?.mode === 'whiteboard') positionWhiteboardCursors(page);
+
   } catch { /* presence is best effort */ }
 }
 
@@ -3221,10 +3076,6 @@ async function exportCurrent(format: string, options: { bleedMm?: number; cropMa
     toast('Scene export is available for Infinite and Whiteboard pages.', 'error');
     return;
   }
-  if (page?.mode === 'whiteboard' && !['html', 'pdf', 'png', 'pptx', 'pptx-editable'].includes(format)) {
-    toast('Whiteboard pages render through Excalidraw for HTML/PDF/PNG/PPTX.', 'info');
-    return;
-  }
   try {
     toast('Rendering ' + format.toUpperCase() + '…', 'info');
     const result = await api<{ downloadUrl?: string; path?: string; format: string }>('/api/export', { method: 'POST', body: JSON.stringify({ docId: state.doc.id, format, pageId: format === 'pptx' || format === 'pptx-editable' ? undefined : page?.id, bleedMm: options.bleedMm || undefined, cropMarks: options.cropMarks || undefined }) });
@@ -3240,15 +3091,6 @@ async function exportCurrent(format: string, options: { bleedMm?: number; cropMa
   } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
 }
 
-let presentWhiteboardHandle: { unmount: () => void; getApi: () => unknown } | null = null;
-
-function unmountPresentWhiteboard(): void {
-  if (presentWhiteboardHandle) {
-    try { presentWhiteboardHandle.unmount(); } catch { /* ignore */ }
-    presentWhiteboardHandle = null;
-  }
-}
-
 function openPresent(): void {
   if (!state.doc) return;
   state.presenting = true;
@@ -3256,7 +3098,6 @@ function openPresent(): void {
   renderPresent();
 }
 function closePresent(): void {
-  unmountPresentWhiteboard();
   state.presenting = false;
   const root = el('presentRoot');
   root.classList.add('hidden');
@@ -3268,11 +3109,11 @@ function nextPresent(delta: number): void {
   renderPresent();
 }
 function renderPresent(): void {
-  unmountPresentWhiteboard();
   const doc = state.doc;
   if (!doc) return;
-  const page = doc.pages[state.presentIndex];
+  let page = doc.pages[state.presentIndex];
   if (!page) return;
+  if (page.mode === 'whiteboard') page = legacyWhiteboardNativePage(page);
   const root = el('presentRoot');
   root.classList.remove('hidden');
   root.innerHTML = '<div class="present-stage"><div id="presentPage" class="present-page"></div></div><div id="presentNotes" class="present-notes hidden"></div><div class="present-bar"><span>' + esc(doc.title) + ' · ' + esc(page.name) + ' · ' + (state.presentIndex + 1) + ' / ' + doc.pages.length + '</span><span><button id="presentNotesBtn" class="btn">Notes</button> <button id="presentPrev" class="btn">← Previous</button> <button id="presentNext" class="btn">Next →</button> <button id="presentClose" class="btn">Exit</button></span></div>';
@@ -3305,39 +3146,6 @@ function renderPresent(): void {
     iframe.setAttribute('sandbox', 'allow-scripts');
     iframe.srcdoc = page.html || '';
     host.appendChild(iframe);
-  } else if (page.mode === 'whiteboard') {
-    host.classList.add('present-whiteboard-host');
-    host.innerHTML = '<div class="whiteboard-loading" style="height:100%;display:grid;place-items:center;color:#8a8276;font:13px Inter,sans-serif"><span class="pulse-dot"></span> Preparing whiteboard…</div>';
-    const presentPageId = page.id;
-    void loadExcalidrawScript().then(entry => {
-      if (!state.presenting || !state.doc || state.doc.pages[state.presentIndex]?.id !== presentPageId) return;
-      host.innerHTML = '';
-      const scene = page.scene || { elements: [], appState: {}, files: {} };
-      const mount = entry.mount as (element: HTMLElement, options: Record<string, unknown>) => { unmount: () => void; getApi: () => unknown; getScene: () => { elements: unknown[] } };
-      const handle = mount(host, {
-        initialData: {
-          elements: scene.elements || [],
-          appState: { ...(scene.appState || {}), viewBackgroundColor: page.background || '#ffffff' },
-          files: scene.files || {},
-          scrollToContent: true,
-        },
-        theme: 'light',
-        viewModeEnabled: true,
-        zenModeEnabled: true,
-        onReady: () => {
-          setTimeout(() => {
-            try {
-              const api = presentWhiteboardHandle?.getApi() as { scrollToContent?: (target?: unknown, opts?: unknown) => void } | undefined;
-              const handleWithScene = presentWhiteboardHandle as unknown as { getScene?: () => { elements: unknown[] } } | null;
-              api?.scrollToContent?.(handleWithScene?.getScene?.().elements, { fitToContent: true, animate: false });
-            } catch { /* optional */ }
-          }, 300);
-        },
-      });
-      presentWhiteboardHandle = handle;
-    }).catch(error => {
-      host.innerHTML = '<div class="whiteboard-error">' + esc(error instanceof Error ? error.message : String(error)) + '</div>';
-    });
   } else host.innerHTML = renderPresentCanvasHtml(presentPage);
   const stage = qs<HTMLElement>('.present-stage');
   if (stage) {

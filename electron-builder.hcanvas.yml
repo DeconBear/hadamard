@@ -25,9 +25,10 @@ files:
   - "!**/node_modules/@playwright/**"
   - "!**/node_modules/@types/**"
   - "!**/*.map"
+  - "!dist/gui-canvas/**"
+  - "!node_modules/@excalidraw/**"
 asar: true
 asarUnpack:
-  - "**/node_modules/@excalidraw/cli/**"
   - "**/node_modules/playwright-core/**"
 npmRebuild: false
 win:
