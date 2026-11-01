@@ -73,7 +73,7 @@ HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
 ## Canvas 页面
 
-块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。可用 **框选**、**Shift+click** 或点击组成员多选；**Ctrl/Cmd+G** 成组、**Ctrl/Cmd+Shift+G** 解组，拖动任一选中 block 会整体移动。转换后的 Excalidraw frame 会记录子元素 `frameId`，拖动 frame 时子元素跟随。**Arrow (A)** 落在 shape/text/image/frame 上时会自动绑定两端（`startBinding` / `endBinding`），移动或缩放被绑定元素时箭头端点自动跟随；Infinite 页可用 **Pen (P)** / **Arrow (A)** / **Eraser (E)** 直接绘制、擦除原生矢量；手绘会平滑成 path，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。**Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** 撤销重做 block 编辑，**Ctrl/Cmd+C/V** 复制粘贴选中 block。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
+块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。可用 **框选**、**Shift+click** 或点击组成员多选；**Ctrl/Cmd+G** 成组、**Ctrl/Cmd+Shift+G** 解组，拖动任一选中 block 会整体移动。转换后的 Excalidraw frame 会记录子元素 `frameId`，拖动 frame 时子元素跟随。**Arrow (A)** 落在 shape/text/image/frame 上时会自动绑定两端（`startBinding` / `endBinding`），移动或缩放被绑定元素时箭头端点自动跟随；Infinite 页可用 **Pen (P)** / **Arrow (A)** / **Eraser (E)** 直接绘制、擦除原生矢量；手绘会平滑成 path，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。**Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** 撤销重做 block 编辑，**Ctrl/Cmd+C/V** 复制粘贴选中 block。Add Page 不再提供 Excalidraw Whiteboard，新画板请用 Infinite；已有旧白板可一键迁移。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
 
 ## 无限画布与工具栏
 
@@ -115,9 +115,9 @@ hcanvas masters delete <masterId>
 
 母版存储在 `<workspace>/masters.json`；应用母版会创建新页，重新生成 page/block ID，并保留原 mode、尺寸、背景、HTML/blocks/scene 与 speaker notes。之后编辑新页面不会改动母版。
 
-## Excalidraw 白板页
+## Legacy Excalidraw 白板页
 
-新增 **Excalidraw whiteboard** 页面预设，内嵌本地打包的完整 Excalidraw 编辑器：形状、箭头、自由绘制、文字、图片、frame、手绘风格、图层、缩放/平移、撤销/重做和 Excalidraw 工具栏。场景随文档保存：
+旧文档可能仍包含 **Excalidraw whiteboard** 页。新建页面已不再提供此预设；只有打开旧白板时才懒加载 Excalidraw 运行时。内嵌编辑器包含：形状、箭头、自由绘制、文字、图片、frame、手绘风格、图层、缩放/平移、撤销/重做和 Excalidraw 工具栏。场景随文档保存：
 
 ```bash
 hcanvas read <doc> --format scene --page <白板页 id>
@@ -137,6 +137,7 @@ hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor clau
 CLI 同样支持转换与原生 scene 导入/导出：
 
 ```bash
+hcanvas migrate-whiteboards <doc> --delete-source
 hcanvas convert-whiteboard <doc> --page <白板页 id> --title "Board · Native"
 hcanvas import-scene ./board.excalidraw <doc> --title "导入画板"
 hcanvas export-scene <doc> --page <infinite 页 id> --out ./exports/board.excalidraw

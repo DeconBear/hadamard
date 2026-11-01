@@ -150,7 +150,6 @@ const PAGE_PRESETS: Array<{ id: string; title: string; mode: 'html' | 'canvas' |
   { id: 'a4-canvas', title: 'Canvas A4', mode: 'canvas', width: 794, height: 1123, background: '#ffffff', hint: 'A4 · blocks' },
   { id: 'square-canvas', title: 'Canvas square', mode: 'canvas', width: 1080, height: 1080, background: '#fbfaf7', hint: '1:1 · blocks' },
   { id: 'infinite', title: 'Infinite canvas', mode: 'infinite', width: 4800, height: 3200, background: '#f8f6f1', hint: 'No bounds · pan & zoom' },
-  { id: 'whiteboard', title: 'Excalidraw whiteboard', mode: 'whiteboard', width: 1280, height: 720, background: '#ffffff', hint: 'Freehand · shapes · arrows' },
 ];
 
 function starterHtml(title: string): string {
@@ -1287,7 +1286,7 @@ function createPageItem(page: HcPage, index: number, pagesLength: number): PageI
   thumb.innerHTML = '<div class="page-thumb-loading"></div>';
   const info = document.createElement('div');
   info.className = 'page-info';
-  const meta = page.mode === 'infinite' ? '∞ · no page bounds' : page.mode === 'whiteboard' ? 'workspace surface' : esc(page.mode) + ' · ' + page.width + '×' + page.height;
+  const meta = page.mode === 'infinite' ? '∞ · no page bounds' : page.mode === 'whiteboard' ? 'legacy · convert to native' : esc(page.mode) + ' · ' + page.width + '×' + page.height;
   info.innerHTML = '<strong>' + esc(page.name || 'Page ' + (index + 1)) + '</strong><small>' + meta + '</small>';
   const button = document.createElement('button');
   button.type = 'button';
@@ -2550,7 +2549,7 @@ function renderPageInspector(): void {
   html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Excalidraw whiteboard · freehand, shapes, arrows, text' : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
   if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Esc exits. The Agent tab exposes the CLI protocol.</div>';
   if (page.mode === 'infinite') html += '<div class="hint-card">Pan with the Hand tool, Space, or middle-drag; zoom with the mouse wheel or the zoom controls. Blocks can be placed anywhere and exports crop to content.</div>';
-  if (page.mode === 'whiteboard') html += '<div class="hint-card">The full Excalidraw toolbar is available inside this page. Use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for agent access.</div>';
+  if (page.mode === 'whiteboard') html += '<div class="hint-card"><strong>Legacy whiteboard.</strong> New pages use native Infinite. Convert this page with <strong>Convert to native Infinite</strong> above; the Excalidraw runtime is only loaded for legacy pages. Use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for agent access.</div>';
   html += '</section>';
   root.innerHTML = html;
   bindPageInspector(page);

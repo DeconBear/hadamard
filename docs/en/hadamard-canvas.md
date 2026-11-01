@@ -78,7 +78,7 @@ The left page rail renders live thumbnails: HTML pages are previewed in a sandbo
 
 ## Page types and local HTML
 
-Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (Excalidraw scene as a full-workspace surface). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. Select blocks with **drag-marquee**, **Shift+click**, or by clicking a grouped block; **Ctrl/Cmd+G** groups / **Ctrl/Cmd+Shift+G** ungroups, and dragging any selected block moves the whole selection. Frames contain converted Excalidraw children: dragging a frame moves its `frameId` children with it. **Arrow (A)** snaps its endpoints to shapes, text, images and frames when dropped on them; bindings are stored as `startBinding` / `endBinding` and the arrow follows when a bound block is moved or resized. **Pen (P)**, **Arrow (A)** and **Eraser (E)** draw/erase native vectors directly on Infinite pages; freehand strokes are smoothed into paths, stored in the document JSON as block points, resizable, and use stroke color/width from the Inspector. **Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** undo and redo block edits, **Ctrl/Cmd+C/V** copy and paste the selected block. Add Page also provides 20 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/Product posters, Infinite canvas and Excalidraw whiteboard.
+Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (legacy Excalidraw scene; new pages use native Infinite). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. Select blocks with **drag-marquee**, **Shift+click**, or by clicking a grouped block; **Ctrl/Cmd+G** groups / **Ctrl/Cmd+Shift+G** ungroups, and dragging any selected block moves the whole selection. Frames contain converted Excalidraw children: dragging a frame moves its `frameId` children with it. **Arrow (A)** snaps its endpoints to shapes, text, images and frames when dropped on them; bindings are stored as `startBinding` / `endBinding` and the arrow follows when a bound block is moved or resized. **Pen (P)**, **Arrow (A)** and **Eraser (E)** draw/erase native vectors directly on Infinite pages; freehand strokes are smoothed into paths, stored in the document JSON as block points, resizable, and use stroke color/width from the Inspector. **Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** undo and redo block edits, **Ctrl/Cmd+C/V** copy and paste the selected block. Add Page also provides 19 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/Product posters and Infinite canvas. Excalidraw whiteboard is no longer offered for new pages.
 
 Import a local HTML file from the desktop with **Import HTML** in the top bar (max 5MB) or:
 
@@ -152,9 +152,9 @@ hcanvas masters delete <masterId>
 
 Masters are stored in `<workspace>/masters.json`; applying a master creates a new page with fresh page/block IDs and the original mode, size, background, HTML/blocks/scene and speaker notes. Editing the new page never changes the master.
 
-## Excalidraw whiteboard pages
+## Legacy Excalidraw whiteboard pages
 
-The **Excalidraw whiteboard** page preset embeds the full locally bundled Excalidraw editor: shapes, arrows, freehand, text, images, frames, hand-drawn styling, layers, zoom/pan, undo/redo and the Excalidraw toolbar. The page is stored as an Excalidraw scene in the document:
+Legacy documents may still contain **Excalidraw whiteboard** pages. New pages cannot be created from this preset; the runtime is lazily loaded only when a legacy whiteboard page is opened. The embedded editor provides: shapes, arrows, freehand, text, images, frames, hand-drawn styling, layers, zoom/pan, undo/redo and the Excalidraw toolbar. The page is stored as an Excalidraw scene in the document:
 
 ```bash
 hcanvas read <doc> --format scene --page <whiteboard-page-id>
@@ -174,6 +174,7 @@ Click **Convert to native Infinite** in a whiteboard page's Inspector. hcanvas c
 The same conversion is available from the CLI, together with native scene import/export:
 
 ```bash
+hcanvas migrate-whiteboards <doc> --delete-source
 hcanvas convert-whiteboard <doc> --page <whiteboardPageId> --title "Board · Native"
 hcanvas import-scene ./board.excalidraw <doc> --title "Imported board"
 hcanvas export-scene <doc> --page <infinitePageId> --out ./exports/board.excalidraw
