@@ -5,6 +5,7 @@ import { marked } from 'marked';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal } from '../types.js';
 import { vectorSvgMarkup } from '../vector.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
+import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
@@ -516,6 +517,20 @@ function beginVectorDraw(startEvent: PointerEvent): void {
       arrowhead: tool === 'arrow' ? 'arrow' : undefined,
       style: { stroke: DEFAULT_VECTOR_STROKE, strokeWidth: DEFAULT_VECTOR_STROKE_WIDTH },
     };
+    if (tool === 'arrow') {
+      const start = points[0]!;
+      const end = points[points.length - 1]!;
+      const startTarget = findBindingTarget(page.blocks || [], start.x, start.y, { padding: 18 });
+      const endTarget = findBindingTarget(page.blocks || [], end.x, end.y, { padding: 18 });
+      block.startBinding = startTarget?.id ?? null;
+      block.endBinding = endTarget?.id ?? null;
+      const geometry = boundArrowGeometry(block, page.blocks || []);
+      if (geometry) {
+        block.x = geometry.x; block.y = geometry.y; block.w = geometry.w; block.h = geometry.h; block.points = geometry.points;
+        if (geometry.clearStart) block.startBinding = null;
+        if (geometry.clearEnd) block.endBinding = null;
+      }
+    }
     state.activeBlockId = block.id;
     void applyOps([{ op: 'add_block', pageId: page.id, block } as HcOp], { refreshArtboard: true }).then(result => {
       if (!result) return;
@@ -1986,15 +2001,47 @@ async function redo(): Promise<void> {
   updateHistoryButtons();
 }
 
+function augmentBindingOps(ops: HcOp[]): HcOp[] {
+  if (!state.doc) return ops;
+  const changed = new Map<string, Set<string>>();
+  for (const op of ops) {
+    if (op.op !== 'update_block' && op.op !== 'delete_block') continue;
+    if (!changed.has(op.pageId)) changed.set(op.pageId, new Set());
+    changed.get(op.pageId)!.add(op.blockId);
+  }
+  if (!changed.size) return ops;
+  const working = cloneJson(state.doc);
+  for (const op of ops) applyOpLocally(working, op);
+  const extra: HcOp[] = [];
+  for (const page of working.pages) {
+    const touched = changed.get(page.id);
+    if (!touched) continue;
+    for (const arrow of page.blocks || []) {
+      if (arrow.type !== 'arrow' || (!arrow.startBinding && !arrow.endBinding)) continue;
+      if (!(arrow.startBinding && touched.has(arrow.startBinding)) && !(arrow.endBinding && touched.has(arrow.endBinding)) && touched.has(arrow.id) === false) continue;
+      const geometry = boundArrowGeometry(arrow, page.blocks || []);
+      if (!geometry) continue;
+      const patch: Partial<HcBlock> = { x: geometry.x, y: geometry.y, w: geometry.w, h: geometry.h, points: geometry.points };
+      if (geometry.clearStart) patch.startBinding = null;
+      if (geometry.clearEnd) patch.endBinding = null;
+      if (JSON.stringify({ x: arrow.x, y: arrow.y, w: arrow.w, h: arrow.h, points: arrow.points, startBinding: arrow.startBinding ?? null, endBinding: arrow.endBinding ?? null })
+        === JSON.stringify({ x: patch.x, y: patch.y, w: patch.w, h: patch.h, points: patch.points, startBinding: patch.startBinding === undefined ? arrow.startBinding ?? null : patch.startBinding, endBinding: patch.endBinding === undefined ? arrow.endBinding ?? null : patch.endBinding })) continue;
+      extra.push({ op: 'update_block', pageId: page.id, blockId: arrow.id, patch });
+    }
+  }
+  return extra.length ? [...ops, ...extra] : ops;
+}
+
 async function applyOps(ops: HcOp[], options: { refreshArtboard?: boolean; actor?: string; silent?: boolean; recordHistory?: boolean } = {}): Promise<HcDocument | null> {
   if (!state.doc) return null;
-  const historyInverse = options.recordHistory !== false && options.silent !== true && !applyingHistory ? invertOps(ops) : null;
+  const finalOps = augmentBindingOps(ops);
+  const historyInverse = options.recordHistory !== false && options.silent !== true && !applyingHistory ? invertOps(finalOps) : null;
   state.ignoreEventsUntil = Date.now() + 1600;
   setSaveStatus('Saving…', 'saving');
   try {
     const result = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id + '/apply', {
       method: 'POST',
-      body: JSON.stringify({ ops, baseRevision: state.doc.revision, actor: options.actor || 'human' }),
+      body: JSON.stringify({ ops: finalOps, baseRevision: state.doc.revision, actor: options.actor || 'human' }),
     });
     state.doc = result.doc;
     if (historyInverse) {
