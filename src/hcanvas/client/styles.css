@@ -485,3 +485,6 @@ button { cursor: pointer; }
 #viewport.whiteboard-surface .selection-toolbar { display: none !important; }
 .artboard.whiteboard-surface { box-shadow: none !important; border-radius: 0 !important; overflow: hidden; }
 .artboard.whiteboard-surface .whiteboard-host { background: #fff; }
+/* Infinite pages paint on the viewport, not a finite page card. */
+#viewport.infinite-surface { background-color: #f8f6f1; background-image: radial-gradient(rgba(80,70,55,.14) 1px, transparent 1px); background-size: 22px 22px; }
+#viewport.infinite-surface .artboard.mode-infinite { background: transparent !important; box-shadow: none !important; }

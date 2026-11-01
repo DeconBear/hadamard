@@ -218,3 +218,16 @@ HTTP API 与 CLI 同源：`/api/state`、`/api/docs`、`/api/docs/:id/read|apply
 - 可视化编辑聚焦文字/样式，结构修改走源码；
 - 视觉 PPTX 中 HTML 页仍为整页图片；可编辑 deck 会把 HTML 文本映射为原生 PowerPoint 对象（布局为近似，复杂 CSS 效果不重建）。母版、素材库、矢量 PDF 仍为后续扩展。
 - DOCX 导出刻意走 text-first/ATS 路线，不复刻视觉卡片和装饰图形。
+## 存储格式
+
+一个 workspace 就是普通目录：
+
+```
+<workspace>/docs/<docId>.json   # 文档：pages、html/blocks/scene、history、proposals
+<workspace>/state.json         # 当前 canvas/page 与 agent sessions
+<workspace>/masters.json        # 可复用页面母版
+<workspace>/daemon.json         # 本地服务 URL + token
+<workspace>/exports/            # HTML/PDF/PNG/PPTX/DOCX 输出
+```
+
+文档使用 JSON schema `hadamard-canvas/1`：HTML 页把完整源码存在 `page.html`；Canvas/Infinite 页存 `page.blocks`；Excalidraw 页存 `page.scene`。桌面应用默认 workspace 是 `~/.hcanvas`，可用 `--workspace <dir>` 指定其他目录。

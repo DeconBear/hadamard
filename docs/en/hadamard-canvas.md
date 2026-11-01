@@ -74,6 +74,18 @@ Whiteboard pages are full-workspace surfaces: the Excalidraw canvas fills the en
 
 The left page rail renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks, and whiteboard pages show a scene placeholder. Hovering a page reveals **move up / move down / duplicate / delete** actions, so a deck can be reordered and duplicated like a slide sorter.
 
+## Page types and local HTML
+
+Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (Excalidraw scene as a full-workspace surface). Canvas/infinite pages use **HTML, text, Markdown, code, image and shape blocks**. Add Page also provides 20 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/Product posters, Infinite canvas and Excalidraw whiteboard.
+
+Import a local HTML file from the desktop with **Import HTML** in the top bar (max 5MB) or:
+
+```bash
+hcanvas import ~/Desktop/page.html <doc-id> --title "Imported page" --width 1280 --height 720
+```
+
+The HTML is embedded into a new HTML page; editing it inside hcanvas does not modify the original file. Re-import to pick up external changes.
+
 ## Direct HTML editing
 
 HTML pages and HTML blocks render in a sandboxed iframe:
@@ -262,3 +274,16 @@ Requests require the `x-hcanvas-token` header (or `?token=` for SSE), and the se
 - No real-time multi-user CRDT yet; multiple agents/hosts coordinate through revisions and proposals.
 - PPTX visual deck keeps HTML pages as images; the separate editable deck maps HTML text to native PowerPoint objects (layout is approximate; complex CSS effects are not reconstructed). Page masters, assets library and vector PDF remain extensions.
 - DOCX export is intentionally text-first/ATS-oriented; it does not reproduce visual layout, cards or decorative graphics.
+## Storage format
+
+A workspace is a plain directory:
+
+```
+<workspace>/docs/<docId>.json   # document: pages, html/blocks/scene, history, proposals
+<workspace>/state.json         # active canvas/page and agent sessions
+<workspace>/masters.json        # reusable page masters
+<workspace>/daemon.json         # local URL + token for the running service
+<workspace>/exports/            # HTML/PDF/PNG/PPTX/DOCX outputs
+```
+
+Documents use the JSON schema `hadamard-canvas/1`. HTML pages store their full source in `page.html`; canvas/infinite pages store `page.blocks`; Excalidraw pages store `page.scene`. The desktop app defaults to `~/.hcanvas`; pass `--workspace <dir>` to use another folder.

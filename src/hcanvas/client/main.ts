@@ -379,6 +379,12 @@ function bindStaticActions(): void {
   el('newDocBtn').addEventListener('click', () => openNewDocModal());
   el('newDocMini').addEventListener('click', () => openNewDocModal());
   el('addPageBtn').addEventListener('click', () => openAddPageModal());
+  el('importHtmlBtn').addEventListener('click', () => el<HTMLInputElement>('htmlFileInput').click());
+  el<HTMLInputElement>('htmlFileInput').addEventListener('change', event => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) void importHtmlFile(file);
+    (event.target as HTMLInputElement).value = '';
+  });
   el('addPageMini').addEventListener('click', () => openAddPageModal());
   el('presentBtn').addEventListener('click', () => openPresent());
   el('exportBtn').addEventListener('click', event => { event.stopPropagation(); toggleExportMenu(); });
@@ -650,6 +656,7 @@ function renderTop(): void {
   if (state.editing) banner.classList.remove('hidden'); else banner.classList.add('hidden');
   el('editingLabel').textContent = state.editing?.blockId ? 'Editing HTML block' : 'Editing HTML page';
   el('addPageBtn').style.display = state.doc ? '' : 'none';
+  el('importHtmlBtn').style.display = state.doc ? '' : 'none';
   el('presentBtn').style.display = state.doc ? '' : 'none';
   el('exportBtn').style.display = state.doc ? '' : 'none';
   renderToolbarState();
@@ -939,13 +946,26 @@ function renderArtboard(): void {
   artboard.textContent = '';
   if (!page) return;
   const whiteboardSurface = page.mode === 'whiteboard';
+  const infiniteSurface = page.mode === 'infinite';
   const viewportRect = viewport.getBoundingClientRect();
-  const metrics = whiteboardSurface ? { width: Math.max(320, viewportRect.width), height: Math.max(240, viewportRect.height) } : pageMetrics(page);
+  const metrics = whiteboardSurface || infiniteSurface ? { width: Math.max(320, viewportRect.width), height: Math.max(240, viewportRect.height) } : pageMetrics(page);
   viewport.classList.toggle('whiteboard-surface', whiteboardSurface);
-  artboard.className = 'artboard mode-' + page.mode + (state.editing ? ' editing' : '') + (whiteboardSurface ? ' whiteboard-surface' : '');
+  viewport.classList.toggle('infinite-surface', infiniteSurface);
+  artboard.className = 'artboard mode-' + page.mode + (state.editing ? ' editing' : '') + (whiteboardSurface ? ' whiteboard-surface' : '') + (infiniteSurface ? ' infinite-surface' : '');
   artboard.style.width = metrics.width + 'px';
   artboard.style.height = metrics.height + 'px';
-  artboard.style.background = page.background;
+  artboard.style.background = infiniteSurface ? 'transparent' : page.background;
+  if (infiniteSurface) {
+    viewport.style.backgroundColor = page.background;
+    viewport.style.backgroundImage = state.showGrid ? 'radial-gradient(rgba(80,70,55,.14) 1px, transparent 1px)' : 'none';
+    viewport.style.backgroundSize = '22px 22px';
+    artboard.style.backgroundImage = '';
+    artboard.style.backgroundSize = '';
+  } else {
+    viewport.style.backgroundColor = '';
+    viewport.style.backgroundImage = '';
+    viewport.style.backgroundSize = '';
+  }
   if (whiteboardSurface) {
     state.zoom = 1;
     state.panX = 0;
@@ -953,9 +973,9 @@ function renderArtboard(): void {
     state.fittedPageId = state.activePageId;
     artboard.style.backgroundImage = '';
     artboard.style.backgroundSize = '';
-  } else if (page.mode === 'infinite' && state.showGrid) {
-    artboard.style.backgroundImage = 'radial-gradient(rgba(80,70,55,.14) 1px, transparent 1px)';
-    artboard.style.backgroundSize = '22px 22px';
+  } else if (page.mode === 'infinite') {
+    artboard.style.backgroundImage = '';
+    artboard.style.backgroundSize = '';
   } else {
     artboard.style.backgroundImage = '';
     artboard.style.backgroundSize = '';
@@ -2201,6 +2221,29 @@ async function openAddPageModal(): Promise<void> {
       } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
     });
   });
+}
+
+async function importHtmlFile(file: File): Promise<void> {
+  if (!state.doc) return;
+  if (file.size > 5 * 1024 * 1024) { toast('HTML file is too large (max 5MB).', 'error'); return; }
+  try {
+    const html = await file.text();
+    if (!html.trim()) { toast('HTML file is empty.', 'error'); return; }
+    const name = file.name.replace(/\.(html?|htm)$/i, '').trim() || 'Imported HTML';
+    const page: HcPage = {
+      id: genId('page'), name, mode: 'html', width: 1280, height: 720, background: '#ffffff', html,
+    };
+    const result = await applyOps([{ op: 'add_page', page } as HcOp], { refreshArtboard: false });
+    if (!result) return;
+    state.activePageId = page.id;
+    state.activeBlockId = null;
+    state.selectedHtmlId = null;
+    state.fittedPageId = null;
+    renderAll();
+    toast('Imported ' + file.name + ' as an HTML page', 'success');
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), 'error');
+  }
 }
 
 async function createPage(preset: typeof PAGE_PRESETS[number]): Promise<void> {
