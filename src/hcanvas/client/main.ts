@@ -267,6 +267,7 @@ function setBlockSelection(ids: string[], primaryId?: string | null): void {
   document.querySelectorAll<HTMLElement>('.block-wrap').forEach(node => {
     node.classList.toggle('selected', unique.includes(node.dataset.blockId || ''));
   });
+  refreshBlockSelectionDecorations();
   renderInspector();
   renderTop();
   renderToolbarState();
@@ -613,7 +614,13 @@ function bindStaticActions(): void {
   el('newDocMini').addEventListener('click', () => openNewDocModal());
   el('addPageBtn').addEventListener('click', () => openAddPageModal());
   el('importHtmlBtn').addEventListener('click', () => el<HTMLInputElement>('htmlFileInput').click());
-  el('projectMenuBtn').addEventListener('click', event => { event.stopPropagation(); void toggleProjectMenu(); });
+  el('projectMenuBtn').addEventListener('click', event => { event.stopPropagation(); void openProjectHub(); });
+  qs<HTMLButtonElement>('#hubCloseBtn')?.addEventListener('click', () => closeProjectHub());
+  qs<HTMLButtonElement>('#hubRefreshBtn')?.addEventListener('click', () => { void renderProjectHub(); });
+  qs<HTMLButtonElement>('#hubNewProjectBtn')?.addEventListener('click', () => {
+    if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject();
+    else toast('Browser mode: run hcanvas app --project <folder> to create a project.', 'info');
+  });
   el('workspacePath').addEventListener('click', () => { void openWorkspaceModal(); });
   el<HTMLInputElement>('htmlFileInput').addEventListener('change', event => {
     const file = (event.target as HTMLInputElement).files?.[0];
@@ -626,7 +633,6 @@ function bindStaticActions(): void {
   document.addEventListener('click', event => {
     const menu = el('exportMenu');
     if (!menu.classList.contains('hidden') && !(event.target as Element).closest('.menu-wrap')) toggleExportMenu(false);
-    if (!(event.target as Element).closest('.menu-wrap')) el('projectMenu').classList.add('hidden');
   });
   el('exportMenu').addEventListener('click', event => {
     const target = (event.target as HTMLElement).closest('[data-export]') as HTMLElement | null;
@@ -959,6 +965,11 @@ function openShortcutsModal(): void {
 }
 
 function handleGlobalKeydown(event: KeyboardEvent): void {
+  const hub = qs<HTMLElement>('#projectHub');
+  if (hub && !hub.classList.contains('hidden')) {
+    if (event.key === 'Escape') closeProjectHub();
+    return;
+  }
   if (state.presenting) {
     if (event.key === 'Escape') closePresent();
     else if (event.key === 'ArrowRight' || event.key === 'PageDown') nextPresent(1);
@@ -1667,7 +1678,7 @@ function renderHtmlPage(container: HTMLElement, page: HcPage): void {
 function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
   const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
   const wrap = document.createElement('div');
-  wrap.className = 'block-wrap' + (state.selectedBlockIds.includes(block.id) ? ' selected' : '') + (editing ? ' editing' : '');
+  wrap.className = 'block-wrap type-' + block.type + (block.shape ? ' shape-' + block.shape : '') + (state.selectedBlockIds.includes(block.id) ? ' selected' : '') + (editing ? ' editing' : '');
   wrap.dataset.blockId = block.id;
   wrap.style.left = block.x + 'px';
   wrap.style.top = block.y + 'px';
@@ -1731,9 +1742,15 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
       const shape = document.createElement('div');
       shape.className = 'block-shape-box' + (block.shape === 'diamond' ? ' shape-diamond' : '') + (block.shape === 'frame' ? ' shape-frame' : '');
       shape.style.background = block.shape === 'frame' ? 'transparent' : String(block.style?.fill || '#f3e8ff');
-      shape.style.borderWidth = String(block.style?.strokeWidth || 1) + 'px';
-      shape.style.borderStyle = block.shape === 'frame' ? 'dashed' : String(block.style?.strokeStyle || 'solid');
-      shape.style.borderColor = String(block.style?.stroke || '#a855f7');
+      const strokeWidth = Number(block.style?.strokeWidth ?? 1);
+      const strokeColor = block.style?.stroke;
+      if (strokeWidth > 0 && strokeColor) {
+        shape.style.borderWidth = String(strokeWidth) + 'px';
+        shape.style.borderStyle = block.shape === 'frame' ? 'dashed' : String(block.style?.strokeStyle || 'solid');
+        shape.style.borderColor = String(strokeColor);
+      } else {
+        shape.style.border = '0';
+      }
       shape.style.borderRadius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || (block.shape === 'frame' ? 8 : 14)) + 'px';
       if (block.shape === 'diamond') shape.style.clipPath = 'polygon(50% 0, 100% 50%, 50% 100%, 0 50%)';
       if (block.shape === 'frame') {
@@ -1752,16 +1769,7 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
       hit.className = 'block-hit';
       wrap.appendChild(hit);
     }
-    if (state.activeBlockId === block.id && state.selectedBlockIds.length <= 1 && !editing) {
-      const label = document.createElement('span');
-      label.className = 'block-label';
-      label.textContent = block.type + ' · ' + block.id.slice(-6);
-      wrap.appendChild(label);
-      const resize = document.createElement('div');
-      resize.className = 'resize-handle';
-      wrap.appendChild(resize);
-      bindResizeHandle(resize, wrap, block);
-    }
+    if (state.activeBlockId === block.id && state.selectedBlockIds.length <= 1 && !editing) addBlockSelectionDecorations(wrap, block);
     bindBlockEvents(wrap, block);
     container.appendChild(wrap);
   }
@@ -1771,55 +1779,76 @@ function wrapBlockHtml(html: string): string {
   return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,sans-serif}</style></head><body>' + html + '</body></html>';
 }
 
+function cycleBlockSelectionAt(clientX: number, clientY: number, currentId: string): void {
+  const page = activePage();
+  if (!page) return;
+  const nodes = document.elementsFromPoint(clientX, clientY)
+    .map(node => (node as Element).closest?.('.block-wrap') as HTMLElement | null)
+    .filter((node): node is HTMLElement => Boolean(node));
+  const ids = [...new Set(nodes.map(node => node.dataset.blockId).filter((id): id is string => Boolean(id)))];
+  const index = ids.indexOf(currentId);
+  const nextId = ids[(index + 1) % ids.length] || currentId;
+  const block = (page.blocks || []).find(item => item.id === nextId);
+  if (block) selectBlock(block.id);
+}
+
+function beginBlockDrag(event: PointerEvent, block: HcBlock, handle: HTMLElement, wrap: HTMLDivElement): void {
+  const page = activePage();
+  if (!page) return;
+  const dragBlocks = selectedBlocks();
+  if (block.shape === 'frame') {
+    for (const child of page.blocks || []) {
+      if (child.frameId === block.id && !dragBlocks.some(item => item.id === child.id)) dragBlocks.push(child);
+    }
+  }
+  const starts = new Map(dragBlocks.map(item => [item.id, { x: item.x, y: item.y }]));
+  const start = { x: event.clientX, y: event.clientY, moved: false };
+  try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+  let dragFrame = 0;
+  const paintDrag = (): void => {
+    for (const item of dragBlocks) {
+      const node = qs<HTMLElement>('.block-wrap[data-block-id="' + item.id + '"]');
+      if (node) { node.style.left = item.x + 'px'; node.style.top = item.y + 'px'; }
+    }
+  };
+  const move = (moveEvent: PointerEvent): void => {
+    const dx = (moveEvent.clientX - start.x) / state.zoom;
+    const dy = (moveEvent.clientY - start.y) / state.zoom;
+    if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+    start.moved = true;
+    for (const item of dragBlocks) {
+      const origin = starts.get(item.id)!;
+      const next = clampBlockPosition(page, item, origin.x + dx, origin.y + dy);
+      item.x = next.x; item.y = next.y;
+    }
+    if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; paintDrag(); });
+  };
+  const up = (): void => {
+    handle.removeEventListener('pointermove', move);
+    handle.removeEventListener('pointerup', up);
+    if (dragFrame) { cancelAnimationFrame(dragFrame); dragFrame = 0; }
+    paintDrag();
+    if (start.moved) {
+      void applyOps(dragBlocks.map(item => ({ op: 'update_block', pageId: page.id, blockId: item.id, patch: { x: item.x, y: item.y } } as HcOp)), { refreshArtboard: true });
+    }
+  };
+  handle.addEventListener('pointermove', move);
+  handle.addEventListener('pointerup', up);
+}
+
 function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
   const hit = qs<HTMLElement>('.block-hit', wrap);
   if (!hit) return;
   hit.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
     event.stopPropagation();
+    if (event.altKey) {
+      cycleBlockSelectionAt(event.clientX, event.clientY, block.id);
+      return;
+    }
     selectBlock(block.id, { additive: event.shiftKey });
     if (!state.selectedBlockIds.includes(block.id)) return;
-    const page = activePage();
-    if (!page) return;
-    const dragBlocks = selectedBlocks();
-    if (block.shape === 'frame') {
-      for (const child of page.blocks || []) {
-        if (child.frameId === block.id && !dragBlocks.some(item => item.id === child.id)) dragBlocks.push(child);
-      }
-    }
-    const starts = new Map(dragBlocks.map(item => [item.id, { x: item.x, y: item.y }]));
-    const start = { x: event.clientX, y: event.clientY, moved: false };
-    hit.setPointerCapture(event.pointerId);
-    let dragFrame = 0;
-    const paintDrag = (): void => {
-      for (const item of dragBlocks) {
-        const node = qs<HTMLElement>('.block-wrap[data-block-id="' + item.id + '"]');
-        if (node) { node.style.left = item.x + 'px'; node.style.top = item.y + 'px'; }
-      }
-    };
-    const move = (moveEvent: PointerEvent): void => {
-      const dx = (moveEvent.clientX - start.x) / state.zoom;
-      const dy = (moveEvent.clientY - start.y) / state.zoom;
-      if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
-      start.moved = true;
-      for (const item of dragBlocks) {
-        const origin = starts.get(item.id)!;
-        const next = clampBlockPosition(page, item, origin.x + dx, origin.y + dy);
-        item.x = next.x; item.y = next.y;
-      }
-      if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; paintDrag(); });
-    };
-    const up = (): void => {
-      hit.removeEventListener('pointermove', move);
-      hit.removeEventListener('pointerup', up);
-      if (dragFrame) { cancelAnimationFrame(dragFrame); dragFrame = 0; }
-      paintDrag();
-      if (start.moved) {
-        void applyOps(dragBlocks.map(item => ({ op: 'update_block', pageId: page.id, blockId: item.id, patch: { x: item.x, y: item.y } } as HcOp)), { refreshArtboard: true });
-      }
-    };
-    hit.addEventListener('pointermove', move);
-    hit.addEventListener('pointerup', up);
+    beginBlockDrag(event, block, hit, wrap);
   });
   hit.addEventListener('dblclick', event => {
     event.stopPropagation();
@@ -1827,16 +1856,58 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
     else if (block.type === 'text') {
       const text = qs<HTMLElement>('.block-text', wrap);
       if (!text) return;
+      wrap.classList.add('text-editing');
       text.contentEditable = 'true';
       text.focus();
-      text.addEventListener('blur', () => {
+      const finish = (): void => {
+        if (!text.isContentEditable) return;
         text.contentEditable = 'false';
+        wrap.classList.remove('text-editing');
         const value = text.innerText;
         if (value !== (block.text || '')) { block.text = value; void persistBlock(block, { text: value }); }
-      }, { once: true });
+      };
+      text.addEventListener('blur', finish, { once: true });
+      text.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); text.blur(); }
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); text.blur(); }
+      });
     } else if (block.type === 'markdown' || block.type === 'code') openSourceEditor({ pageId: activePage()!.id, blockId: block.id });
     else if (block.type === 'image') openImageModal(block);
   });
+}
+
+function clearBlockSelectionDecorations(): void {
+  document.querySelectorAll('.block-label, .resize-handle').forEach(node => node.remove());
+}
+
+function addBlockSelectionDecorations(wrap: HTMLDivElement, block: HcBlock): void {
+  if (wrap.querySelector(':scope > .block-label')) return;
+  const label = document.createElement('span');
+  label.className = 'block-label';
+  label.textContent = block.type + ' · drag label to move';
+  label.title = 'Drag to move; Alt+click the block to cycle overlapping layers';
+  label.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!state.selectedBlockIds.includes(block.id)) selectBlock(block.id);
+    beginBlockDrag(event, block, label, wrap);
+  });
+  wrap.appendChild(label);
+  const resize = document.createElement('div');
+  resize.className = 'resize-handle';
+  wrap.appendChild(resize);
+  bindResizeHandle(resize, wrap, block);
+}
+
+function refreshBlockSelectionDecorations(): void {
+  clearBlockSelectionDecorations();
+  if (state.editing) return;
+  const selected = selectedBlocks();
+  if (selected.length !== 1) return;
+  const block = selected[0]!;
+  const wrap = qs<HTMLDivElement>('.block-wrap[data-block-id="' + block.id + '"]');
+  if (wrap) addBlockSelectionDecorations(wrap, block);
 }
 
 function bindResizeHandle(handle: HTMLElement, wrap: HTMLDivElement, block: HcBlock): void {
@@ -2831,37 +2902,49 @@ function openImageModal(block?: HcBlock): void {
   });
 }
 
-async function toggleProjectMenu(): Promise<void> {
-  const menu = el('projectMenu');
-  if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+function closeProjectHub(): void {
+  el('projectHub').classList.add('hidden');
+}
+
+async function openProjectHub(): Promise<void> {
+  el('projectHub').classList.remove('hidden');
+  await renderProjectHub();
+}
+
+async function renderProjectHub(): Promise<void> {
+  const grid = el('hubProjectGrid');
   const current = await api<{ current: { workspace: string; project?: string | null }; projects: Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }> }>('/api/projects').catch(() => null);
-  if (!current) { toast('Could not read the project registry', 'error'); return; }
-  let html = '<div class="project-menu-head">Projects</div>';
-  for (const project of current.projects) {
-    const active = current.current.project === project.projectPath;
-    html += '<button type="button" class="project-menu-item' + (active ? ' active' : '') + '" data-project="' + esc(project.projectPath) + '"><span>' + esc(project.name) + '</span><small>' + esc(project.projectPath) + (project.runningUrl ? ' · running' : '') + '</small></button>';
+  if (!current) { grid.innerHTML = '<p class="empty-state">Could not read the project registry.</p>'; return; }
+  let projects = current.projects;
+  if (window.hcanvasDesktop) {
+    try {
+      const nativeProjects = await window.hcanvasDesktop.listProjects();
+      if (nativeProjects.length) projects = nativeProjects.map(project => ({ ...project, workspaceExists: project.workspaceExists, runningUrl: project.runningUrl }));
+    } catch { /* use server registry */ }
   }
-  if (!current.projects.length) html += '<p class="empty-state">No initialized projects yet.</p>';
-  html += '<button type="button" class="project-menu-item project-menu-open" data-open-project="1"><span>Open Project…</span><small>Choose a folder and initialize .hcanvas</small></button>';
-  html += '<button type="button" class="project-menu-item" data-project-info="1"><span>Workspace details</span><small>' + esc(current.current.workspace) + '</small></button>';
-  menu.innerHTML = html;
-  menu.classList.remove('hidden');
-  menu.querySelectorAll<HTMLButtonElement>('[data-project]').forEach(button => button.addEventListener('click', () => {
-    const projectPath = button.dataset.project!;
-    menu.classList.add('hidden');
-    if (window.hcanvasDesktop) void window.hcanvasDesktop.openProject(projectPath);
-    else {
-      const record = current.projects.find(item => item.projectPath === projectPath);
-      if (record?.runningUrl) window.open(record.runningUrl, '_blank', 'noopener');
-      else toast('Project is not running. Start it with: hcanvas app --project ' + projectPath, 'info');
-    }
+  el('hubCurrentWorkspace').textContent = 'Current workspace: ' + current.current.workspace;
+  if (!projects.length) {
+    grid.innerHTML = '<div class="hub-empty"><h2>No projects yet</h2><p>Create a project from a folder. hcanvas will initialize <code>.hcanvas/</code> inside it and keep all data there.</p><button id="hubEmptyNewBtn" class="btn primary">Choose a project folder…</button></div>';
+    qs<HTMLButtonElement>('#hubEmptyNewBtn')?.addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject(); else toast('Browser mode: run hcanvas app --project <folder>.', 'info'); });
+    return;
+  }
+  grid.innerHTML = projects.map(project => {
+    const active = current.current.project === project.projectPath;
+    const running = Boolean(project.runningUrl);
+    return '<button type="button" class="hub-card' + (active ? ' current' : '') + '" data-hub-project="' + esc(project.projectPath) + '">' +
+      '<div class="hub-card-top"><strong>' + esc(project.name) + '</strong><span class="hub-badge ' + (active ? 'current' : running ? 'running' : 'idle') + '">' + (active ? 'current' : running ? 'running' : 'closed') + '</span></div>' +
+      '<small class="hub-card-path">' + esc(project.projectPath) + '</small>' +
+      '<small class="hub-card-workspace">' + esc(project.workspacePath) + '</small>' +
+      '<span class="hub-card-action">' + (active ? 'Return to this canvas →' : window.hcanvasDesktop ? 'Open in new window ↗' : running ? 'Open in new tab ↗' : 'Not running') + '</span></button>';
+  }).join('');
+  grid.querySelectorAll<HTMLButtonElement>('[data-hub-project]').forEach(button => button.addEventListener('click', () => {
+    const projectPath = button.dataset.hubProject!;
+    if (current.current.project === projectPath) { closeProjectHub(); return; }
+    if (window.hcanvasDesktop) { void window.hcanvasDesktop.openProject(projectPath); return; }
+    const record = projects.find(project => project.projectPath === projectPath);
+    if (record?.runningUrl) window.open(record.runningUrl, '_blank', 'noopener');
+    else toast('Project is not running. Start it with: hcanvas app --project ' + projectPath, 'info');
   }));
-  menu.querySelector<HTMLButtonElement>('[data-open-project]')?.addEventListener('click', () => {
-    menu.classList.add('hidden');
-    if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject();
-    else toast('Run hcanvas app --project <folder> to initialize a project in browser mode.', 'info');
-  });
-  menu.querySelector<HTMLButtonElement>('[data-project-info]')?.addEventListener('click', () => { menu.classList.add('hidden'); void openWorkspaceModal(); });
 }
 
 async function openWorkspaceModal(): Promise<void> {
@@ -3224,7 +3307,10 @@ function renderPresentCanvasHtml(page: HcPage): string {
       const background = block.shape === 'frame' ? 'transparent' : esc(String(block.style?.fill || '#f3e8ff'));
       const borderStyle = block.shape === 'frame' ? 'dashed' : String(block.style?.strokeStyle || 'solid');
       const clip = block.shape === 'diamond' ? 'clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)' : '';
-      inner = '<div style="width:100%;height:100%;border-radius:' + radius + ';background:' + background + ';border:' + String(block.style?.strokeWidth || 1) + 'px ' + borderStyle + ' ' + esc(String(block.style?.stroke || '#a855f7')) + ';' + clip + '"></div>';
+      const strokeWidth = Number(block.style?.strokeWidth ?? 1);
+      const strokeColor = String(block.style?.stroke || '');
+      const border = strokeWidth > 0 && strokeColor ? 'border:' + strokeWidth + 'px ' + borderStyle + ' ' + esc(strokeColor) + ';' : 'border:0;';
+      inner = '<div style="width:100%;height:100%;border-radius:' + radius + ';background:' + background + ';' + border + clip + '"></div>';
     }
     else if (block.type === 'freehand' || block.type === 'arrow') inner = vectorSvgMarkup(block);
     html += '<div style="' + style + '">' + inner + '</div>';

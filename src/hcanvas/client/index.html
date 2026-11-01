@@ -21,10 +21,7 @@
       <div id="presenceBar" class="presence-bar hidden" aria-label="Live agents"></div>
     </div>
     <div class="top-actions">
-      <div class="menu-wrap">
-        <button id="projectMenuBtn" class="btn ghost" aria-haspopup="menu" aria-expanded="false">Projects ▾</button>
-        <div id="projectMenu" class="menu hidden" role="menu"></div>
-      </div>
+      <button id="projectMenuBtn" class="btn ghost" title="Open the project manager">Projects</button>
       <button id="importHtmlBtn" class="btn ghost" title="Import a local HTML file">Import HTML</button>
       <button id="addPageBtn" class="btn ghost" title="Add a page">+ Page</button>
       <input id="htmlFileInput" type="file" accept=".html,.htm,text/html" hidden>
@@ -134,6 +131,17 @@
     <div id="copilotPanel" class="panel hidden"></div>
     <div id="proposalsPanel" class="panel hidden"></div>
   </aside>
+</div>
+<div id="projectHub" class="project-hub hidden" aria-label="Project manager">
+  <div class="hub-shell">
+    <header class="hub-head">
+      <div><span class="hub-kicker">HADAMARD CANVAS</span><h1>Projects</h1><p>Open a project in a new window, or create one from a folder.</p></div>
+      <div class="hub-head-actions"><button id="hubNewProjectBtn" class="btn primary">New Project…</button><button id="hubCloseBtn" class="btn">Back to canvas</button></div>
+    </header>
+    <div class="hub-meta"><span id="hubCurrentWorkspace"></span><button id="hubRefreshBtn" class="btn tiny">Refresh</button></div>
+    <div id="hubProjectGrid" class="hub-grid"></div>
+    <footer class="hub-foot"><span>Projects are registered in <code>~/.hcanvas/projects.json</code>. Each project stores its data in <code>.hcanvas/</code>.</span></footer>
+  </div>
 </div>
 <div id="modalRoot"></div>
 <div id="toastRoot" class="toast-root"></div>
