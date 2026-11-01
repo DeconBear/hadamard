@@ -80,7 +80,6 @@ function mount(element: HTMLElement, options: ExcalidrawMountOptions = {}): Exca
 
   const resize = () => {
     try { api?.refresh?.(); } catch { /* older builds */ }
-    window.dispatchEvent(new Event('resize'));
   };
   window.addEventListener('resize', resize);
   return {

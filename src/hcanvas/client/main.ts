@@ -460,6 +460,7 @@ function bindStaticActions(): void {
     event.preventDefault();
     setZoom(state.zoom * (event.deltaY < 0 ? 1.08 : 0.92));
   }, { passive: false });
+  window.addEventListener('resize', () => { resizeWhiteboardSurface(); });
 }
 
 function viewportWorldBounds(): { minX: number; minY: number; maxX: number; maxY: number } {
@@ -933,15 +934,26 @@ function fitPage(): void {
 function renderArtboard(): void {
   unmountWhiteboard();
   const artboard = el('artboard');
+  const viewport = el('viewport');
   const page = activePage();
   artboard.textContent = '';
   if (!page) return;
-  const metrics = pageMetrics(page);
-  artboard.className = 'artboard mode-' + page.mode + (state.editing ? ' editing' : '');
+  const whiteboardSurface = page.mode === 'whiteboard';
+  const viewportRect = viewport.getBoundingClientRect();
+  const metrics = whiteboardSurface ? { width: Math.max(320, viewportRect.width), height: Math.max(240, viewportRect.height) } : pageMetrics(page);
+  viewport.classList.toggle('whiteboard-surface', whiteboardSurface);
+  artboard.className = 'artboard mode-' + page.mode + (state.editing ? ' editing' : '') + (whiteboardSurface ? ' whiteboard-surface' : '');
   artboard.style.width = metrics.width + 'px';
   artboard.style.height = metrics.height + 'px';
   artboard.style.background = page.background;
-  if (page.mode === 'infinite' && state.showGrid) {
+  if (whiteboardSurface) {
+    state.zoom = 1;
+    state.panX = 0;
+    state.panY = 0;
+    state.fittedPageId = state.activePageId;
+    artboard.style.backgroundImage = '';
+    artboard.style.backgroundSize = '';
+  } else if (page.mode === 'infinite' && state.showGrid) {
     artboard.style.backgroundImage = 'radial-gradient(rgba(80,70,55,.14) 1px, transparent 1px)';
     artboard.style.backgroundSize = '22px 22px';
   } else {
@@ -949,12 +961,37 @@ function renderArtboard(): void {
     artboard.style.backgroundSize = '';
   }
   if (page.mode === 'html') renderHtmlPage(artboard, page);
-  else if (page.mode === 'whiteboard') renderWhiteboardPage(artboard, page);
+  else if (whiteboardSurface) renderWhiteboardPage(artboard, page);
   else renderCanvasPage(artboard, page);
   renderAgentCursors(artboard, page);
-  if (state.fittedPageId !== state.activePageId) fitPage();
+  if (whiteboardSurface) applyStageTransform();
+  else if (state.fittedPageId !== state.activePageId) fitPage();
   else applyStageTransform();
   renderToolbarState();
+}
+
+let whiteboardResizing = false;
+
+function resizeWhiteboardSurface(): void {
+  if (whiteboardResizing || state.presenting) return;
+  const page = activePage();
+  if (!page || page.mode !== 'whiteboard') return;
+  const artboard = el('artboard');
+  const rect = el('viewport').getBoundingClientRect();
+  const nextWidth = Math.max(320, rect.width);
+  const nextHeight = Math.max(240, rect.height);
+  if (Math.abs(Number.parseFloat(artboard.style.width) - nextWidth) < 0.5 && Math.abs(Number.parseFloat(artboard.style.height) - nextHeight) < 0.5) return;
+  whiteboardResizing = true;
+  try {
+    artboard.style.width = nextWidth + 'px';
+    artboard.style.height = nextHeight + 'px';
+    state.zoom = 1;
+    state.panX = 0;
+    state.panY = 0;
+    applyStageTransform();
+  } finally {
+    whiteboardResizing = false;
+  }
 }
 
 let excalidrawScriptPromise: Promise<Record<string, unknown>> | null = null;

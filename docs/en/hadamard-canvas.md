@@ -66,6 +66,10 @@ The workspace stores documents, state and exports:
 <workspace>/exports/              # HTML/PDF/PNG output
 ```
 
+## Whiteboard workspace
+
+Whiteboard pages are full-workspace surfaces: the Excalidraw canvas fills the entire canvas viewport, while the hcanvas tool rail and page zoom controls are hidden. The full Excalidraw toolbar is available inside this page.
+
 ## Page thumbnails and deck management
 
 The left page rail renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks, and whiteboard pages show a scene placeholder. Hovering a page reveals **move up / move down / duplicate / delete** actions, so a deck can be reordered and duplicated like a slide sorter.
