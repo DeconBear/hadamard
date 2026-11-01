@@ -282,11 +282,12 @@ Select a project folder and let hcanvas initialize it; all product data lives in
 
 ```bash
 hcanvas workspace init ~/projects/my-deck
+hcanvas projects list
 hcanvas app --project ~/projects/my-deck
 hcanvas desktop --project ~/projects/my-deck
 ```
 
-The desktop app exposes **Open Project…** (top bar / Workspace dialog), opens a native folder picker and relaunches into that project. Clicking the workspace path in the bottom-left opens a Workspace dialog with the resolved paths, the generated CLI guide and a copy button. Initialization is non-destructive and creates:
+The **Projects ▾** menu lists every initialized project from the global registry (`~/.hcanvas/projects.json`). In the desktop app, choosing a project opens it in a **separate native window** (multiple projects can be open at once); **Open Project…** opens a native folder picker and creates/opens `<project>/.hcanvas`. In browser mode, the menu can open another project whose local service is already running. Clicking the workspace path in the bottom-left opens a Workspace dialog with the resolved paths, the generated CLI guide and a copy button. Initialization is non-destructive and creates:
 
 ```text
 <project>/.hcanvas/

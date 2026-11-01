@@ -224,11 +224,12 @@ HTTP API 与 CLI 同源：`/api/state`、`/api/docs`、`/api/docs/:id/read|apply
 
 ```bash
 hcanvas workspace init ~/projects/my-deck
+hcanvas projects list
 hcanvas app --project ~/projects/my-deck
 hcanvas desktop --project ~/projects/my-deck
 ```
 
-桌面版顶栏提供 **Open Project…**，通过原生目录选择后重启到该项目；点击左下角 workspace 路径会打开 Workspace 对话框，显示当前路径、生成的 CLI 指南，并可一键复制。初始化不破坏现有文件，会创建：
+顶部 **Projects ▾** 菜单从全局项目注册表（`~/.hcanvas/projects.json`）列出所有初始化过的项目。桌面版选择项目会打开一个**独立窗口**（可同时打开多个项目）；**Open Project…** 通过原生目录选择创建/打开 `<project>/.hcanvas`。浏览器模式可以打开已在运行的其他项目服务。点击左下角 workspace 路径会打开 Workspace 对话框，显示当前路径、生成的 CLI 指南，并可一键复制。初始化不破坏现有文件，会创建：
 
 ```text
 <project>/.hcanvas/
