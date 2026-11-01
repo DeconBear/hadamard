@@ -88,6 +88,22 @@ interface UiState {
   whiteboardHydratingUntil: number;
 }
 
+interface PageItemCache {
+  fingerprint: string;
+  item: HTMLDivElement;
+  thumb: HTMLDivElement;
+  info: HTMLDivElement;
+  actions: HTMLDivElement;
+  index: number;
+  pagesLength: number;
+}
+
+const pageItemCache = new Map<string, PageItemCache>();
+const htmlCursorCache = new Map<string, { left: number; top: number }>();
+let htmlCursorCacheKey = '';
+let remoteReloadTimer: ReturnType<typeof setTimeout> | undefined;
+let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+
 const state: UiState = {
   docs: [], doc: null, activePageId: null, activeBlockId: null, editing: null,
   selectedHtmlId: null, iframeDoc: null, iframeElement: null,
@@ -273,6 +289,14 @@ function setSaveStatus(message: string, kind: UiState['saveKind'] = 'idle'): voi
   node.className = 'save-status' + (kind === 'saving' ? ' saving' : kind === 'error' ? ' error' : '');
 }
 
+function patchDocSummary(doc: HcDocument): void {
+  const pendingProposals = doc.proposals.filter(proposal => proposal.status === 'pending').length;
+  const index = state.docs.findIndex(summary => summary.id === doc.id);
+  const summary: DocSummary = { id: doc.id, title: doc.title, revision: doc.revision, pages: doc.pages.length, updatedAt: doc.updatedAt, pendingProposals };
+  if (index >= 0) state.docs[index] = summary;
+  else state.docs.unshift(summary);
+}
+
 async function loadDocs(): Promise<void> {
   const result = await api<{ docs: DocSummary[] }>('/api/docs');
   state.docs = result.docs || [];
@@ -306,6 +330,9 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
   await loadDocs();
   renderAll();
   void syncActive();
+  if (result.doc.pages.some(page => page.mode === 'whiteboard')) {
+    setTimeout(() => { void loadExcalidrawScript().catch(() => undefined); }, 1200);
+  }
 }
 
 async function initialize(): Promise<void> {
@@ -409,6 +436,7 @@ function bindStaticActions(): void {
     if (!target) return;
     state.tab = target.dataset.tab as UiState['tab'];
     renderTabs();
+    renderActivePanel();
   });
   const viewport = el('viewport');
   viewport.addEventListener('pointerdown', event => {
@@ -421,7 +449,7 @@ function bindStaticActions(): void {
     const move = (moveEvent: PointerEvent): void => {
       state.panX = start.panX + moveEvent.clientX - start.x;
       state.panY = start.panY + moveEvent.clientY - start.y;
-      applyStageTransform();
+      scheduleStageTransform();
     };
     const up = (): void => { viewport.removeEventListener('pointermove', move); viewport.removeEventListener('pointerup', up); };
     viewport.addEventListener('pointermove', move);
@@ -593,16 +621,21 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   }
 }
 
+function renderActivePanel(): void {
+  if (state.tab === 'agent') renderAgent();
+  else if (state.tab === 'proposals') renderProposals();
+  else if (state.tab === 'copilot') renderCopilot();
+  else renderInspector();
+}
+
 function renderAll(): void {
   renderTop();
   renderToolbarState();
   renderDocs();
   renderPages();
   renderArtboard();
-  renderInspector();
-  renderAgent();
-  renderProposals();
-  renderCopilot();
+  renderProposalBadge();
+  renderActivePanel();
   renderTabs();
 }
 
@@ -691,43 +724,141 @@ function movePage(pageId: string, direction: 'up' | 'down'): void {
   });
 }
 
+function hashString(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36) + ':' + value.length;
+}
+
+function pageFingerprint(page: HcPage): string {
+  const base = page.name + '|' + page.mode + '|' + page.width + '|' + page.height + '|' + page.background;
+  if (page.mode === 'whiteboard') return base + '|' + (page.scene?.elements?.length || 0);
+  if (page.mode === 'html') return base + '|' + hashString(page.html || '');
+  return base + '|' + hashString(JSON.stringify(page.blocks || []));
+}
+
+function makePageActions(page: HcPage, index: number, pagesLength: number): HTMLDivElement {
+  const actions = document.createElement('div');
+  actions.className = 'page-actions';
+  const addAction = (label: string, title: string, handler: () => void, disabled = false, danger = false): void => {
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'page-action' + (danger ? ' danger' : '');
+    action.textContent = label;
+    action.title = title;
+    action.disabled = disabled;
+    action.addEventListener('click', event => { event.stopPropagation(); if (!disabled) handler(); });
+    actions.appendChild(action);
+  };
+  addAction('↑', 'Move page up', () => movePage(page.id, 'up'), index === 0);
+  addAction('↓', 'Move page down', () => movePage(page.id, 'down'), index === pagesLength - 1);
+  addAction('⧉', 'Duplicate page', () => duplicatePage(page));
+  addAction('×', 'Delete page', () => { void confirmDialog('Delete page "' + (page.name || 'Page') + '"?').then(ok => { if (ok) void deletePage(page.id); }); }, pagesLength <= 1, true);
+  return actions;
+}
+
+const pageThumbHydrators = new WeakMap<HTMLElement, () => void>();
+let pageThumbObserver: IntersectionObserver | null = null;
+
+function observePageThumb(item: HTMLElement, thumb: HTMLDivElement, page: HcPage, force = false): void {
+  if (thumb.dataset.hydrated === '1') return;
+  const hydrate = (): void => {
+    if (thumb.dataset.hydrated === '1') return;
+    thumb.dataset.hydrated = '1';
+    thumb.innerHTML = pageThumbHtml(page);
+  };
+  pageThumbHydrators.set(item, hydrate);
+  if (force) {
+    hydrate();
+    pageThumbObserver?.unobserve(item);
+    return;
+  }
+  if (!('IntersectionObserver' in window)) { hydrate(); return; }
+  if (!pageThumbObserver) {
+    pageThumbObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const hydrateEntry = pageThumbHydrators.get(entry.target as HTMLElement);
+        hydrateEntry?.();
+        pageThumbObserver?.unobserve(entry.target);
+      }
+    }, { root: el('pagesList'), rootMargin: '240px 0px' });
+  }
+  pageThumbObserver.observe(item);
+}
+
+function createPageItem(page: HcPage, index: number, pagesLength: number): PageItemCache {
+  const item = document.createElement('div');
+  item.className = 'page-item' + (page.id === state.activePageId ? ' active' : '');
+  item.dataset.pageId = page.id;
+  item.style.order = String(index);
+  const thumb = document.createElement('div');
+  thumb.className = 'page-thumb';
+  thumb.innerHTML = '<div class="page-thumb-loading"></div>';
+  const info = document.createElement('div');
+  info.className = 'page-info';
+  info.innerHTML = '<strong>' + esc(page.name || 'Page ' + (index + 1)) + '</strong><small>' + esc(page.mode) + ' · ' + page.width + '×' + page.height + '</small>';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'page-open';
+  button.append(thumb, info);
+  button.addEventListener('click', () => selectPage(page.id));
+  item.appendChild(button);
+  const actions = makePageActions(page, index, pagesLength);
+  item.appendChild(actions);
+  return { fingerprint: pageFingerprint(page), item, thumb, info, actions, index, pagesLength };
+}
+
 function renderPages(): void {
   const root = el('pagesList');
-  root.textContent = '';
   const pages = state.doc?.pages || [];
+  if (!pages.length) {
+    root.textContent = '';
+    pageItemCache.clear();
+    return;
+  }
+  if (!pageItemCache.size && root.childElementCount) root.textContent = '';
+  const pageIds = new Set(pages.map(page => page.id));
+  for (const [pageId, cached] of pageItemCache) {
+    if (!pageIds.has(pageId)) {
+      pageThumbObserver?.unobserve(cached.item);
+      pageThumbHydrators.delete(cached.item);
+      cached.item.remove();
+      pageItemCache.delete(pageId);
+    }
+  }
   pages.forEach((page, index) => {
-    const wrap = document.createElement('div');
-    wrap.className = 'page-item' + (page.id === state.activePageId ? ' active' : '');
-    const thumb = document.createElement('div');
-    thumb.className = 'page-thumb';
-    thumb.innerHTML = pageThumbHtml(page);
-    const info = document.createElement('div');
-    info.className = 'page-info';
-    info.innerHTML = '<strong>' + esc(page.name || 'Page ' + (index + 1)) + '</strong><small>' + esc(page.mode) + ' · ' + page.width + '×' + page.height + '</small>';
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'page-open';
-    button.append(thumb, info);
-    button.addEventListener('click', () => selectPage(page.id));
-    wrap.appendChild(button);
-    const actions = document.createElement('div');
-    actions.className = 'page-actions';
-    const addAction = (label: string, title: string, handler: () => void, disabled = false, danger = false): void => {
-      const action = document.createElement('button');
-      action.type = 'button';
-      action.className = 'page-action' + (danger ? ' danger' : '');
-      action.textContent = label;
-      action.title = title;
-      action.disabled = disabled;
-      action.addEventListener('click', event => { event.stopPropagation(); if (!disabled) handler(); });
-      actions.appendChild(action);
-    };
-    addAction('↑', 'Move page up', () => movePage(page.id, 'up'), index === 0);
-    addAction('↓', 'Move page down', () => movePage(page.id, 'down'), index === pages.length - 1);
-    addAction('⧉', 'Duplicate page', () => duplicatePage(page));
-    addAction('×', 'Delete page', () => { void confirmDialog('Delete page "' + (page.name || 'Page') + '"?').then(ok => { if (ok) void deletePage(page.id); }); }, pages.length <= 1, true);
-    wrap.appendChild(actions);
-    root.appendChild(wrap);
+    const fingerprint = pageFingerprint(page);
+    const editingThisPage = state.editing?.pageId === page.id;
+    let cached = pageItemCache.get(page.id);
+    if (!cached || (cached.fingerprint !== fingerprint && !editingThisPage)) {
+      const previous = cached;
+      if (previous) {
+        pageThumbObserver?.unobserve(previous.item);
+        pageThumbHydrators.delete(previous.item);
+      }
+      const next = createPageItem(page, index, pages.length);
+      if (previous) previous.item.replaceWith(next.item);
+      else root.appendChild(next.item);
+      pageItemCache.set(page.id, next);
+      observePageThumb(next.item, next.thumb, page, page.id === state.activePageId);
+      cached = next;
+    } else if (page.id === state.activePageId) {
+      observePageThumb(cached.item, cached.thumb, page, true);
+    }
+    const previousIndex = cached.index;
+    cached.index = index;
+    cached.item.style.order = String(index);
+    cached.item.classList.toggle('active', page.id === state.activePageId);
+    if (cached.pagesLength !== pages.length || previousIndex !== index) {
+      const nextActions = makePageActions(page, index, pages.length);
+      cached.actions.replaceWith(nextActions);
+      cached.actions = nextActions;
+      cached.pagesLength = pages.length;
+    }
   });
 }
 
@@ -747,6 +878,16 @@ function selectPage(pageId: string): void {
   void syncActive();
 }
 
+let stageFrame = 0;
+
+function scheduleStageTransform(): void {
+  if (stageFrame) return;
+  stageFrame = requestAnimationFrame(() => {
+    stageFrame = 0;
+    applyStageTransform();
+  });
+}
+
 function applyStageTransform(): void {
   const stage = el('stage');
   stage.style.transform = 'translate(' + state.panX + 'px,' + state.panY + 'px) scale(' + state.zoom + ')';
@@ -755,7 +896,7 @@ function applyStageTransform(): void {
 
 function setZoom(next: number): void {
   state.zoom = Math.max(0.1, Math.min(3, next));
-  applyStageTransform();
+  scheduleStageTransform();
 }
 
 function fitPage(): void {
@@ -877,7 +1018,7 @@ function renderWhiteboardPage(container: HTMLElement, page: HcPage): void {
           if (!state.doc || state.activePageId !== pageId) return;
           const current = activePage();
           const nextScene = { elements, files, appState: { viewBackgroundColor: current?.background || '#ffffff' } };
-          void applyOps([{ op: 'set_whiteboard_scene', pageId, scene: nextScene } as HcOp], { refreshArtboard: false, actor: 'human' });
+          void applyOps([{ op: 'set_whiteboard_scene', pageId, scene: nextScene } as HcOp], { refreshArtboard: false, actor: 'human', silent: true });
         }, 900);
       },
     });
@@ -978,6 +1119,19 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
   if (page.mode === 'html' && page.html) {
     const htmlSessions = sessions.filter(session => session.selection?.[0]);
     if (htmlSessions.length) {
+      const cursorKey = page.id + '|' + page.width + 'x' + page.height + '|' + hashString(page.html) + '|' + htmlSessions.map(session => session.id + ':' + (session.selection?.[0] || '')).join(',');
+      if (htmlCursorCacheKey === cursorKey && htmlCursorCache.size) {
+        for (const session of htmlSessions) {
+          const position = htmlCursorCache.get(session.id);
+          const cursor = overlay.querySelector<HTMLElement>('[data-agent-session="' + CSS.escape(session.id) + '"]');
+          if (!position || !cursor) continue;
+          cursor.style.left = position.left + 'px';
+          cursor.style.top = position.top + 'px';
+        }
+        return;
+      }
+      htmlCursorCacheKey = cursorKey;
+      htmlCursorCache.clear();
       const measure = document.createElement('iframe');
       measure.className = 'agent-measure-frame';
       measure.setAttribute('sandbox', 'allow-same-origin');
@@ -996,8 +1150,10 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
             const cursor = overlay.querySelector<HTMLElement>('[data-agent-session="' + CSS.escape(session.id) + '"]');
             if (!target || !cursor) continue;
             const rect = target.getBoundingClientRect();
-            cursor.style.left = (rect.left + rect.width / 2) + 'px';
-            cursor.style.top = Math.max(22, rect.top + 2) + 'px';
+            const position = { left: rect.left + rect.width / 2, top: Math.max(22, rect.top + 2) };
+            htmlCursorCache.set(session.id, position);
+            cursor.style.left = position.left + 'px';
+            cursor.style.top = position.top + 'px';
           }
         } catch { /* measurement is best effort */ }
         setTimeout(() => measure.remove(), 0);
@@ -1156,6 +1312,11 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
     selectBlock(block.id);
     const start = { x: event.clientX, y: event.clientY, left: block.x, top: block.y, moved: false };
     hit.setPointerCapture(event.pointerId);
+    let dragFrame = 0;
+    const paintDrag = (): void => {
+      wrap.style.left = block.x + 'px';
+      wrap.style.top = block.y + 'px';
+    };
     const move = (moveEvent: PointerEvent): void => {
       const dx = (moveEvent.clientX - start.x) / state.zoom;
       const dy = (moveEvent.clientY - start.y) / state.zoom;
@@ -1165,12 +1326,13 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
       if (!page) return;
       const next = clampBlockPosition(page, block, start.left + dx, start.top + dy);
       block.x = next.x; block.y = next.y;
-      wrap.style.left = next.x + 'px';
-      wrap.style.top = next.y + 'px';
+      if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; paintDrag(); });
     };
     const up = (): void => {
       hit.removeEventListener('pointermove', move);
       hit.removeEventListener('pointerup', up);
+      if (dragFrame) { cancelAnimationFrame(dragFrame); dragFrame = 0; }
+      paintDrag();
       if (start.moved) void persistBlock(block, { x: block.x, y: block.y });
     };
     hit.addEventListener('pointermove', move);
@@ -1200,16 +1362,22 @@ function bindResizeHandle(handle: HTMLElement, wrap: HTMLDivElement, block: HcBl
     event.preventDefault();
     const start = { x: event.clientX, y: event.clientY, w: block.w, h: block.h };
     handle.setPointerCapture(event.pointerId);
+    let resizeFrame = 0;
+    const paintResize = (): void => {
+      wrap.style.width = block.w + 'px';
+      wrap.style.height = block.h + 'px';
+    };
     const move = (moveEvent: PointerEvent): void => {
       const nextW = Math.max(40, Math.round(start.w + (moveEvent.clientX - start.x) / state.zoom));
       const nextH = Math.max(30, Math.round(start.h + (moveEvent.clientY - start.y) / state.zoom));
       block.w = nextW; block.h = nextH;
-      wrap.style.width = nextW + 'px';
-      wrap.style.height = nextH + 'px';
+      if (!resizeFrame) resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; paintResize(); });
     };
     const up = (): void => {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
+      if (resizeFrame) { cancelAnimationFrame(resizeFrame); resizeFrame = 0; }
+      paintResize();
       void persistBlock(block, { w: block.w, h: block.h });
     };
     handle.addEventListener('pointermove', move);
@@ -1236,7 +1404,7 @@ async function persistBlock(block: HcBlock, patch: Partial<HcBlock>): Promise<vo
   renderInspector();
 }
 
-async function applyOps(ops: HcOp[], options: { refreshArtboard?: boolean; actor?: string } = {}): Promise<HcDocument | null> {
+async function applyOps(ops: HcOp[], options: { refreshArtboard?: boolean; actor?: string; silent?: boolean } = {}): Promise<HcDocument | null> {
   if (!state.doc) return null;
   state.ignoreEventsUntil = Date.now() + 1600;
   setSaveStatus('Saving…', 'saving');
@@ -1246,14 +1414,19 @@ async function applyOps(ops: HcOp[], options: { refreshArtboard?: boolean; actor
       body: JSON.stringify({ ops, baseRevision: state.doc.revision, actor: options.actor || 'human' }),
     });
     state.doc = result.doc;
+    patchDocSummary(result.doc);
     setSaveStatus('Saved · rev ' + result.doc.revision, 'saved');
-    await loadDocs();
+    if (options.silent) {
+      renderTop();
+      return result.doc;
+    }
     renderTop();
     renderDocs();
     renderPages();
-    renderProposals();
+    renderProposalBadge();
+    if (state.tab === 'proposals') renderProposals();
     if (options.refreshArtboard !== false) renderArtboard();
-    renderInspector();
+    if (state.tab === 'inspector') renderInspector();
     void syncActive();
     return result.doc;
   } catch (error) {
@@ -1318,6 +1491,7 @@ function exitHtmlEdit(): void {
   state.iframeElement = null;
   renderTop();
   renderArtboard();
+  renderPages();
   renderInspector();
 }
 
@@ -1557,7 +1731,6 @@ function renderPageInspector(): void {
 function bindPageInspector(page: HcPage): void {
   const applyPage = async (patch: Record<string, unknown>, refresh = false): Promise<void> => {
     await applyOps([{ op: 'update_page', pageId: page.id, patch } as HcOp], { refreshArtboard: refresh });
-    renderPages();
   };
   el<HTMLInputElement>('pageName').addEventListener('change', event => { void applyPage({ name: (event.target as HTMLInputElement).value }); });
   el<HTMLInputElement>('pageWidth').addEventListener('change', event => { void applyPage({ width: Math.max(100, Number((event.target as HTMLInputElement).value) || page.width) }, true); });
@@ -1674,7 +1847,7 @@ async function refreshPresence(): Promise<void> {
     state.presence = snapshot.presence || [];
     if (snapshot.docs) state.docs = snapshot.docs;
     renderPresence();
-    renderAgent();
+    if (state.tab === 'agent') renderAgent();
     renderDocs();
     const page = activePage();
     if (page?.mode === 'whiteboard') positionWhiteboardCursors(page);
@@ -1790,14 +1963,19 @@ async function sendCopilot(raw: string): Promise<void> {
   }
 }
 
-function renderProposals(): void {
-  const root = el('proposalsPanel');
-  if (!state.doc) return;
-  const proposals = state.doc.proposals;
+function renderProposalBadge(): void {
+  const proposals = state.doc?.proposals || [];
   const pending = proposals.filter(proposal => proposal.status === 'pending');
   const badge = el('proposalCount');
   badge.textContent = String(pending.length);
   badge.classList.toggle('hidden', pending.length === 0);
+}
+
+function renderProposals(): void {
+  const root = el('proposalsPanel');
+  if (!state.doc) return;
+  const proposals = state.doc.proposals;
+  renderProposalBadge();
   if (!proposals.length) { root.innerHTML = '<p class="empty-state">No proposals yet. Agents can submit changes with <code>hcanvas propose</code>.</p>'; return; }
   let html = '';
   for (const proposal of proposals.slice().reverse()) {
@@ -1831,10 +2009,12 @@ function connectEvents(): void {
       try { payload = JSON.parse((event as MessageEvent).data) as Record<string, unknown>; } catch { return; }
       if (payload.type === 'doc.changed' && payload.docId === state.doc?.id) {
         if (state.editing) { toast('Canvas changed elsewhere. Exit HTML edit to reload.', 'info'); return; }
-        void reloadActiveDoc();
+        if (remoteReloadTimer) clearTimeout(remoteReloadTimer);
+        remoteReloadTimer = setTimeout(() => { remoteReloadTimer = undefined; void reloadActiveDoc(); }, 120);
       }
       if (payload.type === 'session.changed') {
-        void refreshPresence();
+        if (presenceRefreshTimer) clearTimeout(presenceRefreshTimer);
+        presenceRefreshTimer = setTimeout(() => { presenceRefreshTimer = undefined; void refreshPresence(); }, 250);
       }
       if ((payload.type === 'proposal.created' || payload.type === 'proposal.resolved') && state.doc) {
         void api<{ doc: HcDocument }>('/api/docs/' + state.doc.id).then(result => { state.doc = result.doc; renderProposals(); renderAll(); }).catch(() => undefined);

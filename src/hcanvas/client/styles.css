@@ -476,3 +476,4 @@ button { cursor: pointer; }
 .page-action:hover:not(:disabled) { background: var(--surface-2); color: var(--accent); }
 .page-action.danger:hover:not(:disabled) { background: #fff0ee; color: var(--red); }
 .page-action:disabled { opacity: .2; }
+.page-thumb-loading { width: 100%; height: 100%; background: linear-gradient(110deg, #f1eee7 8%, #f7f5ef 18%, #f1eee7 33%); border-radius: 3px; }
