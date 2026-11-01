@@ -117,7 +117,7 @@ hcanvas masters delete <masterId>
 
 ## Legacy Excalidraw 白板页
 
-旧文档可能仍包含 **Excalidraw whiteboard** 页。新建页面已不再提供此预设，hcanvas 也不再加载或提供 Excalidraw 运行时。旧白板以只读原生预览显示（形状、箭头、手绘、文本、图片、frame、旋转/透明度/虚线）；点击 **Convert to native Infinite** 后可编辑。原始 scene 仍保存在文档中用于迁移：形状、箭头、自由绘制、文字、图片、frame、手绘风格、图层、缩放/平移、撤销/重做和 Excalidraw 工具栏。场景随文档保存：
+旧文档可能仍包含 **Excalidraw whiteboard** 页。新建页面已不再提供此预设，hcanvas 也不再加载或提供 Excalidraw 运行时。旧白板以只读原生预览显示（形状、箭头、手绘、文本、图片、frame、旋转/透明度/虚线）；点击 **Convert to native Infinite** 后可编辑。原始 scene 仍保存在文档中用于迁移。场景随文档保存：
 
 ```bash
 hcanvas read <doc> --format scene --page <白板页 id>
