@@ -5,43 +5,59 @@ import { fileURLToPath } from 'node:url';
 
 import { startHcanvasServer, type HcServer } from './server.js';
 import { initWorkspace, projectWorkspaceDir } from './workspace.js';
+import { listProjects, registerProject, touchProject } from './projectRegistry.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-function argValue(name: string): string | undefined {
-  const index = process.argv.indexOf(name);
-  return index >= 0 ? process.argv[index + 1] : undefined;
+function argValue(argv: string[], name: string): string | undefined {
+  const index = argv.indexOf(name);
+  return index >= 0 ? argv[index + 1] : undefined;
 }
 
-const projectArg = argValue('--project') || process.env.HCANVAS_PROJECT;
-const project = projectArg ? path.resolve(projectArg) : null;
-const workspace = project ? projectWorkspaceDir(project) : path.resolve(argValue('--workspace') || process.env.HCANVAS_WORKSPACE || path.join(os.homedir(), '.hcanvas'));
-const requestedPort = Number(argValue('--port') || process.env.HCANVAS_PORT || 4319);
+const initialProjectArg = argValue(process.argv, '--project') || process.env.HCANVAS_PROJECT;
+const initialProject = initialProjectArg ? path.resolve(initialProjectArg) : null;
+const initialWorkspace = initialProject
+  ? projectWorkspaceDir(initialProject)
+  : path.resolve(argValue(process.argv, '--workspace') || process.env.HCANVAS_WORKSPACE || path.join(os.homedir(), '.hcanvas'));
+const requestedPort = Number(argValue(process.argv, '--port') || process.env.HCANVAS_PORT || 4319);
 const staticDir = path.resolve(here, '..', '..', 'hcanvas');
+
+interface ProjectWindow {
+  window: BrowserWindow;
+  server: HcServer;
+  workspace: string;
+  project: string | null;
+}
 
 app.setName('Hadamard Canvas');
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  let server: HcServer | null = null;
-  let window: BrowserWindow | null = null;
+  const projectWindows = new Map<string, ProjectWindow>();
+  let firstWindow: BrowserWindow | null = null;
 
-  const createWindow = async (): Promise<void> => {
+  const focusedWindow = (): BrowserWindow | null => BrowserWindow.getFocusedWindow() ?? firstWindow ?? [...projectWindows.values()][0]?.window ?? null;
+
+  const openProjectWindow = async (projectPath: string, port = 0): Promise<ProjectWindow> => {
+    const project = path.resolve(projectPath);
+    const workspace = projectWorkspaceDir(project);
+    const existing = projectWindows.get(workspace);
+    if (existing) {
+      if (existing.window.isMinimized()) existing.window.restore();
+      existing.window.focus();
+      return existing;
+    }
     await initWorkspace(workspace, project);
-    server = await startHcanvasServer({
-      workspace,
-      host: '127.0.0.1',
-      port: Number.isFinite(requestedPort) ? requestedPort : 4319,
-      staticDir,
-    });
-    Menu.setApplicationMenu(null);
-    window = new BrowserWindow({
+    await registerProject(project);
+    await touchProject(project);
+    const server = await startHcanvasServer({ workspace, host: '127.0.0.1', port, staticDir });
+    const window = new BrowserWindow({
       width: 1500,
       height: 940,
       minWidth: 1024,
       minHeight: 680,
-      title: project ? 'Hadamard Canvas — ' + path.basename(project) : 'Hadamard Canvas',
+      title: 'Hadamard Canvas — ' + path.basename(project),
       backgroundColor: '#f1efe9',
       show: false,
       autoHideMenuBar: true,
@@ -52,58 +68,106 @@ if (!gotLock) {
         sandbox: true,
       },
     });
-    window.once('ready-to-show', () => window?.show());
+    const entry: ProjectWindow = { window, server, workspace, project };
+    projectWindows.set(workspace, entry);
+    if (!firstWindow) firstWindow = window;
+    window.once('ready-to-show', () => window.show());
+    window.on('closed', () => {
+      projectWindows.delete(workspace);
+      if (firstWindow === window) firstWindow = [...projectWindows.values()][0]?.window ?? null;
+      void server.close().catch(() => undefined);
+    });
     window.webContents.setWindowOpenHandler(({ url }) => {
       void shell.openExternal(url);
       return { action: 'deny' };
     });
     await window.loadURL(server.url);
-    window.on('closed', () => { window = null; });
+    return entry;
   };
 
-  ipcMain.handle('hcanvas:open-project', async () => {
-    if (!window) return null;
-    const result = await dialog.showOpenDialog(window, {
-      title: 'Open hCanvas project',
-      buttonLabel: 'Open project',
-      properties: ['openDirectory', 'createDirectory'],
-    });
+  const chooseProject = async (): Promise<string | null> => {
+    const parent = focusedWindow();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, { title: 'Open hCanvas project', buttonLabel: 'Open project', properties: ['openDirectory', 'createDirectory'] })
+      : await dialog.showOpenDialog({ title: 'Open hCanvas project', buttonLabel: 'Open project', properties: ['openDirectory', 'createDirectory'] });
     if (result.canceled || !result.filePaths[0]) return null;
-    const selectedProject = result.filePaths[0];
-    await server?.close().catch(() => undefined);
-    const sourceArgs = process.argv.slice(1);
-    const relaunchArgs: string[] = [];
-    for (let index = 0; index < sourceArgs.length; index += 1) {
-      const arg = sourceArgs[index]!;
-      if (arg === '--project' || arg === '--workspace') { index += 1; continue; }
-      relaunchArgs.push(arg);
-    }
-    relaunchArgs.push('--project', selectedProject);
-    app.relaunch({ args: relaunchArgs });
-    app.exit(0);
-    return selectedProject;
+    const selected = path.resolve(result.filePaths[0]);
+    return path.basename(selected) === '.hcanvas' ? path.dirname(selected) : selected;
+  };
+
+  ipcMain.handle('hcanvas:open-project', async (_event, projectPath?: string) => {
+    const selected = typeof projectPath === 'string' && projectPath.trim() ? projectPath : await chooseProject();
+    if (!selected) return null;
+    const entry = await openProjectWindow(selected);
+    return { id: entry.project ? path.basename(entry.project) : entry.workspace, projectPath: entry.project, workspace: entry.workspace };
   });
 
-  app.on('second-instance', () => {
+  ipcMain.handle('hcanvas:choose-project', async () => {
+    const selected = await chooseProject();
+    if (!selected) return null;
+    const entry = await openProjectWindow(selected);
+    return { projectPath: entry.project, workspace: entry.workspace };
+  });
+
+  ipcMain.handle('hcanvas:list-projects', async () => listProjects());
+
+  app.on('second-instance', (_event, argv) => {
+    const projectArg = argValue(argv, '--project') || process.env.HCANVAS_PROJECT;
+    if (projectArg) {
+      void openProjectWindow(path.resolve(projectArg)).catch(() => undefined);
+      return;
+    }
+    const window = focusedWindow();
     if (window) {
       if (window.isMinimized()) window.restore();
       window.focus();
     }
   });
 
-  app.whenReady().then(() => {
-    void createWindow().catch(error => {
+  app.whenReady().then(async () => {
+    Menu.setApplicationMenu(null);
+    try {
+      if (initialProject) await openProjectWindow(initialProject, Number.isFinite(requestedPort) ? requestedPort : 4319);
+      else {
+        await initWorkspace(initialWorkspace);
+        const server = await startHcanvasServer({ workspace: initialWorkspace, host: '127.0.0.1', port: Number.isFinite(requestedPort) ? requestedPort : 4319, staticDir });
+        const window = new BrowserWindow({
+          width: 1500,
+          height: 940,
+          minWidth: 1024,
+          minHeight: 680,
+          title: 'Hadamard Canvas',
+          backgroundColor: '#f1efe9',
+          show: false,
+          autoHideMenuBar: true,
+          webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+        });
+        const entry: ProjectWindow = { window, server, workspace: initialWorkspace, project: null };
+        projectWindows.set(initialWorkspace, entry);
+        firstWindow = window;
+        window.once('ready-to-show', () => window.show());
+        window.on('closed', () => {
+          projectWindows.delete(initialWorkspace);
+          if (firstWindow === window) firstWindow = [...projectWindows.values()][0]?.window ?? null;
+          void server.close().catch(() => undefined);
+        });
+        window.webContents.setWindowOpenHandler(({ url }) => { void shell.openExternal(url); return { action: 'deny' }; });
+        await window.loadURL(server.url);
+      }
+    } catch (error) {
       dialog.showErrorBox('Hadamard Canvas', error instanceof Error ? error.stack ?? error.message : String(error));
       app.quit();
-    });
+    }
   });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow().catch(() => undefined);
+    if (BrowserWindow.getAllWindows().length === 0 && firstWindow === null && initialProject) {
+      void openProjectWindow(initialProject).catch(() => undefined);
+    }
   });
 
   app.on('window-all-closed', () => {
-    void server?.close().catch(() => undefined);
+    for (const entry of projectWindows.values()) void entry.server.close().catch(() => undefined);
     app.quit();
   });
 }

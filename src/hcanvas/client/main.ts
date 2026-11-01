@@ -21,7 +21,12 @@ class ApiError extends Error {
 
 declare global {
   interface Window {
-    hcanvasDesktop?: { openProject: () => Promise<string | null>; platform?: string };
+    hcanvasDesktop?: {
+      openProject: (projectPath?: string) => Promise<{ projectPath: string | null; workspace: string } | null>;
+      chooseProject: () => Promise<{ projectPath: string | null; workspace: string } | null>;
+      listProjects: () => Promise<Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }>>;
+      platform?: string;
+    };
   }
 }
 
@@ -343,7 +348,6 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
 
 async function initialize(): Promise<void> {
   bindStaticActions();
-  el('openProjectBtn').classList.toggle('hidden', !window.hcanvasDesktop);
   try {
     const context = await api<Record<string, unknown> & { active?: { docId?: string }; docs?: DocSummary[]; presence?: PresenceEntry[] }>('/api/state');
     state.context = context;
@@ -387,7 +391,7 @@ function bindStaticActions(): void {
   el('newDocMini').addEventListener('click', () => openNewDocModal());
   el('addPageBtn').addEventListener('click', () => openAddPageModal());
   el('importHtmlBtn').addEventListener('click', () => el<HTMLInputElement>('htmlFileInput').click());
-  el('openProjectBtn').addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.openProject(); });
+  el('projectMenuBtn').addEventListener('click', event => { event.stopPropagation(); void toggleProjectMenu(); });
   el('workspacePath').addEventListener('click', () => { void openWorkspaceModal(); });
   el<HTMLInputElement>('htmlFileInput').addEventListener('change', event => {
     const file = (event.target as HTMLInputElement).files?.[0];
@@ -400,6 +404,7 @@ function bindStaticActions(): void {
   document.addEventListener('click', event => {
     const menu = el('exportMenu');
     if (!menu.classList.contains('hidden') && !(event.target as Element).closest('.menu-wrap')) toggleExportMenu(false);
+    if (!(event.target as Element).closest('.menu-wrap')) el('projectMenu').classList.add('hidden');
   });
   el('exportMenu').addEventListener('click', event => {
     const target = (event.target as HTMLElement).closest('[data-export]') as HTMLElement | null;
@@ -2261,6 +2266,39 @@ function openImageModal(block?: HcBlock): void {
   });
 }
 
+async function toggleProjectMenu(): Promise<void> {
+  const menu = el('projectMenu');
+  if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+  const current = await api<{ current: { workspace: string; project?: string | null }; projects: Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }> }>('/api/projects').catch(() => null);
+  if (!current) { toast('Could not read the project registry', 'error'); return; }
+  let html = '<div class="project-menu-head">Projects</div>';
+  for (const project of current.projects) {
+    const active = current.current.project === project.projectPath;
+    html += '<button type="button" class="project-menu-item' + (active ? ' active' : '') + '" data-project="' + esc(project.projectPath) + '"><span>' + esc(project.name) + '</span><small>' + esc(project.projectPath) + (project.runningUrl ? ' · running' : '') + '</small></button>';
+  }
+  if (!current.projects.length) html += '<p class="empty-state">No initialized projects yet.</p>';
+  html += '<button type="button" class="project-menu-item project-menu-open" data-open-project="1"><span>Open Project…</span><small>Choose a folder and initialize .hcanvas</small></button>';
+  html += '<button type="button" class="project-menu-item" data-project-info="1"><span>Workspace details</span><small>' + esc(current.current.workspace) + '</small></button>';
+  menu.innerHTML = html;
+  menu.classList.remove('hidden');
+  menu.querySelectorAll<HTMLButtonElement>('[data-project]').forEach(button => button.addEventListener('click', () => {
+    const projectPath = button.dataset.project!;
+    menu.classList.add('hidden');
+    if (window.hcanvasDesktop) void window.hcanvasDesktop.openProject(projectPath);
+    else {
+      const record = current.projects.find(item => item.projectPath === projectPath);
+      if (record?.runningUrl) window.open(record.runningUrl, '_blank', 'noopener');
+      else toast('Project is not running. Start it with: hcanvas app --project ' + projectPath, 'info');
+    }
+  }));
+  menu.querySelector<HTMLButtonElement>('[data-open-project]')?.addEventListener('click', () => {
+    menu.classList.add('hidden');
+    if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject();
+    else toast('Run hcanvas app --project <folder> to initialize a project in browser mode.', 'info');
+  });
+  menu.querySelector<HTMLButtonElement>('[data-project-info]')?.addEventListener('click', () => { menu.classList.add('hidden'); void openWorkspaceModal(); });
+}
+
 async function openWorkspaceModal(): Promise<void> {
   try {
     const info = await api<{ workspace: string; project?: string | null; guidePath: string; guide: string }>('/api/workspace');
@@ -2274,7 +2312,7 @@ async function openWorkspaceModal(): Promise<void> {
       '</div><div class="modal-foot">' + (canOpen ? '<button id="workspaceOpenProjectBtn" class="btn">Open Project…</button>' : '') + '<button id="copyWorkspaceGuideBtn" class="btn">Copy CLI guide</button><button class="btn" data-close>Close</button></div></div>';
     openModal(html);
     qs<HTMLButtonElement>('#copyWorkspaceGuideBtn')?.addEventListener('click', () => { void copyText(info.guide); });
-    qs<HTMLButtonElement>('#workspaceOpenProjectBtn')?.addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.openProject(); });
+    qs<HTMLButtonElement>('#workspaceOpenProjectBtn')?.addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject(); });
   } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
 }
 

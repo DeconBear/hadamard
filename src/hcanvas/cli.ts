@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { startHcanvasServer } from './server.js';
 import { hcId, type HcOp, type HcPage } from './types.js';
 import { initWorkspace, projectWorkspaceDir, workspaceInfo } from './workspace.js';
+import { listProjects, registerProject, registryFilePath, touchProject } from './projectRegistry.js';
 
 interface ParsedArgs {
   positionals: string[];
@@ -33,6 +34,7 @@ function usage(): string {
     '  hcanvas serve [--project <dir> | --workspace <dir>] [--port <n>] [--host 127.0.0.1]',
     '  hcanvas workspace init [projectDir]',
     '  hcanvas workspace info [projectDir]',
+    '  hcanvas projects list',
     '  hcanvas status',
     '  hcanvas context [--session <id>]',
     '  hcanvas resolve <query>',
@@ -249,6 +251,7 @@ function launchDesktop(args: ParsedArgs): void {
   }
   const childArgs = [electronMain];
   const project = projectPath(args);
+  if (project) { void registerProject(project); }
   const workspace = flagString(args, 'workspace') || process.env.HCANVAS_WORKSPACE;
   if (project) childArgs.push('--project', project);
   else if (workspace) childArgs.push('--workspace', path.resolve(workspace));
@@ -275,6 +278,7 @@ async function runServe(args: ParsedArgs, open: boolean): Promise<void> {
   const workspace = workspacePath(args);
   const project = projectPath(args);
   const workspaceMeta = await initWorkspace(workspace, project);
+  if (project) { await registerProject(project); await touchProject(project); }
   const portValue = flagString(args, 'port');
   const port = portValue ? Number(portValue) : 4319;
   const server = await startHcanvasServer({
@@ -313,10 +317,17 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     if (!sub || sub === 'init') {
-      print({ ok: true, ...(await initWorkspace(workspace, project)), hint: 'Start with: hcanvas app --project ' + project }, pretty);
+      const info = await initWorkspace(workspace, project);
+      const record = await registerProject(project);
+      print({ ok: true, ...info, projectRecord: record, hint: 'Start with: hcanvas app --project ' + project }, pretty);
       return;
     }
     throw new Error('Unknown workspace command: ' + sub);
+  }
+  if (command === 'projects') {
+    if (sub && sub !== 'list') throw new Error('Unknown projects command: ' + sub);
+    print({ ok: true, projects: await listProjects(), registry: registryFilePath() }, pretty);
+    return;
   }
   if (command === 'guide') {
     process.stdout.write(usage() + '\n\nAgent notes:\n- Always run "hcanvas context --json" first when the user refers to "this canvas".\n- If context is absent or ambiguous, list documents and ask the user; never guess for writes.\n- All writes are revision-checked; read, then apply with --base-revision.\n- HTML edits should patch data-hc-id targets, not rewrite whole documents.\n');

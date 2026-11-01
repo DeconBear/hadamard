@@ -16,6 +16,7 @@ import {
 import type { HcBlock, HcDocument, HcOp, HcPage } from './types.js';
 import { resolveLlmConfig, runAgentChat, type AgentChatMessage } from './agentChat.js';
 import { workspaceInfo } from './workspace.js';
+import { listProjects } from './projectRegistry.js';
 
 export interface HcServerOptions {
   workspace: string;
@@ -378,6 +379,11 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       }
       if (pathname === '/api/workspace' && req.method === 'GET') {
         json(res, 200, { ok: true, ...(await workspaceInfo(store.root)) });
+        return;
+      }
+      if (pathname === '/api/projects' && req.method === 'GET') {
+        const workspace = await workspaceInfo(store.root);
+        json(res, 200, { ok: true, current: { workspace: workspace.workspace, project: workspace.project }, projects: await listProjects() });
         return;
       }
       if (pathname === '/api/agent/status' && req.method === 'GET') {

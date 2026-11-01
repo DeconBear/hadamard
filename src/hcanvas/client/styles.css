@@ -492,3 +492,10 @@ button { cursor: pointer; }
 #viewport.panning * { cursor: grabbing !important; }
 .workspace-path { cursor: pointer; }
 .workspace-guide { margin-top: 12px; max-height: 300px; overflow: auto; white-space: pre-wrap; font: 10px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.project-menu-head { padding: 7px 10px 4px; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.project-menu-item { width: 100%; display: flex; flex-direction: column; gap: 2px; text-align: left; border: 0; background: transparent; color: var(--ink); padding: 7px 10px; border-radius: 6px; }
+.project-menu-item:hover { background: var(--surface-2); }
+.project-menu-item.active { background: var(--accent-soft); color: var(--accent); }
+.project-menu-item span { font-size: 11px; font-weight: 600; }
+.project-menu-item small { font-size: 8.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+.project-menu-open { border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; }

@@ -21,7 +21,10 @@
       <div id="presenceBar" class="presence-bar hidden" aria-label="Live agents"></div>
     </div>
     <div class="top-actions">
-      <button id="openProjectBtn" class="btn ghost hidden" title="Open a project folder (desktop)">Open Project</button>
+      <div class="menu-wrap">
+        <button id="projectMenuBtn" class="btn ghost" aria-haspopup="menu" aria-expanded="false">Projects ▾</button>
+        <div id="projectMenu" class="menu hidden" role="menu"></div>
+      </div>
       <button id="importHtmlBtn" class="btn ghost" title="Import a local HTML file">Import HTML</button>
       <button id="addPageBtn" class="btn ghost" title="Add a page">+ Page</button>
       <input id="htmlFileInput" type="file" accept=".html,.htm,text/html" hidden>
