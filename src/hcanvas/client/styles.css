@@ -516,3 +516,5 @@ button { cursor: pointer; }
 .legacy-whiteboard-banner strong { font-size: 11px; color: var(--ink); text-transform: uppercase; letter-spacing: .08em; }
 .legacy-whiteboard-banner span { color: var(--muted); }
 .legacy-whiteboard-empty { display: grid; place-items: center; height: 100%; color: var(--muted); font: 13px Inter, sans-serif; padding: 40px; text-align: center; }
+#viewport.placing-block, #viewport.placing-block * { cursor: crosshair !important; }
+.tool-btn.placing { background: var(--accent-soft) !important; color: var(--accent) !important; box-shadow: inset 0 0 0 1px rgba(124,58,237,.45); }

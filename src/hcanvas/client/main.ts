@@ -98,7 +98,7 @@ interface UiState {
   showGrid: boolean;
   snap: boolean;
   spaceHeld: boolean;
-
+  pendingInsert: HcBlock['type'] | null;
 }
 
 interface PageItemCache {
@@ -124,7 +124,7 @@ const state: UiState = {
   tab: 'inspector' as 'inspector' | 'agent' | 'proposals' | 'copilot', saveKind: 'idle', context: null, presence: [], masters: [],
   copilotMessages: [] as CopilotMessage[], copilotBusy: false, copilotConfigured: null as boolean | null, copilotModel: '',
   presenting: false, presentIndex: 0, ignoreEventsUntil: 0, sourceModalOpen: false,
-  tool: 'select', showGrid: true, snap: true, spaceHeld: false,
+  tool: 'select', showGrid: true, snap: true, spaceHeld: false, pendingInsert: null,
 };
 
 const PAGE_PRESETS: Array<{ id: string; title: string; mode: 'html' | 'canvas' | 'infinite' | 'whiteboard'; width: number; height: number; background: string; hint: string; template?: string }> = [
@@ -307,7 +307,7 @@ function snapCoordinate(value: number): number {
 }
 
 function clampBlockPosition(page: HcPage, block: HcBlock, x: number, y: number): { x: number; y: number } {
-  if (page.mode === 'infinite') return { x: Math.max(0, snapCoordinate(x)), y: Math.max(0, snapCoordinate(y)) };
+  if (page.mode === 'infinite') return { x: snapCoordinate(x), y: snapCoordinate(y) };
   return {
     x: Math.max(0, Math.min(Math.max(0, page.width - block.w), snapCoordinate(x))),
     y: Math.max(0, Math.min(Math.max(0, page.height - block.h), snapCoordinate(y))),
@@ -363,6 +363,7 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
   state.activePageId = pageId || result.doc.pages[0]?.id || null;
   state.activeBlockId = null;
   state.selectedBlockIds = [];
+  state.pendingInsert = null;
   state.editing = null;
   state.selectedHtmlId = null;
   state.iframeDoc = null;
@@ -645,6 +646,7 @@ function bindStaticActions(): void {
   el('toolRail').addEventListener('click', event => {
     const tool = (event.target as HTMLElement).closest('[data-tool]') as HTMLElement | null;
     if (tool) {
+      cancelInsert();
       const next = tool.dataset.tool;
       state.tool = next === 'hand' || next === 'pen' || next === 'arrow' || next === 'eraser' ? next : 'select';
       renderToolbarState();
@@ -652,9 +654,7 @@ function bindStaticActions(): void {
     }
     const blockButton = (event.target as HTMLElement).closest('[data-block]') as HTMLElement | null;
     if (blockButton) {
-      const type = blockButton.dataset.block as HcBlock['type'];
-      if (type === 'image') { openImageModal(); return; }
-      void addBlock(type);
+      requestInsert(blockButton.dataset.block as HcBlock['type']);
       return;
     }
     const target = event.target as HTMLElement;
@@ -706,6 +706,17 @@ function bindStaticActions(): void {
     viewport.addEventListener('pointermove', move);
     viewport.addEventListener('pointerup', up);
   };
+  viewport.addEventListener('pointerdown', event => {
+    if (!state.pendingInsert || event.button !== 0) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const type = state.pendingInsert;
+    state.pendingInsert = null;
+    const point = viewportToWorldPoint(event.clientX, event.clientY);
+    renderToolbarState();
+    void addBlock(type, {}, point);
+  }, { capture: true });
   viewport.addEventListener('pointerdown', event => {
     const targetElement = event.target as Element;
     if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
@@ -776,6 +787,9 @@ function renderToolbarState(): void {
     if (button.dataset.tool === 'pen' || button.dataset.tool === 'arrow' || button.dataset.tool === 'eraser') button.classList.toggle('disabled', page?.mode !== 'infinite');
   });
   updateHistoryButtons();
+  const placing = Boolean(state.pendingInsert);
+  el('viewport').classList.toggle('placing-block', placing);
+  document.querySelectorAll<HTMLElement>('[data-block]').forEach(button => button.classList.toggle('placing', button.dataset.block === state.pendingInsert));
   el('viewport').classList.toggle('tool-pen', state.tool === 'pen' && page?.mode === 'infinite');
   el('viewport').classList.toggle('tool-arrow', state.tool === 'arrow' && page?.mode === 'infinite');
   el('viewport').classList.toggle('tool-eraser', state.tool === 'eraser' && page?.mode === 'infinite');
@@ -931,7 +945,7 @@ function openShortcutsModal(): void {
     '<kbd>Drag empty / Shift+click</kbd><span>Marquee / add to selection</span>' +
     '<kbd>Ctrl/Cmd + G</kbd><span>Group / Shift = ungroup</span>' +
     '<kbd>P / A / E</kbd><span>Pen / Arrow / Eraser (Infinite)</span>' +
-    '<kbd>1 – 6</kbd><span>Insert HTML / Text / Markdown / Code / Image / Shape</span>' +
+    '<kbd>1 – 6</kbd><span>Insert blocks, then click canvas to place</span>' +
     '<kbd>Ctrl/Cmd + Z</kbd><span>Undo</span>' +
     '<kbd>Ctrl/Cmd + Shift + Z / Y</kbd><span>Redo</span>' +
     '<kbd>Ctrl/Cmd + C / V</kbd><span>Copy / paste selected block</span>' +
@@ -957,6 +971,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     if (state.sourceModalOpen) { closeModal(); return; }
     if (state.editing) { exitHtmlEdit(); return; }
+    if (state.pendingInsert) { cancelInsert(); return; }
     if (state.selectedBlockIds.length) { setBlockSelection([]); return; }
     closeModal();
     return;
@@ -1004,8 +1019,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     const type = map[event.key];
     if (!type) return;
     event.preventDefault();
-    if (type === 'image') openImageModal();
-    else void addBlock(type);
+    requestInsert(type);
     return;
   }
   if (event.key.startsWith('Arrow') && state.selectedBlockIds.length) {
@@ -1284,6 +1298,7 @@ function renderPages(): void {
 function selectPage(pageId: string): void {
   if (state.activePageId === pageId) return;
   if (state.editing) state.editing = null;
+  state.pendingInsert = null;
   state.activePageId = pageId;
   state.activeBlockId = null;
   state.selectedBlockIds = [];
@@ -2424,8 +2439,8 @@ function bindPageInspector(page: HcPage): void {
   bg.addEventListener('change', () => { picker.value = toHex(bg.value); void applyPage({ background: bg.value }, true); });
   el<HTMLTextAreaElement>('pageNotes').addEventListener('change', event => { void applyPage({ notes: (event.target as HTMLTextAreaElement).value }); });
   qs<HTMLButtonElement>('#pageSourceBtn')?.addEventListener('click', () => openSourceEditor({ pageId: page.id }));
-  qs<HTMLButtonElement>('#pageAddHtmlBtn')?.addEventListener('click', () => { void addBlock('html'); });
-  qs<HTMLButtonElement>('#pageAddTextBtn')?.addEventListener('click', () => { void addBlock('text'); });
+  qs<HTMLButtonElement>('#pageAddHtmlBtn')?.addEventListener('click', () => requestInsert('html'));
+  qs<HTMLButtonElement>('#pageAddTextBtn')?.addEventListener('click', () => requestInsert('text'));
   qs<HTMLButtonElement>('#pageFitContentBtn')?.addEventListener('click', () => fitPage());
   qs<HTMLButtonElement>('#pageWhiteboardDownload')?.addEventListener('click', () => downloadWhiteboardScene());
   qs<HTMLButtonElement>('#pageConvertWhiteboardBtn')?.addEventListener('click', () => { void convertWhiteboardPage(page); });
@@ -2443,10 +2458,12 @@ function renderBlockInspector(): void {
   html += '<div class="field-row">' + field('blockX', 'X', '<input id="blockX" type="number" value="' + block.x + '">') + field('blockY', 'Y', '<input id="blockY" type="number" value="' + block.y + '">') + '</div>';
   html += '<div class="field-row">' + field('blockW', 'W', '<input id="blockW" type="number" value="' + block.w + '">') + field('blockH', 'H', '<input id="blockH" type="number" value="' + block.h + '">') + '</div>';
   if (block.type === 'html') html += '<div class="hint-card">Double-click the block to edit HTML in place. Stable IDs stay attached to elements.</div>';
+  if (block.shape === 'frame') html += '<div class="hint-card">A frame is a visual container, not a canvas boundary. It does not clip content. Drag the frame to move its <code>frameId</code> children, or <strong>Dissolve frame</strong> to keep children and remove the frame.</div>';
   html += '<div class="actions-row">';
   if (block.type === 'html') html += '<button id="blockEditHtmlBtn" class="btn tiny primary">Edit HTML</button><button id="blockSourceBtn" class="btn tiny">Source</button>';
   if (block.type === 'markdown' || block.type === 'code' || block.type === 'text') html += '<button id="blockSourceBtn" class="btn tiny">Edit source</button>';
   if (block.type === 'image') html += '<button id="blockImageBtn" class="btn tiny">Set image URL</button>';
+  if (block.shape === 'frame') html += '<button id="blockDissolveFrameBtn" class="btn tiny">Dissolve frame</button>';
   html += '<button id="blockFrontBtn" class="btn tiny">Front</button><button id="blockBackBtn" class="btn tiny">Back</button><button id="blockDeleteBtn" class="btn tiny danger">Delete</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Style</div>';
   if (block.type === 'text' || block.type === 'markdown') {
@@ -2483,6 +2500,7 @@ function bindBlockInspector(block: HcBlock): void {
   qs<HTMLButtonElement>('#blockEditHtmlBtn')?.addEventListener('click', () => enterHtmlEdit(page.id, block.id));
   qs<HTMLButtonElement>('#blockSourceBtn')?.addEventListener('click', () => openSourceEditor({ pageId: page.id, blockId: block.id }));
   qs<HTMLButtonElement>('#blockImageBtn')?.addEventListener('click', () => openImageModal(block));
+  qs<HTMLButtonElement>('#blockDissolveFrameBtn')?.addEventListener('click', () => { void dissolveFrame(block); });
   qs<HTMLButtonElement>('#blockDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this block?').then(ok => { if (ok) void deleteBlock(page.id, block.id); }); });
   qs<HTMLButtonElement>('#blockFrontBtn')?.addEventListener('click', () => { void update({ z: Math.max(...(page.blocks || []).map(item => item.z)) + 1 }); });
   qs<HTMLButtonElement>('#blockBackBtn')?.addEventListener('click', () => { void update({ z: Math.min(...(page.blocks || []).map(item => item.z)) - 1 }); });
@@ -2740,16 +2758,53 @@ async function deleteBlock(pageId: string, blockId: string): Promise<void> {
   renderInspector();
 }
 
-async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}): Promise<void> {
+function requestInsert(type: HcBlock['type']): void {
+  if (type === 'image') { openImageModal(); return; }
+  const page = activePage();
+  if (!page) return;
+  if (page.mode === 'html' || page.mode === 'whiteboard') { toast('Switch to a Canvas or Infinite page to add blocks.', 'info'); return; }
+  if (page.mode === 'infinite') {
+    state.pendingInsert = type;
+    state.tool = 'select';
+    state.activeBlockId = null;
+    state.selectedBlockIds = [];
+    renderToolbarState();
+    toast('Click anywhere on the Infinite canvas to place ' + type + '. Esc cancels.', 'info');
+    return;
+  }
+  void addBlock(type);
+}
+
+function cancelInsert(): void {
+  if (!state.pendingInsert) return;
+  state.pendingInsert = null;
+  renderToolbarState();
+}
+
+async function dissolveFrame(block: HcBlock): Promise<void> {
+  const page = activePage();
+  if (!page || block.shape !== 'frame') return;
+  const children = (page.blocks || []).filter(item => item.frameId === block.id);
+  const ops: HcOp[] = children.map(child => ({ op: 'update_block', pageId: page.id, blockId: child.id, patch: { frameId: null } } as HcOp));
+  ops.push({ op: 'delete_block', pageId: page.id, blockId: block.id } as HcOp);
+  const result = await applyOps(ops, { refreshArtboard: true });
+  if (!result) return;
+  setBlockSelection(children.map(child => child.id));
+  toast('Frame dissolved; ' + children.length + ' child block(s) kept', 'success');
+}
+
+async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}, position?: { x: number; y: number }): Promise<void> {
   const page = activePage();
   if (!page) return;
   if (page.mode === 'html') { toast('Add blocks on a canvas or infinite page, not an HTML page.', 'error'); return; }
   const z = Math.max(0, ...(page.blocks || []).map(block => block.z)) + 1;
-  const center = viewportWorldCenter();
-  const startX = page.mode === 'infinite' ? Math.max(0, snapCoordinate(center.x - 210)) : Math.max(0, Math.round(page.width / 2 - 210));
-  const startY = page.mode === 'infinite' ? Math.max(0, snapCoordinate(center.y - 120)) : Math.max(0, Math.round(page.height / 2 - 120));
+  const center = position || viewportWorldCenter();
+  const blockW = Number(extra.w) || 420;
+  const blockH = Number(extra.h) || 240;
+  const startX = page.mode === 'infinite' ? snapCoordinate(center.x - blockW / 2) : Math.max(0, Math.round(page.width / 2 - blockW / 2));
+  const startY = page.mode === 'infinite' ? snapCoordinate(center.y - blockH / 2) : Math.max(0, Math.round(page.height / 2 - blockH / 2));
   const block: HcBlock = {
-    id: genId('block'), type, x: startX, y: startY, w: 420, h: 240, z, name: type + ' block',
+    id: genId('block'), type, x: startX, y: startY, w: blockW, h: blockH, z, name: type + ' block',
     ...(type === 'html' ? { html: '<div style="box-sizing:border-box;height:100%;padding:28px;border:1px solid #e7e0d2;border-radius:18px;background:#fffdf8;font-family:Inter,sans-serif;color:#2e2a24"><h2 style="margin:0 0 8px;font-family:Georgia,serif;font-weight:500;font-size:28px;letter-spacing:-.03em">New HTML block</h2><p style="margin:0;font-size:15px;line-height:1.6;color:#655e52">Double-click to edit text directly.</p></div>' } : {}),
     ...(type === 'text' ? { text: 'New text block', style: { fontSize: 30, fontWeight: 600, color: '#1d232e' } } : {}),
     ...(type === 'markdown' ? { markdown: '## New markdown block\n\nWrite **markdown** here.', style: { fill: '#ffffff', radius: 16 } } : {}),
