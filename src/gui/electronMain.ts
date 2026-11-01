@@ -214,6 +214,7 @@ async function createWindow(): Promise<void> {
       '  --config <path>            Load a specific Hadamard settings JSON file',
       '  --permission-mode <mode>   default | acceptEdits | plan | bypassPermissions (default)',
       '  --model <model>            Override the configured model',
+      '  --surface <mode>           full | harness | canvas (default: full or HADAMARD_GUI_SURFACE)',
       '  --resume <session-id>      Resume a stored Clean SDK session',
       '  --continue                 Resume the most recent stored session',
       '  -v, --version              Show package version',
@@ -241,7 +242,7 @@ async function createWindow(): Promise<void> {
     height: 860,
     minWidth: 860,
     minHeight: 620,
-    title: 'Hadamard',
+    title: args.surface === 'canvas' ? 'Hadamard Canvas' : args.surface === 'harness' ? 'Hadamard Harness' : 'Hadamard',
     backgroundColor: '#f3f3f3',
     // Apply the Windows AppUserModelID before the taskbar button is created.
     // Showing the window here lets Explorer group it with an installed shortcut

@@ -74,6 +74,16 @@ npx hadamard-gui [work-dir]
 
 Opens an Electron chat window backed by a localhost-only server — send a message to start your first conversation. The visual Agent graph editor is still iterating; prefer saved teams and `/team` for production workflows.
 
+Hadamard can also be launched as a dedicated module window:
+
+```bash
+npx hadamard-harness [work-dir]   # agent-only interface
+npx hadamard-canvas [work-dir]    # canvas-only interface
+# or: npx hadamard-gui --surface harness|canvas [work-dir]
+```
+
+The main app composes every enabled module; configure **Harness** / **Canvas** under **Settings → Personalization → Modules**. See [docs/en/surfaces-and-modules.md](./docs/en/surfaces-and-modules.md).
+
 ## Demo
 
 A 50-second walkthrough of the desktop GUI: open the Chats view, start a new conversation, ask a question, and watch the streamed reply with the thinking indicator and code rendering. ([Full-resolution MP4](https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.mp4))
@@ -87,6 +97,8 @@ A 50-second walkthrough of the desktop GUI: open the Chats view, start a new con
 - Docs site: https://deconbear.github.io/hadamard/
 - English tutorial: [docs/en/README.md](./docs/en/README.md) · Chinese tutorial: [docs/zh/README.md](./docs/zh/README.md)
 - External CLI bridge guide (provider flags, credentials, `HADAMARD_<PROVIDER>_PATH`): [docs/en/05-bridge-runtime.md](./docs/en/05-bridge-runtime.md)
+- Optional Canvas module (off by default; Excalidraw-powered design canvas, AI-model architecture pack, agent tools, proposals): [docs/en/canvas-module.md](./docs/en/canvas-module.md)
+- Standalone Hadamard Canvas (hcanvas): [docs/en/hadamard-canvas.md](./docs/en/hadamard-canvas.md)
 - Examples: [hadamard-quickstart.ts](./examples/hadamard-quickstart.ts), [hadamard-workflow.ts](./examples/hadamard-workflow.ts), [hadamard-agent-helpers.ts](./examples/hadamard-agent-helpers.ts)
 - Security policy: [SECURITY.md](./SECURITY.md)
 

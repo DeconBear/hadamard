@@ -39,6 +39,7 @@
     "vitest.config.ts"
   ],
   "exclude": [
-    "src/gui"            // electron is optional; electronMain.ts requires it
+    "src/gui",           // electron is optional; electronMain.ts requires it
+    "src/hcanvas/client" // browser UI is bundled by esbuild (DOM globals)
   ]
 }

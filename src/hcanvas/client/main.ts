@@ -1,0 +1,2264 @@
+import { basicSetup, EditorView } from 'codemirror';
+import { html as htmlLang } from '@codemirror/lang-html';
+import { oneDark } from '@codemirror/theme-one-dark';
+import { marked } from 'marked';
+import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal } from '../types.js';
+
+interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
+interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
+interface PresenceEntry { id: string; actor: string; docId: string; docTitle: string; pageId?: string; pageName: string; selection?: string[]; createdAt: string; updatedAt: string; stale: boolean; }
+interface MasterSummary { id: string; name: string; mode: string; width: number; height: number; background?: string; createdAt: string; html?: string; blocks?: HcBlock[]; scene?: { elements?: unknown[] }; }
+interface CopilotStep { type: string; name?: string; result?: unknown; }
+interface CopilotMessage { role: 'user' | 'assistant'; content: string; steps?: CopilotStep[]; error?: boolean; }
+interface ApiErrorShape { error?: string; latestRevision?: number; latestDoc?: HcDocument; }
+
+class ApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly payload: unknown) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+const boot = JSON.parse(document.getElementById('hc-boot')?.textContent || '{}') as BootConfig;
+
+function el<T extends HTMLElement>(id: string): T {
+  const element = document.getElementById(id);
+  if (!element) throw new Error('Missing element #' + id);
+  return element as T;
+}
+function qs<T extends Element>(selector: string, root: ParentNode = document): T | null {
+  return root.querySelector<T>(selector);
+}
+function esc(value: unknown): string {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function genId(prefix: string): string {
+  return prefix + '_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+}
+function debounce<T extends (...args: never[]) => void>(fn: T, wait: number): (...args: Parameters<T>) => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return (...args: Parameters<T>) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
+}
+
+async function api<T = Record<string, unknown>>(pathname: string, init: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = { 'x-hcanvas-token': boot.token };
+  if (init.body !== undefined) headers['content-type'] = 'application/json';
+  const response = await fetch(pathname, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> | undefined) } });
+  const text = await response.text();
+  let payload: unknown = {};
+  try { payload = text ? JSON.parse(text) : {}; } catch { payload = { raw: text }; }
+  if (!response.ok) {
+    const shape = payload as ApiErrorShape;
+    throw new ApiError(shape.error || ('HTTP ' + response.status), response.status, payload);
+  }
+  return payload as T;
+}
+
+interface UiState {
+  docs: DocSummary[];
+  doc: HcDocument | null;
+  activePageId: string | null;
+  activeBlockId: string | null;
+  editing: { pageId: string; blockId?: string } | null;
+  selectedHtmlId: string | null;
+  iframeDoc: Document | null;
+  iframeElement: HTMLIFrameElement | null;
+  zoom: number;
+  panX: number;
+  panY: number;
+  fittedPageId: string | null;
+  tab: 'inspector' | 'agent' | 'proposals';
+  saveKind: 'idle' | 'saving' | 'saved' | 'error';
+  context: Record<string, unknown> | null;
+  presence: PresenceEntry[];
+  masters: MasterSummary[];
+  presenting: boolean;
+  presentIndex: number;
+  ignoreEventsUntil: number;
+  sourceModalOpen: boolean;
+  tool: 'select' | 'hand';
+  showGrid: boolean;
+  snap: boolean;
+  spaceHeld: boolean;
+  whiteboardHandle: { unmount: () => void; getScene: () => { elements: unknown[]; appState: Record<string, unknown>; files: Record<string, unknown> }; updateScene: (scene: Record<string, unknown>) => void; getApi: () => unknown } | null;
+  whiteboardPageId: string | null;
+  whiteboardHydratingUntil: number;
+}
+
+const state: UiState = {
+  docs: [], doc: null, activePageId: null, activeBlockId: null, editing: null,
+  selectedHtmlId: null, iframeDoc: null, iframeElement: null,
+  zoom: 1, panX: 0, panY: 0, fittedPageId: null,
+  tab: 'inspector' as 'inspector' | 'agent' | 'proposals' | 'copilot', saveKind: 'idle', context: null, presence: [], masters: [],
+  copilotMessages: [] as CopilotMessage[], copilotBusy: false, copilotConfigured: null as boolean | null, copilotModel: '',
+  presenting: false, presentIndex: 0, ignoreEventsUntil: 0, sourceModalOpen: false,
+  tool: 'select', showGrid: true, snap: true, spaceHeld: false,
+  whiteboardHandle: null, whiteboardPageId: null, whiteboardHydratingUntil: 0,
+};
+
+const PAGE_PRESETS: Array<{ id: string; title: string; mode: 'html' | 'canvas' | 'infinite' | 'whiteboard'; width: number; height: number; background: string; hint: string; template?: string }> = [
+  { id: 'slide-html', title: 'HTML slide', mode: 'html', width: 1280, height: 720, background: '#ffffff', hint: '16:9 · blank editable HTML' },
+  { id: 'slide-cover', title: 'Slide · Cover', mode: 'html', width: 1280, height: 720, background: '#f6f4ef', hint: '16:9 · title slide', template: 'cover' },
+  { id: 'slide-section', title: 'Slide · Section', mode: 'html', width: 1280, height: 720, background: '#171923', hint: '16:9 · dark section divider', template: 'section' },
+  { id: 'slide-two-col', title: 'Slide · Two columns', mode: 'html', width: 1280, height: 720, background: '#ffffff', hint: '16:9 · content + sidebar', template: 'two-col' },
+  { id: 'slide-quote', title: 'Slide · Quote', mode: 'html', width: 1280, height: 720, background: '#f1f5ff', hint: '16:9 · big quote', template: 'quote' },
+  { id: 'slide-agenda', title: 'Slide · Agenda', mode: 'html', width: 1280, height: 720, background: '#fbfaf7', hint: '16:9 · numbered agenda', template: 'agenda' },
+  { id: 'a4-html', title: 'HTML A4', mode: 'html', width: 794, height: 1123, background: '#ffffff', hint: 'A4 · blank document' },
+  { id: 'resume-classic', title: 'Résumé · Classic', mode: 'html', width: 794, height: 1123, background: '#ffffff', hint: 'A4 · ATS-friendly', template: 'resume-classic' },
+  { id: 'resume-modern', title: 'Résumé · Modern', mode: 'html', width: 794, height: 1123, background: '#f8f6f1', hint: 'A4 · visual two-column', template: 'resume-modern' },
+  { id: 'resume-ats', title: 'Résumé · ATS minimal', mode: 'html', width: 794, height: 1123, background: '#ffffff', hint: 'A4 · plain text-first', template: 'resume-ats' },
+  { id: 'poster-html', title: 'HTML poster', mode: 'html', width: 1080, height: 1350, background: '#ffffff', hint: '4:5 · blank' },
+  { id: 'poster-event', title: 'Poster · Event', mode: 'html', width: 1080, height: 1350, background: '#171923', hint: '4:5 · bold event poster', template: 'poster-event' },
+  { id: 'poster-product', title: 'Poster · Product', mode: 'html', width: 1080, height: 1350, background: '#f6f4ef', hint: '4:5 · product / campaign', template: 'poster-product' },
+  { id: 'slide-canvas', title: 'Canvas slide', mode: 'canvas', width: 1280, height: 720, background: '#fbfaf7', hint: '16:9 · blocks' },
+  { id: 'canvas-cover', title: 'Canvas · PPT cover', mode: 'canvas', width: 1280, height: 720, background: '#f6f4ef', hint: '16:9 · editable PowerPoint', template: 'canvas-cover' },
+  { id: 'canvas-content', title: 'Canvas · PPT content', mode: 'canvas', width: 1280, height: 720, background: '#ffffff', hint: '16:9 · editable PowerPoint', template: 'canvas-content' },
+  { id: 'a4-canvas', title: 'Canvas A4', mode: 'canvas', width: 794, height: 1123, background: '#ffffff', hint: 'A4 · blocks' },
+  { id: 'square-canvas', title: 'Canvas square', mode: 'canvas', width: 1080, height: 1080, background: '#fbfaf7', hint: '1:1 · blocks' },
+  { id: 'infinite', title: 'Infinite canvas', mode: 'infinite', width: 4800, height: 3200, background: '#f8f6f1', hint: 'No bounds · pan & zoom' },
+  { id: 'whiteboard', title: 'Excalidraw whiteboard', mode: 'whiteboard', width: 1280, height: 720, background: '#ffffff', hint: 'Freehand · shapes · arrows' },
+];
+
+function starterHtml(title: string): string {
+  return [
+    '<style>',
+    '  .hc-start { box-sizing:border-box; width:100%; height:100%; padding:72px 80px; background:#f7f5f0; color:#1f2430; font-family:Inter,ui-sans-serif,system-ui,sans-serif; }',
+    '  .hc-start .tag { display:inline-block; margin-bottom:26px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#7c3aed; }',
+    '  .hc-start h1 { margin:0 0 16px; max-width:760px; font-family:Georgia,serif; font-weight:500; font-size:58px; line-height:1.04; letter-spacing:-.04em; }',
+    '  .hc-start p { margin:0; max-width:620px; font-size:18px; line-height:1.6; color:#5d584e; }',
+    '</style>',
+    '<div class="hc-start">',
+    '  <div class="tag">HTML page · editable</div>',
+    '  <h1>' + esc(title || 'Start with a beautiful page.') + '</h1>',
+    '  <p>Double-click text to edit in place. Toggle source mode to change HTML and CSS. Agent tools patch this page through stable data-hc-id selectors.</p>',
+    '</div>',
+  ].join('');
+}
+
+function resumeTemplateHtml(template: string, title: string): string {
+  const name = esc(title || 'Alex Morgan');
+  const ats = template === 'resume-ats';
+  const modern = template === 'resume-modern';
+  const accent = ats ? '#111111' : modern ? '#5b21b6' : '#1f2430';
+  const body = ats ? '#111111' : '#2e2a24';
+  const muted = ats ? '#111111' : '#6b6459';
+  const background = ats ? '#ffffff' : modern ? '#f8f6f1' : '#ffffff';
+  const experience = '<section style="margin-top:26px"><h2 style="margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:' + accent + ';border-bottom:1px solid ' + (ats ? '#111' : '#d9d2c5') + ';padding-bottom:6px">Experience</h2>' +
+    '<div style="margin-bottom:18px"><div style="display:flex;justify-content:space-between;gap:20px;align-items:baseline"><h3 style="margin:0;font-size:16px;font-weight:650;color:' + body + '">Senior Product Designer</h3><span style="font-size:11px;color:' + muted + '">2022 — Now</span></div><div style="font-size:12px;color:' + muted + ';margin:2px 0 8px">Northstar Labs</div><ul style="margin:0;padding-left:17px;color:' + body + ';font-size:12.5px;line-height:1.6"><li>Led the redesign of a B2B analytics workspace used by 40k operators.</li><li>Built a design system that cut feature delivery time by 35%.</li><li>Partnered with research and engineering to ship a zero-to-one AI assistant.</li></ul></div>' +
+    '<div style="margin-bottom:18px"><div style="display:flex;justify-content:space-between;gap:20px;align-items:baseline"><h3 style="margin:0;font-size:16px;font-weight:650;color:' + body + '">Product Designer</h3><span style="font-size:11px;color:' + muted + '">2019 — 2022</span></div><div style="font-size:12px;color:' + muted + ';margin:2px 0 8px">Acme Studio</div><ul style="margin:0;padding-left:17px;color:' + body + ';font-size:12.5px;line-height:1.6"><li>Shipped the mobile onboarding flow, improving activation by 18%.</li><li>Facilitated cross-functional design sprints for enterprise clients.</li></ul></div></section>';
+  const education = '<section style="margin-top:22px"><h2 style="margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:' + accent + ';border-bottom:1px solid ' + (ats ? '#111' : '#d9d2c5') + ';padding-bottom:6px">Education</h2><div style="display:flex;justify-content:space-between;gap:20px"><div><div style="font-size:14px;font-weight:600;color:' + body + '">BFA, Interaction Design</div><div style="font-size:12px;color:' + muted + '">Rhode Island School of Design</div></div><div style="font-size:11px;color:' + muted + '">2015 — 2019</div></div></section>';
+  const skills = '<section style="margin-top:22px"><h2 style="margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:' + accent + ';border-bottom:1px solid ' + (ats ? '#111' : '#d9d2c5') + ';padding-bottom:6px">Skills</h2><p style="margin:0;font-size:12.5px;line-height:1.7;color:' + body + '">Product strategy · Interaction design · Design systems · Prototyping · HTML/CSS · AI-native workflows · Figma · User research</p></section>';
+  if (ats) {
+    return '<style>html,body{margin:0;width:100%;height:100%;background:#fff}*{box-sizing:border-box}article{font-family:Arial,Helvetica,sans-serif;color:#111;padding:52px 58px;width:100%;height:100%;background:#fff}</style>' +
+      '<article><header style="border-bottom:2px solid #111;padding-bottom:14px"><h1 style="margin:0;font-size:30px;letter-spacing:-.02em">' + name + '</h1><div style="margin-top:4px;font-size:13px">Senior Product Designer</div><div style="margin-top:6px;font-size:11px;color:#111">alex.morgan@example.com · +1 555 010 2030 · Portland, OR · linkedin.com/in/alexmorgan</div></header>' +
+      '<section style="margin-top:22px"><h2 style="margin:0 0 8px;font-size:12px;letter-spacing:.12em;text-transform:uppercase">Summary</h2><p style="margin:0;font-size:12.5px;line-height:1.6">Product designer with 8+ years shipping data-heavy B2B and AI products. Comfortable owning research, interaction, design systems, and front-end prototypes.</p></section>' +
+      experience + education + skills + '</article>';
+  }
+  return '<style>html,body{margin:0;width:100%;height:100%;background:' + background + '}*{box-sizing:border-box}article{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:' + body + ';width:100%;height:100%;background:' + background + ';padding:' + (modern ? '56px 54px' : '52px 58px') + '}</style>' +
+    '<article><header style="display:' + (modern ? 'grid;grid-template-columns:1.25fr .75fr;gap:28px;align-items:end' : 'block') + ';border-bottom:1px solid ' + (modern ? '#d9d2c5' : '#d9d2c5') + ';padding-bottom:18px">' +
+    '<div><div style="font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:' + accent + ';margin-bottom:10px">Résumé · 2026</div><h1 style="margin:0;font-family:Georgia,serif;font-weight:500;font-size:44px;line-height:1;letter-spacing:-.04em;color:' + accent + '">' + name + '</h1><div style="margin-top:8px;font-size:14px;color:' + muted + '">Senior Product Designer</div></div>' +
+    '<div style="font-size:11px;line-height:1.85;color:' + muted + ';text-align:left"><div>alex.morgan@example.com</div><div>+1 555 010 2030</div><div>Portland, OR</div><div>linkedin.com/in/alexmorgan</div></div></header>' + experience + education + skills + '</article>';
+}
+
+function posterTemplateHtml(template: string, title: string): string {
+  const heading = esc(title || (template === 'poster-event' ? 'The Future of Making' : 'A better way to build'));
+  if (template === 'poster-event') {
+    return '<style>html,body{margin:0;width:100%;height:100%}*{box-sizing:border-box}.poster{position:relative;width:100%;height:100%;padding:70px 64px 56px;background:#171923;color:#f8f7f3;font-family:Inter,sans-serif;overflow:hidden}.poster .orb{position:absolute;right:-120px;top:-80px;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#8b5cf6,#312e81 62%,transparent 70%);opacity:.8}.poster .eyebrow{position:relative;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#a78bfa}.poster h1{position:relative;margin:34px 0 18px;max-width:820px;font-family:Georgia,serif;font-weight:500;font-size:92px;line-height:.95;letter-spacing:-.055em}.poster .lede{position:relative;max-width:540px;font-size:20px;line-height:1.5;color:#c7cbd5}.poster .meta{position:absolute;left:64px;right:64px;bottom:52px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px;border-top:1px solid rgba(255,255,255,.18);padding-top:20px}.poster .meta b{display:block;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#8b93a3;margin-bottom:6px}.poster .meta span{font-size:16px;color:#f8f7f3}.poster .mark{position:relative;margin-top:28px;display:inline-flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#c7cbd5}.poster .dotmark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,#7c3aed,#2563eb)}</style>' +
+      '<div class="poster"><div class="orb"></div><div class="eyebrow">Conference · 2026</div><h1>' + heading + '</h1><p class="lede">A one-day gathering for designers, engineers, and researchers building the next generation of creative tools.</p><div class="mark"><span class="dotmark">H</span> Hadamard Studio</div><div class="meta"><div><b>Date</b><span>18 September 2026</span></div><div><b>Location</b><span>Portland, OR</span></div><div><b>Seats</b><span>Limited · 120</span></div></div></div>';
+  }
+  return '<style>html,body{margin:0;width:100%;height:100%}*{box-sizing:border-box}.poster{width:100%;height:100%;padding:76px 64px 60px;background:#f6f4ef;color:#1f2430;font-family:Inter,sans-serif;display:flex;flex-direction:column;overflow:hidden}.poster .eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#8a8276}.poster h1{margin:22px 0 12px;max-width:850px;font-family:Georgia,serif;font-weight:500;font-size:96px;line-height:.94;letter-spacing:-.055em}.poster p{margin:0;max-width:600px;font-size:21px;line-height:1.5;color:#5d584e}.poster .art{flex:1;margin:34px 0 26px;min-height:250px;border-radius:28px;background:radial-gradient(circle at 70% 30%,#c4b5fd,#a78bfa 38%,#7c3aed 70%,#4c1d95);position:relative;overflow:hidden}.poster .art:before{content:"";position:absolute;inset:28px;border:1px solid rgba(255,255,255,.4);border-radius:20px}.poster .art:after{content:"↗";position:absolute;right:44px;bottom:32px;font-size:54px;color:rgba(255,255,255,.85)}.poster .foot{display:flex;justify-content:space-between;align-items:end;gap:20px;border-top:1px solid #d9d2c5;padding-top:18px;font-size:12px;color:#8a8276}.poster .foot b{display:block;color:#1f2430;font-size:15px;margin-bottom:3px}.poster .cta{padding:11px 18px;border-radius:999px;background:#1f2430;color:#fff;font-size:12px;letter-spacing:.04em}</style>' +
+    '<div class="poster"><div class="eyebrow">Product · 2026</div><h1>' + heading + '</h1><p>An AI-native canvas for ideas, documents, and the people who make them.</p><div class="art"></div><div class="foot"><div><b>Hadamard Canvas</b>One canvas. Humans and agents.</div><div class="cta">Start creating →</div></div></div>';
+}
+
+function canvasTemplateBlocks(template: string, width: number, height: number): HcBlock[] {
+  const blocks: HcBlock[] = [];
+  const push = (block: HcBlock): void => { blocks.push({ ...block, id: genId('block'), z: blocks.length }); };
+  if (template === 'canvas-cover') {
+    push({ id: '', type: 'shape', x: width - 360, y: 0, w: 360, h: height, z: 0, name: 'Accent panel', shape: 'rect', style: { fill: '#efe9ff' } });
+    push({ id: '', type: 'text', x: 72, y: 190, w: 800, h: 190, z: 1, name: 'Title', text: 'A clear idea,\ntold well.', style: { fontSize: 72, fontWeight: 600, color: '#1f2430', fontFamily: 'Georgia, serif' } });
+    push({ id: '', type: 'text', x: 76, y: 410, w: 640, h: 90, z: 2, name: 'Subtitle', text: 'Double-click to edit this subtitle. Export as editable PowerPoint from the Export menu.', style: { fontSize: 20, color: '#5d584e' } });
+    push({ id: '', type: 'text', x: 76, y: 640, w: 400, h: 36, z: 3, name: 'Footer', text: 'HADAMARD CANVAS · 2026', style: { fontSize: 12, fontWeight: 600, color: '#a39b8c' } });
+    return blocks;
+  }
+  push({ id: '', type: 'shape', x: 0, y: 0, w: width, h: 78, z: 0, name: 'Top band', shape: 'rect', style: { fill: '#1f2430' } });
+  push({ id: '', type: 'text', x: 64, y: 130, w: 860, h: 90, z: 1, name: 'Title', text: 'A practical framework', style: { fontSize: 50, fontWeight: 600, color: '#1f2430', fontFamily: 'Georgia, serif' } });
+  push({ id: '', type: 'text', x: 64, y: 250, w: 680, h: 290, z: 2, name: 'Body', text: '• Replace this text with the argument.\n• Keep one idea per slide.\n• Use speaker notes for the narrative.\n• Export to PowerPoint to keep text editable.', style: { fontSize: 22, color: '#3f4552' } });
+  push({ id: '', type: 'shape', x: 820, y: 190, w: 360, h: 360, z: 3, name: 'Card', shape: 'rect', style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 24 } });
+  push({ id: '', type: 'text', x: 850, y: 230, w: 300, h: 280, z: 4, name: 'Card copy', text: 'Key takeaway\n\nSmall visual systems beat one-off slides.', style: { fontSize: 20, color: '#4c1d95' } });
+  return blocks;
+}
+
+function pageTemplateHtml(template: string, title: string): string {
+  if (template.startsWith('resume-')) return resumeTemplateHtml(template, title);
+  if (template.startsWith('poster-')) return posterTemplateHtml(template, title);
+  return slideTemplateHtml(template, title);
+}
+
+function slideTemplateHtml(template: string, title: string): string {
+  const head = '<style>html,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}.tpl{width:100%;height:100%;font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#1f2430}.kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#8a8276}.serif{font-family:Georgia,"Times New Roman",serif;font-weight:500;letter-spacing:-.04em}';
+  if (template === 'cover') {
+    return head + '</style><div class="tpl" style="padding:74px 82px;display:flex;flex-direction:column;background:#f6f4ef"><div class="kicker">Hadamard Canvas · presentation</div><h1 class="serif" style="margin:auto 0 0;max-width:860px;font-size:72px;line-height:1.02;color:#1f2430">' + esc(title || 'A clear idea, told well.') + '</h1><p style="margin:22px 0 0;max-width:620px;font-size:19px;line-height:1.6;color:#5d584e">Double-click to edit this subtitle. Use the source tab for custom HTML and CSS.</p><div style="margin-top:auto;display:flex;justify-content:space-between;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#a39b8c"><span>Hadamard Canvas</span><span>2026</span></div></div>';
+  }
+  if (template === 'section') {
+    return head + '</style><div class="tpl" style="padding:74px 82px;display:flex;flex-direction:column;justify-content:space-between;background:#171923;color:#f8f7f3"><div class="kicker" style="color:#a78bfa">Section 02</div><h1 class="serif" style="margin:0;font-size:88px;line-height:.98;max-width:900px">' + esc(title || 'The next section') + '</h1><div style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#8b93a3">Hadamard Canvas · presentation</div></div>';
+  }
+  if (template === 'two-col') {
+    return head + '</style><div class="tpl" style="padding:64px 72px;display:flex;flex-direction:column;background:#ffffff"><div class="kicker">A practical framework</div><h1 class="serif" style="margin:10px 0 30px;font-size:52px;line-height:1.02">' + esc(title || 'What we will cover') + '</h1><div style="display:grid;grid-template-columns:1.35fr .8fr;gap:42px;flex:1"><div style="font-size:17px;line-height:1.75;color:#4b5160"><p style="margin:0 0 14px">Replace this paragraph with the argument. Keep one idea per slide, then use the speaker notes for the narrative.</p><p style="margin:0 0 14px"><strong style="color:#1f2430">Direct manipulation:</strong> click text to edit, use the style panel for type and color.</p><p style="margin:0"><strong style="color:#1f2430">Agent access:</strong> hcanvas read/patch keeps the same document in sync.</p></div><div style="padding:24px;border:1px solid #e7e0d2;border-radius:16px;background:#fbfaf7"><div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8a8276;margin-bottom:12px">Key takeaway</div><p style="margin:0;font-size:18px;line-height:1.5;color:#2e2a24">Small visual systems beat one-off slides.</p></div></div></div>';
+  }
+  if (template === 'quote') {
+    return head + '</style><div class="tpl" style="padding:80px 100px;display:flex;flex-direction:column;justify-content:center;background:#f1f5ff"><div class="serif" style="font-size:130px;line-height:.6;color:#c7d2fe">“</div><p class="serif" style="margin:30px 0 22px;max-width:990px;font-size:52px;line-height:1.15;color:#1e3a8a">The best tools disappear into the work.</p><div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#64748b">— A design principle</div></div>';
+  }
+  return head + '</style><div class="tpl" style="padding:64px 76px;display:flex;flex-direction:column;background:#fbfaf7"><div class="kicker">Agenda</div><h1 class="serif" style="margin:10px 0 26px;font-size:54px;line-height:1.02">' + esc(title || 'What we will cover') + '</h1><ol style="margin:0;padding:0;list-style:none;display:grid;gap:12px;font-size:19px;color:#2e2a24"><li style="display:grid;grid-template-columns:54px 1fr;gap:14px;border-top:1px solid #e7e0d2;padding-top:12px"><span style="font-family:Georgia,serif;color:#7c3aed">01</span><span>The problem</span></li><li style="display:grid;grid-template-columns:54px 1fr;gap:14px;border-top:1px solid #e7e0d2;padding-top:12px"><span style="font-family:Georgia,serif;color:#7c3aed">02</span><span>The approach</span></li><li style="display:grid;grid-template-columns:54px 1fr;gap:14px;border-top:1px solid #e7e0d2;padding-top:12px"><span style="font-family:Georgia,serif;color:#7c3aed">03</span><span>What changes</span></li><li style="display:grid;grid-template-columns:54px 1fr;gap:14px;border-top:1px solid #e7e0d2;padding-top:12px"><span style="font-family:Georgia,serif;color:#7c3aed">04</span><span>Next steps</span></li></ol></div>';
+}
+
+function activePage(): HcPage | null {
+  if (!state.doc) return null;
+  return state.doc.pages.find(page => page.id === state.activePageId) ?? state.doc.pages[0] ?? null;
+}
+function activeBlock(): HcBlock | null {
+  const page = activePage();
+  return page?.blocks?.find(block => block.id === state.activeBlockId) ?? null;
+}
+function docTitle(): string { return state.doc?.title || 'Untitled canvas'; }
+
+function pageMetrics(page: HcPage): { width: number; height: number; content: { minX: number; minY: number; maxX: number; maxY: number } | null } {
+  if (page.mode !== 'infinite') {
+    return { width: page.width, height: page.height, content: null };
+  }
+  const blocks = page.blocks || [];
+  if (!blocks.length) return { width: Math.max(3200, page.width), height: Math.max(2400, page.height), content: null };
+  const minX = Math.min(...blocks.map(block => block.x));
+  const minY = Math.min(...blocks.map(block => block.y));
+  const maxX = Math.max(...blocks.map(block => block.x + block.w));
+  const maxY = Math.max(...blocks.map(block => block.y + block.h));
+  return {
+    width: Math.max(3200, Math.ceil(maxX + 1600), page.width),
+    height: Math.max(2400, Math.ceil(maxY + 1200), page.height),
+    content: { minX, minY, maxX, maxY },
+  };
+}
+
+function viewportWorldCenter(): { x: number; y: number } {
+  const rect = el('viewport').getBoundingClientRect();
+  return { x: (rect.width / 2 - state.panX) / state.zoom, y: (rect.height / 2 - state.panY) / state.zoom };
+}
+
+function snapCoordinate(value: number): number {
+  return state.snap ? Math.round(value / 8) * 8 : Math.round(value);
+}
+
+function clampBlockPosition(page: HcPage, block: HcBlock, x: number, y: number): { x: number; y: number } {
+  if (page.mode === 'infinite') return { x: Math.max(0, snapCoordinate(x)), y: Math.max(0, snapCoordinate(y)) };
+  return {
+    x: Math.max(0, Math.min(Math.max(0, page.width - block.w), snapCoordinate(x))),
+    y: Math.max(0, Math.min(Math.max(0, page.height - block.h), snapCoordinate(y))),
+  };
+}
+
+function toast(message: string, kind: 'info' | 'success' | 'error' = 'info'): void {
+  const root = el('toastRoot');
+  const node = document.createElement('div');
+  node.className = 'toast ' + kind;
+  node.textContent = message;
+  root.appendChild(node);
+  setTimeout(() => { node.style.opacity = '0'; node.style.transition = 'opacity .2s'; setTimeout(() => node.remove(), 220); }, 3200);
+}
+function setSaveStatus(message: string, kind: UiState['saveKind'] = 'idle'): void {
+  state.saveKind = kind;
+  const node = el('saveStatus');
+  node.textContent = message;
+  node.className = 'save-status' + (kind === 'saving' ? ' saving' : kind === 'error' ? ' error' : '');
+}
+
+async function loadDocs(): Promise<void> {
+  const result = await api<{ docs: DocSummary[] }>('/api/docs');
+  state.docs = result.docs || [];
+}
+
+async function loadMasters(): Promise<void> {
+  try {
+    const result = await api<{ masters: MasterSummary[] }>('/api/masters');
+    state.masters = result.masters || [];
+  } catch { /* masters are optional */ }
+}
+
+async function loadCopilotStatus(): Promise<void> {
+  try {
+    const result = await api<{ configured: boolean; model?: string | null }>('/api/agent/status');
+    state.copilotConfigured = Boolean(result.configured);
+    state.copilotModel = result.model || '';
+  } catch { state.copilotConfigured = false; }
+}
+
+async function openDoc(docId: string, pageId?: string): Promise<void> {
+  const result = await api<{ doc: HcDocument }>('/api/docs/' + docId);
+  state.doc = result.doc;
+  state.activePageId = pageId || result.doc.pages[0]?.id || null;
+  state.activeBlockId = null;
+  state.editing = null;
+  state.selectedHtmlId = null;
+  state.iframeDoc = null;
+  state.iframeElement = null;
+  state.fittedPageId = null;
+  await loadDocs();
+  renderAll();
+  void syncActive();
+}
+
+async function initialize(): Promise<void> {
+  bindStaticActions();
+  try {
+    const context = await api<Record<string, unknown> & { active?: { docId?: string }; docs?: DocSummary[]; presence?: PresenceEntry[] }>('/api/state');
+    state.context = context;
+    state.docs = context.docs || [];
+    state.presence = context.presence || [];
+    const activeId = (context.active as { docId?: string } | undefined)?.docId || state.docs[0]?.id;
+    await loadMasters();
+    await loadCopilotStatus();
+    if (activeId) await openDoc(activeId);
+    else renderAll();
+    connectEvents();
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), 'error');
+    setSaveStatus('Offline', 'error');
+  }
+  const title = el<HTMLInputElement>('docTitle');
+  title.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); title.blur(); }
+  });
+  title.addEventListener('blur', () => { if (state.doc && title.value.trim() && title.value.trim() !== state.doc.title) void renameDocument(title.value.trim()); });
+  window.addEventListener('keydown', handleGlobalKeydown);
+  window.addEventListener('keydown', event => {
+    if (event.code !== 'Space') return;
+    if (activePage()?.mode === 'whiteboard') return;
+    const target = event.target as HTMLElement;
+    if (target.matches('input, textarea, [contenteditable="true"], select') || target.closest('.cm-editor')) return;
+    state.spaceHeld = true;
+    el('viewport').classList.add('tool-hand');
+    event.preventDefault();
+  });
+  window.addEventListener('keyup', event => {
+    if (event.code !== 'Space') return;
+    state.spaceHeld = false;
+    if (state.tool !== 'hand') el('viewport').classList.remove('tool-hand');
+  });
+  window.addEventListener('beforeunload', () => { if (state.doc) void syncActive(); });
+}
+
+function bindStaticActions(): void {
+  el('newDocBtn').addEventListener('click', () => openNewDocModal());
+  el('newDocMini').addEventListener('click', () => openNewDocModal());
+  el('addPageBtn').addEventListener('click', () => openAddPageModal());
+  el('addPageMini').addEventListener('click', () => openAddPageModal());
+  el('presentBtn').addEventListener('click', () => openPresent());
+  el('exportBtn').addEventListener('click', event => { event.stopPropagation(); toggleExportMenu(); });
+  document.addEventListener('click', event => {
+    const menu = el('exportMenu');
+    if (!menu.classList.contains('hidden') && !(event.target as Element).closest('.menu-wrap')) toggleExportMenu(false);
+  });
+  el('exportMenu').addEventListener('click', event => {
+    const target = (event.target as HTMLElement).closest('[data-export]') as HTMLElement | null;
+    if (!target) return;
+    toggleExportMenu(false);
+    void exportCurrent(target.dataset.export || 'html', { bleedMm: Number(target.dataset.bleed || 0), cropMarks: target.dataset.crop === '1' });
+  });
+  el('zoomIn').addEventListener('click', () => setZoom(state.zoom * 1.15));
+  el('zoomOut').addEventListener('click', () => setZoom(state.zoom / 1.15));
+  el('zoomReset').addEventListener('click', () => setZoom(1));
+  el('zoomFit').addEventListener('click', () => fitPage());
+  el('doneEditingBtn').addEventListener('click', () => exitHtmlEdit());
+  el('editSourceBtn').addEventListener('click', () => {
+    if (!state.editing) return;
+    openSourceEditor({ pageId: state.editing.pageId, blockId: state.editing.blockId });
+  });
+  el('toolRail').addEventListener('click', event => {
+    const tool = (event.target as HTMLElement).closest('[data-tool]') as HTMLElement | null;
+    if (tool) { state.tool = tool.dataset.tool === 'hand' ? 'hand' : 'select'; renderToolbarState(); return; }
+    const blockButton = (event.target as HTMLElement).closest('[data-block]') as HTMLElement | null;
+    if (blockButton) {
+      const type = blockButton.dataset.block as HcBlock['type'];
+      if (type === 'image') { openImageModal(); return; }
+      void addBlock(type);
+      return;
+    }
+    const target = event.target as HTMLElement;
+    if (target.closest('#toggleGrid')) { state.showGrid = !state.showGrid; renderArtboard(); renderToolbarState(); return; }
+    if (target.closest('#toggleSnap')) { state.snap = !state.snap; renderToolbarState(); toast(state.snap ? 'Snap: 8px' : 'Snap off', 'info'); return; }
+    if (target.closest('#shortcutsBtn')) { openShortcutsModal(); }
+  });
+  el('selectionToolbar').addEventListener('click', event => {
+    const button = (event.target as HTMLElement).closest('[data-sel-action]') as HTMLElement | null;
+    if (!button) return;
+    const action = button.dataset.selAction;
+    if (action === 'edit') { editActiveBlock(); return; }
+    if (action === 'duplicate') { void duplicateActiveBlock(); return; }
+    if (action === 'front') { void setActiveBlockLayer('front'); return; }
+    if (action === 'back') { void setActiveBlockLayer('back'); return; }
+    if (action === 'delete') { void deleteActiveBlock(); }
+  });
+  el('alignSelect').addEventListener('change', event => {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value) void alignActiveBlock(value);
+    (event.target as HTMLSelectElement).value = '';
+  });
+  qs<HTMLDivElement>('.tabs')?.addEventListener('click', event => {
+    const target = (event.target as HTMLElement).closest('[data-tab]') as HTMLElement | null;
+    if (!target) return;
+    state.tab = target.dataset.tab as UiState['tab'];
+    renderTabs();
+  });
+  const viewport = el('viewport');
+  viewport.addEventListener('pointerdown', event => {
+    const targetElement = event.target as Element;
+    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
+    const panMode = state.tool === 'hand' || state.spaceHeld;
+    if (event.button !== 0 || (!panMode && (targetElement.closest('.block-wrap') || targetElement.closest('.artboard')))) return;
+    const start = { x: event.clientX, y: event.clientY, panX: state.panX, panY: state.panY };
+    viewport.setPointerCapture(event.pointerId);
+    const move = (moveEvent: PointerEvent): void => {
+      state.panX = start.panX + moveEvent.clientX - start.x;
+      state.panY = start.panY + moveEvent.clientY - start.y;
+      applyStageTransform();
+    };
+    const up = (): void => { viewport.removeEventListener('pointermove', move); viewport.removeEventListener('pointerup', up); };
+    viewport.addEventListener('pointermove', move);
+    viewport.addEventListener('pointerup', up);
+  });
+  viewport.addEventListener('wheel', event => {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    event.preventDefault();
+    setZoom(state.zoom * (event.deltaY < 0 ? 1.08 : 0.92));
+  }, { passive: false });
+}
+
+function viewportWorldBounds(): { minX: number; minY: number; maxX: number; maxY: number } {
+  const rect = el('viewport').getBoundingClientRect();
+  return {
+    minX: (0 - state.panX) / state.zoom,
+    minY: (0 - state.panY) / state.zoom,
+    maxX: (rect.width - state.panX) / state.zoom,
+    maxY: (rect.height - state.panY) / state.zoom,
+  };
+}
+
+function renderToolbarState(): void {
+  const page = activePage();
+  const block = activeBlock();
+  document.querySelectorAll<HTMLElement>('[data-tool]').forEach(button => {
+    button.classList.toggle('active', button.dataset.tool === state.tool);
+  });
+  el('toggleGrid').classList.toggle('active', state.showGrid);
+  el('toggleSnap').classList.toggle('active', state.snap);
+  el('infiniteBadge').classList.toggle('hidden', page?.mode !== 'infinite');
+  document.querySelectorAll<HTMLElement>('[data-block]').forEach(button => {
+    button.classList.toggle('disabled', page?.mode === 'whiteboard' || page?.mode === 'html');
+  });
+  el('viewport').classList.toggle('tool-hand', state.tool === 'hand' || state.spaceHeld);
+  const selection = el('selectionToolbar');
+  const showSelection = Boolean(block) && !state.editing && !state.presenting;
+  selection.classList.toggle('hidden', !showSelection);
+  if (block) {
+    const editButton = el('selEditBtn');
+    editButton.textContent = block.type === 'html' ? 'Edit HTML' : block.type === 'markdown' || block.type === 'code' || block.type === 'text' ? 'Edit source' : block.type === 'image' ? 'Image' : 'Style';
+    editButton.style.display = '';
+  }
+}
+
+function editActiveBlock(): void {
+  const page = activePage();
+  const block = activeBlock();
+  if (!page || !block) return;
+  if (block.type === 'html') enterHtmlEdit(page.id, block.id);
+  else if (block.type === 'markdown' || block.type === 'code' || block.type === 'text') openSourceEditor({ pageId: page.id, blockId: block.id });
+  else if (block.type === 'image') openImageModal(block);
+  else renderInspector();
+}
+
+async function duplicateActiveBlock(): Promise<void> {
+  const page = activePage();
+  const block = activeBlock();
+  if (!page || !block) return;
+  const copy: HcBlock = { ...block, id: genId('block'), x: block.x + 24, y: block.y + 24, z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1, name: block.name || block.type + ' copy' };
+  const result = await applyOps([{ op: 'add_block', pageId: page.id, block: copy }], { refreshArtboard: true });
+  if (result) { state.activeBlockId = copy.id; renderArtboard(); renderInspector(); renderToolbarState(); }
+}
+
+async function setActiveBlockLayer(direction: 'front' | 'back'): Promise<void> {
+  const page = activePage();
+  const block = activeBlock();
+  if (!page || !block) return;
+  const z = direction === 'front' ? Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1 : Math.min(0, ...(page.blocks || []).map(item => item.z)) - 1;
+  await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { z } }], { refreshArtboard: true });
+  renderInspector();
+}
+
+async function alignActiveBlock(mode: string): Promise<void> {
+  const page = activePage();
+  const block = activeBlock();
+  if (!page || !block) return;
+  const bounds = page.mode === 'infinite' ? viewportWorldBounds() : { minX: 24, minY: 24, maxX: page.width - 24, maxY: page.height - 24 };
+  let x = block.x;
+  let y = block.y;
+  if (mode === 'left') x = bounds.minX;
+  if (mode === 'center') x = (bounds.minX + bounds.maxX) / 2 - block.w / 2;
+  if (mode === 'right') x = bounds.maxX - block.w;
+  if (mode === 'top') y = bounds.minY;
+  if (mode === 'middle') y = (bounds.minY + bounds.maxY) / 2 - block.h / 2;
+  if (mode === 'bottom') y = bounds.maxY - block.h;
+  const next = clampBlockPosition(page, block, x, y);
+  block.x = next.x; block.y = next.y;
+  await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { x: next.x, y: next.y } }], { refreshArtboard: true });
+  renderInspector();
+}
+
+async function nudgeActiveBlock(dx: number, dy: number): Promise<void> {
+  const page = activePage();
+  const block = activeBlock();
+  if (!page || !block) return;
+  const next = clampBlockPosition(page, block, block.x + dx, block.y + dy);
+  block.x = next.x; block.y = next.y;
+  const wrap = qs<HTMLElement>('.block-wrap[data-block-id="' + block.id + '"]');
+  if (wrap) { wrap.style.left = next.x + 'px'; wrap.style.top = next.y + 'px'; }
+  await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { x: next.x, y: next.y } }], { refreshArtboard: false });
+}
+
+function openShortcutsModal(): void {
+  const html = '<div class="modal small"><div class="modal-head"><div><strong>Canvas shortcuts</strong><small>Works when you are not typing in a field.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="help-grid">' +
+    '<kbd>V</kbd><span>Select tool</span>' +
+    '<kbd>H</kbd><span>Hand / pan tool</span>' +
+    '<kbd>Space</kbd><span>Hold to pan</span>' +
+    '<kbd>1 – 6</kbd><span>Insert HTML / Text / Markdown / Code / Image / Shape</span>' +
+    '<kbd>Ctrl/Cmd + D</kbd><span>Duplicate selected block</span>' +
+    '<kbd>Delete</kbd><span>Delete selected block</span>' +
+    '<kbd>Arrow keys</kbd><span>Nudge selected block (Shift = 10px)</span>' +
+    '<kbd>Ctrl/Cmd + wheel</kbd><span>Zoom</span>' +
+    '<kbd>G / S</kbd><span>Toggle grid / snap</span>' +
+    '<kbd>?</kbd><span>This help</span>' +
+    '</div></div><div class="modal-foot"><button class="btn" data-close>Close</button></div></div>';
+  openModal(html);
+}
+
+function handleGlobalKeydown(event: KeyboardEvent): void {
+  if (state.presenting) {
+    if (event.key === 'Escape') closePresent();
+    else if (event.key === 'ArrowRight' || event.key === 'PageDown') nextPresent(1);
+    else if (event.key === 'ArrowLeft' || event.key === 'PageUp') nextPresent(-1);
+    return;
+  }
+  const target = event.target as HTMLElement;
+  const typing = target.matches('input, textarea, [contenteditable="true"]') || Boolean(target.closest('.cm-editor'));
+  if (activePage()?.mode === 'whiteboard') return;
+  if (event.key === 'Escape') {
+    if (state.sourceModalOpen) { closeModal(); return; }
+    if (state.editing) { exitHtmlEdit(); return; }
+    closeModal();
+    return;
+  }
+  if (typing) return;
+  if ((event.key === 'd' || event.key === 'D') && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    void duplicateActiveBlock();
+    return;
+  }
+  if (event.key === 'v' || event.key === 'V') { state.tool = 'select'; renderToolbarState(); return; }
+  if (event.key === 'h' || event.key === 'H') { state.tool = 'hand'; renderToolbarState(); return; }
+  if (event.key === 'g' || event.key === 'G') { state.showGrid = !state.showGrid; renderArtboard(); renderToolbarState(); return; }
+  if (event.key === 's' || event.key === 'S') { state.snap = !state.snap; renderToolbarState(); return; }
+  if (event.key === '?') { openShortcutsModal(); return; }
+  if (['1', '2', '3', '4', '5', '6'].includes(event.key)) {
+    const map: Record<string, HcBlock['type']> = { '1': 'html', '2': 'text', '3': 'markdown', '4': 'code', '5': 'image', '6': 'shape' };
+    const type = map[event.key];
+    if (!type) return;
+    event.preventDefault();
+    if (type === 'image') openImageModal();
+    else void addBlock(type);
+    return;
+  }
+  if (event.key.startsWith('Arrow') && state.activeBlockId) {
+    event.preventDefault();
+    const step = event.shiftKey ? 10 : 1;
+    const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+    const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+    void nudgeActiveBlock(dx, dy);
+    return;
+  }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (state.activeBlockId) { event.preventDefault(); void deleteActiveBlock(); }
+  }
+  if ((event.key === 'p' || event.key === 'P') && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault(); void exportCurrent('pdf');
+  }
+}
+
+function renderAll(): void {
+  renderTop();
+  renderToolbarState();
+  renderDocs();
+  renderPages();
+  renderArtboard();
+  renderInspector();
+  renderAgent();
+  renderProposals();
+  renderCopilot();
+  renderTabs();
+}
+
+function renderTop(): void {
+  const title = el<HTMLInputElement>('docTitle');
+  if (document.activeElement !== title) title.value = docTitle();
+  el('docRevision').textContent = 'rev ' + (state.doc?.revision ?? 0);
+  el('workspacePath').textContent = boot.workspace || '';
+  renderPresence();
+  const banner = el('editingBanner');
+  if (state.editing) banner.classList.remove('hidden'); else banner.classList.add('hidden');
+  el('editingLabel').textContent = state.editing?.blockId ? 'Editing HTML block' : 'Editing HTML page';
+  el('addPageBtn').style.display = state.doc ? '' : 'none';
+  el('presentBtn').style.display = state.doc ? '' : 'none';
+  el('exportBtn').style.display = state.doc ? '' : 'none';
+  renderToolbarState();
+}
+
+function renderTabs(): void {
+  document.querySelectorAll<HTMLElement>('[data-tab]').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.tab === state.tab);
+  });
+  el('inspectorPanel').classList.toggle('hidden', state.tab !== 'inspector');
+  el('agentPanel').classList.toggle('hidden', state.tab !== 'agent');
+  el('proposalsPanel').classList.toggle('hidden', state.tab !== 'proposals');
+  el('copilotPanel').classList.toggle('hidden', state.tab !== 'copilot');
+}
+
+function renderDocs(): void {
+  const root = el('docsList');
+  root.textContent = '';
+  if (!state.docs.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'No canvases yet. Create one to start.';
+    root.appendChild(empty);
+    return;
+  }
+  for (const doc of state.docs) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'doc-item' + (state.doc?.id === doc.id ? ' active' : '');
+    button.innerHTML = '<strong>' + esc(doc.title) + '</strong><small>rev ' + doc.revision + ' · ' + doc.pages + ' page' + (doc.pages === 1 ? '' : 's') + (doc.pendingProposals ? ' · ' + doc.pendingProposals + ' pending' : '') + '</small>';
+    button.addEventListener('click', () => {
+      if (state.doc?.id === doc.id) return;
+      void openDoc(doc.id);
+    });
+    root.appendChild(button);
+  }
+}
+
+function pageThumbHtml(page: HcPage): string {
+  const ratio = Math.min(46 / page.width, 30 / page.height);
+  if (page.mode === 'html' && page.html) {
+    return '<iframe sandbox srcdoc="' + esc(page.html) + '" style="width:' + page.width + 'px;height:' + page.height + 'px;transform:scale(' + ratio + ');transform-origin:top left" tabindex="-1"></iframe>';
+  }
+  if (page.mode === 'canvas' || page.mode === 'infinite') {
+    const source = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}</style></head><body>' + renderPresentCanvasHtml(page) + '</body></html>';
+    return '<iframe sandbox srcdoc="' + esc(source) + '" style="width:' + page.width + 'px;height:' + page.height + 'px;transform:scale(' + ratio + ');transform-origin:top left" tabindex="-1"></iframe>';
+  }
+  return '<div class="page-thumb-placeholder">Whiteboard</div>';
+}
+
+function duplicatePage(page: HcPage): void {
+  if (!state.doc) return;
+  const copy = JSON.parse(JSON.stringify(page)) as HcPage;
+  copy.id = genId('page');
+  copy.name = 'Copy of ' + page.name;
+  if (copy.blocks) copy.blocks = copy.blocks.map(block => ({ ...block, id: genId('block') }));
+  const index = state.doc.pages.findIndex(item => item.id === page.id);
+  void applyOps([{ op: 'add_page', page: copy, index: index + 1 }], { refreshArtboard: false }).then(result => {
+    if (!result) return;
+    state.activePageId = copy.id;
+    state.activeBlockId = null;
+    state.fittedPageId = null;
+    renderAll();
+    toast('Page duplicated', 'success');
+  });
+}
+
+function movePage(pageId: string, direction: 'up' | 'down'): void {
+  void applyOps([{ op: 'reorder_page', pageId, direction }], { refreshArtboard: false }).then(result => {
+    if (!result) return;
+    renderPages();
+    renderTop();
+  });
+}
+
+function renderPages(): void {
+  const root = el('pagesList');
+  root.textContent = '';
+  const pages = state.doc?.pages || [];
+  pages.forEach((page, index) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'page-item' + (page.id === state.activePageId ? ' active' : '');
+    const thumb = document.createElement('div');
+    thumb.className = 'page-thumb';
+    thumb.innerHTML = pageThumbHtml(page);
+    const info = document.createElement('div');
+    info.className = 'page-info';
+    info.innerHTML = '<strong>' + esc(page.name || 'Page ' + (index + 1)) + '</strong><small>' + esc(page.mode) + ' · ' + page.width + '×' + page.height + '</small>';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'page-open';
+    button.append(thumb, info);
+    button.addEventListener('click', () => selectPage(page.id));
+    wrap.appendChild(button);
+    const actions = document.createElement('div');
+    actions.className = 'page-actions';
+    const addAction = (label: string, title: string, handler: () => void, disabled = false, danger = false): void => {
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'page-action' + (danger ? ' danger' : '');
+      action.textContent = label;
+      action.title = title;
+      action.disabled = disabled;
+      action.addEventListener('click', event => { event.stopPropagation(); if (!disabled) handler(); });
+      actions.appendChild(action);
+    };
+    addAction('↑', 'Move page up', () => movePage(page.id, 'up'), index === 0);
+    addAction('↓', 'Move page down', () => movePage(page.id, 'down'), index === pages.length - 1);
+    addAction('⧉', 'Duplicate page', () => duplicatePage(page));
+    addAction('×', 'Delete page', () => { void confirmDialog('Delete page "' + (page.name || 'Page') + '"?').then(ok => { if (ok) void deletePage(page.id); }); }, pages.length <= 1, true);
+    wrap.appendChild(actions);
+    root.appendChild(wrap);
+  });
+}
+
+function selectPage(pageId: string): void {
+  if (state.activePageId === pageId) return;
+  if (state.editing) state.editing = null;
+  state.activePageId = pageId;
+  state.activeBlockId = null;
+  state.selectedHtmlId = null;
+  state.iframeDoc = null;
+  state.iframeElement = null;
+  state.fittedPageId = null;
+  renderPages();
+  renderArtboard();
+  renderInspector();
+  renderTop();
+  void syncActive();
+}
+
+function applyStageTransform(): void {
+  const stage = el('stage');
+  stage.style.transform = 'translate(' + state.panX + 'px,' + state.panY + 'px) scale(' + state.zoom + ')';
+  el('zoomReset').textContent = Math.round(state.zoom * 100) + '%';
+}
+
+function setZoom(next: number): void {
+  state.zoom = Math.max(0.1, Math.min(3, next));
+  applyStageTransform();
+}
+
+function fitPage(): void {
+  const page = activePage();
+  if (!page) return;
+  const viewport = el('viewport').getBoundingClientRect();
+  const metrics = pageMetrics(page);
+  const padding = 84;
+  if (page.mode === 'infinite') {
+    if (metrics.content) {
+      const contentWidth = Math.max(120, metrics.content.maxX - metrics.content.minX);
+      const contentHeight = Math.max(120, metrics.content.maxY - metrics.content.minY);
+      const zoom = Math.max(0.12, Math.min(1.15, Math.min((viewport.width - padding * 2) / contentWidth, (viewport.height - padding * 2) / contentHeight)));
+      state.zoom = zoom;
+      state.panX = (viewport.width - contentWidth * zoom) / 2 - metrics.content.minX * zoom;
+      state.panY = (viewport.height - contentHeight * zoom) / 2 - metrics.content.minY * zoom;
+    } else {
+      state.zoom = 0.8;
+      state.panX = viewport.width / 2 - (metrics.width / 2) * state.zoom;
+      state.panY = viewport.height / 2 - (metrics.height / 2) * state.zoom;
+    }
+    state.fittedPageId = state.activePageId;
+    applyStageTransform();
+    return;
+  }
+  const zoom = Math.max(0.08, Math.min(1.4, Math.min((viewport.width - padding * 2) / metrics.width, (viewport.height - padding * 2) / metrics.height)));
+  state.zoom = zoom;
+  state.panX = Math.max(20, (viewport.width - metrics.width * zoom) / 2);
+  state.panY = Math.max(20, (viewport.height - metrics.height * zoom) / 2);
+  state.fittedPageId = state.activePageId;
+  applyStageTransform();
+}
+
+function renderArtboard(): void {
+  unmountWhiteboard();
+  const artboard = el('artboard');
+  const page = activePage();
+  artboard.textContent = '';
+  if (!page) return;
+  const metrics = pageMetrics(page);
+  artboard.className = 'artboard mode-' + page.mode + (state.editing ? ' editing' : '');
+  artboard.style.width = metrics.width + 'px';
+  artboard.style.height = metrics.height + 'px';
+  artboard.style.background = page.background;
+  if (page.mode === 'infinite' && state.showGrid) {
+    artboard.style.backgroundImage = 'radial-gradient(rgba(80,70,55,.14) 1px, transparent 1px)';
+    artboard.style.backgroundSize = '22px 22px';
+  } else {
+    artboard.style.backgroundImage = '';
+    artboard.style.backgroundSize = '';
+  }
+  if (page.mode === 'html') renderHtmlPage(artboard, page);
+  else if (page.mode === 'whiteboard') renderWhiteboardPage(artboard, page);
+  else renderCanvasPage(artboard, page);
+  renderAgentCursors(artboard, page);
+  if (state.fittedPageId !== state.activePageId) fitPage();
+  else applyStageTransform();
+  renderToolbarState();
+}
+
+let excalidrawScriptPromise: Promise<Record<string, unknown>> | null = null;
+let whiteboardSaveTimer: ReturnType<typeof setTimeout> | undefined;
+
+function unmountWhiteboard(): void {
+  if (whiteboardSaveTimer) { clearTimeout(whiteboardSaveTimer); whiteboardSaveTimer = undefined; }
+  if (state.whiteboardHandle) {
+    try { state.whiteboardHandle.unmount(); } catch { /* ignore */ }
+  }
+  state.whiteboardHandle = null;
+  state.whiteboardPageId = null;
+}
+
+function loadExcalidrawScript(): Promise<Record<string, unknown>> {
+  const globalWindow = window as unknown as { HadamardExcalidraw?: Record<string, unknown>; EXCALIDRAW_ASSET_PATH?: string };
+  if (globalWindow.HadamardExcalidraw) return Promise.resolve(globalWindow.HadamardExcalidraw);
+  if (excalidrawScriptPromise) return excalidrawScriptPromise;
+  globalWindow.EXCALIDRAW_ASSET_PATH = '/gui-canvas/';
+  excalidrawScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-hc-excalidraw]');
+    if (existing) { reject(new Error('Excalidraw bundle did not initialize')); return; }
+    const script = document.createElement('script');
+    script.src = '/gui-canvas/excalidraw.js';
+    script.dataset.hcExcalidraw = '1';
+    script.onload = () => {
+      if (globalWindow.HadamardExcalidraw) resolve(globalWindow.HadamardExcalidraw);
+      else reject(new Error('Excalidraw global missing'));
+    };
+    script.onerror = () => reject(new Error('Could not load the Excalidraw bundle. Run: npm run build'));
+    document.head.appendChild(script);
+  });
+  return excalidrawScriptPromise;
+}
+
+function renderWhiteboardPage(container: HTMLElement, page: HcPage): void {
+  const host = document.createElement('div');
+  host.className = 'whiteboard-host';
+  host.innerHTML = '<div class="whiteboard-loading"><span class="pulse-dot"></span> Loading Excalidraw whiteboard…</div>';
+  container.appendChild(host);
+  const pageId = page.id;
+  void loadExcalidrawScript().then(entry => {
+    if (state.activePageId !== pageId) return;
+    host.innerHTML = '';
+    const scene = page.scene || { elements: [], appState: {}, files: {} };
+    state.whiteboardHydratingUntil = Date.now() + 1800;
+    const mount = entry.mount as (element: HTMLElement, options: Record<string, unknown>) => typeof state.whiteboardHandle;
+    const handle = mount(host, {
+      initialData: {
+        elements: scene.elements || [],
+        appState: { ...(scene.appState || {}), viewBackgroundColor: page.background || '#ffffff', collaborators: new Map() },
+        files: scene.files || {},
+        scrollToContent: true,
+      },
+      theme: 'light',
+      onReady: () => { state.whiteboardHydratingUntil = Date.now() + 1500; },
+      onChange: (elements: unknown[], appState: Record<string, unknown>, files: Record<string, unknown>) => {
+        if (Date.now() < state.whiteboardHydratingUntil) return;
+        if (whiteboardSaveTimer) clearTimeout(whiteboardSaveTimer);
+        whiteboardSaveTimer = setTimeout(() => {
+          if (!state.doc || state.activePageId !== pageId) return;
+          const current = activePage();
+          const nextScene = { elements, files, appState: { viewBackgroundColor: current?.background || '#ffffff' } };
+          void applyOps([{ op: 'set_whiteboard_scene', pageId, scene: nextScene } as HcOp], { refreshArtboard: false, actor: 'human' });
+        }, 900);
+      },
+    });
+    state.whiteboardHandle = handle;
+    state.whiteboardPageId = pageId;
+    (window as unknown as { __hcanvasWhiteboard?: unknown }).__hcanvasWhiteboard = handle;
+    setTimeout(() => {
+      try {
+        const api = handle?.getApi() as { scrollToContent?: (target?: unknown, opts?: unknown) => void } | undefined;
+        const elements = handle?.getScene().elements || [];
+        if (elements.length) api?.scrollToContent?.(elements, { fitToContent: true, animate: false });
+        else api?.scrollToContent?.(undefined, { fitToContent: true, animate: false });
+      } catch { /* optional */ }
+      setTimeout(() => positionWhiteboardCursors(page), 500);
+    }, 350);
+  }).catch(error => {
+    host.innerHTML = '<div class="whiteboard-error">' + esc(error instanceof Error ? error.message : String(error)) + '</div>';
+  });
+}
+
+function whiteboardSceneJson(page: HcPage): string {
+  return JSON.stringify({ type: 'excalidraw', version: 2, source: 'hcanvas', elements: page.scene?.elements || [], appState: page.scene?.appState || {}, files: page.scene?.files || {} }, null, 2);
+}
+
+function downloadWhiteboardScene(): void {
+  const page = activePage();
+  if (!page || page.mode !== 'whiteboard') return;
+  const blob = new Blob([whiteboardSceneJson(page)], { type: 'application/vnd.excalidraw+json' });
+  const anchor = document.createElement('a');
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = (page.name || 'whiteboard').replace(/[^a-z0-9_-]+/gi, '-') + '.excalidraw';
+  document.body.appendChild(anchor); anchor.click(); anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(anchor.href), 2000);
+}
+
+function agentHue(actor: string): number {
+  return actor.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360;
+}
+
+async function followAgent(session: PresenceEntry): Promise<void> {
+  if (!state.doc || session.docId !== state.doc.id) {
+    await openDoc(session.docId, session.pageId);
+  } else if (session.pageId && session.pageId !== state.activePageId) {
+    state.activePageId = session.pageId;
+    state.fittedPageId = null;
+    state.activeBlockId = null;
+    state.selectedHtmlId = null;
+    renderAll();
+  }
+  const selection = session.selection?.[0];
+  const page = activePage();
+  if (selection && page) {
+    if (page.mode === 'html') state.selectedHtmlId = selection;
+    else if (page.blocks?.some(block => block.id === selection)) state.activeBlockId = selection;
+  }
+  renderArtboard();
+  renderInspector();
+  toast('Following ' + session.actor + (page ? ' on ' + page.name : ''), 'info');
+}
+
+function renderAgentCursors(container: HTMLElement, page: HcPage): void {
+  if (!state.doc) return;
+  const sessions = state.presence.filter(session => session.docId === state.doc?.id && (!session.pageId || session.pageId === page.id));
+  if (!sessions.length) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'agent-cursors';
+  sessions.forEach((session, index) => {
+    const hue = agentHue(session.actor);
+    const cursor = document.createElement('button');
+    cursor.type = 'button';
+    cursor.className = 'agent-cursor';
+    cursor.dataset.agentSession = session.id;
+    cursor.style.color = 'hsl(' + hue + ', 60%, 42%)';
+    let left = 20 + index * 8;
+    let top = 16 + index * 30;
+    const selection = session.selection?.[0];
+    if (selection && page.mode !== 'html') {
+      const block = (page.blocks || []).find(item => item.id === selection);
+      if (block) {
+        left = Math.max(4, block.x + block.w - 8);
+        top = Math.max(24, block.y - 6);
+      }
+    } else if (page.mode === 'whiteboard') {
+      left = page.width - 190;
+      top = 18 + index * 30;
+    } else if (page.mode === 'html') {
+      left = 18;
+      top = 14 + index * 30;
+    }
+    cursor.style.left = left + 'px';
+    cursor.style.top = top + 'px';
+    cursor.title = session.actor + ' · ' + (selection || page.name) + ' · click to follow';
+    cursor.innerHTML = '<span class="agent-cursor-label" style="background:hsl(' + hue + ', 55%, 38%)">' + esc(session.actor) + '</span><span class="agent-cursor-dot" style="background:hsl(' + hue + ', 65%, 50%)"></span>';
+    cursor.addEventListener('click', event => { event.stopPropagation(); void followAgent(session); });
+    overlay.appendChild(cursor);
+  });
+  container.appendChild(overlay);
+  if (page.mode === 'html' && page.html) {
+    const htmlSessions = sessions.filter(session => session.selection?.[0]);
+    if (htmlSessions.length) {
+      const measure = document.createElement('iframe');
+      measure.className = 'agent-measure-frame';
+      measure.setAttribute('sandbox', 'allow-same-origin');
+      measure.setAttribute('title', 'Agent selection measurement');
+      measure.style.width = page.width + 'px';
+      measure.style.height = page.height + 'px';
+      measure.srcdoc = page.html;
+      measure.addEventListener('load', () => {
+        try {
+          const frameDoc = measure.contentDocument;
+          if (!frameDoc) return;
+          for (const session of htmlSessions) {
+            const selection = session.selection?.[0];
+            if (!selection) continue;
+            const target = frameDoc.querySelector('[data-hc-id="' + CSS.escape(selection) + '"]');
+            const cursor = overlay.querySelector<HTMLElement>('[data-agent-session="' + CSS.escape(session.id) + '"]');
+            if (!target || !cursor) continue;
+            const rect = target.getBoundingClientRect();
+            cursor.style.left = (rect.left + rect.width / 2) + 'px';
+            cursor.style.top = Math.max(22, rect.top + 2) + 'px';
+          }
+        } catch { /* measurement is best effort */ }
+        setTimeout(() => measure.remove(), 0);
+      });
+      container.appendChild(measure);
+    }
+  }
+}
+
+function positionWhiteboardCursors(page: HcPage): void {
+  if (page.mode !== 'whiteboard' || !state.whiteboardHandle) return;
+  const overlay = document.querySelector<HTMLElement>('#artboard .agent-cursors');
+  if (!overlay) return;
+  let appState: Record<string, unknown> = {};
+  let elements: Array<Record<string, unknown>> = [];
+  try {
+    const api = state.whiteboardHandle.getApi() as { getAppState?: () => Record<string, unknown>; getSceneElements?: () => Array<Record<string, unknown>> } | undefined;
+    appState = api?.getAppState?.() || {};
+    elements = api?.getSceneElements?.() || (page.scene?.elements as Array<Record<string, unknown>>) || [];
+  } catch { return; }
+  const zoom = Number((appState.zoom as { value?: number } | undefined)?.value) || 1;
+  const scrollX = Number(appState.scrollX) || 0;
+  const scrollY = Number(appState.scrollY) || 0;
+  for (const session of state.presence) {
+    const selection = session.selection?.[0];
+    if (!selection) continue;
+    const element = elements.find(item => item.id === selection);
+    if (!element) continue;
+    const cursor = overlay.querySelector<HTMLElement>('[data-agent-session="' + CSS.escape(session.id) + '"]');
+    if (!cursor) continue;
+    const elementX = Number(element.x) || 0;
+    const elementY = Number(element.y) || 0;
+    const elementW = Number(element.width) || 0;
+    const elementH = Number(element.height) || 0;
+    cursor.style.left = ((elementX + scrollX) * zoom + (elementW * zoom) / 2) + 'px';
+    cursor.style.top = ((elementY + scrollY) * zoom + (elementH * zoom) / 2) + 'px';
+  }
+}
+
+function renderHtmlPage(container: HTMLElement, page: HcPage): void {
+  const editing = state.editing?.pageId === page.id && !state.editing?.blockId;
+  const iframe = document.createElement('iframe');
+  iframe.className = 'page-frame' + (editing ? '' : ' preview');
+  iframe.setAttribute('sandbox', editing ? 'allow-same-origin' : 'allow-scripts');
+  iframe.setAttribute('title', page.name || 'HTML page');
+  iframe.srcdoc = page.html || '';
+  iframe.addEventListener('load', () => { if (editing) setupHtmlEditing(iframe, page.id); });
+  container.appendChild(iframe);
+  if (!editing) {
+    const hit = document.createElement('div');
+    hit.className = 'page-hit';
+    hit.addEventListener('dblclick', event => { event.stopPropagation(); enterHtmlEdit(page.id); });
+    container.appendChild(hit);
+  }
+}
+
+function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
+  const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
+  const wrap = document.createElement('div');
+  wrap.className = 'block-wrap' + (state.activeBlockId === block.id ? ' selected' : '') + (editing ? ' editing' : '');
+  wrap.dataset.blockId = block.id;
+  wrap.style.left = block.x + 'px';
+  wrap.style.top = block.y + 'px';
+  wrap.style.width = block.w + 'px';
+  wrap.style.height = block.h + 'px';
+  wrap.style.zIndex = String(block.z + 1);
+  return wrap;
+}
+
+function renderCanvasPage(container: HTMLElement, page: HcPage): void {
+  const blocks = [...(page.blocks || [])].sort((left, right) => left.z - right.z);
+  for (const block of blocks) {
+    const wrap = blockWrapper(block, page);
+    const content = document.createElement('div');
+    content.className = 'block-content';
+    const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
+    if (block.type === 'html') {
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('sandbox', editing ? 'allow-same-origin' : 'allow-scripts');
+      iframe.setAttribute('title', block.name || 'HTML block');
+      iframe.srcdoc = wrapBlockHtml(block.html || '');
+      iframe.addEventListener('load', () => { if (editing) setupHtmlEditing(iframe, page.id, block.id); });
+      content.appendChild(iframe);
+    } else if (block.type === 'text') {
+      const text = document.createElement('div');
+      text.className = 'block-text';
+      text.style.fontSize = (block.style?.fontSize || 20) + 'px';
+      text.style.fontWeight = String(block.style?.fontWeight || 400);
+      text.style.color = String(block.style?.color || '#1d232e');
+      text.style.fontFamily = String(block.style?.fontFamily || 'Inter, sans-serif');
+      text.style.textAlign = String(block.style?.align || 'left');
+      text.textContent = block.text || '';
+      content.appendChild(text);
+    } else if (block.type === 'markdown') {
+      const md = document.createElement('div');
+      md.className = 'block-md';
+      md.style.background = String(block.style?.fill || '#ffffff');
+      md.style.borderRadius = String(block.style?.radius || 16) + 'px';
+      md.style.border = '1px solid #e7e0d2';
+      md.innerHTML = marked.parse(block.markdown || '', { async: false }) as string;
+      content.appendChild(md);
+    } else if (block.type === 'code') {
+      const code = document.createElement('div');
+      code.className = 'block-code';
+      code.style.background = String(block.style?.fill || '#171923');
+      code.style.borderRadius = String(block.style?.radius || 14) + 'px';
+      code.innerHTML = '<span class="lang">' + esc(block.language || 'code') + '</span><pre style="color:' + esc(String(block.style?.color || '#e2e8f0')) + '"><code>' + esc(block.code || '') + '</code></pre>';
+      content.appendChild(code);
+    } else if (block.type === 'image') {
+      const img = document.createElement('div');
+      img.className = 'block-image';
+      img.style.borderRadius = String(block.style?.radius || 14) + 'px';
+      img.style.overflow = 'hidden';
+      if (block.src) img.innerHTML = '<img src="' + esc(block.src) + '" alt="' + esc(block.alt || '') + '" />';
+      else img.innerHTML = '<div style="display:grid;place-items:center;height:100%;background:#f1eee7;color:#8a8276;font-size:12px">Image block — set a URL in Inspector</div>';
+      content.appendChild(img);
+    } else if (block.type === 'shape') {
+      const shape = document.createElement('div');
+      shape.className = 'block-shape-box';
+      shape.style.background = String(block.style?.fill || '#f3e8ff');
+      shape.style.border = String(block.style?.strokeWidth || 1) + 'px solid ' + String(block.style?.stroke || '#a855f7');
+      shape.style.borderRadius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 14) + 'px';
+      content.appendChild(shape);
+    }
+    wrap.appendChild(content);
+    if (!editing) {
+      const hit = document.createElement('div');
+      hit.className = 'block-hit';
+      wrap.appendChild(hit);
+    }
+    if (state.activeBlockId === block.id && !editing) {
+      const label = document.createElement('span');
+      label.className = 'block-label';
+      label.textContent = block.type + ' · ' + block.id.slice(-6);
+      wrap.appendChild(label);
+      const resize = document.createElement('div');
+      resize.className = 'resize-handle';
+      wrap.appendChild(resize);
+      bindResizeHandle(resize, wrap, block);
+    }
+    bindBlockEvents(wrap, block);
+    container.appendChild(wrap);
+  }
+}
+
+function wrapBlockHtml(html: string): string {
+  return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,sans-serif}</style></head><body>' + html + '</body></html>';
+}
+
+function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
+  const hit = qs<HTMLElement>('.block-hit', wrap);
+  if (!hit) return;
+  hit.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    selectBlock(block.id);
+    const start = { x: event.clientX, y: event.clientY, left: block.x, top: block.y, moved: false };
+    hit.setPointerCapture(event.pointerId);
+    const move = (moveEvent: PointerEvent): void => {
+      const dx = (moveEvent.clientX - start.x) / state.zoom;
+      const dy = (moveEvent.clientY - start.y) / state.zoom;
+      if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+      start.moved = true;
+      const page = activePage();
+      if (!page) return;
+      const next = clampBlockPosition(page, block, start.left + dx, start.top + dy);
+      block.x = next.x; block.y = next.y;
+      wrap.style.left = next.x + 'px';
+      wrap.style.top = next.y + 'px';
+    };
+    const up = (): void => {
+      hit.removeEventListener('pointermove', move);
+      hit.removeEventListener('pointerup', up);
+      if (start.moved) void persistBlock(block, { x: block.x, y: block.y });
+    };
+    hit.addEventListener('pointermove', move);
+    hit.addEventListener('pointerup', up);
+  });
+  hit.addEventListener('dblclick', event => {
+    event.stopPropagation();
+    if (block.type === 'html') enterHtmlEdit(activePage()!.id, block.id);
+    else if (block.type === 'text') {
+      const text = qs<HTMLElement>('.block-text', wrap);
+      if (!text) return;
+      text.contentEditable = 'true';
+      text.focus();
+      text.addEventListener('blur', () => {
+        text.contentEditable = 'false';
+        const value = text.innerText;
+        if (value !== (block.text || '')) { block.text = value; void persistBlock(block, { text: value }); }
+      }, { once: true });
+    } else if (block.type === 'markdown' || block.type === 'code') openSourceEditor({ pageId: activePage()!.id, blockId: block.id });
+    else if (block.type === 'image') openImageModal(block);
+  });
+}
+
+function bindResizeHandle(handle: HTMLElement, wrap: HTMLDivElement, block: HcBlock): void {
+  handle.addEventListener('pointerdown', event => {
+    event.stopPropagation();
+    event.preventDefault();
+    const start = { x: event.clientX, y: event.clientY, w: block.w, h: block.h };
+    handle.setPointerCapture(event.pointerId);
+    const move = (moveEvent: PointerEvent): void => {
+      const nextW = Math.max(40, Math.round(start.w + (moveEvent.clientX - start.x) / state.zoom));
+      const nextH = Math.max(30, Math.round(start.h + (moveEvent.clientY - start.y) / state.zoom));
+      block.w = nextW; block.h = nextH;
+      wrap.style.width = nextW + 'px';
+      wrap.style.height = nextH + 'px';
+    };
+    const up = (): void => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      void persistBlock(block, { w: block.w, h: block.h });
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  });
+}
+
+function selectBlock(blockId: string | null): void {
+  state.activeBlockId = blockId;
+  state.selectedHtmlId = null;
+  document.querySelectorAll<HTMLElement>('.block-wrap').forEach(node => {
+    node.classList.toggle('selected', node.dataset.blockId === blockId);
+  });
+  renderInspector();
+  renderTop();
+  renderToolbarState();
+  void syncActive();
+}
+
+async function persistBlock(block: HcBlock, patch: Partial<HcBlock>): Promise<void> {
+  const page = activePage();
+  if (!page) return;
+  await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch } as HcOp], { refreshArtboard: false });
+  renderInspector();
+}
+
+async function applyOps(ops: HcOp[], options: { refreshArtboard?: boolean; actor?: string } = {}): Promise<HcDocument | null> {
+  if (!state.doc) return null;
+  state.ignoreEventsUntil = Date.now() + 1600;
+  setSaveStatus('Saving…', 'saving');
+  try {
+    const result = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id + '/apply', {
+      method: 'POST',
+      body: JSON.stringify({ ops, baseRevision: state.doc.revision, actor: options.actor || 'human' }),
+    });
+    state.doc = result.doc;
+    setSaveStatus('Saved · rev ' + result.doc.revision, 'saved');
+    await loadDocs();
+    renderTop();
+    renderDocs();
+    renderPages();
+    renderProposals();
+    if (options.refreshArtboard !== false) renderArtboard();
+    renderInspector();
+    void syncActive();
+    return result.doc;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      setSaveStatus('Revision conflict — reloading', 'error');
+      toast('Someone else changed this canvas. Reloading the latest revision.', 'error');
+      await reloadActiveDoc();
+      return null;
+    }
+    setSaveStatus('Save failed', 'error');
+    toast(error instanceof Error ? error.message : String(error), 'error');
+    return null;
+  }
+}
+
+async function reloadActiveDoc(): Promise<void> {
+  if (!state.doc) return;
+  const docId = state.doc.id;
+  const pageId = state.activePageId || undefined;
+  await openDoc(docId, pageId);
+  setSaveStatus('Reloaded', 'idle');
+}
+
+async function syncActive(): Promise<void> {
+  if (!state.doc) return;
+  try {
+    await api('/api/context/activate', {
+      method: 'POST',
+      body: JSON.stringify({ docId: state.doc.id, pageId: state.activePageId, blockId: state.selectedHtmlId || state.activeBlockId, actor: 'human' }),
+    });
+  } catch { /* context sync is best effort */ }
+}
+
+async function renameDocument(title: string): Promise<void> {
+  if (!state.doc) return;
+  const result = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id, { method: 'PATCH', body: JSON.stringify({ title }) });
+  state.doc = result.doc;
+  await loadDocs();
+  renderTop(); renderDocs();
+  setSaveStatus('Renamed', 'saved');
+}
+
+function enterHtmlEdit(pageId: string, blockId?: string): void {
+  const page = state.doc?.pages.find(item => item.id === pageId);
+  if (!page) return;
+  state.editing = blockId ? { pageId, blockId } : { pageId };
+  state.activeBlockId = blockId || null;
+  state.selectedHtmlId = null;
+  state.iframeDoc = null;
+  state.iframeElement = null;
+  renderTop();
+  renderArtboard();
+  renderInspector();
+  toast('HTML edit mode: double-click text to edit, click an element to inspect it.', 'info');
+}
+
+function exitHtmlEdit(): void {
+  if (!state.editing) return;
+  state.editing = null;
+  state.selectedHtmlId = null;
+  state.iframeDoc = null;
+  state.iframeElement = null;
+  renderTop();
+  renderArtboard();
+  renderInspector();
+}
+
+function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: string): void {
+  const contentDocument = iframe.contentDocument;
+  if (!contentDocument) { toast('Cannot enter HTML edit mode.', 'error'); return; }
+  state.iframeDoc = contentDocument;
+  state.iframeElement = iframe;
+  const style = contentDocument.createElement('style');
+  style.setAttribute('data-hc-editor', '');
+  style.textContent = '[data-hc-selected]{outline:2px solid #6d5bd0 !important;outline-offset:2px !important;}[data-hc-editing]{outline:2px dashed #6d5bd0 !important;outline-offset:2px !important;cursor:text !important;}a[href]{cursor:default !important;}';
+  contentDocument.head?.appendChild(style);
+  contentDocument.addEventListener('click', event => {
+    event.preventDefault(); event.stopPropagation();
+    const target = event.target as Element;
+    selectHtmlElement(target.closest('[data-hc-id]') || contentDocument.body);
+  }, true);
+  contentDocument.addEventListener('dblclick', event => {
+    event.preventDefault(); event.stopPropagation();
+    const target = event.target as Element;
+    startInlineTextEdit((target.closest('[data-hc-id]') || contentDocument.body) as HTMLElement);
+  }, true);
+  contentDocument.addEventListener('input', event => {
+    const target = (event.target as Element).closest('[contenteditable="true"]');
+    if (target) scheduleHtmlCommit(target as HTMLElement);
+  }, true);
+  contentDocument.addEventListener('blur', event => {
+    const target = event.target as HTMLElement;
+    if (target && target.getAttribute && target.getAttribute('contenteditable') === 'true') void commitHtmlElement(target);
+  }, true);
+  contentDocument.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    const active = contentDocument.activeElement as HTMLElement | null;
+    if (active && active.getAttribute('contenteditable') === 'true') {
+      active.setAttribute('contenteditable', 'false');
+      active.removeAttribute('data-hc-editing');
+      void commitHtmlElement(active);
+    } else exitHtmlEdit();
+  }, true);
+  contentDocument.addEventListener('submit', event => { event.preventDefault(); }, true);
+  renderInspector();
+}
+
+function selectHtmlElement(element: Element): void {
+  const contentDocument = state.iframeDoc;
+  if (!contentDocument) return;
+  contentDocument.querySelectorAll('[data-hc-selected]').forEach(node => node.removeAttribute('data-hc-selected'));
+  element.setAttribute('data-hc-selected', 'true');
+  state.selectedHtmlId = element.getAttribute('data-hc-id');
+  renderInspector();
+  void syncActive();
+}
+
+function startInlineTextEdit(element: HTMLElement): void {
+  if (!state.iframeDoc) return;
+  const previous = state.iframeDoc.querySelector('[contenteditable="true"]') as HTMLElement | null;
+  if (previous && previous !== element) {
+    previous.setAttribute('contenteditable', 'false');
+    previous.removeAttribute('data-hc-editing');
+    void commitHtmlElement(previous);
+  }
+  selectHtmlElement(element);
+  element.setAttribute('contenteditable', 'true');
+  element.setAttribute('data-hc-editing', 'true');
+  element.focus();
+  try {
+    const range = state.iframeDoc.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    const selection = state.iframeDoc.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  } catch { /* caret fallback */ }
+}
+
+let htmlCommitTimer: ReturnType<typeof setTimeout> | undefined;
+let htmlCommitElement: HTMLElement | null = null;
+function scheduleHtmlCommit(element: HTMLElement): void {
+  htmlCommitElement = element;
+  if (htmlCommitTimer) clearTimeout(htmlCommitTimer);
+  htmlCommitTimer = setTimeout(() => { if (htmlCommitElement) void commitHtmlElement(htmlCommitElement); }, 700);
+}
+
+async function commitHtmlElement(element: HTMLElement): Promise<void> {
+  if (!state.doc || !state.editing) return;
+  const targetId = element.getAttribute('data-hc-id');
+  if (!targetId) return;
+  if (htmlCommitTimer) { clearTimeout(htmlCommitTimer); htmlCommitTimer = undefined; }
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone.removeAttribute('contenteditable');
+  clone.removeAttribute('data-hc-selected');
+  clone.removeAttribute('data-hc-editing');
+  const pageId = state.editing.pageId;
+  const blockId = state.editing.blockId;
+  const op: HcOp = { op: 'html_patch', pageId, ...(blockId ? { blockId } : {}), patches: [{ op: 'set_html', target: targetId, html: clone.innerHTML }] };
+  await applyOps([op], { refreshArtboard: false });
+}
+
+function selectedHtmlElement(): Element | null {
+  if (!state.iframeDoc || !state.selectedHtmlId) return null;
+  return state.iframeDoc.querySelector('[data-hc-id="' + state.selectedHtmlId.replace(/"/g, '\\"') + '"]');
+}
+
+function toHex(value: string): string {
+  if (/^#[0-9a-f]{6}$/i.test(value)) return value;
+  if (/^#[0-9a-f]{3}$/i.test(value)) return '#' + value[1] + value[1] + value[2] + value[2] + value[3] + value[3];
+  const match = value.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (match) return '#' + [match[1], match[2], match[3]].map(part => Number(part).toString(16).padStart(2, '0')).join('');
+  return '#1d232e';
+}
+
+function collectHtmlTree(contentDocument: Document): Array<{ depth: number; tag: string; hcId: string; text: string }> {
+  const rows: Array<{ depth: number; tag: string; hcId: string; text: string }> = [];
+  const walk = (element: Element, depth: number): void => {
+    const tag = element.tagName.toLowerCase();
+    if (!['style', 'script', 'meta', 'link', 'title', 'head', 'html'].includes(tag)) {
+      rows.push({ depth, tag, hcId: element.getAttribute('data-hc-id') || '', text: (element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60) });
+    }
+    for (const child of Array.from(element.children)) walk(child, Math.min(depth + 1, 10));
+  };
+  if (contentDocument.body) walk(contentDocument.body, 0);
+  return rows.slice(0, 220);
+}
+
+function renderHtmlInspector(): void {
+  const root = el('inspectorPanel');
+  const contentDocument = state.iframeDoc;
+  if (!contentDocument) { root.innerHTML = '<p class="empty-state">HTML editor is loading…</p>'; return; }
+  const selected = selectedHtmlElement();
+  const style = selected ? contentDocument.defaultView?.getComputedStyle(selected) : null;
+  const rows = collectHtmlTree(contentDocument);
+  let html = '<section class="inspector-section"><div class="inspector-title">HTML editor</div><p class="inspector-note">Click text twice to edit. Changes patch the document source and keep <code>data-hc-id</code> stability.</p></section>';
+  if (selected) {
+    const tag = selected.tagName.toLowerCase();
+    const id = selected.getAttribute('data-hc-id') || '';
+    const classes = selected.getAttribute('class') || '';
+    html += '<section class="inspector-section"><div class="inspector-title">Selected element</div>';
+    html += '<div class="field"><span>Element</span><input readonly value="' + esc('<' + tag + '>' + (id ? ' #' + id : '') + (classes ? ' .' + classes.replace(/\s+/g, '.') : '')) + '"></div>';
+    html += '<div class="field-row"><div class="field"><span>Text color</span><div class="swatch-row"><input id="hcColor" type="color" value="' + esc(toHex(style?.color || '#1d232e')) + '"><input id="hcColorText" value="' + esc(style?.color || '#1d232e') + '"></div></div><div class="field"><span>Background</span><div class="swatch-row"><input id="hcBg" type="color" value="' + esc(toHex(style?.backgroundColor || '#ffffff')) + '"><input id="hcBgText" value="' + esc(style?.backgroundColor || 'transparent') + '"></div></div></div>';
+    html += '<div class="field-row"><div class="field"><span>Font size</span><input id="hcFontSize" type="number" value="' + esc(parseFloat(style?.fontSize || '16') || 16) + '"></div><div class="field"><span>Padding</span><input id="hcPadding" value="' + esc(style?.padding || '0px') + '"></div><div class="field"><span>Align</span><select id="hcAlign"><option value="">—</option><option value="left">left</option><option value="center">center</option><option value="right">right</option><option value="justify">justify</option></select></div></div>';
+    html += '<div class="actions-row"><button id="hcApplyStyle" class="btn tiny primary">Apply style</button><button id="hcSelectParent" class="btn tiny">Select parent</button><button id="hcSourceBtn" class="btn tiny">Source</button></div></section>';
+  } else {
+    html += '<section class="inspector-section"><p class="empty-state">Click an element in the page to inspect styles, or double-click text to edit it.</p></section>';
+  }
+  html += '<section class="inspector-section"><div class="inspector-title">Elements</div><div class="element-tree">';
+  for (const row of rows) {
+    html += '<button type="button" class="element-row' + (selected && row.hcId === selected.getAttribute('data-hc-id') ? ' active' : '') + '" data-html-id="' + esc(row.hcId) + '" style="padding-left:' + (5 + Math.min(row.depth, 8) * 8) + 'px"><span class="tag">&lt;' + esc(row.tag) + '&gt;</span><span class="clip">' + esc(row.text || row.hcId) + '</span></button>';
+  }
+  html += '</div></section>';
+  root.innerHTML = html;
+  const align = qs<HTMLSelectElement>('#hcAlign');
+  if (align) align.value = style?.textAlign || '';
+  root.querySelectorAll<HTMLButtonElement>('[data-html-id]').forEach(button => {
+    button.addEventListener('click', () => {
+      const element = contentDocument.querySelector('[data-hc-id="' + (button.dataset.htmlId || '').replace(/"/g, '\\"') + '"]');
+      if (element) selectHtmlElement(element);
+    });
+  });
+  qs<HTMLButtonElement>('#hcApplyStyle')?.addEventListener('click', () => { void applySelectedHtmlStyle(); });
+  qs<HTMLButtonElement>('#hcSelectParent')?.addEventListener('click', () => {
+    const parent = selected?.parentElement;
+    if (parent && parent !== contentDocument.body) selectHtmlElement(parent);
+  });
+  qs<HTMLButtonElement>('#hcSourceBtn')?.addEventListener('click', () => { if (state.editing) openSourceEditor({ pageId: state.editing.pageId, blockId: state.editing.blockId }); });
+  const color = qs<HTMLInputElement>('#hcColor');
+  const colorText = qs<HTMLInputElement>('#hcColorText');
+  color?.addEventListener('input', () => { if (colorText) colorText.value = color.value; });
+  colorText?.addEventListener('input', () => { if (color && /^#[0-9a-f]{6}$/i.test(colorText.value)) color.value = colorText.value; });
+  const bg = qs<HTMLInputElement>('#hcBg');
+  const bgText = qs<HTMLInputElement>('#hcBgText');
+  bg?.addEventListener('input', () => { if (bgText) bgText.value = bg.value; });
+  bgText?.addEventListener('input', () => { if (bg && /^#[0-9a-f]{6}$/i.test(bgText.value)) bg.value = bgText.value; });
+}
+
+async function applySelectedHtmlStyle(): Promise<void> {
+  const element = selectedHtmlElement();
+  if (!element || !state.editing) return;
+  const styles: Record<string, string> = {};
+  const color = qs<HTMLInputElement>('#hcColorText')?.value;
+  const bg = qs<HTMLInputElement>('#hcBgText')?.value;
+  const fontSize = qs<HTMLInputElement>('#hcFontSize')?.value;
+  const padding = qs<HTMLInputElement>('#hcPadding')?.value;
+  const align = qs<HTMLSelectElement>('#hcAlign')?.value;
+  if (color) styles.color = color;
+  if (bg) styles['background-color'] = bg;
+  if (fontSize) styles['font-size'] = fontSize + 'px';
+  if (padding) styles.padding = padding;
+  if (align) styles['text-align'] = align;
+  for (const [name, value] of Object.entries(styles)) (element as HTMLElement).style.setProperty(name, value);
+  const targetId = element.getAttribute('data-hc-id');
+  if (!targetId) return;
+  const op: HcOp = { op: 'html_patch', pageId: state.editing.pageId, ...(state.editing.blockId ? { blockId: state.editing.blockId } : {}), patches: [{ op: 'set_style', target: targetId, styles }] };
+  await applyOps([op], { refreshArtboard: false });
+  toast('Style patched', 'success');
+}
+
+function field(id: string, label: string, inputHtml: string): string {
+  return '<div class="field"><span>' + esc(label) + '</span>' + inputHtml + '</div>';
+}
+
+function renderInspector(): void {
+  if (state.editing) { renderHtmlInspector(); return; }
+  if (!state.doc) return;
+  const block = activeBlock();
+  if (block) { renderBlockInspector(); return; }
+  renderPageInspector();
+}
+
+function renderPageInspector(): void {
+  const root = el('inspectorPanel');
+  const page = activePage();
+  if (!page) { root.innerHTML = '<p class="empty-state">No canvas open.</p>'; return; }
+  const blocks = page.blocks || [];
+  let html = '<section class="inspector-section"><div class="inspector-title">Page</div>';
+  html += field('pageName', 'Name', '<input id="pageName" value="' + esc(page.name) + '">');
+  html += '<div class="field-row">' + field('pageWidth', 'Width', '<input id="pageWidth" type="number" value="' + page.width + '">') + field('pageHeight', 'Height', '<input id="pageHeight" type="number" value="' + page.height + '">') + '</div>';
+  html += '<div class="field"><span>Background</span><div class="swatch-row"><input id="pageBgPicker" type="color" value="' + esc(toHex(page.background)) + '"><input id="pageBg" value="' + esc(page.background) + '"></div></div>';
+  html += '<div class="field"><span>Mode</span><input readonly value="' + esc(page.mode === 'infinite' ? 'infinite canvas' : page.mode) + '"></div>';
+  html += '<div class="field"><span>Notes for agent</span><textarea id="pageNotes" rows="2">' + esc(page.notes || '') + '</textarea></div>';
+  html += '<div class="actions-row">';
+  if (page.mode === 'html') html += '<button id="pageSourceBtn" class="btn tiny">Edit HTML source</button>';
+  else if (page.mode !== 'whiteboard') html += '<button id="pageAddHtmlBtn" class="btn tiny">Add HTML block</button><button id="pageAddTextBtn" class="btn tiny">Add text</button>';
+  if (page.mode === 'infinite') html += '<button id="pageFitContentBtn" class="btn tiny">Fit content</button>';
+  if (page.mode === 'whiteboard') html += '<button id="pageWhiteboardDownload" class="btn tiny">Download .excalidraw</button>';
+  html += '<button id="pageSaveMasterBtn" class="btn tiny">Save as master</button>';
+  html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
+  html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Excalidraw whiteboard · freehand, shapes, arrows, text' : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
+  if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Esc exits. The Agent tab exposes the CLI protocol.</div>';
+  if (page.mode === 'infinite') html += '<div class="hint-card">Pan with the Hand tool or Space, zoom with Ctrl/Cmd + wheel or the zoom controls. Blocks can be placed anywhere and exports crop to content.</div>';
+  if (page.mode === 'whiteboard') html += '<div class="hint-card">The full Excalidraw toolbar is available inside this page. Use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for agent access.</div>';
+  html += '</section>';
+  root.innerHTML = html;
+  bindPageInspector(page);
+}
+
+function bindPageInspector(page: HcPage): void {
+  const applyPage = async (patch: Record<string, unknown>, refresh = false): Promise<void> => {
+    await applyOps([{ op: 'update_page', pageId: page.id, patch } as HcOp], { refreshArtboard: refresh });
+    renderPages();
+  };
+  el<HTMLInputElement>('pageName').addEventListener('change', event => { void applyPage({ name: (event.target as HTMLInputElement).value }); });
+  el<HTMLInputElement>('pageWidth').addEventListener('change', event => { void applyPage({ width: Math.max(100, Number((event.target as HTMLInputElement).value) || page.width) }, true); });
+  el<HTMLInputElement>('pageHeight').addEventListener('change', event => { void applyPage({ height: Math.max(100, Number((event.target as HTMLInputElement).value) || page.height) }, true); });
+  const bg = el<HTMLInputElement>('pageBg');
+  const picker = el<HTMLInputElement>('pageBgPicker');
+  picker.addEventListener('input', () => { bg.value = picker.value; });
+  bg.addEventListener('change', () => { picker.value = toHex(bg.value); void applyPage({ background: bg.value }, true); });
+  el<HTMLTextAreaElement>('pageNotes').addEventListener('change', event => { void applyPage({ notes: (event.target as HTMLTextAreaElement).value }); });
+  qs<HTMLButtonElement>('#pageSourceBtn')?.addEventListener('click', () => openSourceEditor({ pageId: page.id }));
+  qs<HTMLButtonElement>('#pageAddHtmlBtn')?.addEventListener('click', () => { void addBlock('html'); });
+  qs<HTMLButtonElement>('#pageAddTextBtn')?.addEventListener('click', () => { void addBlock('text'); });
+  qs<HTMLButtonElement>('#pageFitContentBtn')?.addEventListener('click', () => fitPage());
+  qs<HTMLButtonElement>('#pageWhiteboardDownload')?.addEventListener('click', () => downloadWhiteboardScene());
+  qs<HTMLButtonElement>('#pageSaveMasterBtn')?.addEventListener('click', () => openSaveMasterModal(page));
+  qs<HTMLButtonElement>('#pageDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); }); });
+}
+
+function renderBlockInspector(): void {
+  const block = activeBlock();
+  const page = activePage();
+  if (!block || !page) return;
+  const root = el('inspectorPanel');
+  let html = '<section class="inspector-section"><div class="inspector-title">Block · ' + esc(block.type) + '</div>';
+  html += field('blockName', 'Name', '<input id="blockName" value="' + esc(block.name || '') + '" placeholder="Optional label">');
+  html += '<div class="field-row">' + field('blockX', 'X', '<input id="blockX" type="number" value="' + block.x + '">') + field('blockY', 'Y', '<input id="blockY" type="number" value="' + block.y + '">') + '</div>';
+  html += '<div class="field-row">' + field('blockW', 'W', '<input id="blockW" type="number" value="' + block.w + '">') + field('blockH', 'H', '<input id="blockH" type="number" value="' + block.h + '">') + '</div>';
+  if (block.type === 'html') html += '<div class="hint-card">Double-click the block to edit HTML in place. Stable IDs stay attached to elements.</div>';
+  html += '<div class="actions-row">';
+  if (block.type === 'html') html += '<button id="blockEditHtmlBtn" class="btn tiny primary">Edit HTML</button><button id="blockSourceBtn" class="btn tiny">Source</button>';
+  if (block.type === 'markdown' || block.type === 'code' || block.type === 'text') html += '<button id="blockSourceBtn" class="btn tiny">Edit source</button>';
+  if (block.type === 'image') html += '<button id="blockImageBtn" class="btn tiny">Set image URL</button>';
+  html += '<button id="blockFrontBtn" class="btn tiny">Front</button><button id="blockBackBtn" class="btn tiny">Back</button><button id="blockDeleteBtn" class="btn tiny danger">Delete</button></div></section>';
+  html += '<section class="inspector-section"><div class="inspector-title">Style</div>';
+  if (block.type === 'text' || block.type === 'markdown') {
+    html += '<div class="field-row">' + field('blockFontSize', 'Font size', '<input id="blockFontSize" type="number" value="' + (block.style?.fontSize || 20) + '">') + field('blockColor', 'Color', '<input id="blockColor" type="color" value="' + esc(toHex(String(block.style?.color || '#1d232e'))) + '">') + '</div>';
+  }
+  if (block.type === 'shape' || block.type === 'html' || block.type === 'markdown') {
+    html += '<div class="field-row">' + field('blockFill', 'Fill', '<input id="blockFill" type="color" value="' + esc(toHex(String(block.style?.fill || '#f3e8ff'))) + '">') + field('blockStroke', 'Stroke', '<input id="blockStroke" type="color" value="' + esc(toHex(String(block.style?.stroke || '#a855f7'))) + '">') + '</div>';
+  }
+  html += '</section>';
+  root.innerHTML = html;
+  bindBlockInspector(block);
+}
+
+function bindBlockInspector(block: HcBlock): void {
+  const page = activePage();
+  if (!page) return;
+  const update = async (patch: Partial<HcBlock>, refresh = true): Promise<void> => {
+    await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch } as HcOp], { refreshArtboard: refresh });
+    renderInspector();
+  };
+  el<HTMLInputElement>('blockName').addEventListener('change', event => { void update({ name: (event.target as HTMLInputElement).value }, false); });
+  el<HTMLInputElement>('blockX').addEventListener('change', event => { void update({ x: Number((event.target as HTMLInputElement).value) || 0 }); });
+  el<HTMLInputElement>('blockY').addEventListener('change', event => { void update({ y: Number((event.target as HTMLInputElement).value) || 0 }); });
+  el<HTMLInputElement>('blockW').addEventListener('change', event => { void update({ w: Math.max(20, Number((event.target as HTMLInputElement).value) || block.w) }); });
+  el<HTMLInputElement>('blockH').addEventListener('change', event => { void update({ h: Math.max(20, Number((event.target as HTMLInputElement).value) || block.h) }); });
+  qs<HTMLButtonElement>('#blockEditHtmlBtn')?.addEventListener('click', () => enterHtmlEdit(page.id, block.id));
+  qs<HTMLButtonElement>('#blockSourceBtn')?.addEventListener('click', () => openSourceEditor({ pageId: page.id, blockId: block.id }));
+  qs<HTMLButtonElement>('#blockImageBtn')?.addEventListener('click', () => openImageModal(block));
+  qs<HTMLButtonElement>('#blockDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this block?').then(ok => { if (ok) void deleteBlock(page.id, block.id); }); });
+  qs<HTMLButtonElement>('#blockFrontBtn')?.addEventListener('click', () => { void update({ z: Math.max(...(page.blocks || []).map(item => item.z)) + 1 }); });
+  qs<HTMLButtonElement>('#blockBackBtn')?.addEventListener('click', () => { void update({ z: Math.min(...(page.blocks || []).map(item => item.z)) - 1 }); });
+  const fontSize = qs<HTMLInputElement>('#blockFontSize');
+  const color = qs<HTMLInputElement>('#blockColor');
+  const fill = qs<HTMLInputElement>('#blockFill');
+  const stroke = qs<HTMLInputElement>('#blockStroke');
+  if (fontSize) fontSize.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fontSize: Number(fontSize.value) || 20 } }); });
+  if (color) color.addEventListener('change', () => { void update({ style: { ...(block.style || {}), color: color.value } }); });
+  if (fill) fill.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fill: fill.value } }); });
+  if (stroke) stroke.addEventListener('change', () => { void update({ style: { ...(block.style || {}), stroke: stroke.value } }); });
+}
+
+function relativeTime(iso: string): string {
+  const delta = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(delta)) return 'unknown';
+  if (delta < 60_000) return 'just now';
+  if (delta < 3_600_000) return Math.round(delta / 60_000) + 'm ago';
+  if (delta < 86_400_000) return Math.round(delta / 3_600_000) + 'h ago';
+  return Math.round(delta / 86_400_000) + 'd ago';
+}
+
+function initials(value: string): string {
+  return value.split(/[\s_-]+/).filter(Boolean).slice(0, 2).map(part => part[0]!.toUpperCase()).join('') || 'A';
+}
+
+function renderPresence(): void {
+  const bar = el('presenceBar');
+  if (!bar) return;
+  const active = state.presence.filter(item => !item.stale);
+  bar.textContent = '';
+  if (!active.length) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  bar.title = active.map(item => item.actor + ' · ' + item.docTitle + (item.pageName ? ' / ' + item.pageName : '')).join('\n');
+  active.slice(0, 5).forEach(item => {
+    const avatar = document.createElement('span');
+    avatar.className = 'presence-avatar';
+    avatar.style.background = 'hsl(' + (item.actor.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360) + ', 55%, 58%)';
+    avatar.textContent = initials(item.actor);
+    bar.appendChild(avatar);
+  });
+  if (active.length > 5) {
+    const more = document.createElement('span');
+    more.className = 'presence-more';
+    more.textContent = '+' + (active.length - 5);
+    bar.appendChild(more);
+  }
+  bar.onclick = () => { state.tab = 'agent'; renderTabs(); renderAgent(); };
+}
+
+async function refreshPresence(): Promise<void> {
+  try {
+    const snapshot = await api<{ presence?: PresenceEntry[]; docs?: DocSummary[] }>('/api/state');
+    state.presence = snapshot.presence || [];
+    if (snapshot.docs) state.docs = snapshot.docs;
+    renderPresence();
+    renderAgent();
+    renderDocs();
+    const page = activePage();
+    if (page?.mode === 'whiteboard') positionWhiteboardCursors(page);
+  } catch { /* presence is best effort */ }
+}
+
+function renderAgent(): void {
+  const root = el('agentPanel');
+  const page = activePage();
+  const activeSessions = state.presence;
+  const context = {
+    workspace: boot.workspace,
+    active: state.doc && page ? { docId: state.doc.id, title: state.doc.title, revision: state.doc.revision, pageId: page.id, pageName: page.name, pageMode: page.mode, blockId: state.activeBlockId, selection: state.selectedHtmlId ? [state.selectedHtmlId] : [] } : null,
+    protocol: { cli: 'hcanvas', read: 'hcanvas read <doc> --format outline', write: 'hcanvas apply <doc> --ops-file ops.json --base-revision <rev>', propose: 'hcanvas propose <doc> ...' },
+  };
+  let html = '<section class="inspector-section"><div class="inspector-title">Live agents <span class="presence-count">' + activeSessions.filter(item => !item.stale).length + '</span></div>';
+  html += '<div class="presence-list">';
+  html += '<div class="presence-card human"><span class="presence-avatar" style="background:#1f2430">Y</span><div class="presence-copy"><strong>You · browser</strong><small>' + esc(page ? page.name : 'No page') + ' · active</small></div></div>';
+  for (const session of activeSessions) {
+    html += '<div class="presence-card' + (session.stale ? ' stale' : '') + '" data-session-id="' + esc(session.id) + '">' +
+      '<span class="presence-avatar" style="background:hsl(' + (session.actor.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360) + ',55%,58%)">' + esc(initials(session.actor)) + '</span>' +
+      '<div class="presence-copy"><strong>' + esc(session.actor) + '</strong><small>' + esc(session.docTitle) + (session.pageName ? ' / ' + esc(session.pageName) : '') + ' · ' + relativeTime(session.updatedAt) + '</small>' +
+      (session.selection && session.selection.length ? '<small class="presence-selection">selection: ' + esc(session.selection.join(', ')) + '</small>' : '') +
+      '</div><button class="presence-copy-btn" data-copy-session="' + esc(session.id) + '" title="Copy session id">⧉</button></div>';
+  }
+  if (!activeSessions.length) html += '<p class="empty-state">No agent sessions yet. Create one with <code>hcanvas sessions create</code>.</p>';
+  html += '</div><div class="agent-copy"><button id="refreshPresenceBtn" class="btn tiny">Refresh presence</button></div></section>';
+  const history = state.doc?.history?.slice(-8).reverse() || [];
+  if (history.length) {
+    html += '<section class="inspector-section"><div class="inspector-title">Recent activity</div><div class="history-list">';
+    for (const entry of history) {
+      html += '<div class="history-row"><span class="history-actor">' + esc(entry.actor) + '</span><span class="history-summary">' + esc(entry.summary) + '</span><span class="history-time">rev ' + entry.revision + ' · ' + relativeTime(entry.createdAt) + '</span></div>';
+    }
+    html += '</div></section>';
+  }
+  html += '<section class="inspector-section"><div class="inspector-title">Agent context</div><div class="agent-block">' + esc(JSON.stringify(context, null, 2)) + '</div><div class="agent-copy"><button id="copyContextBtn" class="btn tiny">Copy context JSON</button><button id="refreshAgentBtn" class="btn tiny">Refresh</button></div></section>';
+  if (state.doc) html += '<section class="inspector-section"><div class="inspector-title">CLI</div><div class="hint-card"><code>hcanvas sessions create ' + esc(state.doc.id) + ' --actor claude-code</code><br><br><code>export HCANVAS_SESSION=&lt;sessionId&gt;</code><br><br><code>hcanvas context --json</code><br><br><code>hcanvas read ' + esc(state.doc.id) + ' --format outline</code><br><br><code>hcanvas apply ' + esc(state.doc.id) + ' --ops-file ops.json --base-revision ' + state.doc.revision + '</code><br><br>Read first and pass the returned revision. Sessions heartbeat automatically on context/read/apply.</div></section>';
+  root.innerHTML = html;
+  qs<HTMLButtonElement>('#copyContextBtn')?.addEventListener('click', () => { void copyText(JSON.stringify(context, null, 2)); });
+  qs<HTMLButtonElement>('#refreshAgentBtn')?.addEventListener('click', () => { renderAgent(); toast('Context refreshed', 'success'); });
+  qs<HTMLButtonElement>('#refreshPresenceBtn')?.addEventListener('click', () => { void refreshPresence(); });
+  root.querySelectorAll<HTMLButtonElement>('[data-copy-session]').forEach(button => {
+    button.addEventListener('click', event => { event.stopPropagation(); void copyText(button.dataset.copySession || ''); });
+  });
+}
+
+
+function renderCopilot(): void {
+  const root = el('copilotPanel');
+  if (!root) return;
+  let html = '<section class="inspector-section copilot-section"><div class="copilot-head"><div><div class="inspector-title">Canvas Copilot</div><small class="muted">Chat with an agent that can read and edit this canvas.</small></div><span class="copilot-badge ' + (state.copilotConfigured ? 'ready' : 'setup') + '">' + (state.copilotConfigured ? esc(state.copilotModel || 'ready') : 'setup needed') + '</span></div>';
+  if (state.copilotConfigured === false) {
+    html += '<div class="hint-card">Configure an OpenAI-compatible model before using Copilot:<br><br><code>HCANVAS_LLM_BASE_URL</code><br><code>HCANVAS_LLM_API_KEY</code><br><code>HCANVAS_LLM_MODEL</code><br><br>or create <code>&lt;workspace&gt;/agent.json</code> with <code>baseUrl</code>, <code>apiKey</code>, <code>model</code>. Restart the app after setting environment variables.</div>';
+  }
+  html += '<div id="copilotLog" class="copilot-log">';
+  if (!state.copilotMessages.length) {
+    html += '<div class="copilot-welcome"><div class="copilot-mark">H</div><strong>What should we build?</strong><p>Ask Copilot to improve this page, draft a deck section, or turn notes into a whiteboard — it edits the same document you see.</p><div class="copilot-suggestions">';
+    for (const suggestion of ['Improve this page', 'Add a summary section', 'Make this more visual']) html += '<button type="button" data-copilot-prompt="' + esc(suggestion) + '">' + esc(suggestion) + '</button>';
+    html += '</div></div>';
+  }
+  for (const message of state.copilotMessages) {
+    html += '<div class="copilot-message ' + message.role + (message.error ? ' error' : '') + '"><div class="copilot-role">' + (message.role === 'user' ? 'You' : 'Copilot') + '</div><div class="copilot-bubble">' + esc(message.content) + '</div>';
+    if (message.steps?.length) {
+      html += '<div class="copilot-steps">';
+      for (const step of message.steps) {
+        if (step.type === 'tool') html += '<span class="copilot-step tool">' + esc(step.name || 'tool') + '</span>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  if (state.copilotBusy) html += '<div class="copilot-message assistant"><div class="copilot-role">Copilot</div><div class="copilot-bubble thinking"><span class="pulse-dot"></span> Thinking and editing…</div></div>';
+  html += '</div>';
+  html += '<div class="copilot-compose"><textarea id="copilotInput" rows="3" placeholder="Ask Copilot to change this canvas…"' + (state.copilotConfigured === false ? ' disabled' : '') + '></textarea><div class="copilot-compose-row"><small>Ctrl/Cmd + Enter to send</small><button id="copilotSendBtn" class="btn primary" ' + (state.copilotConfigured === false || state.copilotBusy ? 'disabled' : '') + '>Send ↑</button></div></div></section>';
+  root.innerHTML = html;
+  const input = qs<HTMLTextAreaElement>('#copilotInput');
+  const send = (): void => { void sendCopilot(input?.value || ''); };
+  qs<HTMLButtonElement>('#copilotSendBtn')?.addEventListener('click', send);
+  input?.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); send(); }
+  });
+  root.querySelectorAll<HTMLButtonElement>('[data-copilot-prompt]').forEach(button => button.addEventListener('click', () => { void sendCopilot(button.dataset.copilotPrompt || ''); }));
+}
+
+async function sendCopilot(raw: string): Promise<void> {
+  const prompt = raw.trim();
+  if (!prompt || state.copilotBusy || !state.doc) return;
+  state.copilotMessages.push({ role: 'user', content: prompt });
+  state.copilotBusy = true;
+  renderCopilot();
+  try {
+    const result = await api<{ reply: string; steps?: CopilotStep[]; changed?: boolean }>('/api/agent/chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        docId: state.doc.id,
+        pageId: state.activePageId,
+        messages: state.copilotMessages.filter(message => !message.error).map(message => ({ role: message.role, content: message.content })),
+      }),
+    });
+    state.copilotMessages.push({ role: 'assistant', content: result.reply, steps: result.steps });
+    if (result.changed) {
+      const latest = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id);
+      state.doc = latest.doc;
+      renderAll();
+      toast('Copilot updated the canvas', 'success');
+    }
+  } catch (error) {
+    state.copilotMessages.push({ role: 'assistant', content: error instanceof Error ? error.message : String(error), error: true });
+    toast('Copilot failed', 'error');
+  } finally {
+    state.copilotBusy = false;
+    renderCopilot();
+  }
+}
+
+function renderProposals(): void {
+  const root = el('proposalsPanel');
+  if (!state.doc) return;
+  const proposals = state.doc.proposals;
+  const pending = proposals.filter(proposal => proposal.status === 'pending');
+  const badge = el('proposalCount');
+  badge.textContent = String(pending.length);
+  badge.classList.toggle('hidden', pending.length === 0);
+  if (!proposals.length) { root.innerHTML = '<p class="empty-state">No proposals yet. Agents can submit changes with <code>hcanvas propose</code>.</p>'; return; }
+  let html = '';
+  for (const proposal of proposals.slice().reverse()) {
+    html += '<div class="proposal-card"><strong>' + esc(proposal.intent) + '</strong><div class="proposal-meta">' + esc(proposal.actor) + ' · base rev ' + proposal.baseRevision + ' · ' + esc(proposal.status) + '</div><div class="proposal-ops">' + esc(JSON.stringify(proposal.ops, null, 2)).slice(0, 1200) + '</div>';
+    if (proposal.status === 'pending') html += '<div class="proposal-actions"><button class="btn tiny primary" data-accept="' + esc(proposal.id) + '">Accept</button><button class="btn tiny" data-reject="' + esc(proposal.id) + '">Reject</button></div>';
+    if (proposal.conflict) html += '<p class="inspector-note">Conflict: ' + esc(proposal.conflict) + '</p>';
+    html += '</div>';
+  }
+  root.innerHTML = html;
+  root.querySelectorAll<HTMLButtonElement>('[data-accept]').forEach(button => button.addEventListener('click', () => { void resolveProposal(button.dataset.accept || '', true); }));
+  root.querySelectorAll<HTMLButtonElement>('[data-reject]').forEach(button => button.addEventListener('click', () => { void resolveProposal(button.dataset.reject || '', false); }));
+}
+
+async function resolveProposal(proposalId: string, accept: boolean): Promise<void> {
+  if (!state.doc) return;
+  try {
+    const result = await api<{ doc: HcDocument; conflict?: string }>('/api/docs/' + state.doc.id + '/proposals/' + proposalId + '/' + (accept ? 'accept' : 'reject'), { method: 'POST', body: JSON.stringify({ actor: 'human' }) });
+    state.doc = result.doc;
+    await loadDocs();
+    renderAll();
+    toast(result.conflict ? 'Proposal conflicted: ' + result.conflict : accept ? 'Proposal accepted' : 'Proposal rejected', result.conflict ? 'error' : 'success');
+  } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
+}
+
+function connectEvents(): void {
+  try {
+    const source = new EventSource('/api/events?token=' + encodeURIComponent(boot.token));
+    source.addEventListener('canvas', event => {
+      if (Date.now() < state.ignoreEventsUntil) return;
+      let payload: Record<string, unknown> = {};
+      try { payload = JSON.parse((event as MessageEvent).data) as Record<string, unknown>; } catch { return; }
+      if (payload.type === 'doc.changed' && payload.docId === state.doc?.id) {
+        if (state.editing) { toast('Canvas changed elsewhere. Exit HTML edit to reload.', 'info'); return; }
+        void reloadActiveDoc();
+      }
+      if (payload.type === 'session.changed') {
+        void refreshPresence();
+      }
+      if ((payload.type === 'proposal.created' || payload.type === 'proposal.resolved') && state.doc) {
+        void api<{ doc: HcDocument }>('/api/docs/' + state.doc.id).then(result => { state.doc = result.doc; renderProposals(); renderAll(); }).catch(() => undefined);
+      }
+    });
+  } catch { /* SSE optional */ }
+}
+
+async function deletePage(pageId: string): Promise<void> {
+  const result = await applyOps([{ op: 'delete_page', pageId }], { refreshArtboard: false });
+  if (!result) return;
+  state.activePageId = result.pages[0]?.id || null;
+  state.activeBlockId = null;
+  renderAll();
+}
+
+async function deleteActiveBlock(): Promise<void> {
+  const page = activePage();
+  if (!page || !state.activeBlockId) return;
+  await deleteBlock(page.id, state.activeBlockId);
+}
+
+async function deleteBlock(pageId: string, blockId: string): Promise<void> {
+  state.activeBlockId = null;
+  await applyOps([{ op: 'delete_block', pageId, blockId }], { refreshArtboard: true });
+  renderInspector();
+}
+
+async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}): Promise<void> {
+  const page = activePage();
+  if (!page) return;
+  if (page.mode === 'html') { toast('Add blocks on a canvas or infinite page, not an HTML page.', 'error'); return; }
+  const z = Math.max(0, ...(page.blocks || []).map(block => block.z)) + 1;
+  const center = viewportWorldCenter();
+  const startX = page.mode === 'infinite' ? Math.max(0, snapCoordinate(center.x - 210)) : Math.max(0, Math.round(page.width / 2 - 210));
+  const startY = page.mode === 'infinite' ? Math.max(0, snapCoordinate(center.y - 120)) : Math.max(0, Math.round(page.height / 2 - 120));
+  const block: HcBlock = {
+    id: genId('block'), type, x: startX, y: startY, w: 420, h: 240, z, name: type + ' block',
+    ...(type === 'html' ? { html: '<div style="box-sizing:border-box;height:100%;padding:28px;border:1px solid #e7e0d2;border-radius:18px;background:#fffdf8;font-family:Inter,sans-serif;color:#2e2a24"><h2 style="margin:0 0 8px;font-family:Georgia,serif;font-weight:500;font-size:28px;letter-spacing:-.03em">New HTML block</h2><p style="margin:0;font-size:15px;line-height:1.6;color:#655e52">Double-click to edit text directly.</p></div>' } : {}),
+    ...(type === 'text' ? { text: 'New text block', style: { fontSize: 30, fontWeight: 600, color: '#1d232e' } } : {}),
+    ...(type === 'markdown' ? { markdown: '## New markdown block\n\nWrite **markdown** here.', style: { fill: '#ffffff', radius: 16 } } : {}),
+    ...(type === 'code' ? { code: 'const answer = 42;', language: 'ts', style: { fill: '#171923', color: '#e2e8f0', radius: 14 } } : {}),
+    ...(type === 'image' ? { src: 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=1200&q=80', alt: 'Image' } : {}),
+    ...(type === 'shape' ? { shape: 'rect', style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 16 } } : {}),
+    ...extra,
+  };
+  const result = await applyOps([{ op: 'add_block', pageId: page.id, block }], { refreshArtboard: true });
+  if (result) { state.activeBlockId = block.id; renderArtboard(); renderInspector(); }
+}
+
+function openImageModal(block?: HcBlock): void {
+  const page = activePage();
+  if (!page) return;
+  const html = '<div class="modal small"><div class="modal-head"><div><strong>' + (block ? 'Set image URL' : 'Add image block') + '</strong><small>Use a public URL or data URL.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>Image URL</span><input id="imageUrlInput" value="' + esc(block?.src || '') + '" placeholder="https://..."></div><div class="field"><span>Alt text</span><input id="imageAltInput" value="' + esc(block?.alt || '') + '"></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="imageSaveBtn" class="btn primary">Apply</button></div></div>';
+  openModal(html);
+  qs<HTMLButtonElement>('#imageSaveBtn')?.addEventListener('click', () => {
+    const src = qs<HTMLInputElement>('#imageUrlInput')?.value || '';
+    const alt = qs<HTMLInputElement>('#imageAltInput')?.value || '';
+    closeModal();
+    if (block) void applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { src, alt } }], { refreshArtboard: true }).then(renderInspector);
+    else void addBlock('image', { src, alt, w: 420, h: 260 });
+  });
+}
+
+function openSaveMasterModal(page: HcPage): void {
+  const html = '<div class="modal small"><div class="modal-head"><div><strong>Save page as master</strong><small>Reuse this layout across documents in this workspace.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>Master name</span><input id="masterNameInput" value="' + esc(page.name) + '" placeholder="e.g. Title slide"></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="saveMasterBtn" class="btn primary">Save master</button></div></div>';
+  openModal(html);
+  qs<HTMLButtonElement>('#saveMasterBtn')?.addEventListener('click', async () => {
+    if (!state.doc) return;
+    const name = qs<HTMLInputElement>('#masterNameInput')?.value || page.name;
+    try {
+      closeModal();
+      await api('/api/masters', { method: 'POST', body: JSON.stringify({ docId: state.doc.id, pageId: page.id, name }) });
+      await loadMasters();
+      toast('Page saved as master', 'success');
+    } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
+  });
+}
+
+function masterPreviewHtml(master: MasterSummary): string {
+  const ratio = Math.min(150 / master.width, 84 / master.height);
+  const width = master.width * ratio;
+  const height = master.height * ratio;
+  if (master.html) {
+    return '<div class="master-thumb"><iframe sandbox srcdoc="' + esc(master.html) + '" style="width:' + master.width + 'px;height:' + master.height + 'px;transform:scale(' + ratio + ');transform-origin:top left;border:0;pointer-events:none" tabindex="-1"></iframe><span class="master-thumb-label">' + esc(master.mode) + '</span></div>';
+  }
+  if (master.blocks?.length) {
+    const page: HcPage = { id: 'master_preview', name: master.name, mode: master.mode as HcPage['mode'], width: master.width, height: master.height, background: master.background || '#ffffff', blocks: master.blocks };
+    const source = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}</style></head><body>' + renderPresentCanvasHtml(page) + '</body></html>';
+    return '<div class="master-thumb"><iframe sandbox srcdoc="' + esc(source) + '" style="width:' + master.width + 'px;height:' + master.height + 'px;transform:scale(' + ratio + ');transform-origin:top left;border:0;pointer-events:none" tabindex="-1"></iframe><span class="master-thumb-label">' + esc(master.mode) + '</span></div>';
+  }
+  return '<div class="master-thumb placeholder" style="width:' + width + 'px;height:' + height + 'px"><span>' + esc(master.mode === 'whiteboard' ? 'Whiteboard scene' : 'Page master') + '</span></div>';
+}
+
+async function openAddPageModal(): Promise<void> {
+  if (!state.doc) return;
+  await loadMasters();
+  let html = '<div class="modal"><div class="modal-head"><div><strong>Add a page</strong><small>HTML pages are directly editable; canvas pages accept blocks.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="preset-grid">';
+  for (const preset of PAGE_PRESETS) html += '<button type="button" class="preset-btn" data-preset="' + esc(preset.id) + '"><strong>' + esc(preset.title) + '</strong><small>' + esc(preset.hint) + '</small></button>';
+  html += '</div>';
+  if (state.masters.length) {
+    html += '<div class="masters-head"><strong>My page masters</strong><small>Reusable layouts saved from this workspace</small></div><div class="masters-grid">';
+    for (const master of state.masters) html += '<div class="master-card">' + masterPreviewHtml(master) + '<div class="master-info"><strong>' + esc(master.name) + '</strong><small>' + esc(master.mode) + ' · ' + master.width + '×' + master.height + '</small></div><div class="master-actions"><button type="button" class="btn tiny primary" data-master="' + esc(master.id) + '">Use</button><button type="button" class="btn tiny danger" data-delete-master="' + esc(master.id) + '">Delete</button></div></div>';
+    html += '</div>';
+  } else {
+    html += '<div class="hint-card" style="margin-top:14px">Save any page as a reusable master from the Page inspector, then it appears here.</div>';
+  }
+  html += '</div><div class="modal-foot"><button class="btn" data-close>Cancel</button></div></div>';
+  openModal(html);
+  document.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach(button => {
+    button.addEventListener('click', () => {
+      const preset = PAGE_PRESETS.find(item => item.id === button.dataset.preset);
+      if (!preset) return;
+      closeModal();
+      void createPage(preset);
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-master]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const masterId = button.dataset.master;
+      if (!masterId || !state.doc) return;
+      try {
+        closeModal();
+        const result = await api<{ doc: HcDocument; page: HcPage }>('/api/masters/' + masterId + '/pages', {
+          method: 'POST',
+          body: JSON.stringify({ docId: state.doc.id, baseRevision: state.doc.revision, actor: 'human' }),
+        });
+        await loadDocs();
+        await openDoc(result.doc.id, result.page.id);
+        toast('Page created from master', 'success');
+      } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
+    });
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-delete-master]').forEach(button => {
+    button.addEventListener('click', async event => {
+      event.stopPropagation();
+      const masterId = button.dataset.deleteMaster;
+      if (!masterId) return;
+      const master = state.masters.find(item => item.id === masterId);
+      const ok = await confirmDialog('Delete master "' + (master?.name || 'this master') + '"?');
+      if (!ok) return;
+      try {
+        await api('/api/masters/' + masterId, { method: 'DELETE' });
+        await loadMasters();
+        await openAddPageModal();
+        toast('Master deleted', 'success');
+      } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
+    });
+  });
+}
+
+async function createPage(preset: typeof PAGE_PRESETS[number]): Promise<void> {
+  if (!state.doc) return;
+  const page: HcPage = {
+    id: genId('page'), name: preset.title, mode: preset.mode,
+    width: preset.width, height: preset.height, background: preset.background,
+    ...(preset.mode === 'html' ? { html: preset.template ? pageTemplateHtml(preset.template, '') : starterHtml(preset.title) } : { blocks: preset.template?.startsWith('canvas-') ? canvasTemplateBlocks(preset.template, preset.width, preset.height) : [] }),
+  };
+  const result = await applyOps([{ op: 'add_page', page }], { refreshArtboard: false });
+  if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); }
+}
+
+function openNewDocModal(): void {
+  let html = '<div class="modal small"><div class="modal-head"><div><strong>New canvas</strong><small>Start with a page preset.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>Title</span><input id="newDocTitle" value="Untitled canvas"></div><div class="field"><span>First page</span><select id="newDocPreset">';
+  for (const preset of PAGE_PRESETS) html += '<option value="' + esc(preset.id) + '">' + esc(preset.title) + ' · ' + esc(preset.hint) + '</option>';
+  html += '</select></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="createDocBtn" class="btn primary">Create</button></div></div>';
+  openModal(html);
+  qs<HTMLButtonElement>('#createDocBtn')?.addEventListener('click', async () => {
+    const title = qs<HTMLInputElement>('#newDocTitle')?.value || 'Untitled canvas';
+    const presetId = qs<HTMLSelectElement>('#newDocPreset')?.value || 'slide-html';
+    const preset = PAGE_PRESETS.find(item => item.id === presetId);
+    closeModal();
+    try {
+      const result = await api<{ doc: HcDocument }>('/api/docs', { method: 'POST', body: JSON.stringify({ title, preset: preset ? { width: preset.width, height: preset.height, background: preset.background, title: preset.title } : undefined }) });
+      await loadDocs(); await openDoc(result.doc.id);
+    } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
+  });
+}
+
+function openSourceEditor(target: { pageId: string; blockId?: string }): void {
+  const page = state.doc?.pages.find(item => item.id === target.pageId);
+  if (!page) return;
+  if (target.blockId) {
+    const block = page.blocks?.find(item => item.id === target.blockId);
+    if (!block) return;
+    const kind = block.type;
+    const value = kind === 'markdown' ? (block.markdown || '') : kind === 'code' ? (block.code || '') : kind === 'text' ? (block.text || '') : (block.html || '');
+    openCodeModal({
+      title: block.name || kind + ' block', kind, value,
+      language: kind === 'markdown' ? 'markdown' : kind === 'code' ? 'code' : kind === 'text' ? 'text' : 'html',
+      save: async next => {
+        const op: HcOp = kind === 'markdown' ? { op: 'set_block_markdown', pageId: page.id, blockId: block.id, markdown: next }
+          : kind === 'code' ? { op: 'set_block_code', pageId: page.id, blockId: block.id, code: next }
+          : kind === 'text' ? { op: 'set_block_text', pageId: page.id, blockId: block.id, text: next }
+          : { op: 'set_block_html', pageId: page.id, blockId: block.id, html: next };
+        await applyOps([op], { refreshArtboard: true });
+      },
+    });
+    return;
+  }
+  openCodeModal({ title: page.name + ' · HTML source', kind: 'html', value: page.html || '', language: 'html', save: async next => { await applyOps([{ op: 'set_page_html', pageId: page.id, html: next }], { refreshArtboard: true }); } });
+}
+
+function openCodeModal(options: { title: string; kind: string; value: string; language: string; save: (next: string) => Promise<void> }): void {
+  const modalHtml = '<div class="modal split"><div class="modal-head"><div><strong>' + esc(options.title) + '</strong><small>' + esc(options.kind.toUpperCase()) + ' · source and live preview</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="editor-pane"><span>Source</span><div id="codeEditorHost" class="editor-host"></div></div><div class="editor-pane"><span>Preview</span><div class="preview-host"><iframe id="codePreview" sandbox="allow-scripts"></iframe></div></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="saveCodeBtn" class="btn primary">Save changes</button></div></div>';
+  openModal(modalHtml);
+  state.sourceModalOpen = true;
+  const host = el('codeEditorHost');
+  const extensions = [basicSetup, EditorView.lineWrapping, oneDark];
+  if (options.language === 'html') extensions.push(htmlLang());
+  const view = new EditorView({ doc: options.value, extensions, parent: host });
+  const preview = el<HTMLIFrameElement>('codePreview');
+  const updatePreview = debounce(() => { preview.srcdoc = previewHtmlFor(options.kind, view.state.doc.toString()); }, 280);
+  preview.srcdoc = previewHtmlFor(options.kind, options.value);
+  view.dom.addEventListener('keyup', updatePreview);
+  const originalClose = closeModal;
+  const realClose = (): void => { view.destroy(); state.sourceModalOpen = false; originalClose(); };
+  (window as unknown as { __hcCloseModal?: () => void }).__hcCloseModal = realClose;
+  qs<HTMLButtonElement>('#saveCodeBtn')?.addEventListener('click', async () => {
+    const next = view.state.doc.toString();
+    realClose();
+    try { await options.save(next); toast('Saved', 'success'); } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
+  });
+  document.querySelectorAll<HTMLElement>('[data-close]').forEach(button => button.addEventListener('click', () => realClose()));
+}
+
+function previewHtmlFor(kind: string, value: string): string {
+  if (kind === 'html') return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}</style></head><body>' + value + '</body></html>';
+  if (kind === 'markdown') return '<!doctype html><html><head><meta charset="utf-8"><style>body{font:16px/1.6 Inter,sans-serif;padding:24px;color:#334155}h1,h2,h3{font-family:Georgia,serif}code{background:#f1f5f9;padding:1px 4px;border-radius:4px}</style></head><body>' + String(marked.parse(value, { async: false })) + '</body></html>';
+  return '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:16px;background:#171923;color:#e2e8f0;font:12px/1.6 ui-monospace,Consolas,monospace;white-space:pre-wrap}</style></head><body>' + esc(value) + '</body></html>';
+}
+
+function openModal(html: string): void {
+  closeModal();
+  const root = el('modalRoot');
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = html;
+  backdrop.addEventListener('click', event => { if (event.target === backdrop) closeModal(); });
+  root.appendChild(backdrop);
+  document.body.classList.add('modal-open');
+  backdrop.querySelectorAll<HTMLElement>('[data-close]').forEach(button => button.addEventListener('click', () => closeModal()));
+}
+
+function closeModal(): void {
+  if (state.sourceModalOpen) {
+    const custom = (window as unknown as { __hcCloseModal?: () => void }).__hcCloseModal;
+    if (custom) { custom(); return; }
+  }
+  el('modalRoot').textContent = '';
+  document.body.classList.remove('modal-open');
+}
+
+function confirmDialog(message: string): Promise<boolean> {
+  return new Promise(resolve => {
+    const html = '<div class="modal small"><div class="modal-head"><div><strong>Confirm</strong><small>' + esc(message) + '</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-foot"><button class="btn" id="confirmCancel">Cancel</button><button class="btn primary" id="confirmOk">Confirm</button></div></div>';
+    openModal(html);
+    let settled = false;
+    const finish = (value: boolean): void => { if (settled) return; settled = true; closeModal(); resolve(value); };
+    qs<HTMLButtonElement>('#confirmCancel')?.addEventListener('click', () => finish(false));
+    qs<HTMLButtonElement>('#confirmOk')?.addEventListener('click', () => finish(true));
+    document.querySelectorAll<HTMLElement>('[data-close]').forEach(button => button.addEventListener('click', () => finish(false)));
+  });
+}
+
+function toggleExportMenu(force?: boolean): void {
+  const menu = el('exportMenu');
+  const show = force === undefined ? menu.classList.contains('hidden') : force;
+  menu.classList.toggle('hidden', !show);
+  el('exportBtn').setAttribute('aria-expanded', String(show));
+}
+
+async function exportCurrent(format: string, options: { bleedMm?: number; cropMarks?: boolean } = {}): Promise<void> {
+  if (!state.doc) return;
+  const page = activePage();
+  if (format === 'scene') {
+    if (!page || page.mode !== 'whiteboard') { toast('Switch to a whiteboard page to download its scene.', 'error'); return; }
+    downloadWhiteboardScene();
+    return;
+  }
+  if (page?.mode === 'whiteboard' && !['html', 'pdf', 'png', 'pptx', 'pptx-editable'].includes(format)) {
+    toast('Whiteboard pages render through Excalidraw for HTML/PDF/PNG/PPTX.', 'info');
+    return;
+  }
+  try {
+    toast('Rendering ' + format.toUpperCase() + '…', 'info');
+    const result = await api<{ downloadUrl?: string; path?: string; format: string }>('/api/export', { method: 'POST', body: JSON.stringify({ docId: state.doc.id, format, pageId: format === 'pptx' || format === 'pptx-editable' ? undefined : page?.id, bleedMm: options.bleedMm || undefined, cropMarks: options.cropMarks || undefined }) });
+    if (result.downloadUrl) {
+      const anchor = document.createElement('a');
+      anchor.href = result.downloadUrl + (result.downloadUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(boot.token);
+      anchor.download = '';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor); anchor.click();
+      setTimeout(() => anchor.remove(), 5000);
+      toast('Export ready: ' + (result.path || format), 'success');
+    } else toast('Export failed', 'error');
+  } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
+}
+
+let presentWhiteboardHandle: { unmount: () => void; getApi: () => unknown } | null = null;
+
+function unmountPresentWhiteboard(): void {
+  if (presentWhiteboardHandle) {
+    try { presentWhiteboardHandle.unmount(); } catch { /* ignore */ }
+    presentWhiteboardHandle = null;
+  }
+}
+
+function openPresent(): void {
+  if (!state.doc) return;
+  state.presenting = true;
+  state.presentIndex = Math.max(0, state.doc.pages.findIndex(page => page.id === state.activePageId));
+  renderPresent();
+}
+function closePresent(): void {
+  unmountPresentWhiteboard();
+  state.presenting = false;
+  const root = el('presentRoot');
+  root.classList.add('hidden');
+  root.textContent = '';
+}
+function nextPresent(delta: number): void {
+  if (!state.doc) return;
+  state.presentIndex = Math.max(0, Math.min(state.doc.pages.length - 1, state.presentIndex + delta));
+  renderPresent();
+}
+function renderPresent(): void {
+  unmountPresentWhiteboard();
+  const doc = state.doc;
+  if (!doc) return;
+  const page = doc.pages[state.presentIndex];
+  if (!page) return;
+  const root = el('presentRoot');
+  root.classList.remove('hidden');
+  root.innerHTML = '<div class="present-stage"><div id="presentPage" class="present-page"></div></div><div id="presentNotes" class="present-notes hidden"></div><div class="present-bar"><span>' + esc(doc.title) + ' · ' + esc(page.name) + ' · ' + (state.presentIndex + 1) + ' / ' + doc.pages.length + '</span><span><button id="presentNotesBtn" class="btn">Notes</button> <button id="presentPrev" class="btn">← Previous</button> <button id="presentNext" class="btn">Next →</button> <button id="presentClose" class="btn">Exit</button></span></div>';
+  qs<HTMLButtonElement>('#presentPrev')?.addEventListener('click', () => nextPresent(-1));
+  qs<HTMLButtonElement>('#presentNext')?.addEventListener('click', () => nextPresent(1));
+  qs<HTMLButtonElement>('#presentClose')?.addEventListener('click', () => closePresent());
+  qs<HTMLButtonElement>('#presentNotesBtn')?.addEventListener('click', () => {
+    const notes = el('presentNotes');
+    notes.classList.toggle('hidden');
+    notes.textContent = page.notes || 'No speaker notes for this page.';
+  });
+  el('presentNotes').textContent = page.notes || '';
+  const presentPage = page.mode === 'infinite' ? (() => {
+    const metrics = pageMetrics(page);
+    const content = metrics.content;
+    if (!content) return { ...page, width: 1280, height: 720 };
+    const padding = 80;
+    return {
+      ...page,
+      width: Math.max(640, Math.ceil(content.maxX - content.minX) + padding * 2),
+      height: Math.max(480, Math.ceil(content.maxY - content.minY) + padding * 2),
+      blocks: (page.blocks || []).map(block => ({ ...block, x: block.x - content.minX + padding, y: block.y - content.minY + padding })),
+    };
+  })() : page;
+  const host = el('presentPage');
+  host.style.width = presentPage.width + 'px';
+  host.style.height = presentPage.height + 'px';
+  if (page.mode === 'html') {
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.srcdoc = page.html || '';
+    host.appendChild(iframe);
+  } else if (page.mode === 'whiteboard') {
+    host.classList.add('present-whiteboard-host');
+    host.innerHTML = '<div class="whiteboard-loading" style="height:100%;display:grid;place-items:center;color:#8a8276;font:13px Inter,sans-serif"><span class="pulse-dot"></span> Preparing whiteboard…</div>';
+    const presentPageId = page.id;
+    void loadExcalidrawScript().then(entry => {
+      if (!state.presenting || !state.doc || state.doc.pages[state.presentIndex]?.id !== presentPageId) return;
+      host.innerHTML = '';
+      const scene = page.scene || { elements: [], appState: {}, files: {} };
+      const mount = entry.mount as (element: HTMLElement, options: Record<string, unknown>) => { unmount: () => void; getApi: () => unknown; getScene: () => { elements: unknown[] } };
+      const handle = mount(host, {
+        initialData: {
+          elements: scene.elements || [],
+          appState: { ...(scene.appState || {}), viewBackgroundColor: page.background || '#ffffff' },
+          files: scene.files || {},
+          scrollToContent: true,
+        },
+        theme: 'light',
+        viewModeEnabled: true,
+        zenModeEnabled: true,
+        onReady: () => {
+          setTimeout(() => {
+            try {
+              const api = presentWhiteboardHandle?.getApi() as { scrollToContent?: (target?: unknown, opts?: unknown) => void } | undefined;
+              const handleWithScene = presentWhiteboardHandle as unknown as { getScene?: () => { elements: unknown[] } } | null;
+              api?.scrollToContent?.(handleWithScene?.getScene?.().elements, { fitToContent: true, animate: false });
+            } catch { /* optional */ }
+          }, 300);
+        },
+      });
+      presentWhiteboardHandle = handle;
+    }).catch(error => {
+      host.innerHTML = '<div class="whiteboard-error">' + esc(error instanceof Error ? error.message : String(error)) + '</div>';
+    });
+  } else host.innerHTML = renderPresentCanvasHtml(presentPage);
+  const stage = qs<HTMLElement>('.present-stage');
+  if (stage) {
+    const rect = stage.getBoundingClientRect();
+    const scale = Math.min((rect.width - 40) / presentPage.width, (rect.height - 40) / presentPage.height);
+    host.style.transform = 'scale(' + scale + ')';
+  }
+}
+function renderPresentCanvasHtml(page: HcPage): string {
+  let html = '<div style="position:relative;width:100%;height:100%;background:' + esc(page.background) + ';overflow:hidden">';
+  for (const block of [...(page.blocks || [])].sort((left, right) => left.z - right.z)) {
+    const style = 'position:absolute;left:' + block.x + 'px;top:' + block.y + 'px;width:' + block.w + 'px;height:' + block.h + 'px;overflow:hidden;border-radius:' + esc(String(block.style?.radius || 0)) + 'px;';
+    let inner = '';
+    if (block.type === 'html') inner = block.html || '';
+    else if (block.type === 'text') inner = '<div style="padding:4px;font-size:' + (block.style?.fontSize || 20) + 'px;font-weight:' + (block.style?.fontWeight || 400) + ';color:' + esc(String(block.style?.color || '#1d232e')) + ';white-space:pre-wrap">' + esc(block.text || '') + '</div>';
+    else if (block.type === 'markdown') inner = '<div style="padding:22px 24px;font:16px/1.6 Inter,sans-serif;color:#334155">' + String(marked.parse(block.markdown || '', { async: false })) + '</div>';
+    else if (block.type === 'code') inner = '<pre style="margin:0;padding:20px;font:12px/1.6 ui-monospace,Consolas,monospace;color:' + esc(String(block.style?.color || '#e2e8f0')) + ';background:' + esc(String(block.style?.fill || '#171923')) + ';white-space:pre-wrap">' + esc(block.code || '') + '</pre>';
+    else if (block.type === 'image') inner = block.src ? '<img src="' + esc(block.src) + '" style="width:100%;height:100%;object-fit:cover" />' : '';
+    else if (block.type === 'shape') inner = '<div style="width:100%;height:100%;border-radius:' + (block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 14) + 'px') + ';background:' + esc(String(block.style?.fill || '#f3e8ff')) + ';border:1px solid ' + esc(String(block.style?.stroke || '#a855f7')) + '"></div>';
+    html += '<div style="' + style + '">' + inner + '</div>';
+  }
+  return html + '</div>';
+}
+
+async function copyText(text: string): Promise<void> {
+  try { await navigator.clipboard.writeText(text); toast('Copied to clipboard', 'success'); }
+  catch { toast('Clipboard unavailable', 'error'); }
+}
+
+void initialize();

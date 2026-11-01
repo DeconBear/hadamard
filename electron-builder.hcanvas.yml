@@ -1,0 +1,52 @@
+appId: com.hadamard.canvas
+productName: Hadamard Canvas
+copyright: Copyright Hadamard
+executableName: HadamardCanvas
+directories:
+  output: dist_electron/canvas
+  buildResources: assets
+extraMetadata:
+  main: dist/src/hcanvas/electronMain.js
+files:
+  - dist/**/*
+  - assets/hcanvas-icon.png
+  - assets/hcanvas-icon.ico
+  - package.json
+  - node_modules/**/*
+  - "!**/node_modules/electron/**"
+  - "!**/node_modules/electron-builder/**"
+  - "!**/node_modules/app-builder-lib/**"
+  - "!**/node_modules/@electron/**"
+  - "!**/node_modules/typescript/**"
+  - "!**/node_modules/vitepress/**"
+  - "!**/node_modules/vitest/**"
+  - "!**/node_modules/tsx/**"
+  - "!**/node_modules/playwright/**"
+  - "!**/node_modules/@playwright/**"
+  - "!**/node_modules/@types/**"
+  - "!**/*.map"
+asar: true
+asarUnpack:
+  - "**/node_modules/@excalidraw/cli/**"
+  - "**/node_modules/playwright-core/**"
+npmRebuild: false
+win:
+  icon: assets/hcanvas-icon.ico
+  target:
+    - target: portable
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - x64
+portable:
+  artifactName: Hadamard-Canvas-${version}-portable.${ext}
+  requestExecutionLevel: user
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Hadamard Canvas
+  artifactName: Hadamard-Canvas-Setup-${version}.${ext}

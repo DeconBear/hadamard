@@ -1,0 +1,133 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { HcRevisionConflictError, HcStore } from '../src/hcanvas/store.js';
+
+const dirs: string[] = [];
+async function makeStore(): Promise<HcStore> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'hcanvas-store-'));
+  dirs.push(dir);
+  const store = new HcStore(dir);
+  await store.init();
+  return store;
+}
+afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
+
+describe('hcanvas store', () => {
+  it('seeds a demo document with html and canvas pages', async () => {
+    const store = await makeStore();
+    const docs = await store.listDocs();
+    expect(docs).toHaveLength(1);
+    const doc = await store.readDoc(docs[0]!.id);
+    expect(doc.pages).toHaveLength(4);
+    expect(doc.pages[0]!.mode).toBe('html');
+    expect(doc.pages[1]!.mode).toBe('canvas');
+    expect(doc.pages[2]!.mode).toBe('infinite');
+    expect(doc.pages[3]!.mode).toBe('whiteboard');
+    expect(doc.pages[3]!.scene?.elements.length).toBeGreaterThan(0);
+    expect(doc.pages[0]!.html).toContain('data-hc-id=');
+  });
+
+  it('applies ops with revision CAS and records history', async () => {
+    const store = await makeStore();
+    const demo = (await store.readDoc((await store.listDocs())[0]!.id));
+    await expect(store.applyOps(demo.id, { baseRevision: 99, actor: 'test', ops: [] })).rejects.toBeInstanceOf(HcRevisionConflictError);
+    const result = await store.applyOps(demo.id, {
+      baseRevision: 0,
+      actor: 'claude-code',
+      ops: [{ op: 'add_page', page: { id: 'page_test', name: 'Test', mode: 'canvas', width: 1280, height: 720, background: '#ffffff', blocks: [] } }],
+    });
+    expect(result.doc.revision).toBe(1);
+    expect(result.doc.pages.some(page => page.id === 'page_test')).toBe(true);
+    expect(result.doc.history[0]!.actor).toBe('claude-code');
+  });
+
+  it('adds blocks to an infinite page', async () => {
+    const store = await makeStore();
+    const doc = await store.readDoc((await store.listDocs())[0]!.id);
+    const infinite = doc.pages.find(page => page.mode === 'infinite')!;
+    const before = infinite.blocks?.length || 0;
+    const result = await store.applyOps(doc.id, {
+      baseRevision: 0, actor: 'test',
+      ops: [{ op: 'add_block', pageId: infinite.id, block: { id: 'block_inf', type: 'html', x: 2000, y: 1500, w: 400, h: 200, z: 20, html: '<p>Infinite</p>' } }],
+    });
+    const next = result.doc.pages.find(page => page.id === infinite.id)!;
+    expect(next.blocks?.length).toBe(before + 1);
+    expect(next.blocks?.some(block => block.id === 'block_inf')).toBe(true);
+  });
+
+  it('replaces a whiteboard scene with revision checks', async () => {
+    const store = await makeStore();
+    const doc = await store.readDoc((await store.listDocs())[0]!.id);
+    const whiteboard = doc.pages.find(page => page.mode === 'whiteboard')!;
+    const result = await store.applyOps(doc.id, {
+      baseRevision: 0, actor: 'claude-code',
+      ops: [{ op: 'set_whiteboard_scene', pageId: whiteboard.id, scene: { elements: [{ id: 'el_test', type: 'rectangle', x: 10, y: 10, width: 100, height: 50 }], appState: { viewBackgroundColor: '#ffffff' }, files: {} } }],
+    });
+    const next = result.doc.pages.find(page => page.id === whiteboard.id)!;
+    expect(next.mode).toBe('whiteboard');
+    expect(next.scene?.elements).toHaveLength(1);
+    expect((next.scene?.elements[0] as { id: string }).id).toBe('el_test');
+  });
+
+  it('creates proposals and resolves them against the current revision', async () => {
+    const store = await makeStore();
+    const doc = await store.readDoc((await store.listDocs())[0]!.id);
+    const proposal = await store.createProposal(doc.id, {
+      baseRevision: 0, actor: 'dsh', intent: 'Add a page',
+      ops: [{ op: 'add_page', page: { id: 'page_prop', name: 'Proposal', mode: 'html', width: 1280, height: 720, background: '#fff', html: '<h1>Proposal</h1>' } }],
+    });
+    expect(proposal.status).toBe('pending');
+    const accepted = await store.resolveProposal(doc.id, proposal.id, 'accept', 'human');
+    expect(accepted.conflict).toBeUndefined();
+    expect(accepted.doc.revision).toBe(1);
+    expect(accepted.doc.proposals[0]!.status).toBe('accepted');
+    expect(accepted.doc.pages.some(page => page.id === 'page_prop')).toBe(true);
+  });
+
+  it('tracks agent sessions and presence heartbeats', async () => {
+    const store = await makeStore();
+    const doc = await store.readDoc((await store.listDocs())[0]!.id);
+    const session = await store.createSession(doc.id, 'claude-code');
+    const presence = await store.listSessions();
+    expect(presence).toHaveLength(1);
+    expect(presence[0]).toMatchObject({ id: session.id, actor: 'claude-code', docTitle: doc.title });
+    const touched = await store.touchSession(session.id, { pageId: doc.pages[2]!.id, selection: ['block_x'] });
+    expect(touched.pageId).toBe(doc.pages[2]!.id);
+    expect(touched.selection).toEqual(['block_x']);
+    const context = await store.getContext();
+    expect((context.presence as Array<{ id: string }>).some(item => item.id === session.id)).toBe(true);
+    await store.deleteSession(session.id);
+    expect(await store.listSessions()).toHaveLength(0);
+  });
+
+  it('saves page masters and creates new pages from them', async () => {
+    const store = await makeStore();
+    const doc = await store.readDoc((await store.listDocs())[0]!.id);
+    const source = doc.pages.find(page => page.mode === 'canvas') || doc.pages[0]!;
+    const master = await store.saveMaster({ docId: doc.id, pageId: source.id, name: 'Title master' });
+    expect(master.name).toBe('Title master');
+    expect(master.mode).toBe(source.mode);
+    const masters = await store.listMasters();
+    expect(masters.some(item => item.id === master.id)).toBe(true);
+    const created = await store.addPageFromMaster(doc.id, master.id, { baseRevision: doc.revision, actor: 'test' });
+    expect(created.doc.pages.length).toBe(doc.pages.length + 1);
+    expect(created.page.name).toBe('Title master');
+    expect(created.page.mode).toBe(source.mode);
+    await store.deleteMaster(master.id);
+    expect(await store.listMasters()).toHaveLength(0);
+  });
+
+  it('tracks active context and resolves documents by title', async () => {
+    const store = await makeStore();
+    const doc = await store.readDoc((await store.listDocs())[0]!.id);
+    await store.activate({ docId: doc.id, pageId: doc.pages[1]!.id, blockId: 'block_x', actor: 'human' });
+    const context = await store.getContext();
+    expect(context.active).toMatchObject({ docId: doc.id, pageId: doc.pages[1]!.id, blockId: 'block_x' });
+    const resolved = await store.resolve('welcome');
+    expect(resolved.matches[0]?.docId).toBe(doc.id);
+    expect(resolved.ambiguous).toBe(false);
+  });
+});

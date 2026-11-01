@@ -27,3 +27,6 @@ Advanced notes:
 
 - `buddy` and `dream` are documented inside the existing advanced chapters instead of being split into separate nav pages.
 - See [04-agents-swarm-memory-workspace.md](./04-agents-swarm-memory-workspace.md) for both.
+- Standalone Hadamard Canvas: [Hadamard Canvas](./hadamard-canvas.md) (AI-native HTML/canvas app, CLI-first).
+- Launch surfaces: [Surfaces and modules](./surfaces-and-modules.md) (full / harness-only / canvas-only, module personalization).
+- Optional product modules: [Canvas module](./canvas-module.md) (off by default; GUI editor, AI-model architecture pack, agent tools).

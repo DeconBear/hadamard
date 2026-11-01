@@ -270,6 +270,16 @@ import {
   resolveBuiltInExtensionStates,
 } from '../extensions/builtInExtensions.js';
 import {
+  BUILT_IN_MODULES,
+  normalizeHadamardSurface,
+  patchHadamardModuleSettings,
+  resolveHadamardModuleStates,
+  resolveModuleOverridesFromEnv,
+  resolveSurfaceModuleOverrides,
+  type HadamardSurface,
+} from '../modules/builtInModules.js';
+import { createCanvasContextPart, createHadamardCanvasTools } from '../canvas/tools.js';
+import {
   validateWorkflowSquad,
 } from '../team/workflowSquad.js';
 import { listPlanFiles, planDirFor, planFilePath, readPlanFile } from '../tools/planMode/PlanModeTools.js';
@@ -410,6 +420,8 @@ import { registerGuiAgentHttpController } from './guiAgentHttpController.js';
 import { registerGuiReferenceHttpController } from './guiReferenceHttpController.js';
 import type { KeywaySecretStorePort } from '../keyway/keywayPorts.js';
 import { registerGuiDesignHttpController } from './guiDesignHttpController.js';
+import { registerGuiCanvasHttpController } from './guiCanvasHttpController.js';
+import { registerGuiCanvasAssetsHttpController } from './guiCanvasAssetsHttpController.js';
 import { DesignDocumentService } from '../design/designDocumentService.js';
 import { ProjectRuleCatalogService } from '../rules/projectRuleCatalog.js';
 import {
@@ -547,6 +559,8 @@ export interface HadamardGuiOptions {
   /** Electron injects safeStorage; tests/embedders may inject an admin facade directly. */
   keywaySecretStore?: KeywaySecretStorePort;
   usageRoutingAdmin?: GuiUsageRoutingPort;
+  /** App shell composition: full (all enabled modules), harness (agent only), canvas (canvas only). */
+  surface?: HadamardSurface;
 }
 
 export interface HadamardGuiServer {
@@ -1946,6 +1960,13 @@ async function listenWithFallback(
 }
 
 export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): Promise<HadamardGuiServer> {
+  const surface: HadamardSurface = normalizeHadamardSurface(options.surface ?? process.env.HADAMARD_GUI_SURFACE);
+  const moduleOverrides: Record<string, boolean> = {
+    ...resolveModuleOverridesFromEnv(),
+    ...resolveSurfaceModuleOverrides(surface),
+  };
+  const resolveGuiModuleStates = (settingsRaw: Record<string, unknown> | null | undefined) =>
+    resolveHadamardModuleStates(settingsRaw, moduleOverrides);
   const explicitStartupWorkDir = options.workDir !== undefined && String(options.workDir).trim() !== '';
   let workDir = path.resolve(options.workDir ?? process.cwd());
   const host = options.host ?? '127.0.0.1';
@@ -2068,8 +2089,20 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       managedPluginSettings = {};
       return;
     }
-    tools = base;
+    const moduleStates = resolveGuiModuleStates(store.raw);
+    const canvasEnabled = moduleStates.some(moduleState => moduleState.id === 'canvas' && moduleState.enabled);
+    tools = canvasEnabled
+      ? [...base, ...createHadamardCanvasTools({ getWorkDir: () => projectPrimaryPath, authorName: 'Hadamard GUI' })]
+      : base;
     managedPluginSettings = store.raw;
+  };
+  const isCanvasModuleLoaded = async (): Promise<boolean> => {
+    const store = await resolveHadamardSettingsStore({
+      configPath: options.configPath,
+      homeDir: currentHomeInput(),
+    }).catch(() => undefined);
+    return resolveGuiModuleStates(store?.raw)
+      .some(moduleState => moduleState.id === 'canvas' && moduleState.enabled);
   };
   let tools = [
     ...createHadamardCoreTools({
@@ -3312,6 +3345,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         bridgeModeEnabled = bridgeBlock.enabled === true;
         return {};
       })(),
+      surface,
       settings: {
         configPath: store?.configPath ?? null,
         provider: env.HADAMARD_PROVIDER ?? sdk?.config.provider ?? 'anthropic',
@@ -3335,6 +3369,14 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
           defaultEnabled: definition.defaultEnabled,
           enabled: extensionStateById.get(definition.id)?.enabled ?? definition.defaultEnabled,
         })),
+        modules: (() => {
+          const moduleStates = resolveGuiModuleStates(store?.raw);
+          return {
+            states: moduleStates,
+            enabled: Object.fromEntries(moduleStates.map(moduleState => [moduleState.id, moduleState.enabled])),
+            definitions: BUILT_IN_MODULES.map(definition => ({ ...definition })),
+          };
+        })(),
         autoDetectLanguageServers: sdk?.config.autoDetectLanguageServers
           ?? (typeof store?.raw.autoDetectLanguageServers === 'boolean'
             ? store.raw.autoDetectLanguageServers
@@ -3569,6 +3611,15 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       raw.autoDetectLanguageServers = body.autoDetectLanguageServers;
     }
 
+    if (isPlainRecord(body.modules)) {
+      let patchedRaw: Record<string, unknown> = raw;
+      for (const definition of BUILT_IN_MODULES) {
+        const requested = body.modules[definition.id];
+        if (!isPlainRecord(requested) || typeof requested.enabled !== 'boolean') continue;
+        patchedRaw = patchHadamardModuleSettings(patchedRaw, definition.id, requested.enabled);
+      }
+      raw.modules = patchedRaw.modules;
+    }
     if (isPlainRecord(body.extensions)) {
       const existingExtensions = isPlainRecord(raw.extensions) ? { ...raw.extensions } : {};
       for (const definition of BUILT_IN_EXTENSIONS) {
@@ -7052,6 +7103,17 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
     const runRouter = activeRouter;
     const runAgentOptions = currentEffectiveAgentRunOptions();
     const runTools = currentRunTools();
+    const canvasContextPart = (await isCanvasModuleLoaded()) ? await createCanvasContextPart(runWorkDir) : null;
+    const existingRunHooks = (runAgentOptions as import('../types.js').AgentRunOptions).hooks;
+    const canvasHooks: import('../types.js').HadamardHooks | undefined = canvasContextPart
+      ? {
+          ...(existingRunHooks ?? {}),
+          sessionStart: [
+            ...(existingRunHooks?.sessionStart ?? []),
+            async () => ({ systemPromptParts: [canvasContextPart] }),
+          ],
+        }
+      : undefined;
     if (rejectMismatchedGuiSession(res, expectedSessionId, runSession.id)) return;
     let nextEventSequence = 0;
     const replayEvents: Array<GuiRunEvent & { sequence: number }> = [];
@@ -7290,6 +7352,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
         send({ type: 'notice', message: `${routeLabel} -> ${runBridgeModelApi.model}` });
         stream = runSession.stream(expandImageRefs(input, runWorkDir), {
           ...effectiveAgentOptions,
+          ...(canvasHooks ? { hooks: canvasHooks } : {}),
           signal: withAgentRunTimeout(runAbort.signal),
           approver,
           classifier: preToolUseHookClassifier,
@@ -7301,6 +7364,7 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
       } else {
         stream = runSession.stream(expandImageRefs(input, runWorkDir), {
           ...effectiveAgentOptions,
+          ...(canvasHooks ? { hooks: canvasHooks } : {}),
           signal: withAgentRunTimeout(runAbort.signal),
           approver,
           classifier: preToolUseHookClassifier,
@@ -7820,6 +7884,11 @@ export async function startHadamardGuiServer(options: HadamardGuiOptions = {}): 
   registerGuiDesignHttpController(httpRouter, {
     createService: () => new DesignDocumentService(projectPrimaryPath, resolveGuiHomeDir()),
     openFolder: openPathInSystem,
+  });
+  registerGuiCanvasAssetsHttpController(httpRouter);
+  registerGuiCanvasHttpController(httpRouter, {
+    isModuleEnabled: isCanvasModuleLoaded,
+    resolveProjectPath: async rawPath => agentExecutionTargetPath(rawPath ?? null),
   });
   registerGuiChatHttpController(httpRouter, {
     runtimeMutationInProgress: () => runtimeMutationInProgress,
@@ -11189,11 +11258,13 @@ export function parseHadamardGuiArgs(argv: string[]): HadamardGuiOptions & { hel
       if (!PERMISSION_MODES.has(mode as HadamardPermissionMode)) throw new Error(`Unknown permission mode: ${mode}`);
       result.permissionMode = mode as HadamardPermissionMode;
     } else if (arg === '--model' && argv[index + 1]) result.model = argv[++index];
+    else if (arg === '--surface' && argv[index + 1]) result.surface = normalizeHadamardSurface(argv[++index]);
     else if (arg === '--resume' && argv[index + 1]) result.resumeSessionId = argv[++index];
     else if (arg === '--continue') result.continueMostRecent = true;
     else if (!arg.startsWith('-') && !result.workDir) result.workDir = arg;
     else throw new Error(`Unknown argument: ${arg}`);
   }
+  result.surface = normalizeHadamardSurface(result.surface ?? process.env.HADAMARD_GUI_SURFACE);
   return result;
 }
 
@@ -11215,6 +11286,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
       '  --config <path>            Load a specific Hadamard settings JSON file',
       '  --permission-mode <mode>   default | acceptEdits | plan | bypassPermissions (default)',
       '  --model <model>            Override the configured model',
+      '  --surface <mode>           full | harness | canvas (default: full or HADAMARD_GUI_SURFACE)',
       '  --resume <session-id>      Resume a stored Clean SDK session',
       '  --continue                 Resume the most recent stored session',
       '  -v, --version              Show package version',

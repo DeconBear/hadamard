@@ -74,6 +74,16 @@ npx hadamard-gui [工作目录]
 
 打开 Electron 聊天窗口（仅绑定 localhost 服务）—— 发送一条消息即可开始第一次对话。可视化 Agent graph 编辑器仍在迭代中；生产工作流请优先使用已保存的 team 与 `/team`。
 
+Hadamard 也可以按模块单独启动：
+
+```bash
+npx hadamard-harness [工作目录]   # 仅 agent 界面
+npx hadamard-canvas [工作目录]    # 仅画布界面
+# 或：npx hadamard-gui --surface harness|canvas [工作目录]
+```
+
+主应用会组合所有已启用模块；在 **Settings → Personalization → Modules** 中配置 **Harness** / **Canvas**。详见 [docs/zh/surfaces-and-modules.md](./docs/zh/surfaces-and-modules.md)。
+
 ## 演示
 
 50 秒走一遍桌面 GUI：打开会话视图、新建对话、发送问题，观看流式回复、思考指示器与代码渲染。（[高清 MP4](https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.mp4)）
@@ -87,6 +97,9 @@ npx hadamard-gui [工作目录]
 - 文档站：https://deconbear.github.io/hadamard/
 - 英文教程：[docs/en/README.md](./docs/en/README.md) · 中文教程：[docs/zh/README.md](./docs/zh/README.md)
 - External CLI bridge 指南（provider 参数、凭证、`HADAMARD_<PROVIDER>_PATH`）：[docs/en/05-bridge-runtime.md](./docs/en/05-bridge-runtime.md)
+- 启动界面（完整 / 仅 harness / 仅 canvas，模块个性化）：[docs/zh/surfaces-and-modules.md](./docs/zh/surfaces-and-modules.md)
+- 独立 Hadamard Canvas（hcanvas）：[docs/zh/hadamard-canvas.md](./docs/zh/hadamard-canvas.md)
+- 可选画布模块（默认关闭；Excalidraw 设计画布、AI 模型架构 pack、agent 工具与提案审阅）：[docs/zh/canvas-module.md](./docs/zh/canvas-module.md)
 - 示例：[hadamard-quickstart.ts](./examples/hadamard-quickstart.ts)、[hadamard-workflow.ts](./examples/hadamard-workflow.ts)、[hadamard-agent-helpers.ts](./examples/hadamard-agent-helpers.ts)
 - 安全政策：[SECURITY.md](./SECURITY.md)
 

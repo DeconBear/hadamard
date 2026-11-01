@@ -38,6 +38,7 @@ import {
   GUI_SESSION_CREATE_CLIENT_SCRIPT,
 } from './guiSessionClientScript.js';
 import { GUI_DESIGN_CLIENT_SCRIPT } from './guiDesignClientScript.js';
+import { GUI_CANVAS_CLIENT_SCRIPT } from './guiCanvasClientScript.js';
 import { getGuiBridgeContextClientScript } from './guiBridgeContextClientScript.js';
 
 function guiIcon(name: string): string {
@@ -1065,6 +1066,11 @@ export function createHadamardGuiHtml(): string {
           <h2>Built-in extensions</h2>
           <p class="muted">Enable Hadamard-owned runtime and interface features. Changes apply to subsequent runs.</p>
           <div id="settingsExtensionsList" class="settings-card-list"></div>
+        </div>
+        <div class="settings-group">
+          <h2>Modules</h2>
+          <p class="muted">Optional Hadamard modules. Disabled modules are not loaded: their UI, agent tools and context stay unavailable. Canvas is off by default.</p>
+          <div id="settingsModulesList" class="settings-card-list"></div>
         </div>
         <div class="settings-group">
           <h2>Language servers</h2>
@@ -7843,6 +7849,7 @@ async function loadState() {
     state.snapshot = state.snapshot || { projects: [], sessions: [], runs: [] };
   }
   applyLoadedState();
+  applySurfaceChrome();
 }
 function applyLoadedState() {
   updateSessionActivityIndicators(state.snapshot);
@@ -10499,6 +10506,7 @@ function renderProjectDocPreview(content) {
 }
 
 ${GUI_DESIGN_CLIENT_SCRIPT}
+${GUI_CANVAS_CLIENT_SCRIPT}
 function setProjectDocMode(editing) {
   if (editing && state.projectDocSubTab === 'design' && state.designEntryMode === 'html') {
     state.projectDocEditing = false;
@@ -11379,11 +11387,12 @@ window.addEventListener('resize', () => {
   requestAnimationFrame(revealActiveProjectDetailTab);
   requestAnimationFrame(positionModelPickerFlyout);
   if (window.innerWidth > 1120 && state.projectView === 'detail') {
-    setDetailConversationDrawer(state.detailConversationOpen);
+    setDetailConversationDrawer(state.projectDetailTab === 'canvas' ? false : state.detailConversationOpen);
   }
 });
+let canvasDetailDrawerPrev = null;
 function setProjectDetailTab(tab) {
-  const allowed = { document: 1, issues: 1, agents: 1, settings: 1 };
+  const allowed = { document: 1, issues: 1, agents: 1, settings: 1, ...(state.snapshot?.settings?.modules?.enabled?.canvas === true ? { canvas: 1 } : {}) };
   const next = allowed[tab] ? tab : 'document';
   if (state.projectDetailTab === next) {
     if (next === 'agents') void refreshAgentExecutions(true);
@@ -11393,6 +11402,13 @@ function setProjectDetailTab(tab) {
   if (state.projectDetailTab === 'document' && state.projectDocDirty) void saveProjectDocNow();
   if (state.projectDetailTab === 'settings' && state.projectSettingsDirty) void saveProjectSettingsNow();
   if (next !== 'agents') stopAgentExecutionPolling();
+  if (next === 'canvas') {
+    canvasDetailDrawerPrev = state.detailConversationOpen;
+    setDetailConversationDrawer(false);
+  } else if (state.projectDetailTab === 'canvas' && canvasDetailDrawerPrev != null) {
+    setDetailConversationDrawer(canvasDetailDrawerPrev);
+    canvasDetailDrawerPrev = null;
+  }
   state.projectDetailTab = next;
   let activeTab = null;
   document.querySelectorAll('.project-detail-tab').forEach((btn) => {
@@ -11408,6 +11424,7 @@ function setProjectDetailTab(tab) {
     issues: el('projectIssuesPanel'),
     agents: el('agentExecutionsPanel'),
     settings: el('projectSettingsPanel'),
+    canvas: el('projectCanvasPanel'),
   };
   for (const key of Object.keys(panels)) {
     if (panels[key]) panels[key].classList.toggle('hidden', key !== next);
@@ -11416,6 +11433,7 @@ function setProjectDetailTab(tab) {
   else if (next === 'issues') void loadProjectIssues(false);
   else if (next === 'agents') void refreshAgentExecutions(true);
   else if (next === 'settings') void mountProjectSettingsPanel(false);
+  else if (next === 'canvas') void mountCanvasPanel();
 }
 function mountWorkbenchTools(surface) {
   const nextSurface = surface === 'project' ? 'project' : 'conversation';
@@ -13264,7 +13282,10 @@ async function removeActiveProjectWorkPath() {
 
 function renderProjectDetail() {
   if (state.activeWorkbenchSurface === 'project') mountWorkbenchTools('conversation');
-  if (!['document', 'issues', 'agents', 'settings'].includes(state.projectDetailTab)) state.projectDetailTab = 'document';
+  const canvasEnabled = state.snapshot?.settings?.modules?.enabled?.canvas === true;
+  const harnessEnabled = state.snapshot?.settings?.modules?.enabled?.harness !== false;
+  const projectDetailTabs = ['document', 'issues', ...(harnessEnabled ? ['agents'] : []), 'settings', ...(canvasEnabled ? ['canvas'] : [])];
+  if (!projectDetailTabs.includes(state.projectDetailTab)) state.projectDetailTab = 'document';
   const name = projectNameFromSnapshot();
   const w = state.snapshot?.workDir || '';
   const bc = el('detailBreadcrumb');
@@ -13302,14 +13323,16 @@ function renderProjectDetail() {
   const detailTabs = [
     ['document', 'Document'],
     ['issues', 'Issues'],
-    ['agents', 'Agent monitor'],
+    ...(harnessEnabled ? [['agents', 'Agent monitor']] : []),
     ['settings', 'Project settings'],
+    ...(canvasEnabled ? [['canvas', 'Canvas']] : []),
   ];
   const detailPanelIds = {
     document: 'projectDocumentPanel',
     issues: 'projectIssuesPanel',
     agents: 'agentExecutionsPanel',
     settings: 'projectSettingsPanel',
+    canvas: 'projectCanvasPanel',
   };
   for (const tab of detailTabs) {
     const btn = document.createElement('button');
@@ -13452,16 +13475,20 @@ function renderProjectDetail() {
     + '<p id="projectDreamStatus" class="muted"></p>'
     + '</div>'
     + '</div>';
+  const canvasPanel = document.createElement('section');
+  canvasPanel.id = 'projectCanvasPanel';
+  canvasPanel.className = 'project-workbench-panel project-canvas-panel' + (state.projectDetailTab === 'canvas' ? '' : ' hidden');
   for (const [tabKey, panel] of Object.entries({
     document: docPanel,
     issues: issuesPanel,
     agents: agentsPanel,
     settings: settingsPanel,
+    ...(canvasEnabled ? { canvas: canvasPanel } : {}),
   })) {
     panel.setAttribute('role', 'tabpanel');
     panel.setAttribute('aria-labelledby', 'projectTab' + tabKey.slice(0, 1).toUpperCase() + tabKey.slice(1));
   }
-  main.append(tabs, docPanel, issuesPanel, agentsPanel, settingsPanel);
+  main.append(tabs, docPanel, issuesPanel, agentsPanel, settingsPanel, ...(canvasEnabled ? [canvasPanel] : []));
   const sidebar = document.createElement('aside');
   sidebar.className = 'detail-sidebar';
   sidebar.id = 'projectDetailSidebar';
@@ -13512,7 +13539,7 @@ function renderProjectDetail() {
   body.appendChild(projectWorkbench);
   mountWorkbenchTools('project');
   bindDetailSidebarResize(layout, sidebar, splitter);
-  setDetailConversationDrawer(state.detailConversationOpen);
+  setDetailConversationDrawer(state.projectDetailTab === 'canvas' ? false : state.detailConversationOpen);
   const searchInput = el('detailConvSearch');
   if (searchInput) {
     searchInput.value = state.detailConvQuery || '';
@@ -13526,6 +13553,7 @@ function renderProjectDetail() {
   if (state.projectDetailTab === 'issues') void loadProjectIssues(false);
   else if (state.projectDetailTab === 'agents') void refreshAgentExecutions(true);
   else if (state.projectDetailTab === 'settings') void mountProjectSettingsPanel(false);
+  else if (state.projectDetailTab === 'canvas') void mountCanvasPanel();
   else void mountProjectDoc(false);
 }
 function selectDetailConversation(id) {
@@ -27041,6 +27069,7 @@ function renderExtensionSettings(settings) {
       });
     }
   }
+  renderModuleSettings(settings.modules);
   setChecked('settingsAutoDetectLanguageServers', settings.autoDetectLanguageServers !== false);
   const lspRoot = el('settingsLanguageServersList');
   if (!lspRoot) return;
@@ -27068,9 +27097,14 @@ function collectSettingsBody() {
   document.querySelectorAll('#settingsExtensionsList input[data-extension-id]').forEach(toggle => {
     extensions[toggle.dataset.extensionId] = { enabled: toggle.checked };
   });
+  const modules = {};
+  document.querySelectorAll('#settingsModulesList input[data-module-id]').forEach(toggle => {
+    modules[toggle.dataset.moduleId] = { enabled: toggle.checked };
+  });
   return {
     permissionPreset: derivePermissionPreset(),
     extensions,
+    modules,
     autoDetectLanguageServers: el('settingsAutoDetectLanguageServers')?.checked !== false,
     preferences: {
       theme: el('settingsTheme').value,
@@ -27803,6 +27837,91 @@ bindAuxPanelResize();
 bindTerminalDockResize();
 syncAuxChrome();
 syncTerminalToggle();
+let surfaceChromeBootstrapped = false;
+function ensureSurfaceChromeStyles() {
+  if (document.getElementById('surfaceChromeStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'surfaceChromeStyles';
+  style.textContent = [
+    'body[data-surface="harness"] #appSidebar,',
+    'body[data-surface="harness"] #sidebarExpandBtn,',
+    'body[data-surface="harness"] #projectOverview,',
+    'body[data-surface="harness"] #projectDetail,',
+    'body[data-surface="harness"] #projectChats,',
+    'body[data-surface="harness"] #contextRail,',
+    'body[data-surface="harness"] #managerPanel,',
+    'body[data-surface="harness"] .manager-widget,',
+    'body[data-surface="harness"] #auxPanel,',
+    'body[data-surface="harness"] #auxLauncher { display: none !important; }',
+    'body[data-surface="harness"] #backToOverviewBtn { display: none !important; }',
+    'body[data-surface="harness"] #projectConversation { flex: 1; min-height: 0; }',
+    'body[data-surface="canvas"] #appSidebar,',
+    'body[data-surface="canvas"] #sidebarExpandBtn,',
+    'body[data-surface="canvas"] #projectOverview,',
+    'body[data-surface="canvas"] #projectChats,',
+    'body[data-surface="canvas"] #projectConversation,',
+    'body[data-surface="canvas"] #contextRail,',
+    'body[data-surface="canvas"] #managerPanel,',
+    'body[data-surface="canvas"] .manager-widget,',
+    'body[data-surface="canvas"] #auxPanel,',
+    'body[data-surface="canvas"] #auxLauncher,',
+    'body[data-surface="canvas"] #projectDetailSidebar,',
+    'body[data-surface="canvas"] #detailConvSplitter,',
+    'body[data-surface="canvas"] #detailConversationsBtn,',
+    'body[data-surface="canvas"] #detailNewConversationBtn,',
+    'body[data-surface="canvas"] #detailAuxPanelToggleBtn,',
+    'body[data-surface="canvas"] #detailWorkPathSelect,',
+    'body[data-surface="canvas"] #detailAddWorkPathBtn,',
+    'body[data-surface="canvas"] #detailRemoveWorkPathBtn { display: none !important; }',
+    'body[data-surface="canvas"] #projectDetail { display: flex !important; flex-direction: column; height: 100%; }',
+    'body[data-surface="canvas"] #projectDetail > .region-header { display: none !important; }',
+    'body[data-surface="canvas"] #detailBody { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 0; }',
+    'body[data-surface="canvas"] #projectDetailWorkbench,',
+    'body[data-surface="canvas"] .project-workbench-primary,',
+    'body[data-surface="canvas"] .detail-layout,',
+    'body[data-surface="canvas"] #projectCanvasPanel { height: 100%; }',
+    'body[data-surface="canvas"] .project-detail-tabs { display: none !important; }',
+    'body[data-surface="canvas"] .project-workbench-panel:not(.project-canvas-panel) { display: none !important; }',
+    'body[data-surface="full"][data-harness="off"] #projectConversation,',
+    'body[data-surface="full"][data-harness="off"] #projectDetailSidebar,',
+    'body[data-surface="full"][data-harness="off"] #detailConvSplitter,',
+    'body[data-surface="full"][data-harness="off"] #detailNewConversationBtn,',
+    'body[data-surface="full"][data-harness="off"] #detailConversationsBtn { display: none !important; }',
+    'body[data-harness="off"] #projectTabAgents { display: none !important; }',
+    'body[data-canvas="off"] .project-canvas-panel { display: none !important; }',
+  ].join('\\n');
+  document.head.appendChild(style);
+}
+function applySurfaceChrome() {
+  if (!state.snapshot) return;
+  ensureSurfaceChromeStyles();
+  const surface = state.snapshot.surface || 'full';
+  const modules = (state.snapshot.settings && state.snapshot.settings.modules && state.snapshot.settings.modules.enabled) || {};
+  const harnessEnabled = modules.harness !== false;
+  document.body.dataset.surface = surface;
+  document.body.dataset.harness = harnessEnabled ? 'on' : 'off';
+  document.body.dataset.canvas = modules.canvas === true ? 'on' : 'off';
+  document.title = surface === 'canvas' ? 'Hadamard Canvas' : surface === 'harness' ? 'Hadamard Harness' : 'Hadamard';
+  if (!surfaceChromeBootstrapped) {
+    surfaceChromeBootstrapped = true;
+    if (surface === 'harness') {
+      switchProjectView('conversation');
+      setConversationListOpen(false);
+    } else if (surface === 'canvas') {
+      switchProjectView('detail');
+      setDetailConversationDrawer(false);
+      setProjectDetailTab('canvas');
+    }
+    return;
+  }
+  if (surface === 'canvas' && state.projectView === 'detail' && state.projectDetailTab !== 'canvas') {
+    setProjectDetailTab('canvas');
+  }
+  if (!harnessEnabled && state.projectView === 'conversation') {
+    if (modules.canvas === true) switchProjectView('detail');
+    else switchProjectView('overview');
+  }
+}
 async function initializeGui() {
   await loadState();
   await hydrateTranscript();

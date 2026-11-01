@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hadamard Canvas</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%236d5bd0'/%3E%3Ctext x='16' y='22' font-family='Arial' font-size='18' font-weight='bold' fill='white' text-anchor='middle'%3EH%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">
+      <span class="brand-mark">H</span>
+      <div class="brand-copy"><strong>Hadamard Canvas</strong><small>AI-native canvas · standalone</small></div>
+    </div>
+    <div class="doc-meta">
+      <input id="docTitle" class="doc-title" aria-label="Document title" spellcheck="false" />
+      <span id="docRevision" class="revision-pill">rev 0</span>
+      <span id="saveStatus" class="save-status">Ready</span>
+      <div id="presenceBar" class="presence-bar hidden" aria-label="Live agents"></div>
+    </div>
+    <div class="top-actions">
+      <button id="addPageBtn" class="btn ghost" title="Add a page">+ Page</button>
+      <button id="presentBtn" class="btn ghost" title="Present this canvas">Present</button>
+      <div class="menu-wrap">
+        <button id="exportBtn" class="btn ghost" aria-haspopup="menu" aria-expanded="false">Export</button>
+        <div id="exportMenu" class="menu hidden" role="menu">
+          <button data-export="html">HTML file</button>
+          <button data-export="pdf">PDF (browser)</button>
+      <button data-export="pdf" data-bleed="3" data-crop="1">Print PDF · 3mm bleed</button>
+          <button data-export="png">PNG image</button>
+          <button data-export="pptx">PowerPoint deck (visual .pptx)</button>
+          <button data-export="pptx-editable">PowerPoint editable (.pptx)</button>
+          <button data-export="docx">Word résumé (.docx)</button>
+          <button data-export="scene">Excalidraw scene (.excalidraw)</button>
+        </div>
+      </div>
+      <button id="newDocBtn" class="btn primary">New canvas</button>
+    </div>
+  </header>
+
+  <aside id="leftbar">
+    <section class="side-section docs-section">
+      <div class="side-head"><span>Canvases</span><button id="newDocMini" class="icon-btn" title="New canvas">+</button></div>
+      <div id="docsList" class="docs-list"></div>
+    </section>
+    <section class="side-section pages-section">
+      <div class="side-head"><span>Pages</span><button id="addPageMini" class="icon-btn" title="Add page">+</button></div>
+      <div id="pagesList" class="pages-list"></div>
+    </section>
+    <div class="side-foot">
+      <span class="kbd">hcanvas context --json</span>
+      <span id="workspacePath" class="workspace-path"></span>
+    </div>
+  </aside>
+
+  <main id="workspace">
+    <div id="viewport">
+      <div id="stage">
+        <div id="artboard" class="artboard"></div>
+      </div>
+      <div id="editingBanner" class="editing-banner hidden">
+        <span class="pulse-dot"></span>
+        <span id="editingLabel">Editing HTML</span>
+        <span class="editing-hint">Double-click text · click element to inspect · <kbd>Esc</kbd> to finish</span>
+        <button id="editSourceBtn" class="btn tiny">Source</button>
+        <button id="doneEditingBtn" class="btn tiny primary">Done</button>
+      </div>
+      <div id="toolRail" class="tool-rail" aria-label="Canvas tools">
+        <button type="button" class="tool-btn active" data-tool="select" title="Select (V)"><span class="tool-glyph">↖</span><span class="tool-tiny">Select</span></button>
+        <button type="button" class="tool-btn" data-tool="hand" title="Hand / pan (H, or hold Space)"><span class="tool-glyph">✋</span><span class="tool-tiny">Pan</span></button>
+        <div class="rail-sep"></div>
+        <button type="button" class="tool-btn" data-block="html" title="Insert HTML block (1)"><span class="tool-glyph">HTML</span><span class="tool-tiny">HTML</span></button>
+        <button type="button" class="tool-btn" data-block="text" title="Insert text block (2)"><span class="tool-glyph">T</span><span class="tool-tiny">Text</span></button>
+        <button type="button" class="tool-btn" data-block="markdown" title="Insert Markdown block (3)"><span class="tool-glyph">MD</span><span class="tool-tiny">Markdown</span></button>
+        <button type="button" class="tool-btn" data-block="code" title="Insert code block (4)"><span class="tool-glyph">&lt;/&gt;</span><span class="tool-tiny">Code</span></button>
+        <button type="button" class="tool-btn" data-block="image" title="Insert image (5)"><span class="tool-glyph">▧</span><span class="tool-tiny">Image</span></button>
+        <button type="button" class="tool-btn" data-block="shape" title="Insert shape (6)"><span class="tool-glyph">◇</span><span class="tool-tiny">Shape</span></button>
+        <div class="rail-sep"></div>
+        <button type="button" id="toggleGrid" class="tool-btn rail-toggle active" title="Toggle dot grid"><span class="tool-glyph">▦</span><span class="tool-tiny">Grid</span></button>
+        <button type="button" id="toggleSnap" class="tool-btn rail-toggle active" title="Snap to 8px"><span class="tool-glyph">⌗</span><span class="tool-tiny">Snap</span></button>
+        <button type="button" id="shortcutsBtn" class="tool-btn" title="Keyboard shortcuts & help"><span class="tool-glyph">?</span><span class="tool-tiny">Help</span></button>
+      </div>
+      <div id="selectionToolbar" class="selection-toolbar hidden" aria-label="Selection actions">
+        <button type="button" data-sel-action="edit" id="selEditBtn" class="sel-btn">Edit</button>
+        <button type="button" data-sel-action="duplicate" class="sel-btn" title="Duplicate (Ctrl/Cmd+D)">Duplicate</button>
+        <button type="button" data-sel-action="front" class="sel-btn" title="Bring to front">Front</button>
+        <button type="button" data-sel-action="back" class="sel-btn" title="Send to back">Back</button>
+        <select id="alignSelect" class="sel-select" title="Align selected block">
+          <option value="">Align…</option>
+          <option value="left">Left</option>
+          <option value="center">Center</option>
+          <option value="right">Right</option>
+          <option value="top">Top</option>
+          <option value="middle">Middle</option>
+          <option value="bottom">Bottom</option>
+        </select>
+        <button type="button" data-sel-action="delete" class="sel-btn danger" title="Delete">Delete</button>
+      </div>
+      <div id="infiniteBadge" class="infinite-badge hidden"><span class="infinity-symbol">∞</span> Infinite canvas <span id="infiniteHint">· pan &amp; zoom freely</span></div>
+      <div id="zoomControls" class="zoom-controls">
+        <button id="zoomOut" class="icon-btn" title="Zoom out">−</button>
+        <button id="zoomReset" class="zoom-label">100%</button>
+        <button id="zoomIn" class="icon-btn" title="Zoom in">+</button>
+        <button id="zoomFit" class="btn tiny">Fit</button>
+      </div>
+    </div>
+  </main>
+
+  <aside id="rightbar">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="inspector">Inspector</button>
+      <button class="tab" data-tab="agent">Agent</button>
+      <button class="tab" data-tab="copilot">Copilot</button>
+      <button class="tab" data-tab="proposals">Proposals <span id="proposalCount" class="tab-count hidden">0</span></button>
+    </div>
+    <div id="inspectorPanel" class="panel"></div>
+    <div id="agentPanel" class="panel hidden"></div>
+    <div id="copilotPanel" class="panel hidden"></div>
+    <div id="proposalsPanel" class="panel hidden"></div>
+  </aside>
+</div>
+<div id="modalRoot"></div>
+<div id="toastRoot" class="toast-root"></div>
+<div id="presentRoot" class="present-root hidden"></div>
+<script id="hc-boot" type="application/json">__HCANVAS_BOOT_JSON__</script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

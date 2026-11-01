@@ -9,5 +9,5 @@
     "noEmit": false
   },
   "include": ["src/**/*.ts"],
-  "exclude": []
+  "exclude": ["src/hcanvas/client"]
 }
