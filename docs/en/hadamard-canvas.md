@@ -276,9 +276,30 @@ Requests require the `x-hcanvas-token` header (or `?token=` for SSE), and the se
 - No real-time multi-user CRDT yet; multiple agents/hosts coordinate through revisions and proposals.
 - PPTX visual deck keeps HTML pages as images; the separate editable deck maps HTML text to native PowerPoint objects (layout is approximate; complex CSS effects are not reconstructed). Page masters, assets library and vector PDF remain extensions.
 - DOCX export is intentionally text-first/ATS-oriented; it does not reproduce visual layout, cards or decorative graphics.
+## Project workspaces
+
+Select a project folder and let hcanvas initialize it; all product data lives inside `<project>/.hcanvas`:
+
+```bash
+hcanvas workspace init ~/projects/my-deck
+hcanvas app --project ~/projects/my-deck
+hcanvas desktop --project ~/projects/my-deck
+```
+
+The desktop app exposes **Open Project…** (top bar / Workspace dialog), opens a native folder picker and relaunches into that project. Clicking the workspace path in the bottom-left opens a Workspace dialog with the resolved paths, the generated CLI guide and a copy button. Initialization is non-destructive and creates:
+
+```text
+<project>/.hcanvas/
+  CLI.md          # generated CLI guide
+  workspace.json  # project identity / schema
+  docs/           # documents
+  exports/        # exported files
+  .gitignore      # daemon.json + exports/
+```
+
 ## Storage format
 
-A workspace is a plain directory:
+A workspace (usually `<project>/.hcanvas`) is a plain directory:
 
 ```
 <workspace>/docs/<docId>.json   # document: pages, html/blocks/scene, history, proposals
@@ -288,4 +309,4 @@ A workspace is a plain directory:
 <workspace>/exports/            # HTML/PDF/PNG/PPTX/DOCX outputs
 ```
 
-Documents use the JSON schema `hadamard-canvas/1`. HTML pages store their full source in `page.html`; canvas/infinite pages store `page.blocks`; Excalidraw pages store `page.scene`. The desktop app defaults to `~/.hcanvas`; pass `--workspace <dir>` to use another folder.
+Documents use the JSON schema `hadamard-canvas/1`. HTML pages store their full source in `page.html`; canvas/infinite pages store `page.blocks`; Excalidraw pages store `page.scene`. Without a project, the desktop app falls back to `~/.hcanvas`; `--workspace <dir>` still addresses a store root directly. `--project <dir>` is the recommended project-scoped mode.

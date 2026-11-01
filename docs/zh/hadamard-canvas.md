@@ -218,9 +218,30 @@ HTTP API 与 CLI 同源：`/api/state`、`/api/docs`、`/api/docs/:id/read|apply
 - 可视化编辑聚焦文字/样式，结构修改走源码；
 - 视觉 PPTX 中 HTML 页仍为整页图片；可编辑 deck 会把 HTML 文本映射为原生 PowerPoint 对象（布局为近似，复杂 CSS 效果不重建）。母版、素材库、矢量 PDF 仍为后续扩展。
 - DOCX 导出刻意走 text-first/ATS 路线，不复刻视觉卡片和装饰图形。
+## 项目 Workspace
+
+选定项目目录后，hcanvas 可以初始化它；所有产品数据都放在 `<project>/.hcanvas`：
+
+```bash
+hcanvas workspace init ~/projects/my-deck
+hcanvas app --project ~/projects/my-deck
+hcanvas desktop --project ~/projects/my-deck
+```
+
+桌面版顶栏提供 **Open Project…**，通过原生目录选择后重启到该项目；点击左下角 workspace 路径会打开 Workspace 对话框，显示当前路径、生成的 CLI 指南，并可一键复制。初始化不破坏现有文件，会创建：
+
+```text
+<project>/.hcanvas/
+  CLI.md          # 生成的 CLI 操作指南
+  workspace.json  # 项目标识 / schema
+  docs/           # 文档
+  exports/        # 导出文件
+  .gitignore      # daemon.json + exports/
+```
+
 ## 存储格式
 
-一个 workspace 就是普通目录：
+一个 workspace（通常是 `<project>/.hcanvas`）就是普通目录：
 
 ```
 <workspace>/docs/<docId>.json   # 文档：pages、html/blocks/scene、history、proposals
@@ -230,4 +251,4 @@ HTTP API 与 CLI 同源：`/api/state`、`/api/docs`、`/api/docs/:id/read|apply
 <workspace>/exports/            # HTML/PDF/PNG/PPTX/DOCX 输出
 ```
 
-文档使用 JSON schema `hadamard-canvas/1`：HTML 页把完整源码存在 `page.html`；Canvas/Infinite 页存 `page.blocks`；Excalidraw 页存 `page.scene`。桌面应用默认 workspace 是 `~/.hcanvas`，可用 `--workspace <dir>` 指定其他目录。
+文档使用 JSON schema `hadamard-canvas/1`：HTML 页把完整源码存在 `page.html`；Canvas/Infinite 页存 `page.blocks`；Excalidraw 页存 `page.scene`。未选择项目时，桌面应用回退到 `~/.hcanvas`；`--workspace <dir>` 仍可直接指定 store 根目录，推荐使用项目化模式 `--project <dir>`。

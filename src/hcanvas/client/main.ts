@@ -19,6 +19,12 @@ class ApiError extends Error {
   }
 }
 
+declare global {
+  interface Window {
+    hcanvasDesktop?: { openProject: () => Promise<string | null>; platform?: string };
+  }
+}
+
 const boot = JSON.parse(document.getElementById('hc-boot')?.textContent || '{}') as BootConfig;
 
 function el<T extends HTMLElement>(id: string): T {
@@ -337,6 +343,7 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
 
 async function initialize(): Promise<void> {
   bindStaticActions();
+  el('openProjectBtn').classList.toggle('hidden', !window.hcanvasDesktop);
   try {
     const context = await api<Record<string, unknown> & { active?: { docId?: string }; docs?: DocSummary[]; presence?: PresenceEntry[] }>('/api/state');
     state.context = context;
@@ -380,6 +387,8 @@ function bindStaticActions(): void {
   el('newDocMini').addEventListener('click', () => openNewDocModal());
   el('addPageBtn').addEventListener('click', () => openAddPageModal());
   el('importHtmlBtn').addEventListener('click', () => el<HTMLInputElement>('htmlFileInput').click());
+  el('openProjectBtn').addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.openProject(); });
+  el('workspacePath').addEventListener('click', () => { void openWorkspaceModal(); });
   el<HTMLInputElement>('htmlFileInput').addEventListener('change', event => {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file) void importHtmlFile(file);
@@ -2250,6 +2259,23 @@ function openImageModal(block?: HcBlock): void {
     if (block) void applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { src, alt } }], { refreshArtboard: true }).then(renderInspector);
     else void addBlock('image', { src, alt, w: 420, h: 260 });
   });
+}
+
+async function openWorkspaceModal(): Promise<void> {
+  try {
+    const info = await api<{ workspace: string; project?: string | null; guidePath: string; guide: string }>('/api/workspace');
+    const canOpen = Boolean(window.hcanvasDesktop);
+    const html = '<div class="modal"><div class="modal-head"><div><strong>Workspace</strong><small>All hcanvas content lives in this directory.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body">' +
+      '<div class="field"><span>Workspace</span><input readonly value="' + esc(info.workspace) + '"></div>' +
+      (info.project ? '<div class="field"><span>Project</span><input readonly value="' + esc(info.project) + '"></div>' : '') +
+      '<div class="field"><span>CLI guide</span><input readonly value="' + esc(info.guidePath) + '"></div>' +
+      '<div class="hint-card">Start another app on a project folder:<br><br><code>hcanvas app --project /path/to/project</code><br><br>The project gets a <code>.hcanvas/</code> directory with docs, state, masters, exports and CLI.md.</div>' +
+      '<div class="workspace-guide">' + esc(info.guide) + '</div>' +
+      '</div><div class="modal-foot">' + (canOpen ? '<button id="workspaceOpenProjectBtn" class="btn">Open Project…</button>' : '') + '<button id="copyWorkspaceGuideBtn" class="btn">Copy CLI guide</button><button class="btn" data-close>Close</button></div></div>';
+    openModal(html);
+    qs<HTMLButtonElement>('#copyWorkspaceGuideBtn')?.addEventListener('click', () => { void copyText(info.guide); });
+    qs<HTMLButtonElement>('#workspaceOpenProjectBtn')?.addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.openProject(); });
+  } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
 }
 
 function openSaveMasterModal(page: HcPage): void {

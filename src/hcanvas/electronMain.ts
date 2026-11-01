@@ -1,9 +1,10 @@
-import { app, BrowserWindow, Menu, dialog, shell } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { startHcanvasServer, type HcServer } from './server.js';
+import { initWorkspace, projectWorkspaceDir } from './workspace.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -12,7 +13,9 @@ function argValue(name: string): string | undefined {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
-const workspace = path.resolve(argValue('--workspace') || process.env.HCANVAS_WORKSPACE || path.join(os.homedir(), '.hcanvas'));
+const projectArg = argValue('--project') || process.env.HCANVAS_PROJECT;
+const project = projectArg ? path.resolve(projectArg) : null;
+const workspace = project ? projectWorkspaceDir(project) : path.resolve(argValue('--workspace') || process.env.HCANVAS_WORKSPACE || path.join(os.homedir(), '.hcanvas'));
 const requestedPort = Number(argValue('--port') || process.env.HCANVAS_PORT || 4319);
 const staticDir = path.resolve(here, '..', '..', 'hcanvas');
 
@@ -25,6 +28,7 @@ if (!gotLock) {
   let window: BrowserWindow | null = null;
 
   const createWindow = async (): Promise<void> => {
+    await initWorkspace(workspace, project);
     server = await startHcanvasServer({
       workspace,
       host: '127.0.0.1',
@@ -37,11 +41,12 @@ if (!gotLock) {
       height: 940,
       minWidth: 1024,
       minHeight: 680,
-      title: 'Hadamard Canvas',
+      title: project ? 'Hadamard Canvas — ' + path.basename(project) : 'Hadamard Canvas',
       backgroundColor: '#f1efe9',
       show: false,
       autoHideMenuBar: true,
       webPreferences: {
+        preload: path.join(here, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -55,6 +60,29 @@ if (!gotLock) {
     await window.loadURL(server.url);
     window.on('closed', () => { window = null; });
   };
+
+  ipcMain.handle('hcanvas:open-project', async () => {
+    if (!window) return null;
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Open hCanvas project',
+      buttonLabel: 'Open project',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const selectedProject = result.filePaths[0];
+    await server?.close().catch(() => undefined);
+    const sourceArgs = process.argv.slice(1);
+    const relaunchArgs: string[] = [];
+    for (let index = 0; index < sourceArgs.length; index += 1) {
+      const arg = sourceArgs[index]!;
+      if (arg === '--project' || arg === '--workspace') { index += 1; continue; }
+      relaunchArgs.push(arg);
+    }
+    relaunchArgs.push('--project', selectedProject);
+    app.relaunch({ args: relaunchArgs });
+    app.exit(0);
+    return selectedProject;
+  });
 
   app.on('second-instance', () => {
     if (window) {

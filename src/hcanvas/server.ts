@@ -15,6 +15,7 @@ import {
 } from './store.js';
 import type { HcBlock, HcDocument, HcOp, HcPage } from './types.js';
 import { resolveLlmConfig, runAgentChat, type AgentChatMessage } from './agentChat.js';
+import { workspaceInfo } from './workspace.js';
 
 export interface HcServerOptions {
   workspace: string;
@@ -373,6 +374,10 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
           sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
         });
         json(res, 200, { ok: true, active });
+        return;
+      }
+      if (pathname === '/api/workspace' && req.method === 'GET') {
+        json(res, 200, { ok: true, ...(await workspaceInfo(store.root)) });
         return;
       }
       if (pathname === '/api/agent/status' && req.method === 'GET') {

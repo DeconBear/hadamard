@@ -490,3 +490,5 @@ button { cursor: pointer; }
 #viewport.infinite-surface .artboard.mode-infinite { background: transparent !important; box-shadow: none !important; }
 #viewport.panning { cursor: grabbing !important; }
 #viewport.panning * { cursor: grabbing !important; }
+.workspace-path { cursor: pointer; }
+.workspace-guide { margin-top: 12px; max-height: 300px; overflow: auto; white-space: pre-wrap; font: 10px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { startHcanvasServer } from './server.js';
 import { hcId, type HcOp, type HcPage } from './types.js';
+import { initWorkspace, projectWorkspaceDir, workspaceInfo } from './workspace.js';
 
 interface ParsedArgs {
   positionals: string[];
@@ -27,9 +28,11 @@ function usage(): string {
     'hcanvas — Hadamard Canvas CLI (AI-native, JSON-first)',
     '',
     'Usage:',
-    '  hcanvas app [--workspace <dir>] [--port <n>] [--no-open]',
-    '  hcanvas desktop [--workspace <dir>] [--port <n>]   # standalone Electron window',
-    '  hcanvas serve [--workspace <dir>] [--port <n>] [--host 127.0.0.1]',
+    '  hcanvas app [--project <dir> | --workspace <dir>] [--port <n>] [--no-open]',
+    '  hcanvas desktop [--project <dir> | --workspace <dir>] [--port <n>]   # standalone Electron window',
+    '  hcanvas serve [--project <dir> | --workspace <dir>] [--port <n>] [--host 127.0.0.1]',
+    '  hcanvas workspace init [projectDir]',
+    '  hcanvas workspace info [projectDir]',
     '  hcanvas status',
     '  hcanvas context [--session <id>]',
     '  hcanvas resolve <query>',
@@ -52,7 +55,7 @@ function usage(): string {
     '  hcanvas sessions delete <sessionId>',
     '  hcanvas guide',
     '',
-    'Global flags: --workspace <dir> --url <url> --token <token> --session <id> --actor <name> --pretty',
+    'Global flags: --project <dir> --workspace <dir> --url <url> --token <token> --session <id> --actor <name> --pretty',
     '',
     'Environment: HCANVAS_HOME HCANVAS_URL HCANVAS_TOKEN HCANVAS_SESSION HCANVAS_ACTOR HCANVAS_DOC',
     '',
@@ -95,7 +98,14 @@ function flagBool(args: ParsedArgs, name: string): boolean {
   return args.flags[name] === true || args.flags[name] === 'true' || args.flags[name] === '1';
 }
 
+function projectPath(args: ParsedArgs): string | null {
+  const value = flagString(args, 'project') || process.env.HCANVAS_PROJECT;
+  return value ? path.resolve(value) : null;
+}
+
 function workspacePath(args: ParsedArgs): string {
+  const project = projectPath(args);
+  if (project) return projectWorkspaceDir(project);
   const value = flagString(args, 'workspace') || process.env.HCANVAS_WORKSPACE || DEFAULT_WORKSPACE;
   return path.resolve(value);
 }
@@ -104,9 +114,13 @@ async function findConnection(args: ParsedArgs): Promise<Connection> {
   const explicitUrl = flagString(args, 'url') || process.env.HCANVAS_URL;
   const explicitToken = flagString(args, 'token') || process.env.HCANVAS_TOKEN;
   if (explicitUrl && explicitToken) return { url: explicitUrl, token: explicitToken };
+  const project = projectPath(args);
   const candidates = [
+    project ? projectWorkspaceDir(project) : null,
+    project,
     flagString(args, 'workspace') ? path.resolve(flagString(args, 'workspace')!) : null,
     process.env.HCANVAS_WORKSPACE ? path.resolve(process.env.HCANVAS_WORKSPACE) : null,
+    path.resolve(process.cwd(), '.hcanvas'),
     path.resolve(process.cwd()),
     DEFAULT_WORKSPACE,
   ].filter((value): value is string => Boolean(value));
@@ -234,8 +248,10 @@ function launchDesktop(args: ParsedArgs): void {
     throw new Error('Electron is not installed. Run hcanvas app for the browser version.');
   }
   const childArgs = [electronMain];
+  const project = projectPath(args);
   const workspace = flagString(args, 'workspace') || process.env.HCANVAS_WORKSPACE;
-  if (workspace) childArgs.push('--workspace', path.resolve(workspace));
+  if (project) childArgs.push('--project', project);
+  else if (workspace) childArgs.push('--workspace', path.resolve(workspace));
   const port = flagString(args, 'port');
   if (port) childArgs.push('--port', port);
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -251,11 +267,14 @@ function launchDesktop(args: ParsedArgs): void {
   });
   closeSync(logFd);
   if (process.platform === 'win32') child.unref();
-  print({ ok: true, desktop: true, workspace: workspace ? path.resolve(workspace) : path.join(os.homedir(), '.hcanvas'), pid: child.pid, log: logPath }, flagBool(args, 'pretty'));
+  const effectiveWorkspace = project ? projectWorkspaceDir(project) : workspace ? path.resolve(workspace) : path.join(os.homedir(), '.hcanvas');
+  print({ ok: true, desktop: true, workspace: effectiveWorkspace, project: project || null, pid: child.pid, log: logPath }, flagBool(args, 'pretty'));
 }
 
 async function runServe(args: ParsedArgs, open: boolean): Promise<void> {
   const workspace = workspacePath(args);
+  const project = projectPath(args);
+  const workspaceMeta = await initWorkspace(workspace, project);
   const portValue = flagString(args, 'port');
   const port = portValue ? Number(portValue) : 4319;
   const server = await startHcanvasServer({
@@ -264,7 +283,7 @@ async function runServe(args: ParsedArgs, open: boolean): Promise<void> {
     port,
     staticDir: flagString(args, 'static-dir') ? path.resolve(flagString(args, 'static-dir')!) : undefined,
   });
-  print({ ok: true, url: server.url, token: server.token, workspace, pid: process.pid }, flagBool(args, 'pretty'));
+  print({ ok: true, url: server.url, token: server.token, workspace, project: workspaceMeta.project, guide: workspaceMeta.guidePath, pid: process.pid }, flagBool(args, 'pretty'));
   if (open && !flagBool(args, 'no-open')) openBrowser(server.url);
   const shutdown = async (): Promise<void> => {
     await server.close().catch(() => undefined);
@@ -286,6 +305,19 @@ async function main(argv: string[]): Promise<void> {
   const pretty = flagBool(args, 'pretty');
   if (command === 'serve' || command === 'app') { await runServe(args, command === 'app'); return; }
   if (command === 'desktop') { launchDesktop(args); return; }
+  if (command === 'workspace') {
+    const project = path.resolve(args.positionals[2] || projectPath(args) || process.cwd());
+    const workspace = projectWorkspaceDir(project);
+    if (sub === 'info') {
+      print(await workspaceInfo(workspace), pretty);
+      return;
+    }
+    if (!sub || sub === 'init') {
+      print({ ok: true, ...(await initWorkspace(workspace, project)), hint: 'Start with: hcanvas app --project ' + project }, pretty);
+      return;
+    }
+    throw new Error('Unknown workspace command: ' + sub);
+  }
   if (command === 'guide') {
     process.stdout.write(usage() + '\n\nAgent notes:\n- Always run "hcanvas context --json" first when the user refers to "this canvas".\n- If context is absent or ambiguous, list documents and ask the user; never guess for writes.\n- All writes are revision-checked; read, then apply with --base-revision.\n- HTML edits should patch data-hc-id targets, not rewrite whole documents.\n');
     return;
