@@ -808,7 +808,8 @@ function createPageItem(page: HcPage, index: number, pagesLength: number): PageI
   thumb.innerHTML = '<div class="page-thumb-loading"></div>';
   const info = document.createElement('div');
   info.className = 'page-info';
-  info.innerHTML = '<strong>' + esc(page.name || 'Page ' + (index + 1)) + '</strong><small>' + esc(page.mode) + ' · ' + page.width + '×' + page.height + '</small>';
+  const meta = page.mode === 'infinite' ? '∞ · no page bounds' : page.mode === 'whiteboard' ? 'workspace surface' : esc(page.mode) + ' · ' + page.width + '×' + page.height;
+  info.innerHTML = '<strong>' + esc(page.name || 'Page ' + (index + 1)) + '</strong><small>' + meta + '</small>';
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'page-open';
@@ -1765,7 +1766,9 @@ function renderPageInspector(): void {
   const blocks = page.blocks || [];
   let html = '<section class="inspector-section"><div class="inspector-title">Page</div>';
   html += field('pageName', 'Name', '<input id="pageName" value="' + esc(page.name) + '">');
-  html += '<div class="field-row">' + field('pageWidth', 'Width', '<input id="pageWidth" type="number" value="' + page.width + '">') + field('pageHeight', 'Height', '<input id="pageHeight" type="number" value="' + page.height + '">') + '</div>';
+  if (page.mode === 'infinite') html += field('pageSurface', 'Surface', '<input readonly value="Infinite · no page bounds">');
+  else if (page.mode === 'whiteboard') html += field('pageSurface', 'Surface', '<input readonly value="Full workspace · Excalidraw">');
+  else html += '<div class="field-row">' + field('pageWidth', 'Width', '<input id="pageWidth" type="number" value="' + page.width + '">') + field('pageHeight', 'Height', '<input id="pageHeight" type="number" value="' + page.height + '">') + '</div>';
   html += '<div class="field"><span>Background</span><div class="swatch-row"><input id="pageBgPicker" type="color" value="' + esc(toHex(page.background)) + '"><input id="pageBg" value="' + esc(page.background) + '"></div></div>';
   html += '<div class="field"><span>Mode</span><input readonly value="' + esc(page.mode === 'infinite' ? 'infinite canvas' : page.mode) + '"></div>';
   html += '<div class="field"><span>Notes for agent</span><textarea id="pageNotes" rows="2">' + esc(page.notes || '') + '</textarea></div>';
@@ -1790,8 +1793,8 @@ function bindPageInspector(page: HcPage): void {
     await applyOps([{ op: 'update_page', pageId: page.id, patch } as HcOp], { refreshArtboard: refresh });
   };
   el<HTMLInputElement>('pageName').addEventListener('change', event => { void applyPage({ name: (event.target as HTMLInputElement).value }); });
-  el<HTMLInputElement>('pageWidth').addEventListener('change', event => { void applyPage({ width: Math.max(100, Number((event.target as HTMLInputElement).value) || page.width) }, true); });
-  el<HTMLInputElement>('pageHeight').addEventListener('change', event => { void applyPage({ height: Math.max(100, Number((event.target as HTMLInputElement).value) || page.height) }, true); });
+  qs<HTMLInputElement>('#pageWidth')?.addEventListener('change', event => { void applyPage({ width: Math.max(100, Number((event.target as HTMLInputElement).value) || page.width) }, true); });
+  qs<HTMLInputElement>('#pageHeight')?.addEventListener('change', event => { void applyPage({ height: Math.max(100, Number((event.target as HTMLInputElement).value) || page.height) }, true); });
   const bg = el<HTMLInputElement>('pageBg');
   const picker = el<HTMLInputElement>('pageBgPicker');
   picker.addEventListener('input', () => { bg.value = picker.value; });
