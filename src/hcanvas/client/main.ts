@@ -445,26 +445,44 @@ function bindStaticActions(): void {
     renderActivePanel();
   });
   const viewport = el('viewport');
-  viewport.addEventListener('pointerdown', event => {
-    const targetElement = event.target as Element;
-    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
-    const panMode = state.tool === 'hand' || state.spaceHeld;
-    if (event.button !== 0 || (!panMode && (targetElement.closest('.block-wrap') || targetElement.closest('.artboard')))) return;
+  const beginPan = (event: PointerEvent): void => {
     const start = { x: event.clientX, y: event.clientY, panX: state.panX, panY: state.panY };
+    viewport.classList.add('panning');
     viewport.setPointerCapture(event.pointerId);
     const move = (moveEvent: PointerEvent): void => {
       state.panX = start.panX + moveEvent.clientX - start.x;
       state.panY = start.panY + moveEvent.clientY - start.y;
       scheduleStageTransform();
     };
-    const up = (): void => { viewport.removeEventListener('pointermove', move); viewport.removeEventListener('pointerup', up); };
+    const up = (): void => {
+      viewport.classList.remove('panning');
+      viewport.removeEventListener('pointermove', move);
+      viewport.removeEventListener('pointerup', up);
+    };
     viewport.addEventListener('pointermove', move);
     viewport.addEventListener('pointerup', up);
+  };
+  viewport.addEventListener('pointerdown', event => {
+    const targetElement = event.target as Element;
+    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
+    if (event.button === 1) {
+      if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
+      event.preventDefault();
+      beginPan(event);
+      return;
+    }
+    const panMode = state.tool === 'hand' || state.spaceHeld;
+    if (event.button !== 0 || (!panMode && (targetElement.closest('.block-wrap') || targetElement.closest('.artboard')))) return;
+    beginPan(event);
   });
+  viewport.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
   viewport.addEventListener('wheel', event => {
-    if (!(event.ctrlKey || event.metaKey)) return;
+    const targetElement = event.target as Element;
+    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
+    if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
     event.preventDefault();
-    setZoom(state.zoom * (event.deltaY < 0 ? 1.08 : 0.92));
+    const factor = Math.exp(-event.deltaY * (event.ctrlKey || event.metaKey ? 0.002 : 0.0016));
+    setZoomAt(state.zoom * factor, event.clientX, event.clientY);
   }, { passive: false });
   window.addEventListener('resize', () => { resizeWhiteboardSurface(); });
 }
@@ -564,12 +582,12 @@ function openShortcutsModal(): void {
   const html = '<div class="modal small"><div class="modal-head"><div><strong>Canvas shortcuts</strong><small>Works when you are not typing in a field.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="help-grid">' +
     '<kbd>V</kbd><span>Select tool</span>' +
     '<kbd>H</kbd><span>Hand / pan tool</span>' +
-    '<kbd>Space</kbd><span>Hold to pan</span>' +
+    '<kbd>Space / Middle drag</kbd><span>Pan canvas</span>' +
+    '<kbd>Wheel</kbd><span>Zoom at pointer</span>' +
     '<kbd>1 – 6</kbd><span>Insert HTML / Text / Markdown / Code / Image / Shape</span>' +
     '<kbd>Ctrl/Cmd + D</kbd><span>Duplicate selected block</span>' +
     '<kbd>Delete</kbd><span>Delete selected block</span>' +
     '<kbd>Arrow keys</kbd><span>Nudge selected block (Shift = 10px)</span>' +
-    '<kbd>Ctrl/Cmd + wheel</kbd><span>Zoom</span>' +
     '<kbd>G / S</kbd><span>Toggle grid / snap</span>' +
     '<kbd>?</kbd><span>This help</span>' +
     '</div></div><div class="modal-foot"><button class="btn" data-close>Close</button></div></div>';
@@ -903,9 +921,27 @@ function applyStageTransform(): void {
   el('zoomReset').textContent = Math.round(state.zoom * 100) + '%';
 }
 
-function setZoom(next: number): void {
-  state.zoom = Math.max(0.1, Math.min(3, next));
+function setZoomAt(next: number, clientX?: number, clientY?: number): void {
+  const target = Math.max(0.1, Math.min(3, next));
+  if (clientX === undefined || clientY === undefined) {
+    state.zoom = target;
+    scheduleStageTransform();
+    return;
+  }
+  const rect = el('viewport').getBoundingClientRect();
+  const localX = clientX - rect.left;
+  const localY = clientY - rect.top;
+  const worldX = (localX - state.panX) / state.zoom;
+  const worldY = (localY - state.panY) / state.zoom;
+  state.zoom = target;
+  state.panX = localX - worldX * target;
+  state.panY = localY - worldY * target;
   scheduleStageTransform();
+}
+
+function setZoom(next: number): void {
+  const rect = el('viewport').getBoundingClientRect();
+  setZoomAt(next, rect.left + rect.width / 2, rect.top + rect.height / 2);
 }
 
 function fitPage(): void {
@@ -1781,7 +1817,7 @@ function renderPageInspector(): void {
   html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Excalidraw whiteboard · freehand, shapes, arrows, text' : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
   if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Esc exits. The Agent tab exposes the CLI protocol.</div>';
-  if (page.mode === 'infinite') html += '<div class="hint-card">Pan with the Hand tool or Space, zoom with Ctrl/Cmd + wheel or the zoom controls. Blocks can be placed anywhere and exports crop to content.</div>';
+  if (page.mode === 'infinite') html += '<div class="hint-card">Pan with the Hand tool, Space, or middle-drag; zoom with the mouse wheel or the zoom controls. Blocks can be placed anywhere and exports crop to content.</div>';
   if (page.mode === 'whiteboard') html += '<div class="hint-card">The full Excalidraw toolbar is available inside this page. Use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for agent access.</div>';
   html += '</section>';
   root.innerHTML = html;

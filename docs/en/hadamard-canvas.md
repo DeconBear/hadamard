@@ -68,6 +68,8 @@ The workspace stores documents, state and exports:
 
 ## Whiteboard workspace
 
+Interactive canvas controls: **mouse wheel zooms at the pointer**, **middle-drag pans**, Space/Hand pans, and whiteboard pages keep Excalidraw's native wheel/pan behavior.
+
 Whiteboard pages are full-workspace surfaces: the Excalidraw canvas fills the entire canvas viewport, while the hcanvas tool rail and page zoom controls are hidden. The full Excalidraw toolbar is available inside this page.
 
 ## Page thumbnails and deck management
@@ -112,7 +114,7 @@ Pages can use slide (16:9), A4, poster (4:5), square and custom sizes. Present m
 
 ## Infinite canvas and tools
 
-Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas page). It has no page bounds: pan with the Hand tool or hold Space, zoom with Ctrl/Cmd + wheel or the zoom controls, and place any block anywhere. The dot grid and 8px snapping can be toggled from the tool rail. Exports and Present crop infinite pages to their content bounds.
+Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas page). It has no page bounds: pan with the Hand tool, hold Space, or middle-drag; zoom with the mouse wheel at the pointer or the zoom controls, and place any block anywhere. The dot grid and 8px snapping can be toggled from the tool rail. Exports and Present crop infinite pages to their content bounds.
 
 ## Presentation workflow
 
