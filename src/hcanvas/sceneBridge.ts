@@ -94,6 +94,7 @@ export function excalidrawSceneToBlocks(scene: ExcalidrawScene, options: { pageN
   const idMap = new Map<string, string>();
   const source = new Map<ExcalidrawElement, { blockId: string }>();
   const frames = new Map<string, string>();
+  const groups = new Map<string, string>();
   let skipped = 0;
 
   const pushBlock = (element: ExcalidrawElement, block: HcBlock): void => {
@@ -207,6 +208,31 @@ export function excalidrawSceneToBlocks(scene: ExcalidrawScene, options: { pageN
     skipped += 1;
   }
 
+  // Preserve Excalidraw groups and frame containment on native blocks.
+  for (const [element, info] of source) {
+    if (element.type === 'frame') continue;
+    const block = blocks.find(item => item.id === info.blockId);
+    if (!block) continue;
+    const groupKey = Array.isArray(element.groupIds) ? element.groupIds.find(group => typeof group === 'string') : undefined;
+    if (groupKey) {
+      if (!groups.has(groupKey)) groups.set(groupKey, nativeId('group'));
+      block.groupId = groups.get(groupKey)!;
+    }
+    const directFrame = typeof element.frameId === 'string' ? element.frameId : undefined;
+    if (directFrame && frames.has(directFrame)) block.frameId = frames.get(directFrame)!;
+    else {
+      const centerX = block.x + block.w / 2;
+      const centerY = block.y + block.h / 2;
+      for (const frame of elements) {
+        if (frame.type !== 'frame' || !frames.has(frame.id)) continue;
+        if (centerX >= frame.x && centerX <= frame.x + frame.width && centerY >= frame.y && centerY <= frame.y + frame.height) {
+          block.frameId = frames.get(frame.id)!;
+          break;
+        }
+      }
+    }
+  }
+
   // Map Excalidraw bindings onto native arrow block ids.
   for (const element of elements) {
     if (element.type !== 'arrow' || !source.has(element)) continue;
@@ -268,7 +294,8 @@ export function nativeBlocksToExcalidrawScene(page: HcPage): ExcalidrawScene & {
       strokeStyle: block.style?.strokeStyle || 'solid',
       roughness: 1, opacity: Math.round(Number(block.style?.opacity ?? 1) * 100),
       seed: order * 9973, version: 1, versionNonce: order * 7919, isDeleted: false,
-      groupIds: [] as string[], boundElements: [] as unknown[], updated: 1, link: null, locked: false,
+      groupIds: block.groupId ? [block.groupId] : [] as string[], boundElements: [] as unknown[], updated: 1, link: null, locked: false,
+      frameId: block.frameId ?? null,
     };
     if (block.type === 'freehand') {
       const points = block.points || [{ x: 0, y: 0 }];

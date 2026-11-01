@@ -59,6 +59,10 @@ export interface HcBlock {
   /** optional binding ids, reserved for native arrow-to-shape connections */
   startBinding?: string | null;
   endBinding?: string | null;
+  /** native selection group; null clears the group */
+  groupId?: string | null;
+  /** native frame containment; null clears the frame link */
+  frameId?: string | null;
   style?: HcBlockStyle;
 }
 

@@ -76,6 +76,7 @@ interface UiState {
   doc: HcDocument | null;
   activePageId: string | null;
   activeBlockId: string | null;
+  selectedBlockIds: string[];
   editing: { pageId: string; blockId?: string } | null;
   selectedHtmlId: string | null;
   iframeDoc: Document | null;
@@ -119,7 +120,7 @@ let remoteReloadTimer: ReturnType<typeof setTimeout> | undefined;
 let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 
 const state: UiState = {
-  docs: [], doc: null, activePageId: null, activeBlockId: null, editing: null,
+  docs: [], doc: null, activePageId: null, activeBlockId: null, selectedBlockIds: [], editing: null,
   selectedHtmlId: null, iframeDoc: null, iframeElement: null,
   zoom: 1, panX: 0, panY: 0, fittedPageId: null,
   tab: 'inspector' as 'inspector' | 'agent' | 'proposals' | 'copilot', saveKind: 'idle', context: null, presence: [], masters: [],
@@ -252,6 +253,35 @@ function activeBlock(): HcBlock | null {
   const page = activePage();
   return page?.blocks?.find(block => block.id === state.activeBlockId) ?? null;
 }
+
+function selectedBlocks(): HcBlock[] {
+  const page = activePage();
+  if (!page?.blocks?.length) return [];
+  const ids = new Set(state.selectedBlockIds);
+  return page.blocks.filter(block => ids.has(block.id));
+}
+
+function setBlockSelection(ids: string[], primaryId?: string | null): void {
+  const page = activePage();
+  const available = new Set((page?.blocks || []).map(block => block.id));
+  const unique = [...new Set(ids)].filter(id => available.has(id));
+  state.selectedBlockIds = unique;
+  state.activeBlockId = primaryId && unique.includes(primaryId) ? primaryId : unique[unique.length - 1] ?? null;
+  state.selectedHtmlId = null;
+  document.querySelectorAll<HTMLElement>('.block-wrap').forEach(node => {
+    node.classList.toggle('selected', unique.includes(node.dataset.blockId || ''));
+  });
+  renderInspector();
+  renderTop();
+  renderToolbarState();
+  void syncActive();
+}
+
+function expandGroupSelection(block: HcBlock): string[] {
+  const page = activePage();
+  if (!page || !block.groupId) return [block.id];
+  return (page.blocks || []).filter(item => item.groupId === block.groupId).map(item => item.id);
+}
 function docTitle(): string { return state.doc?.title || 'Untitled canvas'; }
 
 function pageMetrics(page: HcPage): { width: number; height: number; content: { minX: number; minY: number; maxX: number; maxY: number } | null } {
@@ -336,6 +366,7 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
   state.doc = result.doc;
   state.activePageId = pageId || result.doc.pages[0]?.id || null;
   state.activeBlockId = null;
+  state.selectedBlockIds = [];
   state.editing = null;
   state.selectedHtmlId = null;
   state.iframeDoc = null;
@@ -531,12 +562,52 @@ function beginVectorDraw(startEvent: PointerEvent): void {
         if (geometry.clearEnd) block.endBinding = null;
       }
     }
-    state.activeBlockId = block.id;
     void applyOps([{ op: 'add_block', pageId: page.id, block } as HcOp], { refreshArtboard: true }).then(result => {
       if (!result) return;
-      renderInspector();
-      renderToolbarState();
+      setBlockSelection([block.id], block.id);
     });
+  };
+  viewport.addEventListener('pointermove', move);
+  viewport.addEventListener('pointerup', up);
+}
+
+function beginMarquee(event: PointerEvent): void {
+  const page = activePage();
+  if (!page || (page.mode !== 'infinite' && page.mode !== 'canvas')) return;
+  const viewport = el('viewport');
+  const box = document.createElement('div');
+  box.className = 'marquee-box';
+  viewport.appendChild(box);
+  const start = { x: event.clientX, y: event.clientY };
+  let moved = false;
+  const updateBox = (clientX: number, clientY: number): void => {
+    const rect = viewport.getBoundingClientRect();
+    const left = Math.min(start.x, clientX) - rect.left;
+    const top = Math.min(start.y, clientY) - rect.top;
+    box.style.left = left + 'px'; box.style.top = top + 'px';
+    box.style.width = Math.abs(clientX - start.x) + 'px'; box.style.height = Math.abs(clientY - start.y) + 'px';
+  };
+  updateBox(start.x, start.y);
+  try { viewport.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+  const move = (moveEvent: PointerEvent): void => {
+    if (Math.abs(moveEvent.clientX - start.x) > 3 || Math.abs(moveEvent.clientY - start.y) > 3) moved = true;
+    updateBox(moveEvent.clientX, moveEvent.clientY);
+  };
+  const up = (upEvent: PointerEvent): void => {
+    viewport.removeEventListener('pointermove', move);
+    viewport.removeEventListener('pointerup', up);
+    try { viewport.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+    box.remove();
+    if (!moved) { setBlockSelection([]); return; }
+    const a = viewportToWorldPoint(start.x, start.y);
+    const b = viewportToWorldPoint(upEvent.clientX, upEvent.clientY);
+    const minX = Math.min(a.x, b.x); const maxX = Math.max(a.x, b.x);
+    const minY = Math.min(a.y, b.y); const maxY = Math.max(a.y, b.y);
+    const hits = (page.blocks || []).filter(block => block.x + block.w >= minX && block.x <= maxX && block.y + block.h >= minY && block.y <= maxY);
+    const ids = new Set<string>();
+    for (const block of hits) for (const id of expandGroupSelection(block)) ids.add(id);
+    if (upEvent.shiftKey) for (const id of state.selectedBlockIds) ids.add(id);
+    setBlockSelection([...ids], hits[hits.length - 1]?.id ?? null);
   };
   viewport.addEventListener('pointermove', move);
   viewport.addEventListener('pointerup', up);
@@ -604,10 +675,12 @@ function bindStaticActions(): void {
     if (!button) return;
     const action = button.dataset.selAction;
     if (action === 'edit') { editActiveBlock(); return; }
+    if (action === 'group') { void groupSelectedBlocks(); return; }
+    if (action === 'ungroup') { void ungroupSelectedBlocks(); return; }
     if (action === 'duplicate') { void duplicateActiveBlock(); return; }
     if (action === 'front') { void setActiveBlockLayer('front'); return; }
     if (action === 'back') { void setActiveBlockLayer('back'); return; }
-    if (action === 'delete') { void deleteActiveBlock(); }
+    if (action === 'delete') { void deleteSelectedBlocks(); }
   });
   el('alignSelect').addEventListener('change', event => {
     const value = (event.target as HTMLSelectElement).value;
@@ -649,8 +722,16 @@ function bindStaticActions(): void {
       return;
     }
     const panMode = state.tool === 'hand' || state.spaceHeld;
-    if (event.button !== 0 || (!panMode && (targetElement.closest('.block-wrap') || targetElement.closest('.artboard')))) return;
+    if (event.button !== 0 || !panMode) return;
+    if (targetElement.closest('.block-wrap')) return;
     beginPan(event);
+  });
+  viewport.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || state.tool !== 'select' || state.spaceHeld || state.editing) return;
+    const target = event.target as Element;
+    if (target.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .block-wrap')) return;
+    event.preventDefault();
+    beginMarquee(event);
   });
   viewport.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
   viewport.addEventListener('wheel', event => {
@@ -731,12 +812,15 @@ function renderToolbarState(): void {
   });
   el('viewport').classList.toggle('tool-hand', state.tool === 'hand' || state.spaceHeld);
   const selection = el('selectionToolbar');
+  const selectedCount = selectedBlocks().length;
   const showSelection = Boolean(block) && !state.editing && !state.presenting;
   selection.classList.toggle('hidden', !showSelection);
   if (block) {
     const editButton = el('selEditBtn');
     editButton.textContent = block.type === 'html' ? 'Edit HTML' : block.type === 'markdown' || block.type === 'code' || block.type === 'text' ? 'Edit source' : block.type === 'image' ? 'Image' : 'Style';
-    editButton.style.display = '';
+    editButton.style.display = selectedCount > 1 ? 'none' : '';
+    qs<HTMLElement>('[data-sel-action="group"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
+    qs<HTMLElement>('[data-sel-action="ungroup"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
   }
 }
 
@@ -761,24 +845,62 @@ async function pasteBlock(): Promise<void> {
     z: Math.max(0, ...(page.blocks || []).map(block => block.z)) + 1,
   };
   const result = await applyOps([{ op: 'add_block', pageId: page.id, block: copy }], { refreshArtboard: true });
-  if (result) { state.activeBlockId = copy.id; renderArtboard(); renderInspector(); renderToolbarState(); }
+  if (result) { setBlockSelection([copy.id], copy.id); renderArtboard(); }
+}
+
+async function groupSelectedBlocks(): Promise<void> {
+  const page = activePage();
+  const blocks = selectedBlocks();
+  if (!page || blocks.length < 2) { toast('Select at least two blocks to group.', 'info'); return; }
+  const groupId = genId('group');
+  await applyOps(blocks.map(block => ({ op: 'update_block', pageId: page.id, blockId: block.id, patch: { groupId } } as HcOp)), { refreshArtboard: true });
+  renderInspector();
+  toast('Grouped ' + blocks.length + ' blocks', 'success');
+}
+
+async function ungroupSelectedBlocks(): Promise<void> {
+  const page = activePage();
+  const blocks = selectedBlocks().filter(block => block.groupId);
+  if (!page || !blocks.length) { toast('No grouped blocks selected.', 'info'); return; }
+  await applyOps(blocks.map(block => ({ op: 'update_block', pageId: page.id, blockId: block.id, patch: { groupId: null } } as HcOp)), { refreshArtboard: true });
+  renderInspector();
+  toast('Ungrouped ' + blocks.length + ' blocks', 'success');
+}
+
+async function deleteSelectedBlocks(): Promise<void> {
+  const page = activePage();
+  const blocks = selectedBlocks();
+  if (!page || !blocks.length) return;
+  await applyOps(blocks.map(block => ({ op: 'delete_block', pageId: page.id, blockId: block.id } as HcOp)), { refreshArtboard: true });
+  setBlockSelection([]);
 }
 
 async function duplicateActiveBlock(): Promise<void> {
   const page = activePage();
-  const block = activeBlock();
-  if (!page || !block) return;
-  const copy: HcBlock = { ...block, id: genId('block'), x: block.x + 24, y: block.y + 24, z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1, name: block.name || block.type + ' copy' };
-  const result = await applyOps([{ op: 'add_block', pageId: page.id, block: copy }], { refreshArtboard: true });
-  if (result) { state.activeBlockId = copy.id; renderArtboard(); renderInspector(); renderToolbarState(); }
+  const blocks = selectedBlocks();
+  if (!page || !blocks.length) return;
+  const groupMap = new Map<string, string>();
+  const copies = blocks.map((block, index) => {
+    let groupId = block.groupId ?? null;
+    if (groupId) {
+      if (!groupMap.has(groupId)) groupMap.set(groupId, genId('group'));
+      groupId = groupMap.get(groupId)!;
+    }
+    return { ...block, id: genId('block'), x: block.x + 24 + index, y: block.y + 24 + index, z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + index + 1, groupId, name: block.name || block.type + ' copy' };
+  });
+  const result = await applyOps(copies.map(copy => ({ op: 'add_block', pageId: page.id, block: copy } as HcOp)), { refreshArtboard: true });
+  if (result) {
+    setBlockSelection(copies.map(copy => copy.id), copies[copies.length - 1]?.id ?? null);
+    renderArtboard(); renderInspector(); renderToolbarState();
+  }
 }
 
 async function setActiveBlockLayer(direction: 'front' | 'back'): Promise<void> {
   const page = activePage();
-  const block = activeBlock();
-  if (!page || !block) return;
+  const blocks = selectedBlocks();
+  if (!page || !blocks.length) return;
   const z = direction === 'front' ? Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1 : Math.min(0, ...(page.blocks || []).map(item => item.z)) - 1;
-  await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { z } }], { refreshArtboard: true });
+  await applyOps(blocks.map((block, index) => ({ op: 'update_block', pageId: page.id, blockId: block.id, patch: { z: z + index } } as HcOp)), { refreshArtboard: true });
   renderInspector();
 }
 
@@ -801,6 +923,19 @@ async function alignActiveBlock(mode: string): Promise<void> {
   renderInspector();
 }
 
+async function nudgeSelectedBlocks(dx: number, dy: number): Promise<void> {
+  const page = activePage();
+  const blocks = selectedBlocks();
+  if (!page || !blocks.length) return;
+  await applyOps(blocks.map(block => {
+    const next = clampBlockPosition(page, block, block.x + dx, block.y + dy);
+    block.x = next.x; block.y = next.y;
+    const wrap = qs<HTMLElement>('.block-wrap[data-block-id="' + block.id + '"]');
+    if (wrap) { wrap.style.left = next.x + 'px'; wrap.style.top = next.y + 'px'; }
+    return { op: 'update_block', pageId: page.id, blockId: block.id, patch: { x: next.x, y: next.y } } as HcOp;
+  }), { refreshArtboard: false });
+}
+
 async function nudgeActiveBlock(dx: number, dy: number): Promise<void> {
   const page = activePage();
   const block = activeBlock();
@@ -818,6 +953,8 @@ function openShortcutsModal(): void {
     '<kbd>H</kbd><span>Hand / pan tool</span>' +
     '<kbd>Space / Middle drag</kbd><span>Pan canvas</span>' +
     '<kbd>Wheel</kbd><span>Zoom at pointer</span>' +
+    '<kbd>Drag empty / Shift+click</kbd><span>Marquee / add to selection</span>' +
+    '<kbd>Ctrl/Cmd + G</kbd><span>Group / Shift = ungroup</span>' +
     '<kbd>P / A / E</kbd><span>Pen / Arrow / Eraser (Infinite)</span>' +
     '<kbd>1 – 6</kbd><span>Insert HTML / Text / Markdown / Code / Image / Shape</span>' +
     '<kbd>Ctrl/Cmd + Z</kbd><span>Undo</span>' +
@@ -845,6 +982,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     if (state.sourceModalOpen) { closeModal(); return; }
     if (state.editing) { exitHtmlEdit(); return; }
+    if (state.selectedBlockIds.length) { setBlockSelection([]); return; }
     closeModal();
     return;
   }
@@ -878,6 +1016,11 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   if ((event.key === 'p' || event.key === 'P') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'pen'; renderToolbarState(); } return; }
   if ((event.key === 'a' || event.key === 'A') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'arrow'; renderToolbarState(); } return; }
   if ((event.key === 'e' || event.key === 'E') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'eraser'; renderToolbarState(); } return; }
+  if ((event.key === 'g' || event.key === 'G') && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    if (event.shiftKey) void ungroupSelectedBlocks(); else void groupSelectedBlocks();
+    return;
+  }
   if (event.key === 'g' || event.key === 'G') { state.showGrid = !state.showGrid; renderArtboard(); renderToolbarState(); return; }
   if (event.key === 's' || event.key === 'S') { state.snap = !state.snap; renderToolbarState(); return; }
   if (event.key === '?') { openShortcutsModal(); return; }
@@ -890,16 +1033,16 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     else void addBlock(type);
     return;
   }
-  if (event.key.startsWith('Arrow') && state.activeBlockId) {
+  if (event.key.startsWith('Arrow') && state.selectedBlockIds.length) {
     event.preventDefault();
     const step = event.shiftKey ? 10 : 1;
     const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
     const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
-    void nudgeActiveBlock(dx, dy);
+    void nudgeSelectedBlocks(dx, dy);
     return;
   }
   if (event.key === 'Delete' || event.key === 'Backspace') {
-    if (state.activeBlockId) { event.preventDefault(); void deleteActiveBlock(); }
+    if (state.selectedBlockIds.length) { event.preventDefault(); void deleteSelectedBlocks(); }
   }
   if ((event.key === 'p' || event.key === 'P') && (event.ctrlKey || event.metaKey)) {
     event.preventDefault(); void exportCurrent('pdf');
@@ -1053,6 +1196,7 @@ function duplicatePage(page: HcPage): void {
     if (!result) return;
     state.activePageId = copy.id;
     state.activeBlockId = null;
+  state.selectedBlockIds = [];
     state.fittedPageId = null;
     renderAll();
     toast('Page duplicated', 'success');
@@ -1211,6 +1355,7 @@ function selectPage(pageId: string): void {
   if (state.editing) state.editing = null;
   state.activePageId = pageId;
   state.activeBlockId = null;
+  state.selectedBlockIds = [];
   state.selectedHtmlId = null;
   state.iframeDoc = null;
   state.iframeElement = null;
@@ -1471,6 +1616,7 @@ async function convertWhiteboardPage(page: HcPage): Promise<void> {
   if (!result) return;
   state.activePageId = nativePage.id;
   state.activeBlockId = null;
+  state.selectedBlockIds = [];
   state.tool = 'select';
   renderAll();
   void syncActive();
@@ -1499,6 +1645,7 @@ async function followAgent(session: PresenceEntry): Promise<void> {
     state.activePageId = session.pageId;
     state.fittedPageId = null;
     state.activeBlockId = null;
+  state.selectedBlockIds = [];
     state.selectedHtmlId = null;
     renderAll();
   }
@@ -1506,7 +1653,10 @@ async function followAgent(session: PresenceEntry): Promise<void> {
   const page = activePage();
   if (selection && page) {
     if (page.mode === 'html') state.selectedHtmlId = selection;
-    else if (page.blocks?.some(block => block.id === selection)) state.activeBlockId = selection;
+    else if (page.blocks?.some(block => block.id === selection)) {
+      const block = page.blocks.find(item => item.id === selection)!;
+      setBlockSelection(expandGroupSelection(block), block.id);
+    }
   }
   renderArtboard();
   renderInspector();
@@ -1647,7 +1797,7 @@ function renderHtmlPage(container: HTMLElement, page: HcPage): void {
 function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
   const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
   const wrap = document.createElement('div');
-  wrap.className = 'block-wrap' + (state.activeBlockId === block.id ? ' selected' : '') + (editing ? ' editing' : '');
+  wrap.className = 'block-wrap' + (state.selectedBlockIds.includes(block.id) ? ' selected' : '') + (editing ? ' editing' : '');
   wrap.dataset.blockId = block.id;
   wrap.style.left = block.x + 'px';
   wrap.style.top = block.y + 'px';
@@ -1732,7 +1882,7 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
       hit.className = 'block-hit';
       wrap.appendChild(hit);
     }
-    if (state.activeBlockId === block.id && !editing) {
+    if (state.activeBlockId === block.id && state.selectedBlockIds.length <= 1 && !editing) {
       const label = document.createElement('span');
       label.className = 'block-label';
       label.textContent = block.type + ' · ' + block.id.slice(-6);
@@ -1757,23 +1907,36 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
   hit.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
     event.stopPropagation();
-    selectBlock(block.id);
-    const start = { x: event.clientX, y: event.clientY, left: block.x, top: block.y, moved: false };
+    selectBlock(block.id, { additive: event.shiftKey });
+    if (!state.selectedBlockIds.includes(block.id)) return;
+    const page = activePage();
+    if (!page) return;
+    const dragBlocks = selectedBlocks();
+    if (block.shape === 'frame') {
+      for (const child of page.blocks || []) {
+        if (child.frameId === block.id && !dragBlocks.some(item => item.id === child.id)) dragBlocks.push(child);
+      }
+    }
+    const starts = new Map(dragBlocks.map(item => [item.id, { x: item.x, y: item.y }]));
+    const start = { x: event.clientX, y: event.clientY, moved: false };
     hit.setPointerCapture(event.pointerId);
     let dragFrame = 0;
     const paintDrag = (): void => {
-      wrap.style.left = block.x + 'px';
-      wrap.style.top = block.y + 'px';
+      for (const item of dragBlocks) {
+        const node = qs<HTMLElement>('.block-wrap[data-block-id="' + item.id + '"]');
+        if (node) { node.style.left = item.x + 'px'; node.style.top = item.y + 'px'; }
+      }
     };
     const move = (moveEvent: PointerEvent): void => {
       const dx = (moveEvent.clientX - start.x) / state.zoom;
       const dy = (moveEvent.clientY - start.y) / state.zoom;
       if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
       start.moved = true;
-      const page = activePage();
-      if (!page) return;
-      const next = clampBlockPosition(page, block, start.left + dx, start.top + dy);
-      block.x = next.x; block.y = next.y;
+      for (const item of dragBlocks) {
+        const origin = starts.get(item.id)!;
+        const next = clampBlockPosition(page, item, origin.x + dx, origin.y + dy);
+        item.x = next.x; item.y = next.y;
+      }
       if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; paintDrag(); });
     };
     const up = (): void => {
@@ -1781,7 +1944,9 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
       hit.removeEventListener('pointerup', up);
       if (dragFrame) { cancelAnimationFrame(dragFrame); dragFrame = 0; }
       paintDrag();
-      if (start.moved) void persistBlock(block, { x: block.x, y: block.y });
+      if (start.moved) {
+        void applyOps(dragBlocks.map(item => ({ op: 'update_block', pageId: page.id, blockId: item.id, patch: { x: item.x, y: item.y } } as HcOp)), { refreshArtboard: true });
+      }
     };
     hit.addEventListener('pointermove', move);
     hit.addEventListener('pointerup', up);
@@ -1834,16 +1999,19 @@ function bindResizeHandle(handle: HTMLElement, wrap: HTMLDivElement, block: HcBl
   });
 }
 
-function selectBlock(blockId: string | null): void {
-  state.activeBlockId = blockId;
-  state.selectedHtmlId = null;
-  document.querySelectorAll<HTMLElement>('.block-wrap').forEach(node => {
-    node.classList.toggle('selected', node.dataset.blockId === blockId);
-  });
-  renderInspector();
-  renderTop();
-  renderToolbarState();
-  void syncActive();
+function selectBlock(blockId: string | null, options: { additive?: boolean } = {}): void {
+  if (!blockId) { setBlockSelection([]); return; }
+  const block = activePage()?.blocks?.find(item => item.id === blockId);
+  if (!block) { setBlockSelection([]); return; }
+  const groupIds = expandGroupSelection(block);
+  if (options.additive) {
+    const current = new Set(state.selectedBlockIds);
+    const allSelected = groupIds.every(id => current.has(id));
+    for (const id of groupIds) { if (allSelected) current.delete(id); else current.add(id); }
+    setBlockSelection([...current], allSelected ? null : blockId);
+    return;
+  }
+  setBlockSelection(groupIds, blockId);
 }
 
 async function persistBlock(block: HcBlock, patch: Partial<HcBlock>): Promise<void> {
@@ -1854,6 +2022,7 @@ async function persistBlock(block: HcBlock, patch: Partial<HcBlock>): Promise<vo
 }
 
 function cloneJson<T>(value: T): T {
+  if (value === undefined) return value;
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
@@ -1888,7 +2057,10 @@ function inverseOfOp(doc: HcDocument, op: HcOp): HcOp | null {
       const block = page?.blocks?.find(item => item.id === op.blockId);
       if (!block) return null;
       const previous: Record<string, unknown> = {};
-      for (const key of Object.keys(op.patch)) previous[key] = cloneJson((block as unknown as Record<string, unknown>)[key]);
+      for (const key of Object.keys(op.patch)) {
+        const value = (block as unknown as Record<string, unknown>)[key];
+        previous[key] = key === 'groupId' || key === 'frameId' ? value ?? null : cloneJson(value);
+      }
       return { op: 'update_block', pageId: op.pageId, blockId: op.blockId, patch: previous as Partial<Omit<HcBlock, 'id' | 'type'>> };
     }
     case 'set_page_html': {
@@ -2332,9 +2504,27 @@ function field(id: string, label: string, inputHtml: string): string {
 function renderInspector(): void {
   if (state.editing) { renderHtmlInspector(); return; }
   if (!state.doc) return;
+  const selected = selectedBlocks();
+  if (selected.length > 1) { renderMultiSelectionInspector(selected); return; }
   const block = activeBlock();
   if (block) { renderBlockInspector(); return; }
   renderPageInspector();
+}
+
+function renderMultiSelectionInspector(blocks: HcBlock[]): void {
+  const root = el('inspectorPanel');
+  const groupIds = new Set(blocks.map(block => block.groupId).filter(Boolean));
+  let html = '<section class="inspector-section"><div class="inspector-title">Selection · ' + blocks.length + ' blocks</div>';
+  html += '<p class="muted">' + blocks.map(block => esc(block.name || block.type)).join(' · ') + '</p>';
+  if (groupIds.size) html += '<p class="muted">Group: ' + esc([...groupIds].join(', ')) + '</p>';
+  html += '<div class="actions-row"><button id="multiGroupBtn" class="btn tiny">Group</button><button id="multiUngroupBtn" class="btn tiny">Ungroup</button><button id="multiDuplicateBtn" class="btn tiny">Duplicate</button><button id="multiClearBtn" class="btn tiny">Clear</button><button id="multiDeleteBtn" class="btn tiny danger">Delete</button></div></section>';
+  html += '<section class="inspector-section"><div class="inspector-title">Multi-transform</div><div class="hint-card">Drag any selected block to move the whole selection. Arrow keys nudge all selected blocks. Group keeps them selectable as one unit. Click empty canvas and drag to marquee-select.</div></section>';
+  root.innerHTML = html;
+  qs<HTMLButtonElement>('#multiGroupBtn')?.addEventListener('click', () => { void groupSelectedBlocks(); });
+  qs<HTMLButtonElement>('#multiUngroupBtn')?.addEventListener('click', () => { void ungroupSelectedBlocks(); });
+  qs<HTMLButtonElement>('#multiDuplicateBtn')?.addEventListener('click', () => { void duplicateActiveBlock(); });
+  qs<HTMLButtonElement>('#multiClearBtn')?.addEventListener('click', () => setBlockSelection([]));
+  qs<HTMLButtonElement>('#multiDeleteBtn')?.addEventListener('click', () => { void deleteSelectedBlocks(); });
 }
 
 function renderPageInspector(): void {
@@ -2679,6 +2869,7 @@ async function deletePage(pageId: string): Promise<void> {
   if (!result) return;
   state.activePageId = result.pages[0]?.id || null;
   state.activeBlockId = null;
+  state.selectedBlockIds = [];
   renderAll();
 }
 
@@ -2690,6 +2881,7 @@ async function deleteActiveBlock(): Promise<void> {
 
 async function deleteBlock(pageId: string, blockId: string): Promise<void> {
   state.activeBlockId = null;
+  state.selectedBlockIds = [];
   await applyOps([{ op: 'delete_block', pageId, blockId }], { refreshArtboard: true });
   renderInspector();
 }
@@ -2713,7 +2905,7 @@ async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}): Pr
     ...extra,
   };
   const result = await applyOps([{ op: 'add_block', pageId: page.id, block }], { refreshArtboard: true });
-  if (result) { state.activeBlockId = block.id; renderArtboard(); renderInspector(); }
+  if (result) { setBlockSelection([block.id], block.id); renderArtboard(); }
 }
 
 function openImageModal(block?: HcBlock): void {
