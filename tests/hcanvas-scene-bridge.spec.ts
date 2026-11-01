@@ -9,8 +9,8 @@ function scene(): ExcalidrawScene {
     files: { f1: { dataURL: 'data:image/png;base64,AAAA', mimeType: 'image/png' } },
     elements: [
       { id: 'frame1', type: 'frame', x: 40, y: 40, width: 500, height: 300, name: 'Frame A' },
-      { id: 'rect1', type: 'rectangle', x: 100, y: 100, width: 200, height: 100, backgroundColor: '#fff3bf', strokeColor: '#5c940d', roundness: { type: 3 } },
-      { id: 'text1', type: 'text', x: 120, y: 120, width: 160, height: 30, text: 'Hello native', fontSize: 24, strokeColor: '#212529', textAlign: 'center' },
+      { id: 'rect1', type: 'rectangle', x: 100, y: 100, width: 200, height: 100, backgroundColor: '#fff3bf', strokeColor: '#5c940d', roundness: { type: 3 }, groupIds: ['g1'], frameId: 'frame1' },
+      { id: 'text1', type: 'text', x: 120, y: 120, width: 160, height: 30, text: 'Hello native', fontSize: 24, strokeColor: '#212529', textAlign: 'center', groupIds: ['g1'] },
       { id: 'arrow1', type: 'arrow', x: 300, y: 160, width: 100, height: 50, points: [[0, 0], [100, 50]], strokeColor: '#1971c2', strokeWidth: 2, endArrowhead: 'arrow', startBinding: { elementId: 'rect1' }, endBinding: { elementId: 'text1' } },
       { id: 'free1', type: 'freedraw', x: 350, y: 220, width: 80, height: 40, points: [[0, 0], [30, 20], [80, 40]], strokeColor: '#e03131' },
       { id: 'img1', type: 'image', x: 400, y: 80, width: 120, height: 80, fileId: 'f1', alt: 'Chart' },
@@ -35,6 +35,10 @@ describe('hcanvas native scene bridge', () => {
     expect(arrow?.startBinding).toBe(rect?.id);
     expect(arrow?.points?.length).toBe(2);
     expect(conversion.blocks.find(block => block.type === 'image')?.src).toContain('data:image/png');
+    const grouped = conversion.blocks.filter(block => block.groupId);
+    expect(grouped.length).toBe(2);
+    expect(grouped[0]!.groupId).toBe(grouped[1]!.groupId);
+    expect(conversion.blocks.find(block => block.id === rect?.id)?.frameId).toBe(frame?.id);
     expect(conversion.skipped).toBe(0);
   });
 
