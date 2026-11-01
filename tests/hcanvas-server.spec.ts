@@ -93,6 +93,29 @@ describe('hcanvas server', () => {
     expect(docx.bytes).toBeGreaterThan(1000);
     expect(docx.path).toMatch(/\.docx$/);
 
+    // Canvas pages must export a semantic DOCX and an A4 editable PPTX with data-URL images.
+    const canvasDoc = await api<{ doc: { id: string; revision: number; pages: Array<{ id: string }> } }>(server, '/api/docs', { method: 'POST', body: JSON.stringify({ title: 'A4 resume', preset: { width: 794, height: 1123, background: '#ffffff', title: 'A4' } }) });
+    const canvasPageId = canvasDoc.doc.pages[0]!.id;
+    const onePixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+    await api(server, '/api/docs/' + canvasDoc.doc.id + '/apply', {
+      method: 'POST',
+      body: JSON.stringify({
+        baseRevision: canvasDoc.doc.revision,
+        ops: [
+          { op: 'update_page', pageId: canvasPageId, patch: { mode: 'canvas', width: 794, height: 1123, background: '#ffffff' } },
+          { op: 'add_block', pageId: canvasPageId, block: { id: 'resume_text', type: 'text', x: 40, y: 40, w: 300, h: 40, z: 1, text: 'Resume heading', style: { fontSize: 24, fontWeight: 700, color: '#172F45' } } },
+          { op: 'add_block', pageId: canvasPageId, block: { id: 'resume_shape', type: 'shape', shape: 'rect', x: 40, y: 100, w: 300, h: 4, z: 2, style: { fill: '#355E7D', strokeWidth: 0 } } },
+          { op: 'add_block', pageId: canvasPageId, block: { id: 'resume_photo', type: 'image', x: 600, y: 40, w: 100, h: 100, z: 3, src: onePixel, alt: 'photo', style: { radius: 999 } } },
+        ],
+      }),
+    });
+    const canvasDocx = await api<{ path: string; bytes: number }>(server, '/api/export', { method: 'POST', body: JSON.stringify({ docId: canvasDoc.doc.id, format: 'docx' }) });
+    expect(canvasDocx.bytes).toBeGreaterThan(1000);
+    expect(canvasDocx.path).toMatch(/\.docx$/);
+    const canvasPptx = await api<{ path: string; bytes: number }>(server, '/api/export', { method: 'POST', body: JSON.stringify({ docId: canvasDoc.doc.id, format: 'pptx-editable' }) });
+    expect(canvasPptx.bytes).toBeGreaterThan(1000);
+    expect(canvasPptx.path).toMatch(/\.pptx$/);
+
     const exported = await api<{ path: string; bytes: number }>(server, '/api/export', { method: 'POST', body: JSON.stringify({ docId, format: 'html' }) });
     expect(exported.bytes).toBeGreaterThan(100);
     expect(exported.path).toMatch(/\.html$/);

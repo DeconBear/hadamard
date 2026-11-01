@@ -41,9 +41,9 @@ function blockStyle(block: HcBlock): string {
     'z-index:' + block.z,
   ];
   if (block.rotation) parts.push('transform:rotate(' + block.rotation + 'deg)');
-  if (style.fill && block.type !== 'markdown' && block.type !== 'code' && block.type !== 'image') parts.push('background:' + String(style.fill));
+  if (style.fill && block.type !== 'markdown' && block.type !== 'code' && block.type !== 'image' && block.type !== 'shape') parts.push('background:' + String(style.fill));
   if (style.radius) parts.push('border-radius:' + style.radius + 'px');
-  if (style.stroke) parts.push('border:' + (style.strokeWidth || 1) + 'px ' + String(style.strokeStyle || 'solid') + ' ' + style.stroke);
+  if (style.stroke && block.type !== 'shape') parts.push('border:' + (style.strokeWidth || 1) + 'px ' + String(style.strokeStyle || 'solid') + ' ' + style.stroke);
   if (style.opacity !== undefined) parts.push('opacity:' + style.opacity);
   return parts.join(';');
 }
@@ -80,7 +80,10 @@ function renderBlock(block: HcBlock): string {
     const radius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 0) + 'px';
     const clip = block.shape === 'diamond' ? ';clip-path:polygon(50% 0, 100% 50%, 50% 100%, 0 50%)' : '';
     const frame = block.shape === 'frame';
-    return wrapper + '<div style="width:100%;height:100%;border-radius:' + radius + ';background:' + escapeHtml(String(frame ? 'transparent' : (block.style?.fill || '#e9d5ff'))) + ';border:' + String(block.style?.strokeWidth || 1) + 'px ' + String(frame ? 'dashed' : (block.style?.strokeStyle || 'solid')) + ' ' + escapeHtml(String(block.style?.stroke || '#a855f7')) + clip + '"></div></div>';
+    const strokeWidth = Number(block.style?.strokeWidth ?? 1);
+    const strokeColor = String(block.style?.stroke || '');
+    const border = strokeWidth > 0 && strokeColor ? 'border:' + strokeWidth + 'px ' + String(frame ? 'dashed' : (block.style?.strokeStyle || 'solid')) + ' ' + escapeHtml(strokeColor) + ';' : 'border:0;';
+    return wrapper + '<div style="width:100%;height:100%;border-radius:' + radius + ';background:' + escapeHtml(String(frame ? 'transparent' : (block.style?.fill || '#e9d5ff'))) + ';' + border + clip + '"></div></div>';
   }
   if (block.type === 'freehand' || block.type === 'arrow') {
     return wrapper + vectorSvgMarkup(block) + '</div>';
@@ -269,11 +272,32 @@ function textContentOf(node: any): string {
   return String(node?.text || '').replace(/\s+/g, ' ').trim();
 }
 
+function canvasPageToSemanticHtml(page: HcPage): string {
+  const blocks = [...(page.blocks || [])].sort((left, right) => (left.y - right.y) || (left.x - right.x));
+  const parts: string[] = ['<!doctype html><html><head><meta charset="utf-8"></head><body>'];
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      const text = (block.text || '').trim();
+      if (!text) continue;
+      const heading = Number(block.style?.fontSize || 0) >= 14 || Number(block.style?.fontWeight || 0) >= 650;
+      const tag = heading && text.length <= 40 ? 'h2' : 'p';
+      parts.push('<' + tag + '>' + escapeHtml(text).replace(/\n/g, '<br>') + '</' + tag + '>');
+    } else if (block.type === 'markdown' || block.type === 'code') {
+      const text = (block.markdown || block.code || '').trim();
+      if (text) parts.push('<p>' + escapeHtml(text).replace(/\n/g, '<br>') + '</p>');
+    } else if (block.type === 'image') {
+      parts.push('<p>[Image: ' + escapeHtml(block.alt || block.name || 'image') + ']</p>');
+    }
+  }
+  parts.push('</body></html>');
+  return parts.join('');
+}
+
 async function exportDocx(doc: HcDocument, outDir: string, options: { pageId?: string; outPath?: string }): Promise<HcExportResult> {
   const page = options.pageId ? doc.pages.find(item => item.id === options.pageId) : doc.pages[0];
   if (!page) throw new Error('Page not found');
-  if (page.mode !== 'html') throw new Error('DOCX export requires an HTML page (for example a résumé template).');
-  const root = parse(page.html || '', { comment: true, blockTextElements: { script: true, style: true, pre: true } });
+  const html = page.mode === 'html' ? (page.html || '') : canvasPageToSemanticHtml(page);
+  const root = parse(html, { comment: true, blockTextElements: { script: true, style: true, pre: true } });
   const body = root.querySelector('body') || root;
   const children: Paragraph[] = [];
   const walk = (element: any): void => {
@@ -422,16 +446,21 @@ function addEditableCanvasSlide(pptx: { addSlide: () => any; ShapeType: { roundR
     const w = block.w * scale;
     const h = block.h * scale;
     if (block.type === 'shape') {
+      const hasFill = Boolean(style.fill && style.fill !== 'transparent' && /^#[0-9a-f]{6}$/i.test(String(style.fill)));
+      const hasLine = Number(style.strokeWidth || 0) > 0 && Boolean(style.stroke);
       slide.addShape(block.shape === 'ellipse' ? pptx.ShapeType.ellipse : pptx.ShapeType.roundRect, {
         x, y, w, h,
-        fill: { color: pptxColor(style.fill, 'F3E8FF') },
-        line: { color: pptxColor(style.stroke, 'A855F7'), width: Math.max(0.5, Number(style.strokeWidth || 1) * 0.75) },
+        fill: hasFill ? { color: pptxColor(style.fill, 'FFFFFF') } : { color: 'FFFFFF', transparency: 100 },
+        line: hasLine ? { color: pptxColor(style.stroke, 'A855F7'), width: Math.max(0.5, Number(style.strokeWidth || 1) * 0.75) } : { color: 'FFFFFF', width: 0 },
         radius: Number(style.radius || 14) * scale,
       });
       continue;
     }
     if (block.type === 'image') {
-      if (block.src) slide.addImage({ path: block.src, x, y, w, h });
+      if (block.src) {
+        const media = block.src.startsWith('data:') ? { data: block.src } : { path: block.src };
+        slide.addImage({ ...media, x, y, w, h });
+      }
       continue;
     }
     if (block.type === 'markdown' || block.type === 'code') {
@@ -454,6 +483,7 @@ function addEditableCanvasSlide(pptx: { addSlide: () => any; ShapeType: { roundR
       align: style.align || 'left',
       valign: 'top',
       breakLine: true,
+      fit: 'shrink',
     });
   }
   if (page.notes) slide.addNotes(page.notes);
@@ -470,11 +500,15 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
   const outPath = options.outPath ? path.resolve(options.outPath) : path.join(outDirAbs, safeTitle + '-' + Date.now() + '.pptx');
   const workDir = path.join(outDirAbs, '.pptx-work-' + Date.now() + '-' + Math.random().toString(16).slice(2));
   await mkdir(workDir, { recursive: true });
-  type PptxInstance = { layout: string; author: string; subject: string; title: string; company: string; ShapeType: { roundRect: string; ellipse: string }; addSlide: () => { background: { color: string }; addImage: (options: Record<string, unknown>) => void; addNotes: (text: string) => void; addText: (text: string, options: Record<string, unknown>) => void; addShape: (shape: string, options: Record<string, unknown>) => void }; writeFile: (options: { fileName: string }) => Promise<unknown> };
+  type PptxInstance = { layout: string; author: string; subject: string; title: string; company: string; ShapeType: { roundRect: string; ellipse: string }; defineLayout: (options: { name: string; width: number; height: number }) => void; addSlide: () => { background: { color: string }; addImage: (options: Record<string, unknown>) => void; addNotes: (text: string) => void; addText: (text: string, options: Record<string, unknown>) => void; addShape: (shape: string, options: Record<string, unknown>) => void }; writeFile: (options: { fileName: string }) => Promise<unknown> };
   const pptxModule = pptxgen as unknown as { default?: new () => PptxInstance };
   const PptxGenJS = (pptxModule.default ?? pptxgen) as unknown as new () => PptxInstance;
   const pptx = new PptxGenJS();
-  pptx.layout = 'LAYOUT_WIDE';
+  const firstSource = pages[0]!;
+  const deckW = Math.max(3, firstSource.width / 96);
+  const deckH = Math.max(3, firstSource.height / 96);
+  pptx.defineLayout({ name: 'HC_PAGE', width: deckW, height: deckH });
+  pptx.layout = 'HC_PAGE';
   pptx.author = 'Hadamard Canvas';
   pptx.subject = doc.title;
   pptx.title = doc.title;
@@ -482,12 +516,13 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
   try {
     for (const [index, page] of pages.entries()) {
       const blocks = page.blocks || [];
-      const editable = page.mode === 'canvas'
+      const editable = Boolean(options.editableHtml)
+        && page.mode === 'canvas'
         && blocks.length > 0
         && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow')
         && !blocks.some(block => block.type === 'image' && /^https?:/i.test(block.src || ''));
       if (editable) {
-        addEditableCanvasSlide(pptx as unknown as { addSlide: () => any; ShapeType: { roundRect: string; ellipse: string } }, page, index, 13.333, 7.5);
+        addEditableCanvasSlide(pptx as unknown as { addSlide: () => any; ShapeType: { roundRect: string; ellipse: string } }, page, index, deckW, deckH);
         continue;
       }
       if (options.editableHtml && page.mode === 'html') {
@@ -496,7 +531,7 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
           if (browserPath) {
             const layout = await extractHtmlLayout(buildStandalonePageHtml(doc, page), page.width, page.height, browserPath);
             if (layout.texts.length) {
-              addEditableHtmlSlide(pptx as unknown as { addSlide: () => any; ShapeType: { roundRect: string; ellipse: string } }, page, layout, index, 13.333, 7.5);
+              addEditableHtmlSlide(pptx as unknown as { addSlide: () => any; ShapeType: { roundRect: string; ellipse: string } }, page, layout, index, deckW, deckH);
               continue;
             }
           }
@@ -506,8 +541,8 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
       await renderHtmlPagePng(doc, page, imagePath);
       const slide = pptx.addSlide();
       slide.background = { color: slideBackground(page) };
-      const slideW = 13.333;
-      const slideH = 7.5;
+      const slideW = deckW;
+      const slideH = deckH;
       const pageAspect = page.width / page.height;
       let width = slideW;
       let height = slideW / pageAspect;
