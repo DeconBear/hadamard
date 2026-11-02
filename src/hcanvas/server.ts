@@ -374,11 +374,14 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         const body = await readBody(req);
         const workspace = await workspaceInfo(store.root);
         const projects = await listProjects();
+        const documentsDir = path.join(workspace.workspace, 'docs');
         const allowed = new Set<string>();
-        for (const value of [workspace.project, workspace.workspace, ...projects.flatMap(project => [project.projectPath, project.workspacePath])]) {
+        for (const value of [workspace.project, workspace.workspace, documentsDir, ...projects.flatMap(project => [project.projectPath, project.workspacePath])]) {
           if (value) allowed.add(path.resolve(value));
         }
-        const requested = String(body.projectPath || body.path || workspace.project || workspace.workspace);
+        const kind = String(body.kind || 'project');
+        const defaultTarget = kind === 'documents' ? documentsDir : kind === 'workspace' ? workspace.workspace : workspace.project || workspace.workspace;
+        const requested = String(body.projectPath || body.path || defaultTarget);
         const target = path.resolve(requested);
         if (!allowed.has(target)) { json(res, 403, { error: 'Only registered project folders can be opened' }); return; }
         try {

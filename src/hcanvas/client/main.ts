@@ -615,6 +615,7 @@ function bindStaticActions(): void {
   el('addPageBtn').addEventListener('click', () => openAddPageModal());
   el('importHtmlBtn').addEventListener('click', () => el<HTMLInputElement>('htmlFileInput').click());
   el('projectMenuBtn').addEventListener('click', event => { event.stopPropagation(); void openProjectHub(); });
+  el('openProjectFolderBtn').addEventListener('click', () => { void revealProjectFolder(undefined, 'project'); });
   qs<HTMLButtonElement>('#hubCloseBtn')?.addEventListener('click', () => closeProjectHub());
   qs<HTMLButtonElement>('#hubRefreshBtn')?.addEventListener('click', () => { void renderProjectHub(); });
   qs<HTMLButtonElement>('#hubNewProjectBtn')?.addEventListener('click', () => {
@@ -2486,6 +2487,7 @@ function renderPageInspector(): void {
   else if (page.mode !== 'whiteboard') html += '<button id="pageAddHtmlBtn" class="btn tiny">Add HTML block</button><button id="pageAddTextBtn" class="btn tiny">Add text</button>';
   if (page.mode === 'infinite') html += '<button id="pageFitContentBtn" class="btn tiny">Fit content</button>';
   if (page.mode === 'whiteboard') html += '<button id="pageConvertWhiteboardBtn" class="btn tiny primary">Convert to native Infinite</button><button id="pageWhiteboardDownload" class="btn tiny">Download .excalidraw</button>';
+  html += '<button id="pageOpenFolderBtn" class="btn tiny">Open page files</button>';
   html += '<button id="pageSaveMasterBtn" class="btn tiny">Save as master</button>';
   html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Legacy whiteboard · native read-only preview · ' + ((page.scene?.elements || []).length) + ' scene element' + ((page.scene?.elements || []).length === 1 ? '' : 's') : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
@@ -2515,6 +2517,7 @@ function bindPageInspector(page: HcPage): void {
   qs<HTMLButtonElement>('#pageFitContentBtn')?.addEventListener('click', () => fitPage());
   qs<HTMLButtonElement>('#pageWhiteboardDownload')?.addEventListener('click', () => downloadWhiteboardScene());
   qs<HTMLButtonElement>('#pageConvertWhiteboardBtn')?.addEventListener('click', () => { void convertWhiteboardPage(page); });
+  qs<HTMLButtonElement>('#pageOpenFolderBtn')?.addEventListener('click', () => { void revealProjectFolder(undefined, 'documents'); });
   qs<HTMLButtonElement>('#pageSaveMasterBtn')?.addEventListener('click', () => openSaveMasterModal(page));
   qs<HTMLButtonElement>('#pageDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); }); });
 }
@@ -2911,9 +2914,9 @@ async function openProjectHub(): Promise<void> {
   await renderProjectHub();
 }
 
-async function revealProjectFolder(projectPath?: string): Promise<void> {
+async function revealProjectFolder(projectPath?: string, kind: 'project' | 'workspace' | 'documents' = 'project'): Promise<void> {
   try {
-    const result = await api<{ ok: boolean; path: string }>('/api/projects/reveal', { method: 'POST', body: JSON.stringify({ projectPath: projectPath || '' }) });
+    const result = await api<{ ok: boolean; path: string }>('/api/projects/reveal', { method: 'POST', body: JSON.stringify({ projectPath: projectPath || '', kind }) });
     toast('Opened folder: ' + result.path, 'success');
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), 'error');
