@@ -609,7 +609,75 @@ function beginMarquee(event: PointerEvent): void {
   viewport.addEventListener('pointerup', up);
 }
 
+interface SidebarPrefs {
+  leftWidth: number;
+  rightWidth: number;
+  leftCollapsed: boolean;
+  rightCollapsed: boolean;
+}
+
+function initSidebarLayout(): void {
+  const app = el('app');
+  const defaults: SidebarPrefs = { leftWidth: 244, rightWidth: 326, leftCollapsed: false, rightCollapsed: false };
+  let prefs = defaults;
+  try {
+    const saved = JSON.parse(localStorage.getItem('hcanvas.sidebar.v1') || 'null') as Partial<SidebarPrefs> | null;
+    if (saved) prefs = { ...defaults, ...saved };
+  } catch { /* ignore */ }
+  const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, Math.round(value)));
+  const apply = (): void => {
+    prefs.leftWidth = clamp(prefs.leftWidth, 180, 420);
+    prefs.rightWidth = clamp(prefs.rightWidth, 260, 520);
+    app.style.gridTemplateColumns = (prefs.leftCollapsed ? '0px' : prefs.leftWidth + 'px') + ' minmax(0, 1fr) ' + (prefs.rightCollapsed ? '0px' : prefs.rightWidth + 'px');
+    app.classList.toggle('left-collapsed', prefs.leftCollapsed);
+    app.classList.toggle('right-collapsed', prefs.rightCollapsed);
+    const leftToggle = qs<HTMLButtonElement>('#toggleLeftSidebarBtn');
+    const rightToggle = qs<HTMLButtonElement>('#toggleRightSidebarBtn');
+    if (leftToggle) { leftToggle.classList.toggle('active', prefs.leftCollapsed); leftToggle.title = prefs.leftCollapsed ? 'Show left sidebar' : 'Collapse left sidebar'; }
+    if (rightToggle) { rightToggle.classList.toggle('active', prefs.rightCollapsed); rightToggle.title = prefs.rightCollapsed ? 'Show right sidebar' : 'Collapse right sidebar'; }
+  };
+  const save = (): void => { try { localStorage.setItem('hcanvas.sidebar.v1', JSON.stringify(prefs)); } catch { /* ignore */ } };
+  const bindResize = (resizerId: string, side: 'left' | 'right'): void => {
+    const resizer = qs<HTMLElement>('#' + resizerId);
+    if (!resizer) return;
+    resizer.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = side === 'left' ? prefs.leftWidth : prefs.rightWidth;
+      resizer.setPointerCapture(event.pointerId);
+      document.body.classList.add('sidebar-resizing');
+      const move = (moveEvent: PointerEvent): void => {
+        const delta = moveEvent.clientX - startX;
+        if (side === 'left') prefs.leftWidth = clamp(startWidth + delta, 180, 420);
+        else prefs.rightWidth = clamp(startWidth - delta, 260, 520);
+        apply();
+      };
+      const up = (): void => {
+        resizer.removeEventListener('pointermove', move);
+        resizer.removeEventListener('pointerup', up);
+        document.body.classList.remove('sidebar-resizing');
+        save();
+      };
+      resizer.addEventListener('pointermove', move);
+      resizer.addEventListener('pointerup', up);
+    });
+    resizer.addEventListener('dblclick', () => {
+      if (side === 'left') prefs.leftCollapsed = !prefs.leftCollapsed;
+      else prefs.rightCollapsed = !prefs.rightCollapsed;
+      apply();
+      save();
+    });
+  };
+  qs<HTMLButtonElement>('#toggleLeftSidebarBtn')?.addEventListener('click', () => { prefs.leftCollapsed = !prefs.leftCollapsed; apply(); save(); });
+  qs<HTMLButtonElement>('#toggleRightSidebarBtn')?.addEventListener('click', () => { prefs.rightCollapsed = !prefs.rightCollapsed; apply(); save(); });
+  bindResize('leftbarResizer', 'left');
+  bindResize('rightbarResizer', 'right');
+  apply();
+}
+
 function bindStaticActions(): void {
+  initSidebarLayout();
   el('newDocBtn').addEventListener('click', () => openNewDocModal());
   el('newDocMini').addEventListener('click', () => openNewDocModal());
   el('addPageBtn').addEventListener('click', () => openAddPageModal());

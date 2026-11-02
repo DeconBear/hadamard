@@ -270,3 +270,13 @@ hcanvas desktop --project ~/projects/my-deck
 ```
 
 文档使用 JSON schema `hadamard-canvas/1`：HTML 页把完整源码存在 `page.html`；Canvas/Infinite 页存 `page.blocks`；Excalidraw 页存 `page.scene`。未选择项目时，桌面应用回退到 `~/.hcanvas`；`--workspace <dir>` 仍可直接指定 store 根目录，推荐使用项目化模式 `--project <dir>`。
+## 工作区面板
+
+左侧 **Canvases / Pages** 侧边栏和右侧检查器都可以拖拽内侧分隔条调整宽度；双击分隔条可收起面板。顶栏的 ▤ / ▥ 按钮分别切换左右侧边栏，宽度和收起状态会保存在浏览器本地。
+
+右侧有四个 Tab：
+
+- **Inspector**：页面/block 属性、布局、样式、分组、历史与导出入口。
+- **Agent**：显示外部 CLI/Agent 的在线会话、presence、最近操作，以及当前页面上下文 JSON 和 CLI 命令；它是外部 Agent 的观测面板，不是聊天框。
+- **Copilot**：内置聊天式 Copilot，通过本地 agent endpoint 读取并修改画布；需要配置 OpenAI-compatible 模型（`HCANVAS_LLM_*`）。
+- **Proposals**：Agent 提交的修改提案审核队列；接受或拒绝后才会写入文档。

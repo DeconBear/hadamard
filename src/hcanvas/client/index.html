@@ -21,6 +21,8 @@
       <div id="presenceBar" class="presence-bar hidden" aria-label="Live agents"></div>
     </div>
     <div class="top-actions">
+      <button id="toggleLeftSidebarBtn" class="icon-btn panel-toggle" title="Collapse left sidebar" aria-label="Toggle left sidebar">▤</button>
+      <button id="toggleRightSidebarBtn" class="icon-btn panel-toggle" title="Collapse right sidebar" aria-label="Toggle right sidebar">▥</button>
       <button id="openProjectFolderBtn" class="btn ghost" title="Open the current project folder">Open folder</button>
       <button id="projectMenuBtn" class="btn ghost" title="Open the project manager">Projects</button>
       <button id="importHtmlBtn" class="btn ghost" title="Import a local HTML file">Import HTML</button>
@@ -57,6 +59,7 @@
       <span class="kbd">hcanvas context --json</span>
       <span id="workspacePath" class="workspace-path"></span>
     </div>
+    <div id="leftbarResizer" class="sidebar-resizer" title="Drag to resize · double-click to collapse"></div>
   </aside>
 
   <main id="workspace">
@@ -121,11 +124,12 @@
   </main>
 
   <aside id="rightbar">
+    <div id="rightbarResizer" class="sidebar-resizer" title="Drag to resize · double-click to collapse"></div>
     <div class="tabs" role="tablist">
-      <button class="tab active" data-tab="inspector">Inspector</button>
-      <button class="tab" data-tab="agent">Agent</button>
-      <button class="tab" data-tab="copilot">Copilot</button>
-      <button class="tab" data-tab="proposals">Proposals <span id="proposalCount" class="tab-count hidden">0</span></button>
+      <button class="tab active" data-tab="inspector" title="Inspect and edit page and block properties">Inspector</button>
+      <button class="tab" data-tab="agent" title="Live CLI/agent sessions, presence and recent activity">Agent</button>
+      <button class="tab" data-tab="copilot" title="Chat with a configured model to read and edit this canvas">Copilot</button>
+      <button class="tab" data-tab="proposals" title="Review pending agent proposals before applying them">Proposals <span id="proposalCount" class="tab-count hidden">0</span></button>
     </div>
     <div id="inspectorPanel" class="panel"></div>
     <div id="agentPanel" class="panel hidden"></div>

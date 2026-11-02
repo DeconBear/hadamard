@@ -326,3 +326,13 @@ A workspace (usually `<project>/.hcanvas`) is a plain directory:
 ```
 
 Documents use the JSON schema `hadamard-canvas/1`. HTML pages store their full source in `page.html`; canvas/infinite pages store `page.blocks`; Excalidraw pages store `page.scene`. Without a project, the desktop app falls back to `~/.hcanvas`; `--workspace <dir>` still addresses a store root directly. `--project <dir>` is the recommended project-scoped mode.
+## Workspace panels
+
+The left **Canvases / Pages** sidebar and the right inspector sidebar can both be resized by dragging their inner edge. Drag a splitter to set the width; double-click it to collapse the panel. The top-bar ▤ / ▥ buttons toggle the left and right sidebars; widths and collapsed state are remembered per browser profile.
+
+The right sidebar has four tabs:
+
+- **Inspector** — page/block properties, layout, styles, grouping, history and export controls.
+- **Agent** — live CLI/agent sessions, presence, recent activity and the exact context JSON/CLI commands an agent should use. It is the observability surface for external agents, not a chat box.
+- **Copilot** — an in-app chat that can read the canvas and apply edits through the local agent endpoint; requires an OpenAI-compatible model configured with `HCANVAS_LLM_*` variables.
+- **Proposals** — review queue for changes proposed by agents; accept or reject before they are applied to the document.
