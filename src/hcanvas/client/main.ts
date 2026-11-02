@@ -2911,6 +2911,15 @@ async function openProjectHub(): Promise<void> {
   await renderProjectHub();
 }
 
+async function revealProjectFolder(projectPath?: string): Promise<void> {
+  try {
+    const result = await api<{ ok: boolean; path: string }>('/api/projects/reveal', { method: 'POST', body: JSON.stringify({ projectPath: projectPath || '' }) });
+    toast('Opened folder: ' + result.path, 'success');
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), 'error');
+  }
+}
+
 async function renderProjectHub(): Promise<void> {
   const grid = el('hubProjectGrid');
   const current = await api<{ current: { workspace: string; project?: string | null }; projects: Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }> }>('/api/projects').catch(() => null);
@@ -2931,19 +2940,28 @@ async function renderProjectHub(): Promise<void> {
   grid.innerHTML = projects.map(project => {
     const active = current.current.project === project.projectPath;
     const running = Boolean(project.runningUrl);
-    return '<button type="button" class="hub-card' + (active ? ' current' : '') + '" data-hub-project="' + esc(project.projectPath) + '">' +
+    const action = active ? 'Return to this canvas →' : window.hcanvasDesktop ? 'Open in new window ↗' : running ? 'Open in new tab ↗' : 'Not running';
+    return '<article class="hub-card' + (active ? ' current' : '') + '" role="button" tabindex="0" data-hub-project="' + esc(project.projectPath) + '">' +
       '<div class="hub-card-top"><strong>' + esc(project.name) + '</strong><span class="hub-badge ' + (active ? 'current' : running ? 'running' : 'idle') + '">' + (active ? 'current' : running ? 'running' : 'closed') + '</span></div>' +
       '<small class="hub-card-path">' + esc(project.projectPath) + '</small>' +
       '<small class="hub-card-workspace">' + esc(project.workspacePath) + '</small>' +
-      '<span class="hub-card-action">' + (active ? 'Return to this canvas →' : window.hcanvasDesktop ? 'Open in new window ↗' : running ? 'Open in new tab ↗' : 'Not running') + '</span></button>';
+      '<div class="hub-card-actions"><span class="hub-card-action">' + action + '</span><button type="button" class="hub-folder-btn" data-hub-folder="' + esc(project.projectPath) + '" title="Open project folder">📁 Open folder</button></div></article>';
   }).join('');
-  grid.querySelectorAll<HTMLButtonElement>('[data-hub-project]').forEach(button => button.addEventListener('click', () => {
-    const projectPath = button.dataset.hubProject!;
-    if (current.current.project === projectPath) { closeProjectHub(); return; }
-    if (window.hcanvasDesktop) { void window.hcanvasDesktop.openProject(projectPath); return; }
-    const record = projects.find(project => project.projectPath === projectPath);
-    if (record?.runningUrl) window.open(record.runningUrl, '_blank', 'noopener');
-    else toast('Project is not running. Start it with: hcanvas app --project ' + projectPath, 'info');
+  grid.querySelectorAll<HTMLElement>('[data-hub-project]').forEach(card => {
+    const openProject = (): void => {
+      const projectPath = card.dataset.hubProject!;
+      if (current.current.project === projectPath) { closeProjectHub(); return; }
+      if (window.hcanvasDesktop) { void window.hcanvasDesktop.openProject(projectPath); return; }
+      const record = projects.find(project => project.projectPath === projectPath);
+      if (record?.runningUrl) window.open(record.runningUrl, '_blank', 'noopener');
+      else toast('Project is not running. Start it with: hcanvas app --project ' + projectPath, 'info');
+    };
+    card.addEventListener('click', openProject);
+    card.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openProject(); } });
+  });
+  grid.querySelectorAll<HTMLButtonElement>('[data-hub-folder]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    void revealProjectFolder(button.dataset.hubFolder!);
   }));
 }
 
@@ -2957,9 +2975,10 @@ async function openWorkspaceModal(): Promise<void> {
       '<div class="field"><span>CLI guide</span><input readonly value="' + esc(info.guidePath) + '"></div>' +
       '<div class="hint-card">Start another app on a project folder:<br><br><code>hcanvas app --project /path/to/project</code><br><br>The project gets a <code>.hcanvas/</code> directory with docs, state, masters, exports and CLI.md.</div>' +
       '<div class="workspace-guide">' + esc(info.guide) + '</div>' +
-      '</div><div class="modal-foot">' + (canOpen ? '<button id="workspaceOpenProjectBtn" class="btn">Open Project…</button>' : '') + '<button id="copyWorkspaceGuideBtn" class="btn">Copy CLI guide</button><button class="btn" data-close>Close</button></div></div>';
+      '</div><div class="modal-foot"><button id="revealWorkspaceFolderBtn" class="btn">Open project folder</button>' + (canOpen ? '<button id="workspaceOpenProjectBtn" class="btn">Open Project…</button>' : '') + '<button id="copyWorkspaceGuideBtn" class="btn">Copy CLI guide</button><button class="btn" data-close>Close</button></div></div>';
     openModal(html);
     qs<HTMLButtonElement>('#copyWorkspaceGuideBtn')?.addEventListener('click', () => { void copyText(info.guide); });
+    qs<HTMLButtonElement>('#revealWorkspaceFolderBtn')?.addEventListener('click', () => { void revealProjectFolder(info.project || undefined); });
     qs<HTMLButtonElement>('#workspaceOpenProjectBtn')?.addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject(); });
   } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
 }

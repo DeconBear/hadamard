@@ -123,6 +123,13 @@ describe('hcanvas server', () => {
     const removedExcalidrawAsset = await fetch(server.url.replace(/\/$/, '') + '/gui-canvas/excalidraw.js');
     expect(removedExcalidrawAsset.status).toBe(404);
 
+    const forbiddenFolder = await fetch(server.url.replace(/\/$/, '') + '/api/projects/reveal', {
+      method: 'POST',
+      headers: { 'x-hcanvas-token': server.token, 'content-type': 'application/json' },
+      body: JSON.stringify({ projectPath: 'C:\\Windows' }),
+    });
+    expect(forbiddenFolder.status).toBe(403);
+
     const printPdf = await api<{ path: string; bytes: number }>(server, '/api/export', { method: 'POST', body: JSON.stringify({ docId, format: 'pdf', pageId: state.active.pageId, bleedMm: 3, cropMarks: true }) });
     expect(printPdf.bytes).toBeGreaterThan(1000);
     expect(printPdf.path).toMatch(/\.pdf$/);

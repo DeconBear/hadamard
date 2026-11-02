@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
@@ -64,6 +65,15 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
   } catch {
     throw new HcValidationError('Invalid JSON body');
   }
+}
+
+function openFolderInFileManager(folder: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+    const child = spawn(command, [folder], { detached: true, stdio: 'ignore', windowsHide: false });
+    child.once('error', reject);
+    child.once('spawn', () => { child.unref(); resolve(); });
+  });
 }
 
 function blockLine(block: HcBlock): string {
@@ -358,6 +368,28 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       if (pathname === '/api/projects' && req.method === 'GET') {
         const workspace = await workspaceInfo(store.root);
         json(res, 200, { ok: true, current: { workspace: workspace.workspace, project: workspace.project }, projects: await listProjects() });
+        return;
+      }
+      if (pathname === '/api/projects/reveal' && req.method === 'POST') {
+        const body = await readBody(req);
+        const workspace = await workspaceInfo(store.root);
+        const projects = await listProjects();
+        const allowed = new Set<string>();
+        for (const value of [workspace.project, workspace.workspace, ...projects.flatMap(project => [project.projectPath, project.workspacePath])]) {
+          if (value) allowed.add(path.resolve(value));
+        }
+        const requested = String(body.projectPath || body.path || workspace.project || workspace.workspace);
+        const target = path.resolve(requested);
+        if (!allowed.has(target)) { json(res, 403, { error: 'Only registered project folders can be opened' }); return; }
+        try {
+          const info = await stat(target);
+          if (!info.isDirectory()) throw new HcValidationError('Not a folder: ' + target);
+          await openFolderInFileManager(target);
+          json(res, 200, { ok: true, path: target });
+        } catch (error) {
+          if (error instanceof HcValidationError) throw error;
+          throw new HcNotFoundError('Folder not found: ' + target);
+        }
         return;
       }
       if (pathname === '/api/agent/status' && req.method === 'GET') {
