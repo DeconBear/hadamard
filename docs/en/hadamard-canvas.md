@@ -197,30 +197,10 @@ hcanvas sessions heartbeat <id> --doc <doc> --page <page> --block <block>
 hcanvas sessions delete <id>
 ```
 
-The Agent tab shows actor, current document/page, selection, last heartbeat, recent document activity (history), agent context JSON and copy-paste CLI snippets. Stale sessions are dimmed after 10 minutes.
+The Agent tab is an onboarding and observability surface: status chips for the current document/page and connected sessions, a clear empty state, live session cards, recent edits, a collapsed context JSON block, and a numbered CLI quick start with copy buttons. It never starts an agent itself; stale sessions are dimmed after 10 minutes.
 
 Agents with a session on the current page appear as colored cursors inside the canvas. Canvas/infinite cursors anchor to their block; HTML cursors are measured against the rendered page and anchored to the reported `data-hc-id` element; Excalidraw whiteboard cursors are projected from the scene element's position through the whiteboard scroll/zoom state. Click a cursor to **follow** that agent: hcanvas opens its document/page and selects the reported block or HTML element.
 
-## Canvas Copilot (in-app AI)
-
-The **Copilot** tab embeds an agent that can read and edit the current canvas without a terminal. It uses an OpenAI-compatible chat-completions endpoint and two tools: `canvas_read` (outline/html/page/scene + revision) and `canvas_apply` (hcanvas ops with revision CAS).
-
-Configure a model with environment variables before starting hcanvas:
-
-```bash
-export HCANVAS_LLM_BASE_URL="https://api.openai.com/v1"
-export HCANVAS_LLM_API_KEY="..."
-export HCANVAS_LLM_MODEL="gpt-4o-mini"
-hcanvas app --workspace ~/.hcanvas
-```
-
-Or create `<workspace>/agent.json` (never commit it):
-
-```json
-{ "baseUrl": "https://api.openai.com/v1", "apiKey": "...", "model": "gpt-4o-mini" }
-```
-
-Copilot reads before writing, applies changes with revision checks, and reloads the canvas after edits. If no model is configured the tab shows setup instructions; the CLI protocol remains available without any model.
 
 ## Agent protocol (CLI-first)
 
@@ -333,6 +313,5 @@ The left **Canvases / Pages** sidebar and the right inspector sidebar can both b
 The right sidebar has four tabs:
 
 - **Inspector** — page/block properties, layout, styles, grouping, history and export controls.
-- **Agent** — live CLI/agent sessions, presence, recent activity and the exact context JSON/CLI commands an agent should use. It is the observability surface for external agents, not a chat box.
-- **Copilot** — an in-app chat that can read the canvas and apply edits through the local agent endpoint; requires an OpenAI-compatible model configured with `HCANVAS_LLM_*` variables.
+- **Agent** — onboarding + live sessions + recent edits + context JSON + CLI quick start. It is the observability surface for external CLI agents, not a chat box.
 - **Proposals** — review queue for changes proposed by agents; accept or reject before they are applied to the document.

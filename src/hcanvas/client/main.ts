@@ -11,8 +11,6 @@ interface BootConfig { token: string; workspace: string; mode?: string; version?
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
 interface PresenceEntry { id: string; actor: string; docId: string; docTitle: string; pageId?: string; pageName: string; selection?: string[]; createdAt: string; updatedAt: string; stale: boolean; }
 interface MasterSummary { id: string; name: string; mode: string; width: number; height: number; background?: string; createdAt: string; html?: string; blocks?: HcBlock[]; scene?: { elements?: unknown[] }; }
-interface CopilotStep { type: string; name?: string; result?: unknown; }
-interface CopilotMessage { role: 'user' | 'assistant'; content: string; steps?: CopilotStep[]; error?: boolean; }
 interface ApiErrorShape { error?: string; latestRevision?: number; latestDoc?: HcDocument; }
 
 class ApiError extends Error {
@@ -121,8 +119,7 @@ const state: UiState = {
   docs: [], doc: null, activePageId: null, activeBlockId: null, selectedBlockIds: [], editing: null,
   selectedHtmlId: null, iframeDoc: null, iframeElement: null,
   zoom: 1, panX: 0, panY: 0, fittedPageId: null,
-  tab: 'inspector' as 'inspector' | 'agent' | 'proposals' | 'copilot', saveKind: 'idle', context: null, presence: [], masters: [],
-  copilotMessages: [] as CopilotMessage[], copilotBusy: false, copilotConfigured: null as boolean | null, copilotModel: '',
+  tab: 'inspector' as 'inspector' | 'agent' | 'proposals', saveKind: 'idle', context: null, presence: [], masters: [],
   presenting: false, presentIndex: 0, ignoreEventsUntil: 0, sourceModalOpen: false,
   tool: 'select', showGrid: true, snap: true, spaceHeld: false, pendingInsert: null,
 };
@@ -350,14 +347,6 @@ async function loadMasters(): Promise<void> {
   } catch { /* masters are optional */ }
 }
 
-async function loadCopilotStatus(): Promise<void> {
-  try {
-    const result = await api<{ configured: boolean; model?: string | null }>('/api/agent/status');
-    state.copilotConfigured = Boolean(result.configured);
-    state.copilotModel = result.model || '';
-  } catch { state.copilotConfigured = false; }
-}
-
 async function openDoc(docId: string, pageId?: string): Promise<void> {
   const result = await api<{ doc: HcDocument }>('/api/docs/' + docId);
   state.doc = result.doc;
@@ -387,7 +376,6 @@ async function initialize(): Promise<void> {
     state.presence = context.presence || [];
     const activeId = (context.active as { docId?: string } | undefined)?.docId || state.docs[0]?.id;
     await loadMasters();
-    await loadCopilotStatus();
     if (activeId) await openDoc(activeId);
     else renderAll();
     connectEvents();
@@ -1121,7 +1109,6 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
 function renderActivePanel(): void {
   if (state.tab === 'agent') renderAgent();
   else if (state.tab === 'proposals') renderProposals();
-  else if (state.tab === 'copilot') renderCopilot();
   else renderInspector();
 }
 
@@ -1159,7 +1146,6 @@ function renderTabs(): void {
   el('inspectorPanel').classList.toggle('hidden', state.tab !== 'inspector');
   el('agentPanel').classList.toggle('hidden', state.tab !== 'agent');
   el('proposalsPanel').classList.toggle('hidden', state.tab !== 'proposals');
-  el('copilotPanel').classList.toggle('hidden', state.tab !== 'copilot');
 }
 
 function renderDocs(): void {
@@ -2674,6 +2660,12 @@ function initials(value: string): string {
 }
 
 function renderPresence(): void {
+  const agentBadge = qs<HTMLElement>('#agentCount');
+  if (agentBadge) {
+    const connected = state.presence.filter(item => !item.stale).length;
+    agentBadge.textContent = String(connected);
+    agentBadge.classList.toggle('hidden', connected === 0);
+  }
   const bar = el('presenceBar');
   if (!bar) return;
   const active = state.presence.filter(item => !item.stale);
@@ -2712,111 +2704,97 @@ async function refreshPresence(): Promise<void> {
 function renderAgent(): void {
   const root = el('agentPanel');
   const page = activePage();
-  const activeSessions = state.presence;
+  const activeSessions = state.presence.filter(item => !item.stale);
+  const allSessions = state.presence;
   const context = {
     workspace: boot.workspace,
     active: state.doc && page ? { docId: state.doc.id, title: state.doc.title, revision: state.doc.revision, pageId: page.id, pageName: page.name, pageMode: page.mode, blockId: state.activeBlockId, selection: state.selectedHtmlId ? [state.selectedHtmlId] : [] } : null,
     protocol: { cli: 'hcanvas', read: 'hcanvas read <doc> --format outline', write: 'hcanvas apply <doc> --ops-file ops.json --base-revision <rev>', propose: 'hcanvas propose <doc> ...' },
   };
-  let html = '<section class="inspector-section"><div class="inspector-title">Live agents <span class="presence-count">' + activeSessions.filter(item => !item.stale).length + '</span></div>';
+  const docId = state.doc?.id || '<docId>';
+  const revision = state.doc?.revision ?? 0;
+  const connectCommand = 'hcanvas sessions create ' + docId + ' --actor claude-code';
+  const contextText = JSON.stringify(context, null, 2);
+  const count = activeSessions.length;
+  const agentCount = el('agentCount');
+  if (agentCount) {
+    agentCount.textContent = String(count);
+    agentCount.classList.toggle('hidden', count === 0);
+  }
+
+  let html = '<section class="inspector-section agent-hero">';
+  html += '<div class="agent-hero-head"><span class="agent-mark">A</span><div><div class="inspector-title">Agent bridge</div><p class="agent-lede">Show external coding agents operating on this canvas. hcanvas does not start an agent; connect Claude Code or any CLI with the commands below.</p></div></div>';
+  html += '<div class="agent-status-row">';
+  html += '<span class="agent-chip ' + (count ? 'online' : 'off') + '"><span class="agent-dot"></span>' + (count ? count + ' connected' : 'No agent connected') + '</span>';
+  html += '<span class="agent-chip">rev ' + revision + '</span>';
+  html += '<span class="agent-chip">' + esc(page ? page.name : 'No page') + '</span>';
+  html += '</div>';
+  html += '<div class="agent-hero-actions"><button id="copyConnectBtn" class="btn tiny primary">Copy connect command</button><button id="refreshPresenceBtn" class="btn tiny">Refresh</button></div>';
+  html += '</section>';
+
+  html += '<section class="inspector-section"><div class="inspector-title">Live sessions <span class="presence-count">' + count + '</span></div>';
+  html += '<p class="agent-section-lede">Each row is a terminal or API client that has recently read or written this document.</p>';
   html += '<div class="presence-list">';
-  html += '<div class="presence-card human"><span class="presence-avatar" style="background:#1f2430">Y</span><div class="presence-copy"><strong>You · browser</strong><small>' + esc(page ? page.name : 'No page') + ' · active</small></div></div>';
-  for (const session of activeSessions) {
+  html += '<div class="presence-card human"><span class="presence-avatar" style="background:#1f2430">Y</span><div class="presence-copy"><strong>You · this window</strong><small>' + esc(page ? page.name : 'No page') + ' · editing in the browser</small></div><span class="presence-status">local</span></div>';
+  for (const session of allSessions) {
     html += '<div class="presence-card' + (session.stale ? ' stale' : '') + '" data-session-id="' + esc(session.id) + '">' +
       '<span class="presence-avatar" style="background:hsl(' + (session.actor.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360) + ',55%,58%)">' + esc(initials(session.actor)) + '</span>' +
       '<div class="presence-copy"><strong>' + esc(session.actor) + '</strong><small>' + esc(session.docTitle) + (session.pageName ? ' / ' + esc(session.pageName) : '') + ' · ' + relativeTime(session.updatedAt) + '</small>' +
       (session.selection && session.selection.length ? '<small class="presence-selection">selection: ' + esc(session.selection.join(', ')) + '</small>' : '') +
-      '</div><button class="presence-copy-btn" data-copy-session="' + esc(session.id) + '" title="Copy session id">⧉</button></div>';
+      '</div><span class="presence-status ' + (session.stale ? 'idle' : 'online') + '">' + (session.stale ? 'idle' : 'active') + '</span>' +
+      '<button class="presence-copy-btn" data-copy-session="' + esc(session.id) + '" title="Copy session id">⧉</button></div>';
   }
-  if (!activeSessions.length) html += '<p class="empty-state">No agent sessions yet. Create one with <code>hcanvas sessions create</code>.</p>';
-  html += '</div><div class="agent-copy"><button id="refreshPresenceBtn" class="btn tiny">Refresh presence</button></div></section>';
+  if (!allSessions.length) {
+    html += '<div class="agent-empty"><strong>No agent sessions yet</strong><p>Start a CLI agent in the project folder, then create a session:</p><code>' + esc(connectCommand) + '</code><button type="button" class="btn tiny" data-copy-command="' + esc(connectCommand) + '">Copy command</button></div>';
+  }
+  html += '</div></section>';
+
+  html += '<section class="inspector-section"><div class="inspector-title">Recent edits</div>';
   const history = state.doc?.history?.slice(-8).reverse() || [];
   if (history.length) {
-    html += '<section class="inspector-section"><div class="inspector-title">Recent activity</div><div class="history-list">';
+    html += '<div class="history-list">';
     for (const entry of history) {
       html += '<div class="history-row"><span class="history-actor">' + esc(entry.actor) + '</span><span class="history-summary">' + esc(entry.summary) + '</span><span class="history-time">rev ' + entry.revision + ' · ' + relativeTime(entry.createdAt) + '</span></div>';
     }
-    html += '</div></section>';
+    html += '</div>';
+  } else {
+    html += '<p class="agent-muted">No edits recorded yet. Changes made by this window or by an agent will appear here.</p>';
   }
-  html += '<section class="inspector-section"><div class="inspector-title">Agent context</div><div class="agent-block">' + esc(JSON.stringify(context, null, 2)) + '</div><div class="agent-copy"><button id="copyContextBtn" class="btn tiny">Copy context JSON</button><button id="refreshAgentBtn" class="btn tiny">Refresh</button></div></section>';
-  if (state.doc) html += '<section class="inspector-section"><div class="inspector-title">CLI</div><div class="hint-card"><code>hcanvas sessions create ' + esc(state.doc.id) + ' --actor claude-code</code><br><br><code>export HCANVAS_SESSION=&lt;sessionId&gt;</code><br><br><code>hcanvas context --json</code><br><br><code>hcanvas read ' + esc(state.doc.id) + ' --format outline</code><br><br><code>hcanvas apply ' + esc(state.doc.id) + ' --ops-file ops.json --base-revision ' + state.doc.revision + '</code><br><br>Read first and pass the returned revision. Sessions heartbeat automatically on context/read/apply.</div></section>';
+  html += '</section>';
+
+  html += '<section class="inspector-section"><details class="agent-context-details"><summary><span>Context for an agent</span><span class="agent-summary-meta">JSON · ' + (state.doc ? 'current doc/page' : 'no active doc') + '</span></summary>';
+  html += '<p class="agent-muted">Paste this into an agent prompt, or let it run <code>hcanvas context --json</code>.</p>';
+  html += '<pre class="agent-context-pre">' + esc(contextText) + '</pre>';
+  html += '<div class="agent-copy"><button id="copyContextBtn" class="btn tiny">Copy context JSON</button></div></details></section>';
+
+  html += '<section class="inspector-section"><div class="inspector-title">CLI quick start</div>';
+  html += '<ol class="agent-steps">';
+  const commands: Array<[string, string, string]> = [
+    ['1', 'Create a session', connectCommand],
+    ['2', 'Use the session id', 'export HCANVAS_SESSION=<sessionId>'],
+    ['3', 'Read the current page', 'hcanvas context --json'],
+    ['4', 'Inspect the document', 'hcanvas read ' + docId + ' --format outline'],
+    ['5', 'Apply changes safely', 'hcanvas apply ' + docId + ' --ops-file ops.json --base-revision ' + revision],
+  ];
+  for (const [step, label, command] of commands) {
+    html += '<li><span class="agent-step-no">' + step + '</span><div class="agent-step-body"><strong>' + label + '</strong><code>' + esc(command) + '</code></div><button type="button" class="agent-copy-btn" data-copy-command="' + esc(command) + '" title="Copy command">Copy</button></li>';
+  }
+  html += '</ol>';
+  html += '<p class="agent-muted">Always read first and pass the returned revision to <code>apply</code>. Sessions heartbeat automatically on context/read/apply.</p>';
+  html += '</section>';
   root.innerHTML = html;
-  qs<HTMLButtonElement>('#copyContextBtn')?.addEventListener('click', () => { void copyText(JSON.stringify(context, null, 2)); });
-  qs<HTMLButtonElement>('#refreshAgentBtn')?.addEventListener('click', () => { renderAgent(); toast('Context refreshed', 'success'); });
+
+  qs<HTMLButtonElement>('#copyConnectBtn')?.addEventListener('click', () => { void copyText(connectCommand); });
+  qs<HTMLButtonElement>('#copyContextBtn')?.addEventListener('click', () => { void copyText(contextText); });
   qs<HTMLButtonElement>('#refreshPresenceBtn')?.addEventListener('click', () => { void refreshPresence(); });
   root.querySelectorAll<HTMLButtonElement>('[data-copy-session]').forEach(button => {
     button.addEventListener('click', event => { event.stopPropagation(); void copyText(button.dataset.copySession || ''); });
   });
-}
-
-
-function renderCopilot(): void {
-  const root = el('copilotPanel');
-  if (!root) return;
-  let html = '<section class="inspector-section copilot-section"><div class="copilot-head"><div><div class="inspector-title">Canvas Copilot</div><small class="muted">Chat with an agent that can read and edit this canvas.</small></div><span class="copilot-badge ' + (state.copilotConfigured ? 'ready' : 'setup') + '">' + (state.copilotConfigured ? esc(state.copilotModel || 'ready') : 'setup needed') + '</span></div>';
-  if (state.copilotConfigured === false) {
-    html += '<div class="hint-card">Configure an OpenAI-compatible model before using Copilot:<br><br><code>HCANVAS_LLM_BASE_URL</code><br><code>HCANVAS_LLM_API_KEY</code><br><code>HCANVAS_LLM_MODEL</code><br><br>or create <code>&lt;workspace&gt;/agent.json</code> with <code>baseUrl</code>, <code>apiKey</code>, <code>model</code>. Restart the app after setting environment variables.</div>';
-  }
-  html += '<div id="copilotLog" class="copilot-log">';
-  if (!state.copilotMessages.length) {
-    html += '<div class="copilot-welcome"><div class="copilot-mark">H</div><strong>What should we build?</strong><p>Ask Copilot to improve this page, draft a deck section, or turn notes into a whiteboard — it edits the same document you see.</p><div class="copilot-suggestions">';
-    for (const suggestion of ['Improve this page', 'Add a summary section', 'Make this more visual']) html += '<button type="button" data-copilot-prompt="' + esc(suggestion) + '">' + esc(suggestion) + '</button>';
-    html += '</div></div>';
-  }
-  for (const message of state.copilotMessages) {
-    html += '<div class="copilot-message ' + message.role + (message.error ? ' error' : '') + '"><div class="copilot-role">' + (message.role === 'user' ? 'You' : 'Copilot') + '</div><div class="copilot-bubble">' + esc(message.content) + '</div>';
-    if (message.steps?.length) {
-      html += '<div class="copilot-steps">';
-      for (const step of message.steps) {
-        if (step.type === 'tool') html += '<span class="copilot-step tool">' + esc(step.name || 'tool') + '</span>';
-      }
-      html += '</div>';
-    }
-    html += '</div>';
-  }
-  if (state.copilotBusy) html += '<div class="copilot-message assistant"><div class="copilot-role">Copilot</div><div class="copilot-bubble thinking"><span class="pulse-dot"></span> Thinking and editing…</div></div>';
-  html += '</div>';
-  html += '<div class="copilot-compose"><textarea id="copilotInput" rows="3" placeholder="Ask Copilot to change this canvas…"' + (state.copilotConfigured === false ? ' disabled' : '') + '></textarea><div class="copilot-compose-row"><small>Ctrl/Cmd + Enter to send</small><button id="copilotSendBtn" class="btn primary" ' + (state.copilotConfigured === false || state.copilotBusy ? 'disabled' : '') + '>Send ↑</button></div></div></section>';
-  root.innerHTML = html;
-  const input = qs<HTMLTextAreaElement>('#copilotInput');
-  const send = (): void => { void sendCopilot(input?.value || ''); };
-  qs<HTMLButtonElement>('#copilotSendBtn')?.addEventListener('click', send);
-  input?.addEventListener('keydown', event => {
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); send(); }
+  root.querySelectorAll<HTMLButtonElement>('[data-copy-command]').forEach(button => {
+    button.addEventListener('click', () => { void copyText(button.dataset.copyCommand || ''); });
   });
-  root.querySelectorAll<HTMLButtonElement>('[data-copilot-prompt]').forEach(button => button.addEventListener('click', () => { void sendCopilot(button.dataset.copilotPrompt || ''); }));
 }
 
-async function sendCopilot(raw: string): Promise<void> {
-  const prompt = raw.trim();
-  if (!prompt || state.copilotBusy || !state.doc) return;
-  state.copilotMessages.push({ role: 'user', content: prompt });
-  state.copilotBusy = true;
-  renderCopilot();
-  try {
-    const result = await api<{ reply: string; steps?: CopilotStep[]; changed?: boolean }>('/api/agent/chat', {
-      method: 'POST',
-      body: JSON.stringify({
-        docId: state.doc.id,
-        pageId: state.activePageId,
-        messages: state.copilotMessages.filter(message => !message.error).map(message => ({ role: message.role, content: message.content })),
-      }),
-    });
-    state.copilotMessages.push({ role: 'assistant', content: result.reply, steps: result.steps });
-    if (result.changed) {
-      const latest = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id);
-      state.doc = latest.doc;
-      renderAll();
-      toast('Copilot updated the canvas', 'success');
-    }
-  } catch (error) {
-    state.copilotMessages.push({ role: 'assistant', content: error instanceof Error ? error.message : String(error), error: true });
-    toast('Copilot failed', 'error');
-  } finally {
-    state.copilotBusy = false;
-    renderCopilot();
-  }
-}
 
 function renderProposalBadge(): void {
   const proposals = state.doc?.proposals || [];

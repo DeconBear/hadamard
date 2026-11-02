@@ -162,30 +162,10 @@ hcanvas sessions heartbeat <id> --doc <doc> --page <page> --block <block>
 hcanvas sessions delete <id>
 ```
 
-Agent 页显示 actor、当前文档/页面、选中项、最后心跳、最近文档活动（history）、agent context JSON 与可复制的 CLI 片段；10 分钟无心跳会显示为 stale。
+Agent 页现在是接入与观测面板：顶部显示当前文档/页面和在线会话状态，中间是在线会话卡片与最近编辑，下面是可折叠的 context JSON 和带复制按钮的编号 CLI 快速接入步骤。它不会自动启动 agent；10 分钟无心跳会显示为 stale。
 
 当前页有 session 的 agent 会显示为画布内的彩色光标。Canvas/Infinite 页锚定到 block；HTML 页会测量真实渲染布局，锚定到上报的 `data-hc-id` 元素；Excalidraw 白板会用 scene 元素位置 + 当前 scroll/zoom 投影出光标。点击光标即可 **follow** 该 agent：hcanvas 会切换到它的文档/页面并选中它上报的 block 或 HTML 元素。
 
-## Canvas Copilot（应用内 AI）
-
-**Copilot** 页内嵌一个可以读写当前画布的 agent，不需要终端。它使用 OpenAI-compatible chat-completions 接口，并暴露两个工具：`canvas_read`（outline/html/page/scene + revision）和 `canvas_apply`（带 revision CAS 的 hcanvas ops）。
-
-启动前配置模型：
-
-```bash
-export HCANVAS_LLM_BASE_URL="https://api.openai.com/v1"
-export HCANVAS_LLM_API_KEY="..."
-export HCANVAS_LLM_MODEL="gpt-4o-mini"
-hcanvas app --workspace ~/.hcanvas
-```
-
-或创建 `<workspace>/agent.json`（不要提交）：
-
-```json
-{ "baseUrl": "https://api.openai.com/v1", "apiKey": "...", "model": "gpt-4o-mini" }
-```
-
-Copilot 会先读取再写入，用 revision 校验应用修改，并在编辑后重新加载画布。未配置模型时 Copilot 页会显示设置说明；CLI 协议始终可用，不需要模型。
 
 ## Agent 协议（CLI-first）
 
@@ -277,6 +257,5 @@ hcanvas desktop --project ~/projects/my-deck
 右侧有四个 Tab：
 
 - **Inspector**：页面/block 属性、布局、样式、分组、历史与导出入口。
-- **Agent**：显示外部 CLI/Agent 的在线会话、presence、最近操作，以及当前页面上下文 JSON 和 CLI 命令；它是外部 Agent 的观测面板，不是聊天框。
-- **Copilot**：内置聊天式 Copilot，通过本地 agent endpoint 读取并修改画布；需要配置 OpenAI-compatible 模型（`HCANVAS_LLM_*`）。
+- **Agent**：接入引导 + 在线会话 + 最近编辑 + context JSON + CLI 快速接入；它是外部 CLI Agent 的观测面板，不是聊天框。
 - **Proposals**：Agent 提交的修改提案审核队列；接受或拒绝后才会写入文档。
