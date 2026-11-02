@@ -175,6 +175,10 @@ export interface HcPagePreset {
   width: number;
   height: number;
   background: string;
+  mode?: HcPageMode;
+  html?: string;
+  blocks?: HcBlock[];
+  scene?: HcWhiteboardScene;
 }
 
 export const HCANVAS_PAGE_PRESETS: HcPagePreset[] = [

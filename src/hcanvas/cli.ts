@@ -41,7 +41,7 @@ function usage(): string {
     '  hcanvas status',
     '  hcanvas context [--session <id>]',
     '  hcanvas resolve <query>',
-    '  hcanvas docs list | create --title <t> [--preset slide|a4|poster] | delete <doc>',
+    '  hcanvas docs list | create --title <t> [--preset slide|a4|poster|square|canvas|infinite] | delete <doc>',
     '  hcanvas read [doc] [--format outline|html|json|page|scene] [--page <id>] [--block <id>]',
     '  hcanvas apply [doc] --ops-file <file|-> --base-revision <n> [--actor <name>] [--dry-run]',
     '  hcanvas propose [doc] --ops-file <file|-> --base-revision <n> --intent <text>',
@@ -364,11 +364,13 @@ async function main(argv: string[]): Promise<void> {
     if (sub === 'create') {
       const title = flagString(args, 'title') || 'Untitled canvas';
       const presetId = flagString(args, 'preset');
-      const presets: Record<string, { width: number; height: number; background: string; title: string }> = {
+      const presets: Record<string, { width: number; height: number; background: string; title: string; mode?: 'canvas' | 'infinite' }> = {
         slide: { width: 1280, height: 720, background: '#ffffff', title: 'Slide' },
         a4: { width: 794, height: 1123, background: '#ffffff', title: 'A4' },
         poster: { width: 1080, height: 1350, background: '#ffffff', title: 'Poster' },
         square: { width: 1080, height: 1080, background: '#ffffff', title: 'Square' },
+        canvas: { width: 1280, height: 720, background: '#fbfaf7', title: 'Canvas', mode: 'canvas' },
+        infinite: { width: 4800, height: 3200, background: '#f8f6f1', title: 'Infinite canvas', mode: 'infinite' },
       };
       const body: Record<string, unknown> = { title };
       if (presetId && presets[presetId]) body.preset = presets[presetId];

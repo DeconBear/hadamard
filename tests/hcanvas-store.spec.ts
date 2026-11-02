@@ -147,4 +147,24 @@ describe('hcanvas store', () => {
     expect(resolved.matches[0]?.docId).toBe(doc.id);
     expect(resolved.ambiguous).toBe(false);
   });
+
+  it('creates the selected initial page mode and content', async () => {
+    const store = await makeStore();
+    const infinite = await store.createDoc({
+      title: 'Infinite test',
+      preset: { id: 'infinite', title: 'Infinite canvas', mode: 'infinite', width: 4800, height: 3200, background: '#f8f6f1', blocks: [] },
+    });
+    expect(infinite.pages[0]).toMatchObject({ name: 'Infinite canvas', mode: 'infinite', blocks: [] });
+    expect(infinite.pages[0]!.html).toBeUndefined();
+
+    const canvas = await store.createDoc({
+      title: 'Canvas test',
+      preset: {
+        id: 'canvas', title: 'Canvas slide', mode: 'canvas', width: 1280, height: 720, background: '#ffffff',
+        blocks: [{ id: 'block_initial', type: 'text', x: 20, y: 30, w: 300, h: 80, z: 0, text: 'Initial content' }],
+      },
+    });
+    expect(canvas.pages[0]).toMatchObject({ mode: 'canvas', blocks: [{ id: 'block_initial', text: 'Initial content' }] });
+    expect(canvas.pages[0]!.html).toBeUndefined();
+  });
 });

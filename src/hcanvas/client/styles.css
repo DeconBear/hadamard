@@ -501,8 +501,9 @@ button { cursor: pointer; }
 .project-menu-open { border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; }
 .block-vector { width: 100%; height: 100%; display: block; overflow: visible; }
 .vector-draw-preview { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 99999; }
+.shape-draw-preview { position: absolute; pointer-events: none; z-index: 99999; }
 #viewport.tool-pen, #viewport.tool-pen * , #viewport.tool-arrow, #viewport.tool-arrow * { cursor: crosshair !important; }
-#viewport.drawing-vector, #viewport.drawing-vector * { cursor: crosshair !important; }
+#viewport.drawing-vector, #viewport.drawing-vector *, #viewport.drawing-shape, #viewport.drawing-shape * { cursor: crosshair !important; }
 #viewport.tool-eraser, #viewport.tool-eraser * { cursor: cell !important; }
 #viewport.erasing, #viewport.erasing * { cursor: cell !important; }
 .tool-btn:disabled { opacity: .35; cursor: not-allowed; }

@@ -14,7 +14,7 @@ import {
   HcStore,
   HcValidationError,
 } from './store.js';
-import type { HcBlock, HcDocument, HcOp, HcPage } from './types.js';
+import type { HcBlock, HcDocument, HcOp, HcPage, HcPagePreset } from './types.js';
 import { resolveLlmConfig, runAgentChat, type AgentChatMessage } from './agentChat.js';
 import { workspaceInfo } from './workspace.js';
 import { listProjects } from './projectRegistry.js';
@@ -36,6 +36,13 @@ export interface HcServer {
 }
 
 const MAX_BODY = 8 * 1024 * 1024;
+let exportQueue: Promise<unknown> = Promise.resolve();
+
+function enqueueExport<T>(task: () => Promise<T>): Promise<T> {
+  const next = exportQueue.then(task, task);
+  exportQueue = next.then(() => undefined, () => undefined);
+  return next;
+}
 
 function json(res: ServerResponse, status: number, payload: unknown): void {
   const body = JSON.stringify(payload);
@@ -234,11 +241,18 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       }
       if (pathname === '/api/docs' && req.method === 'POST') {
         const body = await readBody(req);
-        const preset = body.preset as { width: number; height: number; background: string; title?: string } | undefined;
+        const preset = body.preset as HcPagePreset | undefined;
         const doc = await store.createDoc({
           title: typeof body.title === 'string' ? body.title : undefined,
           preset: preset && Number.isFinite(preset.width) && Number.isFinite(preset.height)
-            ? { id: 'custom', title: preset.title || 'Custom', width: preset.width, height: preset.height, background: preset.background || '#ffffff' }
+            ? {
+                ...preset,
+                id: typeof preset.id === 'string' && preset.id ? preset.id : 'custom',
+                title: preset.title || 'Custom',
+                width: preset.width,
+                height: preset.height,
+                background: preset.background || '#ffffff',
+              }
             : undefined,
         });
         json(res, 201, { ok: true, doc });
@@ -259,7 +273,7 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         if (req.method === 'PATCH') {
           const body = await readBody(req);
           if (typeof body.title !== 'string') throw new HcValidationError('title is required');
-          json(res, 200, { ok: true, doc: await store.updateTitle(docId, body.title) });
+          json(res, 200, { ok: true, doc: await store.updateTitle(docId, body.title, typeof body.source === 'string' ? body.source : undefined) });
           return;
         }
       }
@@ -306,6 +320,7 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
           ops: Array.isArray(body.ops) ? body.ops as HcOp[] : [],
           dryRun: body.dryRun === true,
           summary: typeof body.summary === 'string' ? body.summary : undefined,
+          source: typeof body.source === 'string' ? body.source : undefined,
         });
         json(res, 200, { ok: true, doc: result.doc, dryRun: result.dryRun, changed: result.changed, revision: result.doc.revision });
         return;
@@ -484,12 +499,12 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         const doc = await store.readDoc(String(body.docId));
         const format = String(body.format || 'html') as HcExportFormat;
         if (!['html', 'pdf', 'png', 'pptx', 'pptx-editable', 'docx'].includes(format)) throw new HcValidationError('format must be html, pdf, png, pptx, pptx-editable or docx');
-        const result = await exportFile(doc, format, store.exportsDir, {
+        const result = await enqueueExport(() => exportFile(doc, format, store.exportsDir, {
           pageId: typeof body.pageId === 'string' ? body.pageId : undefined,
           outPath: typeof body.outPath === 'string' ? body.outPath : undefined,
           bleedMm: Number.isFinite(Number(body.bleedMm)) ? Number(body.bleedMm) : undefined,
           cropMarks: body.cropMarks === true,
-        });
+        }));
         json(res, 200, { ok: true, ...result, downloadUrl: '/api/export/download?name=' + encodeURIComponent(path.basename(result.path)) });
         return;
       }
@@ -537,9 +552,10 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       json(res, 500, { error: error instanceof Error ? error.message : String(error) });
     }
   });
-  const requested = Number.isFinite(options.port) && (options.port || 0) > 0 ? options.port! : 4319;
+  const requested = options.port === 0 ? 0 : Number.isFinite(options.port) && (options.port || 0) > 0 ? options.port! : 4319;
+  const attempts = requested === 0 ? 1 : 40;
   let boundPort = 0;
-  for (let offset = 0; offset < 40; offset += 1) {
+  for (let offset = 0; offset < attempts; offset += 1) {
     try {
       await new Promise<void>((resolve, reject) => {
         const onError = (error: NodeJS.ErrnoException): void => { server.removeListener('listening', onListening); reject(error); };
@@ -551,20 +567,27 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       const address = server.address();
       if (address && typeof address === 'object') { boundPort = address.port; break; }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE' || offset === 39) throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE' || offset === attempts - 1) throw error;
     }
   }
   const url = 'http://' + host + ':' + boundPort + '/';
   await mkdir(store.exportsDir, { recursive: true });
   await writeFile(path.join(store.root, 'daemon.json'), JSON.stringify({ url, token, workspace: store.root, pid: process.pid, startedAt: new Date().toISOString() }, null, 2), 'utf8');
+  let closePromise: Promise<void> | null = null;
   return {
     url,
     token,
     port: boundPort,
     store,
-    async close() {
-      await rm(path.join(store.root, 'daemon.json'), { force: true }).catch(() => undefined);
-      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    close() {
+      if (closePromise) return closePromise;
+      closePromise = (async () => {
+        await rm(path.join(store.root, 'daemon.json'), { force: true }).catch(() => undefined);
+        const closing = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+        server.closeAllConnections();
+        await closing;
+      })();
+      return closePromise;
     },
   };
 }

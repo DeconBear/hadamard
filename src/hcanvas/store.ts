@@ -157,6 +157,7 @@ export function createDocument(title = 'Untitled canvas', preset: HcPagePreset |
   const now = nowIso();
   const width = preset?.width ?? 1280;
   const height = preset?.height ?? 720;
+  const mode = preset?.mode ?? 'html';
   return {
     schema: HCANVAS_SCHEMA,
     id: hcId('doc'),
@@ -166,12 +167,14 @@ export function createDocument(title = 'Untitled canvas', preset: HcPagePreset |
     updatedAt: now,
     pages: [ensurePage({
       id: hcId('page'),
-      name: 'Page 1',
-      mode: 'html',
+      name: cleanTitle(preset?.title, 'Page 1'),
+      mode,
       width,
       height,
       background: preset?.background ?? '#ffffff',
-      html: STARTER_HTML,
+      html: preset?.html ?? STARTER_HTML,
+      blocks: preset?.blocks ? structuredClone(preset.blocks) : [],
+      scene: preset?.scene ? structuredClone(preset.scene) : undefined,
     })],
     proposals: [],
     history: [],
@@ -620,13 +623,13 @@ export class HcStore {
     this.emit({ type: 'doc.deleted', docId });
   }
 
-  async updateTitle(docId: string, title: string): Promise<HcDocument> {
+  async updateTitle(docId: string, title: string, source?: string): Promise<HcDocument> {
     return this.withLock(docId, async () => {
       const doc = await this.readDoc(docId);
       doc.title = cleanTitle(title, doc.title);
       doc.updatedAt = nowIso();
       await this.saveDocument(doc);
-      this.emit({ type: 'doc.changed', docId, revision: doc.revision });
+      this.emit({ type: 'doc.changed', docId, revision: doc.revision, source });
       return doc;
     });
   }
@@ -638,7 +641,7 @@ export class HcStore {
     return next;
   }
 
-  async applyOps(docId: string, input: { baseRevision?: number; actor?: string; ops: HcOp[]; dryRun?: boolean; summary?: string }): Promise<HcApplyResult> {
+  async applyOps(docId: string, input: { baseRevision?: number; actor?: string; ops: HcOp[]; dryRun?: boolean; summary?: string; source?: string }): Promise<HcApplyResult> {
     return this.withLock(docId, async () => {
       const doc = await this.readDoc(docId);
       if (input.baseRevision !== undefined && input.baseRevision !== doc.revision) throw new HcRevisionConflictError(doc);
@@ -654,11 +657,13 @@ export class HcStore {
       } satisfies HcHistoryEntry].slice(-200);
       await this.saveDocument(next);
       if (this.state.active.docId === docId) {
-        this.state.active.actor = input.actor || this.state.active.actor;
+        const actor = input.actor || this.state.active.actor;
+        const actorChanged = actor !== this.state.active.actor;
+        this.state.active.actor = actor;
         this.state.active.updatedAt = nowIso();
-        await this.saveState();
+        if (actorChanged) await this.saveState();
       }
-      this.emit({ type: 'doc.changed', docId, revision: next.revision, actor: input.actor || 'human' });
+      this.emit({ type: 'doc.changed', docId, revision: next.revision, actor: input.actor || 'human', source: input.source });
       return { doc: next, dryRun: false, changed: true };
     });
   }

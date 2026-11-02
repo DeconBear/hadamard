@@ -171,4 +171,32 @@ describe('hcanvas server', () => {
       await new Promise<void>(resolve => mockModel.close(() => resolve()));
     }
   }, 60_000);
+
+  it('preserves the initial preset mode and blocks through the HTTP API', async () => {
+    const server = await start();
+    const created = await api<{ doc: { pages: Array<{ mode: string; name: string; html?: string; blocks?: unknown[] }> } }>(server, '/api/docs', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: 'Infinite API test',
+        preset: { id: 'infinite', title: 'Infinite canvas', mode: 'infinite', width: 4800, height: 3200, background: '#f8f6f1', blocks: [] },
+      }),
+    });
+    expect(created.doc.pages[0]).toMatchObject({ name: 'Infinite canvas', mode: 'infinite', blocks: [] });
+    expect(created.doc.pages[0]!.html).toBeUndefined();
+  });
+
+  it('honors ephemeral ports and closes with an active event stream', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'hcanvas-server-close-'));
+    roots.push(root);
+    const server = await startHcanvasServer({ workspace: root, port: 0, staticDir: path.resolve('dist/hcanvas') });
+    servers.push(server);
+    expect(server.port).toBeGreaterThan(0);
+    const response = await fetch(server.url + 'api/events?token=' + encodeURIComponent(server.token));
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    await server.close();
+    await server.close();
+  });
 });

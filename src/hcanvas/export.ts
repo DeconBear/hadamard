@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { parse } from 'node-html-parser';
@@ -238,7 +240,12 @@ export function findBrowser(): string | null {
 }
 
 async function runBrowser(browser: string, args: string[], timeoutMs = 60000): Promise<void> {
-  await execFileAsync(browser, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+  const profile = await mkdtemp(path.join(os.tmpdir(), 'hcanvas-export-'));
+  try {
+    await execFileAsync(browser, ['--user-data-dir=' + profile, '--no-first-run', '--no-default-browser-check', ...args], { timeout: timeoutMs, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+  } finally {
+    await rm(profile, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 function inlineRuns(root: ReturnType<typeof parse> | any): TextRun[] {
@@ -583,7 +590,7 @@ export async function exportFile(
   const html = format === 'png'
     ? buildStandalonePageHtml(doc, sourcePage)
     : buildPrintHtml(doc, sourcePage, { bleedMm: (options.bleedMm || 0) > 0 ? options.bleedMm : 0, cropMarks: options.cropMarks });
-  const temp = path.resolve(outDir, '.hc-export-' + Date.now() + '.html');
+  const temp = path.resolve(outDir, '.hc-export-' + randomUUID() + '.html');
   await writeFile(temp, html, 'utf8');
   const outPath = path.resolve(options.outPath || path.join(outDir, doc.id + '-' + safeTitle + '.' + format));
   try {

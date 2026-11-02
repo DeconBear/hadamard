@@ -9,6 +9,12 @@ import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup } from '../shapes.js';
 import { HTML_INSERT_PRESETS, applySelectedHtmlStyle, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, insertHtmlPreset, type HtmlEditingContext } from './htmlEditing.js';
 import { buildAgentPrompt } from './agentPrompt.js';
+import { cloneBlocksForPlacement, parseBlocksFromClipboard, serializeBlocksForClipboard } from '../blockClipboard.js';
+import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawing.js';
+import { invertOps as invertDocumentOps } from './documentHistory.js';
+import { canvasTemplateBlocks, PAGE_PRESETS, pageTemplateHtml, starterHtml } from './pageTemplates.js';
+import { SHORTCUTS_MODAL_HTML } from './shortcuts.js';
+import { esc, genId } from './utils.js';
 
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
@@ -43,12 +49,7 @@ function el<T extends HTMLElement>(id: string): T {
 function qs<T extends Element>(selector: string, root: ParentNode = document): T | null {
   return root.querySelector<T>(selector);
 }
-function esc(value: unknown): string {
-  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-function genId(prefix: string): string {
-  return prefix + '_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-}
+const clientId = genId('client');
 function debounce<T extends (...args: never[]) => void>(fn: T, wait: number): (...args: Parameters<T>) => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return (...args: Parameters<T>) => {
@@ -92,7 +93,6 @@ interface UiState {
   masters: MasterSummary[];
   presenting: boolean;
   presentIndex: number;
-  ignoreEventsUntil: number;
   sourceModalOpen: boolean;
   tool: 'select' | 'hand' | 'pen' | 'arrow' | 'eraser';
   showGrid: boolean;
@@ -124,121 +124,9 @@ const state: UiState = {
   selectedHtmlId: null, iframeDoc: null, iframeElement: null,
   zoom: 1, panX: 0, panY: 0, fittedPageId: null,
   tab: 'inspector' as 'inspector' | 'agent' | 'proposals', saveKind: 'idle', context: null, presence: [], masters: [],
-  presenting: false, presentIndex: 0, ignoreEventsUntil: 0, sourceModalOpen: false,
+  presenting: false, presentIndex: 0, sourceModalOpen: false,
   tool: 'select', showGrid: true, snap: true, spaceHeld: false, pendingInsert: null, pendingShape: null,
 };
-
-const PAGE_PRESETS: Array<{ id: string; title: string; mode: 'html' | 'canvas' | 'infinite' | 'whiteboard'; width: number; height: number; background: string; hint: string; template?: string }> = [
-  { id: 'slide-html', title: 'HTML slide', mode: 'html', width: 1280, height: 720, background: '#ffffff', hint: '16:9 · blank editable HTML' },
-  { id: 'slide-cover', title: 'Slide · Cover', mode: 'html', width: 1280, height: 720, background: '#f6f4ef', hint: '16:9 · title slide', template: 'cover' },
-  { id: 'slide-section', title: 'Slide · Section', mode: 'html', width: 1280, height: 720, background: '#171923', hint: '16:9 · dark section divider', template: 'section' },
-  { id: 'slide-two-col', title: 'Slide · Two columns', mode: 'html', width: 1280, height: 720, background: '#ffffff', hint: '16:9 · content + sidebar', template: 'two-col' },
-  { id: 'slide-quote', title: 'Slide · Quote', mode: 'html', width: 1280, height: 720, background: '#f1f5ff', hint: '16:9 · big quote', template: 'quote' },
-  { id: 'slide-agenda', title: 'Slide · Agenda', mode: 'html', width: 1280, height: 720, background: '#fbfaf7', hint: '16:9 · numbered agenda', template: 'agenda' },
-  { id: 'a4-html', title: 'HTML A4', mode: 'html', width: 794, height: 1123, background: '#ffffff', hint: 'A4 · blank document' },
-  { id: 'resume-classic', title: 'Résumé · Classic', mode: 'html', width: 794, height: 1123, background: '#ffffff', hint: 'A4 · ATS-friendly', template: 'resume-classic' },
-  { id: 'resume-modern', title: 'Résumé · Modern', mode: 'html', width: 794, height: 1123, background: '#f8f6f1', hint: 'A4 · visual two-column', template: 'resume-modern' },
-  { id: 'resume-ats', title: 'Résumé · ATS minimal', mode: 'html', width: 794, height: 1123, background: '#ffffff', hint: 'A4 · plain text-first', template: 'resume-ats' },
-  { id: 'poster-html', title: 'HTML poster', mode: 'html', width: 1080, height: 1350, background: '#ffffff', hint: '4:5 · blank' },
-  { id: 'poster-event', title: 'Poster · Event', mode: 'html', width: 1080, height: 1350, background: '#171923', hint: '4:5 · bold event poster', template: 'poster-event' },
-  { id: 'poster-product', title: 'Poster · Product', mode: 'html', width: 1080, height: 1350, background: '#f6f4ef', hint: '4:5 · product / campaign', template: 'poster-product' },
-  { id: 'slide-canvas', title: 'Canvas slide', mode: 'canvas', width: 1280, height: 720, background: '#fbfaf7', hint: '16:9 · blocks' },
-  { id: 'canvas-cover', title: 'Canvas · PPT cover', mode: 'canvas', width: 1280, height: 720, background: '#f6f4ef', hint: '16:9 · editable PowerPoint', template: 'canvas-cover' },
-  { id: 'canvas-content', title: 'Canvas · PPT content', mode: 'canvas', width: 1280, height: 720, background: '#ffffff', hint: '16:9 · editable PowerPoint', template: 'canvas-content' },
-  { id: 'a4-canvas', title: 'Canvas A4', mode: 'canvas', width: 794, height: 1123, background: '#ffffff', hint: 'A4 · blocks' },
-  { id: 'square-canvas', title: 'Canvas square', mode: 'canvas', width: 1080, height: 1080, background: '#fbfaf7', hint: '1:1 · blocks' },
-  { id: 'infinite', title: 'Infinite canvas', mode: 'infinite', width: 4800, height: 3200, background: '#f8f6f1', hint: 'No bounds · pan & zoom' },
-];
-function starterHtml(title: string): string {
-  return [
-    '<style>',
-    '  .hc-start { box-sizing:border-box; width:100%; height:100%; padding:72px 80px; background:#f7f5f0; color:#1f2430; font-family:Inter,ui-sans-serif,system-ui,sans-serif; }',
-    '  .hc-start .tag { display:inline-block; margin-bottom:26px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#7c3aed; }',
-    '  .hc-start h1 { margin:0 0 16px; max-width:760px; font-family:Georgia,serif; font-weight:500; font-size:58px; line-height:1.04; letter-spacing:-.04em; }',
-    '  .hc-start p { margin:0; max-width:620px; font-size:18px; line-height:1.6; color:#5d584e; }',
-    '</style>',
-    '<div class="hc-start">',
-    '  <div class="tag">HTML page · editable</div>',
-    '  <h1>' + esc(title || 'Start with a beautiful page.') + '</h1>',
-    '  <p>Double-click text to edit in place. Toggle source mode to change HTML and CSS. Agent tools patch this page through stable data-hc-id selectors.</p>',
-    '</div>',
-  ].join('');
-}
-function resumeTemplateHtml(template: string, title: string): string {
-  const name = esc(title || 'Alex Morgan');
-  const ats = template === 'resume-ats';
-  const modern = template === 'resume-modern';
-  const accent = ats ? '#111111' : modern ? '#5b21b6' : '#1f2430';
-  const body = ats ? '#111111' : '#2e2a24';
-  const muted = ats ? '#111111' : '#6b6459';
-  const background = ats ? '#ffffff' : modern ? '#f8f6f1' : '#ffffff';
-  const experience = '<section style="margin-top:26px"><h2 style="margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:' + accent + ';border-bottom:1px solid ' + (ats ? '#111' : '#d9d2c5') + ';padding-bottom:6px">Experience</h2>' +
-    '<div style="margin-bottom:18px"><div style="display:flex;justify-content:space-between;gap:20px;align-items:baseline"><h3 style="margin:0;font-size:16px;font-weight:650;color:' + body + '">Senior Product Designer</h3><span style="font-size:11px;color:' + muted + '">2022 — Now</span></div><div style="font-size:12px;color:' + muted + ';margin:2px 0 8px">Northstar Labs</div><ul style="margin:0;padding-left:17px;color:' + body + ';font-size:12.5px;line-height:1.6"><li>Led the redesign of a B2B analytics workspace used by 40k operators.</li><li>Built a design system that cut feature delivery time by 35%.</li><li>Partnered with research and engineering to ship a zero-to-one AI assistant.</li></ul></div>' +
-    '<div style="margin-bottom:18px"><div style="display:flex;justify-content:space-between;gap:20px;align-items:baseline"><h3 style="margin:0;font-size:16px;font-weight:650;color:' + body + '">Product Designer</h3><span style="font-size:11px;color:' + muted + '">2019 — 2022</span></div><div style="font-size:12px;color:' + muted + ';margin:2px 0 8px">Acme Studio</div><ul style="margin:0;padding-left:17px;color:' + body + ';font-size:12.5px;line-height:1.6"><li>Shipped the mobile onboarding flow, improving activation by 18%.</li><li>Facilitated cross-functional design sprints for enterprise clients.</li></ul></div></section>';
-  const education = '<section style="margin-top:22px"><h2 style="margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:' + accent + ';border-bottom:1px solid ' + (ats ? '#111' : '#d9d2c5') + ';padding-bottom:6px">Education</h2><div style="display:flex;justify-content:space-between;gap:20px"><div><div style="font-size:14px;font-weight:600;color:' + body + '">BFA, Interaction Design</div><div style="font-size:12px;color:' + muted + '">Rhode Island School of Design</div></div><div style="font-size:11px;color:' + muted + '">2015 — 2019</div></div></section>';
-  const skills = '<section style="margin-top:22px"><h2 style="margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:' + accent + ';border-bottom:1px solid ' + (ats ? '#111' : '#d9d2c5') + ';padding-bottom:6px">Skills</h2><p style="margin:0;font-size:12.5px;line-height:1.7;color:' + body + '">Product strategy · Interaction design · Design systems · Prototyping · HTML/CSS · AI-native workflows · Figma · User research</p></section>';
-  if (ats) {
-    return '<style>html,body{margin:0;width:100%;height:100%;background:#fff}*{box-sizing:border-box}article{font-family:Arial,Helvetica,sans-serif;color:#111;padding:52px 58px;width:100%;height:100%;background:#fff}</style>' +
-      '<article><header style="border-bottom:2px solid #111;padding-bottom:14px"><h1 style="margin:0;font-size:30px;letter-spacing:-.02em">' + name + '</h1><div style="margin-top:4px;font-size:13px">Senior Product Designer</div><div style="margin-top:6px;font-size:11px;color:#111">alex.morgan@example.com · +1 555 010 2030 · Portland, OR · linkedin.com/in/alexmorgan</div></header>' +
-      '<section style="margin-top:22px"><h2 style="margin:0 0 8px;font-size:12px;letter-spacing:.12em;text-transform:uppercase">Summary</h2><p style="margin:0;font-size:12.5px;line-height:1.6">Product designer with 8+ years shipping data-heavy B2B and AI products. Comfortable owning research, interaction, design systems, and front-end prototypes.</p></section>' +
-      experience + education + skills + '</article>';
-  }
-  return '<style>html,body{margin:0;width:100%;height:100%;background:' + background + '}*{box-sizing:border-box}article{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:' + body + ';width:100%;height:100%;background:' + background + ';padding:' + (modern ? '56px 54px' : '52px 58px') + '}</style>' +
-    '<article><header style="display:' + (modern ? 'grid;grid-template-columns:1.25fr .75fr;gap:28px;align-items:end' : 'block') + ';border-bottom:1px solid ' + (modern ? '#d9d2c5' : '#d9d2c5') + ';padding-bottom:18px">' +
-    '<div><div style="font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:' + accent + ';margin-bottom:10px">Résumé · 2026</div><h1 style="margin:0;font-family:Georgia,serif;font-weight:500;font-size:44px;line-height:1;letter-spacing:-.04em;color:' + accent + '">' + name + '</h1><div style="margin-top:8px;font-size:14px;color:' + muted + '">Senior Product Designer</div></div>' +
-    '<div style="font-size:11px;line-height:1.85;color:' + muted + ';text-align:left"><div>alex.morgan@example.com</div><div>+1 555 010 2030</div><div>Portland, OR</div><div>linkedin.com/in/alexmorgan</div></div></header>' + experience + education + skills + '</article>';
-}
-
-function posterTemplateHtml(template: string, title: string): string {
-  const heading = esc(title || (template === 'poster-event' ? 'The Future of Making' : 'A better way to build'));
-  if (template === 'poster-event') {
-    return '<style>html,body{margin:0;width:100%;height:100%}*{box-sizing:border-box}.poster{position:relative;width:100%;height:100%;padding:70px 64px 56px;background:#171923;color:#f8f7f3;font-family:Inter,sans-serif;overflow:hidden}.poster .orb{position:absolute;right:-120px;top:-80px;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#8b5cf6,#312e81 62%,transparent 70%);opacity:.8}.poster .eyebrow{position:relative;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#a78bfa}.poster h1{position:relative;margin:34px 0 18px;max-width:820px;font-family:Georgia,serif;font-weight:500;font-size:92px;line-height:.95;letter-spacing:-.055em}.poster .lede{position:relative;max-width:540px;font-size:20px;line-height:1.5;color:#c7cbd5}.poster .meta{position:absolute;left:64px;right:64px;bottom:52px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px;border-top:1px solid rgba(255,255,255,.18);padding-top:20px}.poster .meta b{display:block;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#8b93a3;margin-bottom:6px}.poster .meta span{font-size:16px;color:#f8f7f3}.poster .mark{position:relative;margin-top:28px;display:inline-flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#c7cbd5}.poster .dotmark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,#7c3aed,#2563eb)}</style>' +
-      '<div class="poster"><div class="orb"></div><div class="eyebrow">Conference · 2026</div><h1>' + heading + '</h1><p class="lede">A one-day gathering for designers, engineers, and researchers building the next generation of creative tools.</p><div class="mark"><span class="dotmark">H</span> Hadamard Studio</div><div class="meta"><div><b>Date</b><span>18 September 2026</span></div><div><b>Location</b><span>Portland, OR</span></div><div><b>Seats</b><span>Limited · 120</span></div></div></div>';
-  }
-  return '<style>html,body{margin:0;width:100%;height:100%}*{box-sizing:border-box}.poster{width:100%;height:100%;padding:76px 64px 60px;background:#f6f4ef;color:#1f2430;font-family:Inter,sans-serif;display:flex;flex-direction:column;overflow:hidden}.poster .eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#8a8276}.poster h1{margin:22px 0 12px;max-width:850px;font-family:Georgia,serif;font-weight:500;font-size:96px;line-height:.94;letter-spacing:-.055em}.poster p{margin:0;max-width:600px;font-size:21px;line-height:1.5;color:#5d584e}.poster .art{flex:1;margin:34px 0 26px;min-height:250px;border-radius:28px;background:radial-gradient(circle at 70% 30%,#c4b5fd,#a78bfa 38%,#7c3aed 70%,#4c1d95);position:relative;overflow:hidden}.poster .art:before{content:"";position:absolute;inset:28px;border:1px solid rgba(255,255,255,.4);border-radius:20px}.poster .art:after{content:"↗";position:absolute;right:44px;bottom:32px;font-size:54px;color:rgba(255,255,255,.85)}.poster .foot{display:flex;justify-content:space-between;align-items:end;gap:20px;border-top:1px solid #d9d2c5;padding-top:18px;font-size:12px;color:#8a8276}.poster .foot b{display:block;color:#1f2430;font-size:15px;margin-bottom:3px}.poster .cta{padding:11px 18px;border-radius:999px;background:#1f2430;color:#fff;font-size:12px;letter-spacing:.04em}</style>' +
-    '<div class="poster"><div class="eyebrow">Product · 2026</div><h1>' + heading + '</h1><p>An AI-native canvas for ideas, documents, and the people who make them.</p><div class="art"></div><div class="foot"><div><b>Hadamard Canvas</b>One canvas. Humans and agents.</div><div class="cta">Start creating →</div></div></div>';
-}
-
-function canvasTemplateBlocks(template: string, width: number, height: number): HcBlock[] {
-  const blocks: HcBlock[] = [];
-  const push = (block: HcBlock): void => { blocks.push({ ...block, id: genId('block'), z: blocks.length }); };
-  if (template === 'canvas-cover') {
-    push({ id: '', type: 'shape', x: width - 360, y: 0, w: 360, h: height, z: 0, name: 'Accent panel', shape: 'rect', style: { fill: '#efe9ff' } });
-    push({ id: '', type: 'text', x: 72, y: 190, w: 800, h: 190, z: 1, name: 'Title', text: 'A clear idea,\ntold well.', style: { fontSize: 72, fontWeight: 600, color: '#1f2430', fontFamily: 'Georgia, serif' } });
-    push({ id: '', type: 'text', x: 76, y: 410, w: 640, h: 90, z: 2, name: 'Subtitle', text: 'Double-click to edit this subtitle. Export as editable PowerPoint from the Export menu.', style: { fontSize: 20, color: '#5d584e' } });
-    push({ id: '', type: 'text', x: 76, y: 640, w: 400, h: 36, z: 3, name: 'Footer', text: 'HADAMARD CANVAS · 2026', style: { fontSize: 12, fontWeight: 600, color: '#a39b8c' } });
-    return blocks;
-  }
-  push({ id: '', type: 'shape', x: 0, y: 0, w: width, h: 78, z: 0, name: 'Top band', shape: 'rect', style: { fill: '#1f2430' } });
-  push({ id: '', type: 'text', x: 64, y: 130, w: 860, h: 90, z: 1, name: 'Title', text: 'A practical framework', style: { fontSize: 50, fontWeight: 600, color: '#1f2430', fontFamily: 'Georgia, serif' } });
-  push({ id: '', type: 'text', x: 64, y: 250, w: 680, h: 290, z: 2, name: 'Body', text: '• Replace this text with the argument.\n• Keep one idea per slide.\n• Use speaker notes for the narrative.\n• Export to PowerPoint to keep text editable.', style: { fontSize: 22, color: '#3f4552' } });
-  push({ id: '', type: 'shape', x: 820, y: 190, w: 360, h: 360, z: 3, name: 'Card', shape: 'rect', style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 24 } });
-  push({ id: '', type: 'text', x: 850, y: 230, w: 300, h: 280, z: 4, name: 'Card copy', text: 'Key takeaway\n\nSmall visual systems beat one-off slides.', style: { fontSize: 20, color: '#4c1d95' } });
-  return blocks;
-}
-
-function pageTemplateHtml(template: string, title: string): string {
-  if (template.startsWith('resume-')) return resumeTemplateHtml(template, title);
-  if (template.startsWith('poster-')) return posterTemplateHtml(template, title);
-  return slideTemplateHtml(template, title);
-}
-
-function slideTemplateHtml(template: string, title: string): string {
-  const head = '<style>html,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}.tpl{width:100%;height:100%;font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#1f2430}.kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#8a8276}.serif{font-family:Georgia,"Times New Roman",serif;font-weight:500;letter-spacing:-.04em}';
-  if (template === 'cover') {
-    return head + '</style><div class="tpl" style="padding:74px 82px;display:flex;flex-direction:column;background:#f6f4ef"><div class="kicker">Hadamard Canvas · presentation</div><h1 class="serif" style="margin:auto 0 0;max-width:860px;font-size:72px;line-height:1.02;color:#1f2430">' + esc(title || 'A clear idea, told well.') + '</h1><p style="margin:22px 0 0;max-width:620px;font-size:19px;line-height:1.6;color:#5d584e">Double-click to edit this subtitle. Use the source tab for custom HTML and CSS.</p><div style="margin-top:auto;display:flex;justify-content:space-between;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#a39b8c"><span>Hadamard Canvas</span><span>2026</span></div></div>';
-  }
-  if (template === 'section') {
-    return head + '</style><div class="tpl" style="padding:74px 82px;display:flex;flex-direction:column;justify-content:space-between;background:#171923;color:#f8f7f3"><div class="kicker" style="color:#a78bfa">Section 02</div><h1 class="serif" style="margin:0;font-size:88px;line-height:.98;max-width:900px">' + esc(title || 'The next section') + '</h1><div style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#8b93a3">Hadamard Canvas · presentation</div></div>';
-  }
-  if (template === 'two-col') {
-    return head + '</style><div class="tpl" style="padding:64px 72px;display:flex;flex-direction:column;background:#ffffff"><div class="kicker">A practical framework</div><h1 class="serif" style="margin:10px 0 30px;font-size:52px;line-height:1.02">' + esc(title || 'What we will cover') + '</h1><div style="display:grid;grid-template-columns:1.35fr .8fr;gap:42px;flex:1"><div style="font-size:17px;line-height:1.75;color:#4b5160"><p style="margin:0 0 14px">Replace this paragraph with the argument. Keep one idea per slide, then use the speaker notes for the narrative.</p><p style="margin:0 0 14px"><strong style="color:#1f2430">Direct manipulation:</strong> click text to edit, use the style panel for type and color.</p><p style="margin:0"><strong style="color:#1f2430">Agent access:</strong> hcanvas read/patch keeps the same document in sync.</p></div><div style="padding:24px;border:1px solid #e7e0d2;border-radius:16px;background:#fbfaf7"><div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8a8276;margin-bottom:12px">Key takeaway</div><p style="margin:0;font-size:18px;line-height:1.5;color:#2e2a24">Small visual systems beat one-off slides.</p></div></div></div>';
-  }
-  if (template === 'quote') {
-    return head + '</style><div class="tpl" style="padding:80px 100px;display:flex;flex-direction:column;justify-content:center;background:#f1f5ff"><div class="serif" style="font-size:130px;line-height:.6;color:#c7d2fe">“</div><p class="serif" style="margin:30px 0 22px;max-width:990px;font-size:52px;line-height:1.15;color:#1e3a8a">The best tools disappear into the work.</p><div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#64748b">— A design principle</div></div>';
-  }
-  return head + '</style><div class="tpl" style="padding:64px 76px;display:flex;flex-direction:column;background:#fbfaf7"><div class="kicker">Agenda</div><h1 class="serif" style="margin:10px 0 26px;font-size:54px;line-height:1.02">' + esc(title || 'What we will cover') + '</h1><ol style="margin:0;padding:0;list-style:none;display:grid;gap:12px;font-size:19px;color:#2e2a24"><li style="display:grid;grid-template-columns:54px 1fr;gap:14px;border-top:1px solid #e7e0d2;padding-top:12px"><span style="font-family:Georgia,serif;color:#7c3aed">01</span><span>The problem</span></li><li style="display:grid;grid-template-columns:54px 1fr;gap:14px;border-top:1px solid #e7e0d2;padding-top:12px"><span style="font-family:Georgia,serif;color:#7c3aed">02</span><span>The approach</span></li><li style="display:grid;grid-template-columns:54px 1fr;gap:14px;border-top:1px solid #e7e0d2;padding-top:12px"><span style="font-family:Georgia,serif;color:#7c3aed">03</span><span>What changes</span></li><li style="display:grid;grid-template-columns:54px 1fr;gap:14px;border-top:1px solid #e7e0d2;padding-top:12px"><span style="font-family:Georgia,serif;color:#7c3aed">04</span><span>Next steps</span></li></ol></div>';
-}
 
 function activePage(): HcPage | null {
   if (!state.doc) return null;
@@ -269,7 +157,6 @@ function setBlockSelection(ids: string[], primaryId?: string | null): void {
   refreshBlockSelectionDecorations();
   renderInspector();
   renderTop();
-  renderToolbarState();
   void syncActive();
 }
 
@@ -352,10 +239,11 @@ async function loadMasters(): Promise<void> {
 async function openDoc(docId: string, pageId?: string): Promise<void> {
   const result = await api<{ doc: HcDocument }>('/api/docs/' + docId);
   state.doc = result.doc;
-  state.activePageId = pageId || result.doc.pages[0]?.id || null;
+  state.activePageId = pageId && result.doc.pages.some(page => page.id === pageId) ? pageId : result.doc.pages[0]?.id || null;
   state.activeBlockId = null;
   state.selectedBlockIds = [];
   state.pendingInsert = null;
+  state.pendingShape = null;
   state.editing = null;
   state.selectedHtmlId = null;
   state.iframeDoc = null;
@@ -363,22 +251,21 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
   state.fittedPageId = null;
   undoStack = [];
   redoStack = [];
-  await loadDocs();
+  patchDocSummary(result.doc);
   renderAll();
   void syncActive();
-
 }
 
 async function initialize(): Promise<void> {
   bindStaticActions();
   try {
-    const context = await api<Record<string, unknown> & { active?: { docId?: string }; docs?: DocSummary[]; presence?: PresenceEntry[] }>('/api/state');
+    const context = await api<Record<string, unknown> & { active?: { docId?: string; pageId?: string }; docs?: DocSummary[]; presence?: PresenceEntry[] }>('/api/state');
     state.context = context;
     state.docs = context.docs || [];
     state.presence = context.presence || [];
-    const activeId = (context.active as { docId?: string } | undefined)?.docId || state.docs[0]?.id;
+    const activeId = context.active?.docId || state.docs[0]?.id;
     await loadMasters();
-    if (activeId) await openDoc(activeId);
+    if (activeId) await openDoc(activeId, context.active?.pageId);
     else renderAll();
     connectEvents();
   } catch (error) {
@@ -462,6 +349,104 @@ function beginErase(event: PointerEvent): void {
   viewport.addEventListener('pointerup', up);
 }
 
+function beginShapeDraw(startEvent: PointerEvent): void {
+  const page = activePage();
+  if (!page || (page.mode !== 'infinite' && page.mode !== 'canvas')) return;
+  const shape = state.pendingShape || 'rect';
+  const viewport = el('viewport');
+  const artboard = el('artboard');
+  const preview = document.createElement('div');
+  preview.className = 'shape-draw-preview';
+  preview.innerHTML = shapeSvgMarkup({ shape, style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 16 } });
+  artboard.appendChild(preview);
+  const pointForEvent = (event: PointerEvent): { x: number; y: number } => {
+    const point = viewportToWorldPoint(event.clientX, event.clientY);
+    const x = snapCoordinate(point.x);
+    const y = snapCoordinate(point.y);
+    return page.mode === 'canvas'
+      ? { x: Math.max(0, Math.min(page.width, x)), y: Math.max(0, Math.min(page.height, y)) }
+      : { x, y };
+  };
+  const start = pointForEvent(startEvent);
+  let current = { ...start, square: startEvent.shiftKey, fromCenter: startEvent.altKey };
+  let bounds: HcDragBounds;
+  const updateBounds = (): void => {
+    const next = shapeDragBounds(start, current, {
+      square: current.square,
+      fromCenter: current.fromCenter,
+      defaultWidth: shape === 'frame' ? 480 : 240,
+      defaultHeight: shape === 'frame' ? 320 : 160,
+    });
+    bounds = {
+      x: snapCoordinate(next.x),
+      y: snapCoordinate(next.y),
+      w: Math.max(2, snapCoordinate(next.w)),
+      h: Math.max(2, snapCoordinate(next.h)),
+    };
+  };
+  const paint = (): void => {
+    preview.style.left = bounds.x + 'px';
+    preview.style.top = bounds.y + 'px';
+    preview.style.width = bounds.w + 'px';
+    preview.style.height = bounds.h + 'px';
+  };
+  updateBounds();
+  paint();
+  let frame = 0;
+  const schedulePaint = (): void => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => { frame = 0; paint(); });
+  };
+  const move = (event: PointerEvent): void => {
+    current = { ...pointForEvent(event), square: event.shiftKey, fromCenter: event.altKey };
+    updateBounds();
+    schedulePaint();
+  };
+  const cleanup = (): void => {
+    if (frame) cancelAnimationFrame(frame);
+    viewport.removeEventListener('pointermove', move);
+    viewport.removeEventListener('pointerup', up);
+    viewport.removeEventListener('pointercancel', cancel);
+    window.removeEventListener('keydown', escape, true);
+    try { viewport.releasePointerCapture(startEvent.pointerId); } catch { /* ignore */ }
+    viewport.classList.remove('drawing-shape');
+    preview.remove();
+    state.pendingInsert = null;
+    state.pendingShape = null;
+    renderToolbarState();
+  };
+  const cancel = (): void => cleanup();
+  const escape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    cleanup();
+  };
+  const up = (event: PointerEvent): void => {
+    move(event);
+    updateBounds();
+    cleanup();
+    const block: HcBlock = {
+      id: genId('block'),
+      type: 'shape',
+      shape,
+      ...bounds,
+      z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1,
+      name: HCANVAS_SHAPES.find(item => item.id === shape)?.label || 'Shape',
+      style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 16 },
+    };
+    void applyOps([{ op: 'add_block', pageId: page.id, block }], { refreshArtboard: true }).then(result => {
+      if (result) setBlockSelection([block.id], block.id);
+    });
+  };
+  viewport.classList.add('drawing-shape');
+  try { viewport.setPointerCapture(startEvent.pointerId); } catch { /* ignore */ }
+  viewport.addEventListener('pointermove', move);
+  viewport.addEventListener('pointerup', up);
+  viewport.addEventListener('pointercancel', cancel);
+  window.addEventListener('keydown', escape, true);
+}
+
 function beginVectorDraw(startEvent: PointerEvent): void {
   const page = activePage();
   if (!page || page.mode !== 'infinite') return;
@@ -502,35 +487,61 @@ function beginVectorDraw(startEvent: PointerEvent): void {
       head.setAttribute('points', end.x + ',' + end.y + ' ' + left.x + ',' + left.y + ' ' + right.x + ',' + right.y);
     } else head.setAttribute('points', '');
   };
-  paint();
-  viewport.classList.add('drawing-vector');
-  try { viewport.setPointerCapture(startEvent.pointerId); } catch { /* ignore */ }
-  const move = (moveEvent: PointerEvent): void => {
-    const point = viewportToWorldPoint(moveEvent.clientX, moveEvent.clientY);
-    if (tool === 'arrow') points.splice(1, points.length, point);
-    else if (!points.length || Math.hypot(point.x - points[points.length - 1]!.x, point.y - points[points.length - 1]!.y) >= 1.5) points.push(point);
-    paint();
+  let frame = 0;
+  const schedulePaint = (): void => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => { frame = 0; paint(); });
   };
-  const up = (): void => {
+  const collect = (event: PointerEvent): void => {
+    const coalesced = tool === 'freehand' && typeof event.getCoalescedEvents === 'function' ? event.getCoalescedEvents() : [];
+    const samples = coalesced.length ? coalesced : [event];
+    for (const sample of samples) {
+      let point = viewportToWorldPoint(sample.clientX, sample.clientY);
+      if (tool === 'arrow') {
+        if (event.shiftKey) point = constrainLinePoint(points[0]!, point);
+        points.splice(1, points.length, point);
+      } else {
+        const previous = points[points.length - 1]!;
+        if (Math.hypot(point.x - previous.x, point.y - previous.y) >= 1.25 / state.zoom && points.length < 5000) points.push(point);
+      }
+    }
+    schedulePaint();
+  };
+  const cleanup = (): void => {
+    if (frame) cancelAnimationFrame(frame);
     viewport.classList.remove('drawing-vector');
     viewport.removeEventListener('pointermove', move);
     viewport.removeEventListener('pointerup', up);
+    viewport.removeEventListener('pointercancel', cancel);
+    window.removeEventListener('keydown', escape, true);
     try { viewport.releasePointerCapture(startEvent.pointerId); } catch { /* ignore */ }
     svg.remove();
-    if (points.length < 2) return;
+  };
+  const cancel = (): void => cleanup();
+  const escape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    cleanup();
+  };
+  const move = (event: PointerEvent): void => collect(event);
+  const up = (event: PointerEvent): void => {
+    collect(event);
+    cleanup();
+    if (points.length < 2 || (tool === 'arrow' && Math.hypot(points[1]!.x - points[0]!.x, points[1]!.y - points[0]!.y) < 2)) return;
     const xs = points.map(point => point.x);
     const ys = points.map(point => point.y);
     const padding = tool === 'arrow' ? 18 : DEFAULT_VECTOR_STROKE_WIDTH + 4;
-    const minX = Math.min(...xs) - padding;
-    const minY = Math.min(...ys) - padding;
+    const originX = Math.round(Math.min(...xs) - padding);
+    const originY = Math.round(Math.min(...ys) - padding);
     const maxX = Math.max(...xs) + padding;
     const maxY = Math.max(...ys) + padding;
     const block: HcBlock = {
-      id: genId('block'), type: tool, x: Math.round(minX), y: Math.round(minY),
-      w: Math.max(8, Math.round(maxX - minX)), h: Math.max(8, Math.round(maxY - minY)),
+      id: genId('block'), type: tool, x: originX, y: originY,
+      w: Math.max(8, Math.round(maxX - originX)), h: Math.max(8, Math.round(maxY - originY)),
       z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1,
       name: tool === 'freehand' ? 'Freehand' : 'Arrow',
-      points: points.map(point => ({ x: point.x - Math.floor(minX), y: point.y - Math.floor(minY) })),
+      points: points.map(point => ({ x: point.x - originX, y: point.y - originY })),
       arrowhead: tool === 'arrow' ? 'arrow' : undefined,
       style: { stroke: DEFAULT_VECTOR_STROKE, strokeWidth: DEFAULT_VECTOR_STROKE_WIDTH },
     };
@@ -549,12 +560,16 @@ function beginVectorDraw(startEvent: PointerEvent): void {
       }
     }
     void applyOps([{ op: 'add_block', pageId: page.id, block } as HcOp], { refreshArtboard: true }).then(result => {
-      if (!result) return;
-      setBlockSelection([block.id], block.id);
+      if (result) setBlockSelection([block.id], block.id);
     });
   };
+  paint();
+  viewport.classList.add('drawing-vector');
+  try { viewport.setPointerCapture(startEvent.pointerId); } catch { /* ignore */ }
   viewport.addEventListener('pointermove', move);
   viewport.addEventListener('pointerup', up);
+  viewport.addEventListener('pointercancel', cancel);
+  window.addEventListener('keydown', escape, true);
 }
 
 function beginMarquee(event: PointerEvent): void {
@@ -759,19 +774,22 @@ function bindStaticActions(): void {
   const beginPan = (event: PointerEvent): void => {
     const start = { x: event.clientX, y: event.clientY, panX: state.panX, panY: state.panY };
     viewport.classList.add('panning');
-    viewport.setPointerCapture(event.pointerId);
+    try { viewport.setPointerCapture(event.pointerId); } catch { /* ignore */ }
     const move = (moveEvent: PointerEvent): void => {
       state.panX = start.panX + moveEvent.clientX - start.x;
       state.panY = start.panY + moveEvent.clientY - start.y;
       scheduleStageTransform();
     };
-    const up = (): void => {
+    const stop = (): void => {
       viewport.classList.remove('panning');
       viewport.removeEventListener('pointermove', move);
-      viewport.removeEventListener('pointerup', up);
+      viewport.removeEventListener('pointerup', stop);
+      viewport.removeEventListener('pointercancel', stop);
+      try { viewport.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
     };
     viewport.addEventListener('pointermove', move);
-    viewport.addEventListener('pointerup', up);
+    viewport.addEventListener('pointerup', stop);
+    viewport.addEventListener('pointercancel', stop);
   };
   viewport.addEventListener('pointerdown', event => {
     if (!state.pendingInsert || event.button !== 0) return;
@@ -779,12 +797,15 @@ function bindStaticActions(): void {
     event.preventDefault();
     event.stopPropagation();
     const type = state.pendingInsert;
-    const shape = type === 'shape' ? state.pendingShape : null;
+    if (type === 'shape') {
+      beginShapeDraw(event);
+      return;
+    }
     state.pendingInsert = null;
     state.pendingShape = null;
     const point = viewportToWorldPoint(event.clientX, event.clientY);
     renderToolbarState();
-    void addBlock(type, shape ? { shape } : {}, point);
+    void addBlock(type, {}, point);
   }, { capture: true });
   viewport.addEventListener('pointerdown', event => {
     const targetElement = event.target as Element;
@@ -797,7 +818,7 @@ function bindStaticActions(): void {
     }
     const panMode = state.tool === 'hand' || state.spaceHeld;
     if (event.button !== 0 || !panMode) return;
-    if (targetElement.closest('.block-wrap')) return;
+    event.preventDefault();
     beginPan(event);
   });
   viewport.addEventListener('pointerdown', event => {
@@ -813,8 +834,16 @@ function bindStaticActions(): void {
     if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
     if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
     event.preventDefault();
-    const factor = Math.exp(-event.deltaY * (event.ctrlKey || event.metaKey ? 0.002 : 0.0016));
-    setZoomAt(state.zoom * factor, event.clientX, event.clientY);
+    const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientHeight : 1;
+    const deltaX = event.deltaX * unit;
+    const deltaY = event.deltaY * unit;
+    if (event.ctrlKey || event.metaKey) {
+      setZoomAt(state.zoom * Math.exp(-deltaY * 0.002), event.clientX, event.clientY);
+      return;
+    }
+    state.panX -= event.shiftKey && Math.abs(deltaX) < Math.abs(deltaY) ? deltaY : deltaX;
+    state.panY -= event.shiftKey ? 0 : deltaY;
+    scheduleStageTransform();
   }, { passive: false });
   // Eraser removes blocks under the pointer in a drag gesture.
   viewport.addEventListener('pointerdown', event => {
@@ -892,18 +921,44 @@ function editActiveBlock(): void {
   else renderInspector();
 }
 
+async function copySelectedBlocks(cut = false): Promise<void> {
+  const page = activePage();
+  const blocks = selectedBlocks();
+  if (!page || !blocks.length || page.mode === 'html' || page.mode === 'whiteboard') return;
+  clipboardBlocks = cloneJson(blocks);
+  clipboardPasteCount = 0;
+  try { await navigator.clipboard?.writeText(serializeBlocksForClipboard(blocks)); } catch { /* in-memory clipboard remains available */ }
+  if (cut) {
+    const result = await applyOps(blocks.map(block => ({ op: 'delete_block', pageId: page.id, blockId: block.id } as HcOp)), { refreshArtboard: true });
+    if (!result) return;
+    setBlockSelection([]);
+  }
+  toast((cut ? 'Cut ' : 'Copied ') + blocks.length + ' block' + (blocks.length === 1 ? '' : 's'), 'info');
+}
+
 async function pasteBlock(): Promise<void> {
   const page = activePage();
-  if (!page || !clipboardBlock || page.mode === 'html' || page.mode === 'whiteboard') return;
-  const copy: HcBlock = {
-    ...cloneJson(clipboardBlock),
-    id: genId('block'),
-    x: clipboardBlock.x + 28,
-    y: clipboardBlock.y + 28,
-    z: Math.max(0, ...(page.blocks || []).map(block => block.z)) + 1,
-  };
-  const result = await applyOps([{ op: 'add_block', pageId: page.id, block: copy }], { refreshArtboard: true });
-  if (result) { setBlockSelection([copy.id], copy.id); renderArtboard(); }
+  if (!page || page.mode === 'html' || page.mode === 'whiteboard') return;
+  let source = clipboardBlocks;
+  if (!source.length) {
+    try { source = parseBlocksFromClipboard(await navigator.clipboard?.readText() || '') || []; } catch { source = []; }
+  }
+  if (!source.length) return;
+  clipboardPasteCount += 1;
+  const offset = 24 * clipboardPasteCount;
+  const copies = cloneBlocksForPlacement(source, {
+    offsetX: offset,
+    offsetY: offset,
+    nextZ: Math.max(0, ...(page.blocks || []).map(block => block.z)) + 1,
+    createId: genId,
+  });
+  for (const copy of copies) {
+    const next = clampBlockPosition(page, copy, copy.x, copy.y);
+    copy.x = next.x;
+    copy.y = next.y;
+  }
+  const result = await applyOps(copies.map(copy => ({ op: 'add_block', pageId: page.id, block: copy } as HcOp)), { refreshArtboard: true });
+  if (result) setBlockSelection(copies.map(copy => copy.id), copies[copies.length - 1]?.id ?? null);
 }
 
 async function groupSelectedBlocks(): Promise<void> {
@@ -937,20 +992,19 @@ async function duplicateActiveBlock(): Promise<void> {
   const page = activePage();
   const blocks = selectedBlocks();
   if (!page || !blocks.length) return;
-  const groupMap = new Map<string, string>();
-  const copies = blocks.map((block, index) => {
-    let groupId = block.groupId ?? null;
-    if (groupId) {
-      if (!groupMap.has(groupId)) groupMap.set(groupId, genId('group'));
-      groupId = groupMap.get(groupId)!;
-    }
-    return { ...block, id: genId('block'), x: block.x + 24 + index, y: block.y + 24 + index, z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + index + 1, groupId, name: block.name || block.type + ' copy' };
+  const copies = cloneBlocksForPlacement(blocks, {
+    offsetX: 24,
+    offsetY: 24,
+    nextZ: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1,
+    createId: genId,
   });
-  const result = await applyOps(copies.map(copy => ({ op: 'add_block', pageId: page.id, block: copy } as HcOp)), { refreshArtboard: true });
-  if (result) {
-    setBlockSelection(copies.map(copy => copy.id), copies[copies.length - 1]?.id ?? null);
-    renderArtboard(); renderInspector(); renderToolbarState();
+  for (const copy of copies) {
+    const next = clampBlockPosition(page, copy, copy.x, copy.y);
+    copy.x = next.x;
+    copy.y = next.y;
   }
+  const result = await applyOps(copies.map(copy => ({ op: 'add_block', pageId: page.id, block: copy } as HcOp)), { refreshArtboard: true });
+  if (result) setBlockSelection(copies.map(copy => copy.id), copies[copies.length - 1]?.id ?? null);
 }
 
 async function setActiveBlockLayer(direction: 'front' | 'back'): Promise<void> {
@@ -1009,25 +1063,7 @@ async function nudgeActiveBlock(dx: number, dy: number): Promise<void> {
 }
 
 function openShortcutsModal(): void {
-  const html = '<div class="modal small"><div class="modal-head"><div><strong>Canvas shortcuts</strong><small>Works when you are not typing in a field.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="help-grid">' +
-    '<kbd>V</kbd><span>Select tool</span>' +
-    '<kbd>H</kbd><span>Hand / pan tool</span>' +
-    '<kbd>Space / Middle drag</kbd><span>Pan canvas</span>' +
-    '<kbd>Wheel</kbd><span>Zoom at pointer</span>' +
-    '<kbd>Drag empty / Shift+click</kbd><span>Marquee / add to selection</span>' +
-    '<kbd>Ctrl/Cmd + G</kbd><span>Group / Shift = ungroup</span>' +
-    '<kbd>P / A / E</kbd><span>Pen / Arrow / Eraser (Infinite)</span>' +
-    '<kbd>1 – 6</kbd><span>Insert blocks, then click canvas to place</span>' +
-    '<kbd>Ctrl/Cmd + Z</kbd><span>Undo</span>' +
-    '<kbd>Ctrl/Cmd + Shift + Z / Y</kbd><span>Redo</span>' +
-    '<kbd>Ctrl/Cmd + C / V</kbd><span>Copy / paste selected block</span>' +
-    '<kbd>Ctrl/Cmd + D</kbd><span>Duplicate selected block</span>' +
-    '<kbd>Delete</kbd><span>Delete selected block</span>' +
-    '<kbd>Arrow keys</kbd><span>Nudge selected block (Shift = 10px)</span>' +
-    '<kbd>G / S</kbd><span>Toggle grid / snap</span>' +
-    '<kbd>?</kbd><span>This help</span>' +
-    '</div></div><div class="modal-foot"><button class="btn" data-close>Close</button></div></div>';
-  openModal(html);
+  openModal(SHORTCUTS_MODAL_HTML);
 }
 
 function handleGlobalKeydown(event: KeyboardEvent): void {
@@ -1042,65 +1078,116 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     else if (event.key === 'ArrowLeft' || event.key === 'PageUp') nextPresent(-1);
     return;
   }
+  if (el('modalRoot').childElementCount) {
+    if (event.key === 'Escape') { event.preventDefault(); closeModal(); }
+    return;
+  }
   const target = event.target as HTMLElement;
   const typing = target.matches('input, textarea, [contenteditable="true"]') || Boolean(target.closest('.cm-editor'));
-  if (activePage()?.mode === 'whiteboard') return;
   if (event.key === 'Escape') {
-    if (state.sourceModalOpen) { closeModal(); return; }
+    if (typing) { target.blur(); return; }
     if (state.editing) { exitHtmlEdit(); return; }
     if (state.pendingInsert) { cancelInsert(); return; }
     if (state.selectedBlockIds.length) { setBlockSelection([]); return; }
-    closeModal();
+    if (state.tool !== 'select') { state.tool = 'select'; renderToolbarState(); }
     return;
   }
-  const nativeTextEditing = target.matches('[contenteditable="true"]') && Boolean(target.closest('.block-wrap'));
-  if (nativeTextEditing && (event.key === 'z' || event.key === 'Z') && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault();
-    target.blur();
-    if (event.shiftKey) void redo(); else void undo();
-    return;
-  }
-  if (typing) return;
-  if ((event.key === 'z' || event.key === 'Z') && (event.ctrlKey || event.metaKey)) {
+  if (typing || activePage()?.mode === 'whiteboard') return;
+  const key = event.key.toLowerCase();
+  const command = event.ctrlKey || event.metaKey;
+  if (command && key === 'z') {
     event.preventDefault();
     if (event.shiftKey) void redo(); else void undo();
     return;
   }
-  if ((event.key === 'y' || event.key === 'Y') && (event.ctrlKey || event.metaKey)) {
+  if (command && key === 'y') {
     event.preventDefault();
     void redo();
     return;
   }
-  if ((event.key === 'c' || event.key === 'C') && (event.ctrlKey || event.metaKey)) {
-    const block = activeBlock();
-    if (block) { clipboardBlock = cloneJson(block); event.preventDefault(); toast('Block copied', 'info'); }
+  if (command && key === 'a') {
+    const page = activePage();
+    if (page?.blocks?.length) {
+      event.preventDefault();
+      setBlockSelection(page.blocks.map(block => block.id), page.blocks[page.blocks.length - 1]!.id);
+    }
     return;
   }
-  if ((event.key === 'v' || event.key === 'V') && (event.ctrlKey || event.metaKey)) {
-    if (clipboardBlock) { event.preventDefault(); void pasteBlock(); }
+  if (command && key === 'c') {
+    if (state.selectedBlockIds.length) { event.preventDefault(); void copySelectedBlocks(); }
     return;
   }
-  if ((event.key === 'd' || event.key === 'D') && (event.ctrlKey || event.metaKey)) {
+  if (command && key === 'x') {
+    if (state.selectedBlockIds.length) { event.preventDefault(); void copySelectedBlocks(true); }
+    return;
+  }
+  if (command && key === 'v') {
+    event.preventDefault();
+    void pasteBlock();
+    return;
+  }
+  if (command && key === 'd') {
     event.preventDefault();
     void duplicateActiveBlock();
     return;
   }
-  if (event.key === 'v' || event.key === 'V') { state.tool = 'select'; renderToolbarState(); return; }
-  if (event.key === 'h' || event.key === 'H') { state.tool = 'hand'; renderToolbarState(); return; }
-  if ((event.key === 'p' || event.key === 'P') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'pen'; renderToolbarState(); } return; }
-  if ((event.key === 'a' || event.key === 'A') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'arrow'; renderToolbarState(); } return; }
-  if ((event.key === 'e' || event.key === 'E') && !event.ctrlKey && !event.metaKey) { if (activePage()?.mode === 'infinite') { state.tool = 'eraser'; renderToolbarState(); } return; }
-  if ((event.key === 'g' || event.key === 'G') && (event.ctrlKey || event.metaKey)) {
+  if (command && key === 'g') {
     event.preventDefault();
     if (event.shiftKey) void ungroupSelectedBlocks(); else void groupSelectedBlocks();
     return;
   }
-  if (event.key === 'g' || event.key === 'G') { state.showGrid = !state.showGrid; renderArtboard(); renderToolbarState(); return; }
-  if (event.key === 's' || event.key === 'S') { state.snap = !state.snap; renderToolbarState(); return; }
+  if (command && key === 'p') {
+    event.preventDefault();
+    void exportCurrent('pdf');
+    return;
+  }
+  if (command && (event.code === 'Digit0' || event.code === 'Digit1')) {
+    event.preventDefault();
+    if (event.code === 'Digit0') setZoom(1); else fitPage();
+    return;
+  }
+  if (command && (event.code === 'Equal' || event.code === 'Minus')) {
+    event.preventDefault();
+    setZoom(state.zoom * (event.code === 'Equal' ? 1.15 : 1 / 1.15));
+    return;
+  }
+  if (command || event.altKey) return;
+  if (event.shiftKey && event.code === 'Digit1') {
+    event.preventDefault();
+    fitPage();
+    return;
+  }
+  if (key === 'v' || key === 'h') {
+    cancelInsert();
+    state.tool = key === 'h' ? 'hand' : 'select';
+    renderToolbarState();
+    return;
+  }
+  if (key === 'p' || key === 'a' || key === 'e') {
+    if (activePage()?.mode === 'infinite') {
+      cancelInsert();
+      state.tool = key === 'p' ? 'pen' : key === 'a' ? 'arrow' : 'eraser';
+      renderToolbarState();
+    }
+    return;
+  }
+  if (key === 'r' || key === 'o') {
+    event.preventDefault();
+    state.pendingShape = key === 'r' ? 'rect' : 'ellipse';
+    requestInsert('shape');
+    return;
+  }
+  if (key === 't') {
+    event.preventDefault();
+    requestInsert('text');
+    return;
+  }
+  if (key === 'g') { state.showGrid = !state.showGrid; renderArtboard(); return; }
+  if (key === 's') { state.snap = !state.snap; renderToolbarState(); return; }
   if (event.key === '?') { openShortcutsModal(); return; }
-  if (['1', '2', '3', '4', '5', '6'].includes(event.key)) {
-    const map: Record<string, HcBlock['type']> = { '1': 'html', '2': 'text', '3': 'markdown', '4': 'code', '5': 'image', '6': 'shape' };
-    const type = map[event.key];
+  if (/^Digit[1-6]$/.test(event.code) && !event.shiftKey) {
+    const map: Record<string, HcBlock['type']> = { Digit1: 'html', Digit2: 'text', Digit3: 'markdown', Digit4: 'code', Digit5: 'image', Digit6: 'shape' };
+    const type = map[event.code];
     if (!type) return;
     event.preventDefault();
     if (type === 'shape') openShapePicker();
@@ -1115,11 +1202,9 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     void nudgeSelectedBlocks(dx, dy);
     return;
   }
-  if (event.key === 'Delete' || event.key === 'Backspace') {
-    if (state.selectedBlockIds.length) { event.preventDefault(); void deleteSelectedBlocks(); }
-  }
-  if ((event.key === 'p' || event.key === 'P') && (event.ctrlKey || event.metaKey)) {
-    event.preventDefault(); void exportCurrent('pdf');
+  if ((event.key === 'Delete' || event.key === 'Backspace') && state.selectedBlockIds.length) {
+    event.preventDefault();
+    void deleteSelectedBlocks();
   }
 }
 
@@ -1415,7 +1500,8 @@ let applyingHistory = false;
 let pendingHistoryUndo = 0;
 let pendingHistoryRedo = 0;
 let opQueue: Promise<unknown> = Promise.resolve();
-let clipboardBlock: HcBlock | null = null;
+let clipboardBlocks: HcBlock[] = [];
+let clipboardPasteCount = 0;
 
 function enqueueMutation<T>(task: () => Promise<T>): Promise<T> {
   const next = opQueue.then(task, task);
@@ -1925,7 +2011,7 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
   const hit = qs<HTMLElement>('.block-hit', wrap);
   if (!hit) return;
   hit.addEventListener('pointerdown', event => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || state.tool !== 'select' || state.spaceHeld) return;
     event.stopPropagation();
     if (event.altKey) {
       cycleBlockSelectionAt(event.clientX, event.clientY, block.id);
@@ -2057,145 +2143,8 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function findPageInDoc(doc: HcDocument, pageId: string): HcPage | undefined {
-  return doc.pages.find(page => page.id === pageId);
-}
-
-function inverseOfOp(doc: HcDocument, op: HcOp): HcOp | null {
-  switch (op.op) {
-    case 'add_page': return { op: 'delete_page', pageId: op.page.id };
-    case 'delete_page': {
-      const index = doc.pages.findIndex(page => page.id === op.pageId);
-      const page = doc.pages[index];
-      return page ? { op: 'add_page', page: cloneJson(page), index } : null;
-    }
-    case 'update_page': {
-      const page = findPageInDoc(doc, op.pageId);
-      if (!page) return null;
-      const previous: Record<string, unknown> = {};
-      for (const key of Object.keys(op.patch)) previous[key] = cloneJson((page as unknown as Record<string, unknown>)[key]);
-      return { op: 'update_page', pageId: op.pageId, patch: previous as Partial<HcPage> };
-    }
-    case 'add_block': return { op: 'delete_block', pageId: op.pageId, blockId: op.block.id };
-    case 'delete_block': {
-      const page = findPageInDoc(doc, op.pageId);
-      const index = page?.blocks?.findIndex(block => block.id === op.blockId) ?? -1;
-      const block = index >= 0 ? page?.blocks?.[index] : undefined;
-      return block ? { op: 'add_block', pageId: op.pageId, block: cloneJson(block), index } : null;
-    }
-    case 'update_block': {
-      const page = findPageInDoc(doc, op.pageId);
-      const block = page?.blocks?.find(item => item.id === op.blockId);
-      if (!block) return null;
-      const previous: Record<string, unknown> = {};
-      for (const key of Object.keys(op.patch)) {
-        const value = (block as unknown as Record<string, unknown>)[key];
-        previous[key] = key === 'groupId' || key === 'frameId' ? value ?? null : cloneJson(value);
-      }
-      return { op: 'update_block', pageId: op.pageId, blockId: op.blockId, patch: previous as Partial<Omit<HcBlock, 'id' | 'type'>> };
-    }
-    case 'set_page_html': {
-      const page = findPageInDoc(doc, op.pageId);
-      if (!page) return null;
-      return { op: 'set_page_html', pageId: op.pageId, html: page.html || '' };
-    }
-    case 'html_patch': {
-      if (op.blockId) {
-        const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-        return block ? { op: 'set_block_html', pageId: op.pageId, blockId: op.blockId, html: block.html || '' } : null;
-      }
-      const page = findPageInDoc(doc, op.pageId);
-      return page ? { op: 'set_page_html', pageId: op.pageId, html: page.html || '' } : null;
-    }
-    case 'set_whiteboard_scene': {
-      const page = findPageInDoc(doc, op.pageId);
-      return page?.scene ? { op: 'set_whiteboard_scene', pageId: op.pageId, scene: cloneJson(page.scene) } : null;
-    }
-    case 'set_block_html': {
-      const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-      return block ? { op: 'set_block_html', pageId: op.pageId, blockId: op.blockId, html: block.html || '' } : null;
-    }
-    case 'set_block_text': {
-      const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-      return block ? { op: 'set_block_text', pageId: op.pageId, blockId: op.blockId, text: block.text || '' } : null;
-    }
-    case 'set_block_markdown': {
-      const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-      return block ? { op: 'set_block_markdown', pageId: op.pageId, blockId: op.blockId, markdown: block.markdown || '' } : null;
-    }
-    case 'set_block_code': {
-      const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-      return block ? { op: 'set_block_code', pageId: op.pageId, blockId: op.blockId, code: block.code || '', language: block.language } : null;
-    }
-    case 'reorder_block': return { op: 'reorder_block', pageId: op.pageId, blockId: op.blockId, direction: op.direction === 'up' ? 'down' : 'up' };
-    case 'reorder_page': return { op: 'reorder_page', pageId: op.pageId, direction: op.direction === 'up' ? 'down' : 'up' };
-    default: return null;
-  }
-}
-
-function applyOpLocally(doc: HcDocument, op: HcOp): void {
-  if (op.op === 'add_page') {
-    const index = op.index === undefined ? doc.pages.length : op.index;
-    doc.pages.splice(index, 0, cloneJson(op.page));
-  } else if (op.op === 'delete_page') {
-    doc.pages = doc.pages.filter(page => page.id !== op.pageId);
-  } else if (op.op === 'update_page') {
-    const page = findPageInDoc(doc, op.pageId);
-    if (page) Object.assign(page, cloneJson(op.patch));
-  } else if (op.op === 'add_block') {
-    const page = findPageInDoc(doc, op.pageId);
-    if (page) { page.blocks = page.blocks || []; const index = op.index === undefined ? page.blocks.length : op.index; page.blocks.splice(index, 0, cloneJson(op.block)); }
-  } else if (op.op === 'delete_block') {
-    const page = findPageInDoc(doc, op.pageId);
-    if (page) page.blocks = (page.blocks || []).filter(block => block.id !== op.blockId);
-  } else if (op.op === 'update_block') {
-    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-    if (block) Object.assign(block, cloneJson(op.patch));
-  } else if (op.op === 'set_page_html') {
-    const page = findPageInDoc(doc, op.pageId);
-    if (page) { page.mode = 'html'; page.html = op.html; delete page.blocks; delete page.scene; }
-  } else if (op.op === 'set_block_html') {
-    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-    if (block) block.html = op.html;
-  } else if (op.op === 'set_block_text') {
-    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-    if (block) block.text = op.text;
-  } else if (op.op === 'set_block_markdown') {
-    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-    if (block) block.markdown = op.markdown;
-  } else if (op.op === 'set_block_code') {
-    const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
-    if (block) { block.code = op.code; if (op.language !== undefined) block.language = op.language; }
-  } else if (op.op === 'reorder_block') {
-    const page = findPageInDoc(doc, op.pageId);
-    const blocks = page?.blocks || [];
-    const index = blocks.findIndex(block => block.id === op.blockId);
-    const swap = op.direction === 'up' ? index - 1 : index + 1;
-    if (index >= 0 && swap >= 0 && swap < blocks.length) {
-      const [block] = blocks.splice(index, 1);
-      if (block) blocks.splice(swap, 0, block);
-    }
-  } else if (op.op === 'reorder_page') {
-    const index = doc.pages.findIndex(page => page.id === op.pageId);
-    const swap = op.direction === 'up' ? index - 1 : index + 1;
-    if (index >= 0 && swap >= 0 && swap < doc.pages.length) {
-      const [page] = doc.pages.splice(index, 1);
-      if (page) doc.pages.splice(swap, 0, page);
-    }
-  }
-}
-
 function invertOps(ops: HcOp[], baseDoc: HcDocument | null = state.doc): HcOp[] | null {
-  if (!baseDoc) return null;
-  const working = cloneJson(baseDoc);
-  const inverses: HcOp[] = [];
-  for (const op of ops) {
-    const inverse = inverseOfOp(working, op);
-    if (!inverse) return null;
-    inverses.unshift(inverse);
-    applyOpLocally(working, op);
-  }
-  return inverses;
+  return invertDocumentOps(ops, baseDoc);
 }
 
 function updateHistoryButtons(): void {
@@ -2258,6 +2207,16 @@ function augmentBindingOps(ops: HcOp[]): HcOp[] {
     changed.get(op.pageId)!.add(op.blockId);
   }
   if (!changed.size) return ops;
+  let hasAffectedArrow = false;
+  for (const [pageId, touched] of changed) {
+    const page = state.doc.pages.find(item => item.id === pageId);
+    if ((page?.blocks || []).some(arrow => arrow.type === 'arrow' && (arrow.startBinding || arrow.endBinding)
+      && (touched.has(arrow.id) || Boolean(arrow.startBinding && touched.has(arrow.startBinding)) || Boolean(arrow.endBinding && touched.has(arrow.endBinding))))) {
+      hasAffectedArrow = true;
+      break;
+    }
+  }
+  if (!hasAffectedArrow) return ops;
   const working = cloneJson(state.doc);
   for (const op of ops) applyOpLocally(working, op);
   const extra: HcOp[] = [];
@@ -2289,12 +2248,11 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
   if (!state.doc) return null;
   const finalOps = augmentBindingOps(ops);
   const historyInverse = options.recordHistory !== false && options.silent !== true && !applyingHistory ? invertOps(finalOps, options.historyBase || state.doc) : null;
-  state.ignoreEventsUntil = Date.now() + 1600;
   setSaveStatus('Saving…', 'saving');
   try {
     const result = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id + '/apply', {
       method: 'POST',
-      body: JSON.stringify({ ops: finalOps, baseRevision: state.doc.revision, actor: options.actor || 'human' }),
+      body: JSON.stringify({ ops: finalOps, baseRevision: state.doc.revision, actor: options.actor || 'human', source: clientId }),
     });
     state.doc = result.doc;
     if (historyInverse) {
@@ -2339,21 +2297,36 @@ async function reloadActiveDoc(): Promise<void> {
   setSaveStatus('Reloaded', 'idle');
 }
 
+let activeSyncKey = '';
+let activeSyncInFlight = false;
+let activeSyncQueued = false;
+
 async function syncActive(): Promise<void> {
   if (!state.doc) return;
+  const key = JSON.stringify([state.doc.id, state.activePageId, state.selectedHtmlId || state.activeBlockId]);
+  if (key === activeSyncKey) return;
+  activeSyncKey = key;
+  activeSyncQueued = true;
+  if (activeSyncInFlight) return;
+  activeSyncInFlight = true;
   try {
-    await api('/api/context/activate', {
-      method: 'POST',
-      body: JSON.stringify({ docId: state.doc.id, pageId: state.activePageId, blockId: state.selectedHtmlId || state.activeBlockId, actor: 'human' }),
-    });
-  } catch { /* context sync is best effort */ }
+    while (activeSyncQueued && state.doc) {
+      activeSyncQueued = false;
+      const snapshot = { docId: state.doc.id, pageId: state.activePageId, blockId: state.selectedHtmlId || state.activeBlockId, actor: 'human' };
+      await api('/api/context/activate', { method: 'POST', body: JSON.stringify(snapshot) });
+    }
+  } catch {
+    activeSyncKey = '';
+  } finally {
+    activeSyncInFlight = false;
+  }
 }
 
 async function renameDocument(title: string): Promise<void> {
   if (!state.doc) return;
-  const result = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id, { method: 'PATCH', body: JSON.stringify({ title }) });
+  const result = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id, { method: 'PATCH', body: JSON.stringify({ title, source: clientId }) });
   state.doc = result.doc;
-  await loadDocs();
+  patchDocSummary(result.doc);
   renderTop(); renderDocs();
   setSaveStatus('Renamed', 'saved');
 }
@@ -2621,7 +2594,7 @@ function renderPageInspector(): void {
   html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Legacy whiteboard · native read-only preview · ' + ((page.scene?.elements || []).length) + ' scene element' + ((page.scene?.elements || []).length === 1 ? '' : 's') : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
   if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Esc exits. The Agent tab exposes the CLI protocol.</div>';
-  if (page.mode === 'infinite') html += '<div class="hint-card">Pan with the Hand tool, Space, or middle-drag; zoom with the mouse wheel or the zoom controls. Blocks can be placed anywhere and exports crop to content.</div>';
+  if (page.mode === 'infinite') html += '<div class="hint-card">Pan with the mouse wheel, Hand tool, Space, or middle-drag. Hold Ctrl/Cmd while scrolling to zoom at the pointer. Drag shapes to size them; exports crop to content.</div>';
   if (page.mode === 'whiteboard') html += '<div class="hint-card"><strong>Legacy whiteboard.</strong> This page is rendered from its Excalidraw scene through the native block renderer — no Excalidraw runtime is loaded. Convert it with <strong>Convert to native Infinite</strong> above; use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for raw scene access.</div>';
   html += '</section>';
   root.innerHTML = html;
@@ -2921,7 +2894,7 @@ async function resolveProposal(proposalId: string, accept: boolean): Promise<voi
   try {
     const result = await api<{ doc: HcDocument; conflict?: string }>('/api/docs/' + state.doc.id + '/proposals/' + proposalId + '/' + (accept ? 'accept' : 'reject'), { method: 'POST', body: JSON.stringify({ actor: 'human' }) });
     state.doc = result.doc;
-    await loadDocs();
+    patchDocSummary(result.doc);
     renderAll();
     toast(result.conflict ? 'Proposal conflicted: ' + result.conflict : accept ? 'Proposal accepted' : 'Proposal rejected', result.conflict ? 'error' : 'success');
   } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
@@ -2931,10 +2904,10 @@ function connectEvents(): void {
   try {
     const source = new EventSource('/api/events?token=' + encodeURIComponent(boot.token));
     source.addEventListener('canvas', event => {
-      if (Date.now() < state.ignoreEventsUntil) return;
       let payload: Record<string, unknown> = {};
       try { payload = JSON.parse((event as MessageEvent).data) as Record<string, unknown>; } catch { return; }
       if (payload.type === 'doc.changed' && payload.docId === state.doc?.id) {
+        if (payload.source === clientId) return;
         if (state.editing) { toast('Canvas changed elsewhere. Exit HTML edit to reload.', 'info'); return; }
         if (remoteReloadTimer) clearTimeout(remoteReloadTimer);
         remoteReloadTimer = setTimeout(() => { remoteReloadTimer = undefined; void reloadActiveDoc(); }, 120);
@@ -2977,7 +2950,7 @@ function openShapePicker(): void {
     const preview = shapeSvgMarkup({ shape: shape.id, style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 10 } });
     return '<button type="button" class="shape-choice" data-shape-choice="' + shape.id + '" title="' + esc(shape.hint) + '"><span class="shape-choice-preview">' + preview + '</span><span>' + esc(shape.label) + '</span></button>';
   }).join('');
-  openModal('<div class="modal"><div class="modal-head"><div><strong>Choose a shape</strong><small>Then click on the canvas to place it. You can change the shape later in Inspector.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="shape-grid">' + shapes + '</div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button></div></div>');
+  openModal('<div class="modal"><div class="modal-head"><div><strong>Choose a shape</strong><small>Click for a default size or drag to draw. Shift keeps proportions; Alt draws from center.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="shape-grid">' + shapes + '</div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button></div></div>');
   document.querySelectorAll<HTMLButtonElement>('[data-shape-choice]').forEach(button => {
     button.addEventListener('click', () => {
       const shape = button.dataset.shapeChoice as HcShape;
@@ -2993,18 +2966,10 @@ function requestInsert(type: HcBlock['type']): void {
   const page = activePage();
   if (!page) return;
   if (page.mode === 'html' || page.mode === 'whiteboard') { toast('Switch to a Canvas or Infinite page to add blocks.', 'info'); return; }
-  if (page.mode === 'infinite') {
-    state.pendingInsert = type;
-    state.tool = 'select';
-    state.activeBlockId = null;
-    state.selectedBlockIds = [];
-    renderToolbarState();
-    toast('Click anywhere on the Infinite canvas to place ' + type + '. Esc cancels.', 'info');
-    return;
-  }
-  const shape = type === 'shape' ? state.pendingShape : null;
-  state.pendingShape = null;
-  void addBlock(type, shape ? { shape } : {});
+  state.pendingInsert = type;
+  state.tool = 'select';
+  setBlockSelection([]);
+  toast(type === 'shape' ? 'Click for a default shape or drag to draw it. Esc cancels.' : 'Click the canvas to place ' + type + '. Esc cancels.', 'info');
 }
 
 function cancelInsert(): void {
@@ -3031,11 +2996,11 @@ async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}, pos
   if (!page) return;
   if (page.mode === 'html') { toast('Add blocks on a canvas or infinite page, not an HTML page.', 'error'); return; }
   const z = Math.max(0, ...(page.blocks || []).map(block => block.z)) + 1;
-  const center = position || viewportWorldCenter();
+  const center = position || (page.mode === 'infinite' ? viewportWorldCenter() : { x: page.width / 2, y: page.height / 2 });
   const blockW = Number(extra.w) || 420;
   const blockH = Number(extra.h) || 240;
-  const startX = page.mode === 'infinite' ? snapCoordinate(center.x - blockW / 2) : Math.max(0, Math.round(page.width / 2 - blockW / 2));
-  const startY = page.mode === 'infinite' ? snapCoordinate(center.y - blockH / 2) : Math.max(0, Math.round(page.height / 2 - blockH / 2));
+  const startX = page.mode === 'infinite' ? snapCoordinate(center.x - blockW / 2) : Math.max(0, Math.min(Math.max(0, page.width - blockW), Math.round(center.x - blockW / 2)));
+  const startY = page.mode === 'infinite' ? snapCoordinate(center.y - blockH / 2) : Math.max(0, Math.min(Math.max(0, page.height - blockH), Math.round(center.y - blockH / 2)));
   const block: HcBlock = {
     id: genId('block'), type, x: startX, y: startY, w: blockW, h: blockH, z, name: type + ' block',
     ...(type === 'html' ? { html: '<div style="box-sizing:border-box;height:100%;padding:28px;border:1px solid #e7e0d2;border-radius:18px;background:#fffdf8;font-family:Inter,sans-serif;color:#2e2a24"><h2 style="margin:0 0 8px;font-family:Georgia,serif;font-weight:500;font-size:28px;letter-spacing:-.03em">New HTML block</h2><p style="margin:0;font-size:15px;line-height:1.6;color:#655e52">Double-click to edit text directly.</p></div>' } : {}),
@@ -3047,7 +3012,7 @@ async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}, pos
     ...extra,
   };
   const result = await applyOps([{ op: 'add_block', pageId: page.id, block }], { refreshArtboard: true });
-  if (result) { setBlockSelection([block.id], block.id); renderArtboard(); }
+  if (result) setBlockSelection([block.id], block.id);
 }
 
 function openImageModal(block?: HcBlock): void {
@@ -3208,7 +3173,6 @@ async function openAddPageModal(): Promise<void> {
           method: 'POST',
           body: JSON.stringify({ docId: state.doc.id, baseRevision: state.doc.revision, actor: 'human' }),
         });
-        await loadDocs();
         await openDoc(result.doc.id, result.page.id);
         toast('Page created from master', 'success');
       } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
@@ -3277,8 +3241,25 @@ function openNewDocModal(): void {
     const preset = PAGE_PRESETS.find(item => item.id === presetId);
     closeModal();
     try {
-      const result = await api<{ doc: HcDocument }>('/api/docs', { method: 'POST', body: JSON.stringify({ title, preset: preset ? { width: preset.width, height: preset.height, background: preset.background, title: preset.title } : undefined }) });
-      await loadDocs(); await openDoc(result.doc.id);
+      const result = await api<{ doc: HcDocument }>('/api/docs', {
+        method: 'POST',
+        body: JSON.stringify({
+          title,
+          preset: preset ? {
+            id: preset.id,
+            title: preset.title,
+            width: preset.width,
+            height: preset.height,
+            background: preset.background,
+            mode: preset.mode,
+            html: preset.mode === 'html' ? preset.template ? pageTemplateHtml(preset.template, '') : starterHtml(preset.title) : undefined,
+            blocks: preset.mode === 'canvas' || preset.mode === 'infinite'
+              ? preset.template?.startsWith('canvas-') ? canvasTemplateBlocks(preset.template, preset.width, preset.height) : []
+              : undefined,
+          } : undefined,
+        }),
+      });
+      await openDoc(result.doc.id);
     } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
   });
 }
