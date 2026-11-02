@@ -106,7 +106,9 @@ Canvas pages contain absolutely positioned blocks:
 | Markdown | Markdown source rendered on the canvas |
 | Code | Syntax-preserved code preview |
 | Image | Image URL |
-| Shape | Rectangle, ellipse, diamond, triangle, parallelogram, trapezoid, hexagon, octagon, star, cross, line or frame; fill, stroke, stroke style, radius |
+| Shape | Rectangle, ellipse, diamond, triangle, parallelogram, trapezoid, hexagon, octagon, star, cross, line or frame; fill, stroke, stroke style, radius; optional centered text label |
+
+Shapes behave like PowerPoint/Figma objects: select one to get eight resize handles (corners and edges), drag the label to move, double-click the shape to edit its centered text, and use the Inspector for text font/size/color. While dragging, edge/center smart guides snap the block to other blocks and page centers.
 
 Pages can use slide (16:9), A4, poster (4:5), square and custom sizes. Present mode shows pages full screen; exports support HTML, PDF and PNG (local Chrome/Edge/Chromium). Page master/layout templates and editable PPTX export are future work.
 

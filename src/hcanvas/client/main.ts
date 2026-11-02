@@ -6,9 +6,12 @@ import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShap
 import { vectorSvgMarkup } from '../vector.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
-import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup } from '../shapes.js';
+import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup, shapeTextMarkup } from '../shapes.js';
 import { HTML_INSERT_PRESETS, applySelectedHtmlStyle, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, insertHtmlPreset, type HtmlEditingContext } from './htmlEditing.js';
 import { buildAgentPrompt } from './agentPrompt.js';
+import { startShapeTextEdit } from './shapeText.js';
+import { snapMove } from './smartGuides.js';
+import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
 import { cloneBlocksForPlacement, parseBlocksFromClipboard, serializeBlocksForClipboard } from '../blockClipboard.js';
 import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawing.js';
 import { invertOps as invertDocumentOps } from './documentHistory.js';
@@ -127,7 +130,6 @@ const state: UiState = {
   presenting: false, presentIndex: 0, sourceModalOpen: false,
   tool: 'select', showGrid: true, snap: true, spaceHeld: false, pendingInsert: null, pendingShape: null,
 };
-
 function activePage(): HcPage | null {
   if (!state.doc) return null;
   return state.doc.pages.find(page => page.id === state.activePageId) ?? state.doc.pages[0] ?? null;
@@ -136,14 +138,12 @@ function activeBlock(): HcBlock | null {
   const page = activePage();
   return page?.blocks?.find(block => block.id === state.activeBlockId) ?? null;
 }
-
 function selectedBlocks(): HcBlock[] {
   const page = activePage();
   if (!page?.blocks?.length) return [];
   const ids = new Set(state.selectedBlockIds);
   return page.blocks.filter(block => ids.has(block.id));
 }
-
 function setBlockSelection(ids: string[], primaryId?: string | null): void {
   const page = activePage();
   const available = new Set((page?.blocks || []).map(block => block.id));
@@ -159,14 +159,12 @@ function setBlockSelection(ids: string[], primaryId?: string | null): void {
   renderTop();
   void syncActive();
 }
-
 function expandGroupSelection(block: HcBlock): string[] {
   const page = activePage();
   if (!page || !block.groupId) return [block.id];
   return (page.blocks || []).filter(item => item.groupId === block.groupId).map(item => item.id);
 }
 function docTitle(): string { return state.doc?.title || 'Untitled canvas'; }
-
 function pageMetrics(page: HcPage): { width: number; height: number; content: { minX: number; minY: number; maxX: number; maxY: number } | null } {
   if (page.mode !== 'infinite') {
     return { width: page.width, height: page.height, content: null };
@@ -183,16 +181,13 @@ function pageMetrics(page: HcPage): { width: number; height: number; content: { 
     content: { minX, minY, maxX, maxY },
   };
 }
-
 function viewportWorldCenter(): { x: number; y: number } {
   const rect = el('viewport').getBoundingClientRect();
   return { x: (rect.width / 2 - state.panX) / state.zoom, y: (rect.height / 2 - state.panY) / state.zoom };
 }
-
 function snapCoordinate(value: number): number {
   return state.snap ? Math.round(value / 8) * 8 : Math.round(value);
 }
-
 function clampBlockPosition(page: HcPage, block: HcBlock, x: number, y: number): { x: number; y: number } {
   if (page.mode === 'infinite') return { x: snapCoordinate(x), y: snapCoordinate(y) };
   return {
@@ -905,7 +900,7 @@ function renderToolbarState(): void {
   selection.classList.toggle('hidden', !showSelection);
   if (block) {
     const editButton = el('selEditBtn');
-    editButton.textContent = block.type === 'html' ? 'Edit HTML' : block.type === 'markdown' || block.type === 'code' || block.type === 'text' ? 'Edit source' : block.type === 'image' ? 'Image' : 'Style';
+    editButton.textContent = block.type === 'html' ? 'Edit HTML' : block.type === 'shape' ? 'Edit text' : block.type === 'markdown' || block.type === 'code' || block.type === 'text' ? 'Edit source' : block.type === 'image' ? 'Image' : 'Style';
     editButton.style.display = selectedCount > 1 ? 'none' : '';
     qs<HTMLElement>('[data-sel-action="group"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
     qs<HTMLElement>('[data-sel-action="ungroup"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
@@ -917,6 +912,10 @@ function editActiveBlock(): void {
   const block = activeBlock();
   if (!page || !block) return;
   if (block.type === 'html') enterHtmlEdit(page.id, block.id);
+  else if (block.type === 'shape') {
+    const wrap = qs<HTMLDivElement>('.block-wrap[data-block-id="' + block.id + '"]');
+    if (wrap) startShapeTextEdit(block, wrap, { getDoc: () => state.doc, commit: (target, patch, historyBase) => { void persistBlock(target, patch, historyBase || undefined); } });
+  }
   else if (block.type === 'markdown' || block.type === 'code' || block.type === 'text') openSourceEditor({ pageId: page.id, blockId: block.id });
   else if (block.type === 'image') openImageModal(block);
   else renderInspector();
@@ -1927,7 +1926,7 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
     } else if (block.type === 'shape') {
       const shape = document.createElement('div');
       shape.className = 'block-shape-host' + (block.shape === 'frame' ? ' shape-frame' : '');
-      shape.innerHTML = shapeSvgMarkup(block);
+      shape.innerHTML = shapeSvgMarkup(block) + (block.shape === 'frame' ? '' : shapeTextMarkup(block));
       if (block.shape === 'frame') {
         const label = document.createElement('span');
         label.className = 'block-frame-label';
@@ -1976,9 +1975,22 @@ function beginBlockDrag(event: PointerEvent, block: HcBlock, handle: HTMLElement
       if (child.frameId === block.id && !dragBlocks.some(item => item.id === child.id)) dragBlocks.push(child);
     }
   }
-  const starts = new Map(dragBlocks.map(item => [item.id, { x: item.x, y: item.y }]));
+  const starts = new Map(dragBlocks.map(item => [item.id, { x: item.x, y: item.y, w: item.w, h: item.h }]));
   const historyBase = cloneJson(state.doc);
   const start = { x: event.clientX, y: event.clientY, moved: false };
+  const guideLayer = el('artboard');
+  const guideNodes: HTMLElement[] = [];
+  const showGuides = (guides: Array<{ axis: 'x' | 'y'; value: number }>): void => {
+    for (const node of guideNodes) node.remove();
+    guideNodes.length = 0;
+    for (const guide of guides) {
+      const node = document.createElement('div');
+      node.className = 'alignment-guide ' + (guide.axis === 'x' ? 'vertical' : 'horizontal');
+      node.style[guide.axis === 'x' ? 'left' : 'top'] = guide.value + 'px';
+      guideLayer.appendChild(node);
+      guideNodes.push(node);
+    }
+  };
   try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
   let dragFrame = 0;
   const paintDrag = (): void => {
@@ -1988,18 +2000,23 @@ function beginBlockDrag(event: PointerEvent, block: HcBlock, handle: HTMLElement
     }
   };
   const move = (moveEvent: PointerEvent): void => {
-    const dx = (moveEvent.clientX - start.x) / state.zoom;
-    const dy = (moveEvent.clientY - start.y) / state.zoom;
-    if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return;
+    const rawDx = (moveEvent.clientX - start.x) / state.zoom;
+    const rawDy = (moveEvent.clientY - start.y) / state.zoom;
+    if (Math.abs(rawDx) < 2 && Math.abs(rawDy) < 2) return;
     start.moved = true;
+    const origins = dragBlocks.map(item => { const origin = starts.get(item.id)!; return { id: item.id, x: origin.x, y: origin.y, w: item.w, h: item.h }; });
+    const snap = snapMove(page, origins, rawDx, rawDy, state.zoom, state.snap);
+    showGuides(snap.guides);
     for (const item of dragBlocks) {
       const origin = starts.get(item.id)!;
-      const next = clampBlockPosition(page, item, origin.x + dx, origin.y + dy);
+      const next = clampBlockPosition(page, item, origin.x + snap.dx, origin.y + snap.dy);
       item.x = next.x; item.y = next.y;
     }
     if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; paintDrag(); });
   };
   const up = (): void => {
+    for (const node of guideNodes) node.remove();
+    guideNodes.length = 0;
     handle.removeEventListener('pointermove', move);
     handle.removeEventListener('pointerup', up);
     if (dragFrame) { cancelAnimationFrame(dragFrame); dragFrame = 0; }
@@ -2031,6 +2048,7 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
   hit.addEventListener('dblclick', event => {
     event.stopPropagation();
     if (block.type === 'html') enterHtmlEdit(activePage()!.id, block.id);
+    else if (block.type === 'shape') startShapeTextEdit(block, wrap, { getDoc: () => state.doc, commit: (target, patch, historyBase) => { void persistBlock(target, patch, historyBase || undefined); } });
     else if (block.type === 'text') {
       const text = qs<HTMLElement>('.block-text', wrap);
       if (!text) return;
@@ -2076,10 +2094,18 @@ function addBlockSelectionDecorations(wrap: HTMLDivElement, block: HcBlock): voi
     beginBlockDrag(event, block, label, wrap);
   });
   wrap.appendChild(label);
-  const resize = document.createElement('div');
-  resize.className = 'resize-handle';
-  wrap.appendChild(resize);
-  bindResizeHandle(resize, wrap, block);
+  const directions: ResizeDirection[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+  const resizeContext = {
+    getZoom: () => state.zoom,
+    getHistoryBase: () => cloneJson(state.doc),
+    commit: (target: HcBlock, patch: Partial<HcBlock>, historyBase: HcDocument | null) => { void persistBlock(target, patch, historyBase || undefined); },
+  };
+  for (const direction of directions) {
+    const resize = document.createElement('div');
+    resize.className = 'resize-handle handle-' + direction;
+    wrap.appendChild(resize);
+    bindBlockResizeHandle(resize, wrap, block, direction, resizeContext);
+  }
 }
 
 function refreshBlockSelectionDecorations(): void {
@@ -2090,37 +2116,6 @@ function refreshBlockSelectionDecorations(): void {
   const block = selected[0]!;
   const wrap = qs<HTMLDivElement>('.block-wrap[data-block-id="' + block.id + '"]');
   if (wrap) addBlockSelectionDecorations(wrap, block);
-}
-
-function bindResizeHandle(handle: HTMLElement, wrap: HTMLDivElement, block: HcBlock): void {
-  handle.addEventListener('pointerdown', event => {
-    event.stopPropagation();
-    event.preventDefault();
-    const start = { x: event.clientX, y: event.clientY, w: block.w, h: block.h, points: block.points ? JSON.parse(JSON.stringify(block.points)) as Array<{ x: number; y: number }> : null };
-    const historyBase = cloneJson(state.doc);
-    handle.setPointerCapture(event.pointerId);
-    let resizeFrame = 0;
-    const paintResize = (): void => {
-      wrap.style.width = block.w + 'px';
-      wrap.style.height = block.h + 'px';
-    };
-    const move = (moveEvent: PointerEvent): void => {
-      const nextW = Math.max(40, Math.round(start.w + (moveEvent.clientX - start.x) / state.zoom));
-      const nextH = Math.max(30, Math.round(start.h + (moveEvent.clientY - start.y) / state.zoom));
-      block.w = nextW; block.h = nextH;
-      if (start.points) block.points = start.points.map(point => ({ x: point.x * nextW / start.w, y: point.y * nextH / start.h }));
-      if (!resizeFrame) resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; paintResize(); });
-    };
-    const up = (): void => {
-      handle.removeEventListener('pointermove', move);
-      handle.removeEventListener('pointerup', up);
-      if (resizeFrame) { cancelAnimationFrame(resizeFrame); resizeFrame = 0; }
-      paintResize();
-      void persistBlock(block, { w: block.w, h: block.h, ...(block.points ? { points: block.points } : {}) }, historyBase || undefined);
-    };
-    handle.addEventListener('pointermove', move);
-    handle.addEventListener('pointerup', up);
-  });
 }
 
 function selectBlock(blockId: string | null, options: { additive?: boolean } = {}): void {
@@ -2651,9 +2646,10 @@ function renderBlockInspector(): void {
   html += '<section class="inspector-section"><div class="inspector-title">Style</div>';
   if (block.type === 'shape') {
     html += '<div class="field"><span>Shape</span><select id="blockShape">' + HCANVAS_SHAPES.map(shape => '<option value="' + shape.id + '"' + (block.shape === shape.id ? ' selected' : '') + '>' + esc(shape.label) + '</option>').join('') + '</select></div>';
+    html += '<div class="field"><span>Shape text</span><textarea id="blockShapeText" rows="2">' + esc(block.text || '') + '</textarea></div>';
   }
-  if (block.type === 'text' || block.type === 'markdown') {
-    html += '<div class="field-row">' + field('blockFontSize', 'Font size', '<input id="blockFontSize" type="number" value="' + (block.style?.fontSize || 20) + '">') + field('blockColor', 'Color', '<input id="blockColor" type="color" value="' + esc(toHex(String(block.style?.color || '#1d232e'))) + '">') + '</div>';
+  if (block.type === 'text' || block.type === 'markdown' || block.type === 'shape') {
+    html += '<div class="field-row">' + field('blockFontSize', 'Font size', '<input id="blockFontSize" type="number" value="' + (block.style?.fontSize || (block.type === 'shape' ? 18 : 20)) + '">') + field('blockColor', 'Color', '<input id="blockColor" type="color" value="' + esc(toHex(String(block.style?.color || '#1d232e'))) + '">') + '</div>';
   }
   if (block.type === 'shape' || block.type === 'html' || block.type === 'markdown') {
     html += '<div class="field-row">' + field('blockFill', 'Fill', '<input id="blockFill" type="color" value="' + esc(toHex(String(block.style?.fill || '#f3e8ff'))) + '">') + field('blockStroke', 'Stroke', '<input id="blockStroke" type="color" value="' + esc(toHex(String(block.style?.stroke || '#a855f7'))) + '">') + '</div>';
@@ -2698,6 +2694,7 @@ function bindBlockInspector(block: HcBlock): void {
   const arrowhead = qs<HTMLSelectElement>('#blockArrowhead');
   const shapeSelect = qs<HTMLSelectElement>('#blockShape');
   if (shapeSelect) shapeSelect.addEventListener('change', () => { if (isHcShape(shapeSelect.value)) void update({ shape: shapeSelect.value }, true); });
+  qs<HTMLTextAreaElement>('#blockShapeText')?.addEventListener('change', () => { void update({ text: qs<HTMLTextAreaElement>('#blockShapeText')?.value || '' }); });
   if (fontSize) fontSize.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fontSize: Number(fontSize.value) || 20 } }); });
   if (color) color.addEventListener('change', () => { void update({ style: { ...(block.style || {}), color: color.value } }); });
   if (fill) fill.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fill: fill.value } }); });
@@ -3484,7 +3481,7 @@ function renderPresentCanvasHtml(page: HcPage): string {
     else if (block.type === 'markdown') inner = '<div style="padding:22px 24px;font:16px/1.6 Inter,sans-serif;color:#334155">' + String(marked.parse(block.markdown || '', { async: false })) + '</div>';
     else if (block.type === 'code') inner = '<pre style="margin:0;padding:20px;font:12px/1.6 ui-monospace,Consolas,monospace;color:' + esc(String(block.style?.color || '#e2e8f0')) + ';background:' + esc(String(block.style?.fill || '#171923')) + ';white-space:pre-wrap">' + esc(block.code || '') + '</pre>';
     else if (block.type === 'image') inner = block.src ? '<img src="' + esc(block.src) + '" style="width:100%;height:100%;object-fit:cover" />' : '';
-    else if (block.type === 'shape') inner = shapeSvgMarkup(block);
+    else if (block.type === 'shape') inner = '<div style="position:relative;width:100%;height:100%">' + shapeSvgMarkup(block) + (block.shape === 'frame' ? '' : shapeTextMarkup(block)) + '</div>';
     else if (block.type === 'freehand' || block.type === 'arrow') inner = vectorSvgMarkup(block);
     html += '<div style="' + style + '">' + inner + '</div>';
   }

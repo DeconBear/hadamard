@@ -12,7 +12,7 @@ import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from 
 
 import { htmlToPlainDocument } from './html.js';
 import { vectorSvgMarkup } from './vector.js';
-import { shapeSvgMarkup } from './shapes.js';
+import { shapeSvgMarkup, shapeTextMarkup } from './shapes.js';
 import { excalidrawSceneToNativePage } from './sceneBridge.js';
 import { extractHtmlLayout, type HtmlLayout } from './htmlLayout.js';
 import type { HcBlock, HcDocument, HcPage } from './types.js';
@@ -81,7 +81,7 @@ function renderBlock(block: HcBlock): string {
   }
   if (block.type === 'shape') {
     const frameLabel = block.shape === 'frame' ? '<span style="position:absolute;left:10px;top:7px;font:600 11px Inter,sans-serif;color:#525d66;pointer-events:none">' + escapeHtml(block.name || 'Frame') + '</span>' : '';
-    return wrapper + '<div style="position:relative;width:100%;height:100%">' + shapeSvgMarkup(block) + frameLabel + '</div></div>';
+    return wrapper + '<div style="position:relative;width:100%;height:100%">' + shapeSvgMarkup(block) + frameLabel + (block.shape === 'frame' ? '' : shapeTextMarkup(block)) + '</div></div>';
   }
   if (block.type === 'freehand' || block.type === 'arrow') {
     return wrapper + vectorSvgMarkup(block) + '</div>';

@@ -83,3 +83,15 @@ export function shapeSvgMarkup(block: Pick<HcBlock, 'shape' | 'style'>): string 
   }
   return '<svg class="block-shape-svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="display:block;overflow:visible" aria-hidden="true">' + geometry + '</svg>';
 }
+function escapeText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Text overlay used by PowerPoint-style shape labels in editor, exports and Present. */
+export function shapeTextMarkup(block: Pick<HcBlock, 'text' | 'style'>): string {
+  const style = block.style || {};
+  const align = style.align === 'left' ? 'flex-start' : style.align === 'right' ? 'flex-end' : 'center';
+  const textAlign = style.align || 'center';
+  const font = style.fontFamily ? String(style.fontFamily) : 'Inter, ui-sans-serif, system-ui, sans-serif';
+  return '<div class="block-shape-text" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:' + align + ';padding:12px;text-align:' + textAlign + ';font-family:' + escapeAttribute(font) + ';font-size:' + Number(style.fontSize || 18) + 'px;font-weight:' + Number(style.fontWeight || 500) + ';line-height:' + Number(style.lineHeight || 1.25) + ';color:' + escapeAttribute(String(style.color || '#1d232e')) + ';white-space:pre-wrap;pointer-events:none;overflow:hidden">' + escapeText(block.text || '') + '</div>';
+}
