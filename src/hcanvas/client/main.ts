@@ -3409,6 +3409,7 @@ function closePresent(): void {
   const root = el('presentRoot');
   root.classList.add('hidden');
   root.textContent = '';
+  renderToolbarState();
 }
 function nextPresent(delta: number): void {
   if (!state.doc) return;
