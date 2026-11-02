@@ -583,20 +583,19 @@ export async function exportFile(
     const stat = await readFile(outPath);
     return { format, path: outPath, pageId: page.id, width: page.width, height: page.height, bytes: stat.byteLength };
   }
-  const html = format === 'pdf' && ((options.bleedMm || 0) > 0 || options.cropMarks)
-    ? buildPrintHtml(doc, page, { bleedMm: options.bleedMm ?? 3, cropMarks: options.cropMarks })
-    : buildDocumentHtml(doc, options.pageId);
+  const sourcePage = nativePageFromWhiteboard(firstPage(doc, options.pageId));
+  const html = format === 'png'
+    ? buildStandalonePageHtml(doc, sourcePage)
+    : buildPrintHtml(doc, sourcePage, { bleedMm: (options.bleedMm || 0) > 0 ? options.bleedMm : 0, cropMarks: options.cropMarks });
   const temp = path.resolve(outDir, '.hc-export-' + Date.now() + '.html');
   await writeFile(temp, html, 'utf8');
   const outPath = path.resolve(options.outPath || path.join(outDir, doc.id + '-' + safeTitle + '.' + format));
   try {
+    const browser = findBrowser();
+    if (!browser) throw new Error('No Chrome/Edge/Chromium browser found. Set HCANVAS_BROWSER_PATH.');
     if (format === 'pdf') {
-      const browser = findBrowser();
-      if (!browser) throw new Error('No Chrome/Edge/Chromium browser found. Set HCANVAS_BROWSER_PATH or export HTML and print manually.');
-      await runBrowser(browser, ['--headless=new', '--disable-gpu', '--no-pdf-header-footer', '--print-to-pdf=' + outPath, 'file://' + temp.replace(/\\/g, '/')]);
+      await runBrowser(browser, ['--headless=new', '--disable-gpu', '--no-pdf-header-footer', '--no-margins', '--print-to-pdf=' + outPath, 'file://' + temp.replace(/\\/g, '/')]);
     } else {
-      const browser = findBrowser();
-      if (!browser) throw new Error('No Chrome/Edge/Chromium browser found. Set HCANVAS_BROWSER_PATH or export HTML.');
       await runBrowser(browser, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--window-size=' + page.width + ',' + page.height, '--screenshot=' + outPath, 'file://' + temp.replace(/\\/g, '/')]);
     }
   } finally {
