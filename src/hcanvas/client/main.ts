@@ -277,6 +277,7 @@ async function initialize(): Promise<void> {
     if (event.key === 'Enter') { event.preventDefault(); title.blur(); }
   });
   title.addEventListener('blur', () => { if (state.doc && title.value.trim() && title.value.trim() !== state.doc.title) void renameDocument(title.value.trim()); });
+  window.addEventListener('resize', () => { if (state.presenting) fitPresentPage(); });
   window.addEventListener('keydown', handleGlobalKeydown);
   window.addEventListener('keydown', event => {
     if (event.code !== 'Space') return;
@@ -1084,6 +1085,12 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   }
   const target = event.target as HTMLElement;
   const typing = target.matches('input, textarea, [contenteditable="true"]') || Boolean(target.closest('.cm-editor'));
+  if (target.matches('[contenteditable="true"]') && target.closest('.block-wrap') && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    event.preventDefault();
+    target.blur();
+    if (event.shiftKey) void redo(); else void undo();
+    return;
+  }
   if (event.key === 'Escape') {
     if (typing) { target.blur(); return; }
     if (state.editing) { exitHtmlEdit(); return; }
@@ -3416,7 +3423,7 @@ function renderPresent(): void {
   if (page.mode === 'whiteboard') page = legacyWhiteboardNativePage(page);
   const root = el('presentRoot');
   root.classList.remove('hidden');
-  root.innerHTML = '<div class="present-stage"><div id="presentPage" class="present-page"></div></div><div id="presentNotes" class="present-notes hidden"></div><div class="present-bar"><span>' + esc(doc.title) + ' · ' + esc(page.name) + ' · ' + (state.presentIndex + 1) + ' / ' + doc.pages.length + '</span><span><button id="presentNotesBtn" class="btn">Notes</button> <button id="presentPrev" class="btn">← Previous</button> <button id="presentNext" class="btn">Next →</button> <button id="presentClose" class="btn">Exit</button></span></div>';
+  root.innerHTML = '<div class="present-stage"><div id="presentFit" class="present-fit"><div id="presentPage" class="present-page"></div></div></div><div id="presentNotes" class="present-notes hidden"></div><div class="present-bar"><span>' + esc(doc.title) + ' · ' + esc(page.name) + ' · ' + (state.presentIndex + 1) + ' / ' + doc.pages.length + '</span><span><button id="presentNotesBtn" class="btn">Notes</button> <button id="presentPrev" class="btn">← Previous</button> <button id="presentNext" class="btn">Next →</button> <button id="presentClose" class="btn">Exit</button></span></div>';
   qs<HTMLButtonElement>('#presentPrev')?.addEventListener('click', () => nextPresent(-1));
   qs<HTMLButtonElement>('#presentNext')?.addEventListener('click', () => nextPresent(1));
   qs<HTMLButtonElement>('#presentClose')?.addEventListener('click', () => closePresent());
@@ -3424,6 +3431,7 @@ function renderPresent(): void {
     const notes = el('presentNotes');
     notes.classList.toggle('hidden');
     notes.textContent = page.notes || 'No speaker notes for this page.';
+    fitPresentPage();
   });
   el('presentNotes').textContent = page.notes || '';
   const presentPage = page.mode === 'infinite' ? (() => {
@@ -3441,18 +3449,29 @@ function renderPresent(): void {
   const host = el('presentPage');
   host.style.width = presentPage.width + 'px';
   host.style.height = presentPage.height + 'px';
+  host.style.transformOrigin = 'top left';
   if (page.mode === 'html') {
     const iframe = document.createElement('iframe');
     iframe.setAttribute('sandbox', 'allow-scripts');
     iframe.srcdoc = page.html || '';
     host.appendChild(iframe);
   } else host.innerHTML = renderPresentCanvasHtml(presentPage);
+  fitPresentPage();
+}
+
+function fitPresentPage(): void {
   const stage = qs<HTMLElement>('.present-stage');
-  if (stage) {
-    const rect = stage.getBoundingClientRect();
-    const scale = Math.min((rect.width - 40) / presentPage.width, (rect.height - 40) / presentPage.height);
-    host.style.transform = 'scale(' + scale + ')';
-  }
+  const fit = qs<HTMLElement>('#presentFit');
+  const host = qs<HTMLElement>('#presentPage');
+  if (!stage || !fit || !host) return;
+  const pageWidth = host.offsetWidth;
+  const pageHeight = host.offsetHeight;
+  if (!pageWidth || !pageHeight) return;
+  const rect = stage.getBoundingClientRect();
+  const scale = Math.min((rect.width - 56) / pageWidth, (rect.height - 56) / pageHeight);
+  fit.style.width = Math.max(1, pageWidth * scale) + 'px';
+  fit.style.height = Math.max(1, pageHeight * scale) + 'px';
+  host.style.transform = 'scale(' + scale + ')';
 }
 function renderPresentCanvasHtml(page: HcPage): string {
   let html = '<div style="position:relative;width:100%;height:100%;background:' + esc(page.background) + ';overflow:hidden">';

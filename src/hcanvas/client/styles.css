@@ -294,9 +294,10 @@ button { cursor: pointer; }
 
 /* present */
 .present-root { position: fixed; inset: 0; z-index: 800; background: #0f1115; display: flex; flex-direction: column; }
-.present-stage { flex: 1; display: grid; place-items: center; padding: 28px; min-height: 0; }
-.present-page { position: relative; background: #fff; box-shadow: 0 30px 90px rgba(0,0,0,.5); overflow: hidden; transform-origin: center center; }
-.present-page iframe { width: 100%; height: 100%; border: 0; }
+.present-stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 28px; min-height: 0; overflow: hidden; }
+.present-fit { position: relative; flex: 0 0 auto; }
+.present-page { position: absolute; left: 0; top: 0; background: #fff; box-shadow: 0 30px 90px rgba(0,0,0,.5); overflow: hidden; transform-origin: top left; }
+.present-page iframe { width: 100%; height: 100%; border: 0; pointer-events: none; }
 .present-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; color: rgba(255,255,255,.72); font-size: 11px; background: rgba(255,255,255,.04); }
 .present-bar .btn { border-color: rgba(255,255,255,.16); background: transparent; color: #fff; }
 .present-bar .btn:hover { background: rgba(255,255,255,.1); }
