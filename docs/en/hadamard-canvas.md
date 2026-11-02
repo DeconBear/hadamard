@@ -90,7 +90,7 @@ The HTML is embedded into a new HTML page; editing it inside hcanvas does not mo
 
 HTML pages and HTML blocks render in a sandboxed iframe:
 
-- **Visual mode**: double-click text to edit it in place; click any element to inspect it. The inspector shows the element tree and controls for text color, background, font size, padding and alignment. Changes are patched back to the HTML source with stable `data-hc-id` targets.
+- **Visual mode**: double-click text to edit it in place; click any element to inspect it. The inspector shows the element tree, an **Insert element** palette (heading, paragraph, button, link, image, list, quote, card, divider), quick actions (edit text, duplicate, delete), and controls for color, background, font size/weight, padding, alignment, radius and line height. Changes are patched back to the HTML source with stable `data-hc-id` targets.
 - **Source mode**: open the source editor (CodeMirror) for full HTML/CSS editing with a live preview.
 - Stable IDs mean an agent can patch one element without rewriting the page.
 - In edit mode scripts are disabled; in preview mode the iframe runs with a sandboxed opaque origin.
@@ -106,9 +106,13 @@ Canvas pages contain absolutely positioned blocks:
 | Markdown | Markdown source rendered on the canvas |
 | Code | Syntax-preserved code preview |
 | Image | Image URL |
-| Shape | Rectangle/ellipse with fill, stroke, radius |
+| Shape | Rectangle, ellipse, diamond, triangle, parallelogram, trapezoid, hexagon, octagon, star, cross, line or frame; fill, stroke, stroke style, radius |
 
 Pages can use slide (16:9), A4, poster (4:5), square and custom sizes. Present mode shows pages full screen; exports support HTML, PDF and PNG (local Chrome/Edge/Chromium). Page master/layout templates and editable PPTX export are future work.
+
+### Undo / redo
+
+`Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` (or `Ctrl/Cmd+Y`) undo and redo block transforms, text edits, HTML element patches, grouping, page reordering and shape changes. Mutations are serialized, inverses are captured before local state is changed, and rapid repeated shortcuts queue their history steps instead of racing.
 
 ## Infinite canvas and tools
 

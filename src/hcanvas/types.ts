@@ -4,7 +4,7 @@ export const HCANVAS_SCHEMA = 'hadamard-canvas/1';
 
 export type HcPageMode = 'canvas' | 'html' | 'infinite' | 'whiteboard';
 export type HcBlockType = 'html' | 'text' | 'markdown' | 'code' | 'image' | 'shape' | 'freehand' | 'arrow';
-export type HcShape = 'rect' | 'ellipse' | 'diamond' | 'frame' | 'line';
+export type HcShape = 'rect' | 'ellipse' | 'diamond' | 'triangle' | 'parallelogram' | 'trapezoid' | 'hexagon' | 'octagon' | 'star' | 'cross' | 'frame' | 'line';
 
 export interface HcPoint {
   x: number;

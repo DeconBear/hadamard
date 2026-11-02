@@ -10,6 +10,7 @@ import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from 
 
 import { htmlToPlainDocument } from './html.js';
 import { vectorSvgMarkup } from './vector.js';
+import { shapeSvgMarkup } from './shapes.js';
 import { excalidrawSceneToNativePage } from './sceneBridge.js';
 import { extractHtmlLayout, type HtmlLayout } from './htmlLayout.js';
 import type { HcBlock, HcDocument, HcPage } from './types.js';
@@ -77,13 +78,8 @@ function renderBlock(block: HcBlock): string {
     return wrapper + '<img src="' + escapeHtml(block.src || '') + '" alt="' + escapeHtml(block.alt || '') + '" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit" /></div>';
   }
   if (block.type === 'shape') {
-    const radius = block.shape === 'ellipse' ? '50%' : String(block.style?.radius || 0) + 'px';
-    const clip = block.shape === 'diamond' ? ';clip-path:polygon(50% 0, 100% 50%, 50% 100%, 0 50%)' : '';
-    const frame = block.shape === 'frame';
-    const strokeWidth = Number(block.style?.strokeWidth ?? 1);
-    const strokeColor = String(block.style?.stroke || '');
-    const border = strokeWidth > 0 && strokeColor ? 'border:' + strokeWidth + 'px ' + String(frame ? 'dashed' : (block.style?.strokeStyle || 'solid')) + ' ' + escapeHtml(strokeColor) + ';' : 'border:0;';
-    return wrapper + '<div style="width:100%;height:100%;border-radius:' + radius + ';background:' + escapeHtml(String(frame ? 'transparent' : (block.style?.fill || '#e9d5ff'))) + ';' + border + clip + '"></div></div>';
+    const frameLabel = block.shape === 'frame' ? '<span style="position:absolute;left:10px;top:7px;font:600 11px Inter,sans-serif;color:#525d66;pointer-events:none">' + escapeHtml(block.name || 'Frame') + '</span>' : '';
+    return wrapper + '<div style="position:relative;width:100%;height:100%">' + shapeSvgMarkup(block) + frameLabel + '</div></div>';
   }
   if (block.type === 'freehand' || block.type === 'arrow') {
     return wrapper + vectorSvgMarkup(block) + '</div>';

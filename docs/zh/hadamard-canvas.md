@@ -67,17 +67,17 @@ node bin/hcanvas.js app --workspace plan/hcanvas-demo
 
 HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
-- **可视化**：双击文字直接编辑；点击元素查看元素树和文本颜色、背景、字号、padding、对齐等样式；修改通过稳定的 `data-hc-id` patch 回 HTML 源；
+- **可视化**：双击文字直接编辑；点击元素查看元素树、**Insert element** 元素面板（标题、段落、按钮、链接、图片、列表、引用、卡片、分隔线）和快捷操作（编辑文字、复制、删除），以及颜色、背景、字号/字重、padding、对齐、圆角、行高等样式；修改通过稳定的 `data-hc-id` patch 回 HTML 源；
 - **源码**：CodeMirror 编辑完整 HTML/CSS，实时预览；
 - 编辑模式下脚本禁用；预览模式使用带脚本、无同源的沙箱。
 
 ## Canvas 页面
 
-块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。可用 **框选**、**Shift+click** 或点击组成员多选；**Ctrl/Cmd+G** 成组、**Ctrl/Cmd+Shift+G** 解组，拖动任一选中 block 会整体移动。转换后的 Excalidraw frame 会记录子元素 `frameId`，拖动 frame 时子元素跟随。**Arrow (A)** 落在 shape/text/image/frame 上时会自动绑定两端（`startBinding` / `endBinding`），移动或缩放被绑定元素时箭头端点自动跟随；文字 block 选中后可拖 block 本体，也可拖上方的小 **label 把手** 移动；双击就地编辑，`Esc` 结束。block 重叠时 **Alt+click** 会在叠放层之间循环选择。Infinite 页选择插入类型（HTML/Text/Markdown/Code/Shape）后进入 **click-to-place**：下一次点击画布才在该位置创建 block；坐标无边界，负 x/y 也有效，frame 不裁剪/限制 block，可在 Inspector 里 **Dissolve frame** 保留子元素。**Pen (P)** / **Arrow (A)** / **Eraser (E)** 可直接绘制、擦除原生矢量；手绘会平滑成 path，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。**Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** 撤销重做 block 编辑，**Ctrl/Cmd+C/V** 复制粘贴选中 block。Add Page 不再提供 Excalidraw Whiteboard，新画板请用 Infinite；已有旧白板可一键迁移。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
+块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。形状支持矩形、椭圆、菱形、三角形、平行四边形、梯形、六边形、八边形、星形、十字、直线和 frame，可设置填充、描边、线型与圆角；左侧 **Shape** 按钮会先打开形状选择器。可用 **框选**、**Shift+click** 或点击组成员多选；**Ctrl/Cmd+G** 成组、**Ctrl/Cmd+Shift+G** 解组，拖动任一选中 block 会整体移动。转换后的 Excalidraw frame 会记录子元素 `frameId`，拖动 frame 时子元素跟随。**Arrow (A)** 落在 shape/text/image/frame 上时会自动绑定两端（`startBinding` / `endBinding`），移动或缩放被绑定元素时箭头端点自动跟随；文字 block 选中后可拖 block 本体，也可拖上方的小 **label 把手** 移动；双击就地编辑，`Esc` 结束。block 重叠时 **Alt+click** 会在叠放层之间循环选择。Infinite 页选择插入类型（HTML/Text/Markdown/Code/Shape）后进入 **click-to-place**：下一次点击画布才在该位置创建 block；坐标无边界，负 x/y 也有效，frame 不裁剪/限制 block，可在 Inspector 里 **Dissolve frame** 保留子元素。**Pen (P)** / **Arrow (A)** / **Eraser (E)** 可直接绘制、擦除原生矢量；手绘会平滑成 path，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。**Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** 撤销重做 block 编辑，**Ctrl/Cmd+C/V** 复制粘贴选中 block。Add Page 不再提供 Excalidraw Whiteboard，新画板请用 Infinite；已有旧白板可一键迁移。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
 
 ## 无限画布与工具栏
 
-新增页面时选择 **Infinite canvas**（演示文档里也有 Infinite canvas 页）。没有页面边界：用 Hand 工具、按住 Space 或中键拖动平移，鼠标滚轮指哪缩哪或用缩放按钮缩放，块可以放在任意位置。左侧工具栏可切换选择/抓手、插入 HTML/文本/Markdown/代码/图片/形状、切换点阵网格与 8px 吸附、查看快捷键。选中块后顶部出现浮动操作条（编辑、复制、置顶/置底、对齐、删除）。导出/Present 会按内容边界裁剪无限画布。
+新增页面时选择 **Infinite canvas**（演示文档里也有 Infinite canvas 页）。没有页面边界：用 Hand 工具、按住 Space 或中键拖动平移，鼠标滚轮指哪缩哪或用缩放按钮缩放，块可以放在任意位置。左侧工具栏可切换选择/抓手、插入 HTML/文本/Markdown/代码/图片/形状、切换点阵网格与 8px 吸附、查看快捷键。选中块后顶部出现浮动操作条（编辑、复制、置顶/置底、对齐、删除）。导出/Present 会按内容边界裁剪无限画布。撤销/重做会被串行化：拖动、缩放、文字编辑、HTML 元素 patch、分组、页面排序和换形状都记录正确 inverse；连续快速 Ctrl/Cmd+Z 会排队逐步回退。
 
 ## 演示工作流
 
