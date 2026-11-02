@@ -121,7 +121,7 @@ hcanvas masters delete <masterId>
 
 ```bash
 hcanvas read <doc> --format scene --page <白板页 id>
-hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor claude-code
+hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor your-agent
 ```
 
 ```json
@@ -152,7 +152,7 @@ A4 简历推荐用 Canvas 页（794×1123）由原生 text/shape/image block 搭
 每个 agent 创建一个 session 并心跳；hcanvas 在 **Agent** 页和顶栏显示在线 agent：
 
 ```bash
-hcanvas sessions create <doc> --actor claude-code
+hcanvas sessions create <doc> --actor your-agent
 export HCANVAS_SESSION=session_...
 hcanvas context --json          # 自动心跳
 hcanvas read <doc> --format outline
@@ -162,7 +162,7 @@ hcanvas sessions heartbeat <id> --doc <doc> --page <page> --block <block>
 hcanvas sessions delete <id>
 ```
 
-Agent 页现在是接入与观测面板：顶部显示当前文档/页面和在线会话状态，中间是在线会话卡片与最近编辑，下面是可折叠的 context JSON 和带复制按钮的编号 CLI 快速接入步骤。它不会自动启动 agent；10 分钟无心跳会显示为 stale。
+Agent 页现在是接入与观测面板：顶部显示当前文档/页面和在线会话状态；**Copy agent prompt** 会把 workspace、document、page、revision 组合成可直接粘贴到任意 coding agent 对话框的提示词；下面是在线会话卡片、最近编辑、context JSON 和 CLI 参考。不硬编码任何厂商的 agent 名称；10 分钟无心跳会显示为 stale。
 
 当前页有 session 的 agent 会显示为画布内的彩色光标。Canvas/Infinite 页锚定到 block；HTML 页会测量真实渲染布局，锚定到上报的 `data-hc-id` 元素；Excalidraw 白板会用 scene 元素位置 + 当前 scroll/zoom 投影出光标。点击光标即可 **follow** 该 agent：hcanvas 会切换到它的文档/页面并选中它上报的 block 或 HTML 元素。
 
@@ -175,7 +175,7 @@ CLI 默认输出 JSON，支持 stdin/stdout、结构化错误与退出码：
 hcanvas context --json
 hcanvas read <doc> --format outline
 hcanvas read <doc> --format html --page <id>
-hcanvas apply <doc> --ops-file ops.json --base-revision 7 --actor claude-code
+hcanvas apply <doc> --ops-file ops.json --base-revision 7 --actor your-agent
 hcanvas propose <doc> --ops-file ops.json --base-revision 7 --intent "Add a slide"
 hcanvas proposal accept <doc> <proposalId>
 hcanvas export <doc> --format pdf --out deck.pdf

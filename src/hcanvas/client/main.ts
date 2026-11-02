@@ -8,6 +8,7 @@ import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../s
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup } from '../shapes.js';
 import { HTML_INSERT_PRESETS, applySelectedHtmlStyle, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, insertHtmlPreset, type HtmlEditingContext } from './htmlEditing.js';
+import { buildAgentPrompt } from './agentPrompt.js';
 
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
@@ -34,7 +35,6 @@ declare global {
 }
 
 const boot = JSON.parse(document.getElementById('hc-boot')?.textContent || '{}') as BootConfig;
-
 function el<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) throw new Error('Missing element #' + id);
@@ -149,7 +149,6 @@ const PAGE_PRESETS: Array<{ id: string; title: string; mode: 'html' | 'canvas' |
   { id: 'square-canvas', title: 'Canvas square', mode: 'canvas', width: 1080, height: 1080, background: '#fbfaf7', hint: '1:1 · blocks' },
   { id: 'infinite', title: 'Infinite canvas', mode: 'infinite', width: 4800, height: 3200, background: '#f8f6f1', hint: 'No bounds · pan & zoom' },
 ];
-
 function starterHtml(title: string): string {
   return [
     '<style>',
@@ -165,7 +164,6 @@ function starterHtml(title: string): string {
     '</div>',
   ].join('');
 }
-
 function resumeTemplateHtml(template: string, title: string): string {
   const name = esc(title || 'Alex Morgan');
   const ats = template === 'resume-ats';
@@ -2795,7 +2793,15 @@ function renderAgent(): void {
   };
   const docId = state.doc?.id || '<docId>';
   const revision = state.doc?.revision ?? 0;
-  const connectCommand = 'hcanvas sessions create ' + docId + ' --actor claude-code';
+  const agentPrompt = buildAgentPrompt({
+    workspace: boot.workspace,
+    docId,
+    title: state.doc?.title,
+    revision,
+    pageId: page?.id,
+    pageName: page?.name,
+    pageMode: page?.mode,
+  });
   const contextText = JSON.stringify(context, null, 2);
   const count = activeSessions.length;
   const agentCount = el('agentCount');
@@ -2805,13 +2811,13 @@ function renderAgent(): void {
   }
 
   let html = '<section class="inspector-section agent-hero">';
-  html += '<div class="agent-hero-head"><span class="agent-mark">A</span><div><div class="inspector-title">Agent bridge</div><p class="agent-lede">Show external coding agents operating on this canvas. hcanvas does not start an agent; connect Claude Code or any CLI with the commands below.</p></div></div>';
+  html += '<div class="agent-hero-head"><span class="agent-mark">A</span><div><div class="inspector-title">Agent bridge</div><p class="agent-lede">Copy the prompt and send it to your coding agent in its chat. hcanvas does not start an agent; it observes the sessions and changes they report.</p></div></div>';
   html += '<div class="agent-status-row">';
   html += '<span class="agent-chip ' + (count ? 'online' : 'off') + '"><span class="agent-dot"></span>' + (count ? count + ' connected' : 'No agent connected') + '</span>';
   html += '<span class="agent-chip">rev ' + revision + '</span>';
   html += '<span class="agent-chip">' + esc(page ? page.name : 'No page') + '</span>';
   html += '</div>';
-  html += '<div class="agent-hero-actions"><button id="copyConnectBtn" class="btn tiny primary">Copy connect command</button><button id="refreshPresenceBtn" class="btn tiny">Refresh</button></div>';
+  html += '<div class="agent-hero-actions"><button id="copyConnectBtn" class="btn tiny primary">Copy agent prompt</button><button id="refreshPresenceBtn" class="btn tiny">Refresh</button></div>';
   html += '</section>';
 
   html += '<section class="inspector-section"><div class="inspector-title">Live sessions <span class="presence-count">' + count + '</span></div>';
@@ -2827,7 +2833,7 @@ function renderAgent(): void {
       '<button class="presence-copy-btn" data-copy-session="' + esc(session.id) + '" title="Copy session id">⧉</button></div>';
   }
   if (!allSessions.length) {
-    html += '<div class="agent-empty"><strong>No agent sessions yet</strong><p>Start a CLI agent in the project folder, then create a session:</p><code>' + esc(connectCommand) + '</code><button type="button" class="btn tiny" data-copy-command="' + esc(connectCommand) + '">Copy command</button></div>';
+    html += '<div class="agent-empty"><strong>No agent sessions yet</strong><p>Copy the agent prompt above and send it to your coding agent in its chat. It will read the document and can optionally create a live session.</p><button type="button" class="btn tiny" data-copy-command="' + esc(agentPrompt) + '">Copy agent prompt</button></div>';
   }
   html += '</div></section>';
 
@@ -2844,15 +2850,20 @@ function renderAgent(): void {
   }
   html += '</section>';
 
-  html += '<section class="inspector-section"><details class="agent-context-details"><summary><span>Context for an agent</span><span class="agent-summary-meta">JSON · ' + (state.doc ? 'current doc/page' : 'no active doc') + '</span></summary>';
+  html += '<section class="inspector-section"><details class="agent-context-details" open><summary><span>Agent prompt</span><span class="agent-summary-meta">paste into the agent chat</span></summary>';
+  html += '<p class="agent-muted">Ready-to-send prompt with the current workspace, document, page and revision.</p>';
+  html += '<pre class="agent-context-pre">' + esc(agentPrompt) + '</pre>';
+  html += '<div class="agent-copy"><button id="copyAgentPromptBtn" class="btn tiny primary">Copy agent prompt</button></div></details></section>';
+  html += '<section class="inspector-section"><details class="agent-context-details"><summary><span>Context JSON</span><span class="agent-summary-meta">' + (state.doc ? 'current doc/page' : 'no active doc') + '</span></summary>';
   html += '<p class="agent-muted">Paste this into an agent prompt, or let it run <code>hcanvas context --json</code>.</p>';
   html += '<pre class="agent-context-pre">' + esc(contextText) + '</pre>';
   html += '<div class="agent-copy"><button id="copyContextBtn" class="btn tiny">Copy context JSON</button></div></details></section>';
 
-  html += '<section class="inspector-section"><div class="inspector-title">CLI quick start</div>';
+  html += '<section class="inspector-section"><div class="inspector-title">CLI reference</div>';
+  html += '<p class="agent-section-lede">The prompt already contains these commands. Use them in the terminal only when you want to drive hcanvas yourself.</p>';
   html += '<ol class="agent-steps">';
   const commands: Array<[string, string, string]> = [
-    ['1', 'Create a session', connectCommand],
+    ['1', 'Optional: live presence session', 'hcanvas sessions create ' + docId + ' --actor <your-agent-name>'],
     ['2', 'Use the session id', 'export HCANVAS_SESSION=<sessionId>'],
     ['3', 'Read the current page', 'hcanvas context --json'],
     ['4', 'Inspect the document', 'hcanvas read ' + docId + ' --format outline'],
@@ -2866,7 +2877,8 @@ function renderAgent(): void {
   html += '</section>';
   root.innerHTML = html;
 
-  qs<HTMLButtonElement>('#copyConnectBtn')?.addEventListener('click', () => { void copyText(connectCommand); });
+  qs<HTMLButtonElement>('#copyConnectBtn')?.addEventListener('click', () => { void copyText(agentPrompt); });
+  qs<HTMLButtonElement>('#copyAgentPromptBtn')?.addEventListener('click', () => { void copyText(agentPrompt); });
   qs<HTMLButtonElement>('#copyContextBtn')?.addEventListener('click', () => { void copyText(contextText); });
   qs<HTMLButtonElement>('#refreshPresenceBtn')?.addEventListener('click', () => { void refreshPresence(); });
   root.querySelectorAll<HTMLButtonElement>('[data-copy-session]').forEach(button => {

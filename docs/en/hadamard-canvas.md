@@ -160,7 +160,7 @@ Legacy documents may still contain **Excalidraw whiteboard** pages. New pages ca
 
 ```bash
 hcanvas read <doc> --format scene --page <whiteboard-page-id>
-hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor claude-code
+hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor your-agent
 ```
 
 ```json
@@ -191,7 +191,7 @@ For an A4 résumé, build a Canvas page (794×1123) from native text/shape/image
 Create a session per agent and keep it alive; hcanvas shows live actors in the **Agent** tab and as avatars in the top bar:
 
 ```bash
-hcanvas sessions create <doc> --actor claude-code
+hcanvas sessions create <doc> --actor your-agent
 export HCANVAS_SESSION=session_...
 hcanvas context --json          # heartbeats automatically
 hcanvas read <doc> --format outline
@@ -201,7 +201,7 @@ hcanvas sessions heartbeat <id> --doc <doc> --page <page> --block <block>
 hcanvas sessions delete <id>
 ```
 
-The Agent tab is an onboarding and observability surface: status chips for the current document/page and connected sessions, a clear empty state, live session cards, recent edits, a collapsed context JSON block, and a numbered CLI quick start with copy buttons. It never starts an agent itself; stale sessions are dimmed after 10 minutes.
+The Agent tab is an onboarding and observability surface: status chips for the current document/page and connected sessions, a **Copy agent prompt** action that puts workspace, document, page and revision into a ready-to-paste prompt for any coding agent's chat, live session cards, recent edits, context JSON, and a CLI reference. No vendor-specific agent name is hard-coded. It never starts an agent itself; stale sessions are dimmed after 10 minutes.
 
 Agents with a session on the current page appear as colored cursors inside the canvas. Canvas/infinite cursors anchor to their block; HTML cursors are measured against the rendered page and anchored to the reported `data-hc-id` element; Excalidraw whiteboard cursors are projected from the scene element's position through the whiteboard scroll/zoom state. Click a cursor to **follow** that agent: hcanvas opens its document/page and selects the reported block or HTML element.
 
@@ -214,7 +214,7 @@ The CLI prints JSON by default, uses stdin/stdout, has structured errors and exi
 hcanvas context --json                         # active document/page/selection + sessions
 hcanvas read <doc> --format outline            # semantic outline
 hcanvas read <doc> --format html --page <id>   # exact HTML source
-hcanvas apply <doc> --ops-file ops.json --base-revision 7 --actor claude-code
+hcanvas apply <doc> --ops-file ops.json --base-revision 7 --actor your-agent
 hcanvas propose <doc> --ops-file ops.json --base-revision 7 --intent "Add a slide"
 hcanvas proposal list <doc>
 hcanvas proposal accept <doc> <proposalId>
