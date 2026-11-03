@@ -259,3 +259,39 @@ hcanvas desktop --project ~/projects/my-deck
 - **Inspector**：页面/block 属性、布局、样式、分组、历史与导出入口。
 - **Agent**：接入引导 + 在线会话 + 最近编辑 + context JSON + CLI 快速接入；它是外部 CLI Agent 的观测面板，不是聊天框。
 - **Proposals**：Agent 提交的修改提案审核队列；接受或拒绝后才会写入文档。
+## 插件 block
+
+hcanvas 可以加载声明式 block 插件，不需要执行 JavaScript bundle。插件是一个带 `manifest.json` 的目录：
+
+```text
+<project>/.hcanvas/plugins/<plugin-id>/manifest.json
+~/.hadamard/hcanvas/plugins/<plugin-id>/manifest.json
+```
+
+项目插件优先；重复的 block type 会被跳过并报告错误。最小 manifest：
+
+```json
+{
+  "schema": "hcanvas-plugin/1",
+  "id": "sticky-notes",
+  "name": "Sticky Notes",
+  "version": "1.0.0",
+  "apiVersion": "hcanvas-plugin/1",
+  "blocks": [{
+    "type": "sticky-note",
+    "label": "Sticky note",
+    "hint": "A small paper note",
+    "defaultSize": { "w": 280, "h": 200 },
+    "defaultData": { "title": "Sticky note", "body": "Write something here." },
+    "fields": [
+      { "key": "title", "label": "Title", "kind": "text" },
+      { "key": "body", "label": "Body", "kind": "textarea" }
+    ],
+    "render": "<div style=\"padding:18px;background:#fff7d6\">{{title}}<br>{{body}}</div>"
+  }]
+}
+```
+
+`render` 是 HTML 模板，`{{fieldKey}}` 占位符会被 HTML 转义；脚本、iframe、事件属性和 `javascript:` URL 会被拒绝。支持字段类型：`text`、`textarea`、`color`、`select`、`number`。新增或修改 manifest 后，在 Canvas/Infinite 页面的 Inspector 点击 **Reload plugins**，插件 block 会出现在 **Plugin blocks** 区域。
+
+完整示例见 `examples/hcanvas-plugins/sticky-notes/manifest.json`。插件 block 以普通 block + `data` 保存，因此支持保存/重载、撤销/重做、复制粘贴和 Present。声明式模板是本地可信 UI 内容，只安装你理解的 manifest。

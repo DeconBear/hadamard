@@ -325,3 +325,39 @@ The right sidebar has four tabs:
 - **Inspector** — page/block properties, layout, styles, grouping, history and export controls.
 - **Agent** — onboarding + live sessions + recent edits + context JSON + CLI quick start. It is the observability surface for external CLI agents, not a chat box.
 - **Proposals** — review queue for changes proposed by agents; accept or reject before they are applied to the document.
+## Plugin blocks
+
+hcanvas can load declarative block plugins without executing a JavaScript bundle. A plugin is a folder with a `manifest.json`:
+
+```text
+<project>/.hcanvas/plugins/<plugin-id>/manifest.json
+~/.hadamard/hcanvas/plugins/<plugin-id>/manifest.json
+```
+
+Project plugins take precedence; duplicate block types are skipped and reported. The minimal manifest is:
+
+```json
+{
+  "schema": "hcanvas-plugin/1",
+  "id": "sticky-notes",
+  "name": "Sticky Notes",
+  "version": "1.0.0",
+  "apiVersion": "hcanvas-plugin/1",
+  "blocks": [{
+    "type": "sticky-note",
+    "label": "Sticky note",
+    "hint": "A small paper note",
+    "defaultSize": { "w": 280, "h": 200 },
+    "defaultData": { "title": "Sticky note", "body": "Write something here." },
+    "fields": [
+      { "key": "title", "label": "Title", "kind": "text" },
+      { "key": "body", "label": "Body", "kind": "textarea" }
+    ],
+    "render": "<div style=\"padding:18px;background:#fff7d6\">{{title}}<br>{{body}}</div>"
+  }]
+}
+```
+
+`render` is an HTML template; `{{fieldKey}}` placeholders are HTML-escaped. Inline scripts, iframes, event-handler attributes and `javascript:` URLs are rejected. Supported field kinds are `text`, `textarea`, `color`, `select` and `number`. After adding or editing a manifest, open a Canvas/Infinite page Inspector and click **Reload plugins**; plugin blocks appear under **Plugin blocks**.
+
+A working sample lives at [examples/hcanvas-plugins/sticky-notes/manifest.json](https://github.com/DeconBear/hadamard/blob/main/examples/hcanvas-plugins/sticky-notes/manifest.json). Plugin blocks are stored in the document as normal blocks with a `data` payload, so they survive save/reload, undo/redo, copy/paste and Present. Declarative templates are local, trusted UI content; only install manifests you understand.

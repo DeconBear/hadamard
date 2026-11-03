@@ -1,0 +1,35 @@
+{
+  "schema": "hcanvas-plugin/1",
+  "id": "sticky-notes",
+  "name": "Sticky Notes",
+  "version": "1.0.0",
+  "apiVersion": "hcanvas-plugin/1",
+  "blocks": [
+    {
+      "type": "sticky-note",
+      "label": "Sticky note",
+      "hint": "A small paper note with a title and body",
+      "defaultSize": {
+        "w": 280,
+        "h": 200
+      },
+      "defaultData": {
+        "title": "Sticky note",
+        "body": "Write something here."
+      },
+      "fields": [
+        {
+          "key": "title",
+          "label": "Title",
+          "kind": "text"
+        },
+        {
+          "key": "body",
+          "label": "Body",
+          "kind": "textarea"
+        }
+      ],
+      "render": "<div style=\"box-sizing:border-box;height:100%;padding:18px 20px;border:1px solid #f0d58c;border-radius:4px;background:#fff7d6;color:#4a3b12;font-family:Inter,ui-sans-serif,system-ui,sans-serif;box-shadow:3px 4px 0 rgba(58,45,12,.08);overflow:hidden\"><div style=\"margin:0 0 8px;font-size:15px;font-weight:750;letter-spacing:-.01em\">{{title}}</div><div style=\"white-space:pre-wrap;font-size:13px;line-height:1.55;color:#6b5620\">{{body}}</div></div>"
+    }
+  ]
+}

@@ -12,7 +12,7 @@ import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
 import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
-import { bindPluginInspector, bindPluginPicker, pluginBlockMarkup, pluginFallbackMarkup, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
+import { bindPluginInspector, bindPluginPicker, loadExternalPlugins, pluginBlockMarkup, pluginFallbackMarkup, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
 import { installImageInsert } from './imageInsert.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
@@ -258,6 +258,8 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
 
 async function initialize(): Promise<void> {
   bindStaticActions();
+  const pluginLoad = await loadExternalPlugins(api);
+  if (pluginLoad.errors.length) console.warn('hcanvas plugins:', pluginLoad.errors);
   try {
     const context = await api<Record<string, unknown> & { active?: { docId?: string; pageId?: string }; docs?: DocSummary[]; presence?: PresenceEntry[] }>('/api/state');
     state.context = context;
@@ -1560,7 +1562,6 @@ function fitPage(): void {
   state.fittedPageId = state.activePageId;
   applyStageTransform();
 }
-
 function renderArtboard(): void {
   const artboard = el('artboard');
   const viewport = el('viewport');
@@ -1613,7 +1614,6 @@ function renderArtboard(): void {
 }
 
 let whiteboardResizing = false;
-
 function resizeWhiteboardSurface(): void {
   if (whiteboardResizing || state.presenting) return;
   const page = activePage();
@@ -1635,7 +1635,6 @@ function resizeWhiteboardSurface(): void {
     whiteboardResizing = false;
   }
 }
-
 function legacyWhiteboardNativePage(page: HcPage): HcPage {
   const native = excalidrawSceneToNativePage({ elements: (page.scene?.elements || []) as never[], appState: page.scene?.appState, files: page.scene?.files }, page.name || 'Legacy whiteboard');
   native.id = page.id;
@@ -1644,7 +1643,6 @@ function legacyWhiteboardNativePage(page: HcPage): HcPage {
     : page.background || '#ffffff';
   return native;
 }
-
 function renderWhiteboardPage(container: HTMLElement, page: HcPage): void {
   const native = legacyWhiteboardNativePage(page);
   const blocks = native.blocks || [];
@@ -1673,7 +1671,6 @@ function renderWhiteboardPage(container: HTMLElement, page: HcPage): void {
   container.appendChild(banner);
   qs<HTMLButtonElement>('#legacyConvertBtn')?.addEventListener('click', () => { void convertWhiteboardPage(page); });
 }
-
 function whiteboardSceneJson(page: HcPage): string {
   return JSON.stringify({ type: 'excalidraw', version: 2, source: 'hcanvas', elements: page.scene?.elements || [], appState: page.scene?.appState || {}, files: page.scene?.files || {} }, null, 2);
 }
@@ -1696,7 +1693,6 @@ async function convertWhiteboardPage(page: HcPage): Promise<void> {
   void syncActive();
   toast('Converted to a native Infinite page: ' + (nativePage.blocks?.length || 0) + ' blocks', 'success');
 }
-
 function downloadWhiteboardScene(): void {
   const page = activePage();
   if (!page || page.mode !== 'whiteboard') return;
@@ -1707,7 +1703,6 @@ function downloadWhiteboardScene(): void {
   document.body.appendChild(anchor); anchor.click(); anchor.remove();
   setTimeout(() => URL.revokeObjectURL(anchor.href), 2000);
 }
-
 function agentHue(actor: string): number {
   return actor.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360;
 }
@@ -1736,7 +1731,6 @@ async function followAgent(session: PresenceEntry): Promise<void> {
   renderInspector();
   toast('Following ' + session.actor + (page ? ' on ' + page.name : ''), 'info');
 }
-
 function renderAgentCursors(container: HTMLElement, page: HcPage): void {
   if (!state.doc) return;
   const sessions = state.presence.filter(session => session.docId === state.doc?.id && (!session.pageId || session.pageId === page.id));
@@ -1820,7 +1814,6 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
     }
   }
 }
-
 function renderHtmlPage(container: HTMLElement, page: HcPage): void {
   const editing = state.editing?.pageId === page.id && !state.editing?.blockId;
   const iframe = document.createElement('iframe');
@@ -1837,7 +1830,6 @@ function renderHtmlPage(container: HTMLElement, page: HcPage): void {
     container.appendChild(hit);
   }
 }
-
 function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
   const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
   const wrap = document.createElement('div');
@@ -1852,7 +1844,6 @@ function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
   if (block.style?.opacity !== undefined) wrap.style.opacity = String(block.style.opacity);
   return wrap;
 }
-
 function renderCanvasPage(container: HTMLElement, page: HcPage): void {
   const blocks = [...(page.blocks || [])].sort((left, right) => left.z - right.z);
   for (const block of blocks) {
@@ -1934,11 +1925,9 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
     container.appendChild(wrap);
   }
 }
-
 function wrapBlockHtml(html: string): string {
   return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,sans-serif}</style></head><body>' + html + '</body></html>';
 }
-
 function cycleBlockSelectionAt(clientX: number, clientY: number, currentId: string): void {
   const page = activePage();
   if (!page) return;
@@ -1951,7 +1940,6 @@ function cycleBlockSelectionAt(clientX: number, clientY: number, currentId: stri
   const block = (page.blocks || []).find(item => item.id === nextId);
   if (block) selectBlock(block.id);
 }
-
 function beginBlockDrag(event: PointerEvent, block: HcBlock, handle: HTMLElement, wrap: HTMLDivElement): void {
   const page = activePage();
   if (!page) return;
@@ -2016,7 +2004,6 @@ function beginBlockDrag(event: PointerEvent, block: HcBlock, handle: HTMLElement
   handle.addEventListener('pointermove', move);
   handle.addEventListener('pointerup', up);
 }
-
 function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
   const hit = qs<HTMLElement>('.block-hit', wrap);
   if (!hit) return;
@@ -2061,7 +2048,6 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
     else if (block.type === 'image') openImageModal(block);
   });
 }
-
 function clearBlockSelectionDecorations(): void {
   document.querySelectorAll('.block-label, .resize-handle, .line-endpoint').forEach(node => node.remove());
 }
@@ -2630,6 +2616,10 @@ function bindPageInspector(page: HcPage): void {
     const extra: Partial<HcBlock> = { data: plugin.defaultData(), name: plugin.label };
     if (plugin.defaultSize) { extra.w = plugin.defaultSize.w; extra.h = plugin.defaultSize.h; }
     void addBlock(plugin.type, extra);
+  }, async () => {
+    const result = await loadExternalPlugins(api);
+    toast('Plugins: ' + result.loaded + ' block' + (result.loaded === 1 ? '' : 's') + ' loaded' + (result.errors.length ? ' · ' + result.errors.length + ' error' + (result.errors.length === 1 ? '' : 's') : ''), result.errors.length ? 'error' : 'success');
+    renderInspector();
   });
 }
 
