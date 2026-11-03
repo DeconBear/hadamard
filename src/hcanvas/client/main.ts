@@ -12,6 +12,7 @@ import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
 import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
+import { installImageInsert } from './imageInsert.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
 import { addLineEndpointHandles } from './lineEndpoints.js';
@@ -676,6 +677,19 @@ function bindStaticActions(): void {
   initSidebarLayout();
   shapePicker = createShapePicker({ onChoose: shape => { state.pendingShape = shape; requestInsert('shape'); } });
   createHtmlInsertFlyout(el('htmlInsertBtn'), htmlEditingContext(), presetId => { void insertHtmlPreset(presetId, htmlEditingContext()); });
+  installImageInsert({
+    getPage: activePage,
+    getPoint: viewportToWorldPoint,
+    getCenter: viewportWorldCenter,
+    addImage: (src, alt, w, h, point) => addBlock('image', { src, alt, w, h }, point),
+    onPasteText: text => {
+      const blocks = text ? parseBlocksFromClipboard(text) : null;
+      if (blocks?.length) { void pasteBlock(text); return true; }
+      if (!text && clipboardBlocks.length) { void pasteBlock(); return true; }
+      return false;
+    },
+    toast,
+  });
   el('newDocBtn').addEventListener('click', () => openNewDocModal());
   el('newDocMini').addEventListener('click', () => openNewDocModal());
   el('addPageBtn').addEventListener('click', () => openAddPageModal());
@@ -929,11 +943,11 @@ async function copySelectedBlocks(cut = false): Promise<void> {
   toast((cut ? 'Cut ' : 'Copied ') + blocks.length + ' block' + (blocks.length === 1 ? '' : 's'), 'info');
 }
 
-async function pasteBlock(): Promise<void> {
+async function pasteBlock(clipboardText?: string): Promise<void> {
   const page = activePage();
   if (!page || page.mode === 'html' || page.mode === 'whiteboard') return;
-  let source = clipboardBlocks;
-  if (!source.length) {
+  let source = clipboardText ? (parseBlocksFromClipboard(clipboardText) || []) : clipboardBlocks;
+  if (!source.length && !clipboardText) {
     try { source = parseBlocksFromClipboard(await navigator.clipboard?.readText() || '') || []; } catch { source = []; }
   }
   if (!source.length) return;
@@ -1057,7 +1071,6 @@ async function nudgeActiveBlock(dx: number, dy: number): Promise<void> {
 function openShortcutsModal(): void {
   openModal(SHORTCUTS_MODAL_HTML);
 }
-
 function handleGlobalKeydown(event: KeyboardEvent): void {
   const hub = qs<HTMLElement>('#projectHub');
   if (hub && !hub.classList.contains('hidden')) {
@@ -1117,11 +1130,6 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   }
   if (command && key === 'x') {
     if (state.selectedBlockIds.length) { event.preventDefault(); void copySelectedBlocks(true); }
-    return;
-  }
-  if (command && key === 'v') {
-    event.preventDefault();
-    void pasteBlock();
     return;
   }
   if (command && key === 'd') {
@@ -1184,7 +1192,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   if (key === 's') { state.snap = !state.snap; renderToolbarState(); return; }
   if (event.key === '?') { openShortcutsModal(); return; }
   if (/^Digit[1-6]$/.test(event.code) && !event.shiftKey) {
-    const map: Record<string, HcBlock['type']> = { Digit1: 'html', Digit2: 'text', Digit3: 'markdown', Digit4: 'code', Digit5: 'image', Digit6: 'shape' };
+    const map: Record<string, HcBlock['type']> = { Digit1: 'html', Digit2: 'text', Digit3: 'markdown', Digit4: 'code', Digit6: 'shape' };
     const type = map[event.code];
     if (!type) return;
     event.preventDefault();
@@ -1205,13 +1213,11 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     void deleteSelectedBlocks();
   }
 }
-
 function renderActivePanel(): void {
   if (state.tab === 'agent') renderAgent();
   else if (state.tab === 'proposals') renderProposals();
   else renderInspector();
 }
-
 function renderAll(): void {
   renderTop();
   renderToolbarState();
@@ -1222,7 +1228,6 @@ function renderAll(): void {
   renderActivePanel();
   renderTabs();
 }
-
 function renderTop(): void {
   const title = el<HTMLInputElement>('docTitle');
   if (document.activeElement !== title) title.value = docTitle();
@@ -1238,7 +1243,6 @@ function renderTop(): void {
   el('exportBtn').style.display = state.doc ? '' : 'none';
   renderToolbarState();
 }
-
 function renderTabs(): void {
   document.querySelectorAll<HTMLElement>('[data-tab]').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.tab === state.tab);
@@ -1247,7 +1251,6 @@ function renderTabs(): void {
   el('agentPanel').classList.toggle('hidden', state.tab !== 'agent');
   el('proposalsPanel').classList.toggle('hidden', state.tab !== 'proposals');
 }
-
 function renderDocs(): void {
   const root = el('docsList');
   root.textContent = '';
@@ -1270,7 +1273,6 @@ function renderDocs(): void {
     root.appendChild(button);
   }
 }
-
 function pageThumbHtml(page: HcPage): string {
   const ratio = Math.min(46 / page.width, 30 / page.height);
   if (page.mode === 'html' && page.html) {
@@ -1283,7 +1285,6 @@ function pageThumbHtml(page: HcPage): string {
   }
   return '<div class="page-thumb-placeholder">Page</div>';
 }
-
 function exportPageForThumb(page: HcPage): HcPage {
   if (page.mode !== 'infinite' && page.mode !== 'whiteboard') return page;
   const blocks = page.blocks || [];
@@ -1295,7 +1296,6 @@ function exportPageForThumb(page: HcPage): HcPage {
   const padding = 60;
   return { ...page, width: Math.max(320, Math.ceil(maxX - minX) + padding * 2), height: Math.max(240, Math.ceil(maxY - minY) + padding * 2), blocks: blocks.map(block => ({ ...block, x: block.x - minX + padding, y: block.y - minY + padding })) };
 }
-
 function duplicatePage(page: HcPage): void {
   if (!state.doc) return;
   const copy = JSON.parse(JSON.stringify(page)) as HcPage;
@@ -1313,7 +1313,6 @@ function duplicatePage(page: HcPage): void {
     toast('Page duplicated', 'success');
   });
 }
-
 function movePage(pageId: string, direction: 'up' | 'down'): void {
   void applyOps([{ op: 'reorder_page', pageId, direction }], { refreshArtboard: false }).then(result => {
     if (!result) return;

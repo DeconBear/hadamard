@@ -5,7 +5,8 @@ export const SHORTCUTS_MODAL_HTML = '<div class="modal small"><div class="modal-
   '<kbd>Shift + Wheel</kbd><span>Pan horizontally</span>' +
   '<kbd>Ctrl/Cmd + Wheel</kbd><span>Zoom at pointer</span>' +
   '<kbd>R / O</kbd><span>Click or drag to draw rectangle / ellipse</span>' +
-  '<kbd>T / 1 – 6</kbd><span>Insert text / block, then click to place</span>' +
+  '<kbd>T / 1 – 4, 6</kbd><span>Insert text / block, then click to place</span>' +
+  '<kbd>Drop / paste image</kbd><span>Insert image from a folder or clipboard</span>' +
   '<kbd>Shift / Alt while drawing</kbd><span>Keep proportions / draw from center</span>' +
   '<kbd>Drag empty / Shift+click</kbd><span>Marquee / add to selection</span>' +
   '<kbd>P / A / E</kbd><span>Pen / Arrow / Eraser (Infinite); Shift angles arrows</span>' +

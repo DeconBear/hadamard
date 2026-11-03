@@ -661,3 +661,11 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .html-breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
 .html-breadcrumb button { border: 0; background: transparent; padding: 2px 3px; border-radius: 4px; color: var(--muted); font: 9px/1.4 var(--mono); }
 .html-breadcrumb button:hover { color: var(--accent); background: var(--accent-soft); }
+
+#viewport.image-drop-active::after {
+  content: "Drop image to insert"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 90; pointer-events: none; padding: 12px 18px; border-radius: 10px;
+  background: rgba(29,35,46,.9); color: #fff; font: 600 12px/1 Inter, sans-serif;
+  box-shadow: 0 12px 32px rgba(29,35,46,.25);
+}
+#viewport.image-drop-active { outline: 2px dashed rgba(124,58,237,.7); outline-offset: -8px; }
