@@ -67,7 +67,7 @@ node bin/hcanvas.js app --workspace plan/hcanvas-demo
 
 HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
-- **可视化**：双击文字直接编辑；点击元素查看元素树、**Insert element** 元素面板（标题、段落、按钮、链接、图片、列表、引用、卡片、分隔线）和快捷操作（编辑文字、复制、删除），以及颜色、背景、字号/字重、padding、对齐、圆角、行高等样式；修改通过稳定的 `data-hc-id` patch 回 HTML 源；
+- **可视化**：双击文字直接编辑；鼠标悬停元素会显示命中轮廓，点击后可在 Inspector 查看层级路径和元素树；编辑横幅的 **Insert +** 会展开紧凑的元素面板（标题、段落、按钮、链接、图片、列表、引用、卡片、分隔线）；选中的元素还可使用快捷操作和颜色、背景、字号/字重、padding、对齐、圆角、行高等样式；修改通过稳定的 `data-hc-id` patch 回 HTML 源；
 - **源码**：CodeMirror 编辑完整 HTML/CSS，实时预览；
 - 编辑模式下脚本禁用；预览模式使用带脚本、无同源的沙箱。
 

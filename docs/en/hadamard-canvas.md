@@ -90,7 +90,7 @@ The HTML is embedded into a new HTML page; editing it inside hcanvas does not mo
 
 HTML pages and HTML blocks render in a sandboxed iframe:
 
-- **Visual mode**: double-click text to edit it in place; click any element to inspect it. The inspector shows the element tree, an **Insert element** palette (heading, paragraph, button, link, image, list, quote, card, divider), quick actions (edit text, duplicate, delete), and controls for color, background, font size/weight, padding, alignment, radius and line height. Changes are patched back to the HTML source with stable `data-hc-id` targets.
+- **Visual mode**: double-click text to edit it in place; hover any element to see its hit outline and click to inspect it. The edit banner's **Insert +** opens a compact element palette (heading, paragraph, button, link, image, list, quote, card, divider); the Inspector also shows the element path, element tree, quick actions and style controls. Changes are patched back to the HTML source with stable `data-hc-id` targets.
 - **Source mode**: open the source editor (CodeMirror) for full HTML/CSS editing with a live preview.
 - Stable IDs mean an agent can patch one element without rewriting the page.
 - In edit mode scripts are disabled; in preview mode the iframe runs with a sandboxed opaque origin.

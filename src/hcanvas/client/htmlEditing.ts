@@ -144,3 +144,36 @@ export async function applySelectedHtmlStyle(context: HtmlEditingContext): Promi
   await context.applyOps([patchFor(context, [{ op: 'set_style', target: targetId, styles }])], { refreshArtboard: false });
   context.toast('Style patched', 'success');
 }
+export function installHtmlHoverHighlight(contentDocument: Document): void {
+  let hovered: Element | null = null;
+  contentDocument.addEventListener('pointerover', event => {
+    const target = (event.target as Element | null)?.closest?.('[data-hc-id]') || null;
+    if (target === hovered) return;
+    hovered?.removeAttribute('data-hc-hover');
+    hovered = target;
+    target?.setAttribute('data-hc-hover', 'true');
+  }, true);
+  contentDocument.addEventListener('pointerleave', () => {
+    hovered?.removeAttribute('data-hc-hover');
+    hovered = null;
+  }, true);
+}
+
+function breadcrumbEsc(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+export function htmlBreadcrumbMarkup(element: Element | null): string {
+  if (!element) return '';
+  const chain: Element[] = [];
+  let node: Element | null = element;
+  while (node && chain.length < 8) {
+    if (node.getAttribute('data-hc-id')) chain.unshift(node);
+    if (node.tagName === 'BODY') break;
+    node = node.parentElement;
+  }
+  if (!chain.length) return '';
+  return '<section class="inspector-section"><div class="inspector-title">Path</div><div class="html-breadcrumb">' +
+    chain.map((item, index) => '<button type="button" data-html-crumb="' + breadcrumbEsc(item.getAttribute('data-hc-id') || '') + '">' + (index ? '› ' : '') + '&lt;' + breadcrumbEsc(item.tagName.toLowerCase()) + '&gt;</button>').join('') +
+    '</div></section>';
+}

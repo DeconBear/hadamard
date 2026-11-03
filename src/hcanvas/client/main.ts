@@ -7,10 +7,11 @@ import { vectorSvgMarkup } from '../vector.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup, shapeTextMarkup } from '../shapes.js';
-import { HTML_INSERT_PRESETS, applySelectedHtmlStyle, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, insertHtmlPreset, type HtmlEditingContext } from './htmlEditing.js';
+import { HTML_INSERT_PRESETS, applySelectedHtmlStyle, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, htmlBreadcrumbMarkup, insertHtmlPreset, installHtmlHoverHighlight, type HtmlEditingContext } from './htmlEditing.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
+import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
 import { addLineEndpointHandles } from './lineEndpoints.js';
@@ -674,6 +675,7 @@ function initSidebarLayout(): void {
 function bindStaticActions(): void {
   initSidebarLayout();
   shapePicker = createShapePicker({ onChoose: shape => { state.pendingShape = shape; requestInsert('shape'); } });
+  createHtmlInsertFlyout(el('htmlInsertBtn'), htmlEditingContext(), presetId => { void insertHtmlPreset(presetId, htmlEditingContext()); });
   el('newDocBtn').addEventListener('click', () => openNewDocModal());
   el('newDocMini').addEventListener('click', () => openNewDocModal());
   el('addPageBtn').addEventListener('click', () => openAddPageModal());
@@ -2368,8 +2370,9 @@ function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: s
   state.iframeElement = iframe;
   const style = contentDocument.createElement('style');
   style.setAttribute('data-hc-editor', '');
-  style.textContent = '[data-hc-selected]{outline:2px solid #6d5bd0 !important;outline-offset:2px !important;}[data-hc-editing]{outline:2px dashed #6d5bd0 !important;outline-offset:2px !important;cursor:text !important;}a[href]{cursor:default !important;}';
+  style.textContent = '[data-hc-selected]{outline:2px solid #6d5bd0 !important;outline-offset:2px !important;}[data-hc-hover]{outline:1px dashed rgba(109,91,208,.7) !important;outline-offset:2px !important;}[data-hc-editing]{outline:2px dashed #6d5bd0 !important;outline-offset:2px !important;cursor:text !important;}a[href]{cursor:default !important;}';
   contentDocument.head?.appendChild(style);
+  installHtmlHoverHighlight(contentDocument);
   contentDocument.addEventListener('click', event => {
     event.preventDefault(); event.stopPropagation();
     const target = event.target as Element;
@@ -2494,6 +2497,7 @@ function renderHtmlInspector(): void {
   html += '<section class="inspector-section"><div class="inspector-title">Insert element</div><p class="inspector-note">Adds after the selected element, or at the end of the page.</p><div class="html-insert-grid">';
   for (const preset of HTML_INSERT_PRESETS) html += '<button type="button" class="html-insert-btn" data-html-insert="' + preset.id + '" title="' + esc(preset.hint) + '">+ ' + esc(preset.label) + '</button>';
   html += '</div></section>';
+  html += htmlBreadcrumbMarkup(selected);
   if (selected) {
     const tag = selected.tagName.toLowerCase();
     const id = selected.getAttribute('data-hc-id') || '';
@@ -2517,6 +2521,12 @@ function renderHtmlInspector(): void {
   if (align) align.value = style?.textAlign || '';
   const weight = qs<HTMLSelectElement>('#hcFontWeight');
   if (weight) weight.value = style?.fontWeight || '';
+  root.querySelectorAll<HTMLButtonElement>('[data-html-crumb]').forEach(button => {
+    button.addEventListener('click', () => {
+      const element = contentDocument.querySelector('[data-hc-id="' + (button.dataset.htmlCrumb || '').replace(/"/g, '\\"') + '"]');
+      if (element) selectHtmlElement(element);
+    });
+  });
   root.querySelectorAll<HTMLButtonElement>('[data-html-id]').forEach(button => {
     button.addEventListener('click', () => {
       const element = contentDocument.querySelector('[data-hc-id="' + (button.dataset.htmlId || '').replace(/"/g, '\\"') + '"]');
