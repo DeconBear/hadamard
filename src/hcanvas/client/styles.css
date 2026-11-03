@@ -619,4 +619,10 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .shape-choice:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .shape-choice-preview { display: block; width: 42px; height: 34px; }
 .shape-choice-preview svg { width: 100%; height: 100%; overflow: visible; }
-.block-wrap.text-editing .resize-handle, .block-wrap.text-editing .block-label { display: none !important; }
+.line-endpoint {
+  position: absolute; width: 12px; height: 12px; border-radius: 50%; z-index: 10;
+  background: #fff; border: 2px solid var(--accent); box-shadow: 0 1px 4px rgba(29,35,46,.18);
+  transform: translate(-50%, -50%); cursor: crosshair; touch-action: none;
+}
+.line-endpoint:hover { background: var(--accent-soft); }
+.artboard.editing .line-endpoint { display: none; }

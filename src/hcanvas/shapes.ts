@@ -56,7 +56,14 @@ function polygonPoints(shape: HcShape): string {
  * Coordinates use a 100x100 viewBox with preserveAspectRatio=none; stroke uses
  * vector-effect=non-scaling-stroke so the visible border keeps its px width.
  */
-export function shapeSvgMarkup(block: Pick<HcBlock, 'shape' | 'style'>): string {
+type ShapeGeometryBlock = Pick<HcBlock, 'shape' | 'style'> & Partial<Pick<HcBlock, 'points' | 'w' | 'h'>>;
+
+export function linePoints(block: Pick<HcBlock, 'points'> & Partial<Pick<HcBlock, 'w' | 'h'>>): Array<{ x: number; y: number }> {
+  if (block.points && block.points.length >= 2) return [{ x: block.points[0]!.x, y: block.points[0]!.y }, { x: block.points[1]!.x, y: block.points[1]!.y }];
+  return [{ x: 0, y: block.h ?? 100 }, { x: block.w ?? 100, y: 0 }];
+}
+
+export function shapeSvgMarkup(block: ShapeGeometryBlock): string {
   const shape = isHcShape(block.shape) ? block.shape : 'rect';
   const style = block.style || {};
   const fillRaw = shape === 'frame' || shape === 'line' ? 'transparent' : String(style.fill || '#f3e8ff');
@@ -72,7 +79,14 @@ export function shapeSvgMarkup(block: Pick<HcBlock, 'shape' | 'style'>): string 
   if (shape === 'ellipse') {
     geometry = '<ellipse cx="50" cy="50" rx="49" ry="49"' + common + '/>';
   } else if (shape === 'line') {
-    geometry = '<line x1="2" y1="98" x2="98" y2="2"' + common + ' stroke-linecap="round"/>';
+    const points = linePoints(block);
+    const width = Math.max(1, Number(block.w || 100));
+    const height = Math.max(1, Number(block.h || 100));
+    const x1 = points[0]!.x / width * 100;
+    const y1 = points[0]!.y / height * 100;
+    const x2 = points[1]!.x / width * 100;
+    const y2 = points[1]!.y / height * 100;
+    geometry = '<line x1="' + x1.toFixed(2) + '" y1="' + y1.toFixed(2) + '" x2="' + x2.toFixed(2) + '" y2="' + y2.toFixed(2) + '"' + common + ' stroke-linecap="round"/>';
   } else if (shape === 'rect' || shape === 'frame') {
     const radius = shape === 'frame' ? 8 : Math.max(0, Math.min(50, Number(style.radius ?? 14)));
     const line = hasStroke ? stroke : (shape === 'frame' ? ' stroke="#8a8276" stroke-width="1"' : ' stroke="none"');

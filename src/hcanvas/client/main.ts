@@ -12,6 +12,7 @@ import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
+import { addLineEndpointHandles } from './lineEndpoints.js';
 import { cloneBlocksForPlacement, parseBlocksFromClipboard, serializeBlocksForClipboard } from '../blockClipboard.js';
 import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawing.js';
 import { invertOps as invertDocumentOps } from './documentHistory.js';
@@ -195,7 +196,6 @@ function clampBlockPosition(page: HcPage, block: HcBlock, x: number, y: number):
     y: Math.max(0, Math.min(Math.max(0, page.height - block.h), snapCoordinate(y))),
   };
 }
-
 function toast(message: string, kind: 'info' | 'success' | 'error' = 'info'): void {
   const root = el('toastRoot');
   const node = document.createElement('div');
@@ -210,7 +210,6 @@ function setSaveStatus(message: string, kind: UiState['saveKind'] = 'idle'): voi
   node.textContent = message;
   node.className = 'save-status' + (kind === 'saving' ? ' saving' : kind === 'error' ? ' error' : '');
 }
-
 function patchDocSummary(doc: HcDocument): void {
   const pendingProposals = doc.proposals.filter(proposal => proposal.status === 'pending').length;
   const index = state.docs.findIndex(summary => summary.id === doc.id);
@@ -293,12 +292,10 @@ async function initialize(): Promise<void> {
 
 const DEFAULT_VECTOR_STROKE = '#1f2430';
 const DEFAULT_VECTOR_STROKE_WIDTH = 2;
-
 function viewportToWorldPoint(clientX: number, clientY: number): { x: number; y: number } {
   const rect = el('viewport').getBoundingClientRect();
   return { x: (clientX - rect.left - state.panX) / state.zoom, y: (clientY - rect.top - state.panY) / state.zoom };
 }
-
 function blockAtPoint(clientX: number, clientY: number): HcBlock | null {
   const element = document.elementFromPoint(clientX, clientY) as Element | null;
   const wrap = element?.closest('.block-wrap[data-block-id]') as HTMLElement | null;
@@ -306,7 +303,6 @@ function blockAtPoint(clientX: number, clientY: number): HcBlock | null {
   if (!blockId) return null;
   return activePage()?.blocks?.find(block => block.id === blockId) || null;
 }
-
 function beginErase(event: PointerEvent): void {
   const page = activePage();
   if (!page || (page.mode !== 'infinite' && page.mode !== 'canvas')) return;
@@ -344,7 +340,6 @@ function beginErase(event: PointerEvent): void {
   viewport.addEventListener('pointermove', move);
   viewport.addEventListener('pointerup', up);
 }
-
 function beginShapeDraw(startEvent: PointerEvent): void {
   const page = activePage();
   if (!page || (page.mode !== 'infinite' && page.mode !== 'canvas')) return;
@@ -442,7 +437,6 @@ function beginShapeDraw(startEvent: PointerEvent): void {
   viewport.addEventListener('pointercancel', cancel);
   window.addEventListener('keydown', escape, true);
 }
-
 function beginVectorDraw(startEvent: PointerEvent): void {
   const page = activePage();
   if (!page || page.mode !== 'infinite') return;
@@ -567,7 +561,6 @@ function beginVectorDraw(startEvent: PointerEvent): void {
   viewport.addEventListener('pointercancel', cancel);
   window.addEventListener('keydown', escape, true);
 }
-
 function beginMarquee(event: PointerEvent): void {
   const page = activePage();
   if (!page || (page.mode !== 'infinite' && page.mode !== 'canvas')) return;
@@ -616,7 +609,6 @@ interface SidebarPrefs {
   leftCollapsed: boolean;
   rightCollapsed: boolean;
 }
-
 function initSidebarLayout(): void {
   const app = el('app');
   const defaults: SidebarPrefs = { leftWidth: 244, rightWidth: 326, leftCollapsed: false, rightCollapsed: false };
@@ -676,7 +668,6 @@ function initSidebarLayout(): void {
   bindResize('rightbarResizer', 'right');
   apply();
 }
-
 function bindStaticActions(): void {
   initSidebarLayout();
   el('newDocBtn').addEventListener('click', () => openNewDocModal());
@@ -862,7 +853,6 @@ function bindStaticActions(): void {
   }, { capture: true });
   window.addEventListener('resize', () => { resizeWhiteboardSurface(); });
 }
-
 function viewportWorldBounds(): { minX: number; minY: number; maxX: number; maxY: number } {
   const rect = el('viewport').getBoundingClientRect();
   return {
@@ -872,7 +862,6 @@ function viewportWorldBounds(): { minX: number; minY: number; maxX: number; maxY
     maxY: (rect.height - state.panY) / state.zoom,
   };
 }
-
 function renderToolbarState(): void {
   const page = activePage();
   const block = activeBlock();
@@ -906,7 +895,6 @@ function renderToolbarState(): void {
     qs<HTMLElement>('[data-sel-action="ungroup"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
   }
 }
-
 function editActiveBlock(): void {
   const page = activePage();
   const block = activeBlock();
@@ -1061,7 +1049,6 @@ async function nudgeActiveBlock(dx: number, dy: number): Promise<void> {
   if (wrap) { wrap.style.left = next.x + 'px'; wrap.style.top = next.y + 'px'; }
   await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { x: next.x, y: next.y } }], { refreshArtboard: false, historyBase: historyBase || undefined });
 }
-
 function openShortcutsModal(): void {
   openModal(SHORTCUTS_MODAL_HTML);
 }
@@ -2077,7 +2064,7 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
 }
 
 function clearBlockSelectionDecorations(): void {
-  document.querySelectorAll('.block-label, .resize-handle').forEach(node => node.remove());
+  document.querySelectorAll('.block-label, .resize-handle, .line-endpoint').forEach(node => node.remove());
 }
 
 function addBlockSelectionDecorations(wrap: HTMLDivElement, block: HcBlock): void {
@@ -2094,6 +2081,18 @@ function addBlockSelectionDecorations(wrap: HTMLDivElement, block: HcBlock): voi
     beginBlockDrag(event, block, label, wrap);
   });
   wrap.appendChild(label);
+  if (block.type === 'shape' && block.shape === 'line') {
+    addLineEndpointHandles(wrap, block, {
+      getZoom: () => state.zoom,
+      getHistoryBase: () => cloneJson(state.doc),
+      onChange: (target: HcBlock, node: HTMLElement) => {
+        const host = node.querySelector<HTMLElement>('.block-shape-host');
+        if (host) host.innerHTML = shapeSvgMarkup(target);
+      },
+      commit: (target: HcBlock, patch: Partial<HcBlock>, historyBase: HcDocument | null) => { void persistBlock(target, patch, historyBase || undefined); },
+    });
+    return;
+  }
   const directions: ResizeDirection[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
   const resizeContext = {
     getZoom: () => state.zoom,
