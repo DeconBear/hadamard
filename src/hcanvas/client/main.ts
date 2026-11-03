@@ -10,6 +10,7 @@ import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup, shapeTextMarkup } from '../s
 import { HTML_INSERT_PRESETS, applySelectedHtmlStyle, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, insertHtmlPreset, type HtmlEditingContext } from './htmlEditing.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
+import { createShapePicker, type ShapePicker } from './shapePicker.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
 import { addLineEndpointHandles } from './lineEndpoints.js';
@@ -122,6 +123,8 @@ let htmlCursorCacheKey = '';
 let remoteReloadTimer: ReturnType<typeof setTimeout> | undefined;
 let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 let pagesRenderTimer: ReturnType<typeof setTimeout> | undefined;
+
+let shapePicker: ShapePicker | null = null;
 
 const state: UiState = {
   docs: [], doc: null, activePageId: null, activeBlockId: null, selectedBlockIds: [], editing: null,
@@ -670,6 +673,7 @@ function initSidebarLayout(): void {
 }
 function bindStaticActions(): void {
   initSidebarLayout();
+  shapePicker = createShapePicker({ onChoose: shape => { state.pendingShape = shape; requestInsert('shape'); } });
   el('newDocBtn').addEventListener('click', () => openNewDocModal());
   el('newDocMini').addEventListener('click', () => openNewDocModal());
   el('addPageBtn').addEventListener('click', () => openAddPageModal());
@@ -2948,19 +2952,7 @@ async function deleteBlock(pageId: string, blockId: string): Promise<void> {
 }
 
 function openShapePicker(): void {
-  const shapes = HCANVAS_SHAPES.map(shape => {
-    const preview = shapeSvgMarkup({ shape: shape.id, style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 10 } });
-    return '<button type="button" class="shape-choice" data-shape-choice="' + shape.id + '" title="' + esc(shape.hint) + '"><span class="shape-choice-preview">' + preview + '</span><span>' + esc(shape.label) + '</span></button>';
-  }).join('');
-  openModal('<div class="modal"><div class="modal-head"><div><strong>Choose a shape</strong><small>Click for a default size or drag to draw. Shift keeps proportions; Alt draws from center.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="shape-grid">' + shapes + '</div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button></div></div>');
-  document.querySelectorAll<HTMLButtonElement>('[data-shape-choice]').forEach(button => {
-    button.addEventListener('click', () => {
-      const shape = button.dataset.shapeChoice as HcShape;
-      closeModal();
-      state.pendingShape = shape;
-      requestInsert('shape');
-    });
-  });
+  shapePicker?.open();
 }
 
 function requestInsert(type: HcBlock['type']): void {

@@ -108,6 +108,8 @@ Canvas pages contain absolutely positioned blocks:
 | Image | Image URL |
 | Shape | Rectangle, ellipse, diamond, triangle, parallelogram, trapezoid, hexagon, octagon, star, cross, line or frame; fill, stroke, stroke style, radius; optional centered text label |
 
+Hover the left-rail **Shape** tool to open a flyout of shape previews; move into the flyout and click a shape, then click/drag on the canvas to place it. The same flyout opens from the Shape click/6 shortcut.
+
 Shapes behave like PowerPoint/Figma objects: select one to get eight resize handles (corners and edges), drag the label to move, double-click the shape to edit its centered text, and use the Inspector for text font/size/color. Lines are different: they expose two endpoint handles so either end can be moved freely instead of scaling a bounding box. While dragging, edge/center smart guides snap the block to other blocks and page centers.
 
 Pages can use slide (16:9), A4, poster (4:5), square and custom sizes. Present mode shows pages full screen; exports support HTML, PDF and PNG (local Chrome/Edge/Chromium). Page master/layout templates and editable PPTX export are future work.
