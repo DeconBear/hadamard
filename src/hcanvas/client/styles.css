@@ -669,3 +669,10 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
   box-shadow: 0 12px 32px rgba(29,35,46,.25);
 }
 #viewport.image-drop-active { outline: 2px dashed rgba(124,58,237,.7); outline-offset: -8px; }
+
+.html-style-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 10px 0 6px; }
+.html-style-head span { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.html-style-head small { font-size: 8.5px; color: var(--accent); }
+.html-style-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 9px; }
+.html-style-preset { border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--ink-2); padding: 4px 8px; font: 600 9px/1 Inter, sans-serif; }
+.html-style-preset:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }

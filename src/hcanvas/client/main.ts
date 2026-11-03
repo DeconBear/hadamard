@@ -7,7 +7,7 @@ import { vectorSvgMarkup } from '../vector.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup, shapeTextMarkup } from '../shapes.js';
-import { HTML_INSERT_PRESETS, applySelectedHtmlStyle, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, htmlBreadcrumbMarkup, insertHtmlPreset, installHtmlHoverHighlight, type HtmlEditingContext } from './htmlEditing.js';
+import { HTML_INSERT_PRESETS, bindHtmlStyleControls, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, htmlBreadcrumbMarkup, htmlStylePresetMarkup, insertHtmlPreset, installHtmlHoverHighlight, type HtmlEditingContext } from './htmlEditing.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
@@ -2503,10 +2503,13 @@ function renderHtmlInspector(): void {
     const classes = selected.getAttribute('class') || '';
     html += '<section class="inspector-section"><div class="inspector-title">Selected element</div>';
     html += '<div class="field"><span>Element</span><input readonly value="' + esc('<' + tag + '>' + (id ? ' #' + id : '') + (classes ? ' .' + classes.replace(/\s+/g, '.') : '')) + '"></div>';
+    html += '<div class="html-style-head"><span>Style</span><small>Changes apply automatically</small></div>';
+    html += htmlStylePresetMarkup();
     html += '<div class="field-row"><div class="field"><span>Text color</span><div class="swatch-row"><input id="hcColor" type="color" value="' + esc(toHex(style?.color || '#1d232e')) + '"><input id="hcColorText" value="' + esc(style?.color || '#1d232e') + '"></div></div><div class="field"><span>Background</span><div class="swatch-row"><input id="hcBg" type="color" value="' + esc(toHex(style?.backgroundColor || '#ffffff')) + '"><input id="hcBgText" value="' + esc(style?.backgroundColor || 'transparent') + '"></div></div></div>';
     html += '<div class="field-row"><div class="field"><span>Font size</span><input id="hcFontSize" type="number" value="' + esc(parseFloat(style?.fontSize || '16') || 16) + '"></div><div class="field"><span>Padding</span><input id="hcPadding" value="' + esc(style?.padding || '0px') + '"></div><div class="field"><span>Align</span><select id="hcAlign"><option value="">—</option><option value="left">left</option><option value="center">center</option><option value="right">right</option><option value="justify">justify</option></select></div></div>';
     html += '<div class="field-row"><div class="field"><span>Weight</span><select id="hcFontWeight"><option value="">—</option><option value="400">Regular</option><option value="500">Medium</option><option value="600">Semibold</option><option value="700">Bold</option></select></div><div class="field"><span>Radius</span><input id="hcRadius" value="' + esc(style?.borderRadius || '0px') + '"></div><div class="field"><span>Line height</span><input id="hcLineHeight" value="' + esc(style?.lineHeight || 'normal') + '"></div></div>';
-    html += '<div class="actions-row"><button id="hcApplyStyle" class="btn tiny primary">Apply style</button><button id="hcEditText" class="btn tiny">Edit text</button><button id="hcSelectParent" class="btn tiny">Select parent</button><button id="hcDuplicate" class="btn tiny">Duplicate</button><button id="hcSourceBtn" class="btn tiny">Source</button><button id="hcDelete" class="btn tiny danger">Delete</button></div></section>';
+    html += '<div class="field-row"><div class="field"><span>Letter spacing</span><input id="hcLetterSpacing" value="' + esc(style?.letterSpacing || 'normal') + '"></div></div>';
+    html += '<div class="actions-row"><button id="hcEditText" class="btn tiny">Edit text</button><button id="hcSelectParent" class="btn tiny">Select parent</button><button id="hcDuplicate" class="btn tiny">Duplicate</button><button id="hcSourceBtn" class="btn tiny">Source</button><button id="hcDelete" class="btn tiny danger">Delete</button></div></section>';
   } else {
     html += '<section class="inspector-section"><p class="empty-state">Click an element in the page to inspect styles, or double-click text to edit it.</p></section>';
   }
@@ -2532,7 +2535,7 @@ function renderHtmlInspector(): void {
       if (element) selectHtmlElement(element);
     });
   });
-  qs<HTMLButtonElement>('#hcApplyStyle')?.addEventListener('click', () => { void applySelectedHtmlStyle(htmlEditingContext()); });
+  bindHtmlStyleControls(root, htmlEditingContext());
   qs<HTMLButtonElement>('#hcEditText')?.addEventListener('click', () => { if (selected) startInlineTextEdit(selected as HTMLElement); });
   qs<HTMLButtonElement>('#hcDuplicate')?.addEventListener('click', () => { void duplicateSelectedHtml(htmlEditingContext()); });
   qs<HTMLButtonElement>('#hcDelete')?.addEventListener('click', () => { state.selectedHtmlId = null; void deleteSelectedHtml(htmlEditingContext()); });
@@ -2544,14 +2547,6 @@ function renderHtmlInspector(): void {
     if (parent && parent !== contentDocument.body) selectHtmlElement(parent);
   });
   qs<HTMLButtonElement>('#hcSourceBtn')?.addEventListener('click', () => { if (state.editing) openSourceEditor({ pageId: state.editing.pageId, blockId: state.editing.blockId }); });
-  const color = qs<HTMLInputElement>('#hcColor');
-  const colorText = qs<HTMLInputElement>('#hcColorText');
-  color?.addEventListener('input', () => { if (colorText) colorText.value = color.value; });
-  colorText?.addEventListener('input', () => { if (color && /^#[0-9a-f]{6}$/i.test(colorText.value)) color.value = colorText.value; });
-  const bg = qs<HTMLInputElement>('#hcBg');
-  const bgText = qs<HTMLInputElement>('#hcBgText');
-  bg?.addEventListener('input', () => { if (bgText) bgText.value = bg.value; });
-  bgText?.addEventListener('input', () => { if (bg && /^#[0-9a-f]{6}$/i.test(bgText.value)) bg.value = bgText.value; });
 }
 
 function field(id: string, label: string, inputHtml: string): string {

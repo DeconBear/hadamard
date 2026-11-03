@@ -1,5 +1,10 @@
 import type { HcHtmlPatch, HcOp } from '../types.js';
 
+function htmlElement(value: Element | null): HTMLElement | null {
+  const view = value?.ownerDocument?.defaultView;
+  return value && view && value instanceof view.HTMLElement ? value as HTMLElement : null;
+}
+
 export interface HtmlInsertPreset {
   id: string;
   label: string;
@@ -50,7 +55,8 @@ export function cloneHtmlWithNewIds(element: HTMLElement, newId: (prefix: string
 }
 
 export function htmlInsertionTarget(doc: Document | null, selected: Element | null): HTMLElement | null {
-  if (selected instanceof HTMLElement) return selected;
+  const selectedHtml = htmlElement(selected);
+  if (selectedHtml) return selectedHtml;
   if (!doc) return null;
   const children = Array.from(doc.body.children).filter(child => child.getAttribute('data-hc-id')) as HTMLElement[];
   return children[children.length - 1] || null;
@@ -81,12 +87,13 @@ export async function insertHtmlPreset(presetId: string, context: HtmlEditingCon
 
 export async function duplicateSelectedHtml(context: HtmlEditingContext): Promise<void> {
   const selected = context.getSelectedElement();
-  if (!(selected instanceof HTMLElement) || !context.getEditing()) return;
-  const targetId = selected.getAttribute('data-hc-id');
+  const selectedHtml = htmlElement(selected);
+  if (!selectedHtml || !context.getEditing()) return;
+  const targetId = selectedHtml.getAttribute('data-hc-id');
   if (!targetId) return;
-  const clone = cloneHtmlWithNewIds(selected, context.newId);
-  selected.insertAdjacentHTML('afterend', clone.html);
-  const inserted = selected.nextElementSibling as HTMLElement | null;
+  const clone = cloneHtmlWithNewIds(selectedHtml, context.newId);
+  selectedHtml.insertAdjacentHTML('afterend', clone.html);
+  const inserted = selectedHtml.nextElementSibling as HTMLElement | null;
   if (inserted) context.selectElement(inserted);
   const result = await context.applyOps([patchFor(context, [{ op: 'insert_html', target: targetId, position: 'afterend', html: clone.html }])], { refreshArtboard: false });
   if (!result) { inserted?.remove(); return; }
@@ -96,10 +103,11 @@ export async function duplicateSelectedHtml(context: HtmlEditingContext): Promis
 
 export async function deleteSelectedHtml(context: HtmlEditingContext): Promise<void> {
   const selected = context.getSelectedElement();
-  if (!(selected instanceof HTMLElement) || !context.getEditing()) return;
-  const targetId = selected.getAttribute('data-hc-id');
+  const selectedHtml = htmlElement(selected);
+  if (!selectedHtml || !context.getEditing()) return;
+  const targetId = selectedHtml.getAttribute('data-hc-id');
   if (!targetId) return;
-  selected.remove();
+  selectedHtml.remove();
   const result = await context.applyOps([patchFor(context, [{ op: 'remove_node', target: targetId }])], { refreshArtboard: false });
   if (!result) { context.toast('Could not delete element', 'error'); return; }
   context.renderInspector();
@@ -117,9 +125,10 @@ export function collectHtmlTree(contentDocument: Document): Array<{ depth: numbe
   return rows.slice(0, 220);
 }
 
-export async function applySelectedHtmlStyle(context: HtmlEditingContext): Promise<void> {
+export async function applySelectedHtmlStyle(context: HtmlEditingContext, notify = true): Promise<void> {
   const selected = context.getSelectedElement();
-  if (!(selected instanceof HTMLElement) || !context.getEditing()) return;
+  const selectedHtml = htmlElement(selected);
+  if (!selectedHtml || !context.getEditing()) return;
   const input = (id: string): string => (document.querySelector<HTMLInputElement>('#' + id)?.value || '');
   const styles: Record<string, string> = {};
   const color = input('hcColorText');
@@ -130,6 +139,7 @@ export async function applySelectedHtmlStyle(context: HtmlEditingContext): Promi
   const weight = document.querySelector<HTMLSelectElement>('#hcFontWeight')?.value || '';
   const radius = input('hcRadius');
   const lineHeight = input('hcLineHeight');
+  const letterSpacing = input('hcLetterSpacing');
   if (color) styles.color = color;
   if (bg) styles['background-color'] = bg;
   if (fontSize) styles['font-size'] = fontSize + 'px';
@@ -138,11 +148,12 @@ export async function applySelectedHtmlStyle(context: HtmlEditingContext): Promi
   if (weight) styles['font-weight'] = weight;
   if (radius) styles['border-radius'] = radius;
   if (lineHeight) styles['line-height'] = lineHeight;
-  for (const [name, value] of Object.entries(styles)) selected.style.setProperty(name, value);
-  const targetId = selected.getAttribute('data-hc-id');
+  if (letterSpacing) styles['letter-spacing'] = letterSpacing;
+  for (const [name, value] of Object.entries(styles)) selectedHtml.style.setProperty(name, value);
+  const targetId = selectedHtml.getAttribute('data-hc-id');
   if (!targetId) return;
   await context.applyOps([patchFor(context, [{ op: 'set_style', target: targetId, styles }])], { refreshArtboard: false });
-  context.toast('Style patched', 'success');
+  if (notify) context.toast('Style patched', 'success');
 }
 export function installHtmlHoverHighlight(contentDocument: Document): void {
   let hovered: Element | null = null;
@@ -176,4 +187,63 @@ export function htmlBreadcrumbMarkup(element: Element | null): string {
   return '<section class="inspector-section"><div class="inspector-title">Path</div><div class="html-breadcrumb">' +
     chain.map((item, index) => '<button type="button" data-html-crumb="' + breadcrumbEsc(item.getAttribute('data-hc-id') || '') + '">' + (index ? '› ' : '') + '&lt;' + breadcrumbEsc(item.tagName.toLowerCase()) + '&gt;</button>').join('') +
     '</div></section>';
+}
+export interface HtmlStylePreset {
+  id: string;
+  label: string;
+  hint: string;
+  styles: Record<string, string>;
+}
+
+export const HTML_STYLE_PRESETS: HtmlStylePreset[] = [
+  { id: 'title', label: 'Title', hint: 'Large display heading', styles: { 'font-size': '32px', 'font-weight': '700', 'line-height': '1.1', 'letter-spacing': '-0.02em', color: '#1f2430' } },
+  { id: 'body', label: 'Body', hint: 'Readable body copy', styles: { 'font-size': '16px', 'font-weight': '400', 'line-height': '1.65', color: '#334155' } },
+  { id: 'muted', label: 'Muted', hint: 'Secondary text', styles: { color: '#8a8276' } },
+  { id: 'accent', label: 'Accent', hint: 'Highlight text', styles: { color: '#7c3aed' } },
+  { id: 'card', label: 'Card', hint: 'Bordered surface', styles: { 'background-color': '#fffdf8', border: '1px solid #e7e0d2', 'border-radius': '14px', padding: '16px' } },
+];
+
+export function htmlStylePresetMarkup(): string {
+  return '<div class="html-style-presets">' + HTML_STYLE_PRESETS.map(preset => '<button type="button" class="html-style-preset" data-html-style-preset="' + preset.id + '" title="' + preset.hint + '">' + preset.label + '</button>').join('') + '</div>';
+}
+
+async function applyHtmlStyleValues(context: HtmlEditingContext, styles: Record<string, string>, label: string): Promise<void> {
+  const selected = context.getSelectedElement();
+  const selectedHtml = htmlElement(selected);
+  if (!selectedHtml || !context.getEditing()) return;
+  for (const [name, value] of Object.entries(styles)) selected.style.setProperty(name, value);
+  const targetId = selectedHtml.getAttribute('data-hc-id');
+  if (!targetId) return;
+  await context.applyOps([patchFor(context, [{ op: 'set_style', target: targetId, styles }])], { refreshArtboard: false });
+  context.toast(label + ' style applied', 'success');
+  context.renderInspector();
+}
+
+export function bindHtmlStyleControls(root: HTMLElement, context: HtmlEditingContext): void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const schedule = (): void => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { timer = undefined; void applySelectedHtmlStyle(context, false); }, 220);
+  };
+  const bind = (selector: string): void => {
+    root.querySelectorAll<HTMLElement>(selector).forEach(control => {
+      control.addEventListener('input', schedule);
+      control.addEventListener('change', schedule);
+    });
+  };
+  bind('#hcColor, #hcColorText, #hcBg, #hcBgText, #hcFontSize, #hcPadding, #hcAlign, #hcFontWeight, #hcRadius, #hcLineHeight, #hcLetterSpacing');
+  const color = root.querySelector<HTMLInputElement>('#hcColor');
+  const colorText = root.querySelector<HTMLInputElement>('#hcColorText');
+  color?.addEventListener('input', () => { if (colorText) colorText.value = color.value; });
+  colorText?.addEventListener('input', () => { if (color && /^#[0-9a-f]{6}$/i.test(colorText.value)) color.value = colorText.value; });
+  const bg = root.querySelector<HTMLInputElement>('#hcBg');
+  const bgText = root.querySelector<HTMLInputElement>('#hcBgText');
+  bg?.addEventListener('input', () => { if (bgText) bgText.value = bg.value; });
+  bgText?.addEventListener('input', () => { if (bg && /^#[0-9a-f]{6}$/i.test(bgText.value)) bg.value = bgText.value; });
+  root.querySelectorAll<HTMLButtonElement>('[data-html-style-preset]').forEach(button => {
+    button.addEventListener('click', () => {
+      const preset = HTML_STYLE_PRESETS.find(item => item.id === button.dataset.htmlStylePreset);
+      if (preset) void applyHtmlStyleValues(context, preset.styles, preset.label);
+    });
+  });
 }
