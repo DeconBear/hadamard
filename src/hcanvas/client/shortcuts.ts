@@ -1,7 +1,8 @@
 export const SHORTCUTS_MODAL_HTML = '<div class="modal small"><div class="modal-head"><div><strong>Canvas shortcuts</strong><small>Works when you are not typing in a field.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="help-grid">' +
   '<kbd>V / H</kbd><span>Select / Hand tool</span>' +
   '<kbd>Space / Middle drag</kbd><span>Pan from anywhere, including over blocks</span>' +
-  '<kbd>Wheel / Shift+Wheel</kbd><span>Pan vertically / horizontally</span>' +
+  '<kbd>Wheel</kbd><span>Zoom at pointer</span>' +
+  '<kbd>Shift + Wheel</kbd><span>Pan horizontally</span>' +
   '<kbd>Ctrl/Cmd + Wheel</kbd><span>Zoom at pointer</span>' +
   '<kbd>R / O</kbd><span>Click or drag to draw rectangle / ellipse</span>' +
   '<kbd>T / 1 – 6</kbd><span>Insert text / block, then click to place</span>' +

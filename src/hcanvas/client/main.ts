@@ -824,13 +824,12 @@ function bindStaticActions(): void {
     const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientHeight : 1;
     const deltaX = event.deltaX * unit;
     const deltaY = event.deltaY * unit;
-    if (event.ctrlKey || event.metaKey) {
-      setZoomAt(state.zoom * Math.exp(-deltaY * 0.002), event.clientX, event.clientY);
+    if (event.shiftKey) {
+      state.panX -= Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+      scheduleStageTransform();
       return;
     }
-    state.panX -= event.shiftKey && Math.abs(deltaX) < Math.abs(deltaY) ? deltaY : deltaX;
-    state.panY -= event.shiftKey ? 0 : deltaY;
-    scheduleStageTransform();
+    setZoomAt(state.zoom * Math.exp(-deltaY * 0.002), event.clientX, event.clientY);
   }, { passive: false });
   // Eraser removes blocks under the pointer in a drag gesture.
   viewport.addEventListener('pointerdown', event => {
@@ -2595,7 +2594,7 @@ function renderPageInspector(): void {
   html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Legacy whiteboard · native read-only preview · ' + ((page.scene?.elements || []).length) + ' scene element' + ((page.scene?.elements || []).length === 1 ? '' : 's') : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
   if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Esc exits. The Agent tab exposes the CLI protocol.</div>';
-  if (page.mode === 'infinite') html += '<div class="hint-card">Pan with the mouse wheel, Hand tool, Space, or middle-drag. Hold Ctrl/Cmd while scrolling to zoom at the pointer. Drag shapes to size them; exports crop to content.</div>';
+  if (page.mode === 'infinite') html += '<div class="hint-card">Wheel to zoom at the pointer; Shift+Wheel or Hand tool to pan. Hold Space or middle-drag for temporary panning. Drag shapes to size them; exports crop to content.</div>';
   if (page.mode === 'whiteboard') html += '<div class="hint-card"><strong>Legacy whiteboard.</strong> This page is rendered from its Excalidraw scene through the native block renderer — no Excalidraw runtime is loaded. Convert it with <strong>Convert to native Infinite</strong> above; use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for raw scene access.</div>';
   html += '</section>';
   root.innerHTML = html;
