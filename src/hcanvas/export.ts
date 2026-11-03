@@ -13,6 +13,7 @@ import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from 
 import { htmlToPlainDocument } from './html.js';
 import { vectorSvgMarkup } from './vector.js';
 import { shapeSvgMarkup, shapeTextMarkup } from './shapes.js';
+import { blockPlugin } from './blockPlugins.js';
 import { excalidrawSceneToNativePage } from './sceneBridge.js';
 import { extractHtmlLayout, type HtmlLayout } from './htmlLayout.js';
 import type { HcBlock, HcDocument, HcPage } from './types.js';
@@ -86,7 +87,9 @@ function renderBlock(block: HcBlock): string {
   if (block.type === 'freehand' || block.type === 'arrow') {
     return wrapper + vectorSvgMarkup(block) + '</div>';
   }
-  return wrapper + '</div>';
+  const plugin = blockPlugin(block.type);
+  if (plugin) return wrapper + plugin.renderHtml(block) + '</div>';
+  return wrapper + '<div style="display:grid;place-items:center;height:100%;border:1px dashed #d9d3c7;border-radius:12px;color:#8a8276;font:12px Inter,sans-serif">Unknown block type: ' + escapeHtml(block.type) + '</div></div>';
 }
 
 function exportPage(page: HcPage): HcPage {
@@ -522,7 +525,7 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
       const editable = Boolean(options.editableHtml)
         && page.mode === 'canvas'
         && blocks.length > 0
-        && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow')
+        && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow' || Boolean(blockPlugin(block.type)))
         && !blocks.some(block => block.type === 'image' && /^https?:/i.test(block.src || ''));
       if (editable) {
         addEditableCanvasSlide(pptx as unknown as { addSlide: () => any; ShapeType: { roundRect: string; ellipse: string } }, page, index, deckW, deckH);

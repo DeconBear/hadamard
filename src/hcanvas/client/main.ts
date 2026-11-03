@@ -12,6 +12,7 @@ import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
 import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
+import { bindPluginInspector, bindPluginPicker, pluginBlockMarkup, pluginFallbackMarkup, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
 import { installImageInsert } from './imageInsert.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
@@ -1320,7 +1321,6 @@ function movePage(pageId: string, direction: 'up' | 'down'): void {
     renderTop();
   });
 }
-
 function hashString(value: string): string {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -1329,14 +1329,12 @@ function hashString(value: string): string {
   }
   return (hash >>> 0).toString(36) + ':' + value.length;
 }
-
 function pageFingerprint(page: HcPage): string {
   const base = page.name + '|' + page.mode + '|' + page.width + '|' + page.height + '|' + page.background;
   if (page.mode === 'whiteboard') return base + '|' + (page.scene?.elements?.length || 0);
   if (page.mode === 'html') return base + '|' + hashString(page.html || '');
   return base + '|' + hashString(JSON.stringify(page.blocks || []));
 }
-
 function makePageActions(page: HcPage, index: number, pagesLength: number): HTMLDivElement {
   const actions = document.createElement('div');
   actions.className = 'page-actions';
@@ -1359,7 +1357,6 @@ function makePageActions(page: HcPage, index: number, pagesLength: number): HTML
 
 const pageThumbHydrators = new WeakMap<HTMLElement, () => void>();
 let pageThumbObserver: IntersectionObserver | null = null;
-
 function observePageThumb(item: HTMLElement, thumb: HTMLDivElement, page: HcPage, force = false): void {
   if (thumb.dataset.hydrated === '1') return;
   const hydrate = (): void => {
@@ -1386,7 +1383,6 @@ function observePageThumb(item: HTMLElement, thumb: HTMLDivElement, page: HcPage
   }
   pageThumbObserver.observe(item);
 }
-
 function createPageItem(page: HcPage, index: number, pagesLength: number): PageItemCache {
   const item = document.createElement('div');
   item.className = 'page-item' + (page.id === state.activePageId ? ' active' : '');
@@ -1409,7 +1405,6 @@ function createPageItem(page: HcPage, index: number, pagesLength: number): PageI
   item.appendChild(actions);
   return { fingerprint: pageFingerprint(page), item, thumb, info, actions, index, pagesLength };
 }
-
 function schedulePagesRender(): void {
   if (pagesRenderTimer !== undefined) return;
   pagesRenderTimer = setTimeout(() => {
@@ -1417,7 +1412,6 @@ function schedulePagesRender(): void {
     renderPages();
   }, 160);
 }
-
 function renderPages(): void {
   if (pagesRenderTimer !== undefined) {
     clearTimeout(pagesRenderTimer);
@@ -1471,7 +1465,6 @@ function renderPages(): void {
     }
   });
 }
-
 function selectPage(pageId: string): void {
   if (state.activePageId === pageId) return;
   if (state.editing) state.editing = null;
@@ -1499,13 +1492,11 @@ let pendingHistoryRedo = 0;
 let opQueue: Promise<unknown> = Promise.resolve();
 let clipboardBlocks: HcBlock[] = [];
 let clipboardPasteCount = 0;
-
 function enqueueMutation<T>(task: () => Promise<T>): Promise<T> {
   const next = opQueue.then(task, task);
   opQueue = next.then(() => undefined, () => undefined);
   return next;
 }
-
 function scheduleStageTransform(): void {
   if (stageFrame) return;
   stageFrame = requestAnimationFrame(() => {
@@ -1513,13 +1504,11 @@ function scheduleStageTransform(): void {
     applyStageTransform();
   });
 }
-
 function applyStageTransform(): void {
   const stage = el('stage');
   stage.style.transform = 'translate(' + state.panX + 'px,' + state.panY + 'px) scale(' + state.zoom + ')';
   el('zoomReset').textContent = Math.round(state.zoom * 100) + '%';
 }
-
 function setZoomAt(next: number, clientX?: number, clientY?: number): void {
   const target = Math.max(0.1, Math.min(3, next));
   if (clientX === undefined || clientY === undefined) {
@@ -1537,12 +1526,10 @@ function setZoomAt(next: number, clientX?: number, clientY?: number): void {
   state.panY = localY - worldY * target;
   scheduleStageTransform();
 }
-
 function setZoom(next: number): void {
   const rect = el('viewport').getBoundingClientRect();
   setZoomAt(next, rect.left + rect.width / 2, rect.top + rect.height / 2);
 }
-
 function fitPage(): void {
   const page = activePage();
   if (!page) return;
@@ -1927,6 +1914,14 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
       content.appendChild(shape);
     } else if (block.type === 'freehand' || block.type === 'arrow') {
       content.innerHTML = vectorSvgMarkup(block);
+    } else {
+      const pluginMarkup = pluginBlockMarkup(block);
+      if (pluginMarkup !== null) {
+        const pluginHost = document.createElement('div');
+        pluginHost.className = 'block-plugin';
+        pluginHost.innerHTML = pluginMarkup;
+        content.appendChild(pluginHost);
+      } else content.innerHTML = pluginFallbackMarkup(block);
     }
     wrap.appendChild(content);
     if (!editing) {
@@ -2605,6 +2600,7 @@ function renderPageInspector(): void {
   if (page.mode === 'infinite') html += '<div class="hint-card">Wheel to zoom at the pointer; Shift+Wheel or Hand tool to pan. Hold Space or middle-drag for temporary panning. Drag shapes to size them; exports crop to content.</div>';
   if (page.mode === 'whiteboard') html += '<div class="hint-card"><strong>Legacy whiteboard.</strong> This page is rendered from its Excalidraw scene through the native block renderer — no Excalidraw runtime is loaded. Convert it with <strong>Convert to native Infinite</strong> above; use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for raw scene access.</div>';
   html += '</section>';
+  if (page.mode === 'canvas' || page.mode === 'infinite') html += pluginPickerMarkup();
   root.innerHTML = html;
   bindPageInspector(page);
 }
@@ -2630,6 +2626,11 @@ function bindPageInspector(page: HcPage): void {
   qs<HTMLButtonElement>('#pageOpenFolderBtn')?.addEventListener('click', () => { void revealProjectFolder(undefined, 'documents'); });
   qs<HTMLButtonElement>('#pageSaveMasterBtn')?.addEventListener('click', () => openSaveMasterModal(page));
   qs<HTMLButtonElement>('#pageDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); }); });
+  bindPluginPicker(el('inspectorPanel'), plugin => {
+    const extra: Partial<HcBlock> = { data: plugin.defaultData(), name: plugin.label };
+    if (plugin.defaultSize) { extra.w = plugin.defaultSize.w; extra.h = plugin.defaultSize.h; }
+    void addBlock(plugin.type, extra);
+  });
 }
 
 function renderBlockInspector(): void {
@@ -2665,6 +2666,7 @@ function renderBlockInspector(): void {
     if (block.type === 'arrow') html += '<div class="field">' + '<span>Arrowhead</span><select id="blockArrowhead"><option value="arrow"' + ((block.arrowhead ?? 'arrow') === 'arrow' ? ' selected' : '') + '>Arrow</option><option value="none"' + (block.arrowhead === 'none' ? ' selected' : '') + '>None</option></select></div>';
   }
   html += '</section>';
+  html += pluginInspectorMarkup(block);
   root.innerHTML = html;
   bindBlockInspector(block);
 }
@@ -2676,6 +2678,7 @@ function bindBlockInspector(block: HcBlock): void {
     await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch } as HcOp], { refreshArtboard: refresh });
     renderInspector();
   };
+  bindPluginInspector(el('inspectorPanel'), block, data => { void update({ data }); });
   el<HTMLInputElement>('blockName').addEventListener('change', event => { void update({ name: (event.target as HTMLInputElement).value }, false); });
   el<HTMLInputElement>('blockX').addEventListener('change', event => { void update({ x: Number((event.target as HTMLInputElement).value) || 0 }); });
   el<HTMLInputElement>('blockY').addEventListener('change', event => { void update({ y: Number((event.target as HTMLInputElement).value) || 0 }); });
@@ -3477,6 +3480,7 @@ function renderPresentCanvasHtml(page: HcPage): string {
     else if (block.type === 'image') inner = block.src ? '<img src="' + esc(block.src) + '" style="width:100%;height:100%;object-fit:cover" />' : '';
     else if (block.type === 'shape') inner = '<div style="position:relative;width:100%;height:100%">' + shapeSvgMarkup(block) + (block.shape === 'frame' ? '' : shapeTextMarkup(block)) + '</div>';
     else if (block.type === 'freehand' || block.type === 'arrow') inner = vectorSvgMarkup(block);
+    else inner = pluginBlockMarkup(block) || pluginFallbackMarkup(block);
     html += '<div style="' + style + '">' + inner + '</div>';
   }
   return html + '</div>';

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 export const HCANVAS_SCHEMA = 'hadamard-canvas/1';
 
 export type HcPageMode = 'canvas' | 'html' | 'infinite' | 'whiteboard';
-export type HcBlockType = 'html' | 'text' | 'markdown' | 'code' | 'image' | 'shape' | 'freehand' | 'arrow';
+export type HcBlockType = 'html' | 'text' | 'markdown' | 'code' | 'image' | 'shape' | 'freehand' | 'arrow' | (string & {});
 export type HcShape = 'rect' | 'ellipse' | 'diamond' | 'triangle' | 'parallelogram' | 'trapezoid' | 'hexagon' | 'octagon' | 'star' | 'cross' | 'frame' | 'line';
 
 export interface HcPoint {
@@ -52,6 +52,8 @@ export interface HcBlock {
   alt?: string;
   /** shape block */
   shape?: HcShape;
+  /** plugin-defined payload; validated by the block plugin's fields/schema */
+  data?: Record<string, unknown>;
   /** freehand/arrow points in block-local coordinates */
   points?: HcPoint[];
   /** arrow end decoration */
