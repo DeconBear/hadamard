@@ -276,6 +276,7 @@
     "docx": "^9.15.1",
     "electron-updater": "^6.8.9",
     "glob": "^13.0.0",
+    "katex": "^0.16.47",
     "lodash-es": "^4.17.23",
     "marked": "^18.1.2",
     "multicast-dns": "^7.2.5",

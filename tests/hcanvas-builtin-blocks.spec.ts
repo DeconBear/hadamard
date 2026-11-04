@@ -8,7 +8,7 @@ function block(type: string, patch: Partial<HcBlock> = {}): HcBlock {
 
 describe('hcanvas builtin block definitions', () => {
   it('registers all built-in block types', () => {
-    expect(listBuiltinBlockDefinitions().map(definition => definition.type).sort()).toEqual(['arrow', 'code', 'freehand', 'html', 'image', 'markdown', 'shape', 'text']);
+    expect(listBuiltinBlockDefinitions().map(definition => definition.type).sort()).toEqual(['arrow', 'code', 'freehand', 'html', 'image', 'markdown', 'math', 'shape', 'text']);
     expect(builtinBlockDefinition('text')?.label).toBe('Text');
   });
 
@@ -33,5 +33,12 @@ describe('hcanvas builtin block definitions', () => {
     expect(blockAgentSummary(block('code', { code: 'const answer = 42;' }))).toBe('const answer = 42;');
     expect(blockAgentSummary(block('callout', { data: { title: 'Decision', body: 'Keep it small' } }))).toContain('Callout');
     expect(blockAgentSummary(block('callout', { data: { title: 'Decision', body: 'Keep it small' } }))).toContain('Decision');
+  });
+});
+describe('hcanvas math block renderer', () => {
+  it('renders a LaTeX block to MathML and reports an agent summary', () => {
+    const html = renderBlockBody(block('math', { data: { tex: 'E = mc^2' } }), 'export');
+    expect(html).toContain('<math');
+    expect(blockAgentSummary(block('math', { data: { tex: 'E = mc^2' } }))).toContain('formula');
   });
 });

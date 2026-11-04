@@ -1,7 +1,7 @@
 import { basicSetup, EditorView } from 'codemirror';
 import { html as htmlLang } from '@codemirror/lang-html';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { marked } from 'marked';
+import { renderMarkdownHtml, renderMathHtml } from '../markdown.js';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
@@ -940,7 +940,7 @@ function renderToolbarState(): void {
   selection.classList.toggle('hidden', !showSelection);
   if (block) {
     const editButton = el('selEditBtn');
-    editButton.textContent = block.type === 'html' ? 'Edit HTML' : block.type === 'shape' ? 'Edit text' : block.type === 'markdown' || block.type === 'code' || block.type === 'text' ? 'Edit source' : block.type === 'image' ? 'Image' : 'Style';
+    editButton.textContent = block.type === 'html' ? 'Edit HTML' : block.type === 'shape' ? 'Edit text' : block.type === 'math' ? 'Edit formula' : block.type === 'markdown' || block.type === 'code' || block.type === 'text' ? 'Edit source' : block.type === 'image' ? 'Image' : 'Style';
     editButton.style.display = selectedCount > 1 ? 'none' : '';
     const sliceButton = qs<HTMLElement>('#selSliceBtn');
     if (sliceButton) sliceButton.style.display = selectedCount === 1 && block.type === 'shape' && (block.shape === 'rect' || block.shape === 'polygon') && !block.rotation ? '' : 'none';
@@ -958,6 +958,7 @@ function editActiveBlock(): void {
     if (wrap) startShapeTextEdit(block, wrap, { getDoc: () => state.doc, commit: (target, patch, historyBase) => { void persistBlock(target, patch, historyBase || undefined); } });
   }
   else if (block.type === 'markdown' || block.type === 'code' || block.type === 'text') openSourceEditor({ pageId: page.id, blockId: block.id });
+  else if (block.type === 'math') openFormulaModal(block);
   else if (block.type === 'image') openImageModal(block);
   else renderInspector();
 }
@@ -1226,7 +1227,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   if (key === 's') { state.snap = !state.snap; renderToolbarState(); return; }
   if (event.key === '?') { openShortcutsModal(); return; }
   if (/^Digit[1-6]$/.test(event.code) && !event.shiftKey) {
-    const map: Record<string, HcBlock['type']> = { Digit1: 'html', Digit2: 'text', Digit3: 'markdown', Digit4: 'code', Digit6: 'shape' };
+    const map: Record<string, HcBlock['type']> = { Digit1: 'html', Digit2: 'text', Digit3: 'markdown', Digit4: 'code', Digit6: 'shape', Digit7: 'math' };
     const type = map[event.code];
     if (!type) return;
     event.preventDefault();
@@ -2014,6 +2015,7 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
         if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); text.blur(); }
       });
     } else if (block.type === 'markdown' || block.type === 'code') openSourceEditor({ pageId: activePage()!.id, blockId: block.id });
+    else if (block.type === 'math') openFormulaModal(block);
     else if (block.type === 'image') openImageModal(block);
   });
 }
@@ -2612,10 +2614,12 @@ function renderBlockInspector(): void {
   html += '<div class="actions-row">';
   if (block.type === 'html') html += '<button id="blockEditHtmlBtn" class="btn tiny primary">Edit HTML</button><button id="blockSourceBtn" class="btn tiny">Source</button>';
   if (block.type === 'markdown' || block.type === 'code' || block.type === 'text') html += '<button id="blockSourceBtn" class="btn tiny">Edit source</button>';
+  if (block.type === 'math') html += '<button id="blockMathEditBtn" class="btn tiny primary">Edit formula</button>';
   if (block.type === 'image') html += '<button id="blockImageBtn" class="btn tiny">Set image URL</button>';
   if (block.shape === 'frame') html += '<button id="blockDissolveFrameBtn" class="btn tiny">Dissolve frame</button>';
   html += '<button id="blockFrontBtn" class="btn tiny">Front</button><button id="blockBackBtn" class="btn tiny">Back</button><button id="blockDeleteBtn" class="btn tiny danger">Delete</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Style</div>';
+  if (block.type === 'math') html += '<div class="field"><span>LaTeX</span><textarea id="blockMathTex" rows="3">' + esc(String(block.data?.tex || '')) + '</textarea></div>';
   if (block.type === 'shape') {
     const shapeOptions = HCANVAS_SHAPE_CATEGORIES.map(category => '<optgroup label="' + esc(category) + '">' + HCANVAS_SHAPES.filter(shape => !shape.hidden && shape.category === category).map(shape => '<option value="' + shape.id + '"' + (block.shape === shape.id ? ' selected' : '') + '>' + esc(shape.label) + '</option>').join('') + '</optgroup>').join('');
     html += '<div class="field"><span>Shape</span><select id="blockShape">' + shapeOptions + (block.shape === 'polygon' ? '<optgroup label="Cut"><option value="polygon" selected>Polygon</option></optgroup>' : '') + '</select></div>';
@@ -2657,6 +2661,8 @@ function bindBlockInspector(block: HcBlock): void {
   qs<HTMLButtonElement>('#blockEditHtmlBtn')?.addEventListener('click', () => enterHtmlEdit(page.id, block.id));
   qs<HTMLButtonElement>('#blockSourceBtn')?.addEventListener('click', () => openSourceEditor({ pageId: page.id, blockId: block.id }));
   qs<HTMLButtonElement>('#blockImageBtn')?.addEventListener('click', () => openImageModal(block));
+  qs<HTMLButtonElement>('#blockMathEditBtn')?.addEventListener('click', () => openFormulaModal(block));
+  qs<HTMLTextAreaElement>('#blockMathTex')?.addEventListener('change', event => { void update({ data: { ...(block.data || {}), tex: (event.target as HTMLTextAreaElement).value } }); });
   qs<HTMLButtonElement>('#blockDissolveFrameBtn')?.addEventListener('click', () => { void dissolveFrame(block); });
   qs<HTMLButtonElement>('#blockDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this block?').then(ok => { if (ok) void deleteBlock(page.id, block.id); }); });
   qs<HTMLButtonElement>('#blockFrontBtn')?.addEventListener('click', () => { void update({ z: Math.max(...(page.blocks || []).map(item => item.z)) + 1 }); });
@@ -2976,6 +2982,7 @@ async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}, pos
     ...(type === 'code' ? { code: 'const answer = 42;', language: 'ts', style: { fill: '#171923', color: '#e2e8f0', radius: 14 } } : {}),
     ...(type === 'image' ? { src: 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=1200&q=80', alt: 'Image' } : {}),
     ...(type === 'shape' ? { shape: 'rect', style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 16 } } : {}),
+    ...(type === 'math' ? { data: { tex: 'E = mc^2' }, w: 520, h: 160 } : {}),
     ...extra,
   };
   const result = await applyOps([{ op: 'add_block', pageId: page.id, block }], { refreshArtboard: true });
@@ -3262,6 +3269,18 @@ function openSourceEditor(target: { pageId: string; blockId?: string }): void {
   openCodeModal({ title: page.name + ' · HTML source', kind: 'html', value: page.html || '', language: 'html', save: async next => { await applyOps([{ op: 'set_page_html', pageId: page.id, html: next }], { refreshArtboard: true }); } });
 }
 
+function openFormulaModal(block: HcBlock): void {
+  openCodeModal({
+    title: block.name || 'LaTeX formula',
+    kind: 'math',
+    value: String(block.data?.tex || ''),
+    language: 'tex',
+    save: async next => {
+      await applyOps([{ op: 'update_block', pageId: activePage()!.id, blockId: block.id, patch: { data: { ...(block.data || {}), tex: next } } } as HcOp], { refreshArtboard: true });
+    },
+  });
+}
+
 function openCodeModal(options: { title: string; kind: string; value: string; language: string; save: (next: string) => Promise<void> }): void {
   const modalHtml = '<div class="modal split"><div class="modal-head"><div><strong>' + esc(options.title) + '</strong><small>' + esc(options.kind.toUpperCase()) + ' · source and live preview</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="editor-pane"><span>Source</span><div id="codeEditorHost" class="editor-host"></div></div><div class="editor-pane"><span>Preview</span><div class="preview-host"><iframe id="codePreview" sandbox="allow-scripts"></iframe></div></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="saveCodeBtn" class="btn primary">Save changes</button></div></div>';
   openModal(modalHtml);
@@ -3291,7 +3310,8 @@ function openCodeModal(options: { title: string; kind: string; value: string; la
 
 function previewHtmlFor(kind: string, value: string): string {
   if (kind === 'html') return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}</style></head><body>' + value + '</body></html>';
-  if (kind === 'markdown') return '<!doctype html><html><head><meta charset="utf-8"><style>body{font:16px/1.6 Inter,sans-serif;padding:24px;color:#334155}h1,h2,h3{font-family:Georgia,serif}code{background:#f1f5f9;padding:1px 4px;border-radius:4px}</style></head><body>' + String(marked.parse(value, { async: false })) + '</body></html>';
+  if (kind === 'markdown') return '<!doctype html><html><head><meta charset="utf-8"><style>body{font:16px/1.6 Inter,sans-serif;padding:24px;color:#334155}h1,h2,h3{font-family:Georgia,serif}code{background:#f1f5f9;padding:1px 4px;border-radius:4px}blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid #a855f7;background:#faf7ff;color:#4b4058}blockquote p{margin:0}.hc-math-block{margin:14px 0;overflow-x:auto}.hc-math-inline{display:inline-block;vertical-align:middle}</style></head><body>' + renderMarkdownHtml(value) + '</body></html>';
+  if (kind === 'math') return '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:24px;color:#1f2430;font-family:Inter,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;box-sizing:border-box}.katex-display{margin:0;font-size:1.35em}</style></head><body>' + renderMathHtml(value, true) + '</body></html>';
   return '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:16px;background:#171923;color:#e2e8f0;font:12px/1.6 ui-monospace,Consolas,monospace;white-space:pre-wrap}</style></head><body>' + esc(value) + '</body></html>';
 }
 

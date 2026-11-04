@@ -1,4 +1,4 @@
-import { marked } from 'marked';
+import { renderMarkdownHtml, renderMathHtml } from '../markdown.js';
 import { shapeSvgMarkup, shapeTextMarkup } from '../shapes.js';
 import { vectorSvgMarkup } from '../vector.js';
 import { pluginBlockMarkup, pluginFallbackMarkup } from './pluginBlocks.js';
@@ -44,7 +44,7 @@ function renderMarkdown(block: HcBlock): HTMLElement {
   md.style.background = String(block.style?.fill || '#ffffff');
   md.style.borderRadius = String(block.style?.radius || 16) + 'px';
   md.style.border = '1px solid #e7e0d2';
-  md.innerHTML = marked.parse(block.markdown || '', { async: false }) as string;
+  md.innerHTML = renderMarkdownHtml(block.markdown || '');
   return md;
 }
 
@@ -86,6 +86,13 @@ function renderVector(block: HcBlock): HTMLElement {
   return host.firstElementChild as HTMLElement || host;
 }
 
+function renderMath(block: HcBlock): HTMLElement {
+  const host = document.createElement('div');
+  host.className = 'block-math';
+  host.innerHTML = renderMathHtml(String(block.data?.tex || ''), true);
+  return host;
+}
+
 function renderPlugin(block: HcBlock): HTMLElement {
   const host = document.createElement('div');
   host.className = 'block-plugin';
@@ -100,6 +107,7 @@ const definitions: ClientBlockDefinition[] = [
   { type: 'markdown', render: block => renderMarkdown(block) },
   { type: 'code', render: block => renderCode(block) },
   { type: 'image', render: block => renderImage(block) },
+  { type: 'math', render: block => renderMath(block) },
   { type: 'shape', render: block => renderShape(block) },
   { type: 'freehand', render: block => renderVector(block) },
   { type: 'arrow', render: block => renderVector(block) },

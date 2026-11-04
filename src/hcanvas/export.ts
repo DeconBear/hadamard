@@ -488,7 +488,7 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
       const editable = Boolean(options.editableHtml)
         && page.mode === 'canvas'
         && blocks.length > 0
-        && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow' || Boolean(blockPlugin(block.type)))
+        && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow' || block.type === 'math' || Boolean(blockPlugin(block.type)))
         && !blocks.some(block => block.type === 'image' && /^https?:/i.test(block.src || ''));
       if (editable) {
         addEditableCanvasSlide(pptx as unknown as { addSlide: () => any; ShapeType: { roundRect: string; ellipse: string } }, page, index, deckW, deckH);

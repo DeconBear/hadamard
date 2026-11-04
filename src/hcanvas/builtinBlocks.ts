@@ -1,4 +1,4 @@
-import { marked } from 'marked';
+import { renderMarkdownHtml, renderMathHtml } from './markdown.js';
 import { shapeSvgMarkup, shapeTextMarkup } from './shapes.js';
 import { vectorSvgMarkup } from './vector.js';
 import { blockPlugin } from './blockPlugins.js';
@@ -42,7 +42,7 @@ function textBody(block: HcBlock, mode: HcBlockRenderMode): string {
 }
 
 function markdownBody(block: HcBlock, mode: HcBlockRenderMode): string {
-  const html = marked.parse(block.markdown || '', { async: false }) as string;
+  const html = renderMarkdownHtml(block.markdown || '');
   return '<div class="hc-md" style="' + (mode === 'export' ? textStyle(block) : '') + '">' + html + '</div>';
 }
 
@@ -78,6 +78,7 @@ const definitions: HcBuiltinBlockDefinition[] = [
   { type: 'markdown', label: 'Markdown', hint: 'Markdown block', renderBody: markdownBody, summary: block => stripMarkup(block.markdown || '').slice(0, 100) },
   { type: 'code', label: 'Code', hint: 'Code block', renderBody: codeBody, summary: block => (block.code || '').split('\n')[0]?.slice(0, 100) || 'code' },
   { type: 'image', label: 'Image', hint: 'Image block', renderBody: imageBody, summary: block => block.alt || block.name || 'image' },
+  { type: 'math', label: 'Formula', hint: 'LaTeX formula block', renderBody: block => renderMathHtml(String(block.data?.tex || ''), true), summary: block => 'formula · ' + String(block.data?.tex || '').slice(0, 80) },
   { type: 'shape', label: 'Shape', hint: 'Shape block', renderBody: shapeBody, summary: block => block.text || block.name || ('shape · ' + (block.shape || 'rect')) },
   { type: 'freehand', label: 'Freehand', hint: 'Native freehand stroke', renderBody: block => vectorSvgMarkup(block), summary: () => 'freehand stroke' },
   { type: 'arrow', label: 'Arrow', hint: 'Native arrow', renderBody: block => vectorSvgMarkup(block), summary: () => 'arrow' },

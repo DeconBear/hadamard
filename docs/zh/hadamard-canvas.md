@@ -73,7 +73,82 @@ HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
 ## Canvas 页面
 
-块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。形状支持矩形、椭圆、菱形、三角形、平行四边形、梯形、六边形、八边形、星形、十字、直线和 frame，可设置填充、描边、线型与圆角；左侧 **Shape** 按钮悬停时会在右侧展开按 Basic / Lines / Flowchart / Stars & Banners / Callouts / Action Buttons 分组的 60+ 个 PPT 类形状；选中矩形/polygon 后点击选择工具栏的 **Slice**，拖一条切割线即可切成两个可编辑 polygon block（撤销可恢复）。无选中 block 时，Page Inspector 的 **Components** 区域可添加 Slider 等样式关联组件，并在 Inspector 调整 label/value/min/max/accent/track/text。在气泡中点选形状后，在画布上点击/拖拽放置；点击 Shape 或按 6 也会打开同一选择器。可用 **框选**、**Shift+click** 或点击组成员多选；**Ctrl/Cmd+G** 成组、**Ctrl/Cmd+Shift+G** 解组，拖动任一选中 block 会整体移动。图片可从文件夹直接拖入 Canvas/Infinite 页，或从剪贴板粘贴；侧边栏的图片插入按钮已移除，已有图片仍可在 Inspector 改 URL。形状选中后有 8 个角/边缩放手柄；直线则只有两个端点手柄，可自由拖动任一端改变方向和长度；拖动标签可移动，双击形状可直接编辑居中文字，Inspector 可改字体/字号/颜色；拖动时会显示并吸附到其他 block 或页面中心的智能参考线。转换后的 Excalidraw frame 会记录子元素 `frameId`，拖动 frame 时子元素跟随。**Arrow (A)** 落在 shape/text/image/frame 上时会自动绑定两端（`startBinding` / `endBinding`），移动或缩放被绑定元素时箭头端点自动跟随；文字 block 选中后可拖 block 本体，也可拖上方的小 **label 把手** 移动；双击就地编辑，`Esc` 结束。block 重叠时 **Alt+click** 会在叠放层之间循环选择。Infinite 页选择插入类型（HTML/Text/Markdown/Code/Shape）后进入 **click-to-place**：下一次点击画布才在该位置创建 block；坐标无边界，负 x/y 也有效，frame 不裁剪/限制 block，可在 Inspector 里 **Dissolve frame** 保留子元素。**Pen (P)** / **Arrow (A)** / **Eraser (E)** 可直接绘制、擦除原生矢量；手绘会平滑成 path，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。**Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** 撤销重做 block 编辑，**Ctrl/Cmd+C/V** 复制粘贴选中 block。Add Page 不再提供 Excalidraw Whiteboard，新画板请用 Infinite；已有旧白板可一键迁移。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
+块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。形状支持矩形、椭圆、菱形、三角形、平行四边形、梯形、六边形、八边形、星形、十字、直线和 frame，可设置填充、描边、线型与圆角；左侧 **Shape** 按钮悬停时会在右侧展开按 Basic / Lines / Flowchart / Stars & Banners / Callouts / Action Buttons 分组的 60+ 个 PPT 类形状；选中矩形/polygon 后点击选择工具栏的 **Slice**，拖一条切割线即可切成两个可编辑 polygon block（撤销可恢复）。无选中 block 时，Page Inspector 的 **Components** 区域可添加 Slider 等样式关联组件，并在 Inspector 调整 label/value/min/max/accent/track/text。在气泡中点选形状后，在画布上点击/拖拽放置；点击 Shape 或按 6 也会打开同一选择器。可用 **框选**、**Shift+click** 或点击组成员多选；**Ctrl/Cmd+G** 成组、**Ctrl/Cmd+Shift+G** 解组，拖动任一选中 block 会整体移动。Markdown 支持引用块（`> 引用`）、GFM 和 LaTeX 数学公式：行内 `$E=mc^2# Hadamard Canvas（hcanvas）
+
+Hadamard Canvas 是独立于桌面 GUI（`hadamard-gui`）的 AI-native 画布应用。人和 agent 操作同一份文档：
+
+- **HTML 页面**：沙箱渲染，可直接在页面上改文字/样式，也可用完整 HTML/CSS 源码编辑器；
+- **Canvas 页面**：可混合 HTML、文本、Markdown、代码、图片、形状、原生手绘与箭头块；
+- **Agent**：通过 JSON-first CLI 读写同一文档，不需要 MCP 或浏览器自动化。
+
+## 独立桌面应用
+
+Hadamard Canvas 可以作为独立 Electron 窗口运行，不只是一个浏览器标签页：
+
+```bash
+hcanvas desktop --workspace <dir> [--port 4319]
+# 或: npm run hcanvas:desktop -- --workspace <dir>
+# 或: node bin/hcanvas-desktop.js --workspace <dir>
+```
+
+桌面入口会启动本地 hcanvas 服务并打开原生窗口：无菜单栏、外链交给系统浏览器、窗口关闭时服务退出。原有浏览器模式（`hcanvas app`）继续保留。
+
+生成带 Canvas 图标的 Windows 便携版：
+
+```bash
+npm run build:hcanvas:desktop
+# dist_electron/canvas/Hadamard-Canvas-0.4.22-portable.exe
+```
+
+需要独立工作区时显式传路径：
+
+```powershell
+.\Hadamard-Canvas-0.4.22-portable.exe --workspace C:\Users\me\hcanvas --port 4319
+```
+
+改为构建 Windows 安装包：
+
+```bash
+npm run build:hcanvas:installer
+# dist_electron/canvas/Hadamard-Canvas-Setup-0.4.22.exe
+```
+
+安装包是标准 NSIS 向导：可选择安装目录、创建开始菜单与桌面快捷方式、自带卸载器，无需 system-wide 安装。
+
+## 启动
+
+```bash
+npx hcanvas app --workspace ~/.hcanvas
+npx hcanvas serve --workspace /path/to/workspace --port 4319
+```
+
+从本仓库运行：
+
+```bash
+npm run build
+node bin/hcanvas.js app --workspace plan/hcanvas-demo
+```
+
+工作区结构：
+
+```
+<workspace>/docs/<docId>.json     # 文档模型（pages、blocks、HTML）
+<workspace>/state.json            # 当前文档/页面/选中块、agent sessions
+<workspace>/daemon.json           # 服务 URL + token
+<workspace>/exports/              # HTML/PDF/PNG 导出
+```
+
+## HTML 直接编辑
+
+HTML 页面和 HTML block 在沙箱 iframe 中渲染：
+
+- **可视化**：双击文字直接编辑；鼠标悬停元素会显示命中轮廓，点击后可在 Inspector 查看层级路径和元素树；编辑横幅的 **Insert +** 会展开紧凑的元素面板（标题、段落、按钮、链接、图片、列表、引用、卡片、分隔线）；选中的元素还可使用快捷操作和自动应用的样式面板（无需点 Apply），内置 Title/Body/Muted/Accent/Card 预设，并可调颜色、背景、字号/字重、字间距、padding、对齐、圆角、行高；修改通过稳定的 `data-hc-id` patch 回 HTML 源；
+- **源码**：CodeMirror 编辑完整 HTML/CSS，实时预览；
+- 编辑模式下脚本禁用；预览模式使用带脚本、无同源的沙箱。
+
+## Canvas 页面
+
+块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、箭头（arrow）。形状支持矩形、椭圆、菱形、三角形、平行四边形、梯形、六边形、八边形、星形、十字、直线和 frame，可设置填充、描边、线型与圆角；左侧 **Shape** 按钮悬停时会在右侧展开按 Basic / Lines / Flowchart / Stars & Banners / Callouts / Action Buttons 分组的 60+ 个 PPT 类形状；选中矩形/polygon 后点击选择工具栏的 **Slice**，拖一条切割线即可切成两个可编辑 polygon block（撤销可恢复）。无选中 block 时，Page Inspector 的 **Components** 区域可添加 Slider 等样式关联组件，并在 Inspector 调整 label/value/min/max/accent/track/text。在气泡中点选形状后，在画布上点击/拖拽放置；点击 Shape 或按 6 也会打开同一选择器。可用 **框选**、**Shift+click** 或点击组成员多选；**Ctrl/Cmd+G** 成组、**Ctrl/Cmd+Shift+G** 解组，拖动任一选中 block 会整体移动。 / `\(x^2\)`，独立公式 `$...$` / `\[...\]`，通过 KaTeX 输出 MathML，因此导出和 Present 也能正常显示。左侧 **∑ Formula** 工具或快捷键 `7` 可插入独立 LaTeX block，双击或 **Edit formula** 打开源码 + 实时公式编辑器。图片可从文件夹直接拖入 Canvas/Infinite 页，或从剪贴板粘贴；侧边栏的图片插入按钮已移除，已有图片仍可在 Inspector 改 URL。形状选中后有 8 个角/边缩放手柄；直线则只有两个端点手柄，可自由拖动任一端改变方向和长度；拖动标签可移动，双击形状可直接编辑居中文字，Inspector 可改字体/字号/颜色；拖动时会显示并吸附到其他 block 或页面中心的智能参考线。转换后的 Excalidraw frame 会记录子元素 `frameId`，拖动 frame 时子元素跟随。**Arrow (A)** 落在 shape/text/image/frame 上时会自动绑定两端（`startBinding` / `endBinding`），移动或缩放被绑定元素时箭头端点自动跟随；文字 block 选中后可拖 block 本体，也可拖上方的小 **label 把手** 移动；双击就地编辑，`Esc` 结束。block 重叠时 **Alt+click** 会在叠放层之间循环选择。Infinite 页选择插入类型（HTML/Text/Markdown/Code/Shape）后进入 **click-to-place**：下一次点击画布才在该位置创建 block；坐标无边界，负 x/y 也有效，frame 不裁剪/限制 block，可在 Inspector 里 **Dissolve frame** 保留子元素。**Pen (P)** / **Arrow (A)** / **Eraser (E)** 可直接绘制、擦除原生矢量；手绘会平滑成 path，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。**Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** 撤销重做 block 编辑，**Ctrl/Cmd+C/V** 复制粘贴选中 block。Add Page 不再提供 Excalidraw Whiteboard，新画板请用 Infinite；已有旧白板可一键迁移。页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
 
 ## 无限画布与工具栏
 

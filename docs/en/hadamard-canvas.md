@@ -110,6 +110,120 @@ Canvas pages contain absolutely positioned blocks:
 
 Hover the left-rail **Shape** tool to open a categorized flyout with 60+ PowerPoint-like shapes (Basic, Lines, Flowchart, Stars & Banners, Callouts, Action Buttons). Select a rectangle or polygon and use **Slice** in the selection toolbar to draw a cutting line; the shape becomes two editable polygon blocks (undo restores it). A **Components** section in the page Inspector adds style-linked components such as the Slider, whose label/value/min/max/accent/track/text can be adjusted in the Inspector. Click a shape in the flyout, then click/drag on the canvas to place it. The same flyout opens from the Shape click/6 shortcut.
 
+Markdown supports blockquotes (`> quote`), GFM, and LaTeX math: inline `$E=mc^2# Hadamard Canvas (hcanvas)
+
+Hadamard Canvas is a standalone, AI-native canvas application. It runs independently from the desktop GUI (`hadamard-gui`) and exposes one document model to humans and agents:
+
+- **HTML pages** are rendered in a sandbox and can be edited directly in place (text, element styles) or through a full HTML/CSS source editor.
+- **Canvas pages** mix HTML, text, Markdown, code, image, shape, native freehand and arrow blocks.
+- **Agents** read and patch the same document through a small JSON-first CLI; no MCP or browser automation is required.
+
+## Run it
+
+```bash
+# Start the app (local server + browser UI)
+npx hcanvas app --workspace ~/.hcanvas
+
+# Or start the headless service for agents/UI clients
+npx hcanvas serve --workspace /path/to/workspace --port 4319
+```
+
+In this repository, build and run from source:
+
+```bash
+npm run build          # compiles the service/CLI and bundles the UI
+node bin/hcanvas.js app --workspace plan/hcanvas-demo
+```
+
+### Standalone desktop app
+
+Hadamard Canvas can run as its own Electron window, not just a browser tab:
+
+```bash
+hcanvas desktop --workspace <dir> [--port 4319]
+# or: npm run hcanvas:desktop -- --workspace <dir>
+# or: node bin/hcanvas-desktop.js --workspace <dir>
+```
+
+The desktop entry starts the local hcanvas service, opens a native window and closes the server when the window closes; the browser workflow (`hcanvas app`) remains available.
+
+Package a Windows portable build with the Canvas icon:
+
+```bash
+npm run build:hcanvas:desktop
+# dist_electron/canvas/Hadamard-Canvas-0.4.22-portable.exe
+```
+
+Run the portable exe with an explicit workspace when you want a self-contained copy:
+
+```powershell
+.\Hadamard-Canvas-0.4.22-portable.exe --workspace C:\Users\me\hcanvas --port 4319
+```
+
+Build the Windows installer instead of the portable exe:
+
+```bash
+npm run build:hcanvas:installer
+# dist_electron/canvas/Hadamard-Canvas-Setup-0.4.22.exe
+```
+
+The installer is a normal NSIS wizard: choose the install directory, creates Start Menu and desktop shortcuts, and includes an uninstaller. It does not require a system-wide install.
+
+The workspace stores documents, state and exports:
+
+```
+<workspace>/docs/<docId>.json     # document model (pages, blocks, HTML)
+<workspace>/state.json            # active document/page/block and agent sessions
+<workspace>/daemon.json           # URL + token for the running local service
+<workspace>/exports/              # HTML/PDF/PNG output
+```
+
+## Legacy whiteboard preview
+
+Whiteboard pages are **legacy read-only pages**. hcanvas renders their stored Excalidraw scene through the native block renderer — no Excalidraw bundle or runtime is loaded or served. The Inspector exposes **Convert to native Infinite**; converted pages become normal editable Infinite pages.
+
+## Page thumbnails and deck management
+
+The left page rail renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks, and legacy whiteboard pages render a native conversion of their scene. Hovering a page reveals **move up / move down / duplicate / delete** actions, so a deck can be reordered and duplicated like a slide sorter.
+
+## Page types and local HTML
+
+Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (legacy Excalidraw scene; new pages use native Infinite). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. Select blocks with **drag-marquee**, **Shift+click**, or by clicking a grouped block; **Ctrl/Cmd+G** groups / **Ctrl/Cmd+Shift+G** ungroups, and dragging any selected block moves the whole selection. Frames contain converted Excalidraw children: dragging a frame moves its `frameId` children with it. **Arrow (A)** snaps its endpoints to shapes, text, images and frames when dropped on them; bindings are stored as `startBinding` / `endBinding` and the arrow follows when a bound block is moved or resized. Text blocks can be dragged by their body after selection or by the small **label handle** above the block; double-click edits in place, `Esc` finishes. When blocks overlap, **Alt+click** cycles through the stacked blocks. On Infinite pages, choosing an insert type (HTML/Text/Markdown/Code/Shape) enters **click-to-place** mode: the next canvas click creates the block at that world coordinate. Infinite coordinates are unbounded (negative x/y are valid) and frames never clip or constrain blocks; a frame can be **dissolved** from its Inspector while keeping its children. **Pen (P)**, **Arrow (A)** and **Eraser (E)** draw/erase native vectors directly on Infinite pages; freehand strokes are smoothed into paths, stored in the document JSON as block points, resizable, and use stroke color/width from the Inspector. **Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** undo and redo block edits, **Ctrl/Cmd+C/V** copy and paste the selected block. Add Page also provides 19 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/... (line truncated to 2000 chars)
+
+Import a local HTML file from the desktop with **Import HTML** in the top bar (max 5MB) or:
+
+```bash
+hcanvas import ~/Desktop/page.html <doc-id> --title "Imported page" --width 1280 --height 720
+```
+
+The HTML is embedded into a new HTML page; editing it inside hcanvas does not modify the original file. Re-import to pick up external changes.
+
+## Direct HTML editing
+
+HTML pages and HTML blocks render in a sandboxed iframe:
+
+- **Visual mode**: double-click text to edit it in place; hover any element to see its hit outline and click to inspect it. The edit banner's **Insert +** opens a compact element palette (heading, paragraph, button, link, image, list, quote, card, divider); the Inspector also shows the element path, element tree, quick actions and a live style panel. Style changes apply automatically (no Apply button); Title/Body/Muted/Accent/Card presets cover common typography and surface styles, with color, background, size, weight, spacing, padding, radius and alignment controls. Changes are patched back to the HTML source with stable `data-hc-id` targets.
+- **Source mode**: open the source editor (CodeMirror) for full HTML/CSS editing with a live preview.
+- Stable IDs mean an agent can patch one element without rewriting the page.
+- In edit mode scripts are disabled; in preview mode the iframe runs with a sandboxed opaque origin.
+
+## Canvas pages
+
+Canvas pages contain absolutely positioned blocks:
+
+| Block | Content |
+|---|---|
+| HTML | Sandboxed HTML fragment, directly editable |
+| Text | Plain text with font/color controls |
+| Markdown | Markdown source rendered on the canvas |
+| Code | Syntax-preserved code preview |
+| Image | Drop an image file from a folder, or paste an image from the clipboard; URL still editable in Inspector |
+| Shape | Rectangle, ellipse, diamond, triangle, parallelogram, trapezoid, hexagon, octagon, star, cross, line or frame; fill, stroke, stroke style, radius; optional centered text label |
+
+Hover the left-rail **Shape** tool to open a categorized flyout with 60+ PowerPoint-like shapes (Basic, Lines, Flowchart, Stars & Banners, Callouts, Action Buttons). Select a rectangle or polygon and use **Slice** in the selection toolbar to draw a cutting line; the shape becomes two editable polygon blocks (undo restores it). A **Components** section in the page Inspector adds style-linked components such as the Slider, whose label/value/min/max/accent/track/text can be adjusted in the Inspector. Click a shape in the flyout, then click/drag on the canvas to place it. The same flyout opens from the Shape click/6 shortcut.
+
+ / `\(x^2\)`, display `$...$` / `\[...\]`. Math is rendered through KaTeX to MathML, so it also works in exports and Present. The left-rail **∑ Formula** tool (or key `7`) inserts a dedicated LaTeX block; double-click or **Edit formula** opens a source + live-math editor.
+
 Images are inserted by dragging a file from the filesystem directly onto a Canvas/Infinite page, or by pasting an image from the clipboard. The old sidebar Image insertion button has been removed; selecting an existing image still lets you replace its URL in the Inspector.
 
 Shapes behave like PowerPoint/Figma objects: select one to get eight resize handles (corners and edges), drag the label to move, double-click the shape to edit its centered text, and use the Inspector for text font/size/color. Lines are different: they expose two endpoint handles so either end can be moved freely instead of scaling a bounding box. While dragging, edge/center smart guides snap the block to other blocks and page centers.
