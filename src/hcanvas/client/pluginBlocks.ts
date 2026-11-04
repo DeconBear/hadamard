@@ -54,11 +54,11 @@ export function pluginPickerMarkup(): string {
       const meta = plugin.pluginName ? ' · ' + plugin.source : '';
       return '<button type="button" class="plugin-block-btn" data-plugin-add="' + escapeHtml(plugin.type) + '" title="' + escapeHtml(plugin.hint || plugin.label) + '"><strong>' + escapeHtml(plugin.label) + '</strong><small>' + escapeHtml((plugin.hint || 'Custom block') + meta) + '</small></button>';
     }).join('') : '<p class="empty-state">No plugin blocks installed.</p>') +
-    '</div><div class="plugin-block-actions"><button type="button" class="btn tiny" data-plugin-reload>Reload plugins</button><span class="inspector-note">Project: <code>.hcanvas/plugins/</code> · user: <code>~/.hadamard/hcanvas/plugins/</code></span></div>' +
+    '</div><div class="plugin-block-actions"><button type="button" class="btn tiny" data-plugin-manage>Manage</button><button type="button" class="btn tiny" data-plugin-reload>Reload</button><span class="inspector-note">Project: <code>.hcanvas/plugins/</code> · user: <code>~/.hadamard/hcanvas/plugins/</code></span></div>' +
     (lastExternalLoad?.errors.length ? '<p class="plugin-error-note">' + lastExternalLoad.errors.length + ' plugin error' + (lastExternalLoad.errors.length === 1 ? '' : 's') + ' · reload to retry</p>' : '') + '</section>';
 }
 
-export function bindPluginPicker(root: HTMLElement, onAdd: (plugin: HcBlockPlugin) => void, onReload?: () => void): void {
+export function bindPluginPicker(root: HTMLElement, onAdd: (plugin: HcBlockPlugin) => void, onReload?: () => void, onManage?: () => void): void {
   const plugins = listBlockPlugins();
   root.querySelectorAll<HTMLButtonElement>('[data-plugin-add]').forEach(button => {
     button.addEventListener('click', () => {
@@ -67,6 +67,19 @@ export function bindPluginPicker(root: HTMLElement, onAdd: (plugin: HcBlockPlugi
     });
   });
   root.querySelector<HTMLButtonElement>('[data-plugin-reload]')?.addEventListener('click', () => onReload?.());
+  root.querySelector<HTMLButtonElement>('[data-plugin-manage]')?.addEventListener('click', () => onManage?.());
+}
+
+export interface PluginCatalogEntry {
+  manifest: HcPluginManifest;
+  source?: 'project' | 'user';
+  path?: string;
+  enabled: boolean;
+}
+
+export interface PluginCatalog {
+  plugins: PluginCatalogEntry[];
+  errors: string[];
 }
 
 export interface ExternalPluginLoad {
@@ -76,11 +89,17 @@ export interface ExternalPluginLoad {
 }
 
 let lastExternalLoad: ExternalPluginLoad | null = null;
+let lastCatalog: PluginCatalog = { plugins: [], errors: [] };
 
-export function registerDeclarativePlugins(entries: Array<{ manifest: HcPluginManifest; source?: 'project' | 'user' }>): ExternalPluginLoad {
+export function getPluginCatalog(): PluginCatalog {
+  return lastCatalog;
+}
+
+export function registerDeclarativePlugins(entries: Array<{ manifest: HcPluginManifest; source?: 'project' | 'user'; enabled?: boolean }>): ExternalPluginLoad {
   const errors: string[] = [];
   let loaded = 0;
   for (const entry of entries) {
+    if (entry.enabled === false) continue;
     const manifest = entry.manifest;
     for (const block of manifest.blocks) {
       if (blockPlugin(block.type)) {
@@ -109,12 +128,15 @@ export function registerDeclarativePlugins(entries: Array<{ manifest: HcPluginMa
 export async function loadExternalPlugins(fetcher: (path: string) => Promise<unknown>): Promise<ExternalPluginLoad> {
   clearExternalBlockPlugins();
   try {
-    const payload = await fetcher('/api/plugins') as { plugins?: Array<{ manifest: HcPluginManifest; source?: 'project' | 'user'; path?: string }>; errors?: string[] };
-    const result = registerDeclarativePlugins(Array.isArray(payload.plugins) ? payload.plugins : []);
+    const payload = await fetcher('/api/plugins') as { plugins?: Array<{ manifest: HcPluginManifest; source?: 'project' | 'user'; path?: string; enabled?: boolean }>; errors?: string[] };
+    const entries = (Array.isArray(payload.plugins) ? payload.plugins : []).map(item => ({ ...item, enabled: item.enabled !== false }));
+    lastCatalog = { plugins: entries, errors: payload.errors || [] };
+    const result = registerDeclarativePlugins(entries);
     lastExternalLoad = { ...result, errors: [...(payload.errors || []), ...result.errors] };
     return lastExternalLoad;
   } catch (error) {
-    lastExternalLoad = { loaded: 0, plugins: 0, errors: [error instanceof Error ? error.message : String(error)] };
+    lastCatalog = { plugins: [], errors: [error instanceof Error ? error.message : String(error)] };
+    lastExternalLoad = { loaded: 0, plugins: 0, errors: lastCatalog.errors };
     return lastExternalLoad;
   }
 }

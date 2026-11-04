@@ -12,7 +12,8 @@ import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
 import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
-import { bindPluginInspector, bindPluginPicker, loadExternalPlugins, pluginBlockMarkup, pluginFallbackMarkup, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
+import { bindPluginInspector, bindPluginPicker, getPluginCatalog, loadExternalPlugins, pluginBlockMarkup, pluginFallbackMarkup, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
+import { openPluginManager } from './pluginManager.js';
 import { installImageInsert } from './imageInsert.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
@@ -2612,6 +2613,16 @@ function bindPageInspector(page: HcPage): void {
   qs<HTMLButtonElement>('#pageOpenFolderBtn')?.addEventListener('click', () => { void revealProjectFolder(undefined, 'documents'); });
   qs<HTMLButtonElement>('#pageSaveMasterBtn')?.addEventListener('click', () => openSaveMasterModal(page));
   qs<HTMLButtonElement>('#pageDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); }); });
+  const openManager = (): void => openPluginManager({
+    catalog: getPluginCatalog(),
+    request: api,
+    reload: () => loadExternalPlugins(api),
+    onChanged: renderInspector,
+    open: openManager,
+    close: () => closeModal(),
+    openModal: html => openModal(html),
+    toast,
+  });
   bindPluginPicker(el('inspectorPanel'), plugin => {
     const extra: Partial<HcBlock> = { data: plugin.defaultData(), name: plugin.label };
     if (plugin.defaultSize) { extra.w = plugin.defaultSize.w; extra.h = plugin.defaultSize.h; }
@@ -2620,7 +2631,7 @@ function bindPageInspector(page: HcPage): void {
     const result = await loadExternalPlugins(api);
     toast('Plugins: ' + result.loaded + ' block' + (result.loaded === 1 ? '' : 's') + ' loaded' + (result.errors.length ? ' · ' + result.errors.length + ' error' + (result.errors.length === 1 ? '' : 's') : ''), result.errors.length ? 'error' : 'success');
     renderInspector();
-  });
+  }, () => openManager());
 }
 
 function renderBlockInspector(): void {

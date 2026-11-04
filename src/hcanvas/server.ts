@@ -17,7 +17,7 @@ import {
 import type { HcBlock, HcDocument, HcOp, HcPage, HcPagePreset } from './types.js';
 import { resolveLlmConfig, runAgentChat, type AgentChatMessage } from './agentChat.js';
 import { workspaceInfo } from './workspace.js';
-import { discoverPlugins } from './pluginLoader.js';
+import { discoverPlugins, setPluginEnabled } from './pluginLoader.js';
 import { listProjects } from './projectRegistry.js';
 
 export interface HcServerOptions {
@@ -497,6 +497,14 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       }
       if (pathname === '/api/plugins' && req.method === 'GET') {
         const discovery = await discoverPlugins(options.workspace);
+        json(res, 200, { ok: true, plugins: discovery.plugins, errors: discovery.errors });
+        return;
+      }
+      if (pathname === '/api/plugins/toggle' && req.method === 'POST') {
+        const body = await readBody(req);
+        const id = String(body.id || '');
+        if (!id) throw new HcValidationError('id is required');
+        const discovery = await setPluginEnabled(options.workspace, id, body.enabled !== false);
         json(res, 200, { ok: true, plugins: discovery.plugins, errors: discovery.errors });
         return;
       }
