@@ -708,3 +708,16 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .plugin-preset-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .plugin-preset-copy strong { font-size: 10px; font-weight: 700; }
 .plugin-preset-copy small { font-size: 8px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.plugin-gallery-modal { max-width: 640px; }
+.gallery-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.gallery-card { padding: 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); display: flex; flex-direction: column; gap: 7px; }
+.gallery-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.gallery-card-head > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gallery-card-head strong { font-size: 11px; color: var(--ink); }
+.gallery-card-head small { font-size: 8px; color: var(--muted); }
+.gallery-badge { flex: 0 0 auto; padding: 3px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 600 8px/1.2 Inter, sans-serif; }
+.gallery-card p { margin: 0; min-height: 34px; font-size: 9px; line-height: 1.45; color: var(--muted); }
+.gallery-card .btn { align-self: flex-start; }
+.plugin-gallery-modal textarea { width: 100%; box-sizing: border-box; font: 10px/1.45 ui-monospace, Consolas, monospace; }
+.plugin-manager-row .btn.danger { margin-left: auto; flex: 0 0 auto; }

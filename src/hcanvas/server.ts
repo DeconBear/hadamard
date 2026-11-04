@@ -18,6 +18,7 @@ import type { HcBlock, HcDocument, HcOp, HcPage, HcPagePreset } from './types.js
 import { resolveLlmConfig, runAgentChat, type AgentChatMessage } from './agentChat.js';
 import { workspaceInfo } from './workspace.js';
 import { discoverPlugins, setPluginEnabled } from './pluginLoader.js';
+import { installPluginManifest, listGallerySamples, uninstallProjectPlugin } from './pluginGallery.js';
 import { blockAgentSummary } from './builtinBlocks.js';
 import { createPluginScaffold } from './pluginScaffold.js';
 import { listProjects } from './projectRegistry.js';
@@ -502,10 +503,28 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         json(res, 200, { ok: true, plugins: discovery.plugins, errors: discovery.errors });
         return;
       }
+      if (pathname === '/api/plugins/gallery' && req.method === 'GET') {
+        json(res, 200, { ok: true, samples: listGallerySamples() });
+        return;
+      }
       if (pathname === '/api/plugins/scaffold' && req.method === 'POST') {
         const body = await readBody(req);
         const scaffold = await createPluginScaffold(options.workspace, body.kind === 'page' ? 'page' : 'block');
         json(res, 201, { ok: true, ...scaffold });
+        return;
+      }
+      if (pathname === '/api/plugins/install' && req.method === 'POST') {
+        const body = await readBody(req);
+        const result = await installPluginManifest(options.workspace, body.manifest, body.overwrite === true);
+        json(res, 201, { ok: true, plugin: result.plugin, discovery: result.discovery });
+        return;
+      }
+      if (pathname === '/api/plugins/uninstall' && req.method === 'POST') {
+        const body = await readBody(req);
+        const id = typeof body.id === 'string' ? body.id : '';
+        if (!id) throw new HcValidationError('id is required');
+        const discovery = await uninstallProjectPlugin(options.workspace, id);
+        json(res, 200, { ok: true, discovery });
         return;
       }
       if (pathname === '/api/plugins/toggle' && req.method === 'POST') {

@@ -13,6 +13,7 @@ import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
 import { bindPluginInspector, bindPluginPicker, getPluginCatalog, loadExternalPlugins, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
 import { renderCanvasBlockContent } from './blockRenderers.js';
 import { openPluginManager } from './pluginManager.js';
+import { openPluginGallery } from './pluginGallery.js';
 import { installImageInsert } from './imageInsert.js';
 import { bindPluginPagePicker, pluginPagePickerMarkup } from './pluginPages.js';
 import { renderPresentCanvasHtml } from './presentCanvas.js';
@@ -2532,12 +2533,24 @@ function bindPageInspector(page: HcPage): void {
   qs<HTMLButtonElement>('#pageOpenFolderBtn')?.addEventListener('click', () => { void revealProjectFolder(undefined, 'documents'); });
   qs<HTMLButtonElement>('#pageSaveMasterBtn')?.addEventListener('click', () => openSaveMasterModal(page));
   qs<HTMLButtonElement>('#pageDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); }); });
+  const openGallery = (): void => openPluginGallery({
+    request: api,
+    reload: () => loadExternalPlugins(api),
+    onChanged: renderInspector,
+    open: openGallery,
+    close: () => closeModal(),
+    openManager,
+    openModal: html => openModal(html),
+    toast,
+  });
   const openManager = (): void => openPluginManager({
     catalog: getPluginCatalog(),
     request: api,
     reload: () => loadExternalPlugins(api),
     onChanged: renderInspector,
     open: openManager,
+    openGallery,
+    confirm: message => confirmDialog(message),
     close: () => closeModal(),
     openModal: html => openModal(html),
     toast,
