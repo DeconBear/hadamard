@@ -721,3 +721,30 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .gallery-card .btn { align-self: flex-start; }
 .plugin-gallery-modal textarea { width: 100%; box-sizing: border-box; font: 10px/1.45 ui-monospace, Consolas, monospace; }
 .plugin-manager-row .btn.danger { margin-left: auto; flex: 0 0 auto; }
+
+.present-stage { cursor: pointer; }
+.present-notes, .present-bar { cursor: default; }
+
+.present-context-menu {
+  position: fixed; z-index: 4000; min-width: 210px; padding: 6px;
+  border: 1px solid rgba(255,255,255,.14); border-radius: 10px;
+  background: rgba(24, 28, 38, .97); color: #f2efe9;
+  box-shadow: 0 18px 48px rgba(0,0,0,.42); backdrop-filter: blur(12px);
+}
+.present-context-menu button {
+  display: flex; align-items: center; width: 100%; padding: 8px 10px;
+  border: 0; border-radius: 6px; background: transparent; color: inherit;
+  font: 500 12px/1.25 Inter, ui-sans-serif, system-ui, sans-serif; text-align: left; cursor: pointer;
+}
+.present-context-menu button:hover:not(:disabled) { background: rgba(255,255,255,.12); }
+.present-context-menu button:disabled { color: rgba(255,255,255,.32); cursor: default; }
+.present-context-menu button.checked { color: #fca5a5; }
+.present-menu-sep { height: 1px; margin: 5px 6px; background: rgba(255,255,255,.12); }
+.present-laser {
+  position: fixed; z-index: 4500; width: 18px; height: 18px; border-radius: 50%;
+  pointer-events: none; transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 40% 40%, #fff 0 8%, #f87171 22%, #dc2626 58%, rgba(220,38,38,.2) 75%, transparent 78%);
+  box-shadow: 0 0 8px 3px rgba(248,113,113,.55), 0 0 26px 8px rgba(220,38,38,.35);
+}
+.present-laser.hidden { display: none; }
+.present-root.laser-active .present-stage { cursor: none; }

@@ -128,7 +128,7 @@ Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas
 
 - **Slide templates**: Cover, Section, Two columns, Quote and Agenda (16:9 HTML pages), plus blank slide/A4/poster.
 - **Speaker notes**: edit per-page notes in the Inspector; Present mode has a Notes toggle and PPTX export writes notes into the deck.
-- **Present**: full-screen page navigation with notes; legacy whiteboard pages render through the native conversion.
+- **Present**: full-screen page navigation with notes; click the screen or scroll the wheel to go forward/back, right-click for previous/next/laser/notes/exit, and press L to toggle the laser pointer. Legacy whiteboard pages render through the native conversion.
 - **PowerPoint export**: `hcanvas export <doc> --format pptx` produces a 16:9 PPTX with one slide per page and speaker notes.
   - **Canvas pages** with text/shape/image blocks become **editable PowerPoint** text boxes and shapes (no HTML blocks).
   - `format=pptx-editable` additionally maps HTML headings, paragraphs, lists, inline labels and background cards to native PowerPoint text boxes/shapes using real browser layout data; pages with no extractable text fall back to images.

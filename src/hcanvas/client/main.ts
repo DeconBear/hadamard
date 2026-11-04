@@ -17,6 +17,7 @@ import { openPluginGallery } from './pluginGallery.js';
 import { installImageInsert } from './imageInsert.js';
 import { bindPluginPagePicker, pluginPagePickerMarkup } from './pluginPages.js';
 import { renderPresentCanvasHtml } from './presentCanvas.js';
+import { installPresentInteractions, type PresentInteractions } from './presentControls.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
 import { addLineEndpointHandles } from './lineEndpoints.js';
@@ -131,6 +132,7 @@ let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 let pagesRenderTimer: ReturnType<typeof setTimeout> | undefined;
 
 let shapePicker: ShapePicker | null = null;
+let presentInteractions: PresentInteractions | null = null;
 
 const state: UiState = {
   docs: [], doc: null, activePageId: null, activeBlockId: null, selectedBlockIds: [], editing: null,
@@ -716,6 +718,15 @@ function bindStaticActions(): void {
   });
   el('addPageMini').addEventListener('click', () => openAddPageModal());
   el('presentBtn').addEventListener('click', () => openPresent());
+  presentInteractions = installPresentInteractions({
+    root: el('presentRoot'),
+    isActive: () => state.presenting,
+    next: delta => nextPresent(delta),
+    close: () => closePresent(),
+    toggleNotes: () => togglePresentNotes(),
+    canPrev: () => Boolean(state.doc && state.presentIndex > 0),
+    canNext: () => Boolean(state.doc && state.presentIndex < state.doc.pages.length - 1),
+  });
   el('exportBtn').addEventListener('click', event => { event.stopPropagation(); toggleExportMenu(); });
   document.addEventListener('click', event => {
     const menu = el('exportMenu');
@@ -3336,14 +3347,23 @@ function openPresent(): void {
   if (!state.doc) return;
   state.presenting = true;
   state.presentIndex = Math.max(0, state.doc.pages.findIndex(page => page.id === state.activePageId));
+  presentInteractions?.reset();
   renderPresent();
 }
 function closePresent(): void {
   state.presenting = false;
+  presentInteractions?.reset();
   const root = el('presentRoot');
   root.classList.add('hidden');
   root.textContent = '';
   renderToolbarState();
+}
+function togglePresentNotes(): void {
+  const notes = el('presentNotes');
+  const page = state.doc?.pages[state.presentIndex];
+  notes.classList.toggle('hidden');
+  notes.textContent = page?.notes || 'No speaker notes for this page.';
+  fitPresentPage();
 }
 function nextPresent(delta: number): void {
   if (!state.doc) return;
@@ -3362,12 +3382,7 @@ function renderPresent(): void {
   qs<HTMLButtonElement>('#presentPrev')?.addEventListener('click', () => nextPresent(-1));
   qs<HTMLButtonElement>('#presentNext')?.addEventListener('click', () => nextPresent(1));
   qs<HTMLButtonElement>('#presentClose')?.addEventListener('click', () => closePresent());
-  qs<HTMLButtonElement>('#presentNotesBtn')?.addEventListener('click', () => {
-    const notes = el('presentNotes');
-    notes.classList.toggle('hidden');
-    notes.textContent = page.notes || 'No speaker notes for this page.';
-    fitPresentPage();
-  });
+  qs<HTMLButtonElement>('#presentNotesBtn')?.addEventListener('click', () => togglePresentNotes());
   el('presentNotes').textContent = page.notes || '';
   const presentPage = page.mode === 'infinite' ? (() => {
     const metrics = pageMetrics(page);

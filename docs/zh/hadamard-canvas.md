@@ -83,7 +83,7 @@ HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
 - **幻灯片模板**：Cover、Section、Two columns、Quote、Agenda（16:9 HTML 页），以及空白 slide/A4/海报模板。
 - **Speaker notes**：在 Inspector 编辑每页备注；Present 模式有 Notes 开关，PPTX 导出会写入 notes。
-- **Present**：全屏翻页演示；Excalidraw 白板页以干净的只读 view mode 展示。
+- **Present**：全屏翻页演示；单击屏幕或滚轮上下翻页，右键菜单提供上一页/下一页/激光笔/备注/退出，按 L 切换激光笔；Excalidraw 白板页以干净的只读 view mode 展示。
 - **PowerPoint 导出**：`hcanvas export <doc> --format pptx` 生成 16:9 PPTX，一页一张 slide，并带 speaker notes。
   - **Canvas 页面**（文本/形状/图片块，不含 HTML 块）会导出为**可编辑的 PowerPoint 文本框和形状**；
   - `format=pptx-editable` 还会用真实浏览器布局数据，把 HTML 标题、段落、列表、内联标签和卡片背景映射为原生 PowerPoint 文本框/形状；无文本可提取的页面回退为图片；
