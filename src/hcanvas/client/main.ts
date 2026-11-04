@@ -1,21 +1,21 @@
 import { basicSetup, EditorView } from 'codemirror';
 import { html as htmlLang } from '@codemirror/lang-html';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { marked } from 'marked';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
-import { vectorSvgMarkup } from '../vector.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
-import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup, shapeTextMarkup } from '../shapes.js';
+import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup } from '../shapes.js';
 import { HTML_INSERT_PRESETS, bindHtmlStyleControls, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, htmlBreadcrumbMarkup, htmlStylePresetMarkup, insertHtmlPreset, installHtmlHoverHighlight, type HtmlEditingContext } from './htmlEditing.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
 import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
-import { bindPluginInspector, bindPluginPicker, getPluginCatalog, loadExternalPlugins, pluginBlockMarkup, pluginFallbackMarkup, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
+import { bindPluginInspector, bindPluginPicker, getPluginCatalog, loadExternalPlugins, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
+import { renderCanvasBlockContent } from './blockRenderers.js';
 import { openPluginManager } from './pluginManager.js';
 import { installImageInsert } from './imageInsert.js';
 import { bindPluginPagePicker, pluginPagePickerMarkup } from './pluginPages.js';
+import { renderPresentCanvasHtml } from './presentCanvas.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
 import { addLineEndpointHandles } from './lineEndpoints.js';
@@ -1850,72 +1850,10 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
   const blocks = [...(page.blocks || [])].sort((left, right) => left.z - right.z);
   for (const block of blocks) {
     const wrap = blockWrapper(block, page);
+    const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
     const content = document.createElement('div');
     content.className = 'block-content';
-    const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
-    if (block.type === 'html') {
-      const iframe = document.createElement('iframe');
-      iframe.setAttribute('sandbox', editing ? 'allow-same-origin' : 'allow-scripts');
-      iframe.setAttribute('title', block.name || 'HTML block');
-      iframe.srcdoc = wrapBlockHtml(block.html || '');
-      iframe.addEventListener('load', () => { if (editing) setupHtmlEditing(iframe, page.id, block.id); });
-      content.appendChild(iframe);
-    } else if (block.type === 'text') {
-      const text = document.createElement('div');
-      text.className = 'block-text';
-      text.style.fontSize = (block.style?.fontSize || 20) + 'px';
-      text.style.fontWeight = String(block.style?.fontWeight || 400);
-      text.style.color = String(block.style?.color || '#1d232e');
-      text.style.fontFamily = String(block.style?.fontFamily || 'Inter, sans-serif');
-      text.style.textAlign = String(block.style?.align || 'left');
-      text.style.lineHeight = String(block.style?.lineHeight || 1.25);
-      text.textContent = block.text || '';
-      content.appendChild(text);
-    } else if (block.type === 'markdown') {
-      const md = document.createElement('div');
-      md.className = 'block-md';
-      md.style.background = String(block.style?.fill || '#ffffff');
-      md.style.borderRadius = String(block.style?.radius || 16) + 'px';
-      md.style.border = '1px solid #e7e0d2';
-      md.innerHTML = marked.parse(block.markdown || '', { async: false }) as string;
-      content.appendChild(md);
-    } else if (block.type === 'code') {
-      const code = document.createElement('div');
-      code.className = 'block-code';
-      code.style.background = String(block.style?.fill || '#171923');
-      code.style.borderRadius = String(block.style?.radius || 14) + 'px';
-      code.innerHTML = '<span class="lang">' + esc(block.language || 'code') + '</span><pre style="color:' + esc(String(block.style?.color || '#e2e8f0')) + '"><code>' + esc(block.code || '') + '</code></pre>';
-      content.appendChild(code);
-    } else if (block.type === 'image') {
-      const img = document.createElement('div');
-      img.className = 'block-image';
-      img.style.borderRadius = String(block.style?.radius || 14) + 'px';
-      img.style.overflow = 'hidden';
-      if (block.src) img.innerHTML = '<img src="' + esc(block.src) + '" alt="' + esc(block.alt || '') + '" />';
-      else img.innerHTML = '<div style="display:grid;place-items:center;height:100%;background:#f1eee7;color:#8a8276;font-size:12px">Image block — set a URL in Inspector</div>';
-      content.appendChild(img);
-    } else if (block.type === 'shape') {
-      const shape = document.createElement('div');
-      shape.className = 'block-shape-host' + (block.shape === 'frame' ? ' shape-frame' : '');
-      shape.innerHTML = shapeSvgMarkup(block) + (block.shape === 'frame' ? '' : shapeTextMarkup(block));
-      if (block.shape === 'frame') {
-        const label = document.createElement('span');
-        label.className = 'block-frame-label';
-        label.textContent = block.name || 'Frame';
-        shape.appendChild(label);
-      }
-      content.appendChild(shape);
-    } else if (block.type === 'freehand' || block.type === 'arrow') {
-      content.innerHTML = vectorSvgMarkup(block);
-    } else {
-      const pluginMarkup = pluginBlockMarkup(block);
-      if (pluginMarkup !== null) {
-        const pluginHost = document.createElement('div');
-        pluginHost.className = 'block-plugin';
-        pluginHost.innerHTML = pluginMarkup;
-        content.appendChild(pluginHost);
-      } else content.innerHTML = pluginFallbackMarkup(block);
-    }
+    content.appendChild(renderCanvasBlockContent(block, page, { editing, wrapHtml: wrapBlockHtml, setupHtmlEditing }));
     wrap.appendChild(content);
     if (!editing) {
       const hit = document.createElement('div');
@@ -3457,24 +3395,6 @@ function fitPresentPage(): void {
   fit.style.height = Math.max(1, pageHeight * scale) + 'px';
   host.style.transform = 'scale(' + scale + ')';
 }
-function renderPresentCanvasHtml(page: HcPage): string {
-  let html = '<div style="position:relative;width:100%;height:100%;background:' + esc(page.background) + ';overflow:hidden">';
-  for (const block of [...(page.blocks || [])].sort((left, right) => left.z - right.z)) {
-    const style = 'position:absolute;left:' + block.x + 'px;top:' + block.y + 'px;width:' + block.w + 'px;height:' + block.h + 'px;overflow:' + (block.type === 'freehand' || block.type === 'arrow' ? 'visible' : 'hidden') + ';border-radius:' + esc(String(block.style?.radius || 0)) + 'px;' + (block.rotation ? 'transform:rotate(' + block.rotation + 'deg);' : '') + (block.style?.opacity !== undefined ? 'opacity:' + block.style.opacity + ';' : '');
-    let inner = '';
-    if (block.type === 'html') inner = block.html || '';
-    else if (block.type === 'text') inner = '<div style="padding:4px;font-size:' + (block.style?.fontSize || 20) + 'px;font-weight:' + (block.style?.fontWeight || 400) + ';color:' + esc(String(block.style?.color || '#1d232e')) + ';white-space:pre-wrap">' + esc(block.text || '') + '</div>';
-    else if (block.type === 'markdown') inner = '<div style="padding:22px 24px;font:16px/1.6 Inter,sans-serif;color:#334155">' + String(marked.parse(block.markdown || '', { async: false })) + '</div>';
-    else if (block.type === 'code') inner = '<pre style="margin:0;padding:20px;font:12px/1.6 ui-monospace,Consolas,monospace;color:' + esc(String(block.style?.color || '#e2e8f0')) + ';background:' + esc(String(block.style?.fill || '#171923')) + ';white-space:pre-wrap">' + esc(block.code || '') + '</pre>';
-    else if (block.type === 'image') inner = block.src ? '<img src="' + esc(block.src) + '" style="width:100%;height:100%;object-fit:cover" />' : '';
-    else if (block.type === 'shape') inner = '<div style="position:relative;width:100%;height:100%">' + shapeSvgMarkup(block) + (block.shape === 'frame' ? '' : shapeTextMarkup(block)) + '</div>';
-    else if (block.type === 'freehand' || block.type === 'arrow') inner = vectorSvgMarkup(block);
-    else inner = pluginBlockMarkup(block) || pluginFallbackMarkup(block);
-    html += '<div style="' + style + '">' + inner + '</div>';
-  }
-  return html + '</div>';
-}
-
 async function copyText(text: string): Promise<void> {
   try { await navigator.clipboard.writeText(text); toast('Copied to clipboard', 'success'); }
   catch { toast('Clipboard unavailable', 'error'); }

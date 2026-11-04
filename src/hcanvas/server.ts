@@ -18,6 +18,7 @@ import type { HcBlock, HcDocument, HcOp, HcPage, HcPagePreset } from './types.js
 import { resolveLlmConfig, runAgentChat, type AgentChatMessage } from './agentChat.js';
 import { workspaceInfo } from './workspace.js';
 import { discoverPlugins, setPluginEnabled } from './pluginLoader.js';
+import { blockAgentSummary } from './builtinBlocks.js';
 import { createPluginScaffold } from './pluginScaffold.js';
 import { listProjects } from './projectRegistry.js';
 
@@ -86,7 +87,7 @@ function openFolderInFileManager(folder: string): Promise<void> {
 }
 
 function blockLine(block: HcBlock): string {
-  const label = block.name || block.text || block.code?.split('\n')[0] || block.markdown?.split('\n')[0] || '(no label)';
+  const label = blockAgentSummary(block) || '(no label)';
   return '- block ' + block.id + ' [' + block.type + '] ' + String(label).slice(0, 100) +
     ' at ' + block.x + ',' + block.y + ' ' + block.w + '×' + block.h + ' z=' + block.z;
 }

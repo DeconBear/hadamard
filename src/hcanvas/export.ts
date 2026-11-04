@@ -6,14 +6,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { parse } from 'node-html-parser';
-import { marked } from 'marked';
 import pptxgen from 'pptxgenjs';
 import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 
 import { htmlToPlainDocument } from './html.js';
-import { vectorSvgMarkup } from './vector.js';
-import { shapeSvgMarkup, shapeTextMarkup } from './shapes.js';
 import { blockPlugin } from './blockPlugins.js';
+import { renderBlockBody } from './builtinBlocks.js';
 import { excalidrawSceneToNativePage } from './sceneBridge.js';
 import { extractHtmlLayout, type HtmlLayout } from './htmlLayout.js';
 import type { HcBlock, HcDocument, HcPage } from './types.js';
@@ -52,44 +50,9 @@ function blockStyle(block: HcBlock): string {
   return parts.join(';');
 }
 
-function textStyle(block: HcBlock): string {
-  const style = block.style || {};
-  const parts: string[] = [];
-  if (style.fontSize) parts.push('font-size:' + style.fontSize + 'px');
-  if (style.fontWeight) parts.push('font-weight:' + style.fontWeight);
-  if (style.color) parts.push('color:' + style.color);
-  if (style.fontFamily) parts.push('font-family:' + style.fontFamily);
-  if (style.align) parts.push('text-align:' + style.align);
-  return parts.join(';');
-}
-
 function renderBlock(block: HcBlock): string {
   const wrapper = '<div class="hc-block hc-block-' + block.type + '" data-block-id="' + escapeHtml(block.id) + '" style="' + blockStyle(block) + '">';
-  if (block.type === 'html') return wrapper + (block.html || '') + '</div>';
-  if (block.type === 'text') {
-    const paragraphs = (block.text || '').split(/\n{2,}/).map(paragraph => '<p>' + escapeHtml(paragraph).replace(/\n/g, '<br>') + '</p>').join('');
-    return wrapper + '<div style="padding:4px;' + textStyle(block) + '">' + paragraphs + '</div></div>';
-  }
-  if (block.type === 'markdown') {
-    const html = marked.parse(block.markdown || '', { async: false }) as string;
-    return wrapper + '<div class="hc-md" style="' + textStyle(block) + '">' + html + '</div></div>';
-  }
-  if (block.type === 'code') {
-    return wrapper + '<pre style="margin:0;padding:22px 24px;overflow:hidden;white-space:pre-wrap;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;color:' + escapeHtml(String(block.style?.color || '#e2e8f0')) + '"><code>' + escapeHtml(block.code || '') + '</code></pre></div>';
-  }
-  if (block.type === 'image') {
-    return wrapper + '<img src="' + escapeHtml(block.src || '') + '" alt="' + escapeHtml(block.alt || '') + '" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit" /></div>';
-  }
-  if (block.type === 'shape') {
-    const frameLabel = block.shape === 'frame' ? '<span style="position:absolute;left:10px;top:7px;font:600 11px Inter,sans-serif;color:#525d66;pointer-events:none">' + escapeHtml(block.name || 'Frame') + '</span>' : '';
-    return wrapper + '<div style="position:relative;width:100%;height:100%">' + shapeSvgMarkup(block) + frameLabel + (block.shape === 'frame' ? '' : shapeTextMarkup(block)) + '</div></div>';
-  }
-  if (block.type === 'freehand' || block.type === 'arrow') {
-    return wrapper + vectorSvgMarkup(block) + '</div>';
-  }
-  const plugin = blockPlugin(block.type);
-  if (plugin) return wrapper + plugin.renderHtml(block) + '</div>';
-  return wrapper + '<div style="display:grid;place-items:center;height:100%;border:1px dashed #d9d3c7;border-radius:12px;color:#8a8276;font:12px Inter,sans-serif">Unknown block type: ' + escapeHtml(block.type) + '</div></div>';
+  return wrapper + renderBlockBody(block, 'export') + '</div>';
 }
 
 function exportPage(page: HcPage): HcPage {
