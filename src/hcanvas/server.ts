@@ -18,6 +18,7 @@ import type { HcBlock, HcDocument, HcOp, HcPage, HcPagePreset } from './types.js
 import { resolveLlmConfig, runAgentChat, type AgentChatMessage } from './agentChat.js';
 import { workspaceInfo } from './workspace.js';
 import { discoverPlugins, setPluginEnabled } from './pluginLoader.js';
+import { createPluginScaffold } from './pluginScaffold.js';
 import { listProjects } from './projectRegistry.js';
 
 export interface HcServerOptions {
@@ -498,6 +499,12 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       if (pathname === '/api/plugins' && req.method === 'GET') {
         const discovery = await discoverPlugins(options.workspace);
         json(res, 200, { ok: true, plugins: discovery.plugins, errors: discovery.errors });
+        return;
+      }
+      if (pathname === '/api/plugins/scaffold' && req.method === 'POST') {
+        const body = await readBody(req);
+        const scaffold = await createPluginScaffold(options.workspace, body.kind === 'page' ? 'page' : 'block');
+        json(res, 201, { ok: true, ...scaffold });
         return;
       }
       if (pathname === '/api/plugins/toggle' && req.method === 'POST') {

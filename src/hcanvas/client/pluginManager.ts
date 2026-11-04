@@ -34,7 +34,7 @@ export function openPluginManager(ctx: PluginManagerContext): void {
   const html = '<div class="modal plugin-manager-modal"><div class="modal-head"><div><strong>Plugins</strong><small>Enable/disable declarative block plugins. Changes are saved in .hcanvas/plugin-settings.json.</small></div><button class="icon-btn" data-close>×</button></div>' +
     '<div class="modal-body"><div class="plugin-manager-list">' + (rows || '<p class="empty-state">No external plugins found.</p>') + '</div>' + errors +
     '<p class="inspector-note">Project plugins: <code>.hcanvas/plugins/</code> · user plugins: <code>~/.hadamard/hcanvas/plugins/</code>. Reload after adding or editing a manifest.</p>' +
-    '</div><div class="modal-foot"><button class="btn tiny" data-plugin-manager-reload>Reload</button><button class="btn primary tiny" data-close>Done</button></div></div>';
+    '</div><div class="modal-foot"><button class="btn tiny" data-plugin-scaffold="block">Create block sample</button><button class="btn tiny" data-plugin-scaffold="page">Create page sample</button><button class="btn tiny" data-plugin-manager-reload>Reload</button><button class="btn primary tiny" data-close>Done</button></div></div>';
   ctx.openModal(html);
   const root = document.querySelector('.plugin-manager-modal');
   root?.querySelectorAll<HTMLInputElement>('[data-plugin-toggle]').forEach(input => {
@@ -52,6 +52,21 @@ export function openPluginManager(ctx: PluginManagerContext): void {
       } catch (error) {
         input.checked = !input.checked;
         input.disabled = false;
+        ctx.toast(error instanceof Error ? error.message : String(error), 'error');
+      }
+    });
+  });
+  root?.querySelectorAll<HTMLButtonElement>('[data-plugin-scaffold]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const kind = button.dataset.pluginScaffold === 'page' ? 'page' : 'block';
+      try {
+        await ctx.request('/api/plugins/scaffold', { method: 'POST', body: JSON.stringify({ kind }) });
+        await ctx.reload();
+        ctx.onChanged();
+        ctx.close();
+        ctx.open();
+        ctx.toast('Created a sample ' + kind + ' plugin in .hcanvas/plugins', 'success');
+      } catch (error) {
         ctx.toast(error instanceof Error ? error.message : String(error), 'error');
       }
     });
