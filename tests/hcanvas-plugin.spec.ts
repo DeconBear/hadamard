@@ -3,6 +3,7 @@ import { blockPlugin, listBlockPlugins, registerBlockPlugin } from '../src/hcanv
 import type { HcBlock } from '../src/hcanvas/types.js';
 import { renderDeclarativeTemplate, validatePluginManifest } from '../src/hcanvas/pluginManifest.js';
 import { materializePluginPagePreset } from '../src/hcanvas/client/pluginBlocks.js';
+import { listComponentPlugins } from '../src/hcanvas/blockPlugins.js';
 
 function calloutBlock(data: Record<string, unknown>): HcBlock {
   return {
@@ -105,5 +106,16 @@ describe('hcanvas plugin page presets', () => {
     });
     expect(html.pagePresets[0]?.html).toContain('Hello');
     expect(() => validatePluginManifest({ schema: 'hcanvas-plugin/1', id: 'bad-pages', pagePresets: [{ id: 'x', label: 'X', mode: 'html', width: 1280, height: 720 }] })).toThrow(/html is required/);
+  });
+});
+describe('hcanvas style-linked components', () => {
+  it('registers the slider component with linked style fields', () => {
+    const slider = listComponentPlugins().find(plugin => plugin.type === 'slider');
+    expect(slider?.label).toBe('Slider');
+    expect(slider?.fields?.map(field => field.key)).toEqual(['label', 'value', 'min', 'max', 'accent', 'track', 'ink']);
+    const html = slider!.renderHtml({ id: 'block_slider', type: 'slider', x: 0, y: 0, w: 360, h: 120, z: 1, data: { label: 'Speed', value: 75, min: 0, max: 100, accent: '#0ea5e9' } });
+    expect(html).toContain('Speed');
+    expect(html).toContain('75');
+    expect(html).toContain('#0ea5e9');
   });
 });

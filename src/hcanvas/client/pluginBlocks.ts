@@ -1,5 +1,5 @@
 import type { HcBlock, HcPage } from '../types.js';
-import { blockPlugin, clearExternalBlockPlugins, listBlockPlugins, registerBlockPlugin, type HcBlockPlugin, type HcPluginField } from '../blockPlugins.js';
+import { blockPlugin, clearExternalBlockPlugins, listBlockPlugins, listComponentPlugins, registerBlockPlugin, type HcBlockPlugin, type HcPluginField } from '../blockPlugins.js';
 import { renderDeclarativeTemplate, type HcPluginManifest, type HcPluginPagePreset } from '../pluginManifest.js';
 
 function escapeHtml(value: unknown): string {
@@ -38,17 +38,20 @@ export function pluginInspectorMarkup(block: HcBlock): string {
 }
 
 export function bindPluginInspector(root: HTMLElement, block: HcBlock, onUpdate: (data: Record<string, unknown>) => void): void {
+  const fields = blockPlugin(block.type)?.fields || [];
   root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('[data-plugin-field]').forEach(control => {
     control.addEventListener('change', () => {
       const key = control.dataset.pluginField;
       if (!key) return;
-      onUpdate({ ...(block.data || {}), [key]: control.value });
+      const field = fields.find(item => item.key === key);
+      const value = field?.kind === 'number' ? Number(control.value) : control.value;
+      onUpdate({ ...(block.data || {}), [key]: value });
     });
   });
 }
 
 export function pluginPickerMarkup(): string {
-  const plugins = listBlockPlugins();
+  const plugins = listBlockPlugins().filter(plugin => !plugin.component);
   return '<section class="inspector-section"><div class="inspector-title">Plugin blocks</div><div class="plugin-block-grid">' +
     (plugins.length ? plugins.map(plugin => {
       const meta = plugin.pluginName ? ' · ' + plugin.source : '';
@@ -59,7 +62,7 @@ export function pluginPickerMarkup(): string {
 }
 
 export function bindPluginPicker(root: HTMLElement, onAdd: (plugin: HcBlockPlugin) => void, onReload?: () => void, onManage?: () => void): void {
-  const plugins = listBlockPlugins();
+  const plugins = listBlockPlugins().filter(plugin => !plugin.component);
   root.querySelectorAll<HTMLButtonElement>('[data-plugin-add]').forEach(button => {
     button.addEventListener('click', () => {
       const plugin = plugins.find(item => item.type === button.dataset.pluginAdd);
@@ -192,4 +195,21 @@ export async function loadExternalPlugins(fetcher: (path: string) => Promise<unk
     lastExternalLoad = { loaded: 0, plugins: 0, errors: lastCatalog.errors };
     return lastExternalLoad;
   }
+}
+export function componentPickerMarkup(): string {
+  const components = listComponentPlugins();
+  if (!components.length) return '';
+  return '<section class="inspector-section"><div class="inspector-title">Components</div><div class="plugin-block-grid">' +
+    components.map(plugin => '<button type="button" class="plugin-block-btn" data-component-add="' + escapeHtml(plugin.type) + '" title="' + escapeHtml(plugin.hint || plugin.label) + '"><strong>' + escapeHtml(plugin.label) + '</strong><small>' + escapeHtml(plugin.hint || 'Style-linked component') + '</small></button>').join('') +
+    '</div><p class="inspector-note">Components carry linked style fields in the Inspector.</p></section>';
+}
+
+export function bindComponentPicker(root: HTMLElement, onAdd: (plugin: HcBlockPlugin) => void): void {
+  const components = listComponentPlugins();
+  root.querySelectorAll<HTMLButtonElement>('[data-component-add]').forEach(button => {
+    button.addEventListener('click', () => {
+      const plugin = components.find(item => item.type === button.dataset.componentAdd);
+      if (plugin) onAdd(plugin);
+    });
+  });
 }

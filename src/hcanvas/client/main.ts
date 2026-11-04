@@ -4,13 +4,14 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
-import { HCANVAS_SHAPES, isHcShape, shapeSvgMarkup } from '../shapes.js';
+import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, isHcShape, shapeSvgMarkup } from '../shapes.js';
 import { HTML_INSERT_PRESETS, bindHtmlStyleControls, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, htmlBreadcrumbMarkup, htmlStylePresetMarkup, insertHtmlPreset, installHtmlHoverHighlight, type HtmlEditingContext } from './htmlEditing.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
+import type { HcBlockPlugin } from '../blockPlugins.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
 import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
-import { bindPluginInspector, bindPluginPicker, getPluginCatalog, loadExternalPlugins, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
+import { bindComponentPicker, bindPluginInspector, bindPluginPicker, componentPickerMarkup, getPluginCatalog, loadExternalPlugins, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
 import { renderCanvasBlockContent } from './blockRenderers.js';
 import { openPluginManager } from './pluginManager.js';
 import { openPluginGallery } from './pluginGallery.js';
@@ -18,6 +19,7 @@ import { installImageInsert } from './imageInsert.js';
 import { bindPluginPagePicker, pluginPagePickerMarkup } from './pluginPages.js';
 import { renderPresentCanvasHtml } from './presentCanvas.js';
 import { installPresentInteractions, type PresentInteractions } from './presentControls.js';
+import { createSliceTool, type SliceTool } from './sliceTool.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
 import { addLineEndpointHandles } from './lineEndpoints.js';
@@ -133,6 +135,7 @@ let pagesRenderTimer: ReturnType<typeof setTimeout> | undefined;
 
 let shapePicker: ShapePicker | null = null;
 let presentInteractions: PresentInteractions | null = null;
+let sliceTool: SliceTool | null = null;
 
 const state: UiState = {
   docs: [], doc: null, activePageId: null, activeBlockId: null, selectedBlockIds: [], editing: null,
@@ -718,6 +721,16 @@ function bindStaticActions(): void {
   });
   el('addPageMini').addEventListener('click', () => openAddPageModal());
   el('presentBtn').addEventListener('click', () => openPresent());
+  sliceTool = createSliceTool({
+    viewport: el('viewport'),
+    getPage: activePage,
+    getBlock: id => activePage()?.blocks?.find(block => block.id === id) || null,
+    getPoint: viewportToWorldPoint,
+    nextId: genId,
+    applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean),
+    selectBlocks: (ids, primaryId) => setBlockSelection(ids, primaryId),
+    toast,
+  });
   presentInteractions = installPresentInteractions({
     root: el('presentRoot'),
     isActive: () => state.presenting,
@@ -775,6 +788,7 @@ function bindStaticActions(): void {
     if (!button) return;
     const action = button.dataset.selAction;
     if (action === 'edit') { editActiveBlock(); return; }
+    if (action === 'slice') { const block = activeBlock(); if (block) sliceTool?.begin(block); return; }
     if (action === 'group') { void groupSelectedBlocks(); return; }
     if (action === 'ungroup') { void ungroupSelectedBlocks(); return; }
     if (action === 'duplicate') { void duplicateActiveBlock(); return; }
@@ -927,6 +941,8 @@ function renderToolbarState(): void {
     const editButton = el('selEditBtn');
     editButton.textContent = block.type === 'html' ? 'Edit HTML' : block.type === 'shape' ? 'Edit text' : block.type === 'markdown' || block.type === 'code' || block.type === 'text' ? 'Edit source' : block.type === 'image' ? 'Image' : 'Style';
     editButton.style.display = selectedCount > 1 ? 'none' : '';
+    const sliceButton = qs<HTMLElement>('#selSliceBtn');
+    if (sliceButton) sliceButton.style.display = selectedCount === 1 && block.type === 'shape' && (block.shape === 'rect' || block.shape === 'polygon') && !block.rotation ? '' : 'none';
     qs<HTMLElement>('[data-sel-action="group"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
     qs<HTMLElement>('[data-sel-action="ungroup"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
   }
@@ -2518,7 +2534,7 @@ function renderPageInspector(): void {
   if (page.mode === 'infinite') html += '<div class="hint-card">Wheel to zoom at the pointer; Shift+Wheel or Hand tool to pan. Hold Space or middle-drag for temporary panning. Drag shapes to size them; exports crop to content.</div>';
   if (page.mode === 'whiteboard') html += '<div class="hint-card"><strong>Legacy whiteboard.</strong> This page is rendered from its Excalidraw scene through the native block renderer — no Excalidraw runtime is loaded. Convert it with <strong>Convert to native Infinite</strong> above; use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for raw scene access.</div>';
   html += '</section>';
-  if (page.mode === 'canvas' || page.mode === 'infinite') html += pluginPickerMarkup();
+  if (page.mode === 'canvas' || page.mode === 'infinite') { html += componentPickerMarkup(); html += pluginPickerMarkup(); }
   root.innerHTML = html;
   bindPageInspector(page);
 }
@@ -2566,10 +2582,14 @@ function bindPageInspector(page: HcPage): void {
     openModal: html => openModal(html),
     toast,
   });
-  bindPluginPicker(el('inspectorPanel'), plugin => {
+  const addPluginBlock = (plugin: HcBlockPlugin): void => {
     const extra: Partial<HcBlock> = { data: plugin.defaultData(), name: plugin.label };
     if (plugin.defaultSize) { extra.w = plugin.defaultSize.w; extra.h = plugin.defaultSize.h; }
     void addBlock(plugin.type, extra);
+  };
+  bindComponentPicker(el('inspectorPanel'), addPluginBlock);
+  bindPluginPicker(el('inspectorPanel'), plugin => {
+    addPluginBlock(plugin);
   }, async () => {
     const result = await loadExternalPlugins(api);
     toast('Plugins: ' + result.loaded + ' block' + (result.loaded === 1 ? '' : 's') + ' loaded' + (result.errors.length ? ' · ' + result.errors.length + ' error' + (result.errors.length === 1 ? '' : 's') : ''), result.errors.length ? 'error' : 'success');
@@ -2596,7 +2616,8 @@ function renderBlockInspector(): void {
   html += '<button id="blockFrontBtn" class="btn tiny">Front</button><button id="blockBackBtn" class="btn tiny">Back</button><button id="blockDeleteBtn" class="btn tiny danger">Delete</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Style</div>';
   if (block.type === 'shape') {
-    html += '<div class="field"><span>Shape</span><select id="blockShape">' + HCANVAS_SHAPES.map(shape => '<option value="' + shape.id + '"' + (block.shape === shape.id ? ' selected' : '') + '>' + esc(shape.label) + '</option>').join('') + '</select></div>';
+    const shapeOptions = HCANVAS_SHAPE_CATEGORIES.map(category => '<optgroup label="' + esc(category) + '">' + HCANVAS_SHAPES.filter(shape => !shape.hidden && shape.category === category).map(shape => '<option value="' + shape.id + '"' + (block.shape === shape.id ? ' selected' : '') + '>' + esc(shape.label) + '</option>').join('') + '</optgroup>').join('');
+    html += '<div class="field"><span>Shape</span><select id="blockShape">' + shapeOptions + (block.shape === 'polygon' ? '<optgroup label="Cut"><option value="polygon" selected>Polygon</option></optgroup>' : '') + '</select></div>';
     html += '<div class="field"><span>Shape text</span><textarea id="blockShapeText" rows="2">' + esc(block.text || '') + '</textarea></div>';
   }
   if (block.type === 'text' || block.type === 'markdown' || block.type === 'shape') {

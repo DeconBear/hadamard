@@ -1,5 +1,6 @@
 import type { HcBlock } from './types.js';
 import { calloutPlugin } from './plugins/callout.js';
+import { sliderPlugin } from './plugins/slider.js';
 
 export type HcPluginFieldKind = 'text' | 'textarea' | 'color' | 'select' | 'number';
 
@@ -22,6 +23,7 @@ export interface HcBlockPlugin {
   pluginName?: string;
   version?: string;
   source?: 'builtin' | 'project' | 'user';
+  component?: boolean;
 }
 
 const registry = new Map<string, HcBlockPlugin>();
@@ -41,6 +43,10 @@ export function listBlockPlugins(): HcBlockPlugin[] {
   return [...registry.values()];
 }
 
+export function listComponentPlugins(): HcBlockPlugin[] {
+  return [...registry.values()].filter(plugin => plugin.component);
+}
+
 export function unregisterBlockPlugin(type: string): void {
   const plugin = registry.get(type);
   if (plugin && plugin.source !== 'builtin') registry.delete(type);
@@ -53,3 +59,4 @@ export function clearExternalBlockPlugins(): void {
 }
 
 registerBlockPlugin(calloutPlugin as HcBlockPlugin);
+registerBlockPlugin(sliderPlugin as HcBlockPlugin);

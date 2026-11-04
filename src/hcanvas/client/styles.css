@@ -748,3 +748,15 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 }
 .present-laser.hidden { display: none; }
 .present-root.laser-active .present-stage { cursor: none; }
+
+.shape-category-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 1px 0 9px; }
+.shape-category-tab { border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--muted); padding: 4px 8px; font: 600 8.5px/1 Inter, sans-serif; }
+.shape-category-tab:hover { color: var(--accent); border-color: var(--accent); }
+.shape-category-tab.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+.shape-popover-grid { max-height: min(58vh, 460px); overflow-y: auto; padding-right: 2px; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+.shape-popover .shape-choice { min-height: 54px; }
+.shape-popover .shape-choice-preview { height: 24px; }
+.slice-overlay { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 5000; pointer-events: none; overflow: visible; }
+.slice-line { stroke: #7c3aed; stroke-width: 2; stroke-dasharray: 8 5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(124,58,237,.55)); }
+.slice-ready { cursor: crosshair; }
+.slice-ready .block-wrap { cursor: crosshair; }

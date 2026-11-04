@@ -108,7 +108,7 @@ Canvas pages contain absolutely positioned blocks:
 | Image | Drop an image file from a folder, or paste an image from the clipboard; URL still editable in Inspector |
 | Shape | Rectangle, ellipse, diamond, triangle, parallelogram, trapezoid, hexagon, octagon, star, cross, line or frame; fill, stroke, stroke style, radius; optional centered text label |
 
-Hover the left-rail **Shape** tool to open a flyout of shape previews; move into the flyout and click a shape, then click/drag on the canvas to place it. The same flyout opens from the Shape click/6 shortcut.
+Hover the left-rail **Shape** tool to open a categorized flyout with 60+ PowerPoint-like shapes (Basic, Lines, Flowchart, Stars & Banners, Callouts, Action Buttons). Select a rectangle or polygon and use **Slice** in the selection toolbar to draw a cutting line; the shape becomes two editable polygon blocks (undo restores it). A **Components** section in the page Inspector adds style-linked components such as the Slider, whose label/value/min/max/accent/track/text can be adjusted in the Inspector. Click a shape in the flyout, then click/drag on the canvas to place it. The same flyout opens from the Shape click/6 shortcut.
 
 Images are inserted by dragging a file from the filesystem directly onto a Canvas/Infinite page, or by pasting an image from the clipboard. The old sidebar Image insertion button has been removed; selecting an existing image still lets you replace its URL in the Inspector.
 
