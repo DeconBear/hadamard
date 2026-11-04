@@ -1,5 +1,6 @@
 import type { HcBlock, HcGradient, HcOp, HcPage } from '../types.js';
 import { gradientCss } from '../fill.js';
+import { openImageCutout } from './imageCutout.js';
 
 type ColorTarget = 'auto' | 'fill' | 'stroke' | 'text';
 
@@ -86,6 +87,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
   closeFloating();
   const node = document.createElement('div');
   node.className = 'hc-context-menu';
+  const hasImage = blocks.some(block => block.type === 'image');
   node.innerHTML = '<div class="hc-context-head">' + escape(blocks.length > 1 ? blocks.length + ' blocks' : (blocks[0]?.name || blocks[0]?.type || 'Block')) + '</div>' +
     '<button type="button" data-hc-action="edit">Edit</button>' +
     '<button type="button" data-hc-action="duplicate">Duplicate</button>' +
@@ -95,12 +97,14 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
     '<button type="button" data-hc-action="front">Bring to front</button>' +
     '<button type="button" data-hc-action="back">Send to back</button>' +
     '<div class="hc-context-sep"></div>' +
+    '<button type="button" data-hc-action="opacity">Opacity…</button>' +
     '<button type="button" data-hc-action="color">Change color…</button>' +
     '<button type="button" data-hc-action="fill">Fill / gradient…</button>' +
     '<button type="button" data-hc-action="stroke">Stroke color…</button>' +
     '<button type="button" data-hc-action="eyedrop">Pick color from screen</button>' +
     '<div class="hc-context-sep"></div>' +
-    '<button type="button" data-hc-action="delete" class="danger">Delete</button>';
+    (hasImage ? '<div class="hc-context-sep"></div><button type="button" data-hc-action="cutout">Remove image background…</button>' : '') +
+    '<div class="hc-context-sep"></div><button type="button" data-hc-action="delete" class="danger">Delete</button>';
   node.addEventListener('click', event => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-hc-action]');
     if (!button) return;
@@ -268,6 +272,47 @@ function openFillPopover(block: HcBlock, x: number, y: number): void {
   requestAnimationFrame(() => anchor.remove());
 }
 
+function openOpacityPopover(anchor: HTMLElement | null, blocks: HcBlock[]): void {
+  closeFloating();
+  const first = blocks[0];
+  if (!first) return;
+  const value = Math.round((first.style?.opacity ?? 1) * 100);
+  const node = document.createElement('div');
+  node.className = 'hc-opacity-popover';
+  node.innerHTML = '<div class="hc-opacity-head"><strong>Opacity</strong><output id="hcOpacityValue">' + value + '%</output></div><input type="range" id="hcOpacityRange" min="0" max="100" value="' + value + '"><div class="hc-opacity-foot"><button type="button" class="btn tiny" id="hcOpacityReset">100%</button></div>';
+  const range = node.querySelector<HTMLInputElement>('#hcOpacityRange')!;
+  const output = node.querySelector<HTMLOutputElement>('#hcOpacityValue')!;
+  const preview = (next: number): void => {
+    output.value = next + '%';
+    for (const block of blocks) {
+      const wrap = document.querySelector<HTMLElement>('.block-wrap[data-block-id="' + block.id + '"]');
+      if (wrap) wrap.style.opacity = String(next / 100);
+    }
+  };
+  const apply = (next: number): void => {
+    if (!context) return;
+    const page = context.getPage();
+    if (!page) return;
+    const ops = blocks.map(block => ({ op: 'update_block' as const, pageId: page.id, blockId: block.id, patch: { style: { ...(block.style || {}), opacity: next / 100 } } }));
+    void context.applyOps(ops).then(() => updateDirectEditUI());
+  };
+  range.addEventListener('input', () => preview(Number(range.value)));
+  range.addEventListener('change', () => apply(Number(range.value)));
+  node.querySelector<HTMLButtonElement>('#hcOpacityReset')?.addEventListener('click', () => { range.value = '100'; preview(100); apply(100); });
+  document.body.appendChild(node);
+  const rect = anchor?.getBoundingClientRect();
+  placeFloating(node, rect ? rect.left : window.innerWidth / 2 - 110, rect ? rect.bottom + 8 : window.innerHeight / 2);
+  popover = node;
+  popoverClose = () => node.remove();
+}
+
+function openImageCutoutFor(block: HcBlock): void {
+  if (!context) return;
+  const page = context.getPage();
+  if (!page) return;
+  openImageCutout({ block, pageId: page.id, applyOps: context.applyOps, toast: context.toast });
+}
+
 function openColorFor(blocks: HcBlock[], target: ColorTarget): void {
   const first = blocks[0];
   if (!first) return;
@@ -283,6 +328,8 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
     if (action === 'edit') { context?.select([block.id], block.id); context?.edit(); return; }
     if (action === 'duplicate') { context?.select([block.id], block.id); context?.duplicate(); return; }
     if (action === 'delete') { context?.select(blocks.map(item => item.id), block.id); context?.remove(); return; }
+    if (action === 'opacity') { openOpacityPopover(document.querySelector<HTMLElement>('#selOpacityBtn'), blocks); return; }
+    if (action === 'cutout') { const image = blocks.find(item => item.type === 'image'); if (image) openImageCutoutFor(image); return; }
     if (action === 'color') { openColorFor(blocks, 'auto'); return; }
     if (action === 'fill') { openColorFor(blocks, 'fill'); return; }
     if (action === 'stroke') { openColorFor(blocks, 'stroke'); return; }
@@ -296,6 +343,8 @@ export function updateDirectEditUI(): void {
   if (!toolbar) return;
   let colorButton = toolbar.querySelector<HTMLButtonElement>('#selColorBtn');
   let eyedropButton = toolbar.querySelector<HTMLButtonElement>('#selEyedropBtn');
+  let opacityButton = toolbar.querySelector<HTMLButtonElement>('#selOpacityBtn');
+  let cutoutButton = toolbar.querySelector<HTMLButtonElement>('#selCutoutBtn');
   if (!colorButton) {
     colorButton = document.createElement('button');
     colorButton.type = 'button';
@@ -305,6 +354,26 @@ export function updateDirectEditUI(): void {
     colorButton.innerHTML = '<span class="sel-color-swatch"></span><span>Color</span>';
     colorButton.addEventListener('click', () => openColorFor(selectedBlocks(), 'auto'));
     toolbar.insertBefore(colorButton, toolbar.querySelector('[data-sel-action="delete"]'));
+  }
+  if (!opacityButton) {
+    opacityButton = document.createElement('button');
+    opacityButton.type = 'button';
+    opacityButton.id = 'selOpacityBtn';
+    opacityButton.className = 'sel-btn';
+    opacityButton.title = 'Opacity';
+    opacityButton.textContent = 'Opacity';
+    opacityButton.addEventListener('click', () => openOpacityPopover(opacityButton, selectedBlocks()));
+    toolbar.insertBefore(opacityButton, toolbar.querySelector('[data-sel-action="delete"]'));
+  }
+  if (!cutoutButton) {
+    cutoutButton = document.createElement('button');
+    cutoutButton.type = 'button';
+    cutoutButton.id = 'selCutoutBtn';
+    cutoutButton.className = 'sel-btn';
+    cutoutButton.title = 'Remove image background';
+    cutoutButton.textContent = 'Cutout';
+    cutoutButton.addEventListener('click', () => { const image = selectedBlocks().find(block => block.type === 'image'); if (image) openImageCutoutFor(image); });
+    toolbar.insertBefore(cutoutButton, toolbar.querySelector('[data-sel-action="delete"]'));
   }
   if (!eyedropButton) {
     eyedropButton = document.createElement('button');
@@ -323,6 +392,8 @@ export function updateDirectEditUI(): void {
   const visible = Boolean(active && supportsColor(active));
   colorButton.style.display = visible ? '' : 'none';
   eyedropButton.style.display = visible ? '' : 'none';
+  opacityButton.style.display = active ? '' : 'none';
+  cutoutButton.style.display = active?.type === 'image' ? '' : 'none';
   const swatch = colorButton.querySelector<HTMLElement>('.sel-color-swatch');
   if (swatch && active) swatch.style.background = active.fillGradient ? gradientCss(active.fillGradient) : primaryColor(active);
 }
