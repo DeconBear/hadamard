@@ -133,16 +133,16 @@ Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas
   - **Canvas pages** with text/shape/image blocks become **editable PowerPoint** text boxes and shapes (no HTML blocks).
   - `format=pptx-editable` additionally maps HTML headings, paragraphs, lists, inline labels and background cards to native PowerPoint text boxes/shapes using real browser layout data; pages with no extractable text fall back to images.
   - HTML, infinite and Excalidraw whiteboard pages are embedded as high-fidelity slide images in the default visual deck.
-  - Canvas PPT templates (Canvas · PPT cover / content) are in **+ Page**.
+  - Create a **Canvas · 16:9** page from **+ Page**; add text/shape blocks for editable PowerPoint output.
   - Legacy whiteboard pages are converted to native blocks before image/PPTX rendering; no Excalidraw CLI is used.
 
-## Résumés and posters
+## Documents, résumés and posters
 
-Page templates for A4 résumés (Classic / Modern / ATS minimal) and 4:5 posters (Event / Product) are available from **+ Page**. They are ordinary editable HTML pages: direct-edit text, switch to source for layout changes, then export.
+Use the generic **Canvas · A4** size for documents and résumés, and **Canvas · 4:5** for posters. These are ordinary canvas pages: add text/shape/image blocks, edit directly, then export. The purpose comes from the size and content, not a separate “Résumé” or “Slide” page type.
 
 - **PDF / PNG / HTML**: vector print via the local browser; A4 and poster page sizes are preserved.
 - **Print PDF**: Export → **Print PDF · 3mm bleed** (or `--format pdf --bleed-mm 3 --crop-marks`) adds a 3mm bleed and crop marks in a slug area. Output is RGB PDF; CMYK conversion is not performed.
-- **DOCX (ATS)**: export the current HTML page with `format=docx` (UI: **Word résumé (.docx)**). The exporter walks semantic HTML (headings, paragraphs, lists) and writes a single-column A4 Word document with selectable text, suitable for ATS submission. Use the **ATS minimal** template for the safest result.
+- **DOCX (ATS)**: export a semantic HTML page or an HTML-page document with `format=docx` (UI: **Word résumé (.docx)**). The exporter walks semantic HTML (headings, paragraphs, lists) and writes a single-column A4 Word document with selectable text, suitable for ATS submission. Use a single-column, plain-text layout for the safest ATS result.
 - **PPTX**: résumé/poster pages can also be embedded into a PPTX deck as full-page slides.
 
 ## Page masters

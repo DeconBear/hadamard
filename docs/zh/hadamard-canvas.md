@@ -81,23 +81,23 @@ HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
 ## 演示工作流
 
-- **幻灯片模板**：Cover、Section、Two columns、Quote、Agenda（16:9 HTML 页），以及空白 slide/A4/海报模板。
+- **画布尺寸**：新建时可选择 Canvas · 16:9、A4、4:5、1:1、16:9 wide、Infinite 或 HTML page；用途由尺寸和内容决定，不再区分 Slide / Résumé 页面类型。
 - **Speaker notes**：在 Inspector 编辑每页备注；Present 模式有 Notes 开关，PPTX 导出会写入 notes。
 - **Present**：全屏翻页演示；单击屏幕或滚轮上下翻页，右键菜单提供上一页/下一页/激光笔/备注/退出，按 L 切换激光笔；Excalidraw 白板页以干净的只读 view mode 展示。
 - **PowerPoint 导出**：`hcanvas export <doc> --format pptx` 生成 16:9 PPTX，一页一张 slide，并带 speaker notes。
   - **Canvas 页面**（文本/形状/图片块，不含 HTML 块）会导出为**可编辑的 PowerPoint 文本框和形状**；
   - `format=pptx-editable` 还会用真实浏览器布局数据，把 HTML 标题、段落、列表、内联标签和卡片背景映射为原生 PowerPoint 文本框/形状；无文本可提取的页面回退为图片；
   - HTML、Infinite、Excalidraw 白板页在默认视觉 deck 中以高保真整页图片嵌入；
-  - **+ Page** 提供 Canvas · PPT cover / content 模板；
+  - 在 **+ Page** 创建 **Canvas · 16:9** 页面，添加文本/形状 blocks 即可导出可编辑 PowerPoint；
   - Legacy 白板页在图片/PPTX 渲染前会先转换为原生 blocks，不再使用 Excalidraw CLI。
 
-## 简历与海报
+## 文档、简历与海报
 
-**+ Page** 提供 A4 简历模板（Classic / Modern / ATS minimal）和 4:5 海报模板（Event / Product）。它们就是可编辑的 HTML 页面：直接改文字、用源码改布局，然后导出。
+使用通用的 **Canvas · A4** 做文档/简历，**Canvas · 4:5** 做海报。它们就是普通 canvas 页面：添加文本/形状/图片 blocks、直接编辑，然后导出。用途由画布尺寸和内容决定，不再有独立的“简历”或“幻灯片”页面类型。
 
 - **PDF / PNG / HTML**：通过本地浏览器按 A4/海报尺寸矢量打印；
 - **Print PDF**：Export → **Print PDF · 3mm bleed**（或 `--format pdf --bleed-mm 3 --crop-marks`）增加 3mm 出血和 slug 区裁切标记；输出为 RGB PDF，不做 CMYK 转换。
-- **DOCX（ATS）**：当前 HTML 页可导出 `format=docx`（UI：**Word résumé (.docx)**）。导出器遍历语义 HTML（标题、段落、列表），生成单栏 A4 Word 文档，文字可选，适合 ATS 投递；最稳妥的模板是 **ATS minimal**；
+- **DOCX（ATS）**：语义 HTML 页或 HTML-page 文档可导出 `format=docx`（UI：**Word résumé (.docx)**）。导出器遍历语义 HTML（标题、段落、列表），生成单栏 A4 Word 文档，文字可选，适合 ATS 投递；单栏纯文本布局最稳妥；
 - **PPTX**：简历/海报页也可以作为整页 slide 放进 PPTX deck。
 
 ## 页面母版

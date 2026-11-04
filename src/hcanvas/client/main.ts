@@ -24,7 +24,7 @@ import { addLineEndpointHandles } from './lineEndpoints.js';
 import { cloneBlocksForPlacement, parseBlocksFromClipboard, serializeBlocksForClipboard } from '../blockClipboard.js';
 import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawing.js';
 import { invertOps as invertDocumentOps } from './documentHistory.js';
-import { canvasTemplateBlocks, PAGE_PRESETS, pageTemplateHtml, starterHtml } from './pageTemplates.js';
+import { CANVAS_PAGE_PRESETS, canvasTemplateBlocks, pageTemplateHtml, starterHtml } from './pageTemplates.js';
 import { SHORTCUTS_MODAL_HTML } from './shortcuts.js';
 import { esc, genId } from './utils.js';
 
@@ -3089,7 +3089,7 @@ async function openAddPageModal(): Promise<void> {
   if (!state.doc) return;
   await loadMasters();
   let html = '<div class="modal"><div class="modal-head"><div><strong>Add a page</strong><small>HTML pages are directly editable; canvas pages accept blocks.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="preset-grid">';
-  for (const preset of PAGE_PRESETS) html += '<button type="button" class="preset-btn" data-preset="' + esc(preset.id) + '"><strong>' + esc(preset.title) + '</strong><small>' + esc(preset.hint) + '</small></button>';
+  for (const preset of CANVAS_PAGE_PRESETS) html += '<button type="button" class="preset-btn" data-preset="' + esc(preset.id) + '"><strong>' + esc(preset.title) + '</strong><small>' + esc(preset.hint) + '</small></button>';
   html += '</div>';
   html += pluginPagePickerMarkup(pageThumbHtml);
   if (state.masters.length) {
@@ -3103,7 +3103,7 @@ async function openAddPageModal(): Promise<void> {
   openModal(html);
   document.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach(button => {
     button.addEventListener('click', () => {
-      const preset = PAGE_PRESETS.find(item => item.id === button.dataset.preset);
+      const preset = CANVAS_PAGE_PRESETS.find(item => item.id === button.dataset.preset);
       if (!preset) return;
       closeModal();
       void createPage(preset);
@@ -3171,7 +3171,7 @@ async function addPluginPage(page: HcPage): Promise<void> {
   if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); void syncActive(); }
 }
 
-async function createPage(preset: typeof PAGE_PRESETS[number]): Promise<void> {
+async function createPage(preset: typeof CANVAS_PAGE_PRESETS[number]): Promise<void> {
   if (!state.doc) return;
   const page: HcPage = {
     id: genId('page'), name: preset.title, mode: preset.mode,
@@ -3179,18 +3179,18 @@ async function createPage(preset: typeof PAGE_PRESETS[number]): Promise<void> {
     ...(preset.mode === 'html' ? { html: preset.template ? pageTemplateHtml(preset.template, '') : starterHtml(preset.title) } : { blocks: preset.template?.startsWith('canvas-') ? canvasTemplateBlocks(preset.template, preset.width, preset.height) : [] }),
   };
   const result = await applyOps([{ op: 'add_page', page }], { refreshArtboard: false });
-  if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); }
+  if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); void syncActive(); }
 }
 
 function openNewDocModal(): void {
-  let html = '<div class="modal small"><div class="modal-head"><div><strong>New canvas</strong><small>Start with a page preset.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>Title</span><input id="newDocTitle" value="Untitled canvas"></div><div class="field"><span>First page</span><select id="newDocPreset">';
-  for (const preset of PAGE_PRESETS) html += '<option value="' + esc(preset.id) + '">' + esc(preset.title) + ' · ' + esc(preset.hint) + '</option>';
+  let html = '<div class="modal small"><div class="modal-head"><div><strong>New canvas</strong><small>Start with a canvas size.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>Title</span><input id="newDocTitle" value="Untitled canvas"></div><div class="field"><span>First page</span><select id="newDocPreset">';
+  for (const preset of CANVAS_PAGE_PRESETS) html += '<option value="' + esc(preset.id) + '">' + esc(preset.title) + ' · ' + esc(preset.hint) + '</option>';
   html += '</select></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="createDocBtn" class="btn primary">Create</button></div></div>';
   openModal(html);
   qs<HTMLButtonElement>('#createDocBtn')?.addEventListener('click', async () => {
     const title = qs<HTMLInputElement>('#newDocTitle')?.value || 'Untitled canvas';
-    const presetId = qs<HTMLSelectElement>('#newDocPreset')?.value || 'slide-html';
-    const preset = PAGE_PRESETS.find(item => item.id === presetId);
+    const presetId = qs<HTMLSelectElement>('#newDocPreset')?.value || 'canvas-16-9';
+    const preset = CANVAS_PAGE_PRESETS.find(item => item.id === presetId);
     closeModal();
     try {
       const result = await api<{ doc: HcDocument }>('/api/docs', {

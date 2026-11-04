@@ -1,4 +1,4 @@
-import type { HcBlock } from '../types.js';
+﻿import type { HcBlock } from '../types.js';
 import { esc, genId } from './utils.js';
 
 export interface HcClientPagePreset {
@@ -12,6 +12,18 @@ export interface HcClientPagePreset {
   template?: string;
 }
 
+/** Primary page-creation presets: one generic canvas surface per size, not use-case templates. */
+export const CANVAS_PAGE_PRESETS: HcClientPagePreset[] = [
+  { id: 'canvas-16-9', title: 'Canvas · 16:9', mode: 'canvas', width: 1280, height: 720, background: '#fbfaf7', hint: 'Slides & presentations' },
+  { id: 'canvas-a4', title: 'Canvas · A4', mode: 'canvas', width: 794, height: 1123, background: '#ffffff', hint: 'Documents, resumes & printables' },
+  { id: 'canvas-4-5', title: 'Canvas · 4:5', mode: 'canvas', width: 1080, height: 1350, background: '#f6f4ef', hint: 'Posters & social' },
+  { id: 'canvas-square', title: 'Canvas · 1:1', mode: 'canvas', width: 1080, height: 1080, background: '#fbfaf7', hint: 'Square graphics' },
+  { id: 'canvas-wide', title: 'Canvas · 16:9 wide', mode: 'canvas', width: 1920, height: 1080, background: '#ffffff', hint: 'Full-HD presentations' },
+  { id: 'infinite', title: 'Infinite canvas', mode: 'infinite', width: 4800, height: 3200, background: '#f8f6f1', hint: 'No bounds · pan & zoom' },
+  { id: 'html-page', title: 'HTML page', mode: 'html', width: 1280, height: 720, background: '#ffffff', hint: 'Directly editable HTML / CSS' },
+];
+
+/** Legacy decorated templates, kept for existing documents/API compatibility. New UI uses CANVAS_PAGE_PRESETS. */
 export const PAGE_PRESETS: HcClientPagePreset[] = [
   { id: 'slide-html', title: 'HTML slide', mode: 'html', width: 1280, height: 720, background: '#ffffff', hint: '16:9 · blank editable HTML' },
   { id: 'slide-cover', title: 'Slide · Cover', mode: 'html', width: 1280, height: 720, background: '#f6f4ef', hint: '16:9 · title slide', template: 'cover' },
