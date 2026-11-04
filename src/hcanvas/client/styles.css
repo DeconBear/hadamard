@@ -865,3 +865,5 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .hc-node-handle { position: absolute; z-index: 1200; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #7c3aed, 0 1px 4px rgba(31,36,48,.25); background: #7c3aed; cursor: grab; }
 .hc-node-handle.control { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; background: #fff; border-color: #7c3aed; box-shadow: 0 0 0 1px #7c3aed; }
 .hc-node-handle:active { cursor: grabbing; }
+
+.hc-context-label { padding: 6px 9px 3px; color: #9a8f80; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }

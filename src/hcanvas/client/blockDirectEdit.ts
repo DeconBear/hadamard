@@ -44,6 +44,10 @@ function supportsColor(block: HcBlock | null): boolean {
   return Boolean(block && block.type !== 'image' && block.type !== 'html');
 }
 
+function supportsStroke(block: HcBlock | null): boolean {
+  return Boolean(block && (block.type === 'curve' || block.type === 'freehand' || block.type === 'arrow' || block.type === 'shape'));
+}
+
 function supportsFill(block: HcBlock | null): boolean {
   return Boolean(block && ((block.type === 'shape' && block.shape !== 'line' && block.shape !== 'frame') || block.type === 'curve' || block.type === 'freehand'));
 }
@@ -89,6 +93,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
   const node = document.createElement('div');
   node.className = 'hc-context-menu';
   const hasImage = blocks.some(block => block.type === 'image');
+  const hasStroke = blocks.some(block => supportsStroke(block));
   node.innerHTML = '<div class="hc-context-head">' + escape(blocks.length > 1 ? blocks.length + ' blocks' : (blocks[0]?.name || blocks[0]?.type || 'Block')) + '</div>' +
     '<button type="button" data-hc-action="edit">Edit</button>' +
     '<button type="button" data-hc-action="duplicate">Duplicate</button>' +
@@ -102,6 +107,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
     '<button type="button" data-hc-action="color">Change color…</button>' +
     '<button type="button" data-hc-action="fill">Fill / gradient…</button>' +
     '<button type="button" data-hc-action="stroke">Stroke color…</button>' +
+    (hasStroke ? '<div class="hc-context-label">Line style</div><button type="button" data-hc-action="solid">Solid line</button><button type="button" data-hc-action="dashed">Dashed line</button><button type="button" data-hc-action="dotted">Dotted line</button>' : '') +
     '<button type="button" data-hc-action="eyedrop">Pick color from screen</button>' +
     '<div class="hc-context-sep"></div>' +
     (hasImage ? '<div class="hc-context-sep"></div><button type="button" data-hc-action="cutout">Remove image background…</button>' : '') +
@@ -314,6 +320,14 @@ function openImageCutoutFor(block: HcBlock): void {
   openImageCutout({ block, pageId: page.id, applyOps: context.applyOps, toast: context.toast });
 }
 
+function applyStrokeStyle(blocks: HcBlock[], strokeStyle: 'solid' | 'dashed' | 'dotted'): void {
+  if (!context) return;
+  const page = context.getPage();
+  if (!page) return;
+  const ops = blocks.filter(block => supportsStroke(block)).map(block => ({ op: 'update_block' as const, pageId: page.id, blockId: block.id, patch: { style: { ...(block.style || {}), strokeStyle } } }));
+  void context.applyOps(ops).then(() => updateDirectEditUI());
+}
+
 function openColorFor(blocks: HcBlock[], target: ColorTarget): void {
   const first = blocks[0];
   if (!first) return;
@@ -334,6 +348,7 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
     if (action === 'color') { openColorFor(blocks, 'auto'); return; }
     if (action === 'fill') { openColorFor(blocks, 'fill'); return; }
     if (action === 'stroke') { openColorFor(blocks, 'stroke'); return; }
+    if (action === 'solid' || action === 'dashed' || action === 'dotted') { applyStrokeStyle(blocks, action); return; }
     if (action === 'eyedrop') { void pickScreenColor(context?.toast).then(color => { if (color) applyColorToSelection(blocks, color, 'auto'); }); return; }
     moveLayer(action);
   });
