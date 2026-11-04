@@ -37,7 +37,7 @@ function textBody(block: HcBlock, mode: HcBlockRenderMode): string {
   if (mode === 'present') {
     return '<div style="padding:4px;font-size:' + (block.style?.fontSize || 20) + 'px;font-weight:' + (block.style?.fontWeight || 400) + ';color:' + escapeHtml(String(block.style?.color || '#1d232e')) + ';white-space:pre-wrap">' + escapeHtml(block.text || '') + '</div>';
   }
-  const paragraphs = (block.text || '').split(/\n{2,}/).map(paragraph => '<p>' + escapeHtml(paragraph).replace(/\n/g, '<br>') + '</p>').join('');
+  const paragraphs = (block.text || '').split(/\n{2,}/).map(paragraph => '<p style="margin:0">' + escapeHtml(paragraph).replace(/\n/g, '<br>') + '</p>').join('');
   return '<div style="padding:4px;' + textStyle(block) + '">' + paragraphs + '</div>';
 }
 
