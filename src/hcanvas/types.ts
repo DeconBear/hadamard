@@ -101,6 +101,12 @@ export interface HcBlock {
   rotation?: number;
   locked?: boolean;
   name?: string;
+  /** owning user layer; omitted blocks belong to the default layer */
+  layerId?: string;
+  /** closed vector paths can receive fill */
+  closed?: boolean;
+  /** optional gradient paint; overrides style.fill for closed/vector elements */
+  fillGradient?: HcGradient | null;
   /** html block / page block source */
   html?: string;
   /** plain text block source */
@@ -131,6 +137,16 @@ export interface HcBlock {
   style?: HcBlockStyle;
 }
 
+export interface HcGradientStop { offset: number; color: string; opacity?: number }
+export interface HcGradient { type: 'linear'; angle: number; stops: HcGradientStop[] }
+export interface HcLayer {
+  id: string;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  color?: string;
+}
+
 export interface HcWhiteboardScene {
   elements: unknown[];
   appState?: Record<string, unknown>;
@@ -148,6 +164,8 @@ export interface HcPage {
   html?: string;
   /** blocks when mode === 'canvas' or 'infinite' */
   blocks?: HcBlock[];
+  /** user layers ordered bottom → top; omitted means one implicit default layer */
+  layers?: HcLayer[];
   /** Excalidraw scene when mode === 'whiteboard' */
   scene?: HcWhiteboardScene;
   notes?: string;

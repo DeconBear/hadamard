@@ -1,4 +1,5 @@
 import type { HcBlock, HcShape } from './types.js';
+import { blockFill, gradientSvgDefs, normalizeGradient } from './fill.js';
 
 export type HcShapeCategory = 'Basic' | 'Lines' | 'Flowchart' | 'Stars & Banners' | 'Callouts' | 'Action Buttons';
 
@@ -164,9 +165,9 @@ interface HcShapePaint {
   common: string;
 }
 
-function shapePaint(shape: HcShape, style: HcBlock['style']): HcShapePaint {
-  const blockStyle = style || {};
-  const fillRaw = shape === 'frame' || shape === 'line' ? 'transparent' : String(blockStyle.fill || '#f3e8ff');
+function shapePaint(shape: HcShape, block: ShapeGeometryBlock): HcShapePaint {
+  const blockStyle = block.style || {};
+  const fillRaw = shape === 'frame' || shape === 'line' ? 'transparent' : (normalizeGradient(block.fillGradient) ? blockFill(block as HcBlock) : String(blockStyle.fill || '#f3e8ff'));
   const fill = fillRaw === 'transparent' ? 'none' : escapeAttribute(fillRaw);
   const strokeWidth = Number(blockStyle.strokeWidth ?? 0);
   const strokeColor = String(blockStyle.stroke || '');
@@ -204,7 +205,7 @@ function actionButtonGeometry(shape: HcShape, paint: HcShapePaint): string {
  * Coordinates use a 100x100 viewBox with preserveAspectRatio=none; stroke uses
  * vector-effect=non-scaling-stroke so the visible border keeps its px width.
  */
-type ShapeGeometryBlock = Pick<HcBlock, 'shape' | 'style'> & Partial<Pick<HcBlock, 'points' | 'w' | 'h'>>;
+type ShapeGeometryBlock = Pick<HcBlock, 'shape' | 'style'> & Partial<Pick<HcBlock, 'id' | 'points' | 'w' | 'h' | 'fillGradient'>>;
 
 export function linePoints(block: Pick<HcBlock, 'points'> & Partial<Pick<HcBlock, 'w' | 'h'>>): Array<{ x: number; y: number }> {
   if (block.points && block.points.length >= 2) return [{ x: block.points[0]!.x, y: block.points[0]!.y }, { x: block.points[1]!.x, y: block.points[1]!.y }];
@@ -214,7 +215,7 @@ export function linePoints(block: Pick<HcBlock, 'points'> & Partial<Pick<HcBlock
 export function shapeSvgMarkup(block: ShapeGeometryBlock): string {
   const shape = isHcShape(block.shape) ? block.shape : 'rect';
   const style = block.style || {};
-  const paint = shapePaint(shape, style);
+  const paint = shapePaint(shape, block);
   const common = paint.common;
   let geometry = '';
 
@@ -337,7 +338,7 @@ export function shapeSvgMarkup(block: ShapeGeometryBlock): string {
     }
   }
 
-  return '<svg class="block-shape-svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="display:block;overflow:visible" aria-hidden="true">' + geometry + '</svg>';
+  return '<svg class="block-shape-svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="display:block;overflow:visible" aria-hidden="true">' + gradientSvgDefs(block as HcBlock) + geometry + '</svg>';
 }
 
 function escapeText(value: string): string {

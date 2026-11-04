@@ -230,7 +230,9 @@ Shapes behave like PowerPoint/Figma objects: select one to get eight resize hand
 
 Selecting a block directly on the canvas exposes a **Color** swatch and eyedropper in the floating selection toolbar. Right-click any block for a context menu with Edit, Duplicate, Bring forward / Send backward / Bring to front / Send to back, Change color, Stroke color, Pick color from screen, and Delete. Color and layer changes are native edits with undo; the eyedropper uses Chromium's EyeDropper API when available.
 
-The right-side **Layers** tab lists blocks from top to bottom. Click a row to select it, Shift-click for multiple selection, use the row ↑/↓ buttons or the header **Front / Back** buttons to change stacking order, and drag rows to reorder. Layer changes are native `z` updates and support undo/redo.
+The right-side **Layers** tab is a user-layer tree. A page starts with one implicit **Default layer** containing every block; create new layers with **+**, delete non-default layers with **−** (contents are removed after confirmation), double-click a layer name to rename it, and click a layer header to make it the active layer for new blocks. Each layer has eye and lock toggles; hidden layers are omitted from the editor/export/Present, and locked layers cannot be selected or filled. Layers can be reordered by dragging their headers, and objects can be dragged from one layer to another. Within a layer blocks keep their own `z` order; the layer stack and block order both support undo/redo.
+
+Use **Color** for solid fills or pick a **Fill / gradient** preset in the same popover to apply a linear gradient fill to shapes and closed curves. The rail **▣ Fill** tool fills a closed shape/path directly on the canvas; selecting an element and using **Fill / gradient…** in the right-click menu does the same. Gradient paint is rendered natively in SVG, Present and exports.
 
 Pages can use slide (16:9), A4, poster (4:5), square and custom sizes. Present mode shows pages full screen; exports support HTML, PDF and PNG (local Chrome/Edge/Chromium). Page master/layout templates and editable PPTX export are future work.
 

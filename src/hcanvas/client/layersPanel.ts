@@ -1,165 +1,238 @@
-import type { HcBlock, HcOp, HcPage } from '../types.js';
+import type { HcBlock, HcLayer, HcOp, HcPage } from '../types.js';
+import { createLayer, ensureLayerList, effectiveLayers, DEFAULT_LAYER_ID } from '../layers.js';
 
 export interface LayersPanelOptions {
   panel: HTMLElement;
   getPage(): HcPage | null;
   getSelectedIds(): string[];
-  select(id: string | null, additive?: boolean): void;
+  select(ids: string[], primary?: string | null): void;
   applyOps(ops: HcOp[]): Promise<boolean>;
+  toast(message: string, kind?: 'info' | 'success' | 'error'): void;
 }
 
 export interface LayersContext extends LayersPanelOptions {}
-
 let context: LayersContext | null = null;
-let dragId: string | null = null;
+let draggingLayer: string | null = null;
+const activeLayerByPage = new Map<string, string>();
+const collapsedLayers = new Set<string>();
 
-export function configureLayersPanel(options: LayersPanelOptions): void {
-  context = options;
-}
+export function configureLayersPanel(options: LayersPanelOptions): void { context = options; }
 
-function escape(value: unknown): string {
+function escapeHtml(value: unknown): string {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-const GLYPHS: Record<string, string> = {
-  text: 'T', html: '<>', markdown: 'MD', code: '</>', image: '▧', shape: '◇', curve: '∿', freehand: '✎', arrow: '→', math: '∑',
-};
-
-function layerLabel(block: HcBlock): string {
-  if (block.name) return block.name;
-  if (block.text) return block.text.replace(/\s+/g, ' ').slice(0, 32);
-  if (block.markdown) return block.markdown.replace(/\s+/g, ' ').slice(0, 32);
-  if (block.type === 'shape' && block.shape) return block.shape;
-  return block.type;
+export function activeLayerId(page: HcPage | null): string {
+  if (!page) return DEFAULT_LAYER_ID;
+  const layers = effectiveLayers(page);
+  const stored = activeLayerByPage.get(page.id);
+  const active = layers.find(layer => layer.id === stored && layer.visible !== false) || layers.find(layer => layer.id === DEFAULT_LAYER_ID && layer.visible !== false) || layers.find(layer => layer.visible !== false) || layers[0]!;
+  activeLayerByPage.set(page.id, active.id);
+  return active.id;
 }
 
-export function orderedLayers(page: HcPage | null): HcBlock[] {
-  return [...(page?.blocks || [])].sort((a, b) => b.z - a.z || (a.id < b.id ? -1 : 1));
+function selectedIds(): Set<string> { return new Set(context?.getSelectedIds() || []); }
+
+function layerBlocks(page: HcPage, layerId: string): HcBlock[] {
+  return (page.blocks || []).filter(block => (block.layerId || DEFAULT_LAYER_ID) === layerId).sort((a, b) => b.z - a.z);
 }
 
-function selectedIdSet(): Set<string> {
-  return new Set(context?.getSelectedIds() || []);
+function layerIcon(name: string): string {
+  return String(name || 'L').trim().slice(0, 1).toUpperCase();
 }
 
-async function applyOrder(idsTopDown: string[]): Promise<void> {
+function layerCount(page: HcPage, layer: HcLayer): number {
+  return (page.blocks || []).filter(block => (block.layerId || DEFAULT_LAYER_ID) === layer.id).length;
+}
+
+async function updateLayers(page: HcPage, layers: HcLayer[]): Promise<void> {
   if (!context) return;
-  const page = context.getPage();
-  if (!page) return;
-  const byId = new Map((page.blocks || []).map(block => [block.id, block]));
-  const ordered = idsTopDown.map(id => byId.get(id)).filter((block): block is HcBlock => Boolean(block));
-  if (ordered.length < 2) return;
-  const ops = ordered.flatMap((block, index) => {
-    const z = ordered.length - index;
-    return block.z === z ? [] : [{ op: 'update_block' as const, pageId: page.id, blockId: block.id, patch: { z } }];
-  });
-  if (ops.length) await context.applyOps(ops);
+  const result = await context.applyOps([{ op: 'update_page', pageId: page.id, patch: { layers } }]);
+  if (result) renderLayersPanel();
+}
+
+async function createNewLayer(page: HcPage): Promise<void> {
+  if (!context) return;
+  const layers = ensureLayerList(page);
+  const name = 'Layer ' + (layers.length + 1);
+  const layer = createLayer(name);
+  const next = [...layers, layer];
+  await updateLayers(page, next);
+  activeLayerByPage.set(page.id, layer.id);
+  context.toast('Created ' + name, 'success');
   renderLayersPanel();
 }
 
-async function moveLayer(id: string, direction: 'front' | 'back'): Promise<void> {
+async function removeActiveLayer(page: HcPage): Promise<void> {
   if (!context) return;
-  const page = context.getPage();
-  if (!page) return;
-  const ids = orderedLayers(page).map(block => block.id);
-  const rest = ids.filter(item => item !== id);
-  const next = direction === 'front' ? [id, ...rest] : [...rest, id];
-  await applyOrder(next);
-  context.select(id);
+  const layers = effectiveLayers(page);
+  const activeId = activeLayerId(page);
+  if (activeId === DEFAULT_LAYER_ID || layers.length <= 1) { context.toast('The default layer cannot be deleted.', 'info'); return; }
+  const layer = layers.find(item => item.id === activeId);
+  if (!layer) return;
+  const blocks = layerBlocks(page, activeId);
+  if (blocks.length && !window.confirm('Delete "' + layer.name + '" and its ' + blocks.length + ' object(s)?')) return;
+  const nextLayers = layers.filter(item => item.id !== activeId);
+  const ops: HcOp[] = [
+    ...blocks.map(block => ({ op: 'delete_block' as const, pageId: page.id, blockId: block.id })),
+    { op: 'update_page', pageId: page.id, patch: { layers: nextLayers } },
+  ];
+  const result = await context.applyOps(ops);
+  if (!result) return;
+  activeLayerByPage.set(page.id, DEFAULT_LAYER_ID);
+  context.select([], null);
+  context.toast('Deleted ' + layer.name, 'success');
+  renderLayersPanel();
 }
 
-async function moveSelected(direction: 'front' | 'back'): Promise<void> {
+async function toggleLayer(page: HcPage, id: string, field: 'visible' | 'locked'): Promise<void> {
   if (!context) return;
-  const page = context.getPage();
-  if (!page) return;
-  const selected = selectedIdSet();
-  if (!selected.size) return;
-  const ids = orderedLayers(page).map(block => block.id);
-  const picked = ids.filter(id => selected.has(id));
-  const rest = ids.filter(id => !selected.has(id));
-  const next = direction === 'front' ? [...picked, ...rest] : [...rest, ...picked];
-  await applyOrder(next);
+  const layers = effectiveLayers(page).map(layer => layer.id === id ? { ...layer, [field]: !layer[field] } : { ...layer });
+  const changed = layers.find(layer => layer.id === id);
+  if (!changed) return;
+  await updateLayers(page, layers);
+  if (field === 'locked' && changed.locked) {
+    const ids = new Set((page.blocks || []).filter(block => (block.layerId || DEFAULT_LAYER_ID) === id).map(block => block.id));
+    context.select(context.getSelectedIds().filter(item => !ids.has(item)), null);
+  }
+  if (field === 'visible' && !changed.visible) {
+    const ids = new Set((page.blocks || []).filter(block => (block.layerId || DEFAULT_LAYER_ID) === id).map(block => block.id));
+    context.select(context.getSelectedIds().filter(item => !ids.has(item)), null);
+  }
 }
 
-function bind(panel: HTMLElement): void {
-  panel.querySelectorAll<HTMLElement>('[data-layer-id]').forEach(row => {
-    const id = row.dataset.layerId;
-    if (!id) return;
-    row.addEventListener('click', event => {
+async function renameLayer(page: HcPage, id: string): Promise<void> {
+  if (!context) return;
+  const layers = effectiveLayers(page);
+  const layer = layers.find(item => item.id === id);
+  if (!layer) return;
+  const name = window.prompt('Layer name', layer.name)?.trim();
+  if (!name) return;
+  await updateLayers(page, layers.map(item => item.id === id ? { ...item, name } : item));
+}
+
+async function moveActiveLayerOrder(page: HcPage, id: string, direction: 'up' | 'down'): Promise<void> {
+  const layers = effectiveLayers(page).map(layer => ({ ...layer }));
+  const index = layers.findIndex(layer => layer.id === id);
+  if (index < 0) return;
+  const target = direction === 'up' ? index + 1 : index - 1;
+  if (target < 0 || target >= layers.length) return;
+  [layers[index], layers[target]] = [layers[target]!, layers[index]!];
+  await updateLayers(page, layers);
+}
+
+async function assignBlockLayer(page: HcPage, blockId: string, layerId: string): Promise<void> {
+  if (!context) return;
+  const block = (page.blocks || []).find(item => item.id === blockId);
+  if (!block) return;
+  const maxZ = Math.max(0, ...(page.blocks || []).filter(item => (item.layerId || DEFAULT_LAYER_ID) === layerId).map(item => item.z));
+  const result = await context.applyOps([{ op: 'update_block', pageId: page.id, blockId, patch: { layerId, z: maxZ + 1 } }]);
+  if (result) {
+    context.select([blockId], blockId);
+    context.toast('Moved to layer', 'success');
+    renderLayersPanel();
+  }
+}
+
+function bind(panel: HTMLElement, page: HcPage): void {
+  const activeId = activeLayerId(page);
+  panel.querySelectorAll<HTMLElement>('[data-layer-head]').forEach(head => {
+    const id = head.dataset.layerHead!;
+    head.addEventListener('click', event => {
       if ((event.target as Element).closest('button')) return;
-      context?.select(id, event.shiftKey || event.metaKey || event.ctrlKey);
+      activeLayerByPage.set(page.id, id);
+      renderLayersPanel();
     });
-    row.addEventListener('dragstart', event => {
-      dragId = id;
-      row.classList.add('dragging');
-      event.dataTransfer?.setData('text/plain', id);
+    head.addEventListener('dblclick', event => {
+      event.preventDefault();
+      void renameLayer(page, id);
+    });
+    head.addEventListener('dragstart', event => {
+      draggingLayer = id;
+      event.dataTransfer?.setData('text/plain', 'layer:' + id);
       if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
     });
-    row.addEventListener('dragend', () => {
-      dragId = null;
-      row.classList.remove('dragging');
-      panel.querySelectorAll('.layer-row').forEach(node => node.classList.remove('drop-target'));
-    });
-    row.addEventListener('dragover', event => {
-      if (!dragId || dragId === id) return;
+    head.addEventListener('dragend', () => { draggingLayer = null; panel.querySelectorAll('.layer-head').forEach(node => node.classList.remove('drop-target')); });
+    head.addEventListener('dragover', event => {
       event.preventDefault();
-      row.classList.add('drop-target');
-      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      head.classList.add('drop-target');
     });
-    row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
-    row.addEventListener('drop', event => {
+    head.addEventListener('dragleave', () => head.classList.remove('drop-target'));
+    head.addEventListener('drop', event => {
       event.preventDefault();
-      row.classList.remove('drop-target');
-      if (!dragId || dragId === id) return;
-      const page = context?.getPage();
-      if (!page) return;
-      const ids = orderedLayers(page).map(block => block.id);
-      const from = ids.indexOf(dragId);
-      const to = ids.indexOf(id);
-      if (from < 0 || to < 0) return;
-      ids.splice(from, 1);
-      ids.splice(to, 0, dragId);
-      void applyOrder(ids);
-      dragId = null;
+      head.classList.remove('drop-target');
+      const data = event.dataTransfer?.getData('text/plain') || '';
+      if (data.startsWith('block:')) void assignBlockLayer(page, data.slice(6), id);
+      else if (draggingLayer && draggingLayer !== id) {
+        const layers = effectiveLayers(page).map(layer => ({ ...layer }));
+        const from = layers.findIndex(layer => layer.id === draggingLayer);
+        const to = layers.findIndex(layer => layer.id === id);
+        if (from >= 0 && to >= 0) {
+          const [moved] = layers.splice(from, 1);
+          layers.splice(to, 0, moved!);
+          void updateLayers(page, layers);
+        }
+        draggingLayer = null;
+      }
     });
-    row.querySelector<HTMLButtonElement>('[data-layer-front]')?.addEventListener('click', event => {
+    head.querySelector<HTMLElement>('[data-layer-expand]')?.addEventListener('click', event => {
       event.stopPropagation();
-      void moveLayer(id, 'front');
+      if (collapsedLayers.has(id)) collapsedLayers.delete(id); else collapsedLayers.add(id);
+      renderLayersPanel();
     });
-    row.querySelector<HTMLButtonElement>('[data-layer-back]')?.addEventListener('click', event => {
-      event.stopPropagation();
-      void moveLayer(id, 'back');
+    head.querySelector<HTMLButtonElement>('[data-layer-eye]')?.addEventListener('click', event => { event.stopPropagation(); void toggleLayer(page, id, 'visible'); });
+    head.querySelector<HTMLButtonElement>('[data-layer-lock]')?.addEventListener('click', event => { event.stopPropagation(); void toggleLayer(page, id, 'locked'); });
+    head.querySelector<HTMLButtonElement>('[data-layer-up]')?.addEventListener('click', event => { event.stopPropagation(); void moveActiveLayerOrder(page, id, 'up'); });
+    head.querySelector<HTMLButtonElement>('[data-layer-down]')?.addEventListener('click', event => { event.stopPropagation(); void moveActiveLayerOrder(page, id, 'down'); });
+  });
+  panel.querySelectorAll<HTMLElement>('[data-layer-block]').forEach(row => {
+    const blockId = row.dataset.layerBlock!;
+    row.addEventListener('click', event => context?.select([blockId], blockId));
+    row.addEventListener('dragstart', event => {
+      event.dataTransfer?.setData('text/plain', 'block:' + blockId);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
     });
   });
-  panel.querySelectorAll<HTMLButtonElement>('[data-layer-selected-front]').forEach(button => button.addEventListener('click', () => { void moveSelected('front'); }));
-  panel.querySelectorAll<HTMLButtonElement>('[data-layer-selected-back]').forEach(button => button.addEventListener('click', () => { void moveSelected('back'); }));
+  panel.querySelector<HTMLButtonElement>('[data-layer-add]')?.addEventListener('click', () => { void createNewLayer(page); });
+  panel.querySelector<HTMLButtonElement>('[data-layer-delete]')?.addEventListener('click', () => { void removeActiveLayer(page); });
+  panel.querySelector<HTMLButtonElement>('[data-layer-front]')?.addEventListener('click', () => { void moveActiveLayerOrder(page, activeId, 'up'); });
+  panel.querySelector<HTMLButtonElement>('[data-layer-back]')?.addEventListener('click', () => { void moveActiveLayerOrder(page, activeId, 'down'); });
 }
 
 export function renderLayersPanel(): void {
   if (!context) return;
   const panel = context.panel;
   const page = context.getPage();
-  const layers = orderedLayers(page);
-  const selected = selectedIdSet();
-  if (!page || !layers.length) {
-    panel.innerHTML = '<div class="layers-header"><div><strong>Layers</strong><span>No blocks yet</span></div></div>' +
-      '<div class="layers-empty">Add text, shapes, curves or HTML to this page. Blocks will appear here in stacking order.</div>';
+  if (!page || (page.mode !== 'canvas' && page.mode !== 'infinite')) {
+    panel.innerHTML = '<div class="layers-header"><div><strong>Layers</strong><span>Layers are available on Canvas and Infinite pages</span></div></div>';
     return;
   }
-  const rows = layers.map((block, index) => {
-    const isSelected = selected.has(block.id);
-    return '<div class="layer-row' + (isSelected ? ' selected' : '') + '" draggable="true" data-layer-id="' + escape(block.id) + '">' +
-      '<span class="layer-grip" aria-hidden="true">⠿</span>' +
-      '<span class="layer-icon">' + escape(GLYPHS[block.type] || '▢') + '</span>' +
-      '<span class="layer-name">' + escape(layerLabel(block)) + '</span>' +
-      '<span class="layer-type">' + escape(block.type) + '</span>' +
-      '<span class="layer-actions">' +
-      '<button type="button" class="layer-action" data-layer-front title="Bring to front">↑</button>' +
-      '<button type="button" class="layer-action" data-layer-back title="Send to back">↓</button>' +
-      '</span></div>';
+  const layers = effectiveLayers(page);
+  const topDown = [...layers].reverse();
+  const selected = selectedIds();
+  const active = activeLayerId(page);
+  const rows = topDown.map(layer => {
+    const count = layerCount(page, layer);
+    const collapsed = collapsedLayers.has(layer.id);
+    const isActive = layer.id === active;
+    const children = collapsed ? '' : layerBlocks(page, layer.id).map(block => {
+      const isSelected = selected.has(block.id);
+      return '<div class="layer-child' + (isSelected ? ' selected' : '') + '" draggable="true" data-layer-block="' + escapeHtml(block.id) + '"><span class="layer-child-icon">' + escapeHtml(block.type === 'shape' ? '◇' : block.type === 'curve' ? '∿' : block.type === 'text' ? 'T' : '▢') + '</span><span class="layer-child-name">' + escapeHtml(block.name || block.text || block.type) + '</span></div>';
+    }).join('');
+    return '<div class="layer-group' + (isActive ? ' active' : '') + '" data-layer-group="' + escapeHtml(layer.id) + '">' +
+      '<div class="layer-head" draggable="true" data-layer-head="' + escapeHtml(layer.id) + '">' +
+      '<button type="button" class="layer-icon-btn" data-layer-expand title="Expand/collapse">' + (collapsed ? '▸' : '▾') + '</button>' +
+      '<button type="button" class="layer-icon-btn" data-layer-eye title="Toggle visibility">' + (layer.visible ? '◉' : '○') + '</button>' +
+      '<button type="button" class="layer-icon-btn" data-layer-lock title="Toggle lock">' + (layer.locked ? '🔒' : '🔓') + '</button>' +
+      '<span class="layer-badge">' + escapeHtml(layerIcon(layer.name)) + '</span>' +
+      '<span class="layer-name">' + escapeHtml(layer.name) + '</span>' +
+      '<span class="layer-count">' + count + '</span>' +
+      '<span class="layer-head-actions"><button type="button" class="layer-icon-btn" data-layer-up title="Raise layer">↑</button><button type="button" class="layer-icon-btn" data-layer-down title="Lower layer">↓</button></span>' +
+      '</div><div class="layer-children">' + children + (count === 0 ? '<div class="layer-empty-row">Empty layer</div>' : '') + '</div></div>';
   }).join('');
-  panel.innerHTML = '<div class="layers-header"><div><strong>Layers</strong><span>' + layers.length + ' block' + (layers.length === 1 ? '' : 's') + ' · top → bottom</span></div>' +
-    '<div class="layers-head-actions"><button type="button" class="btn tiny" data-layer-selected-front' + (selected.size ? '' : ' disabled') + '>Front</button><button type="button" class="btn tiny" data-layer-selected-back' + (selected.size ? '' : ' disabled') + '>Back</button></div></div>' +
-    '<div class="layers-help">Click to select · Shift-click for multiple · drag to reorder</div>' +
+  panel.innerHTML = '<div class="layers-header"><div><strong>Layers</strong><span>' + layers.length + ' layer' + (layers.length === 1 ? '' : 's') + ' · top → bottom</span></div>' +
+    '<div class="layers-head-actions"><button type="button" class="btn tiny" data-layer-add title="New layer">+</button><button type="button" class="btn tiny" data-layer-delete title="Delete active layer">−</button></div></div>' +
+    '<div class="layers-help">Active layer: <strong>' + escapeHtml(layers.find(layer => layer.id === active)?.name || 'Default layer') + '</strong><br>Click a layer to make it active · double-click to rename · drag objects onto a layer</div>' +
     '<div class="layer-list">' + rows + '</div>';
-  bind(panel);
+  bind(panel, page);
 }

@@ -7,6 +7,7 @@ export interface CurveDrawOptions {
   getPage(): HcPage | null;
   getWorldPoint(clientX: number, clientY: number): { x: number; y: number };
   nextId(): string;
+  layerId(): string;
   canDraw(): boolean;
   createBlock(block: HcBlock): void;
 }
@@ -72,6 +73,7 @@ export function beginCurveDraw(startEvent: PointerEvent, options: CurveDrawOptio
     options.createBlock({
       id: options.nextId(),
       type: 'curve',
+      layerId: options.layerId(),
       x: originX,
       y: originY,
       w: Math.max(8, Math.round(maxX - originX)),

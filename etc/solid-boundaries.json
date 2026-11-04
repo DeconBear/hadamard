@@ -22,8 +22,8 @@
   },
   "interfaces": {
     "hcanvas/types.ts#HcBlock": {
-      "maxMembers": 26,
-      "reason": "Native canvas block schema extended with freehand/arrow points, arrowhead and binding ids."
+      "maxMembers": 29,
+      "reason": "Native canvas block schema extended with user-layer ownership, closed vector fill and linear-gradient paint."
     },
     "config/agentProfiles.ts#SelectableAgent": { "maxMembers": 29, "reason": "Compatibility DTO extended with the reusable Agent execution mode and the orthogonal tool presentation." },
     "issues/issueStore.ts#ProjectIssue": { "maxMembers": 21, "reason": "Persisted issue schema." },

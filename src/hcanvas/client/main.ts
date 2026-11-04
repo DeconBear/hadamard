@@ -3,7 +3,8 @@ import { html as htmlLang } from '@codemirror/lang-html';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { renderMarkdownHtml, renderMathHtml } from '../markdown.js';
 import { installCurveTool } from './curveTool.js';
-import { configureLayersPanel, renderLayersPanel } from './layersPanel.js';
+import { activeLayerId, configureLayersPanel, renderLayersPanel } from './layersPanel.js';
+import { blockRenderZ, blocksInStackOrder, isBlockLocked } from '../layers.js';
 import { installBlockDirectEdit, updateDirectEditUI } from './blockDirectEdit.js';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
@@ -443,7 +444,7 @@ function beginShapeDraw(startEvent: PointerEvent): void {
       shape,
       ...bounds,
       z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1,
-      name: HCANVAS_SHAPES.find(item => item.id === shape)?.label || 'Shape',
+      name: HCANVAS_SHAPES.find(item => item.id === shape)?.label || 'Shape', layerId: activeLayerId(page),
       style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 16 },
     };
     void applyOps([{ op: 'add_block', pageId: page.id, block }], { refreshArtboard: true }).then(result => {
@@ -735,14 +736,14 @@ function bindStaticActions(): void {
     selectBlocks: (ids, primaryId) => setBlockSelection(ids, primaryId),
     toast,
   });
-  installBlockDirectEdit({ viewport: el('viewport'), getPage: activePage, getBlocks: () => activePage()?.blocks || [], getSelectedIds: () => state.selectedBlockIds, select: (ids, primary) => setBlockSelection(ids, primary), applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean), edit: editActiveBlock, duplicate: () => { void duplicateActiveBlock(); }, remove: () => { void deleteSelectedBlocks(); }, toast });
+  installBlockDirectEdit({ viewport: el('viewport'), getPage: activePage, getBlocks: () => activePage()?.blocks || [], getSelectedIds: () => state.selectedBlockIds, isLocked: id => { const pg = activePage(); const item = pg?.blocks?.find(block => block.id === id); return Boolean(pg && item && isBlockLocked(pg, item)); }, select: (ids, primary) => setBlockSelection(ids, primary), applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean), edit: editActiveBlock, duplicate: () => { void duplicateActiveBlock(); }, remove: () => { void deleteSelectedBlocks(); }, toast });
   configureLayersPanel({
     panel: el('layersPanel'), getPage: activePage, getSelectedIds: () => state.selectedBlockIds,
-    select: (id, additive) => selectBlock(id, { additive }),
-    applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean),
+    select: (ids, primary) => setBlockSelection(ids, primary),
+    applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean), toast,
   });
   installCurveTool({
-    viewport: el('viewport'), artboard: el('artboard'), getPage: activePage, getWorldPoint: viewportToWorldPoint, nextId: () => genId('block'),
+    viewport: el('viewport'), artboard: el('artboard'), getPage: activePage, getWorldPoint: viewportToWorldPoint, nextId: () => genId('block'), layerId: () => activeLayerId(activePage()),
     canDraw: () => state.tool === 'curve' && !state.editing,
     createBlock: block => { void applyOps([{ op: 'add_block', pageId: activePage()!.id, block } as HcOp], { refreshArtboard: true }).then(result => { if (result) setBlockSelection([block.id], block.id); }); },
   });
@@ -1890,13 +1891,13 @@ function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
   wrap.style.top = block.y + 'px';
   wrap.style.width = block.w + 'px';
   wrap.style.height = block.h + 'px';
-  wrap.style.zIndex = String(block.z + 1);
+  wrap.style.zIndex = String(blockRenderZ(page, block));
   if (block.rotation) { wrap.style.transform = 'rotate(' + block.rotation + 'deg)'; wrap.style.transformOrigin = 'center center'; }
   if (block.style?.opacity !== undefined) wrap.style.opacity = String(block.style.opacity);
   return wrap;
 }
 function renderCanvasPage(container: HTMLElement, page: HcPage): void {
-  const blocks = [...(page.blocks || [])].sort((left, right) => left.z - right.z);
+  const blocks = blocksInStackOrder(page);
   for (const block of blocks) {
     const wrap = blockWrapper(block, page);
     const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
@@ -2093,6 +2094,7 @@ function selectBlock(blockId: string | null, options: { additive?: boolean } = {
   if (!blockId) { setBlockSelection([]); return; }
   const block = activePage()?.blocks?.find(item => item.id === blockId);
   if (!block) { setBlockSelection([]); return; }
+  if (isBlockLocked(activePage()!, block)) { toast('This block is on a locked layer.', 'info'); return; }
   const groupIds = expandGroupSelection(block);
   if (options.additive) {
     const current = new Set(state.selectedBlockIds);
@@ -2995,7 +2997,7 @@ async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}, pos
   const startX = page.mode === 'infinite' ? snapCoordinate(center.x - blockW / 2) : Math.max(0, Math.min(Math.max(0, page.width - blockW), Math.round(center.x - blockW / 2)));
   const startY = page.mode === 'infinite' ? snapCoordinate(center.y - blockH / 2) : Math.max(0, Math.min(Math.max(0, page.height - blockH), Math.round(center.y - blockH / 2)));
   const block: HcBlock = {
-    id: genId('block'), type, x: startX, y: startY, w: blockW, h: blockH, z, name: type + ' block',
+    id: genId('block'), type, x: startX, y: startY, w: blockW, h: blockH, z, layerId: activeLayerId(page), name: type + ' block',
     ...(type === 'html' ? { html: '<div style="box-sizing:border-box;height:100%;padding:28px;border:1px solid #e7e0d2;border-radius:18px;background:#fffdf8;font-family:Inter,sans-serif;color:#2e2a24"><h2 style="margin:0 0 8px;font-family:Georgia,serif;font-weight:500;font-size:28px;letter-spacing:-.03em">New HTML block</h2><p style="margin:0;font-size:15px;line-height:1.6;color:#655e52">Double-click to edit text directly.</p></div>' } : {}),
     ...(type === 'text' ? { text: 'New text block', style: { fontSize: 30, fontWeight: 600, color: '#1d232e' } } : {}),
     ...(type === 'markdown' ? { markdown: '## New markdown block\n\nWrite **markdown** here.', style: { fill: '#ffffff', radius: 16 } } : {}),

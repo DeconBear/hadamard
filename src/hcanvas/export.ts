@@ -10,6 +10,7 @@ import pptxgen from 'pptxgenjs';
 import { BorderStyle, Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 
 import { htmlToPlainDocument } from './html.js';
+import { blocksInStackOrder } from './layers.js';
 import { blockPlugin } from './blockPlugins.js';
 import { renderBlockBody } from './builtinBlocks.js';
 import { excalidrawSceneToNativePage } from './sceneBridge.js';
@@ -57,7 +58,7 @@ function renderBlock(block: HcBlock): string {
 
 function exportPage(page: HcPage): HcPage {
   if (page.mode !== 'infinite') return page;
-  const blocks = page.blocks || [];
+  const blocks = blocksInStackOrder(page);
   if (!blocks.length) return { ...page, width: 1280, height: 720 };
   const minX = Math.min(...blocks.map(block => block.x));
   const minY = Math.min(...blocks.map(block => block.y));
@@ -83,7 +84,7 @@ function nativePageFromWhiteboard(page: HcPage): HcPage {
 }
 
 function renderCanvasPage(page: HcPage): string {
-  const blocks = [...(page.blocks || [])].sort((left, right) => left.z - right.z).map(renderBlock).join('');
+  const blocks = blocksInStackOrder(page).map((block, index) => renderBlock({ ...block, z: index + 1 })).join('');
   return '<div class="hc-page hc-page-canvas" style="width:' + page.width + 'px;height:' + page.height + 'px;background:' + escapeHtml(page.background) + '">' + blocks + '</div>';
 }
 
@@ -242,7 +243,7 @@ function textContentOf(node: any): string {
 }
 
 function canvasPageToSemanticHtml(page: HcPage): string {
-  const blocks = [...(page.blocks || [])].sort((left, right) => (left.y - right.y) || (left.x - right.x));
+  const blocks = [...blocksInStackOrder(page)].sort((left, right) => (left.y - right.y) || (left.x - right.x));
   const parts: string[] = ['<!doctype html><html><head><meta charset="utf-8"></head><body>'];
   for (const block of blocks) {
     if (block.type === 'text') {
@@ -407,7 +408,7 @@ function addEditableCanvasSlide(pptx: { addSlide: () => any; ShapeType: { roundR
   const offsetX = (slideW - page.width * scale) / 2;
   const offsetY = (slideH - page.height * scale) / 2;
   const pxToPt = scale * 72;
-  const blocks = [...(page.blocks || [])].sort((left, right) => left.z - right.z);
+  const blocks = blocksInStackOrder(page);
   for (const block of blocks) {
     const style = block.style || {};
     const x = offsetX + block.x * scale;
@@ -488,7 +489,7 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
       const editable = Boolean(options.editableHtml)
         && page.mode === 'canvas'
         && blocks.length > 0
-        && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow' || block.type === 'curve' || block.type === 'math' || Boolean(blockPlugin(block.type)))
+        && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow' || block.type === 'curve' || block.type === 'math' || Boolean(block.fillGradient) || Boolean(blockPlugin(block.type)))
         && !blocks.some(block => block.type === 'image' && /^https?:/i.test(block.src || ''));
       if (editable) {
         addEditableCanvasSlide(pptx as unknown as { addSlide: () => any; ShapeType: { roundRect: string; ellipse: string } }, page, index, deckW, deckH);

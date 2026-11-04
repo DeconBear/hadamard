@@ -1,4 +1,5 @@
-import type { HcBlock, HcOp, HcPage } from '../types.js';
+import type { HcBlock, HcGradient, HcOp, HcPage } from '../types.js';
+import { gradientCss } from '../fill.js';
 
 type ColorTarget = 'auto' | 'fill' | 'stroke' | 'text';
 
@@ -7,6 +8,7 @@ export interface BlockDirectEditOptions {
   getPage(): HcPage | null;
   getBlocks(): HcBlock[];
   getSelectedIds(): string[];
+  isLocked(id: string): boolean;
   select(ids: string[], primary?: string | null): void;
   applyOps(ops: HcOp[]): Promise<boolean>;
   edit(): void;
@@ -21,8 +23,16 @@ let context: DirectEditContext | null = null;
 let menu: HTMLDivElement | null = null;
 let popover: HTMLDivElement | null = null;
 let popoverClose: (() => void) | null = null;
+let fillMode = false;
+let fillButton: HTMLButtonElement | null = null;
 
 const SWATCHES = ['#1f2430', '#ffffff', '#f3e8ff', '#a855f7', '#8b5cf6', '#ff3d7f', '#ff8a3d', '#f5c542', '#67cf76', '#37c7b4', '#5a9ee8', '#4562b8'];
+const GRADIENTS: HcGradient[] = [
+  { type: 'linear', angle: 90, stops: [{ offset: 0, color: '#ff3d7f' }, { offset: 1, color: '#8b5cf6' }] },
+  { type: 'linear', angle: 90, stops: [{ offset: 0, color: '#8b5cf6' }, { offset: 1, color: '#5a9ee8' }] },
+  { type: 'linear', angle: 90, stops: [{ offset: 0, color: '#37c7b4' }, { offset: 1, color: '#67cf76' }] },
+  { type: 'linear', angle: 90, stops: [{ offset: 0, color: '#ff8a3d' }, { offset: 1, color: '#f5c542' }] },
+];
 
 function escape(value: unknown): string {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -30,6 +40,10 @@ function escape(value: unknown): string {
 
 function supportsColor(block: HcBlock | null): boolean {
   return Boolean(block && block.type !== 'image' && block.type !== 'html');
+}
+
+function supportsFill(block: HcBlock | null): boolean {
+  return Boolean(block && ((block.type === 'shape' && block.shape !== 'line' && block.shape !== 'frame') || block.type === 'curve' || block.type === 'freehand'));
 }
 
 function primaryColor(block: HcBlock): string {
@@ -42,9 +56,10 @@ function colorPatch(block: HcBlock, color: string, target: ColorTarget = 'auto')
   if (!supportsColor(block)) return null;
   const style = { ...(block.style || {}) };
   if (target === 'stroke' && (block.type === 'shape')) return { style: { ...style, stroke: color } };
-  if (target === 'fill' && block.type === 'shape') return { style: { ...style, fill: color } };
+  if (target === 'fill' && block.type === 'shape') return { style: { ...style, fill: color }, fillGradient: null };
+  if (target === 'fill' && (block.type === 'curve' || block.type === 'freehand')) return { style: { ...style, fill: color }, closed: true, fillGradient: null };
   if (target === 'text') return { style: { ...style, color } };
-  if (block.type === 'shape') return { style: { ...style, fill: color } };
+  if (block.type === 'shape') return { style: { ...style, fill: color }, fillGradient: null };
   if (block.type === 'curve' || block.type === 'freehand' || block.type === 'arrow') return { style: { ...style, stroke: color, color } };
   return { style: { ...style, color } };
 }
@@ -81,6 +96,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
     '<button type="button" data-hc-action="back">Send to back</button>' +
     '<div class="hc-context-sep"></div>' +
     '<button type="button" data-hc-action="color">Change color…</button>' +
+    '<button type="button" data-hc-action="fill">Fill / gradient…</button>' +
     '<button type="button" data-hc-action="stroke">Stroke color…</button>' +
     '<button type="button" data-hc-action="eyedrop">Pick color from screen</button>' +
     '<div class="hc-context-sep"></div>' +
@@ -114,13 +130,14 @@ function bindOutsideClose(): void {
   window.addEventListener('scroll', closeFloating, true);
 }
 
-function openColorPopover(anchor: HTMLElement | null, current: string, onPick: (color: string) => void): void {
+function openColorPopover(anchor: HTMLElement | null, current: string, onPick: (color: string) => void, onGradient?: (gradient: HcGradient) => void): void {
   closeFloating();
   const node = document.createElement('div');
   node.className = 'hc-color-popover';
   node.innerHTML = '<div class="hc-color-head"><strong>Color</strong><span class="hc-color-preview" style="background:' + escape(current) + '"></span></div>' +
     '<div class="hc-color-swatches">' + SWATCHES.map(color => '<button type="button" class="hc-swatch" data-hc-color="' + escape(color) + '" title="' + escape(color) + '" style="background:' + escape(color) + '"></button>').join('') + '</div>' +
     '<div class="hc-color-row"><input type="color" id="hcColorInput" value="' + escape(current) + '"><input type="text" id="hcHexInput" value="' + escape(current) + '" spellcheck="false" aria-label="Hex color"></div>' +
+    (onGradient ? '<div class="hc-fill-divider">Fill / gradient</div><div class="hc-gradient-presets">' + GRADIENTS.map((gradient, index) => '<button type="button" class="hc-gradient-swatch" data-hc-gradient="' + index + '" title="Linear gradient" style="background:' + gradientCss(gradient) + '"></button>').join('') + '</div><div class="hc-gradient-row"><input type="color" id="hcGradientStart" value="#ff3d7f" title="Gradient start"><span>→</span><input type="color" id="hcGradientEnd" value="#8b5cf6" title="Gradient end"><span>Angle</span><input type="number" id="hcGradientAngle" min="0" max="360" value="90"><button type="button" class="btn tiny" id="hcGradientApply">Apply</button></div>' : '') +
     '<button type="button" class="btn tiny hc-eyedrop-btn">Pick color from screen</button>';
   const input = node.querySelector<HTMLInputElement>('#hcColorInput')!;
   const hex = node.querySelector<HTMLInputElement>('#hcHexInput')!;
@@ -135,6 +152,14 @@ function openColorPopover(anchor: HTMLElement | null, current: string, onPick: (
   input.addEventListener('input', () => apply(input.value));
   hex.addEventListener('change', () => { if (/^#[0-9a-f]{6}$/i.test(hex.value)) apply(hex.value); });
   node.querySelector<HTMLButtonElement>('.hc-eyedrop-btn')?.addEventListener('click', () => { void pickScreenColor(context?.toast).then(color => { if (color) apply(color); }); });
+  if (onGradient) {
+    const angle = node.querySelector<HTMLInputElement>('#hcGradientAngle');
+    const start = node.querySelector<HTMLInputElement>('#hcGradientStart');
+    const end = node.querySelector<HTMLInputElement>('#hcGradientEnd');
+    const paint = (): void => { const gradient: HcGradient = { type: 'linear', angle: Number(angle?.value ?? 90), stops: [{ offset: 0, color: start?.value || '#ff3d7f' }, { offset: 1, color: end?.value || '#8b5cf6' }] }; onGradient(gradient); preview.style.background = gradientCss(gradient); };
+    node.querySelectorAll<HTMLButtonElement>('[data-hc-gradient]').forEach(button => button.addEventListener('click', () => { const preset = GRADIENTS[Number(button.dataset.hcGradient || 0)]!; if (start) start.value = preset.stops[0]!.color; if (end) end.value = preset.stops[preset.stops.length - 1]!.color; paint(); }));
+    node.querySelector<HTMLButtonElement>('#hcGradientApply')?.addEventListener('click', paint);
+  }
   document.body.appendChild(node);
   const rect = anchor?.getBoundingClientRect();
   placeFloating(node, rect ? rect.left : window.innerWidth / 2 - 120, rect ? rect.bottom + 8 : window.innerHeight / 2);
@@ -214,11 +239,41 @@ function moveLayer(action: string): void {
   }
 }
 
+function applyGradientToSelection(blocks: HcBlock[], gradient: HcGradient): void {
+  if (!context || !blocks.length) return;
+  const page = context.getPage();
+  if (!page) return;
+  const ops = blocks.filter(block => supportsFill(block)).map(block => ({ op: 'update_block' as const, pageId: page.id, blockId: block.id, patch: { fillGradient: gradient, ...(block.type === 'curve' || block.type === 'freehand' ? { closed: true } : {}) } }));
+  void context.applyOps(ops).then(() => updateDirectEditUI());
+}
+
+function updateFillButton(): void {
+  fillButton?.classList.toggle('active', fillMode);
+  context?.viewport.classList.toggle('hc-fill-mode', fillMode);
+}
+
+function openFillPopover(block: HcBlock, x: number, y: number): void {
+  const anchor = document.createElement('span');
+  anchor.style.position = 'fixed';
+  anchor.style.left = x + 'px';
+  anchor.style.top = y + 'px';
+  document.body.appendChild(anchor);
+  const finish = (): void => { fillMode = false; updateFillButton(); };
+  openColorPopover(
+    anchor,
+    primaryColor(block),
+    color => { applyColorToSelection([block], color, 'fill'); context?.select([block.id], block.id); finish(); },
+    supportsFill(block) ? gradient => { applyGradientToSelection([block], gradient); context?.select([block.id], block.id); finish(); } : undefined,
+  );
+  requestAnimationFrame(() => anchor.remove());
+}
+
 function openColorFor(blocks: HcBlock[], target: ColorTarget): void {
   const first = blocks[0];
   if (!first) return;
   const anchor = document.querySelector<HTMLElement>('#selColorBtn');
-  openColorPopover(anchor, primaryColor(first), color => applyColorToSelection(blocks, color, target));
+  const gradient = supportsFill(first) ? (value: HcGradient) => applyGradientToSelection(blocks, value) : undefined;
+  openColorPopover(anchor, primaryColor(first), color => applyColorToSelection(blocks, color, target), gradient);
 }
 
 function showBlockMenu(block: HcBlock, x: number, y: number): void {
@@ -229,6 +284,7 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
     if (action === 'duplicate') { context?.select([block.id], block.id); context?.duplicate(); return; }
     if (action === 'delete') { context?.select(blocks.map(item => item.id), block.id); context?.remove(); return; }
     if (action === 'color') { openColorFor(blocks, 'auto'); return; }
+    if (action === 'fill') { openColorFor(blocks, 'fill'); return; }
     if (action === 'stroke') { openColorFor(blocks, 'stroke'); return; }
     if (action === 'eyedrop') { void pickScreenColor(context?.toast).then(color => { if (color) applyColorToSelection(blocks, color, 'auto'); }); return; }
     moveLayer(action);
@@ -268,12 +324,44 @@ export function updateDirectEditUI(): void {
   colorButton.style.display = visible ? '' : 'none';
   eyedropButton.style.display = visible ? '' : 'none';
   const swatch = colorButton.querySelector<HTMLElement>('.sel-color-swatch');
-  if (swatch && active) swatch.style.background = primaryColor(active);
+  if (swatch && active) swatch.style.background = active.fillGradient ? gradientCss(active.fillGradient) : primaryColor(active);
 }
 
 export function installBlockDirectEdit(options: BlockDirectEditOptions): void {
   context = options;
   bindOutsideClose();
+  const rail = document.querySelector<HTMLElement>('#toolRail');
+  if (rail && !rail.querySelector('#fillToolBtn')) {
+    fillButton = document.createElement('button');
+    fillButton.type = 'button';
+    fillButton.id = 'fillToolBtn';
+    fillButton.className = 'tool-btn';
+    fillButton.title = 'Fill closed area (F)';
+    fillButton.innerHTML = '<span class="tool-glyph">▣</span><span class="tool-tiny">Fill</span>';
+    fillButton.addEventListener('click', event => { event.stopPropagation(); fillMode = !fillMode; updateFillButton(); });
+    const curveTool = rail.querySelector('[data-tool="curve"]');
+    rail.insertBefore(fillButton, curveTool?.nextSibling || rail.querySelector('[data-block="html"]'));
+    rail.addEventListener('click', event => {
+      if (fillMode && (event.target as Element).closest('[data-tool]')) { fillMode = false; updateFillButton(); }
+    });
+  }
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && fillMode) { fillMode = false; updateFillButton(); }
+    if ((event.key === 'f' || event.key === 'F') && !event.metaKey && !event.ctrlKey && !event.altKey && !(event.target as Element)?.closest?.('input, textarea, [contenteditable="true"]')) { fillMode = true; updateFillButton(); }
+  });
+  options.viewport.addEventListener('pointerdown', event => {
+    if (!fillMode || event.button !== 0) return;
+    const wrap = (event.target as Element).closest<HTMLElement>('.block-wrap[data-block-id]');
+    if (!wrap) return;
+    const block = options.getBlocks().find(item => item.id === wrap.dataset.blockId);
+    if (!block) return;
+    if (options.isLocked(block.id)) { context?.toast('This block is on a locked layer.', 'info'); return; }
+    if (!supportsFill(block)) { context?.toast('This element cannot be filled. Select a shape or a closed path.', 'info'); return; }
+    event.preventDefault();
+    event.stopPropagation();
+    context?.select([block.id], block.id);
+    openFillPopover(block, event.clientX, event.clientY);
+  }, { capture: true });
   options.viewport.addEventListener('contextmenu', event => {
     const wrap = (event.target as Element).closest<HTMLElement>('.block-wrap[data-block-id]');
     if (!wrap) return;
@@ -281,6 +369,7 @@ export function installBlockDirectEdit(options: BlockDirectEditOptions): void {
     if (!block) return;
     event.preventDefault();
     event.stopPropagation();
+    if (options.isLocked(block.id)) { context?.toast('This block is on a locked layer.', 'info'); return; }
     if (!options.getSelectedIds().includes(block.id)) options.select([block.id], block.id);
     showBlockMenu(block, event.clientX, event.clientY);
   }, { capture: true });

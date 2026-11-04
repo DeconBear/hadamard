@@ -1,5 +1,6 @@
 import type { HcBlock } from './types.js';
 import { vectorStroke } from './vector.js';
+import { blockFill, gradientSvgDefs, normalizeGradient } from './fill.js';
 
 function attr(value: unknown): string {
   return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -19,7 +20,10 @@ export function curveSvgMarkup(block: HcBlock): string {
   } else {
     data = 'M ' + points[0]!.x + ' ' + points[0]!.y + ' L ' + points[points.length - 1]!.x + ' ' + points[points.length - 1]!.y;
   }
-  return '<svg class="block-vector" viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + data + '" fill="none" stroke="' + attr(stroke.color) + '" stroke-width="' + stroke.width + '" stroke-linecap="round" stroke-linejoin="round"' + dash + '/></svg>';
+  const closed = Boolean(block.closed);
+  const fill = closed ? blockFill(block, 'none') : 'none';
+  const defs = closed && normalizeGradient(block.fillGradient) ? gradientSvgDefs(block) : '';
+  return '<svg class="block-vector" viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none" aria-hidden="true">' + defs + '<path d="' + data + (closed ? ' Z' : '') + '" fill="' + attr(fill) + '" stroke="' + attr(stroke.color) + '" stroke-width="' + stroke.width + '" stroke-linecap="round" stroke-linejoin="round"' + dash + '/></svg>';
 }
 export interface CurvePoint { x: number; y: number }
 
