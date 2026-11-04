@@ -8,14 +8,14 @@ function block(type: string, patch: Partial<HcBlock> = {}): HcBlock {
 
 describe('hcanvas builtin block definitions', () => {
   it('registers all built-in block types', () => {
-    expect(listBuiltinBlockDefinitions().map(definition => definition.type).sort()).toEqual(['arrow', 'code', 'freehand', 'html', 'image', 'markdown', 'math', 'shape', 'text']);
+    expect(listBuiltinBlockDefinitions().map(definition => definition.type).sort()).toEqual(['arrow', 'code', 'curve', 'freehand', 'html', 'image', 'markdown', 'math', 'shape', 'text']);
     expect(builtinBlockDefinition('text')?.label).toBe('Text');
   });
 
   it('renders text and markdown bodies in export and present modes', () => {
     const text = renderBlockBody(block('text', { text: 'Hello\n\nWorld', style: { fontSize: 22 } }), 'export');
-    expect(text).toContain('<p>Hello</p>');
-    expect(text).toContain('<p>World</p>');
+    expect(text).toContain('margin:0">Hello</p>');
+    expect(text).toContain('margin:0">World</p>');
     expect(renderBlockBody(block('text', { text: 'Hello' }), 'present')).toContain('font-size:20px');
     const markdown = renderBlockBody(block('markdown', { markdown: '## Title' }), 'export');
     expect(markdown).toContain('<h2');
@@ -40,5 +40,13 @@ describe('hcanvas math block renderer', () => {
     const html = renderBlockBody(block('math', { data: { tex: 'E = mc^2' } }), 'export');
     expect(html).toContain('<math');
     expect(blockAgentSummary(block('math', { data: { tex: 'E = mc^2' } }))).toContain('formula');
+  });
+});
+describe('hcanvas native curve block', () => {
+  it('renders a cubic Bezier path and summary', () => {
+    const html = renderBlockBody(block('curve', { points: [{ x: 0, y: 40 }, { x: 30, y: 0 }, { x: 70, y: 0 }, { x: 100, y: 40 }], style: { stroke: '#1f2430', strokeWidth: 3 } }), 'export');
+    expect(html).toContain('<path');
+    expect(html).toContain('C ');
+    expect(blockAgentSummary(block('curve'))).toContain('curve');
   });
 });

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 export const HCANVAS_SCHEMA = 'hadamard-canvas/1';
 
 export type HcPageMode = 'canvas' | 'html' | 'infinite' | 'whiteboard';
-export type HcBlockType = 'html' | 'text' | 'markdown' | 'code' | 'image' | 'shape' | 'freehand' | 'arrow' | (string & {});
+export type HcBlockType = 'html' | 'text' | 'markdown' | 'code' | 'image' | 'shape' | 'freehand' | 'arrow' | 'curve' | (string & {});
 export type HcShape =
   | 'rect'
   | 'roundRect'

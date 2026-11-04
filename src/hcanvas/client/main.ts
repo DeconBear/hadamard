@@ -2,6 +2,7 @@ import { basicSetup, EditorView } from 'codemirror';
 import { html as htmlLang } from '@codemirror/lang-html';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { renderMarkdownHtml, renderMathHtml } from '../markdown.js';
+import { installCurveTool } from './curveTool.js';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
@@ -109,7 +110,7 @@ interface UiState {
   presenting: boolean;
   presentIndex: number;
   sourceModalOpen: boolean;
-  tool: 'select' | 'hand' | 'pen' | 'arrow' | 'eraser';
+  tool: 'select' | 'hand' | 'pen' | 'arrow' | 'curve' | 'eraser';
   showGrid: boolean;
   snap: boolean;
   spaceHeld: boolean;
@@ -732,6 +733,11 @@ function bindStaticActions(): void {
     selectBlocks: (ids, primaryId) => setBlockSelection(ids, primaryId),
     toast,
   });
+  installCurveTool({
+    viewport: el('viewport'), artboard: el('artboard'), getPage: activePage, getWorldPoint: viewportToWorldPoint, nextId: () => genId('block'),
+    canDraw: () => state.tool === 'curve' && !state.editing,
+    createBlock: block => { void applyOps([{ op: 'add_block', pageId: activePage()!.id, block } as HcOp], { refreshArtboard: true }).then(result => { if (result) setBlockSelection([block.id], block.id); }); },
+  });
   presentInteractions = installPresentInteractions({
     root: el('presentRoot'),
     isActive: () => state.presenting,
@@ -766,7 +772,7 @@ function bindStaticActions(): void {
     if (tool) {
       cancelInsert();
       const next = tool.dataset.tool;
-      state.tool = next === 'hand' || next === 'pen' || next === 'arrow' || next === 'eraser' ? next : 'select';
+      state.tool = next === 'hand' || next === 'pen' || next === 'arrow' || next === 'curve' || next === 'eraser' ? next : 'select';
       renderToolbarState();
       return;
     }
@@ -919,6 +925,7 @@ function renderToolbarState(): void {
   document.querySelectorAll<HTMLElement>('[data-tool]').forEach(button => {
     button.classList.toggle('active', button.dataset.tool === state.tool);
     if (button.dataset.tool === 'pen' || button.dataset.tool === 'arrow' || button.dataset.tool === 'eraser') button.classList.toggle('disabled', page?.mode !== 'infinite');
+    if (button.dataset.tool === 'curve') button.classList.toggle('disabled', page?.mode !== 'infinite' && page?.mode !== 'canvas');
   });
   updateHistoryButtons();
   const placing = Boolean(state.pendingInsert);
@@ -926,6 +933,7 @@ function renderToolbarState(): void {
   document.querySelectorAll<HTMLElement>('[data-block]').forEach(button => button.classList.toggle('placing', button.dataset.block === state.pendingInsert));
   el('viewport').classList.toggle('tool-pen', state.tool === 'pen' && page?.mode === 'infinite');
   el('viewport').classList.toggle('tool-arrow', state.tool === 'arrow' && page?.mode === 'infinite');
+  el('viewport').classList.toggle('tool-curve', state.tool === 'curve' && (page?.mode === 'infinite' || page?.mode === 'canvas'));
   el('viewport').classList.toggle('tool-eraser', state.tool === 'eraser' && page?.mode === 'infinite');
   el('toggleGrid').classList.toggle('active', state.showGrid);
   el('toggleSnap').classList.toggle('active', state.snap);
@@ -1204,10 +1212,10 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     renderToolbarState();
     return;
   }
-  if (key === 'p' || key === 'a' || key === 'e') {
-    if (activePage()?.mode === 'infinite') {
+  if (key === 'p' || key === 'a' || key === 'c' || key === 'e') {
+    if (activePage()?.mode === 'infinite' || (key === 'c' && activePage()?.mode === 'canvas')) {
       cancelInsert();
-      state.tool = key === 'p' ? 'pen' : key === 'a' ? 'arrow' : 'eraser';
+      state.tool = key === 'p' ? 'pen' : key === 'a' ? 'arrow' : key === 'c' ? 'curve' : 'eraser';
       renderToolbarState();
     }
     return;
@@ -2631,7 +2639,7 @@ function renderBlockInspector(): void {
   if (block.type === 'shape' || block.type === 'html' || block.type === 'markdown') {
     html += '<div class="field-row">' + field('blockFill', 'Fill', '<input id="blockFill" type="color" value="' + esc(toHex(String(block.style?.fill || '#f3e8ff'))) + '">') + field('blockStroke', 'Stroke', '<input id="blockStroke" type="color" value="' + esc(toHex(String(block.style?.stroke || '#a855f7'))) + '">') + '</div>';
   }
-  if (block.type === 'freehand' || block.type === 'arrow') {
+  if (block.type === 'freehand' || block.type === 'arrow' || block.type === 'curve') {
     html += '<div class="field-row">' + field('blockStroke', 'Stroke', '<input id="blockStroke" type="color" value="' + esc(toHex(String(block.style?.stroke || block.style?.color || '#1f2430'))) + '">') + field('blockVectorWidth', 'Width', '<input id="blockVectorWidth" type="number" min="1" max="40" value="' + (block.style?.strokeWidth || 2) + '">') + '</div>';
     if (block.type === 'arrow') html += '<div class="field">' + '<span>Arrowhead</span><select id="blockArrowhead"><option value="arrow"' + ((block.arrowhead ?? 'arrow') === 'arrow' ? ' selected' : '') + '>Arrow</option><option value="none"' + (block.arrowhead === 'none' ? ' selected' : '') + '>None</option></select></div>';
   }
@@ -2653,7 +2661,7 @@ function bindBlockInspector(block: HcBlock): void {
   el<HTMLInputElement>('blockX').addEventListener('change', event => { void update({ x: Number((event.target as HTMLInputElement).value) || 0 }); });
   el<HTMLInputElement>('blockY').addEventListener('change', event => { void update({ y: Number((event.target as HTMLInputElement).value) || 0 }); });
   const resizeVector = (nextW: number, nextH: number): Partial<HcBlock> => {
-    if ((block.type !== 'freehand' && block.type !== 'arrow') || !block.points?.length) return { w: nextW, h: nextH };
+    if ((block.type !== 'freehand' && block.type !== 'arrow' && block.type !== 'curve') || !block.points?.length) return { w: nextW, h: nextH };
     return { w: nextW, h: nextH, points: block.points.map(point => ({ x: point.x * nextW / block.w, y: point.y * nextH / block.h })) };
   };
   el<HTMLInputElement>('blockW').addEventListener('change', event => { const nextW = Math.max(20, Number((event.target as HTMLInputElement).value) || block.w); void update(resizeVector(nextW, block.h)); });

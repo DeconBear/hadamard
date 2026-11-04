@@ -767,3 +767,6 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .block-math .katex-display { margin: 0; }
 .hc-math-block { overflow-x: auto; }
 .hc-math-inline { display: inline-block; vertical-align: middle; }
+
+#viewport.tool-curve, #viewport.tool-curve * { cursor: crosshair !important; }
+.block-vector-host { width: 100%; height: 100%; }

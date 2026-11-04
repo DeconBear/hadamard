@@ -45,7 +45,7 @@ function blockStyle(block: HcBlock): string {
   if (block.rotation) parts.push('transform:rotate(' + block.rotation + 'deg)');
   if (style.fill && block.type !== 'markdown' && block.type !== 'code' && block.type !== 'image' && block.type !== 'shape') parts.push('background:' + String(style.fill));
   if (style.radius) parts.push('border-radius:' + style.radius + 'px');
-  if (style.stroke && block.type !== 'shape') parts.push('border:' + (style.strokeWidth || 1) + 'px ' + String(style.strokeStyle || 'solid') + ' ' + style.stroke);
+  if (style.stroke && block.type !== 'shape' && block.type !== 'freehand' && block.type !== 'arrow' && block.type !== 'curve') parts.push('border:' + (style.strokeWidth || 1) + 'px ' + String(style.strokeStyle || 'solid') + ' ' + style.stroke);
   if (style.opacity !== undefined) parts.push('opacity:' + style.opacity);
   return parts.join(';');
 }
@@ -488,7 +488,7 @@ async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: s
       const editable = Boolean(options.editableHtml)
         && page.mode === 'canvas'
         && blocks.length > 0
-        && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow' || block.type === 'math' || Boolean(blockPlugin(block.type)))
+        && !blocks.some(block => block.type === 'html' || block.type === 'freehand' || block.type === 'arrow' || block.type === 'curve' || block.type === 'math' || Boolean(blockPlugin(block.type)))
         && !blocks.some(block => block.type === 'image' && /^https?:/i.test(block.src || ''));
       if (editable) {
         addEditableCanvasSlide(pptx as unknown as { addSlide: () => any; ShapeType: { roundRect: string; ellipse: string } }, page, index, deckW, deckH);

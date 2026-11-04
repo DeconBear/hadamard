@@ -1,4 +1,5 @@
 import { renderMarkdownHtml, renderMathHtml } from '../markdown.js';
+import { curveSvgMarkup } from '../curves.js';
 import { shapeSvgMarkup, shapeTextMarkup } from '../shapes.js';
 import { vectorSvgMarkup } from '../vector.js';
 import { pluginBlockMarkup, pluginFallbackMarkup } from './pluginBlocks.js';
@@ -93,6 +94,13 @@ function renderMath(block: HcBlock): HTMLElement {
   return host;
 }
 
+function renderCurve(block: HcBlock): HTMLElement {
+  const host = document.createElement('div');
+  host.className = 'block-vector-host';
+  host.innerHTML = curveSvgMarkup(block);
+  return host;
+}
+
 function renderPlugin(block: HcBlock): HTMLElement {
   const host = document.createElement('div');
   host.className = 'block-plugin';
@@ -108,6 +116,7 @@ const definitions: ClientBlockDefinition[] = [
   { type: 'code', render: block => renderCode(block) },
   { type: 'image', render: block => renderImage(block) },
   { type: 'math', render: block => renderMath(block) },
+  { type: 'curve', render: block => renderCurve(block) },
   { type: 'shape', render: block => renderShape(block) },
   { type: 'freehand', render: block => renderVector(block) },
   { type: 'arrow', render: block => renderVector(block) },
