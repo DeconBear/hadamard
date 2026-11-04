@@ -861,3 +861,7 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .hc-cutout-bg { width: 20px; height: 20px; border: 1px solid rgba(31,36,48,.2); border-radius: 5px; }
 .hc-cutout-check { display: flex; align-items: center; gap: 5px; color: #5d5548; font-size: 11px; }
 .hc-cutout-foot { display: flex; justify-content: flex-end; gap: 7px; padding: 11px 16px; border-top: 1px solid #ece5da; }
+
+.hc-node-handle { position: absolute; z-index: 1200; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #7c3aed, 0 1px 4px rgba(31,36,48,.25); background: #7c3aed; cursor: grab; }
+.hc-node-handle.control { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; background: #fff; border-color: #7c3aed; box-shadow: 0 0 0 1px #7c3aed; }
+.hc-node-handle:active { cursor: grabbing; }

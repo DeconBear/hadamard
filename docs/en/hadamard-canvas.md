@@ -3,7 +3,7 @@
 Hadamard Canvas is a standalone, AI-native canvas application. It runs independently from the desktop GUI (`hadamard-gui`) and exposes one document model to humans and agents:
 
 - **HTML pages** are rendered in a sandbox and can be edited directly in place (text, element styles) or through a full HTML/CSS source editor.
-- **Canvas pages** mix HTML, text, Markdown, code, image, shape, native freehand, curve and arrow blocks. Use the **Curve (C)** tool to drag a smooth cubic Bezier; curves have tight selectable bounds (unlike full-page freehand strokes), editable stroke color/width/dash and move/resize handles.
+- **Canvas pages** mix HTML, text, Markdown, code, image, shape, native freehand, curve and arrow blocks. Use the **Curve (C)** tool to drag a smooth cubic Bezier; curves have tight selectable bounds (unlike full-page freehand strokes), editable stroke color/width/dash and move/resize handles. Selecting a curve exposes four native node handles (start, two Bezier controls, end); drag a handle to reshape the curve in place.
 - **Agents** read and patch the same document through a small JSON-first CLI; no MCP or browser automation is required.
 
 ## Run it

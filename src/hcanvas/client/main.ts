@@ -736,7 +736,7 @@ function bindStaticActions(): void {
     selectBlocks: (ids, primaryId) => setBlockSelection(ids, primaryId),
     toast,
   });
-  installBlockDirectEdit({ viewport: el('viewport'), getPage: activePage, getBlocks: () => activePage()?.blocks || [], getSelectedIds: () => state.selectedBlockIds, isLocked: id => { const pg = activePage(); const item = pg?.blocks?.find(block => block.id === id); return Boolean(pg && item && isBlockLocked(pg, item)); }, select: (ids, primary) => setBlockSelection(ids, primary), applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean), edit: editActiveBlock, duplicate: () => { void duplicateActiveBlock(); }, remove: () => { void deleteSelectedBlocks(); }, toast });
+  installBlockDirectEdit({ viewport: el('viewport'), getPage: activePage, getBlocks: () => activePage()?.blocks || [], getSelectedIds: () => state.selectedBlockIds, getWorldPoint: viewportToWorldPoint, isLocked: id => { const pg = activePage(); const item = pg?.blocks?.find(block => block.id === id); return Boolean(pg && item && isBlockLocked(pg, item)); }, select: (ids, primary) => setBlockSelection(ids, primary), applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean), edit: editActiveBlock, duplicate: () => { void duplicateActiveBlock(); }, remove: () => { void deleteSelectedBlocks(); }, toast });
   configureLayersPanel({
     panel: el('layersPanel'), getPage: activePage, getSelectedIds: () => state.selectedBlockIds,
     select: (ids, primary) => setBlockSelection(ids, primary),
@@ -847,7 +847,7 @@ function bindStaticActions(): void {
   };
   viewport.addEventListener('pointerdown', event => {
     if (!state.pendingInsert || event.button !== 0) return;
-    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
     event.preventDefault();
     event.stopPropagation();
     const type = state.pendingInsert;
@@ -863,7 +863,7 @@ function bindStaticActions(): void {
   }, { capture: true });
   viewport.addEventListener('pointerdown', event => {
     const targetElement = event.target as Element;
-    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
+    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
     if (event.button === 1) {
       if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
       event.preventDefault();
@@ -878,14 +878,14 @@ function bindStaticActions(): void {
   viewport.addEventListener('pointerdown', event => {
     if (event.button !== 0 || state.tool !== 'select' || state.spaceHeld || state.editing) return;
     const target = event.target as Element;
-    if (target.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .block-wrap')) return;
+    if (target.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .block-wrap')) return;
     event.preventDefault();
     beginMarquee(event);
   });
   viewport.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
   viewport.addEventListener('wheel', event => {
     const targetElement = event.target as Element;
-    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor')) return;
+    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
     if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
     event.preventDefault();
     const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientHeight : 1;
@@ -902,7 +902,7 @@ function bindStaticActions(): void {
   viewport.addEventListener('pointerdown', event => {
     if (event.button !== 0 || state.tool !== 'eraser') return;
     if (activePage()?.mode !== 'infinite' || state.editing) return;
-    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor')) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
     event.preventDefault();
     event.stopPropagation();
     beginErase(event);
@@ -912,7 +912,7 @@ function bindStaticActions(): void {
   viewport.addEventListener('pointerdown', event => {
     if (event.button !== 0 || (state.tool !== 'pen' && state.tool !== 'arrow')) return;
     if (activePage()?.mode !== 'infinite' || state.editing) return;
-    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor')) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
     event.preventDefault();
     event.stopPropagation();
     beginVectorDraw(event);

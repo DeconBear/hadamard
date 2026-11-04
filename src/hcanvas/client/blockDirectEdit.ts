@@ -9,6 +9,7 @@ export interface BlockDirectEditOptions {
   getPage(): HcPage | null;
   getBlocks(): HcBlock[];
   getSelectedIds(): string[];
+  getWorldPoint(clientX: number, clientY: number): { x: number; y: number };
   isLocked(id: string): boolean;
   select(ids: string[], primary?: string | null): void;
   applyOps(ops: HcOp[]): Promise<boolean>;
@@ -338,6 +339,60 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
   });
 }
 
+const NODE_LABELS = ['Start', 'Control 1', 'Control 2', 'End'];
+
+function renderCurveHandles(): void {
+  document.querySelectorAll('.hc-node-handle').forEach(node => node.remove());
+  const blocks = selectedBlocks();
+  if (blocks.length !== 1) return;
+  const block = blocks[0]!;
+  if (block.type !== 'curve' || !block.points || block.points.length < 4) return;
+  if (context?.isLocked(block.id)) return;
+  const artboard = document.querySelector<HTMLElement>('#artboard');
+  if (!artboard) return;
+  block.points.forEach((point, index) => {
+    const handle = document.createElement('div');
+    handle.className = 'hc-node-handle ' + (index === 0 || index === 3 ? 'endpoint' : 'control');
+    handle.dataset.nodeIndex = String(index);
+    handle.title = NODE_LABELS[index] || 'Node';
+    handle.style.left = (block.x + point.x) + 'px';
+    handle.style.top = (block.y + point.y) + 'px';
+    if (!context) return;
+    handle.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!context) return;
+      const origin = { x: block.x, y: block.y };
+      const initial = block.points!.map(item => ({ ...item }));
+      const start = context.getWorldPoint(event.clientX, event.clientY);
+      const move = (moveEvent: PointerEvent): void => {
+        const current = context!.getWorldPoint(moveEvent.clientX, moveEvent.clientY);
+        handle.style.left = (origin.x + initial[index]!.x + current.x - start.x) + 'px';
+        handle.style.top = (origin.y + initial[index]!.y + current.y - start.y) + 'px';
+      };
+      const up = (upEvent: PointerEvent): void => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        const current = context!.getWorldPoint(upEvent.clientX, upEvent.clientY);
+        const next = initial.map((item, itemIndex) => itemIndex === index ? { x: item.x + current.x - start.x, y: item.y + current.y - start.y } : item);
+        const xs = next.map(item => item.x);
+        const ys = next.map(item => item.y);
+        const minX = Math.min(...xs);
+        const minY = Math.min(...ys);
+        const maxX = Math.max(...xs);
+        const maxY = Math.max(...ys);
+        const page = context!.getPage();
+        if (!page) return;
+        const patch = { x: origin.x + minX, y: origin.y + minY, w: Math.max(8, Math.round(maxX - minX)), h: Math.max(8, Math.round(maxY - minY)), points: next.map(item => ({ x: item.x - minX, y: item.y - minY })) };
+        void context!.applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch }]).then(() => updateDirectEditUI());
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+    artboard.appendChild(handle);
+  });
+}
+
 export function updateDirectEditUI(): void {
   const toolbar = document.querySelector<HTMLElement>('#selectionToolbar');
   if (!toolbar) return;
@@ -394,6 +449,7 @@ export function updateDirectEditUI(): void {
   eyedropButton.style.display = visible ? '' : 'none';
   opacityButton.style.display = active ? '' : 'none';
   cutoutButton.style.display = active?.type === 'image' ? '' : 'none';
+  renderCurveHandles();
   const swatch = colorButton.querySelector<HTMLElement>('.sel-color-swatch');
   if (swatch && active) swatch.style.background = active.fillGradient ? gradientCss(active.fillGradient) : primaryColor(active);
 }
