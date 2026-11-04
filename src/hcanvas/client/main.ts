@@ -1,6 +1,7 @@
 import { basicSetup, EditorView } from 'codemirror';
 import { html as htmlLang } from '@codemirror/lang-html';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { marked } from 'marked';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
@@ -3270,8 +3271,12 @@ function openCodeModal(options: { title: string; kind: string; value: string; la
   if (options.language === 'html') extensions.push(htmlLang());
   const view = new EditorView({ doc: options.value, extensions, parent: host });
   const preview = el<HTMLIFrameElement>('codePreview');
-  const updatePreview = debounce(() => { preview.srcdoc = previewHtmlFor(options.kind, view.state.doc.toString()); }, 280);
-  preview.srcdoc = previewHtmlFor(options.kind, options.value);
+  const setPreview = (kind: string, value: string): void => {
+    try { preview.srcdoc = previewHtmlFor(kind, value); }
+    catch (error) { preview.srcdoc = '<!doctype html><html><body style="margin:0;padding:16px;color:#b42318;font:12px Inter,sans-serif">Preview unavailable: ' + esc(error instanceof Error ? error.message : String(error)) + '</body></html>'; }
+  };
+  const updatePreview = debounce(() => { setPreview(options.kind, view.state.doc.toString()); }, 280);
+  setPreview(options.kind, options.value);
   view.dom.addEventListener('keyup', updatePreview);
   const originalClose = closeModal;
   const realClose = (): void => { view.destroy(); state.sourceModalOpen = false; originalClose(); };
