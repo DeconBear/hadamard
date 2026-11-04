@@ -791,3 +791,22 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .layer-row:hover .layer-actions, .layer-row.selected .layer-actions { opacity: 1; }
 .layer-action { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: 11px; line-height: 1; cursor: pointer; }
 .layer-action:hover { background: #e7ddcf; color: var(--text); }
+
+.hc-context-menu { position: fixed; z-index: 9000; min-width: 190px; padding: 5px; border: 1px solid #d9d0c2; border-radius: 10px; background: #fffdf8; box-shadow: 0 14px 36px rgba(31,36,48,.18); font: 12px/1.3 Inter, sans-serif; }
+.hc-context-head { overflow: hidden; max-width: 240px; padding: 6px 9px 7px; color: #81786b; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.hc-context-menu button { display: block; width: 100%; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: #1f2430; text-align: left; cursor: pointer; }
+.hc-context-menu button:hover { background: #f1eafc; color: #5b2bb5; }
+.hc-context-menu button.danger { color: #b42318; }
+.hc-context-sep { height: 1px; margin: 4px 6px; background: #ece5da; }
+.hc-color-popover { position: fixed; z-index: 9001; width: 218px; padding: 10px; border: 1px solid #d9d0c2; border-radius: 12px; background: #fffdf8; box-shadow: 0 14px 36px rgba(31,36,48,.18); font: 12px Inter, sans-serif; }
+.hc-color-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.hc-color-preview { width: 22px; height: 22px; border: 1px solid #e1d8ca; border-radius: 6px; }
+.hc-color-swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-bottom: 8px; }
+.hc-swatch { aspect-ratio: 1; border: 1px solid rgba(31,36,48,.12); border-radius: 5px; cursor: pointer; }
+.hc-swatch:hover { transform: scale(1.1); }
+.hc-color-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.hc-color-row input[type=color] { width: 32px; height: 28px; padding: 0; border: 1px solid #e1d8ca; border-radius: 6px; background: #fff; }
+.hc-color-row input[type=text] { min-width: 0; flex: 1; height: 28px; padding: 4px 7px; border: 1px solid #e1d8ca; border-radius: 6px; font: 11px ui-monospace, Consolas, monospace; }
+.hc-eyedrop-btn { width: 100%; }
+.sel-color-btn { display: flex; align-items: center; gap: 5px; }
+.sel-color-swatch { width: 13px; height: 13px; border: 1px solid rgba(31,36,48,.25); border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.5); }

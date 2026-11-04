@@ -4,6 +4,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { renderMarkdownHtml, renderMathHtml } from '../markdown.js';
 import { installCurveTool } from './curveTool.js';
 import { configureLayersPanel, renderLayersPanel } from './layersPanel.js';
+import { installBlockDirectEdit, updateDirectEditUI } from './blockDirectEdit.js';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
@@ -734,6 +735,7 @@ function bindStaticActions(): void {
     selectBlocks: (ids, primaryId) => setBlockSelection(ids, primaryId),
     toast,
   });
+  installBlockDirectEdit({ viewport: el('viewport'), getPage: activePage, getBlocks: () => activePage()?.blocks || [], getSelectedIds: () => state.selectedBlockIds, select: (ids, primary) => setBlockSelection(ids, primary), applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean), edit: editActiveBlock, duplicate: () => { void duplicateActiveBlock(); }, remove: () => { void deleteSelectedBlocks(); }, toast });
   configureLayersPanel({
     panel: el('layersPanel'), getPage: activePage, getSelectedIds: () => state.selectedBlockIds,
     select: (id, additive) => selectBlock(id, { additive }),
@@ -961,6 +963,7 @@ function renderToolbarState(): void {
     qs<HTMLElement>('[data-sel-action="group"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
     qs<HTMLElement>('[data-sel-action="ungroup"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
   }
+  updateDirectEditUI();
 }
 function editActiveBlock(): void {
   const page = activePage();

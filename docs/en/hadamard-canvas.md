@@ -228,6 +228,8 @@ Images are inserted by dragging a file from the filesystem directly onto a Canva
 
 Shapes behave like PowerPoint/Figma objects: select one to get eight resize handles (corners and edges), drag the label to move, double-click the shape to edit its centered text, and use the Inspector for text font/size/color. Lines are different: they expose two endpoint handles so either end can be moved freely instead of scaling a bounding box. While dragging, edge/center smart guides snap the block to other blocks and page centers.
 
+Selecting a block directly on the canvas exposes a **Color** swatch and eyedropper in the floating selection toolbar. Right-click any block for a context menu with Edit, Duplicate, Bring forward / Send backward / Bring to front / Send to back, Change color, Stroke color, Pick color from screen, and Delete. Color and layer changes are native edits with undo; the eyedropper uses Chromium's EyeDropper API when available.
+
 The right-side **Layers** tab lists blocks from top to bottom. Click a row to select it, Shift-click for multiple selection, use the row ↑/↓ buttons or the header **Front / Back** buttons to change stacking order, and drag rows to reorder. Layer changes are native `z` updates and support undo/redo.
 
 Pages can use slide (16:9), A4, poster (4:5), square and custom sizes. Present mode shows pages full screen; exports support HTML, PDF and PNG (local Chrome/Edge/Chromium). Page master/layout templates and editable PPTX export are future work.
