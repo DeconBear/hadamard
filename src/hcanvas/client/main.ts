@@ -3,6 +3,7 @@ import { html as htmlLang } from '@codemirror/lang-html';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { renderMarkdownHtml, renderMathHtml } from '../markdown.js';
 import { installCurveTool } from './curveTool.js';
+import { configureLayersPanel, renderLayersPanel } from './layersPanel.js';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
@@ -102,7 +103,7 @@ interface UiState {
   panX: number;
   panY: number;
   fittedPageId: string | null;
-  tab: 'inspector' | 'agent' | 'proposals';
+  tab: 'inspector' | 'layers' | 'agent' | 'proposals';
   saveKind: 'idle' | 'saving' | 'saved' | 'error';
   context: Record<string, unknown> | null;
   presence: PresenceEntry[];
@@ -143,7 +144,7 @@ const state: UiState = {
   docs: [], doc: null, activePageId: null, activeBlockId: null, selectedBlockIds: [], editing: null,
   selectedHtmlId: null, iframeDoc: null, iframeElement: null,
   zoom: 1, panX: 0, panY: 0, fittedPageId: null,
-  tab: 'inspector' as 'inspector' | 'agent' | 'proposals', saveKind: 'idle', context: null, presence: [], masters: [],
+  tab: 'inspector' as 'inspector' | 'layers' | 'agent' | 'proposals', saveKind: 'idle', context: null, presence: [], masters: [],
   presenting: false, presentIndex: 0, sourceModalOpen: false,
   tool: 'select', showGrid: true, snap: true, spaceHeld: false, pendingInsert: null, pendingShape: null,
 };
@@ -172,7 +173,7 @@ function setBlockSelection(ids: string[], primaryId?: string | null): void {
     node.classList.toggle('selected', unique.includes(node.dataset.blockId || ''));
   });
   refreshBlockSelectionDecorations();
-  renderInspector();
+  if (state.tab === 'layers') renderLayersPanel(); else renderInspector();
   renderTop();
   void syncActive();
 }
@@ -733,6 +734,11 @@ function bindStaticActions(): void {
     selectBlocks: (ids, primaryId) => setBlockSelection(ids, primaryId),
     toast,
   });
+  configureLayersPanel({
+    panel: el('layersPanel'), getPage: activePage, getSelectedIds: () => state.selectedBlockIds,
+    select: (id, additive) => selectBlock(id, { additive }),
+    applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean),
+  });
   installCurveTool({
     viewport: el('viewport'), artboard: el('artboard'), getPage: activePage, getWorldPoint: viewportToWorldPoint, nextId: () => genId('block'),
     canDraw: () => state.tool === 'curve' && !state.editing,
@@ -1259,6 +1265,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
 function renderActivePanel(): void {
   if (state.tab === 'agent') renderAgent();
   else if (state.tab === 'proposals') renderProposals();
+  else if (state.tab === 'layers') renderLayersPanel();
   else renderInspector();
 }
 function renderAll(): void {
@@ -1291,6 +1298,7 @@ function renderTabs(): void {
     tab.classList.toggle('active', tab.dataset.tab === state.tab);
   });
   el('inspectorPanel').classList.toggle('hidden', state.tab !== 'inspector');
+  el('layersPanel').classList.toggle('hidden', state.tab !== 'layers');
   el('agentPanel').classList.toggle('hidden', state.tab !== 'agent');
   el('proposalsPanel').classList.toggle('hidden', state.tab !== 'proposals');
 }
@@ -2232,6 +2240,7 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
     if (state.tab === 'proposals') renderProposals();
     if (options.refreshArtboard !== false) renderArtboard();
     if (state.tab === 'inspector') renderInspector();
+    else if (state.tab === 'layers') renderLayersPanel();
     void syncActive();
     return result.doc;
   } catch (error) {
