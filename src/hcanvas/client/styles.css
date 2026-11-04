@@ -699,3 +699,12 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .plugin-manager-errors { padding: 9px 10px; border: 1px solid #f1c0bc; border-radius: 9px; background: #fff6f5; color: #8f241c; font-size: 9px; }
 .plugin-manager-errors strong { display: block; margin-bottom: 3px; }
 .plugin-manager-errors ul { margin: 0; padding-left: 16px; }
+
+.plugin-preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.plugin-preset-card { display: flex; gap: 9px; align-items: center; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); text-align: left; color: var(--ink-2); }
+.plugin-preset-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+.plugin-preset-thumb { flex: 0 0 52px; width: 52px; height: 36px; overflow: hidden; border-radius: 5px; background: #f4f1eb; border: 1px solid var(--border); display: block; }
+.plugin-preset-thumb iframe { display: block; border: 0; pointer-events: none; }
+.plugin-preset-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.plugin-preset-copy strong { font-size: 10px; font-weight: 700; }
+.plugin-preset-copy small { font-size: 8px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

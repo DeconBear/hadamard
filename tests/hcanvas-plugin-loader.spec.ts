@@ -47,6 +47,17 @@ describe('hcanvas plugin discovery', () => {
     expect(result.errors).toEqual([]);
   });
 
+  it('loads page-template-only plugins', async () => {
+    const workspace = path.join(temp, 'project', '.hcanvas');
+    await installPlugin(path.join(workspace, 'plugins'), 'pages', {
+      schema: 'hcanvas-plugin/1', id: 'pages', name: 'Pages', version: '1.0.0', apiVersion: 'hcanvas-plugin/1',
+      pagePresets: [{ id: 'brief', label: 'Brief', mode: 'canvas', width: 1280, height: 720, background: '#fff', blocks: [{ type: 'text', text: 'Hello' }] }],
+    });
+    const result = await discoverPlugins(workspace);
+    expect(result.plugins[0]?.manifest.pagePresets).toHaveLength(1);
+    expect(result.plugins[0]?.manifest.blocks).toEqual([]);
+  });
+
   it('persists enable/disable state in plugin-settings.json', async () => {
     const workspace = path.join(temp, 'project', '.hcanvas');
     await installPlugin(path.join(workspace, 'plugins'), 'project-note', manifest('project-note', 'project-note'));

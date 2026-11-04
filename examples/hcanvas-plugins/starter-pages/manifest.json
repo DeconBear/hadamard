@@ -1,0 +1,217 @@
+{
+  "schema": "hcanvas-plugin/1",
+  "id": "starter-pages",
+  "name": "Starter Pages",
+  "version": "1.0.0",
+  "apiVersion": "hcanvas-plugin/1",
+  "pagePresets": [
+    {
+      "id": "project-brief",
+      "label": "Project brief",
+      "hint": "A calm one-page canvas brief",
+      "mode": "canvas",
+      "width": 1280,
+      "height": 720,
+      "background": "#fffdf8",
+      "blocks": [
+        {
+          "type": "text",
+          "x": 72,
+          "y": 56,
+          "w": 900,
+          "h": 80,
+          "z": 1,
+          "text": "Project brief",
+          "style": {
+            "fontSize": 48,
+            "fontWeight": 700,
+            "color": "#1f2430",
+            "fontFamily": "Georgia, serif"
+          }
+        },
+        {
+          "type": "text",
+          "x": 74,
+          "y": 145,
+          "w": 700,
+          "h": 48,
+          "z": 2,
+          "text": "What we are building, for whom, and why it matters.",
+          "style": {
+            "fontSize": 17,
+            "fontWeight": 400,
+            "color": "#8a8276"
+          }
+        },
+        {
+          "type": "shape",
+          "x": 72,
+          "y": 250,
+          "w": 340,
+          "h": 220,
+          "z": 3,
+          "shape": "rect",
+          "text": "Goals",
+          "style": {
+            "fill": "#f7f4ff",
+            "stroke": "#c4b5fd",
+            "strokeWidth": 1,
+            "radius": 16,
+            "fontSize": 24,
+            "fontWeight": 700,
+            "color": "#4c1d95"
+          }
+        },
+        {
+          "type": "shape",
+          "x": 438,
+          "y": 250,
+          "w": 340,
+          "h": 220,
+          "z": 4,
+          "shape": "rect",
+          "text": "Audience",
+          "style": {
+            "fill": "#f1fbf4",
+            "stroke": "#bbf7d0",
+            "strokeWidth": 1,
+            "radius": 16,
+            "fontSize": 24,
+            "fontWeight": 700,
+            "color": "#14532d"
+          }
+        },
+        {
+          "type": "shape",
+          "x": 804,
+          "y": 250,
+          "w": 340,
+          "h": 220,
+          "z": 5,
+          "shape": "rect",
+          "text": "Success",
+          "style": {
+            "fill": "#fff7ed",
+            "stroke": "#fed7aa",
+            "strokeWidth": 1,
+            "radius": 16,
+            "fontSize": 24,
+            "fontWeight": 700,
+            "color": "#9a3412"
+          }
+        },
+        {
+          "type": "text",
+          "x": 74,
+          "y": 545,
+          "w": 1000,
+          "h": 80,
+          "z": 6,
+          "text": "Next step: capture the brief, agree on the audience, then ship a first version.",
+          "style": {
+            "fontSize": 15,
+            "fontWeight": 500,
+            "color": "#5d584e"
+          }
+        }
+      ]
+    },
+    {
+      "id": "daily-note",
+      "label": "Daily note",
+      "hint": "An infinite desk for thoughts and tasks",
+      "mode": "infinite",
+      "width": 1600,
+      "height": 1000,
+      "background": "#fbfaf7",
+      "blocks": [
+        {
+          "type": "text",
+          "x": 120,
+          "y": 100,
+          "w": 760,
+          "h": 90,
+          "z": 1,
+          "text": "Daily note",
+          "style": {
+            "fontSize": 56,
+            "fontWeight": 700,
+            "color": "#1f2430",
+            "fontFamily": "Georgia, serif"
+          }
+        },
+        {
+          "type": "text",
+          "x": 124,
+          "y": 210,
+          "w": 620,
+          "h": 60,
+          "z": 2,
+          "text": "Capture first. Organize later.",
+          "style": {
+            "fontSize": 18,
+            "fontWeight": 400,
+            "color": "#8a8276"
+          }
+        },
+        {
+          "type": "shape",
+          "x": 124,
+          "y": 330,
+          "w": 420,
+          "h": 260,
+          "z": 3,
+          "shape": "rect",
+          "text": "Today",
+          "style": {
+            "fill": "#ffffff",
+            "stroke": "#e7e0d2",
+            "strokeWidth": 1,
+            "radius": 16,
+            "fontSize": 24,
+            "fontWeight": 700,
+            "color": "#1f2430"
+          }
+        },
+        {
+          "type": "shape",
+          "x": 600,
+          "y": 330,
+          "w": 420,
+          "h": 260,
+          "z": 4,
+          "shape": "rect",
+          "text": "Ideas",
+          "style": {
+            "fill": "#f7f4ff",
+            "stroke": "#ddd6fe",
+            "strokeWidth": 1,
+            "radius": 16,
+            "fontSize": 24,
+            "fontWeight": 700,
+            "color": "#4c1d95"
+          }
+        },
+        {
+          "type": "shape",
+          "x": 1076,
+          "y": 330,
+          "w": 420,
+          "h": 260,
+          "z": 5,
+          "shape": "rect",
+          "text": "Later",
+          "style": {
+            "fill": "#fff7ed",
+            "stroke": "#fed7aa",
+            "strokeWidth": 1,
+            "radius": 16,
+            "fontSize": 24,
+            "fontWeight": 700,
+            "color": "#9a3412"
+          }
+        }
+      ]
+    }
+  ]
+}

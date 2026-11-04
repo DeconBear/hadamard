@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { blockPlugin, listBlockPlugins, registerBlockPlugin } from '../src/hcanvas/blockPlugins.js';
 import type { HcBlock } from '../src/hcanvas/types.js';
 import { renderDeclarativeTemplate, validatePluginManifest } from '../src/hcanvas/pluginManifest.js';
+import { materializePluginPagePreset } from '../src/hcanvas/client/pluginBlocks.js';
 
 function calloutBlock(data: Record<string, unknown>): HcBlock {
   return {
@@ -71,6 +72,38 @@ describe('hcanvas declarative plugin manifests', () => {
 
   it('rejects invalid plugin ids and empty block lists', () => {
     expect(() => validatePluginManifest({ ...base, id: 'Bad Id' })).toThrow(/lowercase/);
-    expect(() => validatePluginManifest({ ...base, blocks: [] })).toThrow(/non-empty/);
+    expect(() => validatePluginManifest({ ...base, blocks: [] })).toThrow(/blocks or pagePresets/);
+  });
+});
+describe('hcanvas plugin page presets', () => {
+  it('validates page-only manifests and materializes canvas pages', () => {
+    const manifest = validatePluginManifest({
+      schema: 'hcanvas-plugin/1', id: 'starter-pages', name: 'Starter Pages', version: '1.0.0', apiVersion: 'hcanvas-plugin/1',
+      pagePresets: [{
+        id: 'brief', label: 'Brief', mode: 'canvas', width: 1280, height: 720, background: '#fffdf8',
+        blocks: [
+          { type: 'text', x: 10, y: 20, w: 300, h: 60, text: 'Hello', style: { fontSize: 24 } },
+          { type: 'shape', x: 10, y: 100, w: 300, h: 160, shape: 'rect' },
+        ],
+      }],
+    });
+    expect(manifest.blocks).toEqual([]);
+    expect(manifest.pagePresets).toHaveLength(1);
+    const page = materializePluginPagePreset(manifest.pagePresets[0]!, prefix => prefix + '_test');
+    expect(page.mode).toBe('canvas');
+    expect(page.name).toBe('Brief');
+    expect(page.blocks).toHaveLength(2);
+    expect(page.blocks?.[0]?.id).toBe('block_test');
+    expect(page.blocks?.[0]?.text).toBe('Hello');
+  });
+
+  it('validates html page presets', () => {
+    const html = validatePluginManifest({
+      schema: 'hcanvas-plugin/1', id: 'html-pages', pagePresets: [{
+        id: 'one-pager', label: 'One pager', mode: 'html', width: 1280, height: 720, background: '#fff', html: '<h1>Hello</h1>',
+      }],
+    });
+    expect(html.pagePresets[0]?.html).toContain('Hello');
+    expect(() => validatePluginManifest({ schema: 'hcanvas-plugin/1', id: 'bad-pages', pagePresets: [{ id: 'x', label: 'X', mode: 'html', width: 1280, height: 720 }] })).toThrow(/html is required/);
   });
 });

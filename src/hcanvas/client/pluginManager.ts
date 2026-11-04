@@ -18,7 +18,10 @@ function escapeHtml(value: unknown): string {
 export function openPluginManager(ctx: PluginManagerContext): void {
   const rows = ctx.catalog.plugins.map(plugin => {
     const manifest = plugin.manifest;
-    const blockLabels = manifest.blocks.map(block => block.label || block.type).join(' · ');
+    const blockLabels = [
+      ...manifest.blocks.map(block => block.label || block.type),
+      ...(manifest.pagePresets || []).map(preset => 'Page: ' + preset.label),
+    ].join(' · ') || 'No blocks';
     return '<label class="plugin-manager-row">' +
       '<input type="checkbox" data-plugin-toggle="' + escapeHtml(manifest.id) + '"' + (plugin.enabled ? ' checked' : '') + '>' +
       '<span class="plugin-manager-copy"><strong>' + escapeHtml(manifest.name) + ' <small>v' + escapeHtml(manifest.version) + '</small></strong>' +

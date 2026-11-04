@@ -15,6 +15,7 @@ import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
 import { bindPluginInspector, bindPluginPicker, getPluginCatalog, loadExternalPlugins, pluginBlockMarkup, pluginFallbackMarkup, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
 import { openPluginManager } from './pluginManager.js';
 import { installImageInsert } from './imageInsert.js';
+import { bindPluginPagePicker, pluginPagePickerMarkup } from './pluginPages.js';
 import { snapMove } from './smartGuides.js';
 import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from './resizeHandle.js';
 import { addLineEndpointHandles } from './lineEndpoints.js';
@@ -2052,7 +2053,6 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
 function clearBlockSelectionDecorations(): void {
   document.querySelectorAll('.block-label, .resize-handle, .line-endpoint').forEach(node => node.remove());
 }
-
 function addBlockSelectionDecorations(wrap: HTMLDivElement, block: HcBlock): void {
   if (wrap.querySelector(':scope > .block-label')) return;
   const label = document.createElement('span');
@@ -2092,7 +2092,6 @@ function addBlockSelectionDecorations(wrap: HTMLDivElement, block: HcBlock): voi
     bindBlockResizeHandle(resize, wrap, block, direction, resizeContext);
   }
 }
-
 function refreshBlockSelectionDecorations(): void {
   clearBlockSelectionDecorations();
   if (state.editing) return;
@@ -2102,7 +2101,6 @@ function refreshBlockSelectionDecorations(): void {
   const wrap = qs<HTMLDivElement>('.block-wrap[data-block-id="' + block.id + '"]');
   if (wrap) addBlockSelectionDecorations(wrap, block);
 }
-
 function selectBlock(blockId: string | null, options: { additive?: boolean } = {}): void {
   if (!blockId) { setBlockSelection([]); return; }
   const block = activePage()?.blocks?.find(item => item.id === blockId);
@@ -2124,16 +2122,13 @@ async function persistBlock(block: HcBlock, patch: Partial<HcBlock>, historyBase
   await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch } as HcOp], { refreshArtboard: false, ...(historyBase ? { historyBase } : {}) });
   renderInspector();
 }
-
 function cloneJson<T>(value: T): T {
   if (value === undefined) return value;
   return JSON.parse(JSON.stringify(value)) as T;
 }
-
 function invertOps(ops: HcOp[], baseDoc: HcDocument | null = state.doc): HcOp[] | null {
   return invertDocumentOps(ops, baseDoc);
 }
-
 function updateHistoryButtons(): void {
   const undoBtn = qs<HTMLButtonElement>('#undoBtn');
   const redoBtn = qs<HTMLButtonElement>('#redoBtn');
@@ -2184,7 +2179,6 @@ async function redo(): Promise<void> {
     else pendingHistoryRedo = 0;
   }
 }
-
 function augmentBindingOps(ops: HcOp[]): HcOp[] {
   if (!state.doc) return ops;
   const changed = new Map<string, Set<string>>();
@@ -2317,7 +2311,6 @@ async function renameDocument(title: string): Promise<void> {
   renderTop(); renderDocs();
   setSaveStatus('Renamed', 'saved');
 }
-
 function enterHtmlEdit(pageId: string, blockId?: string): void {
   const page = state.doc?.pages.find(item => item.id === pageId);
   if (!page) return;
@@ -2331,7 +2324,6 @@ function enterHtmlEdit(pageId: string, blockId?: string): void {
   renderInspector();
   toast('HTML edit mode: double-click text to edit, click an element to inspect it.', 'info');
 }
-
 function exitHtmlEdit(): void {
   if (!state.editing) return;
   state.editing = null;
@@ -2343,7 +2335,6 @@ function exitHtmlEdit(): void {
   renderPages();
   renderInspector();
 }
-
 function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: string): void {
   const contentDocument = iframe.contentDocument;
   if (!contentDocument) { toast('Cannot enter HTML edit mode.', 'error'); return; }
@@ -2385,7 +2376,6 @@ function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: s
   contentDocument.addEventListener('submit', event => { event.preventDefault(); }, true);
   renderInspector();
 }
-
 function selectHtmlElement(element: Element): void {
   const contentDocument = state.iframeDoc;
   if (!contentDocument) return;
@@ -2395,7 +2385,6 @@ function selectHtmlElement(element: Element): void {
   renderInspector();
   void syncActive();
 }
-
 function startInlineTextEdit(element: HTMLElement): void {
   if (!state.iframeDoc) return;
   const previous = state.iframeDoc.querySelector('[contenteditable="true"]') as HTMLElement | null;
@@ -2440,12 +2429,10 @@ async function commitHtmlElement(element: HTMLElement): Promise<void> {
   const op: HcOp = { op: 'html_patch', pageId, ...(blockId ? { blockId } : {}), patches: [{ op: 'set_html', target: targetId, html: clone.innerHTML }] };
   await applyOps([op], { refreshArtboard: false });
 }
-
 function selectedHtmlElement(): Element | null {
   if (!state.iframeDoc || !state.selectedHtmlId) return null;
   return state.iframeDoc.querySelector('[data-hc-id="' + state.selectedHtmlId.replace(/"/g, '\\"') + '"]');
 }
-
 function toHex(value: string): string {
   if (/^#[0-9a-f]{6}$/i.test(value)) return value;
   if (/^#[0-9a-f]{3}$/i.test(value)) return '#' + value[1] + value[1] + value[2] + value[2] + value[3] + value[3];
@@ -2453,7 +2440,6 @@ function toHex(value: string): string {
   if (match) return '#' + [match[1], match[2], match[3]].map(part => Number(part).toString(16).padStart(2, '0')).join('');
   return '#1d232e';
 }
-
 function htmlEditingContext(): HtmlEditingContext {
   return {
     getEditing: () => state.editing,
@@ -2466,7 +2452,6 @@ function htmlEditingContext(): HtmlEditingContext {
     newId: genId,
   };
 }
-
 function renderHtmlInspector(): void {
   const root = el('inspectorPanel');
   const contentDocument = state.iframeDoc;
@@ -2530,11 +2515,9 @@ function renderHtmlInspector(): void {
   });
   qs<HTMLButtonElement>('#hcSourceBtn')?.addEventListener('click', () => { if (state.editing) openSourceEditor({ pageId: state.editing.pageId, blockId: state.editing.blockId }); });
 }
-
 function field(id: string, label: string, inputHtml: string): string {
   return '<div class="field"><span>' + esc(label) + '</span>' + inputHtml + '</div>';
 }
-
 function renderInspector(): void {
   if (state.editing) { renderHtmlInspector(); return; }
   if (!state.doc) return;
@@ -2544,7 +2527,6 @@ function renderInspector(): void {
   if (block) { renderBlockInspector(); return; }
   renderPageInspector();
 }
-
 function renderMultiSelectionInspector(blocks: HcBlock[]): void {
   const root = el('inspectorPanel');
   const groupIds = new Set(blocks.map(block => block.groupId).filter(Boolean));
@@ -2560,7 +2542,6 @@ function renderMultiSelectionInspector(blocks: HcBlock[]): void {
   qs<HTMLButtonElement>('#multiClearBtn')?.addEventListener('click', () => setBlockSelection([]));
   qs<HTMLButtonElement>('#multiDeleteBtn')?.addEventListener('click', () => { void deleteSelectedBlocks(); });
 }
-
 function renderPageInspector(): void {
   const root = el('inspectorPanel');
   const page = activePage();
@@ -3148,6 +3129,7 @@ async function openAddPageModal(): Promise<void> {
   let html = '<div class="modal"><div class="modal-head"><div><strong>Add a page</strong><small>HTML pages are directly editable; canvas pages accept blocks.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="preset-grid">';
   for (const preset of PAGE_PRESETS) html += '<button type="button" class="preset-btn" data-preset="' + esc(preset.id) + '"><strong>' + esc(preset.title) + '</strong><small>' + esc(preset.hint) + '</small></button>';
   html += '</div>';
+  html += pluginPagePickerMarkup(pageThumbHtml);
   if (state.masters.length) {
     html += '<div class="masters-head"><strong>My page masters</strong><small>Reusable layouts saved from this workspace</small></div><div class="masters-grid">';
     for (const master of state.masters) html += '<div class="master-card">' + masterPreviewHtml(master) + '<div class="master-info"><strong>' + esc(master.name) + '</strong><small>' + esc(master.mode) + ' · ' + master.width + '×' + master.height + '</small></div><div class="master-actions"><button type="button" class="btn tiny primary" data-master="' + esc(master.id) + '">Use</button><button type="button" class="btn tiny danger" data-delete-master="' + esc(master.id) + '">Delete</button></div></div>';
@@ -3165,6 +3147,7 @@ async function openAddPageModal(): Promise<void> {
       void createPage(preset);
     });
   });
+  bindPluginPagePicker(document, page => { closeModal(); void addPluginPage(page); });
   document.querySelectorAll<HTMLButtonElement>('[data-master]').forEach(button => {
     button.addEventListener('click', async () => {
       const masterId = button.dataset.master;
@@ -3219,6 +3202,11 @@ async function importHtmlFile(file: File): Promise<void> {
   } catch (error) {
     toast(error instanceof Error ? error.message : String(error), 'error');
   }
+}
+
+async function addPluginPage(page: HcPage): Promise<void> {
+  const result = await applyOps([{ op: 'add_page', page }], { refreshArtboard: false });
+  if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); void syncActive(); }
 }
 
 async function createPage(preset: typeof PAGE_PRESETS[number]): Promise<void> {

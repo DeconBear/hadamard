@@ -361,3 +361,25 @@ Project plugins take precedence; duplicate block types are skipped and reported.
 `render` is an HTML template; `{{fieldKey}}` placeholders are HTML-escaped. Inline scripts, iframes, event-handler attributes and `javascript:` URLs are rejected. Supported field kinds are `text`, `textarea`, `color`, `select` and `number`. After adding or editing a manifest, open a Canvas/Infinite page Inspector and click **Reload plugins**; plugin blocks appear under **Plugin blocks**.
 
 Open **Manage** next to the Plugin blocks section to enable/disable installed plugins. Toggle state is persisted in `.hcanvas/plugin-settings.json`; disabled plugins are not registered, so their blocks show the safe unknown-block fallback. A working sample lives at [examples/hcanvas-plugins/sticky-notes/manifest.json](https://github.com/DeconBear/hadamard/blob/main/examples/hcanvas-plugins/sticky-notes/manifest.json). Plugin blocks are stored in the document as normal blocks with a `data` payload, so they survive save/reload, undo/redo, copy/paste and Present. Declarative templates are local, trusted UI content; only install manifests you understand.
+### Page-template plugins
+
+A plugin can also contribute whole page templates. Add `pagePresets` to the same manifest:
+
+```json
+{
+  "pagePresets": [{
+    "id": "project-brief",
+    "label": "Project brief",
+    "mode": "canvas",
+    "width": 1280,
+    "height": 720,
+    "background": "#fffdf8",
+    "blocks": [
+      { "type": "text", "x": 72, "y": 56, "w": 900, "h": 80, "text": "Project brief", "style": { "fontSize": 48, "fontWeight": 700 } },
+      { "type": "shape", "x": 72, "y": 250, "w": 340, "h": 220, "shape": "rect", "text": "Goals" }
+    ]
+  }]
+}
+```
+
+Modes: `canvas`, `infinite` and `html`. Canvas/infinite templates provide blocks; HTML templates provide an `html` string. Open **Add a page** and use **Plugin page templates**; the new page is created through the normal document operation path and supports undo/redo. A page-template-only manifest does not need a `blocks` array. Sample: [examples/hcanvas-plugins/starter-pages/manifest.json](https://github.com/DeconBear/hadamard/blob/main/examples/hcanvas-plugins/starter-pages/manifest.json).

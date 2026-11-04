@@ -295,3 +295,25 @@ hcanvas 可以加载声明式 block 插件，不需要执行 JavaScript bundle�
 `render` 是 HTML 模板，`{{fieldKey}}` 占位符会被 HTML 转义；脚本、iframe、事件属性和 `javascript:` URL 会被拒绝。支持字段类型：`text`、`textarea`、`color`、`select`、`number`。新增或修改 manifest 后，在 Canvas/Infinite 页面的 Inspector 点击 **Reload plugins**，插件 block 会出现在 **Plugin blocks** 区域。
 
 点击 **Plugin blocks** 旁边的 **Manage** 可以启用/禁用已安装插件；状态保存在 `.hcanvas/plugin-settings.json`，禁用后插件 block 会显示安全的 unknown-block fallback。完整示例见 `examples/hcanvas-plugins/sticky-notes/manifest.json`。插件 block 以普通 block + `data` 保存，因此支持保存/重载、撤销/重做、复制粘贴和 Present。声明式模板是本地可信 UI 内容，只安装你理解的 manifest。
+### 页面模板插件
+
+插件还可以贡献整套页面模板，在 manifest 中加入 `pagePresets`：
+
+```json
+{
+  "pagePresets": [{
+    "id": "project-brief",
+    "label": "Project brief",
+    "mode": "canvas",
+    "width": 1280,
+    "height": 720,
+    "background": "#fffdf8",
+    "blocks": [
+      { "type": "text", "x": 72, "y": 56, "w": 900, "h": 80, "text": "Project brief", "style": { "fontSize": 48, "fontWeight": 700 } },
+      { "type": "shape", "x": 72, "y": 250, "w": 340, "h": 220, "shape": "rect", "text": "Goals" }
+    ]
+  }]
+}
+```
+
+支持 `canvas`、`infinite`、`html` 三种模式；canvas/infinite 模板提供 blocks，HTML 模板提供 `html` 字符串。打开 **Add a page**，在 **Plugin page templates** 区域选择模板；新页面通过正常文档操作创建，支持撤销/重做。纯页面模板插件可以不提供 `blocks`。示例：`examples/hcanvas-plugins/starter-pages/manifest.json`。

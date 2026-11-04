@@ -1,6 +1,6 @@
-import type { HcBlock } from '../types.js';
+import type { HcBlock, HcPage } from '../types.js';
 import { blockPlugin, clearExternalBlockPlugins, listBlockPlugins, registerBlockPlugin, type HcBlockPlugin, type HcPluginField } from '../blockPlugins.js';
-import { renderDeclarativeTemplate, type HcPluginManifest } from '../pluginManifest.js';
+import { renderDeclarativeTemplate, type HcPluginManifest, type HcPluginPagePreset } from '../pluginManifest.js';
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -93,6 +93,59 @@ let lastCatalog: PluginCatalog = { plugins: [], errors: [] };
 
 export function getPluginCatalog(): PluginCatalog {
   return lastCatalog;
+}
+
+export interface PluginPagePresetEntry {
+  pluginId: string;
+  pluginName: string;
+  source: 'project' | 'user';
+  preset: HcPluginPagePreset;
+}
+
+export function listPluginPagePresets(): PluginPagePresetEntry[] {
+  const presets: PluginPagePresetEntry[] = [];
+  for (const plugin of lastCatalog.plugins) {
+    if (!plugin.enabled) continue;
+    for (const preset of plugin.manifest.pagePresets || []) {
+      presets.push({ pluginId: plugin.manifest.id, pluginName: plugin.manifest.name, source: plugin.source || 'project', preset });
+    }
+  }
+  return presets;
+}
+
+export function materializePluginPagePreset(preset: HcPluginPagePreset, newId: (prefix: string) => string): HcPage {
+  const page: HcPage = {
+    id: newId('page'),
+    name: preset.label,
+    mode: preset.mode,
+    width: preset.width,
+    height: preset.height,
+    background: preset.background,
+  };
+  if (preset.mode === 'html') {
+    page.html = preset.html || '';
+    return page;
+  }
+  page.blocks = (preset.blocks || []).map((item, index): HcBlock => ({
+    id: newId('block'),
+    type: item.type,
+    x: item.x || 0,
+    y: item.y || 0,
+    w: item.w || 320,
+    h: item.h || 200,
+    z: item.z ?? index + 1,
+    name: item.name,
+    data: item.data,
+    style: item.style as HcBlock['style'],
+    text: item.text,
+    html: item.html,
+    markdown: item.markdown,
+    code: item.code,
+    shape: item.shape as HcBlock['shape'],
+    src: item.src,
+    alt: item.alt,
+  }));
+  return page;
 }
 
 export function registerDeclarativePlugins(entries: Array<{ manifest: HcPluginManifest; source?: 'project' | 'user'; enabled?: boolean }>): ExternalPluginLoad {
