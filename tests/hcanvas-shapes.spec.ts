@@ -45,6 +45,11 @@ describe('hcanvas shape definitions', () => {
     expect(isHcShape('not-a-shape')).toBe(false);
   });
 
+  it('offers arc, polyline, elbow and curve connectors in Lines', () => {
+    const lines = new Set(visibleShapes.filter(shape => shape.category === 'Lines').map(shape => shape.id));
+    for (const id of ['line', 'doubleArrow', 'arcLine', 'polyline', 'elbow', 'curveLine']) expect(lines.has(id as HcShape)).toBe(true);
+  });
+
   it('hides the internal polygon shape from the visible picker filter', () => {
     const polygon = HCANVAS_SHAPES.find(shape => shape.id === 'polygon');
     expect(polygon).toBeDefined();

@@ -48,6 +48,10 @@ export const HCANVAS_SHAPES: HcShapeDefinition[] = [
   { id: 'frame', label: 'Frame', hint: 'Visual container', category: 'Basic' },
   { id: 'line', label: 'Line', hint: 'Divider / connector', category: 'Lines' },
   { id: 'doubleArrow', label: 'Double arrow', hint: 'Two-way connector', category: 'Lines' },
+  { id: 'arcLine', label: 'Arc line', hint: 'Curved connector / arc', category: 'Lines' },
+  { id: 'polyline', label: 'Polyline', hint: 'Bent multi-point connector', category: 'Lines' },
+  { id: 'elbow', label: 'Elbow connector', hint: 'Right-angle connector', category: 'Lines' },
+  { id: 'curveLine', label: 'Curve line', hint: 'Smooth connector', category: 'Lines' },
   { id: 'process', label: 'Process', hint: 'Workflow step', category: 'Flowchart' },
   { id: 'decision', label: 'Decision', hint: 'Branch / yes-no', category: 'Flowchart' },
   { id: 'terminator', label: 'Terminator', hint: 'Start / end', category: 'Flowchart' },
@@ -167,7 +171,7 @@ interface HcShapePaint {
 
 function shapePaint(shape: HcShape, block: ShapeGeometryBlock): HcShapePaint {
   const blockStyle = block.style || {};
-  const fillRaw = shape === 'frame' || shape === 'line' ? 'transparent' : (normalizeGradient(block.fillGradient) ? blockFill(block as HcBlock) : String(blockStyle.fill || '#f3e8ff'));
+  const fillRaw = shape === 'frame' || shape === 'line' || shape === 'arcLine' || shape === 'polyline' || shape === 'elbow' || shape === 'curveLine' ? 'transparent' : (normalizeGradient(block.fillGradient) ? blockFill(block as HcBlock) : String(blockStyle.fill || '#f3e8ff'));
   const fill = fillRaw === 'transparent' ? 'none' : escapeAttribute(fillRaw);
   const strokeWidth = Number(blockStyle.strokeWidth ?? 0);
   const strokeColor = String(blockStyle.stroke || '');
@@ -234,6 +238,18 @@ export function shapeSvgMarkup(block: ShapeGeometryBlock): string {
       geometry = '<line x1="' + x1.toFixed(2) + '" y1="' + y1.toFixed(2) + '" x2="' + x2.toFixed(2) + '" y2="' + y2.toFixed(2) + '"' + common + ' stroke-linecap="round"/>';
       break;
     }
+    case 'arcLine':
+      geometry = '<path d="M6,82 A44,44 0 0 1 94,82"' + common + ' stroke-linecap="round"/>';
+      break;
+    case 'polyline':
+      geometry = '<path d="M6,82 L28,38 L52,64 L76,28 L94,52"' + common + ' stroke-linecap="round"/>';
+      break;
+    case 'elbow':
+      geometry = '<path d="M8,80 L8,28 L92,28 L92,76"' + common + ' stroke-linecap="round"/>';
+      break;
+    case 'curveLine':
+      geometry = '<path d="M8,78 C28,10 72,10 92,78"' + common + ' stroke-linecap="round"/>';
+      break;
     case 'rect':
     case 'frame': {
       const radius = shape === 'frame' ? 8 : Math.max(0, Math.min(50, Number(style.radius ?? 14)));
