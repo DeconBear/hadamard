@@ -6,14 +6,9 @@ function attr(value: unknown): string {
   return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
-/** A cubic Bezier curve stored as four local points: start, control1, control2, end. */
-export function curveSvgMarkup(block: HcBlock): string {
-  const width = Math.max(1, block.w);
-  const height = Math.max(1, block.h);
-  const points = (block.points && block.points.length >= 2 ? block.points : [{ x: 0, y: 0 }, { x: 0.25, y: -20 }, { x: 0.75, y: -20 }, { x: width, y: 0 }])
-    .map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }));
-  const stroke = vectorStroke(block);
-  const dash = block.style?.strokeStyle === 'dashed' ? ' stroke-dasharray="' + (stroke.width * 4 + 4) + ' ' + (stroke.width * 3 + 3) + '"' : block.style?.strokeStyle === 'dotted' ? ' stroke-dasharray="1 ' + (stroke.width * 2 + 2) + '"' : '';
+/** Path data for one or more cubic segments: start + 3 points per segment. */
+export function curvePathData(points: Array<{ x: number; y: number }>): string {
+  if (!points.length) return '';
   let data = 'M ' + points[0]!.x + ' ' + points[0]!.y;
   if (points.length >= 4 && (points.length - 1) % 3 === 0) {
     for (let segment = 0; segment < (points.length - 1) / 3; segment += 1) {
@@ -23,6 +18,18 @@ export function curveSvgMarkup(block: HcBlock): string {
   } else if (points.length >= 2) {
     data += ' L ' + points[points.length - 1]!.x + ' ' + points[points.length - 1]!.y;
   }
+  return data;
+}
+
+/** A cubic Bezier curve stored as four local points: start, control1, control2, end. */
+export function curveSvgMarkup(block: HcBlock): string {
+  const width = Math.max(1, block.w);
+  const height = Math.max(1, block.h);
+  const points = (block.points && block.points.length >= 2 ? block.points : [{ x: 0, y: 0 }, { x: 0.25, y: -20 }, { x: 0.75, y: -20 }, { x: width, y: 0 }])
+    .map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }));
+  const stroke = vectorStroke(block);
+  const dash = block.style?.strokeStyle === 'dashed' ? ' stroke-dasharray="' + (stroke.width * 4 + 4) + ' ' + (stroke.width * 3 + 3) + '"' : block.style?.strokeStyle === 'dotted' ? ' stroke-dasharray="1 ' + (stroke.width * 2 + 2) + '"' : '';
+  const data = curvePathData(points);
   const closed = Boolean(block.closed);
   const fill = closed ? blockFill(block, 'none') : 'none';
   const defs = closed && normalizeGradient(block.fillGradient) ? gradientSvgDefs(block) : '';

@@ -878,6 +878,5 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .hc-node-guides line { stroke: #9b8adf; stroke-width: 1; stroke-dasharray: 3 3; opacity: .85; }
 .block-wrap.type-curve.selected { outline: none !important; }
 .block-wrap.type-curve.selected > .block-hit { box-shadow: none !important; }
+.block-wrap.type-curve.selected .block-vector-host svg { overflow: visible; }
 
-.hc-node-add { position: absolute; z-index: 1202; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border: 1px solid #7c3aed; border-radius: 50%; background: #f4efff; color: #6d28d9; font: 700 12px/12px Inter, sans-serif; text-align: center; cursor: pointer; box-shadow: 0 1px 4px rgba(31,36,48,.16); }
-.hc-node-add:hover { background: #7c3aed; color: #fff; }

@@ -1,6 +1,7 @@
 import type { HcBlock, HcGradient, HcOp, HcPage } from '../types.js';
 import { gradientCss } from '../fill.js';
 import { openImageCutout } from './imageCutout.js';
+import { curvePathData } from '../curves.js';
 
 type ColorTarget = 'auto' | 'fill' | 'stroke' | 'text';
 
@@ -95,6 +96,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
   const hasImage = blocks.some(block => block.type === 'image');
   const hasStroke = blocks.some(block => supportsStroke(block));
   const hasArc = blocks.some(block => block.type === 'arc');
+  const hasCurve = blocks.length === 1 && blocks[0]?.type === 'curve';
   node.innerHTML = '<div class="hc-context-head">' + escape(blocks.length > 1 ? blocks.length + ' blocks' : (blocks[0]?.name || blocks[0]?.type || 'Block')) + '</div>' +
     '<button type="button" data-hc-action="edit">Edit</button>' +
     '<button type="button" data-hc-action="duplicate">Duplicate</button>' +
@@ -110,6 +112,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
     '<button type="button" data-hc-action="stroke">Stroke color…</button>' +
     (hasStroke ? '<div class="hc-context-label">Line style</div><button type="button" data-hc-action="solid">Solid line</button><button type="button" data-hc-action="dashed">Dashed line</button><button type="button" data-hc-action="dotted">Dotted line</button>' : '') +
     (hasArc ? '<div class="hc-context-label">Arc ends</div><button type="button" data-hc-action="arc-start-none">Start: none</button><button type="button" data-hc-action="arc-start-arrow">Start: arrow</button><button type="button" data-hc-action="arc-end-none">End: none</button><button type="button" data-hc-action="arc-end-arrow">End: arrow</button>' : '') +
+    (hasCurve ? '<button type="button" data-hc-action="add-vertex">Add vertex at click</button>' : '') +
     '<div class="hc-context-label">Transform</div><button type="button" data-hc-action="rotate-cw">Rotate 90° clockwise</button><button type="button" data-hc-action="rotate-ccw">Rotate 90° counter-clockwise</button><button type="button" data-hc-action="flip-h">Flip horizontal</button><button type="button" data-hc-action="flip-v">Flip vertical</button>' +
     '<button type="button" data-hc-action="eyedrop">Pick color from screen</button>' +
     '<div class="hc-context-sep"></div>' +
@@ -423,7 +426,7 @@ function openColorFor(blocks: HcBlock[], target: ColorTarget): void {
   openColorPopover(anchor, primaryColor(first), color => applyColorToSelection(blocks, color, target), gradient);
 }
 
-function showBlockMenu(block: HcBlock, x: number, y: number): void {
+function showBlockMenu(block: HcBlock, x: number, y: number, insertPoint?: { x: number; y: number }): void {
   const selected = context?.getSelectedIds() || [];
   const blocks = selected.includes(block.id) ? selectedBlocks() : [block];
   openMenu(x, y, blocks, action => {
@@ -437,6 +440,7 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
     if (action === 'stroke') { openColorFor(blocks, 'stroke'); return; }
     if (action === 'solid' || action === 'dashed' || action === 'dotted') { applyStrokeStyle(blocks, action); return; }
     if (action.startsWith('arc-')) { applyArcMarker(blocks, action); return; }
+    if (action === 'add-vertex' && insertPoint && block.type === 'curve') { addCurveVertex(block, insertPoint); return; }
     if (action === 'rotate-cw') { applyRotation(blocks, 90); return; }
     if (action === 'rotate-ccw') { applyRotation(blocks, -90); return; }
     if (action === 'flip-h') { applyFlip(blocks, 'x'); return; }
@@ -446,19 +450,40 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
   });
 }
 
-const NODE_LABELS = ['Start', 'Control 1', 'Control 2', 'End'];
-
-function midpoint(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } {
-  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+function lerp(a: { x: number; y: number }, b: { x: number; y: number }, t: number): { x: number; y: number } {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
-function splitCurvePoints(points: Array<{ x: number; y: number }>, segment: number): Array<{ x: number; y: number }> {
+function splitCurvePoints(points: Array<{ x: number; y: number }>, segment: number, t = 0.5): Array<{ x: number; y: number }> {
   const base = segment * 3;
   const p0 = points[base]!, p1 = points[base + 1]!, p2 = points[base + 2]!, p3 = points[base + 3]!;
-  const q0 = midpoint(p0, p1), q1 = midpoint(p1, p2), q2 = midpoint(p2, p3);
-  const r0 = midpoint(q0, q1), r1 = midpoint(q1, q2);
-  const s = midpoint(r0, r1);
+  const q0 = lerp(p0, p1, t), q1 = lerp(p1, p2, t), q2 = lerp(p2, p3, t);
+  const r0 = lerp(q0, q1, t), r1 = lerp(q1, q2, t);
+  const s = lerp(r0, r1, t);
   return [...points.slice(0, base), p0, q0, r0, s, r1, q2, p3, ...points.slice(base + 4)];
+}
+
+function addCurveVertex(block: HcBlock, worldPoint: { x: number; y: number }): void {
+  const points = block.points || [];
+  if (points.length < 4 || (points.length - 1) % 3 !== 0) return;
+  const local = { x: worldPoint.x - block.x, y: worldPoint.y - block.y };
+  let bestSegment = 0;
+  let bestT = 0.5;
+  let bestDistance = Infinity;
+  const segments = (points.length - 1) / 3;
+  for (let segment = 0; segment < segments; segment += 1) {
+    const base = segment * 3;
+    const p0 = points[base]!, p1 = points[base + 1]!, p2 = points[base + 2]!, p3 = points[base + 3]!;
+    for (let step = 1; step < 40; step += 1) {
+      const t = step / 40;
+      const q0 = lerp(p0, p1, t), q1 = lerp(p1, p2, t), q2 = lerp(p2, p3, t);
+      const r0 = lerp(q0, q1, t), r1 = lerp(q1, q2, t);
+      const point = lerp(r0, r1, t);
+      const distance = Math.hypot(point.x - local.x, point.y - local.y);
+      if (distance < bestDistance) { bestDistance = distance; bestSegment = segment; bestT = t; }
+    }
+  }
+  applyCurvePoints(block, splitCurvePoints(points, bestSegment, bestT));
 }
 
 function applyCurvePoints(block: HcBlock, points: Array<{ x: number; y: number }>): void {
@@ -516,8 +541,11 @@ function renderCurveHandles(): void {
       const start = context.getWorldPoint(event.clientX, event.clientY);
       const move = (moveEvent: PointerEvent): void => {
         const current = context!.getWorldPoint(moveEvent.clientX, moveEvent.clientY);
-        handle.style.left = (origin.x + initial[index]!.x + current.x - start.x) + 'px';
-        handle.style.top = (origin.y + initial[index]!.y + current.y - start.y) + 'px';
+        const moved = initial.map((item, itemIndex) => itemIndex === index ? { x: item.x + current.x - start.x, y: item.y + current.y - start.y } : item);
+        handle.style.left = (origin.x + moved[index]!.x) + 'px';
+        handle.style.top = (origin.y + moved[index]!.y) + 'px';
+        const path = document.querySelector<SVGPathElement>('.block-wrap[data-block-id="' + block.id + '"] .block-vector-host svg path');
+        if (path) path.setAttribute('d', curvePathData(moved));
       };
       const up = (upEvent: PointerEvent): void => {
         window.removeEventListener('pointermove', move);
@@ -531,23 +559,6 @@ function renderCurveHandles(): void {
     });
     artboard.appendChild(handle);
   });
-  for (let segment = 0; segment < segments; segment += 1) {
-    const base = segment * 3;
-    const p0 = points[base]!, p1 = points[base + 1]!, p2 = points[base + 2]!, p3 = points[base + 3]!;
-    const q0 = midpoint(p0, p1), q1 = midpoint(p1, p2), q2 = midpoint(p2, p3);
-    const r0 = midpoint(q0, q1), r1 = midpoint(q1, q2);
-    const middle = midpoint(r0, r1);
-    const add = document.createElement('button');
-    add.type = 'button';
-    add.className = 'hc-node-add';
-    add.title = 'Add vertex at this segment';
-    add.textContent = '+';
-    add.style.left = (block.x + middle.x) + 'px';
-    add.style.top = (block.y + middle.y) + 'px';
-    add.addEventListener('pointerdown', event => { event.preventDefault(); event.stopPropagation(); });
-    add.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); applyCurvePoints(block, splitCurvePoints(points, segment)); });
-    artboard.appendChild(add);
-  }
 }
 
 export function updateDirectEditUI(): void {
@@ -656,6 +667,6 @@ export function installBlockDirectEdit(options: BlockDirectEditOptions): void {
     event.stopPropagation();
     if (options.isLocked(block.id)) { context?.toast('This block is on a locked layer.', 'info'); return; }
     if (!options.getSelectedIds().includes(block.id)) options.select([block.id], block.id);
-    showBlockMenu(block, event.clientX, event.clientY);
+    showBlockMenu(block, event.clientX, event.clientY, options.getWorldPoint(event.clientX, event.clientY));
   }, { capture: true });
 }
