@@ -33,6 +33,8 @@ export interface HtmlEditingContext {
   toast(message: string, kind?: 'info' | 'success' | 'error'): void;
   renderInspector(): void;
   newId(prefix: string): string;
+  undo?(): void;
+  redo?(): void;
 }
 
 export function prepareHtmlFragment(source: string, newId: (prefix: string) => string): { html: string; rootId: string } | null {
