@@ -377,6 +377,7 @@ function renderTransformHandle(): void {
   const radius = block.h / 2 + 30;
   const handle = document.createElement('div');
   handle.className = 'hc-rotate-handle';
+  handle.style.transform = 'scale(' + 1 / Math.max(0.1, context.getZoom()) + ')';
   handle.title = 'Drag to rotate · Shift snaps 15°';
   handle.style.left = (centerX + Math.sin(radians) * radius) + 'px';
   handle.style.top = (centerY - Math.cos(radians) * radius) + 'px';
@@ -610,6 +611,7 @@ function renderCurveHandles(): void {
       };
       const cancel = (): void => {
         moved = initial;
+        latest = start;
         update();
         cleanup();
       };

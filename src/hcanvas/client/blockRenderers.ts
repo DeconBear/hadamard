@@ -22,6 +22,7 @@ function renderHtml(block: HcBlock, page: HcPage, context: ClientBlockRenderCont
   const iframe = document.createElement('iframe');
   iframe.setAttribute('sandbox', context.editing ? 'allow-same-origin' : 'allow-scripts');
   iframe.setAttribute('title', block.name || 'HTML block');
+  iframe.loading = 'lazy';
   iframe.srcdoc = context.wrapHtml(block.html || '');
   iframe.addEventListener('load', () => { if (context.editing) context.setupHtmlEditing(iframe, page.id, block.id); });
   return iframe;

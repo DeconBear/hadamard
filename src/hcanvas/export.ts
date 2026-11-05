@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -216,6 +216,25 @@ async function runBrowser(browser: string, args: string[], timeoutMs = 60000): P
   }
 }
 
+async function runBrowserExport(args: string[], outputPath: string, timeoutMs = 60000): Promise<void> {
+  const candidates = browserCandidates().filter((candidate, index, all) => all.indexOf(candidate) === index && existsSync(candidate));
+  if (!candidates.length) throw new Error('No Chrome/Edge/Chromium browser found. Set HCANVAS_BROWSER_PATH.');
+  const failures: string[] = [];
+  for (const browser of candidates) {
+    const label = path.basename(path.dirname(browser)) + '/' + path.basename(browser);
+    try {
+      await rm(outputPath, { force: true });
+      await runBrowser(browser, args, timeoutMs);
+      const output = await stat(outputPath);
+      if (output.isFile() && output.size > 0) return;
+      failures.push(label + ': no output file');
+    } catch (error) {
+      failures.push(label + ': ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+  throw new Error('Browser export failed. ' + failures.join('; '));
+}
+
 function inlineRuns(root: ReturnType<typeof parse> | any): TextRun[] {
   const runs: TextRun[] = [];
   const visit = (node: any, style: { bold?: boolean; italics?: boolean } = {}): void => {
@@ -328,14 +347,11 @@ async function exportDocx(doc: HcDocument, outDir: string, options: { pageId?: s
 }
 
 async function renderHtmlPagePng(doc: HcDocument, page: HcPage, outPath: string): Promise<void> {
-  const browser = findBrowser();
-  if (!browser) throw new Error('No Chrome/Edge/Chromium browser found. Set HCANVAS_BROWSER_PATH.');
   const html = buildStandalonePageHtml(doc, page);
   const temp = path.join(path.dirname(outPath), '.hc-slide-' + Date.now() + '-' + Math.random().toString(16).slice(2) + '.html');
   await writeFile(temp, html, 'utf8');
   try {
-    await runBrowser(browser, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--window-size=' + page.width + ',' + page.height, '--screenshot=' + path.resolve(outPath), 'file://' + path.resolve(temp).replace(/\\/g, '/')], 90000);
-    if (!existsSync(outPath)) throw new Error('Browser did not produce a screenshot for page ' + page.name);
+    await runBrowserExport(['--headless=new', '--disable-gpu', '--hide-scrollbars', '--window-size=' + page.width + ',' + page.height, '--screenshot=' + path.resolve(outPath), 'file://' + path.resolve(temp).replace(/\\/g, '/')], path.resolve(outPath), 90000);
   } finally {
     await rm(temp, { force: true });
   }
@@ -562,12 +578,10 @@ export async function exportFile(
   await writeFile(temp, html, 'utf8');
   const outPath = path.resolve(options.outPath || path.join(outDir, doc.id + '-' + safeTitle + '.' + format));
   try {
-    const browser = findBrowser();
-    if (!browser) throw new Error('No Chrome/Edge/Chromium browser found. Set HCANVAS_BROWSER_PATH.');
     if (format === 'pdf') {
-      await runBrowser(browser, ['--headless=new', '--disable-gpu', '--no-pdf-header-footer', '--no-margins', '--print-to-pdf=' + outPath, 'file://' + temp.replace(/\\/g, '/')]);
+      await runBrowserExport(['--headless=new', '--disable-gpu', '--no-pdf-header-footer', '--no-margins', '--print-to-pdf=' + outPath, 'file://' + temp.replace(/\\/g, '/')], outPath);
     } else {
-      await runBrowser(browser, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--window-size=' + page.width + ',' + page.height, '--screenshot=' + outPath, 'file://' + temp.replace(/\\/g, '/')]);
+      await runBrowserExport(['--headless=new', '--disable-gpu', '--hide-scrollbars', '--window-size=' + page.width + ',' + page.height, '--screenshot=' + outPath, 'file://' + temp.replace(/\\/g, '/')], outPath);
     }
   } finally {
     await rm(temp, { force: true });

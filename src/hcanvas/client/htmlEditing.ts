@@ -48,12 +48,47 @@ export function prepareHtmlFragment(source: string, newId: (prefix: string) => s
   return { html: template.innerHTML, rootId: root.getAttribute('data-hc-id') || '' };
 }
 
+function cleanHtmlEditorState(root: HTMLElement): void {
+  for (const node of [root, ...Array.from(root.querySelectorAll('*'))]) {
+    node.removeAttribute('data-hc-selected');
+    node.removeAttribute('data-hc-hover');
+    node.removeAttribute('data-hc-editing');
+    node.removeAttribute('contenteditable');
+  }
+}
+
 export function cloneHtmlWithNewIds(element: HTMLElement, newId: (prefix: string) => string): { html: string; rootId: string } {
   const clone = element.cloneNode(true) as HTMLElement;
-  for (const node of [clone, ...Array.from(clone.querySelectorAll('*'))]) {
-    node.setAttribute('data-hc-id', newId('el'));
-  }
+  cleanHtmlEditorState(clone);
+  for (const node of [clone, ...Array.from(clone.querySelectorAll('*'))]) node.setAttribute('data-hc-id', newId('el'));
   return { html: clone.outerHTML, rootId: clone.getAttribute('data-hc-id') || '' };
+}
+
+const HCANVAS_HTML_CLIPBOARD_TYPE = 'hadamard-canvas-html';
+let htmlClipboard = '';
+
+export function serializeHtmlClipboard(html: string): string {
+  return JSON.stringify({ type: HCANVAS_HTML_CLIPBOARD_TYPE, version: 1, html });
+}
+
+export function parseHtmlClipboard(text: string): string | null {
+  if (!text.trim() || text.length > 4 * 1024 * 1024) return null;
+  try {
+    const payload = JSON.parse(text) as { type?: string; version?: number; html?: unknown };
+    return payload.type === HCANVAS_HTML_CLIPBOARD_TYPE && payload.version === 1 && typeof payload.html === 'string' && payload.html.trim() ? payload.html : null;
+  } catch {
+    return null;
+  }
+}
+
+function prepareClipboardHtml(source: string, newId: (prefix: string) => string): { html: string; rootId: string } | null {
+  const template = document.createElement('template');
+  template.innerHTML = source.trim();
+  const root = template.content.firstElementChild as HTMLElement | null;
+  if (!root) return null;
+  cleanHtmlEditorState(root);
+  for (const node of [root, ...Array.from(template.content.querySelectorAll('*'))]) node.setAttribute('data-hc-id', newId('el'));
+  return { html: template.innerHTML, rootId: root.getAttribute('data-hc-id') || '' };
 }
 
 export function htmlInsertionTarget(doc: Document | null, selected: Element | null): HTMLElement | null {
@@ -69,50 +104,117 @@ function patchFor(context: HtmlEditingContext, patches: HcHtmlPatch[]): HcOp {
   return { op: 'html_patch', pageId: editing.pageId, ...(editing.blockId ? { blockId: editing.blockId } : {}), patches };
 }
 
+function insertPreparedHtml(context: HtmlEditingContext, html: string): { op: HcOp; inserted: HTMLElement | null } | null {
+  const editing = context.getEditing();
+  const doc = context.getIframeDoc();
+  const target = htmlInsertionTarget(doc, context.getSelectedElement());
+  if (!editing || !doc || !target) return null;
+  const targetId = target.getAttribute('data-hc-id');
+  if (!targetId) return null;
+  const intoBody = target === doc.body;
+  const position = intoBody ? 'beforeend' as const : 'afterend' as const;
+  target.insertAdjacentHTML(position, html);
+  const inserted = (intoBody ? target.lastElementChild : target.nextElementSibling) as HTMLElement | null;
+  if (inserted) context.selectElement(inserted);
+  return { op: patchFor(context, [{ op: 'insert_html', target: targetId, position, html }]), inserted };
+}
+
 export async function insertHtmlPreset(presetId: string, context: HtmlEditingContext): Promise<void> {
   const preset = HTML_INSERT_PRESETS.find(item => item.id === presetId);
-  const editing = context.getEditing();
-  const target = htmlInsertionTarget(context.getIframeDoc(), context.getSelectedElement());
-  if (!preset || !editing || !target) { context.toast('Click inside the HTML page first, then add an element.', 'info'); return; }
+  if (!preset) return;
   const prepared = prepareHtmlFragment(preset.html, context.newId);
-  if (!prepared) return;
-  const targetId = target.getAttribute('data-hc-id');
-  if (!targetId) return;
-  target.insertAdjacentHTML('afterend', prepared.html);
-  const inserted = target.nextElementSibling as HTMLElement | null;
-  if (inserted) context.selectElement(inserted);
-  const result = await context.applyOps([patchFor(context, [{ op: 'insert_html', target: targetId, position: 'afterend', html: prepared.html }])], { refreshArtboard: false });
-  if (!result) { inserted?.remove(); return; }
+  const insertion = prepared ? insertPreparedHtml(context, prepared.html) : null;
+  if (!insertion) { context.toast('Click inside the HTML page first, then add an element.', 'info'); return; }
+  const result = await context.applyOps([insertion.op], { refreshArtboard: false });
+  if (!result) { insertion.inserted?.remove(); return; }
   context.toast('Inserted ' + preset.label.toLowerCase(), 'success');
   context.renderInspector();
 }
 
 export async function duplicateSelectedHtml(context: HtmlEditingContext): Promise<void> {
-  const selected = context.getSelectedElement();
-  const selectedHtml = htmlElement(selected);
+  const selectedHtml = htmlElement(context.getSelectedElement());
   if (!selectedHtml || !context.getEditing()) return;
-  const targetId = selectedHtml.getAttribute('data-hc-id');
-  if (!targetId) return;
+  if (selectedHtml === selectedHtml.ownerDocument.body) { context.toast('The page body cannot be duplicated.', 'info'); return; }
   const clone = cloneHtmlWithNewIds(selectedHtml, context.newId);
-  selectedHtml.insertAdjacentHTML('afterend', clone.html);
-  const inserted = selectedHtml.nextElementSibling as HTMLElement | null;
-  if (inserted) context.selectElement(inserted);
-  const result = await context.applyOps([patchFor(context, [{ op: 'insert_html', target: targetId, position: 'afterend', html: clone.html }])], { refreshArtboard: false });
-  if (!result) { inserted?.remove(); return; }
+  const insertion = insertPreparedHtml(context, clone.html);
+  if (!insertion) return;
+  const result = await context.applyOps([insertion.op], { refreshArtboard: false });
+  if (!result) { insertion.inserted?.remove(); return; }
   context.toast('Element duplicated', 'success');
   context.renderInspector();
 }
 
-export async function deleteSelectedHtml(context: HtmlEditingContext): Promise<void> {
-  const selected = context.getSelectedElement();
-  const selectedHtml = htmlElement(selected);
-  if (!selectedHtml || !context.getEditing()) return;
+export async function deleteSelectedHtml(context: HtmlEditingContext): Promise<boolean> {
+  const selectedHtml = htmlElement(context.getSelectedElement());
+  if (!selectedHtml || !context.getEditing()) return false;
+  if (selectedHtml === selectedHtml.ownerDocument.body) { context.toast('The page body cannot be deleted.', 'info'); return false; }
   const targetId = selectedHtml.getAttribute('data-hc-id');
-  if (!targetId) return;
+  const parent = selectedHtml.parentNode;
+  const next = selectedHtml.nextSibling;
+  if (!targetId || !parent) return false;
   selectedHtml.remove();
   const result = await context.applyOps([patchFor(context, [{ op: 'remove_node', target: targetId }])], { refreshArtboard: false });
-  if (!result) { context.toast('Could not delete element', 'error'); return; }
+  if (!result) {
+    parent.insertBefore(selectedHtml, next && next.parentNode === parent ? next : null);
+    context.selectElement(selectedHtml);
+    context.toast('Could not delete element', 'error');
+    return false;
+  }
   context.renderInspector();
+  return true;
+}
+
+export async function copySelectedHtml(context: HtmlEditingContext, cut = false): Promise<void> {
+  const selectedHtml = htmlElement(context.getSelectedElement());
+  if (!selectedHtml || !context.getEditing()) return;
+  if (selectedHtml === selectedHtml.ownerDocument.body) { context.toast('Select an element inside the page body.', 'info'); return; }
+  const clone = selectedHtml.cloneNode(true) as HTMLElement;
+  cleanHtmlEditorState(clone);
+  htmlClipboard = clone.outerHTML;
+  const clipboard = context.getIframeDoc()?.defaultView?.navigator.clipboard;
+  try { await clipboard?.writeText(serializeHtmlClipboard(htmlClipboard)); } catch { /* in-memory HTML clipboard remains available */ }
+  if (cut) {
+    if (await deleteSelectedHtml(context)) context.toast('Element cut', 'success');
+  } else context.toast('Element copied', 'success');
+}
+
+export async function pasteSelectedHtml(context: HtmlEditingContext): Promise<void> {
+  let source = '';
+  const clipboard = context.getIframeDoc()?.defaultView?.navigator.clipboard;
+  try { source = parseHtmlClipboard(await clipboard?.readText() || '') || ''; } catch { /* use in-memory HTML clipboard */ }
+  if (!source) source = htmlClipboard;
+  if (!source) return;
+  const prepared = prepareClipboardHtml(source, context.newId);
+  const insertion = prepared ? insertPreparedHtml(context, prepared.html) : null;
+  if (!insertion) { context.toast('Select an HTML element before pasting.', 'info'); return; }
+  const result = await context.applyOps([insertion.op], { refreshArtboard: false });
+  if (!result) { insertion.inserted?.remove(); return; }
+  context.toast('Element pasted', 'success');
+  context.renderInspector();
+}
+
+export function installHtmlKeyboardShortcuts(contentDocument: Document, context: HtmlEditingContext): void {
+  contentDocument.addEventListener('keydown', event => {
+    const target = event.target as Element | null;
+    if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+    const key = event.key.toLowerCase();
+    const command = event.ctrlKey || event.metaKey;
+    if (command && (key === 'z' || key === 'y')) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (key === 'y' || event.shiftKey) context.redo?.(); else context.undo?.();
+      return;
+    }
+    if (command && key === 'd') { event.preventDefault(); event.stopPropagation(); void duplicateSelectedHtml(context); return; }
+    if (command && key === 'c') { event.preventDefault(); event.stopPropagation(); void copySelectedHtml(context); return; }
+    if (command && key === 'x') { event.preventDefault(); event.stopPropagation(); void copySelectedHtml(context, true); return; }
+    if (command && key === 'v') { event.preventDefault(); event.stopPropagation(); void pasteSelectedHtml(context); return; }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !command) {
+      event.preventDefault();
+      event.stopPropagation();
+      void deleteSelectedHtml(context);
+    }
+  }, true);
 }
 export function collectHtmlTree(contentDocument: Document): Array<{ depth: number; tag: string; hcId: string; text: string }> {
   const rows: Array<{ depth: number; tag: string; hcId: string; text: string }> = [];
@@ -213,7 +315,7 @@ async function applyHtmlStyleValues(context: HtmlEditingContext, styles: Record<
   const selected = context.getSelectedElement();
   const selectedHtml = htmlElement(selected);
   if (!selectedHtml || !context.getEditing()) return;
-  for (const [name, value] of Object.entries(styles)) selected.style.setProperty(name, value);
+  for (const [name, value] of Object.entries(styles)) selectedHtml.style.setProperty(name, value);
   const targetId = selectedHtml.getAttribute('data-hc-id');
   if (!targetId) return;
   await context.applyOps([patchFor(context, [{ op: 'set_style', target: targetId, styles }])], { refreshArtboard: false });

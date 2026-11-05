@@ -10,7 +10,8 @@ import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShap
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, isHcShape, shapeSvgMarkup } from '../shapes.js';
-import { HTML_INSERT_PRESETS, bindHtmlStyleControls, collectHtmlTree, deleteSelectedHtml, duplicateSelectedHtml, htmlBreadcrumbMarkup, htmlStylePresetMarkup, insertHtmlPreset, installHtmlHoverHighlight, type HtmlEditingContext } from './htmlEditing.js';
+import { insertHtmlPreset, installHtmlHoverHighlight, installHtmlKeyboardShortcuts, type HtmlEditingContext } from './htmlEditing.js';
+import { renderHtmlInspectorPanel } from './htmlInspector.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import type { HcBlockPlugin } from '../blockPlugins.js';
@@ -33,7 +34,7 @@ import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawi
 import { invertOps as invertDocumentOps } from './documentHistory.js';
 import { CANVAS_PAGE_PRESETS, canvasTemplateBlocks, pageTemplateHtml, starterHtml } from './pageTemplates.js';
 import { SHORTCUTS_MODAL_HTML } from './shortcuts.js';
-import { esc, genId } from './utils.js';
+import { esc, genId, toHex } from './utils.js';
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
 interface PresenceEntry { id: string; actor: string; docId: string; docTitle: string; pageId?: string; pageName: string; selection?: string[]; createdAt: string; updatedAt: string; stale: boolean; }
@@ -210,10 +211,13 @@ function clampBlockPosition(page: HcPage, block: HcBlock, x: number, y: number):
 }
 function toast(message: string, kind: 'info' | 'success' | 'error' = 'info'): void {
   const root = el('toastRoot');
+  Array.from(root.children).find(item => item.textContent === message)?.remove();
   const node = document.createElement('div');
   node.className = 'toast ' + kind;
+  node.setAttribute('role', 'status');
   node.textContent = message;
   root.appendChild(node);
+  while (root.childElementCount > 3) root.firstElementChild?.remove();
   setTimeout(() => { node.style.opacity = '0'; node.style.transition = 'opacity .2s'; setTimeout(() => node.remove(), 220); }, 3200);
 }
 function setSaveStatus(message: string, kind: UiState['saveKind'] = 'idle'): void {
@@ -1555,6 +1559,12 @@ function applyStageTransform(): void {
   const stage = el('stage');
   stage.style.transform = 'translate(' + state.panX + 'px,' + state.panY + 'px) scale(' + state.zoom + ')';
   el('zoomReset').textContent = Math.round(state.zoom * 100) + '%';
+  const viewport = el('viewport');
+  if (viewport.classList.contains('infinite-surface')) {
+    const gridSize = 22 * state.zoom;
+    viewport.style.backgroundSize = gridSize + 'px ' + gridSize + 'px';
+    viewport.style.backgroundPosition = state.panX + 'px ' + state.panY + 'px';
+  }
 }
 function setZoomAt(next: number, clientX?: number, clientY?: number): void {
   const target = Math.max(0.1, Math.min(3, next));
@@ -2242,7 +2252,7 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
     renderProposalBadge();
     if (state.tab === 'proposals') renderProposals();
     if (options.refreshArtboard !== false) renderArtboard();
-    if (state.tab === 'inspector') renderInspector();
+    if (state.tab === 'inspector' && !(state.editing && options.refreshArtboard === false)) renderInspector();
     else if (state.tab === 'layers') renderLayersPanel();
     void syncActive();
     return result.doc;
@@ -2311,10 +2321,11 @@ function enterHtmlEdit(pageId: string, blockId?: string): void {
   renderTop();
   renderArtboard();
   renderInspector();
-  toast('HTML edit mode: double-click text to edit, click an element to inspect it.', 'info');
 }
 function exitHtmlEdit(): void {
   if (!state.editing) return;
+  const active = state.iframeDoc?.querySelector<HTMLElement>('[contenteditable="true"]');
+  if (active) void commitHtmlElement(active);
   state.editing = null;
   state.selectedHtmlId = null;
   state.iframeDoc = null;
@@ -2331,9 +2342,10 @@ function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: s
   state.iframeElement = iframe;
   const style = contentDocument.createElement('style');
   style.setAttribute('data-hc-editor', '');
-  style.textContent = '[data-hc-selected]{outline:2px solid #6d5bd0 !important;outline-offset:2px !important;}[data-hc-hover]{outline:1px dashed rgba(109,91,208,.7) !important;outline-offset:2px !important;}[data-hc-editing]{outline:2px dashed #6d5bd0 !important;outline-offset:2px !important;cursor:text !important;}a[href]{cursor:default !important;}';
+  style.textContent = '[data-hc-hover]{outline:1px solid rgba(109,91,208,.52) !important;outline-offset:3px !important;}[data-hc-selected]{outline:2px solid #6d5bd0 !important;outline-offset:3px !important;}[data-hc-editing]{outline:2px dashed #7c3aed !important;outline-offset:4px !important;cursor:text !important;}a[href]{cursor:default !important;}';
   contentDocument.head?.appendChild(style);
   installHtmlHoverHighlight(contentDocument);
+  installHtmlKeyboardShortcuts(contentDocument, htmlEditingContext());
   contentDocument.addEventListener('click', event => {
     event.preventDefault(); event.stopPropagation();
     const target = event.target as Element;
@@ -2405,7 +2417,7 @@ function scheduleHtmlCommit(element: HTMLElement): void {
 }
 
 async function commitHtmlElement(element: HTMLElement): Promise<void> {
-  if (!state.doc || !state.editing) return;
+  if (!state.doc || !state.editing || !element.isConnected) return;
   const targetId = element.getAttribute('data-hc-id');
   if (!targetId) return;
   if (htmlCommitTimer) { clearTimeout(htmlCommitTimer); htmlCommitTimer = undefined; }
@@ -2422,13 +2434,6 @@ function selectedHtmlElement(): Element | null {
   if (!state.iframeDoc || !state.selectedHtmlId) return null;
   return state.iframeDoc.querySelector('[data-hc-id="' + state.selectedHtmlId.replace(/"/g, '\\"') + '"]');
 }
-function toHex(value: string): string {
-  if (/^#[0-9a-f]{6}$/i.test(value)) return value;
-  if (/^#[0-9a-f]{3}$/i.test(value)) return '#' + value[1] + value[1] + value[2] + value[2] + value[3] + value[3];
-  const match = value.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (match) return '#' + [match[1], match[2], match[3]].map(part => Number(part).toString(16).padStart(2, '0')).join('');
-  return '#1d232e';
-}
 function htmlEditingContext(): HtmlEditingContext {
   return {
     getEditing: () => state.editing,
@@ -2439,70 +2444,16 @@ function htmlEditingContext(): HtmlEditingContext {
     toast,
     renderInspector,
     newId: genId,
+    undo: () => { void undo(); },
+    redo: () => { void redo(); },
   };
 }
 function renderHtmlInspector(): void {
-  const root = el('inspectorPanel');
-  const contentDocument = state.iframeDoc;
-  if (!contentDocument) { root.innerHTML = '<p class="empty-state">HTML editor is loading…</p>'; return; }
-  const selected = selectedHtmlElement();
-  const style = selected ? contentDocument.defaultView?.getComputedStyle(selected) : null;
-  const rows = collectHtmlTree(contentDocument);
-  let html = '<section class="inspector-section"><div class="inspector-title">HTML editor</div><p class="inspector-note">Click text twice to edit. Changes patch the document source and keep <code>data-hc-id</code> stability.</p></section>';
-  html += '<section class="inspector-section"><div class="inspector-title">Insert element</div><p class="inspector-note">Adds after the selected element, or at the end of the page.</p><div class="html-insert-grid">';
-  for (const preset of HTML_INSERT_PRESETS) html += '<button type="button" class="html-insert-btn" data-html-insert="' + preset.id + '" title="' + esc(preset.hint) + '">+ ' + esc(preset.label) + '</button>';
-  html += '</div></section>';
-  html += htmlBreadcrumbMarkup(selected);
-  if (selected) {
-    const tag = selected.tagName.toLowerCase();
-    const id = selected.getAttribute('data-hc-id') || '';
-    const classes = selected.getAttribute('class') || '';
-    html += '<section class="inspector-section"><div class="inspector-title">Selected element</div>';
-    html += '<div class="field"><span>Element</span><input readonly value="' + esc('<' + tag + '>' + (id ? ' #' + id : '') + (classes ? ' .' + classes.replace(/\s+/g, '.') : '')) + '"></div>';
-    html += '<div class="html-style-head"><span>Style</span><small>Changes apply automatically</small></div>';
-    html += htmlStylePresetMarkup();
-    html += '<div class="field-row"><div class="field"><span>Text color</span><div class="swatch-row"><input id="hcColor" type="color" value="' + esc(toHex(style?.color || '#1d232e')) + '"><input id="hcColorText" value="' + esc(style?.color || '#1d232e') + '"></div></div><div class="field"><span>Background</span><div class="swatch-row"><input id="hcBg" type="color" value="' + esc(toHex(style?.backgroundColor || '#ffffff')) + '"><input id="hcBgText" value="' + esc(style?.backgroundColor || 'transparent') + '"></div></div></div>';
-    html += '<div class="field-row"><div class="field"><span>Font size</span><input id="hcFontSize" type="number" value="' + esc(parseFloat(style?.fontSize || '16') || 16) + '"></div><div class="field"><span>Padding</span><input id="hcPadding" value="' + esc(style?.padding || '0px') + '"></div><div class="field"><span>Align</span><select id="hcAlign"><option value="">—</option><option value="left">left</option><option value="center">center</option><option value="right">right</option><option value="justify">justify</option></select></div></div>';
-    html += '<div class="field-row"><div class="field"><span>Weight</span><select id="hcFontWeight"><option value="">—</option><option value="400">Regular</option><option value="500">Medium</option><option value="600">Semibold</option><option value="700">Bold</option></select></div><div class="field"><span>Radius</span><input id="hcRadius" value="' + esc(style?.borderRadius || '0px') + '"></div><div class="field"><span>Line height</span><input id="hcLineHeight" value="' + esc(style?.lineHeight || 'normal') + '"></div></div>';
-    html += '<div class="field-row"><div class="field"><span>Letter spacing</span><input id="hcLetterSpacing" value="' + esc(style?.letterSpacing || 'normal') + '"></div></div>';
-    html += '<div class="actions-row"><button id="hcEditText" class="btn tiny">Edit text</button><button id="hcSelectParent" class="btn tiny">Select parent</button><button id="hcDuplicate" class="btn tiny">Duplicate</button><button id="hcSourceBtn" class="btn tiny">Source</button><button id="hcDelete" class="btn tiny danger">Delete</button></div></section>';
-  } else {
-    html += '<section class="inspector-section"><p class="empty-state">Click an element in the page to inspect styles, or double-click text to edit it.</p></section>';
-  }
-  html += '<section class="inspector-section"><div class="inspector-title">Elements</div><div class="element-tree">';
-  for (const row of rows) {
-    html += '<button type="button" class="element-row' + (selected && row.hcId === selected.getAttribute('data-hc-id') ? ' active' : '') + '" data-html-id="' + esc(row.hcId) + '" style="padding-left:' + (5 + Math.min(row.depth, 8) * 8) + 'px"><span class="tag">&lt;' + esc(row.tag) + '&gt;</span><span class="clip">' + esc(row.text || row.hcId) + '</span></button>';
-  }
-  html += '</div></section>';
-  root.innerHTML = html;
-  const align = qs<HTMLSelectElement>('#hcAlign');
-  if (align) align.value = style?.textAlign || '';
-  const weight = qs<HTMLSelectElement>('#hcFontWeight');
-  if (weight) weight.value = style?.fontWeight || '';
-  root.querySelectorAll<HTMLButtonElement>('[data-html-crumb]').forEach(button => {
-    button.addEventListener('click', () => {
-      const element = contentDocument.querySelector('[data-hc-id="' + (button.dataset.htmlCrumb || '').replace(/"/g, '\\"') + '"]');
-      if (element) selectHtmlElement(element);
-    });
+  renderHtmlInspectorPanel({
+    root: el('inspectorPanel'), contentDocument: state.iframeDoc, editing: state.editing, context: htmlEditingContext(),
+    editText: element => startInlineTextEdit(element),
+    openSource: target => openSourceEditor(target),
   });
-  root.querySelectorAll<HTMLButtonElement>('[data-html-id]').forEach(button => {
-    button.addEventListener('click', () => {
-      const element = contentDocument.querySelector('[data-hc-id="' + (button.dataset.htmlId || '').replace(/"/g, '\\"') + '"]');
-      if (element) selectHtmlElement(element);
-    });
-  });
-  bindHtmlStyleControls(root, htmlEditingContext());
-  qs<HTMLButtonElement>('#hcEditText')?.addEventListener('click', () => { if (selected) startInlineTextEdit(selected as HTMLElement); });
-  qs<HTMLButtonElement>('#hcDuplicate')?.addEventListener('click', () => { void duplicateSelectedHtml(htmlEditingContext()); });
-  qs<HTMLButtonElement>('#hcDelete')?.addEventListener('click', () => { state.selectedHtmlId = null; void deleteSelectedHtml(htmlEditingContext()); });
-  root.querySelectorAll<HTMLButtonElement>('[data-html-insert]').forEach(button => {
-    button.addEventListener('click', () => { void insertHtmlPreset(button.dataset.htmlInsert || '', htmlEditingContext()); });
-  });
-  qs<HTMLButtonElement>('#hcSelectParent')?.addEventListener('click', () => {
-    const parent = selected?.parentElement;
-    if (parent && parent !== contentDocument.body) selectHtmlElement(parent);
-  });
-  qs<HTMLButtonElement>('#hcSourceBtn')?.addEventListener('click', () => { if (state.editing) openSourceEditor({ pageId: state.editing.pageId, blockId: state.editing.blockId }); });
 }
 function field(id: string, label: string, inputHtml: string): string {
   return '<div class="field"><span>' + esc(label) + '</span>' + inputHtml + '</div>';

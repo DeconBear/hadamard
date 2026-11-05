@@ -104,7 +104,7 @@ export function installCurveTool(options: CurveDrawOptions): void {
     if (event.button !== 0 || !options.canDraw()) return;
     const page = options.getPage();
     if (!page || (page.mode !== 'canvas' && page.mode !== 'infinite')) return;
-    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor')) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
     event.preventDefault();
     event.stopPropagation();
     beginCurveDraw(event, options);
