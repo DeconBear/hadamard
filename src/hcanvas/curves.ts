@@ -14,11 +14,14 @@ export function curveSvgMarkup(block: HcBlock): string {
     .map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }));
   const stroke = vectorStroke(block);
   const dash = block.style?.strokeStyle === 'dashed' ? ' stroke-dasharray="' + (stroke.width * 4 + 4) + ' ' + (stroke.width * 3 + 3) + '"' : block.style?.strokeStyle === 'dotted' ? ' stroke-dasharray="1 ' + (stroke.width * 2 + 2) + '"' : '';
-  let data = '';
-  if (points.length >= 4) {
-    data = 'M ' + points[0]!.x + ' ' + points[0]!.y + ' C ' + points[1]!.x + ' ' + points[1]!.y + ' ' + points[2]!.x + ' ' + points[2]!.y + ' ' + points[3]!.x + ' ' + points[3]!.y;
-  } else {
-    data = 'M ' + points[0]!.x + ' ' + points[0]!.y + ' L ' + points[points.length - 1]!.x + ' ' + points[points.length - 1]!.y;
+  let data = 'M ' + points[0]!.x + ' ' + points[0]!.y;
+  if (points.length >= 4 && (points.length - 1) % 3 === 0) {
+    for (let segment = 0; segment < (points.length - 1) / 3; segment += 1) {
+      const base = segment * 3;
+      data += ' C ' + points[base + 1]!.x + ' ' + points[base + 1]!.y + ' ' + points[base + 2]!.x + ' ' + points[base + 2]!.y + ' ' + points[base + 3]!.x + ' ' + points[base + 3]!.y;
+    }
+  } else if (points.length >= 2) {
+    data += ' L ' + points[points.length - 1]!.x + ' ' + points[points.length - 1]!.y;
   }
   const closed = Boolean(block.closed);
   const fill = closed ? blockFill(block, 'none') : 'none';

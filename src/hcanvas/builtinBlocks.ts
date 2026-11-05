@@ -1,5 +1,6 @@
 import { renderMarkdownHtml, renderMathHtml } from './markdown.js';
 import { curveSvgMarkup } from './curves.js';
+import { arcSvgMarkup } from './arcs.js';
 import { shapeSvgMarkup, shapeTextMarkup } from './shapes.js';
 import { vectorSvgMarkup } from './vector.js';
 import { blockPlugin } from './blockPlugins.js';
@@ -81,6 +82,7 @@ const definitions: HcBuiltinBlockDefinition[] = [
   { type: 'image', label: 'Image', hint: 'Image block', renderBody: imageBody, summary: block => block.alt || block.name || 'image' },
   { type: 'math', label: 'Formula', hint: 'LaTeX formula block', renderBody: block => renderMathHtml(String(block.data?.tex || ''), true), summary: block => 'formula · ' + String(block.data?.tex || '').slice(0, 80) },
   { type: 'curve', label: 'Curve', hint: 'Native cubic Bezier curve', renderBody: block => curveSvgMarkup(block), summary: block => 'curve' },
+  { type: 'arc', label: 'Arc', hint: 'Native elliptical arc', renderBody: block => arcSvgMarkup(block), summary: block => 'arc' },
   { type: 'shape', label: 'Shape', hint: 'Shape block', renderBody: shapeBody, summary: block => block.text || block.name || ('shape · ' + (block.shape || 'rect')) },
   { type: 'freehand', label: 'Freehand', hint: 'Native freehand stroke', renderBody: block => vectorSvgMarkup(block), summary: () => 'freehand stroke' },
   { type: 'arrow', label: 'Arrow', hint: 'Native arrow', renderBody: block => vectorSvgMarkup(block), summary: () => 'arrow' },

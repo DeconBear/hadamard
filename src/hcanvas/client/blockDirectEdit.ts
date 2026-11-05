@@ -45,7 +45,7 @@ function supportsColor(block: HcBlock | null): boolean {
 }
 
 function supportsStroke(block: HcBlock | null): boolean {
-  return Boolean(block && (block.type === 'curve' || block.type === 'freehand' || block.type === 'arrow' || block.type === 'shape'));
+  return Boolean(block && (block.type === 'curve' || block.type === 'arc' || block.type === 'freehand' || block.type === 'arrow' || block.type === 'shape'));
 }
 
 function supportsFill(block: HcBlock | null): boolean {
@@ -54,7 +54,7 @@ function supportsFill(block: HcBlock | null): boolean {
 
 function primaryColor(block: HcBlock): string {
   if (block.type === 'shape') return String(block.style?.fill || '#f3e8ff');
-  if (block.type === 'curve' || block.type === 'freehand' || block.type === 'arrow') return String(block.style?.stroke || block.style?.color || '#1f2430');
+  if (block.type === 'curve' || block.type === 'arc' || block.type === 'freehand' || block.type === 'arrow') return String(block.style?.stroke || block.style?.color || '#1f2430');
   return String(block.style?.color || block.style?.fill || '#1f2430');
 }
 
@@ -66,7 +66,7 @@ function colorPatch(block: HcBlock, color: string, target: ColorTarget = 'auto')
   if (target === 'fill' && (block.type === 'curve' || block.type === 'freehand')) return { style: { ...style, fill: color }, closed: true, fillGradient: null };
   if (target === 'text') return { style: { ...style, color } };
   if (block.type === 'shape') return { style: { ...style, fill: color }, fillGradient: null };
-  if (block.type === 'curve' || block.type === 'freehand' || block.type === 'arrow') return { style: { ...style, stroke: color, color } };
+  if (block.type === 'curve' || block.type === 'arc' || block.type === 'freehand' || block.type === 'arrow') return { style: { ...style, stroke: color, color } };
   return { style: { ...style, color } };
 }
 
@@ -435,40 +435,71 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
 
 const NODE_LABELS = ['Start', 'Control 1', 'Control 2', 'End'];
 
+function midpoint(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function splitCurvePoints(points: Array<{ x: number; y: number }>, segment: number): Array<{ x: number; y: number }> {
+  const base = segment * 3;
+  const p0 = points[base]!, p1 = points[base + 1]!, p2 = points[base + 2]!, p3 = points[base + 3]!;
+  const q0 = midpoint(p0, p1), q1 = midpoint(p1, p2), q2 = midpoint(p2, p3);
+  const r0 = midpoint(q0, q1), r1 = midpoint(q1, q2);
+  const s = midpoint(r0, r1);
+  return [...points.slice(0, base), p0, q0, r0, s, r1, q2, p3, ...points.slice(base + 4)];
+}
+
+function applyCurvePoints(block: HcBlock, points: Array<{ x: number; y: number }>): void {
+  if (!context) return;
+  const page = context.getPage();
+  if (!page) return;
+  const absolute = points.map(point => ({ x: block.x + point.x, y: block.y + point.y }));
+  const minX = Math.min(...absolute.map(point => point.x));
+  const minY = Math.min(...absolute.map(point => point.y));
+  const maxX = Math.max(...absolute.map(point => point.x));
+  const maxY = Math.max(...absolute.map(point => point.y));
+  const patch = { x: minX, y: minY, w: Math.max(8, Math.round(maxX - minX)), h: Math.max(8, Math.round(maxY - minY)), points: absolute.map(point => ({ x: point.x - minX, y: point.y - minY })) };
+  void context.applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch }]).then(() => updateDirectEditUI());
+}
+
 function renderCurveHandles(): void {
-  document.querySelectorAll('.hc-node-handle, .hc-node-guides').forEach(node => node.remove());
+  document.querySelectorAll('.hc-node-handle, .hc-node-guides, .hc-node-add').forEach(node => node.remove());
   const blocks = selectedBlocks();
   if (blocks.length !== 1) return;
   const block = blocks[0]!;
-  if (block.type !== 'curve' || !block.points || block.points.length < 4) return;
+  if (block.type !== 'curve' || !block.points || block.points.length < 4 || (block.points.length - 1) % 3 !== 0) return;
   if (context?.isLocked(block.id)) return;
   const artboard = document.querySelector<HTMLElement>('#artboard');
-  if (!artboard) return;
+  if (!artboard || !context) return;
+  const points = block.points;
+  const segments = (points.length - 1) / 3;
   const guides = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   guides.setAttribute('class', 'hc-node-guides');
-  for (const [from, to] of [[0, 1], [2, 3]]) {
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', String(block.x + block.points![from]!.x));
-    line.setAttribute('y1', String(block.y + block.points![from]!.y));
-    line.setAttribute('x2', String(block.x + block.points![to]!.x));
-    line.setAttribute('y2', String(block.y + block.points![to]!.y));
-    guides.appendChild(line);
+  for (let segment = 0; segment < segments; segment += 1) {
+    const base = segment * 3;
+    for (const [from, to] of [[base, base + 1], [base + 2, base + 3]]) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', String(block.x + points[from]!.x));
+      line.setAttribute('y1', String(block.y + points[from]!.y));
+      line.setAttribute('x2', String(block.x + points[to]!.x));
+      line.setAttribute('y2', String(block.y + points[to]!.y));
+      guides.appendChild(line);
+    }
   }
   artboard.appendChild(guides);
-  block.points.forEach((point, index) => {
+  points.forEach((point, index) => {
     const handle = document.createElement('div');
-    handle.className = 'hc-node-handle ' + (index === 0 || index === 3 ? 'endpoint' : 'control');
+    const isAnchor = index % 3 === 0;
+    handle.className = 'hc-node-handle ' + (isAnchor ? 'endpoint' : 'control');
     handle.dataset.nodeIndex = String(index);
-    handle.title = NODE_LABELS[index] || 'Node';
+    handle.title = isAnchor ? 'Anchor ' + (index / 3 + 1) : 'Bezier control';
     handle.style.left = (block.x + point.x) + 'px';
     handle.style.top = (block.y + point.y) + 'px';
-    if (!context) return;
     handle.addEventListener('pointerdown', event => {
       event.preventDefault();
       event.stopPropagation();
       if (!context) return;
       const origin = { x: block.x, y: block.y };
-      const initial = block.points!.map(item => ({ ...item }));
+      const initial = points.map(item => ({ ...item }));
       const start = context.getWorldPoint(event.clientX, event.clientY);
       const move = (moveEvent: PointerEvent): void => {
         const current = context!.getWorldPoint(moveEvent.clientX, moveEvent.clientY);
@@ -480,22 +511,30 @@ function renderCurveHandles(): void {
         window.removeEventListener('pointerup', up);
         const current = context!.getWorldPoint(upEvent.clientX, upEvent.clientY);
         const next = initial.map((item, itemIndex) => itemIndex === index ? { x: item.x + current.x - start.x, y: item.y + current.y - start.y } : item);
-        const xs = next.map(item => item.x);
-        const ys = next.map(item => item.y);
-        const minX = Math.min(...xs);
-        const minY = Math.min(...ys);
-        const maxX = Math.max(...xs);
-        const maxY = Math.max(...ys);
-        const page = context!.getPage();
-        if (!page) return;
-        const patch = { x: origin.x + minX, y: origin.y + minY, w: Math.max(8, Math.round(maxX - minX)), h: Math.max(8, Math.round(maxY - minY)), points: next.map(item => ({ x: item.x - minX, y: item.y - minY })) };
-        void context!.applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch }]).then(() => updateDirectEditUI());
+        applyCurvePoints(block, next);
       };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
     });
     artboard.appendChild(handle);
   });
+  for (let segment = 0; segment < segments; segment += 1) {
+    const base = segment * 3;
+    const p0 = points[base]!, p1 = points[base + 1]!, p2 = points[base + 2]!, p3 = points[base + 3]!;
+    const q0 = midpoint(p0, p1), q1 = midpoint(p1, p2), q2 = midpoint(p2, p3);
+    const r0 = midpoint(q0, q1), r1 = midpoint(q1, q2);
+    const middle = midpoint(r0, r1);
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'hc-node-add';
+    add.title = 'Add vertex at this segment';
+    add.textContent = '+';
+    add.style.left = (block.x + middle.x) + 'px';
+    add.style.top = (block.y + middle.y) + 'px';
+    add.addEventListener('pointerdown', event => { event.preventDefault(); event.stopPropagation(); });
+    add.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); applyCurvePoints(block, splitCurvePoints(points, segment)); });
+    artboard.appendChild(add);
+  }
 }
 
 export function updateDirectEditUI(): void {

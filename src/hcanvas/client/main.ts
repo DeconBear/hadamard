@@ -2652,7 +2652,7 @@ function renderBlockInspector(): void {
   if (block.type === 'shape' || block.type === 'html' || block.type === 'markdown') {
     html += '<div class="field-row">' + field('blockFill', 'Fill', '<input id="blockFill" type="color" value="' + esc(toHex(String(block.style?.fill || '#f3e8ff'))) + '">') + field('blockStroke', 'Stroke', '<input id="blockStroke" type="color" value="' + esc(toHex(String(block.style?.stroke || '#a855f7'))) + '">') + '</div>';
   }
-  if (block.type === 'freehand' || block.type === 'arrow' || block.type === 'curve') {
+  if (block.type === 'freehand' || block.type === 'arrow' || block.type === 'curve' || block.type === 'arc') {
     html += '<div class="field-row">' + field('blockStroke', 'Stroke', '<input id="blockStroke" type="color" value="' + esc(toHex(String(block.style?.stroke || block.style?.color || '#1f2430'))) + '">') + field('blockVectorWidth', 'Width', '<input id="blockVectorWidth" type="number" min="1" max="40" value="' + (block.style?.strokeWidth || 2) + '">') + '</div>';
     if (block.type === 'arrow') html += '<div class="field">' + '<span>Arrowhead</span><select id="blockArrowhead"><option value="arrow"' + ((block.arrowhead ?? 'arrow') === 'arrow' ? ' selected' : '') + '>Arrow</option><option value="none"' + (block.arrowhead === 'none' ? ' selected' : '') + '>None</option></select></div>';
   }

@@ -8,7 +8,7 @@ function block(type: string, patch: Partial<HcBlock> = {}): HcBlock {
 
 describe('hcanvas builtin block definitions', () => {
   it('registers all built-in block types', () => {
-    expect(listBuiltinBlockDefinitions().map(definition => definition.type).sort()).toEqual(['arrow', 'code', 'curve', 'freehand', 'html', 'image', 'markdown', 'math', 'shape', 'text']);
+    expect(listBuiltinBlockDefinitions().map(definition => definition.type).sort()).toEqual(['arc', 'arrow', 'code', 'curve', 'freehand', 'html', 'image', 'markdown', 'math', 'shape', 'text']);
     expect(builtinBlockDefinition('text')?.label).toBe('Text');
   });
 
@@ -48,5 +48,18 @@ describe('hcanvas native curve block', () => {
     expect(html).toContain('<path');
     expect(html).toContain('C ');
     expect(blockAgentSummary(block('curve'))).toContain('curve');
+  });
+
+  it('renders multi-segment Bezier paths', () => {
+    const points = [{ x: 0, y: 40 }, { x: 20, y: 0 }, { x: 40, y: 0 }, { x: 60, y: 20 }, { x: 80, y: 40 }, { x: 90, y: 60 }, { x: 100, y: 40 }];
+    const html = renderBlockBody(block('curve', { points, style: { stroke: '#1f2430', strokeWidth: 3 } }), 'export');
+    expect((html.match(/ C /g) || []).length).toBe(2);
+  });
+});
+describe('hcanvas native arc block', () => {
+  it('renders an elliptical arc path', () => {
+    const html = renderBlockBody(block('arc', { data: { startAngle: 180, endAngle: 360 }, style: { stroke: '#4a83b8', strokeWidth: 2 } }), 'export');
+    expect(html).toContain('<path');
+    expect(html).toContain(' A ');
   });
 });
