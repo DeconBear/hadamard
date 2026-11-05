@@ -867,3 +867,6 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .hc-node-handle:active { cursor: grabbing; }
 
 .hc-context-label { padding: 6px 9px 3px; color: #9a8f80; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* Keep the shape picker frame height stable when switching categories. */
+.shape-popover-grid { min-height: min(58vh, 460px); max-height: min(58vh, 460px); overflow-y: auto; align-content: start; }
