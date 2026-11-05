@@ -72,7 +72,6 @@ function debounce<T extends (...args: never[]) => void>(fn: T, wait: number): (.
     timer = setTimeout(() => fn(...args), wait);
   };
 }
-
 async function api<T = Record<string, unknown>>(pathname: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { 'x-hcanvas-token': boot.token };
   if (init.body !== undefined) headers['content-type'] = 'application/json';
@@ -86,7 +85,6 @@ async function api<T = Record<string, unknown>>(pathname: string, init: RequestI
   }
   return payload as T;
 }
-
 interface UiState {
   docs: DocSummary[];
   doc: HcDocument | null;
@@ -2641,6 +2639,7 @@ function renderBlockInspector(): void {
   if (block.shape === 'frame') html += '<button id="blockDissolveFrameBtn" class="btn tiny">Dissolve frame</button>';
   html += '<button id="blockFrontBtn" class="btn tiny">Front</button><button id="blockBackBtn" class="btn tiny">Back</button><button id="blockDeleteBtn" class="btn tiny danger">Delete</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Style</div>';
+  html += '<div class="field"><span>Rotation</span><input id="blockRotation" type="number" step="1" value="' + (Number(block.rotation) || 0) + '"></div>';
   if (block.type === 'math') html += '<div class="field"><span>LaTeX</span><textarea id="blockMathTex" rows="3">' + esc(String(block.data?.tex || '')) + '</textarea></div>';
   if (block.type === 'shape') {
     const shapeOptions = HCANVAS_SHAPE_CATEGORIES.map(category => '<optgroup label="' + esc(category) + '">' + HCANVAS_SHAPES.filter(shape => !shape.hidden && shape.category === category).map(shape => '<option value="' + shape.id + '"' + (block.shape === shape.id ? ' selected' : '') + '>' + esc(shape.label) + '</option>').join('') + '</optgroup>').join('');
@@ -2683,6 +2682,7 @@ function bindBlockInspector(block: HcBlock): void {
   qs<HTMLButtonElement>('#blockEditHtmlBtn')?.addEventListener('click', () => enterHtmlEdit(page.id, block.id));
   qs<HTMLButtonElement>('#blockSourceBtn')?.addEventListener('click', () => openSourceEditor({ pageId: page.id, blockId: block.id }));
   qs<HTMLButtonElement>('#blockImageBtn')?.addEventListener('click', () => openImageModal(block));
+  qs<HTMLInputElement>('#blockRotation')?.addEventListener('change', event => { void update({ rotation: Number((event.target as HTMLInputElement).value) || 0 }); });
   qs<HTMLButtonElement>('#blockMathEditBtn')?.addEventListener('click', () => openFormulaModal(block));
   qs<HTMLTextAreaElement>('#blockMathTex')?.addEventListener('change', event => { void update({ data: { ...(block.data || {}), tex: (event.target as HTMLTextAreaElement).value } }); });
   qs<HTMLButtonElement>('#blockDissolveFrameBtn')?.addEventListener('click', () => { void dissolveFrame(block); });
