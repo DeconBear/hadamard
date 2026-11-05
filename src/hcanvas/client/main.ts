@@ -729,14 +729,14 @@ function bindStaticActions(): void {
     selectBlocks: (ids, primaryId) => setBlockSelection(ids, primaryId),
     toast,
   });
-  installBlockDirectEdit({ viewport: el('viewport'), getPage: activePage, getBlocks: () => activePage()?.blocks || [], getSelectedIds: () => state.selectedBlockIds, getWorldPoint: viewportToWorldPoint, isLocked: id => { const pg = activePage(); const item = pg?.blocks?.find(block => block.id === id); return Boolean(pg && item && isBlockLocked(pg, item)); }, select: (ids, primary) => setBlockSelection(ids, primary), applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean), edit: editActiveBlock, duplicate: () => { void duplicateActiveBlock(); }, remove: () => { void deleteSelectedBlocks(); }, toast });
+  installBlockDirectEdit({ viewport: el('viewport'), getPage: activePage, getBlocks: () => activePage()?.blocks || [], getSelectedIds: () => state.selectedBlockIds, getWorldPoint: viewportToWorldPoint, getZoom: () => state.zoom, isLocked: id => { const pg = activePage(); const item = pg?.blocks?.find(block => block.id === id); return Boolean(pg && item && isBlockLocked(pg, item)); }, select: (ids, primary) => setBlockSelection(ids, primary), applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean), edit: editActiveBlock, duplicate: () => { void duplicateActiveBlock(); }, remove: () => { void deleteSelectedBlocks(); }, toast });
   configureLayersPanel({
     panel: el('layersPanel'), getPage: activePage, getSelectedIds: () => state.selectedBlockIds,
     select: (ids, primary) => setBlockSelection(ids, primary),
     applyOps: ops => applyOps(ops, { refreshArtboard: true }).then(Boolean), toast,
   });
   installCurveTool({
-    viewport: el('viewport'), artboard: el('artboard'), getPage: activePage, getWorldPoint: viewportToWorldPoint, nextId: () => genId('block'), layerId: () => activeLayerId(activePage()),
+    viewport: el('viewport'), artboard: el('artboard'), getPage: activePage, getWorldPoint: viewportToWorldPoint, getZoom: () => state.zoom, nextId: () => genId('block'), layerId: () => activeLayerId(activePage()),
     canDraw: () => state.tool === 'curve' && !state.editing,
     createBlock: block => { void applyOps([{ op: 'add_block', pageId: activePage()!.id, block } as HcOp], { refreshArtboard: true }).then(result => { if (result) setBlockSelection([block.id], block.id); }); },
   });

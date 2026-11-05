@@ -1,11 +1,12 @@
 import type { HcBlock, HcPage } from '../types.js';
-import { cubicCurveFromSamples } from '../curves.js';
+import { cubicCurveFromSamples, curvePathData } from '../curves.js';
 
 export interface CurveDrawOptions {
   viewport: HTMLElement;
   artboard: HTMLElement;
   getPage(): HcPage | null;
   getWorldPoint(clientX: number, clientY: number): { x: number; y: number };
+  getZoom(): number;
   nextId(): string;
   layerId(): string;
   canDraw(): boolean;
@@ -20,26 +21,32 @@ export function beginCurveDraw(startEvent: PointerEvent, options: CurveDrawOptio
   svg.setAttribute('class', 'vector-draw-preview');
   svg.setAttribute('width', '100%');
   svg.setAttribute('height', '100%');
-  const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-  line.setAttribute('fill', 'none');
-  line.setAttribute('stroke', '#1f2430');
-  line.setAttribute('stroke-width', '2');
-  line.setAttribute('stroke-linecap', 'round');
-  line.setAttribute('stroke-linejoin', 'round');
-  svg.appendChild(line);
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', '#1f2430');
+  path.setAttribute('stroke-width', '2');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(path);
   options.artboard.appendChild(svg);
   const points: Array<{ x: number; y: number }> = [options.getWorldPoint(startEvent.clientX, startEvent.clientY)];
-  const paint = (): void => { line.setAttribute('points', points.map(point => point.x + ',' + point.y).join(' ')); };
+  const paint = (): void => { path.setAttribute('d', curvePathData(cubicCurveFromSamples(points))); };
+  let frame = 0;
+  const schedulePaint = (): void => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => { frame = 0; paint(); });
+  };
   const collect = (event: PointerEvent): void => {
     const samples = typeof event.getCoalescedEvents === 'function' ? event.getCoalescedEvents() : [];
     for (const sample of samples.length ? samples : [event]) {
       const point = options.getWorldPoint(sample.clientX, sample.clientY);
       const previous = points[points.length - 1]!;
-      if (Math.hypot(point.x - previous.x, point.y - previous.y) >= 1.25) points.push(point);
+      if (Math.hypot(point.x - previous.x, point.y - previous.y) >= 1.25 / Math.max(0.1, options.getZoom())) points.push(point);
     }
-    paint();
+    schedulePaint();
   };
   const cleanup = (): void => {
+    if (frame) cancelAnimationFrame(frame);
     viewport.removeEventListener('pointermove', move);
     viewport.removeEventListener('pointerup', up);
     viewport.removeEventListener('pointercancel', cancel);

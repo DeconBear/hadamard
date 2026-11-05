@@ -1,7 +1,7 @@
 import type { HcBlock, HcGradient, HcOp, HcPage } from '../types.js';
 import { gradientCss } from '../fill.js';
 import { openImageCutout } from './imageCutout.js';
-import { curvePathData } from '../curves.js';
+import { curveGeometry, curveLocalToWorld, curvePathData, curveWorldToLocal, deleteCurveAnchor, nearestCurveSegment, splitCurvePoints } from '../curves.js';
 
 type ColorTarget = 'auto' | 'fill' | 'stroke' | 'text';
 
@@ -11,6 +11,7 @@ export interface BlockDirectEditOptions {
   getBlocks(): HcBlock[];
   getSelectedIds(): string[];
   getWorldPoint(clientX: number, clientY: number): { x: number; y: number };
+  getZoom(): number;
   isLocked(id: string): boolean;
   select(ids: string[], primary?: string | null): void;
   applyOps(ops: HcOp[]): Promise<boolean>;
@@ -112,7 +113,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
     '<button type="button" data-hc-action="stroke">Stroke color…</button>' +
     (hasStroke ? '<div class="hc-context-label">Line style</div><button type="button" data-hc-action="solid">Solid line</button><button type="button" data-hc-action="dashed">Dashed line</button><button type="button" data-hc-action="dotted">Dotted line</button>' : '') +
     (hasArc ? '<div class="hc-context-label">Arc ends</div><button type="button" data-hc-action="arc-start-none">Start: none</button><button type="button" data-hc-action="arc-start-arrow">Start: arrow</button><button type="button" data-hc-action="arc-end-none">End: none</button><button type="button" data-hc-action="arc-end-arrow">End: arrow</button>' : '') +
-    (hasCurve ? '<button type="button" data-hc-action="add-vertex">Add vertex at click</button>' : '') +
+    (hasCurve ? '<div class="hc-context-label">Bezier points</div><button type="button" data-hc-action="add-vertex">Add vertex at click</button><button type="button" data-hc-action="delete-vertex">Delete nearest anchor</button>' : '') +
     '<div class="hc-context-label">Transform</div><button type="button" data-hc-action="rotate-cw">Rotate 90° clockwise</button><button type="button" data-hc-action="rotate-ccw">Rotate 90° counter-clockwise</button><button type="button" data-hc-action="flip-h">Flip horizontal</button><button type="button" data-hc-action="flip-v">Flip vertical</button>' +
     '<button type="button" data-hc-action="eyedrop">Pick color from screen</button>' +
     '<div class="hc-context-sep"></div>' +
@@ -441,6 +442,7 @@ function showBlockMenu(block: HcBlock, x: number, y: number, insertPoint?: { x: 
     if (action === 'solid' || action === 'dashed' || action === 'dotted') { applyStrokeStyle(blocks, action); return; }
     if (action.startsWith('arc-')) { applyArcMarker(blocks, action); return; }
     if (action === 'add-vertex' && insertPoint && block.type === 'curve') { addCurveVertex(block, insertPoint); return; }
+    if (action === 'delete-vertex' && insertPoint && block.type === 'curve') { deleteCurveVertexAt(block, insertPoint); return; }
     if (action === 'rotate-cw') { applyRotation(blocks, 90); return; }
     if (action === 'rotate-ccw') { applyRotation(blocks, -90); return; }
     if (action === 'flip-h') { applyFlip(blocks, 'x'); return; }
@@ -450,52 +452,43 @@ function showBlockMenu(block: HcBlock, x: number, y: number, insertPoint?: { x: 
   });
 }
 
-function lerp(a: { x: number; y: number }, b: { x: number; y: number }, t: number): { x: number; y: number } {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-}
-
-function splitCurvePoints(points: Array<{ x: number; y: number }>, segment: number, t = 0.5): Array<{ x: number; y: number }> {
-  const base = segment * 3;
-  const p0 = points[base]!, p1 = points[base + 1]!, p2 = points[base + 2]!, p3 = points[base + 3]!;
-  const q0 = lerp(p0, p1, t), q1 = lerp(p1, p2, t), q2 = lerp(p2, p3, t);
-  const r0 = lerp(q0, q1, t), r1 = lerp(q1, q2, t);
-  const s = lerp(r0, r1, t);
-  return [...points.slice(0, base), p0, q0, r0, s, r1, q2, p3, ...points.slice(base + 4)];
-}
-
 function addCurveVertex(block: HcBlock, worldPoint: { x: number; y: number }): void {
   const points = block.points || [];
-  if (points.length < 4 || (points.length - 1) % 3 !== 0) return;
-  const local = { x: worldPoint.x - block.x, y: worldPoint.y - block.y };
-  let bestSegment = 0;
-  let bestT = 0.5;
-  let bestDistance = Infinity;
-  const segments = (points.length - 1) / 3;
-  for (let segment = 0; segment < segments; segment += 1) {
-    const base = segment * 3;
-    const p0 = points[base]!, p1 = points[base + 1]!, p2 = points[base + 2]!, p3 = points[base + 3]!;
-    for (let step = 1; step < 40; step += 1) {
-      const t = step / 40;
-      const q0 = lerp(p0, p1, t), q1 = lerp(p1, p2, t), q2 = lerp(p2, p3, t);
-      const r0 = lerp(q0, q1, t), r1 = lerp(q1, q2, t);
-      const point = lerp(r0, r1, t);
-      const distance = Math.hypot(point.x - local.x, point.y - local.y);
-      if (distance < bestDistance) { bestDistance = distance; bestSegment = segment; bestT = t; }
-    }
+  const local = curveWorldToLocal(block, worldPoint);
+  const nearest = nearestCurveSegment(points, local);
+  if (!nearest || nearest.distance > 14 / Math.max(0.1, context?.getZoom() || 1)) {
+    context?.toast('Click closer to the curve to insert a vertex.', 'info');
+    return;
   }
-  applyCurvePoints(block, splitCurvePoints(points, bestSegment, bestT));
+  applyCurvePoints(block, splitCurvePoints(points, nearest.segment, nearest.t));
+}
+
+function deleteCurveVertexAt(block: HcBlock, worldPoint: { x: number; y: number }): void {
+  const points = block.points || [];
+  if (points.length <= 4) {
+    context?.toast('A Bezier curve needs at least one segment.', 'info');
+    return;
+  }
+  const local = curveWorldToLocal(block, worldPoint);
+  let anchorIndex = -1;
+  let distance = Infinity;
+  for (let index = 0; index < points.length; index += 3) {
+    const next = Math.hypot(points[index]!.x - local.x, points[index]!.y - local.y);
+    if (next < distance) { distance = next; anchorIndex = index; }
+  }
+  if (anchorIndex < 0 || distance > 14 / Math.max(0.1, context?.getZoom() || 1)) {
+    context?.toast('Click near an anchor to delete it.', 'info');
+    return;
+  }
+  const next = deleteCurveAnchor(points, anchorIndex);
+  if (next) applyCurvePoints(block, next);
 }
 
 function applyCurvePoints(block: HcBlock, points: Array<{ x: number; y: number }>): void {
   if (!context) return;
   const page = context.getPage();
   if (!page) return;
-  const absolute = points.map(point => ({ x: block.x + point.x, y: block.y + point.y }));
-  const minX = Math.min(...absolute.map(point => point.x));
-  const minY = Math.min(...absolute.map(point => point.y));
-  const maxX = Math.max(...absolute.map(point => point.x));
-  const maxY = Math.max(...absolute.map(point => point.y));
-  const patch = { x: minX, y: minY, w: Math.max(8, Math.round(maxX - minX)), h: Math.max(8, Math.round(maxY - minY)), points: absolute.map(point => ({ x: point.x - minX, y: point.y - minY })) };
+  const patch = curveGeometry(block, points);
   void context.applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch }]).then(() => updateDirectEditUI());
 }
 
@@ -510,17 +503,23 @@ function renderCurveHandles(): void {
   if (!artboard || !context) return;
   const points = block.points;
   const segments = (points.length - 1) / 3;
+  const zoom = Math.max(0.1, context.getZoom());
   const guides = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   guides.setAttribute('class', 'hc-node-guides');
+  const guideLines: Array<{ line: SVGLineElement; from: number; to: number }> = [];
   for (let segment = 0; segment < segments; segment += 1) {
     const base = segment * 3;
     for (const [from, to] of [[base, base + 1], [base + 2, base + 3]]) {
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', String(block.x + points[from]!.x));
-      line.setAttribute('y1', String(block.y + points[from]!.y));
-      line.setAttribute('x2', String(block.x + points[to]!.x));
-      line.setAttribute('y2', String(block.y + points[to]!.y));
+      line.setAttribute('vector-effect', 'non-scaling-stroke');
+      const start = curveLocalToWorld(block, points[from]!);
+      const end = curveLocalToWorld(block, points[to]!);
+      line.setAttribute('x1', String(start.x));
+      line.setAttribute('y1', String(start.y));
+      line.setAttribute('x2', String(end.x));
+      line.setAttribute('y2', String(end.y));
       guides.appendChild(line);
+      guideLines.push({ line, from, to });
     }
   }
   artboard.appendChild(guides);
@@ -529,33 +528,109 @@ function renderCurveHandles(): void {
     const isAnchor = index % 3 === 0;
     handle.className = 'hc-node-handle ' + (isAnchor ? 'endpoint' : 'control');
     handle.dataset.nodeIndex = String(index);
-    handle.title = isAnchor ? 'Anchor ' + (index / 3 + 1) : 'Bezier control';
-    handle.style.left = (block.x + point.x) + 'px';
-    handle.style.top = (block.y + point.y) + 'px';
+    handle.tabIndex = 0;
+    handle.setAttribute('role', 'button');
+    const label = isAnchor ? 'Anchor ' + (index / 3 + 1) : 'Bezier control ' + (index % 3);
+    handle.title = label + (isAnchor ? ' · Alt+click deletes · arrows nudge' : ' · drag or use arrow keys');
+    handle.setAttribute('aria-label', handle.title);
+    handle.style.transform = 'scale(' + 1 / zoom + ')';
+    const position = curveLocalToWorld(block, point);
+    handle.style.left = position.x + 'px';
+    handle.style.top = position.y + 'px';
+    handle.addEventListener('keydown', event => {
+      if (isAnchor && (event.key === 'Delete' || event.key === 'Backspace')) {
+        event.preventDefault();
+        event.stopPropagation();
+        const next = deleteCurveAnchor(points, index);
+        if (next) applyCurvePoints(block, next);
+        else context?.toast('A Bezier curve needs at least one segment.', 'info');
+        return;
+      }
+      if (!event.key.startsWith('Arrow')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const step = event.shiftKey ? 10 : 1;
+      const world = curveLocalToWorld(block, point);
+      world.x += event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+      world.y += event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+      const next = points.map((item, itemIndex) => itemIndex === index ? curveWorldToLocal(block, world) : item);
+      applyCurvePoints(block, next);
+    });
     handle.addEventListener('pointerdown', event => {
       event.preventDefault();
       event.stopPropagation();
       if (!context) return;
-      const origin = { x: block.x, y: block.y };
+      if (event.altKey && isAnchor) {
+        const next = deleteCurveAnchor(points, index);
+        if (next) applyCurvePoints(block, next);
+        else context.toast('A Bezier curve needs at least one segment.', 'info');
+        return;
+      }
       const initial = points.map(item => ({ ...item }));
       const start = context.getWorldPoint(event.clientX, event.clientY);
-      const move = (moveEvent: PointerEvent): void => {
-        const current = context!.getWorldPoint(moveEvent.clientX, moveEvent.clientY);
-        const moved = initial.map((item, itemIndex) => itemIndex === index ? { x: item.x + current.x - start.x, y: item.y + current.y - start.y } : item);
-        handle.style.left = (origin.x + moved[index]!.x) + 'px';
-        handle.style.top = (origin.y + moved[index]!.y) + 'px';
-        const path = document.querySelector<SVGPathElement>('.block-wrap[data-block-id="' + block.id + '"] .block-vector-host svg path');
+      const startLocal = curveWorldToLocal(block, start);
+      const path = document.querySelector<SVGPathElement>('.block-wrap[data-block-id="' + block.id + '"] .block-vector-host svg path');
+      let moved = initial;
+      let latest = start;
+      let frame = 0;
+      const update = (): void => {
+        const currentLocal = curveWorldToLocal(block, latest);
+        const dx = currentLocal.x - startLocal.x;
+        const dy = currentLocal.y - startLocal.y;
+        moved = initial.map((item, itemIndex) => itemIndex === index ? { x: item.x + dx, y: item.y + dy } : item);
+        const current = curveLocalToWorld(block, moved[index]!);
+        handle.style.left = current.x + 'px';
+        handle.style.top = current.y + 'px';
         if (path) path.setAttribute('d', curvePathData(moved));
+        for (const guide of guideLines) {
+          const from = curveLocalToWorld(block, moved[guide.from]!);
+          const to = curveLocalToWorld(block, moved[guide.to]!);
+          guide.line.setAttribute('x1', String(from.x));
+          guide.line.setAttribute('y1', String(from.y));
+          guide.line.setAttribute('x2', String(to.x));
+          guide.line.setAttribute('y2', String(to.y));
+        }
       };
-      const up = (upEvent: PointerEvent): void => {
+      const schedule = (): void => {
+        if (frame) return;
+        frame = requestAnimationFrame(() => { frame = 0; update(); });
+      };
+      const move = (moveEvent: PointerEvent): void => {
+        latest = context!.getWorldPoint(moveEvent.clientX, moveEvent.clientY);
+        schedule();
+      };
+      const cleanup = (): void => {
+        if (frame) cancelAnimationFrame(frame);
+        handle.classList.remove('dragging');
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
-        const current = context!.getWorldPoint(upEvent.clientX, upEvent.clientY);
-        const next = initial.map((item, itemIndex) => itemIndex === index ? { x: item.x + current.x - start.x, y: item.y + current.y - start.y } : item);
-        applyCurvePoints(block, next);
+        window.removeEventListener('pointercancel', cancel);
+        window.removeEventListener('keydown', escape, true);
+        try { handle.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
       };
+      const cancel = (): void => {
+        moved = initial;
+        update();
+        cleanup();
+      };
+      const escape = (keyEvent: KeyboardEvent): void => {
+        if (keyEvent.key !== 'Escape') return;
+        keyEvent.preventDefault();
+        keyEvent.stopImmediatePropagation();
+        cancel();
+      };
+      const up = (upEvent: PointerEvent): void => {
+        latest = context!.getWorldPoint(upEvent.clientX, upEvent.clientY);
+        update();
+        cleanup();
+        applyCurvePoints(block, moved);
+      };
+      handle.classList.add('dragging');
+      try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', cancel);
+      window.addEventListener('keydown', escape, true);
     });
     artboard.appendChild(handle);
   });
