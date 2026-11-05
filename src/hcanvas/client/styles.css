@@ -873,3 +873,8 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 
 .hc-rotate-handle { position: absolute; z-index: 1201; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid #fff; background: #1f2430; box-shadow: 0 0 0 1px #1f2430, 0 2px 6px rgba(31,36,48,.25); cursor: grab; }
 .hc-rotate-handle:active { cursor: grabbing; }
+
+.hc-node-guides { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1100; overflow: visible; pointer-events: none; }
+.hc-node-guides line { stroke: #9b8adf; stroke-width: 1; stroke-dasharray: 3 3; opacity: .85; }
+.block-wrap.type-curve.selected { outline: none !important; }
+.block-wrap.type-curve.selected > .block-hit { box-shadow: none !important; }

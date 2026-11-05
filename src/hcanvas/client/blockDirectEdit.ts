@@ -436,7 +436,7 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
 const NODE_LABELS = ['Start', 'Control 1', 'Control 2', 'End'];
 
 function renderCurveHandles(): void {
-  document.querySelectorAll('.hc-node-handle').forEach(node => node.remove());
+  document.querySelectorAll('.hc-node-handle, .hc-node-guides').forEach(node => node.remove());
   const blocks = selectedBlocks();
   if (blocks.length !== 1) return;
   const block = blocks[0]!;
@@ -444,6 +444,17 @@ function renderCurveHandles(): void {
   if (context?.isLocked(block.id)) return;
   const artboard = document.querySelector<HTMLElement>('#artboard');
   if (!artboard) return;
+  const guides = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  guides.setAttribute('class', 'hc-node-guides');
+  for (const [from, to] of [[0, 1], [2, 3]]) {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', String(block.x + block.points![from]!.x));
+    line.setAttribute('y1', String(block.y + block.points![from]!.y));
+    line.setAttribute('x2', String(block.x + block.points![to]!.x));
+    line.setAttribute('y2', String(block.y + block.points![to]!.y));
+    guides.appendChild(line);
+  }
+  artboard.appendChild(guides);
   block.points.forEach((point, index) => {
     const handle = document.createElement('div');
     handle.className = 'hc-node-handle ' + (index === 0 || index === 3 ? 'endpoint' : 'control');

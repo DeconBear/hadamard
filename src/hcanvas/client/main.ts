@@ -114,7 +114,6 @@ interface UiState {
   pendingInsert: HcBlock['type'] | null;
   pendingShape: HcShape | null;
 }
-
 interface PageItemCache {
   fingerprint: string;
   item: HTMLDivElement;
@@ -2044,7 +2043,7 @@ function addBlockSelectionDecorations(wrap: HTMLDivElement, block: HcBlock): voi
   if (wrap.querySelector(':scope > .block-label')) return;
   const label = document.createElement('span');
   label.className = 'block-label';
-  label.textContent = block.type + ' · drag label to move';
+  label.textContent = block.type === 'curve' ? 'curve · drag to move' : block.type + ' · drag label to move';
   label.title = 'Drag to move; Alt+click the block to cycle overlapping layers';
   label.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
@@ -2066,6 +2065,7 @@ function addBlockSelectionDecorations(wrap: HTMLDivElement, block: HcBlock): voi
     });
     return;
   }
+  if (block.type === 'curve') return;
   const directions: ResizeDirection[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
   const resizeContext = {
     getZoom: () => state.zoom,
