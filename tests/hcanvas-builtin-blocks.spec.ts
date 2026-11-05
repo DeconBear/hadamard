@@ -62,4 +62,10 @@ describe('hcanvas native arc block', () => {
     expect(html).toContain('<path');
     expect(html).toContain(' A ');
   });
+
+  it('attaches endpoint markers to the arc path', () => {
+    const html = renderBlockBody(block('arc', { data: { startAngle: 0, endAngle: 180 }, style: { color: '#4a83b8', strokeWidth: 2, markerEnd: 'arrow' } }), 'export');
+    expect(html).toContain('marker-end="url(#hc-arc-end-');
+    expect(html).toContain('<marker');
+  });
 });

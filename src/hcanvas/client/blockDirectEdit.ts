@@ -71,7 +71,7 @@ function colorPatch(block: HcBlock, color: string, target: ColorTarget = 'auto')
 }
 
 function blockIcon(block: HcBlock): string {
-  return { text: 'T', markdown: 'MD', code: '</>', shape: '◇', curve: '∿', freehand: '✎', arrow: '→', math: '∑', html: '<>' }[block.type] || '▢';
+  return { text: 'T', markdown: 'MD', code: '</>', shape: '◇', curve: '∿', arc: '◜', freehand: '✎', arrow: '→', math: '∑', html: '<>' }[block.type] || '▢';
 }
 
 function closeFloating(): void {
@@ -94,6 +94,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
   node.className = 'hc-context-menu';
   const hasImage = blocks.some(block => block.type === 'image');
   const hasStroke = blocks.some(block => supportsStroke(block));
+  const hasArc = blocks.some(block => block.type === 'arc');
   node.innerHTML = '<div class="hc-context-head">' + escape(blocks.length > 1 ? blocks.length + ' blocks' : (blocks[0]?.name || blocks[0]?.type || 'Block')) + '</div>' +
     '<button type="button" data-hc-action="edit">Edit</button>' +
     '<button type="button" data-hc-action="duplicate">Duplicate</button>' +
@@ -108,6 +109,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
     '<button type="button" data-hc-action="fill">Fill / gradient…</button>' +
     '<button type="button" data-hc-action="stroke">Stroke color…</button>' +
     (hasStroke ? '<div class="hc-context-label">Line style</div><button type="button" data-hc-action="solid">Solid line</button><button type="button" data-hc-action="dashed">Dashed line</button><button type="button" data-hc-action="dotted">Dotted line</button>' : '') +
+    (hasArc ? '<div class="hc-context-label">Arc ends</div><button type="button" data-hc-action="arc-start-none">Start: none</button><button type="button" data-hc-action="arc-start-arrow">Start: arrow</button><button type="button" data-hc-action="arc-end-none">End: none</button><button type="button" data-hc-action="arc-end-arrow">End: arrow</button>' : '') +
     '<div class="hc-context-label">Transform</div><button type="button" data-hc-action="rotate-cw">Rotate 90° clockwise</button><button type="button" data-hc-action="rotate-ccw">Rotate 90° counter-clockwise</button><button type="button" data-hc-action="flip-h">Flip horizontal</button><button type="button" data-hc-action="flip-v">Flip vertical</button>' +
     '<button type="button" data-hc-action="eyedrop">Pick color from screen</button>' +
     '<div class="hc-context-sep"></div>' +
@@ -321,6 +323,16 @@ function openImageCutoutFor(block: HcBlock): void {
   openImageCutout({ block, pageId: page.id, applyOps: context.applyOps, toast: context.toast });
 }
 
+function applyArcMarker(blocks: HcBlock[], action: string): void {
+  if (!context) return;
+  const page = context.getPage();
+  if (!page) return;
+  const [, side, kind] = action.split('-');
+  const key = side === 'start' ? 'markerStart' : 'markerEnd';
+  const ops = blocks.filter(block => block.type === 'arc').map(block => ({ op: 'update_block' as const, pageId: page.id, blockId: block.id, patch: { style: { ...(block.style || {}), [key]: kind === 'arrow' ? 'arrow' : 'none' } } }));
+  if (ops.length) void context.applyOps(ops).then(() => updateDirectEditUI());
+}
+
 function applyStrokeStyle(blocks: HcBlock[], strokeStyle: 'solid' | 'dashed' | 'dotted'): void {
   if (!context) return;
   const page = context.getPage();
@@ -424,6 +436,7 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
     if (action === 'fill') { openColorFor(blocks, 'fill'); return; }
     if (action === 'stroke') { openColorFor(blocks, 'stroke'); return; }
     if (action === 'solid' || action === 'dashed' || action === 'dotted') { applyStrokeStyle(blocks, action); return; }
+    if (action.startsWith('arc-')) { applyArcMarker(blocks, action); return; }
     if (action === 'rotate-cw') { applyRotation(blocks, 90); return; }
     if (action === 'rotate-ccw') { applyRotation(blocks, -90); return; }
     if (action === 'flip-h') { applyFlip(blocks, 'x'); return; }
