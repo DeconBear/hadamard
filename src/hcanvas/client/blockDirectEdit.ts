@@ -108,6 +108,7 @@ function openMenu(x: number, y: number, blocks: HcBlock[], onAction: (action: st
     '<button type="button" data-hc-action="fill">Fill / gradient…</button>' +
     '<button type="button" data-hc-action="stroke">Stroke color…</button>' +
     (hasStroke ? '<div class="hc-context-label">Line style</div><button type="button" data-hc-action="solid">Solid line</button><button type="button" data-hc-action="dashed">Dashed line</button><button type="button" data-hc-action="dotted">Dotted line</button>' : '') +
+    '<div class="hc-context-label">Transform</div><button type="button" data-hc-action="rotate-cw">Rotate 90° clockwise</button><button type="button" data-hc-action="rotate-ccw">Rotate 90° counter-clockwise</button><button type="button" data-hc-action="flip-h">Flip horizontal</button><button type="button" data-hc-action="flip-v">Flip vertical</button>' +
     '<button type="button" data-hc-action="eyedrop">Pick color from screen</button>' +
     '<div class="hc-context-sep"></div>' +
     (hasImage ? '<div class="hc-context-sep"></div><button type="button" data-hc-action="cutout">Remove image background…</button>' : '') +
@@ -328,6 +329,80 @@ function applyStrokeStyle(blocks: HcBlock[], strokeStyle: 'solid' | 'dashed' | '
   void context.applyOps(ops).then(() => updateDirectEditUI());
 }
 
+function applyRotation(blocks: HcBlock[], delta: number): void {
+  if (!context) return;
+  const page = context.getPage();
+  if (!page) return;
+  const ops = blocks.map(block => ({ op: 'update_block' as const, pageId: page.id, blockId: block.id, patch: { rotation: ((((Number(block.rotation) || 0) + delta) % 360) + 360) % 360 } }));
+  void context.applyOps(ops).then(() => updateDirectEditUI());
+}
+
+function applyFlip(blocks: HcBlock[], axis: 'x' | 'y'): void {
+  if (!context) return;
+  const page = context.getPage();
+  if (!page) return;
+  const key = axis === 'x' ? 'flipX' : 'flipY';
+  const ops = blocks.map(block => ({ op: 'update_block' as const, pageId: page.id, blockId: block.id, patch: { style: { ...(block.style || {}), [key]: !block.style?.[key] } } }));
+  void context.applyOps(ops).then(() => updateDirectEditUI());
+}
+
+function renderTransformHandle(): void {
+  document.querySelectorAll('.hc-rotate-handle').forEach(node => node.remove());
+  const blocks = selectedBlocks();
+  if (blocks.length !== 1) return;
+  const block = blocks[0]!;
+  if (context?.isLocked(block.id)) return;
+  const artboard = document.querySelector<HTMLElement>('#artboard');
+  if (!artboard || !context) return;
+  const angle = Number(block.rotation) || 0;
+  const radians = angle * Math.PI / 180;
+  const centerX = block.x + block.w / 2;
+  const centerY = block.y + block.h / 2;
+  const radius = block.h / 2 + 30;
+  const handle = document.createElement('div');
+  handle.className = 'hc-rotate-handle';
+  handle.title = 'Drag to rotate · Shift snaps 15°';
+  handle.style.left = (centerX + Math.sin(radians) * radius) + 'px';
+  handle.style.top = (centerY - Math.cos(radians) * radius) + 'px';
+  handle.addEventListener('pointerdown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!context) return;
+    const wrap = document.querySelector<HTMLElement>('.block-wrap[data-block-id="' + block.id + '"]');
+    if (!wrap) return;
+    const startAngle = angle;
+    const startPoint = context.getWorldPoint(event.clientX, event.clientY);
+    const startVector = Math.atan2(startPoint.y - centerY, startPoint.x - centerX) * 180 / Math.PI;
+    const move = (moveEvent: PointerEvent): void => {
+      if (!context) return;
+      const point = context.getWorldPoint(moveEvent.clientX, moveEvent.clientY);
+      const current = Math.atan2(point.y - centerY, point.x - centerX) * 180 / Math.PI;
+      let next = startAngle + current - startVector;
+      if (moveEvent.shiftKey) next = Math.round(next / 15) * 15;
+      handle.style.left = (centerX + Math.sin(next * Math.PI / 180) * radius) + 'px';
+      handle.style.top = (centerY - Math.cos(next * Math.PI / 180) * radius) + 'px';
+      wrap.style.transform = (next ? 'rotate(' + next + 'deg) ' : '') + (block.style?.flipX ? 'scaleX(-1) ' : '') + (block.style?.flipY ? 'scaleY(-1)' : '');
+      wrap.dataset.previewRotation = String(next);
+    };
+    const up = (upEvent: PointerEvent): void => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (!context) return;
+      const point = context.getWorldPoint(upEvent.clientX, upEvent.clientY);
+      const current = Math.atan2(point.y - centerY, point.x - centerX) * 180 / Math.PI;
+      let next = startAngle + current - startVector;
+      if (upEvent.shiftKey) next = Math.round(next / 15) * 15;
+      next = ((next % 360) + 360) % 360;
+      const page = context.getPage();
+      if (!page) return;
+      void context.applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { rotation: next } }]).then(() => updateDirectEditUI());
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
+  artboard.appendChild(handle);
+}
+
 function openColorFor(blocks: HcBlock[], target: ColorTarget): void {
   const first = blocks[0];
   if (!first) return;
@@ -349,6 +424,10 @@ function showBlockMenu(block: HcBlock, x: number, y: number): void {
     if (action === 'fill') { openColorFor(blocks, 'fill'); return; }
     if (action === 'stroke') { openColorFor(blocks, 'stroke'); return; }
     if (action === 'solid' || action === 'dashed' || action === 'dotted') { applyStrokeStyle(blocks, action); return; }
+    if (action === 'rotate-cw') { applyRotation(blocks, 90); return; }
+    if (action === 'rotate-ccw') { applyRotation(blocks, -90); return; }
+    if (action === 'flip-h') { applyFlip(blocks, 'x'); return; }
+    if (action === 'flip-v') { applyFlip(blocks, 'y'); return; }
     if (action === 'eyedrop') { void pickScreenColor(context?.toast).then(color => { if (color) applyColorToSelection(blocks, color, 'auto'); }); return; }
     moveLayer(action);
   });
@@ -465,6 +544,7 @@ export function updateDirectEditUI(): void {
   opacityButton.style.display = active ? '' : 'none';
   cutoutButton.style.display = active?.type === 'image' ? '' : 'none';
   renderCurveHandles();
+  renderTransformHandle();
   const swatch = colorButton.querySelector<HTMLElement>('.sel-color-swatch');
   if (swatch && active) swatch.style.background = active.fillGradient ? gradientCss(active.fillGradient) : primaryColor(active);
 }

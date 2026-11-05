@@ -34,6 +34,18 @@ export function bindResizeHandle(handle: HTMLElement, wrap: HTMLElement, block: 
       if (direction.includes('e')) { w = start.w + dx; }
       if (direction.includes('n')) { y = start.y0 + dy; h = start.h - dy; }
       if (direction.includes('s')) { h = start.h + dy; }
+      if (moveEvent.shiftKey && direction.length === 2) {
+        const aspect = start.w / Math.max(1, start.h);
+        if (Math.abs(dx) >= Math.abs(dy)) h = w / aspect; else w = h * aspect;
+        if (direction.includes('w')) x = start.x0 + start.w - w;
+        if (direction.includes('n')) y = start.y0 + start.h - h;
+      }
+      if (moveEvent.ctrlKey || moveEvent.metaKey) {
+        const centerX = start.x0 + start.w / 2;
+        const centerY = start.y0 + start.h / 2;
+        x = centerX - w / 2;
+        y = centerY - h / 2;
+      }
       const minW = 40;
       const minH = 30;
       if (w < minW) { if (direction.includes('w')) x = start.x0 + start.w - minW; w = minW; }

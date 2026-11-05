@@ -17,6 +17,9 @@ export const SHORTCUTS_MODAL_HTML = '<div class="modal small"><div class="modal-
   '<kbd>Ctrl/Cmd + Z</kbd><span>Undo; Ctrl/Cmd+Shift+Z or Y = redo</span>' +
   '<kbd>Ctrl/Cmd + 0 / 1</kbd><span>100% zoom / fit; Shift+1 also fits</span>' +
   '<kbd>Delete / Arrow keys</kbd><span>Delete / nudge selection (Shift = 10px)</span>' +
+  '<kbd>Shift + drag</kbd><span>Lock movement axis / keep aspect ratio when resizing</span>' +
+  '<kbd>Ctrl/Cmd + drag</kbd><span>Duplicate while dragging / resize from center</span>' +
+  '<kbd>Shift + rotate</kbd><span>Snap rotation to 15°</span>' +
   '<kbd>Present: Click / Wheel</kbd><span>Next / previous page; right-click menu; L = laser pointer</span>' +
   '<kbd>G / S</kbd><span>Toggle grid / snap</span>' +
   '<kbd>?</kbd><span>This help</span>' +

@@ -870,3 +870,6 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 
 /* Keep the shape picker frame height stable when switching categories. */
 .shape-popover-grid { min-height: min(58vh, 460px); max-height: min(58vh, 460px); overflow-y: auto; align-content: start; }
+
+.hc-rotate-handle { position: absolute; z-index: 1201; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid #fff; background: #1f2430; box-shadow: 0 0 0 1px #1f2430, 0 2px 6px rgba(31,36,48,.25); cursor: grab; }
+.hc-rotate-handle:active { cursor: grabbing; }

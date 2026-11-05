@@ -9,7 +9,7 @@ function escapeHtml(value: string): string {
 export function renderPresentCanvasHtml(page: HcPage): string {
   let html = '<div style="position:relative;width:100%;height:100%;background:' + escapeHtml(page.background) + ';overflow:hidden">';
   for (const block of blocksInStackOrder(page)) {
-    const style = 'position:absolute;left:' + block.x + 'px;top:' + block.y + 'px;width:' + block.w + 'px;height:' + block.h + 'px;overflow:' + (block.type === 'freehand' || block.type === 'arrow' ? 'visible' : 'hidden') + ';border-radius:' + escapeHtml(String(block.style?.radius || 0)) + 'px;' + (block.rotation ? 'transform:rotate(' + block.rotation + 'deg);' : '') + (block.style?.opacity !== undefined ? 'opacity:' + block.style.opacity + ';' : '');
+    const style = 'position:absolute;left:' + block.x + 'px;top:' + block.y + 'px;width:' + block.w + 'px;height:' + block.h + 'px;overflow:' + (block.type === 'freehand' || block.type === 'arrow' ? 'visible' : 'hidden') + ';border-radius:' + escapeHtml(String(block.style?.radius || 0)) + 'px;' + ([block.rotation ? 'rotate(' + block.rotation + 'deg)' : '', block.style?.flipX ? 'scaleX(-1)' : '', block.style?.flipY ? 'scaleY(-1)' : ''].filter(Boolean).length ? 'transform:' + [block.rotation ? 'rotate(' + block.rotation + 'deg)' : '', block.style?.flipX ? 'scaleX(-1)' : '', block.style?.flipY ? 'scaleY(-1)' : ''].filter(Boolean).join(' ') + ';transform-origin:center center;' : '') + (block.style?.opacity !== undefined ? 'opacity:' + block.style.opacity + ';' : '');
     html += '<div style="' + style + '">' + renderBlockBody(block, 'present') + '</div>';
   }
   return html + '</div>';

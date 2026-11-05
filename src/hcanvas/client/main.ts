@@ -34,20 +34,17 @@ import { invertOps as invertDocumentOps } from './documentHistory.js';
 import { CANVAS_PAGE_PRESETS, canvasTemplateBlocks, pageTemplateHtml, starterHtml } from './pageTemplates.js';
 import { SHORTCUTS_MODAL_HTML } from './shortcuts.js';
 import { esc, genId } from './utils.js';
-
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
 interface PresenceEntry { id: string; actor: string; docId: string; docTitle: string; pageId?: string; pageName: string; selection?: string[]; createdAt: string; updatedAt: string; stale: boolean; }
 interface MasterSummary { id: string; name: string; mode: string; width: number; height: number; background?: string; createdAt: string; html?: string; blocks?: HcBlock[]; scene?: { elements?: unknown[] }; }
 interface ApiErrorShape { error?: string; latestRevision?: number; latestDoc?: HcDocument; }
-
 class ApiError extends Error {
   constructor(message: string, public readonly status: number, public readonly payload: unknown) {
     super(message);
     this.name = 'ApiError';
   }
 }
-
 declare global {
   interface Window {
     hcanvasDesktop?: {
@@ -58,7 +55,6 @@ declare global {
     };
   }
 }
-
 const boot = JSON.parse(document.getElementById('hc-boot')?.textContent || '{}') as BootConfig;
 function el<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -847,7 +843,7 @@ function bindStaticActions(): void {
   };
   viewport.addEventListener('pointerdown', event => {
     if (!state.pendingInsert || event.button !== 0) return;
-    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
     event.preventDefault();
     event.stopPropagation();
     const type = state.pendingInsert;
@@ -863,7 +859,7 @@ function bindStaticActions(): void {
   }, { capture: true });
   viewport.addEventListener('pointerdown', event => {
     const targetElement = event.target as Element;
-    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
+    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
     if (event.button === 1) {
       if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
       event.preventDefault();
@@ -878,14 +874,14 @@ function bindStaticActions(): void {
   viewport.addEventListener('pointerdown', event => {
     if (event.button !== 0 || state.tool !== 'select' || state.spaceHeld || state.editing) return;
     const target = event.target as Element;
-    if (target.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .block-wrap')) return;
+    if (target.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle, .block-wrap')) return;
     event.preventDefault();
     beginMarquee(event);
   });
   viewport.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
   viewport.addEventListener('wheel', event => {
     const targetElement = event.target as Element;
-    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
+    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
     if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
     event.preventDefault();
     const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientHeight : 1;
@@ -902,7 +898,7 @@ function bindStaticActions(): void {
   viewport.addEventListener('pointerdown', event => {
     if (event.button !== 0 || state.tool !== 'eraser') return;
     if (activePage()?.mode !== 'infinite' || state.editing) return;
-    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
     event.preventDefault();
     event.stopPropagation();
     beginErase(event);
@@ -912,7 +908,7 @@ function bindStaticActions(): void {
   viewport.addEventListener('pointerdown', event => {
     if (event.button !== 0 || (state.tool !== 'pen' && state.tool !== 'arrow')) return;
     if (activePage()?.mode !== 'infinite' || state.editing) return;
-    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor, .hc-node-handle')) return;
+    if ((event.target as Element).closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
     event.preventDefault();
     event.stopPropagation();
     beginVectorDraw(event);
@@ -1892,7 +1888,7 @@ function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
   wrap.style.width = block.w + 'px';
   wrap.style.height = block.h + 'px';
   wrap.style.zIndex = String(blockRenderZ(page, block));
-  if (block.rotation) { wrap.style.transform = 'rotate(' + block.rotation + 'deg)'; wrap.style.transformOrigin = 'center center'; }
+  if (block.rotation || block.style?.flipX || block.style?.flipY) { wrap.style.transform = (block.rotation ? 'rotate(' + block.rotation + 'deg) ' : '') + (block.style?.flipX ? 'scaleX(-1) ' : '') + (block.style?.flipY ? 'scaleY(-1)' : ''); wrap.style.transformOrigin = 'center center'; }
   if (block.style?.opacity !== undefined) wrap.style.opacity = String(block.style.opacity);
   return wrap;
 }
@@ -1941,7 +1937,7 @@ function beginBlockDrag(event: PointerEvent, block: HcBlock, handle: HTMLElement
   }
   const starts = new Map(dragBlocks.map(item => [item.id, { x: item.x, y: item.y, w: item.w, h: item.h }]));
   const historyBase = cloneJson(state.doc);
-  const start = { x: event.clientX, y: event.clientY, moved: false };
+  const start = { x: event.clientX, y: event.clientY, moved: false }; const duplicateOnDrag = event.ctrlKey || event.metaKey;
   const guideLayer = el('artboard');
   const guideNodes: HTMLElement[] = [];
   const showGuides = (guides: Array<{ axis: 'x' | 'y'; value: number }>): void => {
@@ -1964,16 +1960,18 @@ function beginBlockDrag(event: PointerEvent, block: HcBlock, handle: HTMLElement
     }
   };
   const move = (moveEvent: PointerEvent): void => {
-    const rawDx = (moveEvent.clientX - start.x) / state.zoom;
-    const rawDy = (moveEvent.clientY - start.y) / state.zoom;
-    if (Math.abs(rawDx) < 2 && Math.abs(rawDy) < 2) return;
+    const rawX = (moveEvent.clientX - start.x) / state.zoom;
+    const rawY = (moveEvent.clientY - start.y) / state.zoom;
+    if (Math.abs(rawX) < 2 && Math.abs(rawY) < 2) return;
     start.moved = true;
+    const lockX = moveEvent.shiftKey && Math.abs(rawX) >= Math.abs(rawY);
+    const lockY = moveEvent.shiftKey && !lockX;
     const origins = dragBlocks.map(item => { const origin = starts.get(item.id)!; return { id: item.id, x: origin.x, y: origin.y, w: item.w, h: item.h }; });
-    const snap = snapMove(page, origins, rawDx, rawDy, state.zoom, state.snap);
+    const snap = snapMove(page, origins, lockY ? 0 : rawX, lockX ? 0 : rawY, state.zoom, state.snap);
     showGuides(snap.guides);
     for (const item of dragBlocks) {
       const origin = starts.get(item.id)!;
-      const next = clampBlockPosition(page, item, origin.x + snap.dx, origin.y + snap.dy);
+      const next = clampBlockPosition(page, item, lockY ? origin.x : origin.x + snap.dx, lockX ? origin.y : origin.y + snap.dy);
       item.x = next.x; item.y = next.y;
     }
     if (!dragFrame) dragFrame = requestAnimationFrame(() => { dragFrame = 0; paintDrag(); });
@@ -1988,7 +1986,9 @@ function beginBlockDrag(event: PointerEvent, block: HcBlock, handle: HTMLElement
     if (start.moved) {
       const movedIds = new Set(dragBlocks.map(item => item.id));
       const hasBoundArrows = (page.blocks || []).some(item => item.type === 'arrow' && ((item.startBinding && movedIds.has(item.startBinding)) || (item.endBinding && movedIds.has(item.endBinding))));
-      void applyOps(dragBlocks.map(item => ({ op: 'update_block', pageId: page.id, blockId: item.id, patch: { x: item.x, y: item.y } } as HcOp)), { refreshArtboard: hasBoundArrows, historyBase: historyBase || undefined });
+      const copies = duplicateOnDrag ? dragBlocks.map(item => { const origin = starts.get(item.id)!; return { ...cloneJson(item), id: genId('block'), x: origin.x, y: origin.y, z: Math.max(0, ...(page.blocks || []).map(block => block.z)) + 1, name: (item.name || 'Block') + ' copy' } as HcBlock; }) : [];
+      const ops: HcOp[] = [...dragBlocks.map(item => ({ op: 'update_block' as const, pageId: page.id, blockId: item.id, patch: { x: item.x, y: item.y } })), ...copies.map(block => ({ op: 'add_block' as const, pageId: page.id, block }))];
+      void applyOps(ops, { refreshArtboard: hasBoundArrows || Boolean(copies.length), historyBase: historyBase || undefined });
     }
   };
   handle.addEventListener('pointermove', move);
@@ -2004,7 +2004,7 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
       cycleBlockSelectionAt(event.clientX, event.clientY, block.id);
       return;
     }
-    selectBlock(block.id, { additive: event.shiftKey });
+    selectBlock(block.id, { additive: event.shiftKey && !state.selectedBlockIds.includes(block.id) });
     if (!state.selectedBlockIds.includes(block.id)) return;
     beginBlockDrag(event, block, hit, wrap);
   });
