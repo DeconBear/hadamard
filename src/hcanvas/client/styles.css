@@ -179,11 +179,11 @@ button { cursor: pointer; }
 .block-image img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; }
 .block-shape-box { width: 100%; height: 100%; }
 .block-hit { position: absolute; inset: 0; z-index: 4; cursor: default; }
-.artboard:not(.editing) .block-hit:hover { box-shadow: inset 0 0 0 1.5px rgba(109, 91, 208, .55); }
-.block-wrap.selected > .block-hit { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.artboard:not(.editing) .block-hit:hover { box-shadow: inset 0 0 0 1px rgba(109, 91, 208, .4); }
+.block-wrap.selected > .block-hit { box-shadow: inset 0 0 0 1px rgba(109, 91, 208, .8); }
 .block-label {
-  position: absolute; left: 0; top: -19px; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--accent); background: var(--accent-soft); border: 1px solid #d8cef8; border-radius: 4px; padding: 1px 5px; white-space: nowrap;
+  position: absolute; left: 0; top: -16px; font-size: 8px; letter-spacing: .04em; text-transform: uppercase;
+  color: rgba(109, 91, 208, .82); background: rgba(240, 235, 255, .78); border: 1px solid rgba(109, 91, 208, .18); border-radius: 3px; padding: 0 3px; white-space: nowrap;
 }
 .resize-handle {
   position: absolute; width: 8px; height: 8px; z-index: 8;
@@ -527,7 +527,7 @@ button { cursor: pointer; }
 .block-shape-box.shape-frame { position: relative; }
 .block-frame-label { position: absolute; left: 10px; top: 8px; font: 600 10px/1 Inter, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: #8a8276; white-space: nowrap; background: rgba(251,250,247,.9); padding: 3px 5px; border-radius: 4px; pointer-events: none; }
 .marquee-box { position: absolute; z-index: 99998; border: 1px solid rgba(124,58,237,.85); background: rgba(124,58,237,.08); border-radius: 3px; pointer-events: none; }
-.block-wrap.selected { outline: 2px solid rgba(124,58,237,.9); outline-offset: 3px; border-radius: 6px; }
+.block-wrap.selected { outline: 1px solid rgba(124,58,237,.62); outline-offset: 2px; border-radius: 4px; }
 .legacy-whiteboard-preview { position: absolute; transform-origin: 0 0; pointer-events: none; }
 .legacy-whiteboard-preview .block-wrap { pointer-events: none !important; }
 .legacy-whiteboard-banner { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 100000; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: rgba(251,250,247,.94); box-shadow: 0 8px 24px rgba(30,25,20,.12); font: 11px/1.3 Inter, sans-serif; color: var(--ink-2); }
@@ -878,7 +878,7 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 /* Keep the shape picker frame height stable when switching categories. */
 .shape-popover-grid { min-height: min(58vh, 460px); max-height: min(58vh, 460px); overflow-y: auto; align-content: start; }
 
-.hc-rotate-handle { position: absolute; z-index: 1201; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid #fff; background: #1f2430; box-shadow: 0 0 0 1px #1f2430, 0 2px 6px rgba(31,36,48,.25); cursor: grab; }
+.hc-rotate-handle { position: absolute; z-index: 1201; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; border: 1.5px solid var(--accent); background: #fff; box-shadow: 0 0 0 1px rgba(255,255,255,.85), 0 1px 4px rgba(31,36,48,.18); cursor: grab; }
 .hc-rotate-handle:active { cursor: grabbing; }
 
 .hc-node-guides { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1100; overflow: visible; pointer-events: none; }

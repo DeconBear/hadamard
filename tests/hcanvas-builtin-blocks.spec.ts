@@ -67,5 +67,9 @@ describe('hcanvas native arc block', () => {
     const html = renderBlockBody(block('arc', { data: { startAngle: 0, endAngle: 180 }, style: { color: '#4a83b8', strokeWidth: 2, markerEnd: 'arrow' } }), 'export');
     expect(html).toContain('marker-end="url(#hc-arc-end-');
     expect(html).toContain('<marker');
+    expect(html).toContain('markerWidth="12"');
+    expect(html).toContain('d="M1,1 L8,5 L1,9"');
+    expect(html).not.toContain('markerWidth="20"');
+    expect(html).not.toContain('L14,7 L0,14');
   });
 });

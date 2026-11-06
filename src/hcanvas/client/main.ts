@@ -2053,7 +2053,7 @@ function addBlockSelectionDecorations(wrap: HTMLDivElement, block: HcBlock): voi
   if (wrap.querySelector(':scope > .block-label')) return;
   const label = document.createElement('span');
   label.className = 'block-label';
-  label.textContent = block.type === 'curve' ? 'curve · drag to move' : block.type + ' · drag label to move';
+  label.textContent = block.name || block.type;
   label.title = 'Drag to move; Alt+click the block to cycle overlapping layers';
   label.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;

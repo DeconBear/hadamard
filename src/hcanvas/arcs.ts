@@ -11,9 +11,9 @@ function markerKind(value: unknown): 'none' | 'arrow' | 'dot' {
 
 function markerMarkup(id: string, kind: 'arrow' | 'dot', color: string, start: boolean): string {
   const path = kind === 'arrow'
-    ? '<path d="M0,0 L14,7 L0,14 Z" fill="' + attr(color) + '"/>'
-    : '<circle cx="6" cy="5" r="4" fill="' + attr(color) + '"/>';
-  return '<marker id="' + attr(id) + '" viewBox="0 0 14 14" markerWidth="20" markerHeight="20" refX="14" refY="7" orient="' + (start ? 'auto-start-reverse' : 'auto') + '" markerUnits="userSpaceOnUse">' + path + '</marker>';
+    ? '<path d="M1,1 L8,5 L1,9" fill="none" stroke="' + attr(color) + '" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+    : '<circle cx="5" cy="5" r="2.5" fill="' + attr(color) + '"/>';
+  return '<marker id="' + attr(id) + '" viewBox="0 0 10 10" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="' + (start ? 'auto-start-reverse' : 'auto') + '" markerUnits="userSpaceOnUse">' + path + '</marker>';
 }
 
 export function arcSvgMarkup(block: HcBlock): string {
