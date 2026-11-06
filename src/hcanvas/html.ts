@@ -96,6 +96,10 @@ function findTarget(root: HTMLElement, patch: HcHtmlPatch): HTMLElement {
     } catch {
       throw new HcHtmlPatchError('Invalid CSS selector: ' + patch.selector);
     }
+    if (patch.selector === 'body') {
+      const body = root.querySelector('body');
+      return body || root;
+    }
     throw new HcHtmlPatchError('HTML target not found: ' + patch.selector);
   }
   return root;

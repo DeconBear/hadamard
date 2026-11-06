@@ -81,6 +81,13 @@ export function parseHtmlClipboard(text: string): string | null {
   }
 }
 
+/** Select the source for pasting without reusing stale canvas HTML when the OS clipboard contains other text. */
+export function resolveHtmlClipboardSource(nativeText: string | null, nativeRead: boolean, memoryHtml: string): string | null {
+  if (!nativeRead) return memoryHtml.trim() ? memoryHtml : null;
+  if (!nativeText?.trim()) return memoryHtml.trim() ? memoryHtml : null;
+  return parseHtmlClipboard(nativeText);
+}
+
 function prepareClipboardHtml(source: string, newId: (prefix: string) => string): { html: string; rootId: string } | null {
   const template = document.createElement('template');
   template.innerHTML = source.trim();
@@ -110,13 +117,16 @@ function insertPreparedHtml(context: HtmlEditingContext, html: string): { op: Hc
   const target = htmlInsertionTarget(doc, context.getSelectedElement());
   if (!editing || !doc || !target) return null;
   const targetId = target.getAttribute('data-hc-id');
-  if (!targetId) return null;
   const intoBody = target === doc.body;
+  if (!intoBody && !targetId) return null;
   const position = intoBody ? 'beforeend' as const : 'afterend' as const;
   target.insertAdjacentHTML(position, html);
   const inserted = (intoBody ? target.lastElementChild : target.nextElementSibling) as HTMLElement | null;
   if (inserted) context.selectElement(inserted);
-  return { op: patchFor(context, [{ op: 'insert_html', target: targetId, position, html }]), inserted };
+  const patch: HcHtmlPatch = intoBody
+    ? { op: 'insert_html', selector: 'body', position, html }
+    : { op: 'insert_html', target: targetId!, position, html };
+  return { op: patchFor(context, [patch]), inserted };
 }
 
 export async function insertHtmlPreset(presetId: string, context: HtmlEditingContext): Promise<void> {
@@ -179,11 +189,20 @@ export async function copySelectedHtml(context: HtmlEditingContext, cut = false)
 }
 
 export async function pasteSelectedHtml(context: HtmlEditingContext): Promise<void> {
-  let source = '';
+  let clipboardRead = false;
+  let clipboardText = '';
   const clipboard = context.getIframeDoc()?.defaultView?.navigator.clipboard;
-  try { source = parseHtmlClipboard(await clipboard?.readText() || '') || ''; } catch { /* use in-memory HTML clipboard */ }
-  if (!source) source = htmlClipboard;
-  if (!source) return;
+  if (clipboard) {
+    try {
+      clipboardText = await clipboard.readText();
+      clipboardRead = true;
+    } catch { /* use in-memory HTML clipboard */ }
+  }
+  const source = resolveHtmlClipboardSource(clipboardRead ? clipboardText : null, clipboardRead, htmlClipboard);
+  if (!source) {
+    if (clipboardRead && clipboardText.trim()) context.toast('Clipboard does not contain a canvas HTML element.', 'info');
+    return;
+  }
   const prepared = prepareClipboardHtml(source, context.newId);
   const insertion = prepared ? insertPreparedHtml(context, prepared.html) : null;
   if (!insertion) { context.toast('Select an HTML element before pasting.', 'info'); return; }

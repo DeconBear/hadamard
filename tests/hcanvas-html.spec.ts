@@ -38,6 +38,14 @@ describe('hcanvas HTML engine', () => {
     expect(() => applyHtmlPatches(source, [{ op: 'set_text', target: 'missing', text: 'x' }])).toThrow(/target not found/);
   });
 
+  it('appends at the document end without a target id for HTML block fragments', () => {
+    const patched = applyHtmlPatches('<div data-hc-id="root">one</div>', [{ op: 'insert_html', position: 'beforeend', html: '<p>two</p>' }]);
+    expect(patched).toContain('two');
+    expect(patched.indexOf('two')).toBeGreaterThan(patched.indexOf('one'));
+    const bodyPatched = applyHtmlPatches('<div data-hc-id="root">one</div>', [{ op: 'insert_html', selector: 'body', position: 'beforeend', html: '<p>three</p>' }]);
+    expect(bodyPatched).toContain('three');
+  });
+
   it('creates an outline with tags, ids and text', () => {
     const source = normalizeHtml('<div class="card"><h1>Title</h1><p>Body</p></div>');
     const rows = htmlOutline(source);
