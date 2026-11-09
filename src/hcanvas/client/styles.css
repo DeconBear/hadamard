@@ -898,3 +898,15 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .element-row.active { box-shadow: inset 2px 0 0 var(--accent); }
 .element-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+
+/* HTML inspector: compact, tactile insert buttons and actions. */
+.html-insert-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-top:9px; }
+.html-insert-btn { display:flex; align-items:center; gap:6px; min-width:0; padding:7px 7px; border:1px solid var(--border); border-radius:9px; background:var(--surface); color:var(--ink-2); text-align:left; font:600 9.5px/1.2 Inter, sans-serif; transition:border-color .15s, background .15s, color .15s; }
+.html-insert-btn:hover { border-color:var(--accent); background:var(--accent-soft); color:var(--accent); }
+.html-insert-btn:active { transform:translateY(1px); }
+.html-insert-plus { width:17px; height:17px; flex:0 0 auto; display:grid; place-items:center; border-radius:5px; background:var(--accent-soft); color:var(--accent); font:700 13px/1 Inter, sans-serif; }
+.html-insert-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.html-selected-section .actions-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin-top:8px; }
+.html-selected-section .actions-row .btn { width:100%; padding:6px 7px; border-radius:8px; font-size:10px; background:var(--surface); }
+.html-selected-section .actions-row .btn:hover { border-color:var(--accent); background:var(--accent-soft); color:var(--accent); }
+.html-selected-section .actions-row .btn.danger { grid-column:span 2; background:#fff7f6; }

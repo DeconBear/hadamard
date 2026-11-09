@@ -26,9 +26,9 @@ export function renderHtmlInspectorPanel(options: HtmlInspectorOptions): void {
   const selected = context.getSelectedElement();
   const style = selected ? contentDocument.defaultView?.getComputedStyle(selected) : null;
   const rows = collectHtmlTree(contentDocument);
-  let html = '<section class="inspector-section html-editor-overview"><div class="inspector-title">HTML editor</div><p class="inspector-note">Click to select · double-click text to edit · styles save automatically.</p></section>';
+  let html = '<section class="inspector-section html-editor-overview"><div class="inspector-title">HTML editor</div><p class="inspector-note">Click to select · click selected text again to edit · styles save automatically.</p></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Insert element</div><p class="inspector-note">Adds after the selected element, or at the end of the page.</p><div class="html-insert-grid">';
-  for (const preset of HTML_INSERT_PRESETS) html += '<button type="button" class="html-insert-btn" data-html-insert="' + preset.id + '" title="' + esc(preset.hint) + '">+ ' + esc(preset.label) + '</button>';
+  for (const preset of HTML_INSERT_PRESETS) html += '<button type="button" class="html-insert-btn" data-html-insert="' + preset.id + '" title="' + esc(preset.hint) + '"><span class="html-insert-plus">+</span><span class="html-insert-label">' + esc(preset.label) + '</span></button>';
   html += '</div></section>';
   html += htmlBreadcrumbMarkup(selected);
   if (selected) {
@@ -43,9 +43,9 @@ export function renderHtmlInspectorPanel(options: HtmlInspectorOptions): void {
     html += '<div class="field-row"><div class="field"><span>Font size</span><input id="hcFontSize" type="number" value="' + esc(parseFloat(style?.fontSize || '16') || 16) + '"></div><div class="field"><span>Padding</span><input id="hcPadding" value="' + esc(style?.padding || '0px') + '"></div><div class="field"><span>Align</span><select id="hcAlign"><option value="">—</option><option value="left">left</option><option value="center">center</option><option value="right">right</option><option value="justify">justify</option></select></div></div>';
     html += '<div class="field-row"><div class="field"><span>Weight</span><select id="hcFontWeight"><option value="">—</option><option value="400">Regular</option><option value="500">Medium</option><option value="600">Semibold</option><option value="700">Bold</option></select></div><div class="field"><span>Radius</span><input id="hcRadius" value="' + esc(style?.borderRadius || '0px') + '"></div><div class="field"><span>Line height</span><input id="hcLineHeight" value="' + esc(style?.lineHeight || 'normal') + '"></div></div>';
     html += '<div class="field-row"><div class="field"><span>Letter spacing</span><input id="hcLetterSpacing" value="' + esc(style?.letterSpacing || 'normal') + '"></div></div>';
-    html += '<div class="actions-row"><button id="hcEditText" class="btn tiny">Edit text</button><button id="hcSelectParent" class="btn tiny">Select parent</button><button id="hcDuplicate" class="btn tiny">Duplicate</button><button id="hcSourceBtn" class="btn tiny">Source</button><button id="hcDelete" class="btn tiny danger">Delete</button></div><p class="html-keyboard-hint">Ctrl/Cmd+C/X/V · Ctrl/Cmd+D · Delete · Ctrl/Cmd+Z</p></section>';
+    html += '<div class="actions-row"><button id="hcEditText" class="btn tiny">Edit text</button><button id="hcSelectParent" class="btn tiny">Select parent</button><button id="hcDuplicate" class="btn tiny">Duplicate</button><button id="hcSourceBtn" class="btn tiny">Source</button><button id="hcDelete" class="btn tiny danger">Delete</button></div><p class="html-keyboard-hint">Click again / Enter to edit · Ctrl/Cmd+C/X/V · Delete · Ctrl/Cmd+Z</p></section>';
   } else {
-    html += '<section class="inspector-section"><p class="empty-state">Click an element in the page to inspect styles, or double-click text to edit it.</p></section>';
+    html += '<section class="inspector-section"><p class="empty-state">Click an element in the page to inspect styles. Click the selected text again, or press Enter, to edit it.</p></section>';
   }
   html += '<section class="inspector-section html-tree-section"><div class="inspector-title">Elements <span class="inspector-count">' + rows.length + '</span></div><div class="element-tree">';
   for (const row of rows) {

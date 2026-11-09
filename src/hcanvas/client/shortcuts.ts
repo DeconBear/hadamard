@@ -11,7 +11,7 @@ export const SHORTCUTS_MODAL_HTML = '<div class="modal small"><div class="modal-
   '<kbd>Drag empty / Shift+click</kbd><span>Marquee / add to selection</span>' +
   '<kbd>P / A / C / E</kbd><span>Pen / Arrow / Bezier Curve / Eraser; Shift angles arrows</span>' +
   '<kbd>Curve points</kbd><span>Drag anchors/controls; arrows nudge; Alt+click or Delete removes anchors</span>' +
-  '<kbd>HTML editing</kbd><span>Click selects; double-click edits text; Ctrl/Cmd+C/X/V/D and Delete work in the frame</span>' +
+  '<kbd>HTML editing</kbd><span>Click selects; click selected text again or press Enter to edit; Ctrl/Cmd+C/X/V/D and Delete work in the frame</span>' +
   '<kbd>Ctrl/Cmd + A</kbd><span>Select all blocks</span>' +
   '<kbd>Ctrl/Cmd + C / X / V</kbd><span>Copy / cut / paste selected blocks</span>' +
   '<kbd>Ctrl/Cmd + D</kbd><span>Duplicate selected blocks</span>' +

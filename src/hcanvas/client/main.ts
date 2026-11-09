@@ -2335,6 +2335,15 @@ function exitHtmlEdit(): void {
   renderPages();
   renderInspector();
 }
+function canEditHtmlText(element: Element): boolean {
+  if (element === element.ownerDocument.body) return false;
+  const tag = element.tagName.toLowerCase();
+  if (['img', 'br', 'hr', 'input', 'textarea', 'select', 'option', 'iframe', 'svg', 'path', 'style', 'script'].includes(tag)) return false;
+  if (!element.textContent?.trim()) return false;
+  const inlineTags = new Set(['A', 'SPAN', 'STRONG', 'EM', 'B', 'I', 'BR', 'CODE', 'SMALL', 'MARK', 'U', 'S']);
+  return Array.from(element.children).every(child => inlineTags.has(child.tagName));
+}
+
 function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: string): void {
   const contentDocument = iframe.contentDocument;
   if (!contentDocument) { toast('Cannot enter HTML edit mode.', 'error'); return; }
@@ -2347,9 +2356,15 @@ function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: s
   installHtmlHoverHighlight(contentDocument);
   installHtmlKeyboardShortcuts(contentDocument, htmlEditingContext());
   contentDocument.addEventListener('click', event => {
-    event.preventDefault(); event.stopPropagation();
     const target = event.target as Element;
-    selectHtmlElement(target.closest('[data-hc-id]') || contentDocument.body);
+    if (target.closest('[contenteditable="true"]')) return;
+    event.preventDefault(); event.stopPropagation();
+    const candidate = target.closest('[data-hc-id]') || contentDocument.body;
+    if (candidate === selectedHtmlElement() && canEditHtmlText(candidate)) {
+      startInlineTextEdit(candidate as HTMLElement);
+      return;
+    }
+    selectHtmlElement(candidate);
   }, true);
   contentDocument.addEventListener('dblclick', event => {
     event.preventDefault(); event.stopPropagation();
@@ -2365,6 +2380,14 @@ function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: s
     if (target && target.getAttribute && target.getAttribute('contenteditable') === 'true') void commitHtmlElement(target);
   }, true);
   contentDocument.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !(event.target as Element).closest('input, textarea, select, [contenteditable="true"]')) {
+      const selected = selectedHtmlElement();
+      if (selected && canEditHtmlText(selected)) {
+        event.preventDefault();
+        startInlineTextEdit(selected as HTMLElement);
+      }
+      return;
+    }
     if (event.key !== 'Escape') return;
     event.preventDefault();
     const active = contentDocument.activeElement as HTMLElement | null;
