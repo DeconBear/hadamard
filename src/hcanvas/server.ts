@@ -22,6 +22,7 @@ import { installPluginManifest, listGallerySamples, uninstallProjectPlugin } fro
 import { blockAgentSummary } from './builtinBlocks.js';
 import { createPluginScaffold } from './pluginScaffold.js';
 import { listProjects } from './projectRegistry.js';
+import { HcFileService } from './fileWorkspace.js';
 
 export interface HcServerOptions {
   workspace: string;
@@ -172,6 +173,8 @@ function escapeJsonForHtml(value: unknown): string {
 export async function startHcanvasServer(options: HcServerOptions): Promise<HcServer> {
   const store = new HcStore(options.workspace);
   await store.init();
+  const files = new HcFileService(options.workspace);
+  await files.init();
   const host = options.host || '127.0.0.1';
   const token = options.token || randomBytes(18).toString('hex');
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -190,7 +193,10 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       const pathname = decodeURIComponent(url.pathname);
       if (pathname.startsWith('/api/')) {
         const provided = req.headers['x-hcanvas-token'] || url.searchParams.get('token');
-        if (provided !== token) {
+        const cookie = String(req.headers.cookie || '');
+        const cookieToken = cookie.split(';').map(part => part.trim()).find(part => part.startsWith('hc_files_token='))?.slice('hc_files_token='.length);
+        const rawPathToken = pathname.match(/^\/api\/files\/raw\/root_[A-Za-z0-9]+\/([^/]+)\//)?.[1];
+        if (provided !== token && rawPathToken !== token && !(pathname.startsWith('/api/files/raw/') && cookieToken === token)) {
           json(res, 401, { error: 'Unauthorized' });
           return;
         }
@@ -228,6 +234,52 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         } catch {
           json(res, 404, { error: 'Asset not found' });
         }
+        return;
+      }
+      if (pathname === '/api/files/roots' && req.method === 'GET') {
+        json(res, 200, { ok: true, roots: files.listRoots() });
+        return;
+      }
+      if (pathname === '/api/files/roots' && req.method === 'POST') {
+        const body = await readBody(req);
+        const root = await files.addRoot(String(body.path || ''));
+        json(res, 201, { ok: true, root });
+        return;
+      }
+      const rootMatch = pathname.match(/^\/api\/files\/roots\/(root_[A-Za-z0-9]+)$/);
+      if (rootMatch && req.method === 'DELETE') {
+        await files.removeRoot(rootMatch[1]!);
+        json(res, 200, { ok: true });
+        return;
+      }
+      if (pathname === '/api/files/list' && req.method === 'GET') {
+        const rootId = url.searchParams.get('root') || '';
+        const relative = url.searchParams.get('path') || '';
+        json(res, 200, { ok: true, entries: await files.list(rootId, relative) });
+        return;
+      }
+      if (pathname === '/api/files/read' && req.method === 'GET') {
+        const rootId = url.searchParams.get('root') || '';
+        const relative = url.searchParams.get('path') || '';
+        json(res, 200, { ok: true, file: await files.read(rootId, relative) });
+        return;
+      }
+      if (pathname === '/api/files/write' && req.method === 'POST') {
+        const body = await readBody(req);
+        await files.write(String(body.root || ''), String(body.path || ''), String(body.content ?? ''));
+        json(res, 200, { ok: true });
+        return;
+      }
+      const rawMatch = pathname.match(/^\/api\/files\/raw\/(root_[A-Za-z0-9]+)\/([^/]+)\/(.+)$/);
+      if (rawMatch && rawMatch[2] === token && req.method === 'GET') {
+        const served = await files.serve(rawMatch[1]!, rawMatch[3]!);
+        res.writeHead(200, {
+          'content-type': served.type,
+          'content-length': served.size,
+          'cache-control': 'no-store',
+          'set-cookie': 'hc_files_token=' + token + '; Path=/api/files/raw/; SameSite=Strict',
+        });
+        served.stream.pipe(res);
         return;
       }
       if (pathname === '/api/health') {

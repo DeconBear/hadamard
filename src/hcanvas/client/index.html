@@ -25,9 +25,7 @@
       <button id="toggleRightSidebarBtn" class="icon-btn panel-toggle" title="Collapse right sidebar" aria-label="Toggle right sidebar">▥</button>
       <button id="openProjectFolderBtn" class="btn ghost" title="Open the current project folder">Open folder</button>
       <button id="projectMenuBtn" class="btn ghost" title="Open the project manager">Projects</button>
-      <button id="importHtmlBtn" class="btn ghost" title="Import a local HTML file">Import HTML</button>
       <button id="addPageBtn" class="btn ghost" title="Add a page">+ Page</button>
-      <input id="htmlFileInput" type="file" accept=".html,.htm,text/html" hidden>
       <button id="presentBtn" class="btn ghost" title="Present this canvas">Present</button>
       <div class="menu-wrap">
         <button id="exportBtn" class="btn ghost" aria-haspopup="menu" aria-expanded="false">Export</button>
@@ -55,6 +53,10 @@
       <div class="side-head"><span>Pages</span><button id="addPageMini" class="icon-btn" title="Add page">+</button></div>
       <div id="pagesList" class="pages-list"></div>
     </section>
+    <section class="side-section files-section">
+      <div class="side-head"><span>Files</span><span class="files-head-actions"><button id="addRootBtn" class="icon-btn" title="Add a folder as workspace root">+</button><button id="collapseFilesBtn" class="icon-btn" title="Collapse files">⌃</button></span></div>
+      <div id="filesPanel" class="files-panel"></div>
+    </section>
     <div class="side-foot">
       <span class="kbd">hcanvas context --json</span>
       <span id="workspacePath" class="workspace-path"></span>
@@ -63,6 +65,7 @@
   </aside>
 
   <main id="workspace">
+    <div id="workspaceTabs" class="workspace-tabs"></div>
     <div id="viewport">
       <div id="stage">
         <div id="artboard" class="artboard"></div>

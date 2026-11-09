@@ -78,13 +78,7 @@ The left page rail renders live thumbnails: HTML pages are previewed in a sandbo
 
 Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (legacy Excalidraw scene; new pages use native Infinite). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. Select blocks with **drag-marquee**, **Shift+click**, or by clicking a grouped block; **Ctrl/Cmd+G** groups / **Ctrl/Cmd+Shift+G** ungroups, and dragging any selected block moves the whole selection. Frames contain converted Excalidraw children: dragging a frame moves its `frameId` children with it. **Arrow (A)** snaps its endpoints to shapes, text, images and frames when dropped on them; bindings are stored as `startBinding` / `endBinding` and the arrow follows when a bound block is moved or resized. Text blocks can be dragged by their body after selection or by the small **label handle** above the block; double-click edits in place, `Esc` finishes. When blocks overlap, **Alt+click** cycles through the stacked blocks. On Infinite pages, choosing an insert type (HTML/Text/Markdown/Code/Shape) enters **click-to-place** mode: the next canvas click creates the block at that world coordinate. Infinite coordinates are unbounded (negative x/y are valid) and frames never clip or constrain blocks; a frame can be **dissolved** from its Inspector while keeping its children. **Pen (P)**, **Arrow (A)** and **Eraser (E)** draw/erase native vectors directly on Infinite pages; freehand strokes are smoothed into paths, stored in the document JSON as block points, resizable, and use stroke color/width from the Inspector. **Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** undo and redo block edits, **Ctrl/Cmd+C/V** copy and paste the selected block. Add Page also provides 19 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/... (line truncated to 2000 chars)
 
-Import a local HTML file from the desktop with **Import HTML** in the top bar (max 5MB) or:
-
-```bash
-hcanvas import ~/Desktop/page.html <doc-id> --title "Imported page" --width 1280 --height 720
-```
-
-The HTML is embedded into a new HTML page; editing it inside hcanvas does not modify the original file. Re-import to pick up external changes.
+The **Files** panel in the left sidebar browses workspace folders directly; add more folders with **+**. Open an HTML file to preview it as a page, or open Markdown/code files to view, edit and save them without importing them into the document. The original file stays authoritative on disk.
 
 ## Direct HTML editing
 
@@ -190,13 +184,7 @@ The left page rail renders live thumbnails: HTML pages are previewed in a sandbo
 
 Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (legacy Excalidraw scene; new pages use native Infinite). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. Select blocks with **drag-marquee**, **Shift+click**, or by clicking a grouped block; **Ctrl/Cmd+G** groups / **Ctrl/Cmd+Shift+G** ungroups, and dragging any selected block moves the whole selection. Frames contain converted Excalidraw children: dragging a frame moves its `frameId` children with it. **Arrow (A)** snaps its endpoints to shapes, text, images and frames when dropped on them; bindings are stored as `startBinding` / `endBinding` and the arrow follows when a bound block is moved or resized. Text blocks can be dragged by their body after selection or by the small **label handle** above the block; double-click edits in place, `Esc` finishes. When blocks overlap, **Alt+click** cycles through the stacked blocks. On Infinite pages, choosing an insert type (HTML/Text/Markdown/Code/Shape) enters **click-to-place** mode: the next canvas click creates the block at that world coordinate. Infinite coordinates are unbounded (negative x/y are valid) and frames never clip or constrain blocks; a frame can be **dissolved** from its Inspector while keeping its children. **Pen (P)**, **Arrow (A)** and **Eraser (E)** draw/erase native vectors directly on Infinite pages; freehand strokes are smoothed into paths, stored in the document JSON as block points, resizable, and use stroke color/width from the Inspector. **Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** undo and redo block edits, **Ctrl/Cmd+C/V** copy and paste the selected block. Add Page also provides 19 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/... (line truncated to 2000 chars)
 
-Import a local HTML file from the desktop with **Import HTML** in the top bar (max 5MB) or:
-
-```bash
-hcanvas import ~/Desktop/page.html <doc-id> --title "Imported page" --width 1280 --height 720
-```
-
-The HTML is embedded into a new HTML page; editing it inside hcanvas does not modify the original file. Re-import to pick up external changes.
+The **Files** panel in the left sidebar browses workspace folders directly; add more folders with **+**. Open an HTML file to preview it as a page, or open Markdown/code files to view, edit and save them without importing them into the document. The original file stays authoritative on disk.
 
 ## Direct HTML editing
 

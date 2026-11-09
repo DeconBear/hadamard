@@ -12,6 +12,7 @@ import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, isHcShape, shapeSvgMarkup } from '../shapes.js';
 import { insertHtmlPreset, installHtmlHoverHighlight, installHtmlKeyboardShortcuts, type HtmlEditingContext } from './htmlEditing.js';
 import { renderHtmlInspectorPanel } from './htmlInspector.js';
+import { installFileBrowser, type FileBrowserController } from './fileBrowser.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
@@ -52,6 +53,7 @@ declare global {
     hcanvasDesktop?: {
       openProject: (projectPath?: string) => Promise<{ projectPath: string | null; workspace: string } | null>;
       chooseProject: () => Promise<{ projectPath: string | null; workspace: string } | null>;
+    chooseDirectory: () => Promise<string | null>;
       listProjects: () => Promise<Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }>>;
       platform?: string;
     };
@@ -134,6 +136,7 @@ let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 let pagesRenderTimer: ReturnType<typeof setTimeout> | undefined;
 
 let shapePicker: ShapePicker | null = null;
+let fileBrowser: FileBrowserController | null = null;
 let presentInteractions: PresentInteractions | null = null;
 let sliceTool: SliceTool | null = null;
 
@@ -264,6 +267,7 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
   redoStack = [];
   patchDocSummary(result.doc);
   renderAll();
+  notifyCanvasTab();
   void syncActive();
 }
 
@@ -707,7 +711,6 @@ function bindStaticActions(): void {
   el('newDocBtn').addEventListener('click', () => openNewDocModal());
   el('newDocMini').addEventListener('click', () => openNewDocModal());
   el('addPageBtn').addEventListener('click', () => openAddPageModal());
-  el('importHtmlBtn').addEventListener('click', () => el<HTMLInputElement>('htmlFileInput').click());
   el('projectMenuBtn').addEventListener('click', event => { event.stopPropagation(); void openProjectHub(); });
   el('openProjectFolderBtn').addEventListener('click', () => { void revealProjectFolder(undefined, 'project'); });
   qs<HTMLButtonElement>('#hubCloseBtn')?.addEventListener('click', () => closeProjectHub());
@@ -717,12 +720,15 @@ function bindStaticActions(): void {
     else toast('Browser mode: run hcanvas app --project <folder> to create a project.', 'info');
   });
   el('workspacePath').addEventListener('click', () => { void openWorkspaceModal(); });
-  el<HTMLInputElement>('htmlFileInput').addEventListener('change', event => {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (file) void importHtmlFile(file);
-    (event.target as HTMLInputElement).value = '';
-  });
   el('addPageMini').addEventListener('click', () => openAddPageModal());
+  fileBrowser = installFileBrowser({
+    mount: el('filesPanel'), tabs: el('workspaceTabs'), viewport: el('viewport'),
+    request: api, toast, chooseDirectory: () => window.hcanvasDesktop?.chooseDirectory?.() ?? null,
+    serveUrl: (rootId, filePath) => '/api/files/raw/' + encodeURIComponent(rootId) + '/' + encodeURIComponent(boot.token) + '/' + filePath.split('/').map(encodeURIComponent).join('/'),
+    canvasLabel: () => activePage()?.name || state.doc?.title || 'Canvas',
+    onShowCanvas: () => { renderArtboard(); },
+    openCanvas: (docId, pageId) => { void openDoc(docId, pageId); },
+  });
   el('presentBtn').addEventListener('click', () => openPresent());
   sliceTool = createSliceTool({
     viewport: el('viewport'),
@@ -1292,9 +1298,9 @@ function renderTop(): void {
   if (state.editing) banner.classList.remove('hidden'); else banner.classList.add('hidden');
   el('editingLabel').textContent = state.editing?.blockId ? 'Editing HTML block' : 'Editing HTML page';
   el('addPageBtn').style.display = state.doc ? '' : 'none';
-  el('importHtmlBtn').style.display = state.doc ? '' : 'none';
   el('presentBtn').style.display = state.doc ? '' : 'none';
   el('exportBtn').style.display = state.doc ? '' : 'none';
+  fileBrowser?.syncCanvasTab(state.doc?.id || '', state.activePageId || '', activePage()?.name || state.doc?.title || 'Canvas');
   renderToolbarState();
 }
 function renderTabs(): void {
@@ -1519,8 +1525,11 @@ function renderPages(): void {
     }
   });
 }
+function notifyCanvasTab(): void {
+  window.dispatchEvent(new CustomEvent('hcanvas:canvas-opened', { detail: { docId: state.doc?.id, pageId: state.activePageId, label: activePage()?.name || 'Canvas' } }));
+}
 function selectPage(pageId: string): void {
-  if (state.activePageId === pageId) return;
+  if (state.activePageId === pageId) { notifyCanvasTab(); return; }
   if (state.editing) state.editing = null;
   state.pendingInsert = null;
   state.activePageId = pageId;
@@ -1534,6 +1543,7 @@ function selectPage(pageId: string): void {
   renderArtboard();
   renderInspector();
   renderTop();
+  notifyCanvasTab();
   void syncActive();
 }
 
@@ -3172,29 +3182,6 @@ async function openAddPageModal(): Promise<void> {
       } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
     });
   });
-}
-
-async function importHtmlFile(file: File): Promise<void> {
-  if (!state.doc) return;
-  if (file.size > 5 * 1024 * 1024) { toast('HTML file is too large (max 5MB).', 'error'); return; }
-  try {
-    const html = await file.text();
-    if (!html.trim()) { toast('HTML file is empty.', 'error'); return; }
-    const name = file.name.replace(/\.(html?|htm)$/i, '').trim() || 'Imported HTML';
-    const page: HcPage = {
-      id: genId('page'), name, mode: 'html', width: 1280, height: 720, background: '#ffffff', html,
-    };
-    const result = await applyOps([{ op: 'add_page', page } as HcOp], { refreshArtboard: false });
-    if (!result) return;
-    state.activePageId = page.id;
-    state.activeBlockId = null;
-    state.selectedHtmlId = null;
-    state.fittedPageId = null;
-    renderAll();
-    toast('Imported ' + file.name + ' as an HTML page', 'success');
-  } catch (error) {
-    toast(error instanceof Error ? error.message : String(error), 'error');
-  }
 }
 
 async function addPluginPage(page: HcPage): Promise<void> {

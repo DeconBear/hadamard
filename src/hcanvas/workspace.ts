@@ -41,7 +41,6 @@ export function workspaceGuide(workspace: string, project: string | null): strin
     'export HCANVAS_SESSION=<sessionId>\n' +
     'hcanvas context --json\n\n' +
     '## Import / export\n\n' +
-    'hcanvas import ./page.html ' + example + '\n' +
     'hcanvas export ' + example + ' --format pdf --out ./exports/deck.pdf\n' +
     'hcanvas import-scene ./board.excalidraw ' + example + '\n' +
     'hcanvas convert-whiteboard ' + example + '\n' +

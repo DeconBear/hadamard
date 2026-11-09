@@ -8,7 +8,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { startHcanvasServer } from './server.js';
-import { hcId, type HcOp, type HcPage } from './types.js';
 import { initWorkspace, projectWorkspaceDir, workspaceInfo } from './workspace.js';
 import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from './sceneBridge.js';
 import { parseExcalidrawScene } from '../canvas/excalidrawScene.js';
@@ -48,7 +47,6 @@ function usage(): string {
     '  hcanvas proposal list [doc]',
     '  hcanvas proposal accept [doc] <proposalId> [--actor <name>]',
     '  hcanvas proposal reject [doc] <proposalId>',
-    '  hcanvas import <file.html> [doc] [--title <t>] [--width <px>] [--height <px>]',
     '  hcanvas import-scene <file.excalidraw> [doc] [--title <t>]',
     '  hcanvas convert-whiteboard <doc> [--page <pageId>] [--title <t>]',
     '  hcanvas migrate-whiteboards <doc> [--delete-source]',
@@ -502,24 +500,6 @@ async function main(argv: string[]): Promise<void> {
       body: JSON.stringify({ ops: [{ op: 'add_page', page }], baseRevision: current.revision, actor, summary: 'convert whiteboard to native Infinite' }),
     });
     print({ ok: true, docId, sourcePageId: source.id, pageId: page.id, name: page.name, blocks: page.blocks?.length || 0, result }, pretty);
-    return;
-  }
-  if (command === 'import') {
-    const file = args.positionals[1];
-    if (!file) throw new Error('import requires an HTML file path');
-    const html = await readFile(path.resolve(file), 'utf8');
-    if (!html.trim()) throw new Error('HTML file is empty');
-    const docId = await resolveDoc(conn, args, args.positionals[2]);
-    const baseRevision = await baseRevisionFor(conn, docId, args);
-    const width = Number(flagString(args, 'width') || 1280);
-    const height = Number(flagString(args, 'height') || 720);
-    const title = flagString(args, 'title') || path.basename(file).replace(/\.[^.]+$/, '') || 'Imported HTML';
-    const page: HcPage = { id: hcId('page'), name: title, mode: 'html', width: Number.isFinite(width) && width > 0 ? width : 1280, height: Number.isFinite(height) && height > 0 ? height : 720, background: '#ffffff', html };
-    const result = await request<Record<string, unknown>>(conn, '/api/docs/' + docId + '/apply', {
-      method: 'POST',
-      body: JSON.stringify({ ops: [{ op: 'add_page', page } as HcOp], baseRevision, actor, summary: 'Import HTML: ' + file }),
-    });
-    print({ ok: true, docId, pageId: page.id, ...result }, pretty);
     return;
   }
   if (command === 'export') {

@@ -1,0 +1,187 @@
+import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { HcValidationError } from './store.js';
+
+export interface HcFileRoot {
+  id: string;
+  name: string;
+  path: string;
+}
+
+export interface HcFileEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  ext?: string;
+  size?: number;
+  modified?: number;
+}
+
+export interface HcFileContent {
+  path: string;
+  name: string;
+  ext: string;
+  size: number;
+  binary: boolean;
+  content: string;
+  language: string;
+}
+
+const MAX_EDITABLE = 4 * 1024 * 1024;
+const SKIP_NAMES = new Set(['.git', 'node_modules', '.hcanvas', 'dist_electron']);
+
+const LANGUAGE_BY_EXT: Record<string, string> = {
+  '.ts': 'typescript', '.tsx': 'typescript', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+  '.json': 'json', '.html': 'html', '.htm': 'html', '.css': 'css', '.scss': 'css', '.less': 'css', '.md': 'markdown', '.markdown': 'markdown',
+  '.py': 'python', '.rs': 'rust', '.go': 'go', '.java': 'java', '.c': 'c', '.h': 'c', '.cpp': 'cpp', '.cc': 'cpp', '.hpp': 'cpp',
+  '.sql': 'sql', '.xml': 'xml', '.svg': 'xml', '.php': 'php', '.yaml': 'yaml', '.yml': 'yaml', '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell',
+  '.toml': 'toml', '.ini': 'ini', '.txt': 'text', '.log': 'text', '.vue': 'html', '.svelte': 'html',
+};
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+  '.pdf': 'application/pdf', '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8',
+};
+
+function languageFor(filePath: string): string {
+  return LANGUAGE_BY_EXT[path.extname(filePath).toLowerCase()] || 'text';
+}
+
+export class HcFileService {
+  private roots: HcFileRoot[] = [];
+  private readonly rootsFile: string;
+
+  constructor(private readonly workspaceDir: string) {
+    this.rootsFile = path.join(workspaceDir, 'file-roots.json');
+  }
+
+  async init(): Promise<void> {
+    await mkdir(this.workspaceDir, { recursive: true });
+    try {
+      const parsed = JSON.parse(await readFile(this.rootsFile, 'utf8')) as { roots?: HcFileRoot[] };
+      this.roots = (parsed.roots || []).filter(root => root && root.id && root.path);
+    } catch { /* no persisted roots */ }
+    const defaultRoot = path.basename(this.workspaceDir) === '.hcanvas' ? path.dirname(this.workspaceDir) : this.workspaceDir;
+    if (!this.roots.length) {
+      this.roots.push({ id: 'root_default', name: path.basename(defaultRoot) || 'Workspace', path: defaultRoot });
+      await this.persist();
+    }
+  }
+
+  listRoots(): HcFileRoot[] {
+    return this.roots.map(root => ({ ...root }));
+  }
+
+  async addRoot(rawPath: string): Promise<HcFileRoot> {
+    if (!rawPath || !rawPath.trim()) throw new HcValidationError('Folder path is required');
+    const resolved = await realpath(path.resolve(rawPath));
+    const info = await stat(resolved);
+    if (!info.isDirectory()) throw new HcValidationError('Path is not a directory');
+    const existing = this.roots.find(root => path.resolve(root.path) === path.resolve(resolved));
+    if (existing) return { ...existing };
+    const root: HcFileRoot = { id: 'root_' + randomUUID().replace(/-/g, '').slice(0, 12), name: path.basename(resolved) || resolved, path: resolved };
+    this.roots.push(root);
+    await this.persist();
+    return { ...root };
+  }
+
+  async removeRoot(id: string): Promise<void> {
+    this.roots = this.roots.filter(root => root.id !== id);
+    if (!this.roots.length) {
+      const fallback = path.basename(this.workspaceDir) === '.hcanvas' ? path.dirname(this.workspaceDir) : this.workspaceDir;
+      this.roots.push({ id: 'root_default', name: path.basename(fallback) || 'Workspace', path: fallback });
+    }
+    await this.persist();
+  }
+
+  async list(rootId: string, relative = ''): Promise<HcFileEntry[]> {
+    const root = this.root(rootId);
+    const directory = await this.resolveExisting(root, relative || '.');
+    const info = await stat(directory);
+    if (!info.isDirectory()) throw new HcValidationError('Not a directory');
+    const entries = await readdir(directory, { withFileTypes: true });
+    const result: HcFileEntry[] = [];
+    for (const entry of entries) {
+      if (SKIP_NAMES.has(entry.name)) continue;
+      const childPath = path.join(directory, entry.name);
+      const childRelative = path.relative(root.path, childPath).split(path.sep).join('/');
+      const childInfo = await stat(childPath).catch(() => null);
+      if (!childInfo) continue;
+      result.push({
+        name: entry.name,
+        path: childRelative,
+        type: entry.isDirectory() ? 'directory' : 'file',
+        ...(entry.isDirectory() ? {} : { ext: path.extname(entry.name).toLowerCase(), size: childInfo.size }),
+        modified: childInfo.mtimeMs,
+      });
+    }
+    return result.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1));
+  }
+
+  async read(rootId: string, relative: string): Promise<HcFileContent> {
+    const root = this.root(rootId);
+    const filePath = await this.resolveExisting(root, relative);
+    const info = await stat(filePath);
+    if (!info.isFile()) throw new HcValidationError('Not a file');
+    if (info.size > MAX_EDITABLE) throw new HcValidationError('File is too large to open (max 4 MB)');
+    const buffer = await readFile(filePath);
+    const binary = buffer.includes(0);
+    return {
+      path: relative,
+      name: path.basename(filePath),
+      ext: path.extname(filePath).toLowerCase(),
+      size: info.size,
+      binary,
+      content: binary ? '' : buffer.toString('utf8'),
+      language: languageFor(filePath),
+    };
+  }
+
+  async write(rootId: string, relative: string, content: string): Promise<void> {
+    if (Buffer.byteLength(content, 'utf8') > MAX_EDITABLE) throw new HcValidationError('File is too large to save (max 4 MB)');
+    const root = this.root(rootId);
+    const filePath = await this.resolveForWrite(root, relative);
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, content, 'utf8');
+  }
+
+  async serve(rootId: string, relative: string): Promise<{ stream: ReturnType<typeof createReadStream>; type: string; size: number }> {
+    const root = this.root(rootId);
+    const filePath = await this.resolveExisting(root, relative);
+    const info = await stat(filePath);
+    if (!info.isFile()) throw new HcValidationError('Not a file');
+    const type = MIME_BY_EXT[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+    return { stream: createReadStream(filePath), type, size: info.size };
+  }
+
+  private root(id: string): HcFileRoot {
+    const root = this.roots.find(item => item.id === id);
+    if (!root) throw new HcValidationError('File root not found');
+    return root;
+  }
+
+  private async resolveExisting(root: HcFileRoot, relative: string): Promise<string> {
+    const rootReal = await realpath(root.path);
+    const target = path.resolve(rootReal, relative || '.');
+    if (target !== rootReal && !target.startsWith(rootReal + path.sep)) throw new HcValidationError('Path escapes workspace root');
+    const real = await realpath(target);
+    if (real !== rootReal && !real.startsWith(rootReal + path.sep)) throw new HcValidationError('Path escapes workspace root');
+    return real;
+  }
+
+  private async resolveForWrite(root: HcFileRoot, relative: string): Promise<string> {
+    const rootReal = await realpath(root.path);
+    const target = path.resolve(rootReal, relative);
+    if (!target.startsWith(rootReal + path.sep)) throw new HcValidationError('Path escapes workspace root');
+    return target;
+  }
+
+  private async persist(): Promise<void> {
+    await writeFile(this.rootsFile, JSON.stringify({ roots: this.roots }, null, 2), 'utf8');
+  }
+}

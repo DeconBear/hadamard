@@ -115,6 +115,14 @@ if (!gotLock) {
 
   ipcMain.handle('hcanvas:list-projects', async () => listProjects());
 
+  ipcMain.handle('hcanvas:choose-directory', async () => {
+    const parent = focusedWindow();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, { title: 'Add folder to workspace', properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({ title: 'Add folder to workspace', properties: ['openDirectory'] });
+    return result.canceled || !result.filePaths[0] ? null : result.filePaths[0];
+  });
+
   app.on('second-instance', (_event, argv) => {
     const projectArg = argValue(argv, '--project') || process.env.HCANVAS_PROJECT;
     if (projectArg) {
