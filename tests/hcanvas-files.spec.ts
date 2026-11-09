@@ -59,6 +59,7 @@ describe('HcFileService', () => {
     expect(service.listRoots().map(root => root.id)).toContain(added.id);
     expect((await service.list(added.id)).map(entry => entry.name)).toContain('outside.md');
     await expect(service.read(added.id, '../' + path.basename(extra) + '-escape.md')).rejects.toThrow(/escapes workspace/);
+    await rm(escapePath, { force: true });
     await service.removeRoot(added.id);
     expect(service.listRoots().map(root => root.id)).not.toContain(added.id);
   });

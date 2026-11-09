@@ -2,6 +2,15 @@ import { basicSetup, EditorView } from 'codemirror';
 import { EditorState, type Extension } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { completeFromList } from '@codemirror/autocomplete';
+import { StreamLanguage } from '@codemirror/language';
+import { shell } from '@codemirror/legacy-modes/mode/shell';
+import { ruby } from '@codemirror/legacy-modes/mode/ruby';
+import { swift } from '@codemirror/legacy-modes/mode/swift';
+import { lua } from '@codemirror/legacy-modes/mode/lua';
+import { perl } from '@codemirror/legacy-modes/mode/perl';
+import { powerShell } from '@codemirror/legacy-modes/mode/powershell';
+import { r } from '@codemirror/legacy-modes/mode/r';
+import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { javascript } from '@codemirror/lang-javascript';
@@ -64,6 +73,12 @@ const KEYWORDS: Record<string, string[]> = {
   sql: ['SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'INNER JOIN', 'GROUP BY', 'ORDER BY', 'INSERT INTO', 'UPDATE', 'DELETE', 'CREATE TABLE', 'ALTER TABLE', 'LIMIT'],
   shell: ['if', 'then', 'else', 'fi', 'for', 'do', 'done', 'while', 'case', 'esac', 'function', 'export', 'local', 'echo', 'cd', 'set'],
   markdown: ['# ', '## ', '### ', '- ', '1. ', '> ', '**', '[]()', '- [ ] '],
+  csharp: ['class', 'interface', 'public', 'private', 'protected', 'static', 'void', 'var', 'new', 'return', 'if', 'else', 'for', 'foreach', 'while', 'try', 'catch', 'using', 'namespace'],
+  kotlin: ['fun', 'class', 'object', 'interface', 'val', 'var', 'when', 'if', 'else', 'for', 'while', 'return', 'package', 'import', 'data'],
+  swift: ['func', 'class', 'struct', 'enum', 'protocol', 'let', 'var', 'if', 'else', 'for', 'while', 'return', 'guard', 'import', 'extension'],
+  ruby: ['def', 'class', 'module', 'end', 'if', 'else', 'elsif', 'unless', 'while', 'do', 'each', 'require', 'attr_accessor'],
+  lua: ['function', 'local', 'end', 'if', 'then', 'else', 'elseif', 'for', 'while', 'repeat', 'until', 'return', 'require'],
+  powershell: ['function', 'param', 'if', 'else', 'elseif', 'foreach', 'while', 'return', 'Write-Host', 'Get-ChildItem', 'Set-Location'],
 };
 
 function languageExtension(language: string, filePath: string): Extension | null {
@@ -78,11 +93,20 @@ function languageExtension(language: string, filePath: string): Extension | null
   if (ext === '.sql') return sql();
   if (['.c', '.h', '.cc', '.cpp', '.hpp'].includes(ext)) return cpp();
   if (ext === '.java') return java();
+  if (['.cs', '.kt', '.kts', '.scala', '.dart'].includes(ext)) return java();
   if (ext === '.rs') return rust();
   if (ext === '.go') return go();
   if (['.xml', '.svg'].includes(ext)) return xml();
   if (ext === '.php') return php();
   if (['.yaml', '.yml'].includes(ext)) return yaml();
+  if (['.sh', '.bash', '.zsh', '.fish'].includes(ext)) return StreamLanguage.define(shell);
+  if (ext === '.rb') return StreamLanguage.define(ruby);
+  if (ext === '.swift') return StreamLanguage.define(swift);
+  if (ext === '.lua') return StreamLanguage.define(lua);
+  if (ext === '.pl') return StreamLanguage.define(perl);
+  if (ext === '.ps1') return StreamLanguage.define(powerShell);
+  if (ext === '.r') return StreamLanguage.define(r);
+  if (filePath.toLowerCase().endsWith('dockerfile') || ext === '.dockerfile') return StreamLanguage.define(dockerFile);
   return null;
 }
 

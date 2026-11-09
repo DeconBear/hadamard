@@ -37,7 +37,8 @@ const LANGUAGE_BY_EXT: Record<string, string> = {
   '.json': 'json', '.html': 'html', '.htm': 'html', '.css': 'css', '.scss': 'css', '.less': 'css', '.md': 'markdown', '.markdown': 'markdown',
   '.py': 'python', '.rs': 'rust', '.go': 'go', '.java': 'java', '.c': 'c', '.h': 'c', '.cpp': 'cpp', '.cc': 'cpp', '.hpp': 'cpp',
   '.sql': 'sql', '.xml': 'xml', '.svg': 'xml', '.php': 'php', '.yaml': 'yaml', '.yml': 'yaml', '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell',
-  '.toml': 'toml', '.ini': 'ini', '.txt': 'text', '.log': 'text', '.vue': 'html', '.svelte': 'html',
+  '.cs': 'csharp', '.kt': 'kotlin', '.kts': 'kotlin', '.scala': 'scala', '.dart': 'dart', '.swift': 'swift', '.rb': 'ruby', '.lua': 'lua', '.pl': 'perl', '.ps1': 'powershell', '.r': 'r',
+  '.dockerfile': 'dockerfile', '.toml': 'toml', '.ini': 'ini', '.txt': 'text', '.log': 'text', '.vue': 'html', '.svelte': 'html',
 };
 
 const MIME_BY_EXT: Record<string, string> = {
