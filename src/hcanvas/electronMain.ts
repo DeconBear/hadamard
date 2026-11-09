@@ -30,6 +30,9 @@ interface ProjectWindow {
 }
 
 app.setName('Hadamard Canvas');
+app.setAppUserModelId('com.hadamard.canvas');
+const assetDir = path.resolve(here, '..', '..', '..', 'assets');
+const appIcon = process.platform === 'win32' ? path.join(assetDir, 'hcanvas-icon.ico') : path.join(assetDir, 'hcanvas-icon.png');
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -59,6 +62,7 @@ if (!gotLock) {
       minHeight: 680,
       title: 'Hadamard Canvas — ' + path.basename(project),
       backgroundColor: '#f1efe9',
+      icon: appIcon,
       show: false,
       autoHideMenuBar: true,
       webPreferences: {
@@ -138,6 +142,7 @@ if (!gotLock) {
           minHeight: 680,
           title: 'Hadamard Canvas',
           backgroundColor: '#f1efe9',
+          icon: appIcon,
           show: false,
           autoHideMenuBar: true,
           webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
