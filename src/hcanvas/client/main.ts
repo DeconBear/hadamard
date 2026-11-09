@@ -13,6 +13,8 @@ import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, isHcShape, shapeSvgMarkup } f
 import { insertHtmlPreset, installHtmlHoverHighlight, installHtmlKeyboardShortcuts, type HtmlEditingContext } from './htmlEditing.js';
 import { renderHtmlInspectorPanel } from './htmlInspector.js';
 import { installFileBrowser, type FileBrowserController } from './fileBrowser.js';
+import { createHtmlSelectionEditor } from './htmlSelectionEditor.js';
+import { bindSidebarSections } from './sidebarCollapse.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
@@ -148,6 +150,14 @@ const state: UiState = {
   presenting: false, presentIndex: 0, sourceModalOpen: false,
   tool: 'select', showGrid: true, snap: true, spaceHeld: false, pendingInsert: null, pendingShape: null,
 };
+const htmlSelectionEditor = createHtmlSelectionEditor({
+  getIframe: () => state.iframeElement || document.querySelector<HTMLIFrameElement>('.html-page-surface iframe'),
+  isEditing: () => Boolean(state.editing),
+  getDocument: () => state.iframeDoc,
+  canEdit: canEditHtmlText,
+  startInline: startInlineTextEdit,
+  enterEdit: pageId => enterHtmlEdit(pageId),
+});
 function activePage(): HcPage | null {
   if (!state.doc) return null;
   return state.doc.pages.find(page => page.id === state.activePageId) ?? state.doc.pages[0] ?? null;
@@ -721,6 +731,7 @@ function bindStaticActions(): void {
   });
   el('workspacePath').addEventListener('click', () => { void openWorkspaceModal(); });
   el('addPageMini').addEventListener('click', () => openAddPageModal());
+  bindSidebarSections();
   fileBrowser = installFileBrowser({
     mount: el('filesPanel'), tabs: el('workspaceTabs'), viewport: el('viewport'),
     request: api, toast, chooseDirectory: () => window.hcanvasDesktop?.chooseDirectory?.() ?? null,
@@ -1631,6 +1642,7 @@ function fitPage(): void {
   applyStageTransform();
 }
 function renderArtboard(): void {
+  htmlSelectionEditor.hide();
   const artboard = el('artboard');
   const viewport = el('viewport');
   const page = activePage();
@@ -1642,7 +1654,8 @@ function renderArtboard(): void {
     artboard.style.display = 'none';
     renderHtmlPageSurface(viewport, page, {
       editing: Boolean(state.editing),
-      onLoad: iframe => { if (state.editing) setupHtmlEditing(iframe, page.id); },
+      onLoad: iframe => { if (state.editing) setupHtmlEditing(iframe, page.id); htmlSelectionEditor.applyPending(page.id); },
+      onEdit: pageId => enterHtmlEdit(pageId),
     });
     renderToolbarState();
     return;
@@ -1895,7 +1908,12 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
   }
 }
 window.addEventListener('message', event => {
-  const data = event.data as { type?: string; pageId?: string } | null;
+  const data = event.data as { type?: string; pageId?: string; text?: string; hcId?: string; rect?: { left: number; top: number; width: number; height: number } } | null;
+  if (data?.type === 'hcanvas:html-selection') {
+    if (state.editing || !data.pageId || data.pageId !== state.activePageId || activePage()?.mode !== 'html' || !data.text || !data.hcId || !data.rect) { htmlSelectionEditor.hide(); return; }
+    htmlSelectionEditor.show(data.pageId, data.hcId, data.rect);
+    return;
+  }
   if (!data || data.type !== 'hcanvas:edit-html' || typeof data.pageId !== 'string') return;
   if (state.editing || !state.doc?.pages.some(page => page.id === data.pageId)) return;
   enterHtmlEdit(data.pageId);
@@ -2328,6 +2346,7 @@ async function renameDocument(title: string): Promise<void> {
 function enterHtmlEdit(pageId: string, blockId?: string): void {
   const page = state.doc?.pages.find(item => item.id === pageId);
   if (!page) return;
+  htmlSelectionEditor.hide();
   state.editing = blockId ? { pageId, blockId } : { pageId };
   state.activeBlockId = blockId || null;
   state.fittedPageId = null;
@@ -2340,6 +2359,7 @@ function enterHtmlEdit(pageId: string, blockId?: string): void {
 }
 function exitHtmlEdit(): void {
   if (!state.editing) return;
+  htmlSelectionEditor.hide();
   const active = state.iframeDoc?.querySelector<HTMLElement>('[contenteditable="true"]');
   if (active) void commitHtmlElement(active);
   state.editing = null;
@@ -2412,6 +2432,16 @@ function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: s
       active.removeAttribute('data-hc-editing');
       void commitHtmlElement(active);
     } else exitHtmlEdit();
+  }, true);
+  contentDocument.addEventListener('selectionchange', () => {
+    if (!state.editing) return;
+    const selection = contentDocument.getSelection();
+    if (!selection || selection.isCollapsed || !selection.rangeCount) { htmlSelectionEditor.hide(); return; }
+    const node = selection.anchorNode?.nodeType === 3 ? selection.anchorNode.parentElement : selection.anchorNode as Element | null;
+    const element = node?.closest?.('[data-hc-id]') || null;
+    if (!element) { htmlSelectionEditor.hide(); return; }
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    htmlSelectionEditor.show(state.activePageId || '', element.getAttribute('data-hc-id') || '', rect);
   }, true);
   contentDocument.addEventListener('submit', event => { event.preventDefault(); }, true);
   renderInspector();

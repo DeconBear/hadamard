@@ -1,13 +1,15 @@
 import type { HcPage } from '../types.js';
 
 export function previewHtmlDocument(html: string, pageId: string): string {
-  const bridge = '<script>(function(){var last=0;function edit(){parent.postMessage({type:"hcanvas:edit-html",pageId:' + JSON.stringify(pageId) + '},"*")}window.addEventListener("dblclick",function(event){event.preventDefault();event.stopPropagation();edit()},true);window.addEventListener("click",function(event){var now=Date.now();if(now-last<420){event.preventDefault();event.stopPropagation();edit()}last=now},true)})();<' + '/script>';
+  const pid = JSON.stringify(pageId);
+  const bridge = '<script>(function(){var pid=' + pid + ';var last=0;var reportTimer=null;function edit(){parent.postMessage({type:"hcanvas:edit-html",pageId:pid},"*")}function report(){if(reportTimer)clearTimeout(reportTimer);reportTimer=setTimeout(function(){var sel=window.getSelection();var text=sel?String(sel).trim():"";var payload={type:"hcanvas:html-selection",pageId:pid,text:"",hcId:""};if(sel&&!sel.isCollapsed&&sel.rangeCount&&text){var node=sel.anchorNode;if(node&&node.nodeType===3)node=node.parentElement;var el=node&&node.closest?node.closest("[data-hc-id]"):null;var rect=sel.getRangeAt(0).getBoundingClientRect();payload.text=text.slice(0,160);payload.hcId=el&&el.getAttribute("data-hc-id")||"";payload.rect={left:rect.left,top:rect.top,width:rect.width,height:rect.height}}parent.postMessage(payload,"*")},120)}window.addEventListener("dblclick",function(event){event.preventDefault();event.stopPropagation();edit()},true);window.addEventListener("click",function(event){var now=Date.now();if(now-last<420){event.preventDefault();event.stopPropagation();edit()}last=now},true);document.addEventListener("selectionchange",report,true);window.addEventListener("mouseup",report,true);window.addEventListener("keyup",report,true)})();<' + '/script>';
   return html.includes('</body>') ? html.replace('</body>', bridge + '</body>') : html + bridge;
 }
 
 export interface HtmlPageSurfaceOptions {
   editing: boolean;
   onLoad?(iframe: HTMLIFrameElement): void;
+  onEdit?(pageId: string): void;
 }
 
 /** HTML pages own the whole workspace: no artboard, no canvas tool rail. */
@@ -26,7 +28,8 @@ export function renderHtmlPageSurface(container: HTMLElement, page: HcPage, opti
   if (!options.editing) {
     const badge = document.createElement('div');
     badge.className = 'html-reader-badge';
-    badge.innerHTML = '<span>HTML PAGE</span><strong>' + escapeHtml(page.name || 'Page') + '</strong><small>scroll to read · double-click to edit</small>';
+    badge.innerHTML = '<span>HTML PAGE</span><strong>' + escapeHtml(page.name || 'Page') + '</strong><small>select text · Edit</small><button type="button" class="html-reader-edit" title="Edit this HTML page">Edit</button>';
+    badge.querySelector<HTMLButtonElement>('.html-reader-edit')?.addEventListener('click', () => options.onEdit?.(page.id));
     surface.appendChild(badge);
   }
   container.appendChild(surface);

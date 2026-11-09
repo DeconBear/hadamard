@@ -84,6 +84,7 @@ The **Files** panel in the left sidebar browses workspace folders directly; add 
 
 HTML pages and HTML blocks render in a sandboxed iframe:
 
+- **Selection edit**: select text in the page preview and click the floating **Edit text** chip, or click **Edit** in the page badge, to enter direct text editing.
 - **Visual mode**: click once to select an element, then click the selected text again (or press Enter) to edit it in place; hover any element to see its hit outline and click to inspect it. The edit banner's **Insert +** opens a compact element palette (heading, paragraph, button, link, image, list, quote, card, divider); the Inspector also shows the element path, element tree, quick actions and a live style panel. Style changes apply automatically (no Apply button); Title/Body/Muted/Accent/Card presets cover common typography and surface styles, with color, background, size, weight, spacing, padding, radius and alignment controls. Changes are patched back to the HTML source with stable `data-hc-id` targets.
 - **Source mode**: open the source editor (CodeMirror) for full HTML/CSS editing with a live preview.
 - Stable IDs mean an agent can patch one element without rewriting the page.
@@ -190,6 +191,7 @@ The **Files** panel in the left sidebar browses workspace folders directly; add 
 
 HTML pages and HTML blocks render in a sandboxed iframe:
 
+- **Selection edit**: select text in the page preview and click the floating **Edit text** chip, or click **Edit** in the page badge, to enter direct text editing.
 - **Visual mode**: click once to select an element, then click the selected text again (or press Enter) to edit it in place; hover any element to see its hit outline and click to inspect it. The edit banner's **Insert +** opens a compact element palette (heading, paragraph, button, link, image, list, quote, card, divider); the Inspector also shows the element path, element tree, quick actions and a live style panel. Style changes apply automatically (no Apply button); Title/Body/Muted/Accent/Card presets cover common typography and surface styles, with color, background, size, weight, spacing, padding, radius and alignment controls. Changes are patched back to the HTML source with stable `data-hc-id` targets.
 - **Source mode**: open the source editor (CodeMirror) for full HTML/CSS editing with a live preview.
 - Stable IDs mean an agent can patch one element without rewriting the page.

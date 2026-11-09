@@ -981,3 +981,12 @@ body.file-browser-mode #viewport { background:#f4f2ec; }
 .file-image-view { height:100%; display:grid; place-items:center; overflow:auto; background:#f7f5ef; padding:20px; }
 .file-image-view img { max-width:100%; max-height:100%; object-fit:contain; }
 .file-binary { padding:24px; color:var(--muted); }
+
+/* Sidebar sections and HTML selection editing. */
+.side-head-actions { display:flex; align-items:center; gap:2px; }
+.section-collapse-btn { font-size:10px; color:var(--muted); }
+.html-reader-badge { pointer-events:none; }
+.html-reader-edit { pointer-events:auto; margin-left:2px; border:1px solid rgba(109,91,208,.28); border-radius:999px; background:var(--accent); color:#fff; padding:4px 9px; font:700 9px/1 Inter,sans-serif; cursor:pointer; }
+.html-reader-edit:hover { background:#5d4bc0; }
+.html-selection-edit { position:fixed; z-index:80; transform:translate(-50%, 0); border:1px solid rgba(109,91,208,.36); border-radius:999px; background:#211d33; color:#fff; box-shadow:0 8px 24px rgba(31,36,48,.24); padding:6px 11px; font:600 10px/1.2 Inter,sans-serif; cursor:pointer; }
+.html-selection-edit:hover { background:#332b4f; }
