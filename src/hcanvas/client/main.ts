@@ -884,6 +884,8 @@ function bindStaticActions(): void {
     const targetElement = event.target as Element;
     if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
     if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
+    // Let an HTML page own wheel scrolling in browse mode; canvas zoom remains available in edit mode.
+    if (activePage()?.mode === 'html' && !state.editing) return;
     event.preventDefault();
     const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientHeight : 1;
     const deltaX = event.deltaX * unit;
@@ -1869,22 +1871,29 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
     }
   }
 }
+function htmlPreviewDocument(html: string, pageId: string): string {
+  // The preview iframe is cross-origin (sandbox without allow-same-origin), so
+  // the parent cannot attach a dblclick listener. Post a small navigation event
+  // from inside the iframe instead; this keeps the page scrollable like a browser.
+  const bridge = '<script>(function(){var last=0;function edit(){parent.postMessage({type:"hcanvas:edit-html",pageId:' + JSON.stringify(pageId) + '},"*")}window.addEventListener("dblclick",function(event){event.preventDefault();event.stopPropagation();edit()},true);window.addEventListener("click",function(event){var now=Date.now();if(now-last<420){event.preventDefault();event.stopPropagation();edit()}last=now},true)})();<' + '/script>';
+  return html.includes('</body>') ? html.replace('</body>', bridge + '</body>') : html + bridge;
+}
 function renderHtmlPage(container: HTMLElement, page: HcPage): void {
   const editing = state.editing?.pageId === page.id && !state.editing?.blockId;
   const iframe = document.createElement('iframe');
   iframe.className = 'page-frame' + (editing ? '' : ' preview');
   iframe.setAttribute('sandbox', editing ? 'allow-same-origin' : 'allow-scripts');
   iframe.setAttribute('title', page.name || 'HTML page');
-  iframe.srcdoc = page.html || '';
+  iframe.srcdoc = editing ? (page.html || '') : htmlPreviewDocument(page.html || '', page.id);
   iframe.addEventListener('load', () => { if (editing) setupHtmlEditing(iframe, page.id); });
   container.appendChild(iframe);
-  if (!editing) {
-    const hit = document.createElement('div');
-    hit.className = 'page-hit';
-    hit.addEventListener('dblclick', event => { event.stopPropagation(); enterHtmlEdit(page.id); });
-    container.appendChild(hit);
-  }
 }
+window.addEventListener('message', event => {
+  const data = event.data as { type?: string; pageId?: string } | null;
+  if (!data || data.type !== 'hcanvas:edit-html' || typeof data.pageId !== 'string') return;
+  if (state.editing || !state.doc?.pages.some(page => page.id === data.pageId)) return;
+  enterHtmlEdit(data.pageId);
+});
 function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
   const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
   const wrap = document.createElement('div');

@@ -151,7 +151,7 @@ button { cursor: pointer; }
 .page-frame {
   position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #fff;
 }
-.page-frame.preview { pointer-events: none; }
+.page-frame.preview { pointer-events: auto; overscroll-behavior: contain; }
 .page-hit { position: absolute; inset: -4px; border-radius: 3px; }
 .artboard.mode-html .page-hit { cursor: text; }
 .artboard.mode-html.editing .page-hit { display: none; }
