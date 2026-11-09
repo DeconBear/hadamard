@@ -12,7 +12,7 @@ import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, isHcShape, shapeSvgMarkup } from '../shapes.js';
 import { insertHtmlPreset, installHtmlHoverHighlight, installHtmlKeyboardShortcuts, type HtmlEditingContext } from './htmlEditing.js';
 import { renderHtmlInspectorPanel } from './htmlInspector.js';
-import { previewHtmlDocument, renderHtmlPageReader } from './htmlPageReader.js';
+import { renderHtmlPageSurface } from './htmlPageReader.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import type { HcBlockPlugin } from '../blockPlugins.js';
@@ -1626,15 +1626,18 @@ function renderArtboard(): void {
   const page = activePage();
   artboard.textContent = '';
   if (!page) return;
-  const htmlReading = page.mode === 'html' && !state.editing;
-  if (!htmlReading) viewport.querySelector('.html-reader')?.remove();
-  viewport.classList.toggle('html-reader-mode', htmlReading);
-  if (htmlReading) {
+  document.body.classList.toggle('html-page-mode', page.mode === 'html');
+  viewport.classList.toggle('html-page-mode', page.mode === 'html');
+  if (page.mode === 'html') {
     artboard.style.display = 'none';
-    renderHtmlPageReader(viewport, page);
+    renderHtmlPageSurface(viewport, page, {
+      editing: Boolean(state.editing),
+      onLoad: iframe => { if (state.editing) setupHtmlEditing(iframe, page.id); },
+    });
     renderToolbarState();
     return;
   }
+  viewport.querySelectorAll('.html-page-surface').forEach(node => node.remove());
   artboard.style.display = '';
   const whiteboardSurface = page.mode === 'whiteboard';
   const infiniteSurface = page.mode === 'infinite';
@@ -1671,8 +1674,7 @@ function renderArtboard(): void {
     artboard.style.backgroundImage = '';
     artboard.style.backgroundSize = '';
   }
-  if (page.mode === 'html') renderHtmlPage(artboard, page);
-  else if (whiteboardSurface) renderWhiteboardPage(artboard, page);
+  if (whiteboardSurface) renderWhiteboardPage(artboard, page);
   else renderCanvasPage(artboard, page);
   renderAgentCursors(artboard, page);
   if (whiteboardSurface) applyStageTransform();
@@ -1881,16 +1883,6 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
       container.appendChild(measure);
     }
   }
-}
-function renderHtmlPage(container: HTMLElement, page: HcPage): void {
-  const editing = state.editing?.pageId === page.id && !state.editing?.blockId;
-  const iframe = document.createElement('iframe');
-  iframe.className = 'page-frame' + (editing ? '' : ' preview');
-  iframe.setAttribute('sandbox', editing ? 'allow-same-origin' : 'allow-scripts');
-  iframe.setAttribute('title', page.name || 'HTML page');
-  iframe.srcdoc = editing ? (page.html || '') : previewHtmlDocument(page.html || '', page.id);
-  iframe.addEventListener('load', () => { if (editing) setupHtmlEditing(iframe, page.id); });
-  container.appendChild(iframe);
 }
 window.addEventListener('message', event => {
   const data = event.data as { type?: string; pageId?: string } | null;
@@ -3292,7 +3284,8 @@ function openFormulaModal(block: HcBlock): void {
 }
 
 function openCodeModal(options: { title: string; kind: string; value: string; language: string; save: (next: string) => Promise<void> }): void {
-  const modalHtml = '<div class="modal split"><div class="modal-head"><div><strong>' + esc(options.title) + '</strong><small>' + esc(options.kind.toUpperCase()) + ' · source and live preview</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="editor-pane"><span>Source</span><div id="codeEditorHost" class="editor-host"></div></div><div class="editor-pane"><span>Preview</span><div class="preview-host"><iframe id="codePreview" sandbox="allow-scripts"></iframe></div></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="saveCodeBtn" class="btn primary">Save changes</button></div></div>';
+  const modalClass = 'modal split' + (options.kind === 'markdown' ? ' markdown-workspace' : '');
+  const modalHtml = '<div class="' + modalClass + '"><div class="modal-head"><div><strong>' + esc(options.title) + '</strong><small>' + esc(options.kind.toUpperCase()) + ' · source and live preview</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="editor-pane"><span>Source</span><div id="codeEditorHost" class="editor-host"></div></div><div class="editor-pane"><span>Preview</span><div class="preview-host"><iframe id="codePreview" sandbox="allow-scripts"></iframe></div></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="saveCodeBtn" class="btn primary">Save changes</button></div></div>';
   openModal(modalHtml);
   state.sourceModalOpen = true;
   const host = el('codeEditorHost');

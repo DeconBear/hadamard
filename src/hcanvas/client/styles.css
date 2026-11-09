@@ -911,13 +911,19 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .html-selected-section .actions-row .btn:hover { border-color:var(--accent); background:var(--accent-soft); color:var(--accent); }
 .html-selected-section .actions-row .btn.danger { grid-column:span 2; background:#fff7f6; }
 
-/* HTML pages use a browser-like reader outside edit mode. */
-#viewport.html-reader-mode { background: #e9e5dc; background-image: none; }
-#viewport.html-reader-mode .zoom-controls { display: none; }
-.html-reader { position:absolute; inset:0; z-index:8; overflow:auto; padding:28px 32px 44px; box-sizing:border-box; display:flex; justify-content:center; align-items:flex-start; background:#e9e5dc; }
-.html-reader-sheet { flex:0 0 auto; overflow:hidden; background:#fff; box-shadow:0 18px 60px rgba(31,36,48,.18), 0 2px 8px rgba(31,36,48,.08); border-radius:2px; }
-.page-frame.reading { position:static; display:block; border:0; background:#fff; }
+/* HTML pages are a separate whole-page surface, not a canvas page. */
+body.html-page-mode #toolRail, body.html-page-mode #selectionToolbar, body.html-page-mode #zoomControls, body.html-page-mode #infiniteBadge { display:none !important; }
+#viewport.html-page-mode { background:#e9e5dc; background-image:none; }
+.html-page-surface { position:absolute; inset:0; z-index:8; overflow:hidden; background:#fff; }
+.page-frame.full { position:static; display:block; width:100% !important; height:100% !important; border:0; background:#fff; }
 .html-reader-badge { position:absolute; right:24px; top:16px; z-index:9; display:flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid rgba(109,91,208,.2); border-radius:999px; background:rgba(255,252,247,.92); box-shadow:0 4px 18px rgba(31,36,48,.1); color:#5f4bad; font:9px/1.2 Inter,sans-serif; pointer-events:none; backdrop-filter:blur(8px); }
 .html-reader-badge span { font-weight:700; letter-spacing:.12em; }
 .html-reader-badge strong { color:#1d232c; font-size:10px; }
 .html-reader-badge small { color:#7a746b; font-size:9px; }
+
+/* Markdown gets a dedicated writing workspace instead of the canvas chrome. */
+.modal.markdown-workspace { width: calc(100vw - 32px); height: calc(100vh - 32px); max-height: none; border-radius: 12px; }
+.modal.markdown-workspace .modal-body { min-height: 0; }
+.modal.markdown-workspace .editor-pane { min-height: 0; }
+.modal.markdown-workspace .editor-host { min-height: 0; }
+.modal.markdown-workspace .preview-host { min-height: 0; height: 100%; }
