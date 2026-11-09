@@ -144,6 +144,9 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   let surface: HTMLElement | null = null;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let collapsed = false;
+  const autoSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const saveQueues = new Map<string, Promise<boolean>>();
+  const AUTO_SAVE_DELAY = 700;
   const panel = options.mount;
   const tabRoot = document.createElement('div');
   tabRoot.className = 'workspace-tab-list';
@@ -172,7 +175,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       });
       button.querySelector('.tab-close')!.addEventListener('click', event => {
         event.stopPropagation();
-        closeTab(tab.id);
+        void closeTab(tab.id);
       });
       tabRoot.appendChild(button);
     }
@@ -190,6 +193,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   }
 
   function activateCanvasTab(tab: CanvasTab): void {
+    flushActiveSave();
     activeId = tab.id;
     surface?.remove();
     surface = null;
@@ -201,16 +205,21 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   async function activateFile(id: string): Promise<void> {
     const tab = tabs.find(item => item.id === id);
     if (!tab) return;
+    flushActiveSave(id);
     activeId = id;
     document.body.classList.add('file-browser-mode');
     renderTabs();
     renderSurface(tab);
   }
 
-  function closeTab(id: string): void {
+  async function closeTab(id: string): Promise<void> {
     const tab = tabs.find(item => item.id === id);
     if (!tab) return;
-    if (tab.dirty && !window.confirm('Discard unsaved changes in ' + tab.name + '?')) return;
+    if (tab.dirty) {
+      const saved = await saveTab(tab, true);
+      if (!saved) return;
+    }
+    clearAutoSave(tab);
     tab.editor?.destroy();
     tabs = tabs.filter(item => item.id !== id);
     if (activeId !== id) { renderTabs(); return; }
@@ -220,7 +229,68 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       const canvas = canvasTabs.find(item => item.id === activeId);
       if (canvas) activateCanvasTab(canvas);
       else renderTabs();
-    } else void activateFile(activeId);
+    } else await activateFile(activeId);
+  }
+
+  function flushActiveSave(excludeId?: string): void {
+    const current = tabs.find(item => item.id === activeId);
+    if (!current || current.id === excludeId || !current.dirty) return;
+    clearAutoSave(current);
+    void saveTab(current, true);
+  }
+
+  function setFileSaveStatus(text: string, tone?: 'saving' | 'saved' | 'error'): void {
+    const label = surface?.querySelector<HTMLElement>('[data-file-save-status]');
+    if (!label) return;
+    label.textContent = text;
+    label.className = 'file-save-status' + (tone ? ' ' + tone : '');
+  }
+
+  function clearAutoSave(tab: FileTab): void {
+    const timer = autoSaveTimers.get(tab.id);
+    if (timer) clearTimeout(timer);
+    autoSaveTimers.delete(tab.id);
+  }
+
+  function scheduleAutoSave(tab: FileTab): void {
+    clearAutoSave(tab);
+    autoSaveTimers.set(tab.id, setTimeout(() => {
+      autoSaveTimers.delete(tab.id);
+      if (tab.dirty) void saveTab(tab, true);
+    }, AUTO_SAVE_DELAY));
+  }
+
+  function saveTab(tab: FileTab, auto = false): Promise<boolean> {
+    const previous = saveQueues.get(tab.id) || Promise.resolve(true);
+    const next = previous.then(() => performSave(tab, auto), () => performSave(tab, auto));
+    saveQueues.set(tab.id, next);
+    void next.finally(() => { if (saveQueues.get(tab.id) === next) saveQueues.delete(tab.id); });
+    return next;
+  }
+
+  async function performSave(tab: FileTab, auto: boolean): Promise<boolean> {
+    clearAutoSave(tab);
+    const content = tab.editor?.state.doc.toString() ?? tab.content;
+    if (!tab.dirty) {
+      if (auto && activeId === tab.id) setFileSaveStatus('Saved', 'saved');
+      return true;
+    }
+    if (activeId === tab.id) setFileSaveStatus(auto ? 'Auto-saving…' : 'Saving…', 'saving');
+    try {
+      await options.request('/api/files/write', { method: 'POST', body: JSON.stringify({ root: tab.rootId, path: tab.path, content }) });
+      tab.content = content;
+      const latest = tab.editor?.state.doc.toString() ?? content;
+      tab.dirty = latest !== content;
+      if (tab.dirty) scheduleAutoSave(tab);
+      renderTabs();
+      if (activeId === tab.id) setFileSaveStatus(auto ? 'Auto-saved' : 'Saved', 'saved');
+      if (!auto) options.toast('Saved ' + tab.name, 'success');
+      return true;
+    } catch (error) {
+      if (activeId === tab.id) setFileSaveStatus('Save failed', 'error');
+      options.toast(error instanceof Error ? error.message : String(error), 'error');
+      return false;
+    }
   }
 
   function editorExtensions(tab: FileTab, editable: boolean): Extension[] {
@@ -234,6 +304,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       tab.content = update.state.doc.toString();
       tab.dirty = true;
       renderTabs();
+      if (activeId === tab.id) setFileSaveStatus('Auto-save pending', 'saving');
+      scheduleAutoSave(tab);
     }));
     return extensions;
   }
@@ -297,7 +369,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const toggle = canToggle ? '<button type="button" class="btn tiny" data-file-action="toggle">' + (tab.mode === 'edit' ? 'Preview' : isHtml ? 'Source' : 'Edit') + '</button>' : '';
     const zoom = editorActive ? '<span class="file-zoom-group" title="Ctrl/Cmd + wheel to zoom"><button type="button" class="file-zoom-btn" data-file-action="zoom-out">−</button><span class="file-zoom-value" data-file-zoom>' + Math.round(tab.fontSize / 13 * 100) + '%</span><button type="button" class="file-zoom-btn" data-file-action="zoom-in">+</button></span>' : '';
     const history = editorActive ? '<button type="button" class="btn tiny" data-file-action="undo" title="Undo (Ctrl/Cmd+Z)">Undo</button><button type="button" class="btn tiny" data-file-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button><button type="button" class="btn tiny primary" data-file-action="save">Save</button>' : '';
-    surface.innerHTML = '<div class="file-surface-head"><div class="file-surface-title"><span class="file-type">' + escapeHtml(iconFor(tab.name)) + '</span><div><strong>' + escapeHtml(tab.name) + '</strong><small>' + escapeHtml(tab.language) + ' · ' + escapeHtml(tab.path) + '</small></div></div><div class="file-surface-actions">' + zoom + toggle + history + '<button type="button" class="btn tiny" data-file-action="close">Close</button></div></div><div class="file-surface-body"></div>';
+    const saveStatus = editorActive ? '<span class="file-save-status" data-file-save-status>Auto-save</span>' : '';
+    surface.innerHTML = '<div class="file-surface-head"><div class="file-surface-title"><span class="file-type">' + escapeHtml(iconFor(tab.name)) + '</span><div><strong>' + escapeHtml(tab.name) + '</strong><small>' + escapeHtml(tab.language) + ' · ' + escapeHtml(tab.path) + '</small></div></div><div class="file-surface-actions">' + saveStatus + zoom + toggle + history + '<button type="button" class="btn tiny" data-file-action="close">Close</button></div></div><div class="file-surface-body"></div>';
     options.viewport.appendChild(surface);
     for (const eventName of ['pointerdown', 'mousedown', 'click', 'wheel']) {
       surface.addEventListener(eventName, event => event.stopPropagation(), { passive: eventName === 'wheel' });
@@ -318,8 +391,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       event.stopPropagation();
       setEditorZoom(tab, tab.fontSize + (event.deltaY < 0 ? 1 : -1));
     }, { passive: false });
-    surface.querySelector('[data-file-action="save"]')?.addEventListener('click', () => { void saveTab(tab); });
-    surface.querySelector('[data-file-action="close"]')?.addEventListener('click', () => closeTab(tab.id));
+    surface.querySelector('[data-file-action="save"]')?.addEventListener('click', () => { void saveTab(tab, false); });
+    surface.querySelector('[data-file-action="close"]')?.addEventListener('click', () => { void closeTab(tab.id); });
     if (image) { body.innerHTML = '<div class="file-image-view"><img src="' + escapeAttr(options.serveUrl(tab.rootId, tab.path)) + '" alt="' + escapeAttr(tab.name) + '"></div>'; return; }
     if (tab.binary) { body.innerHTML = '<div class="file-binary">Binary file · ' + escapeHtml(tab.name) + '</div>'; return; }
     if (['.html', '.htm'].includes(tab.ext)) {
@@ -342,17 +415,6 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       return;
     }
     mountEditor(body, tab, tab.editor?.state.doc.toString() || tab.content);
-  }
-
-  async function saveTab(tab: FileTab): Promise<void> {
-    const content = tab.editor?.state.doc.toString() ?? tab.content;
-    try {
-      await options.request('/api/files/write', { method: 'POST', body: JSON.stringify({ root: tab.rootId, path: tab.path, content }) });
-      tab.content = content;
-      tab.dirty = false;
-      renderTabs();
-      options.toast('Saved ' + tab.name, 'success');
-    } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
   }
 
   async function openFile(rootId: string, relative: string): Promise<void> {

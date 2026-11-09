@@ -1036,3 +1036,8 @@ body.sidebar-section-resizing { cursor:row-resize !important; user-select:none; 
 
 .section-drag-grip { font-size:14px; opacity:.72; }
 .section-drag-grip:hover { opacity:1; }
+
+.file-save-status { margin-right:4px; color:var(--muted); font:600 9px/1 Inter,sans-serif; white-space:nowrap; }
+.file-save-status.saving { color:var(--accent); }
+.file-save-status.saved { color:#2f7d4a; }
+.file-save-status.error { color:#b42318; }
