@@ -45,18 +45,24 @@
   </header>
 
   <aside id="leftbar">
-    <section class="side-section docs-section">
+    <div id="sidebarSections" class="sidebar-sections">
+    <section class="side-section docs-section" data-sidebar-section="canvases">
       <div class="side-head"><span>Canvases</span><span class="side-head-actions"><button id="collapseDocsBtn" class="icon-btn section-collapse-btn" title="Collapse canvases">⌃</button><button id="newDocMini" class="icon-btn" title="New canvas">+</button></span></div>
       <div id="docsList" class="docs-list"></div>
     </section>
-    <section class="side-section pages-section">
+    <section class="side-section pages-section" data-sidebar-section="pages">
       <div class="side-head"><span>Pages</span><span class="side-head-actions"><button id="collapsePagesBtn" class="icon-btn section-collapse-btn" title="Collapse pages">⌃</button><button id="addPageMini" class="icon-btn" title="Add page">+</button></span></div>
       <div id="pagesList" class="pages-list"></div>
     </section>
-    <section class="side-section files-section">
+    <section class="side-section files-section" data-sidebar-section="files">
       <div class="side-head"><span>Files</span><span class="files-head-actions"><button id="addRootBtn" class="icon-btn" title="Add a folder as workspace root">+</button><button id="collapseFilesBtn" class="icon-btn" title="Collapse files">⌃</button></span></div>
       <div id="filesPanel" class="files-panel"></div>
     </section>
+    <section class="side-section plugins-section" data-sidebar-section="plugins">
+      <div class="side-head"><span>Plugins</span><span class="side-head-actions"><button id="pluginGalleryBtn" class="icon-btn" title="Browse plugin gallery">⊕</button><button id="managePluginsBtn" class="icon-btn" title="Manage plugins">⚙</button></span></div>
+      <div id="pluginsPanel" class="plugins-panel"><p id="pluginSidebarCount" class="plugin-sidebar-count">0 plugins loaded</p><p class="plugin-sidebar-hint">Extend blocks and page presets.</p><div class="plugin-sidebar-actions"><button id="pluginManagePanelBtn" class="btn tiny">Manage plugins</button><button id="pluginGalleryPanelBtn" class="btn tiny">Gallery</button></div></div>
+    </section>
+    </div>
     <div class="side-foot">
       <span class="kbd">hcanvas context --json</span>
       <span id="workspacePath" class="workspace-path"></span>

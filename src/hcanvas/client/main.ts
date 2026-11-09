@@ -15,6 +15,7 @@ import { renderHtmlInspectorPanel } from './htmlInspector.js';
 import { installFileBrowser, type FileBrowserController } from './fileBrowser.js';
 import { createHtmlSelectionEditor } from './htmlSelectionEditor.js';
 import { bindSidebarSections } from './sidebarCollapse.js';
+import { installPluginSidebar } from './pluginSidebar.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
@@ -732,6 +733,7 @@ function bindStaticActions(): void {
   el('workspacePath').addEventListener('click', () => { void openWorkspaceModal(); });
   el('addPageMini').addEventListener('click', () => openAddPageModal());
   bindSidebarSections();
+  installPluginSidebar({ request: api, openModal: html => openModal(html), closeModal: () => closeModal(), confirm: message => confirmDialog(message), toast, reload: () => loadExternalPlugins(api), onChanged: () => renderInspector() });
   fileBrowser = installFileBrowser({
     mount: el('filesPanel'), tabs: el('workspaceTabs'), viewport: el('viewport'),
     request: api, toast, chooseDirectory: () => window.hcanvasDesktop?.chooseDirectory?.() ?? null,
@@ -1470,8 +1472,8 @@ function createPageItem(page: HcPage, index: number, pagesLength: number): PageI
   button.type = 'button';
   button.className = 'page-open';
   button.append(thumb, info);
-  button.addEventListener('click', () => selectPage(page.id));
   item.appendChild(button);
+  item.addEventListener('click', event => { if (!(event.target as Element).closest('.page-actions')) selectPage(page.id); });
   const actions = makePageActions(page, index, pagesLength);
   item.appendChild(actions);
   return { fingerprint: pageFingerprint(page), item, thumb, info, actions, index, pagesLength };
@@ -1643,8 +1645,7 @@ function fitPage(): void {
 }
 function renderArtboard(): void {
   htmlSelectionEditor.hide();
-  const artboard = el('artboard');
-  const viewport = el('viewport');
+  const artboard = el('artboard'), viewport = el('viewport');
   const page = activePage();
   artboard.textContent = '';
   if (!page) return;
