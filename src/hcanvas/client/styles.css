@@ -990,3 +990,13 @@ body.file-browser-mode #viewport { background:#f4f2ec; }
 .html-reader-edit:hover { background:#5d4bc0; }
 .html-selection-edit { position:fixed; z-index:80; transform:translate(-50%, 0); border:1px solid rgba(109,91,208,.36); border-radius:999px; background:#211d33; color:#fff; box-shadow:0 8px 24px rgba(31,36,48,.24); padding:6px 11px; font:600 10px/1.2 Inter,sans-serif; cursor:pointer; }
 .html-selection-edit:hover { background:#332b4f; }
+
+/* VSCode-like file editing chrome. */
+.file-surface-actions { align-items:center; }
+.file-zoom-group { display:inline-flex; align-items:center; gap:2px; margin-right:4px; padding:1px 3px; border:1px solid var(--border); border-radius:6px; background:var(--surface-2); }
+.file-zoom-btn { border:0; background:transparent; color:var(--muted); width:18px; height:18px; padding:0; border-radius:4px; cursor:pointer; font:600 11px/1 Inter,sans-serif; }
+.file-zoom-btn:hover { background:var(--accent-soft); color:var(--accent); }
+.file-zoom-value { min-width:30px; text-align:center; color:var(--ink-2); font:600 9px/1 Inter,sans-serif; }
+.file-editor-host .cm-editor { font-size: var(--hc-editor-font-size,13px); }
+.file-editor-host .cm-scroller { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+.workspace-tab.dirty .tab-name::before { content:""; display:inline-block; width:5px; height:5px; margin-right:4px; border-radius:50%; background:var(--accent); vertical-align:middle; }

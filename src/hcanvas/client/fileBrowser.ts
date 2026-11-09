@@ -2,6 +2,7 @@ import { basicSetup, EditorView } from 'codemirror';
 import { EditorState, type Extension } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { completeFromList } from '@codemirror/autocomplete';
+import { undo, redo } from '@codemirror/commands';
 import { StreamLanguage } from '@codemirror/language';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { ruby } from '@codemirror/legacy-modes/mode/ruby';
@@ -42,6 +43,7 @@ interface FileTab {
   ext: string;
   mode: 'view' | 'edit';
   dirty: boolean;
+  fontSize: number;
   editor?: EditorView;
 }
 
@@ -237,11 +239,25 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   }
 
   function mountEditor(host: HTMLElement, tab: FileTab, value: string): void {
-    tab.editor?.destroy();
     const editorHost = document.createElement('div');
     editorHost.className = 'file-editor-host';
     host.appendChild(editorHost);
+    if (tab.editor) {
+      editorHost.appendChild(tab.editor.dom);
+      applyEditorZoom(tab);
+      return;
+    }
     tab.editor = new EditorView({ doc: value, extensions: editorExtensions(tab, tab.mode === 'edit'), parent: editorHost });
+    applyEditorZoom(tab);
+  }
+  function applyEditorZoom(tab: FileTab): void {
+    tab.editor?.dom.style.setProperty('--hc-editor-font-size', tab.fontSize + 'px');
+  }
+  function setEditorZoom(tab: FileTab, nextSize: number): void {
+    tab.fontSize = Math.max(9, Math.min(30, nextSize));
+    applyEditorZoom(tab);
+    const label = surface?.querySelector<HTMLElement>('[data-file-zoom]');
+    if (label) label.textContent = Math.round(tab.fontSize / 13 * 100) + '%';
   }
 
   function mountMarkdownEditor(host: HTMLElement, tab: FileTab): void {
@@ -254,7 +270,12 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     layout.appendChild(editorHost);
     layout.appendChild(preview);
     host.appendChild(layout);
-    tab.editor = new EditorView({ doc: tab.content, extensions: editorExtensions(tab, true), parent: editorHost });
+    if (tab.editor) {
+      editorHost.appendChild(tab.editor.dom);
+    } else {
+      tab.editor = new EditorView({ doc: tab.content, extensions: editorExtensions(tab, true), parent: editorHost });
+    }
+    applyEditorZoom(tab);
     const paint = (): void => { preview.innerHTML = renderMarkdownHtml(tab.editor?.state.doc.toString() || ''); };
     paint();
     tab.editor.dom.addEventListener('keyup', () => {
@@ -269,7 +290,14 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     surface.className = 'file-surface';
     const image = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'].includes(tab.ext);
     const editable = !image && !tab.binary;
-    surface.innerHTML = '<div class="file-surface-head"><div class="file-surface-title"><span class="file-type">' + escapeHtml(iconFor(tab.name)) + '</span><div><strong>' + escapeHtml(tab.name) + '</strong><small>' + escapeHtml(tab.language) + ' · ' + escapeHtml(tab.path) + '</small></div></div><div class="file-surface-actions">' + (editable ? '<button type="button" class="btn tiny" data-file-action="toggle">' + (tab.mode === 'edit' ? 'Preview' : 'Edit') + '</button><button type="button" class="btn tiny primary" data-file-action="save">Save</button>' : '') + '<button type="button" class="btn tiny" data-file-action="close">Close</button></div></div><div class="file-surface-body"></div>';
+    const isHtml = ['.html', '.htm'].includes(tab.ext);
+    const isMarkdown = ['.md', '.markdown'].includes(tab.ext);
+    const canToggle = editable && (isHtml || isMarkdown);
+    const editorActive = editable && tab.mode === 'edit';
+    const toggle = canToggle ? '<button type="button" class="btn tiny" data-file-action="toggle">' + (tab.mode === 'edit' ? 'Preview' : isHtml ? 'Source' : 'Edit') + '</button>' : '';
+    const zoom = editorActive ? '<span class="file-zoom-group" title="Ctrl/Cmd + wheel to zoom"><button type="button" class="file-zoom-btn" data-file-action="zoom-out">−</button><span class="file-zoom-value" data-file-zoom>' + Math.round(tab.fontSize / 13 * 100) + '%</span><button type="button" class="file-zoom-btn" data-file-action="zoom-in">+</button></span>' : '';
+    const history = editorActive ? '<button type="button" class="btn tiny" data-file-action="undo" title="Undo (Ctrl/Cmd+Z)">Undo</button><button type="button" class="btn tiny" data-file-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button><button type="button" class="btn tiny primary" data-file-action="save">Save</button>' : '';
+    surface.innerHTML = '<div class="file-surface-head"><div class="file-surface-title"><span class="file-type">' + escapeHtml(iconFor(tab.name)) + '</span><div><strong>' + escapeHtml(tab.name) + '</strong><small>' + escapeHtml(tab.language) + ' · ' + escapeHtml(tab.path) + '</small></div></div><div class="file-surface-actions">' + zoom + toggle + history + '<button type="button" class="btn tiny" data-file-action="close">Close</button></div></div><div class="file-surface-body"></div>';
     options.viewport.appendChild(surface);
     for (const eventName of ['pointerdown', 'mousedown', 'click', 'wheel']) {
       surface.addEventListener(eventName, event => event.stopPropagation(), { passive: eventName === 'wheel' });
@@ -279,6 +307,17 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       tab.mode = tab.mode === 'edit' ? 'view' : 'edit';
       renderSurface(tab);
     });
+    surface.querySelector('[data-file-action="undo"]')?.addEventListener('click', () => { if (tab.editor) { undo(tab.editor); tab.editor.focus(); } });
+    surface.querySelector('[data-file-action="redo"]')?.addEventListener('click', () => { if (tab.editor) { redo(tab.editor); tab.editor.focus(); } });
+    surface.querySelector('[data-file-action="zoom-out"]')?.addEventListener('click', () => setEditorZoom(tab, tab.fontSize - 1));
+    surface.querySelector('[data-file-action="zoom-in"]')?.addEventListener('click', () => setEditorZoom(tab, tab.fontSize + 1));
+    surface.addEventListener('wheel', event => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (!tab.editor) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setEditorZoom(tab, tab.fontSize + (event.deltaY < 0 ? 1 : -1));
+    }, { passive: false });
     surface.querySelector('[data-file-action="save"]')?.addEventListener('click', () => { void saveTab(tab); });
     surface.querySelector('[data-file-action="close"]')?.addEventListener('click', () => closeTab(tab.id));
     if (image) { body.innerHTML = '<div class="file-image-view"><img src="' + escapeAttr(options.serveUrl(tab.rootId, tab.path)) + '" alt="' + escapeAttr(tab.name) + '"></div>'; return; }
@@ -322,7 +361,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     try {
       const result = await options.request<{ file: FileContent }>('/api/files/read?root=' + encodeURIComponent(rootId) + '&path=' + encodeURIComponent(relative));
       const file = result.file;
-      const tab: FileTab = { id: 'file_' + rootId + '_' + relative, rootId, path: relative, name: file.name, language: file.language, content: file.content, binary: file.binary, ext: file.ext, mode: 'view', dirty: false };
+      const viewOnly = file.binary || ['.html', '.htm'].includes(file.ext);
+      const tab: FileTab = { id: 'file_' + rootId + '_' + relative, rootId, path: relative, name: file.name, language: file.language, content: file.content, binary: file.binary, ext: file.ext, mode: viewOnly ? 'view' : 'edit', dirty: false, fontSize: 13 };
       tabs.push(tab);
       await activateFile(tab.id);
     } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
