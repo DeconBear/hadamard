@@ -13,7 +13,7 @@ export function bindSidebarSections(): void {
       list.classList.toggle('hidden');
       const collapsed = list.classList.contains('hidden');
       list.closest('.side-section')?.classList.toggle('section-collapsed', collapsed);
-      button.textContent = collapsed ? '⌄' : '⌃';
+      button.textContent = collapsed ? '▸' : '▾';
       button.title = (collapsed ? 'Expand ' : 'Collapse ') + label;
     });
   }

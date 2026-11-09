@@ -4,7 +4,7 @@ interface SidebarLayoutState {
 }
 
 const STORAGE_KEY = 'hcanvas.sidebar.sections.v1';
-const DEFAULT_WEIGHTS: Record<string, number> = { canvases: 0.9, pages: 1.7, files: 1.15, plugins: 0.48 };
+const DEFAULT_WEIGHTS: Record<string, number> = { canvases: 0.9, pages: 2.0, files: 0.78, plugins: 0.4 };
 const MIN_WEIGHT = 0.16;
 
 function readState(): SidebarLayoutState {
@@ -44,6 +44,9 @@ export function installSidebarLayout(container: HTMLElement): void {
       });
       grip.addEventListener('dragend', () => section.classList.remove('section-dragging'));
       head.insertBefore(grip, head.firstChild);
+      const title = head.querySelector('.section-title');
+      const collapse = head.querySelector('.section-collapse-btn');
+      if (title && collapse) head.insertBefore(collapse, title);
     }
   }
 

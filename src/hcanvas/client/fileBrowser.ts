@@ -545,7 +545,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     collapsed = !collapsed;
     panel.classList.toggle('files-collapsed', collapsed);
     const button = document.getElementById('collapseFilesBtn');
-    if (button) button.textContent = collapsed ? '⌄' : '⌃';
+    if (button) button.textContent = collapsed ? '▸' : '▾';
   });
   window.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && activeId !== '') {

@@ -61,7 +61,7 @@ export function installPluginSidebar(options: PluginSidebarOptions): void {
     panel.classList.toggle('hidden');
     const collapsed = panel.classList.contains('hidden');
     section?.classList.toggle('section-collapsed', collapsed);
-    collapseButton.textContent = collapsed ? '⌄' : '⌃';
+    collapseButton.textContent = collapsed ? '▸' : '▾';
     collapseButton.title = collapsed ? 'Expand plugins' : 'Collapse plugins';
   });
   updateCount();
