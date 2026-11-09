@@ -272,7 +272,9 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       }
       const rawMatch = pathname.match(/^\/api\/files\/raw\/(root_[A-Za-z0-9]+)\/([^/]+)\/(.+)$/);
       if (rawMatch && rawMatch[2] === token && req.method === 'GET') {
-        const served = await files.serve(rawMatch[1]!, rawMatch[3]!);
+        const served = url.searchParams.get('office') === '1'
+          ? await files.officePreviewPdf(rawMatch[1]!, rawMatch[3]!)
+          : await files.serve(rawMatch[1]!, rawMatch[3]!);
         res.writeHead(200, {
           'content-type': served.type,
           'content-length': served.size,

@@ -30,7 +30,8 @@ import { renderMarkdownHtml } from '../markdown.js';
 
 interface FileRoot { id: string; name: string; path: string; }
 interface FileEntry { name: string; path: string; type: 'file' | 'directory'; ext?: string; size?: number; }
-interface FileContent { path: string; name: string; ext: string; size: number; binary: boolean; content: string; language: string; }
+type FilePreview = 'text' | 'image' | 'pdf' | 'office' | 'binary';
+interface FileContent { path: string; name: string; ext: string; size: number; binary: boolean; content: string; language: string; preview: FilePreview; }
 interface CanvasTab { id: string; docId: string; pageId: string; label: string; }
 interface FileTab {
   id: string;
@@ -41,6 +42,7 @@ interface FileTab {
   content: string;
   binary: boolean;
   ext: string;
+  preview: FilePreview;
   mode: 'view' | 'edit';
   dirty: boolean;
   fontSize: number;
@@ -131,6 +133,10 @@ function iconFor(name: string): string {
   if (['.json', '.css', '.scss'].includes(ext)) return '{}';
   if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) return 'JS';
   if (ext === '.py') return 'PY';
+  if (['.doc', '.docx', '.odt', '.rtf'].includes(ext)) return 'W';
+  if (['.ppt', '.pptx', '.odp'].includes(ext)) return 'P';
+  if (['.xls', '.xlsx', '.ods'].includes(ext)) return 'X';
+  if (ext === '.pdf') return 'PDF';
   if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].includes(ext)) return 'I';
   return '.';
 }
@@ -360,8 +366,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     surface?.remove();
     surface = document.createElement('div');
     surface.className = 'file-surface';
-    const image = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'].includes(tab.ext);
-    const editable = !image && !tab.binary;
+    const image = tab.preview === 'image';
+    const editable = tab.preview === 'text';
     const isHtml = ['.html', '.htm'].includes(tab.ext);
     const isMarkdown = ['.md', '.markdown'].includes(tab.ext);
     const canToggle = editable && (isHtml || isMarkdown);
@@ -394,7 +400,25 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     surface.querySelector('[data-file-action="save"]')?.addEventListener('click', () => { void saveTab(tab, false); });
     surface.querySelector('[data-file-action="close"]')?.addEventListener('click', () => { void closeTab(tab.id); });
     if (image) { body.innerHTML = '<div class="file-image-view"><img src="' + escapeAttr(options.serveUrl(tab.rootId, tab.path)) + '" alt="' + escapeAttr(tab.name) + '"></div>'; return; }
-    if (tab.binary) { body.innerHTML = '<div class="file-binary">Binary file · ' + escapeHtml(tab.name) + '</div>'; return; }
+    if (tab.preview === 'pdf') {
+      const frame = document.createElement('iframe');
+      frame.className = 'file-html-frame';
+      frame.title = tab.name;
+      frame.setAttribute('src', options.serveUrl(tab.rootId, tab.path));
+      body.appendChild(frame);
+      return;
+    }
+    if (tab.preview === 'office') {
+      body.innerHTML = '<div class="file-preview-loading">Converting Office document…</div>';
+      const frame = document.createElement('iframe');
+      frame.className = 'file-html-frame';
+      frame.title = tab.name;
+      frame.setAttribute('src', options.serveUrl(tab.rootId, tab.path) + '?office=1');
+      frame.addEventListener('load', () => body.querySelector('.file-preview-loading')?.remove());
+      body.appendChild(frame);
+      return;
+    }
+    if (tab.preview === 'binary') { body.innerHTML = '<div class="file-binary">Binary file · ' + escapeHtml(tab.name) + ' · no inline preview</div>'; return; }
     if (['.html', '.htm'].includes(tab.ext)) {
       if (tab.mode === 'view') {
         const iframe = document.createElement('iframe');
@@ -423,8 +447,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     try {
       const result = await options.request<{ file: FileContent }>('/api/files/read?root=' + encodeURIComponent(rootId) + '&path=' + encodeURIComponent(relative));
       const file = result.file;
-      const viewOnly = file.binary || ['.html', '.htm'].includes(file.ext);
-      const tab: FileTab = { id: 'file_' + rootId + '_' + relative, rootId, path: relative, name: file.name, language: file.language, content: file.content, binary: file.binary, ext: file.ext, mode: viewOnly ? 'view' : 'edit', dirty: false, fontSize: 13 };
+      const viewOnly = file.preview !== 'text' || ['.html', '.htm'].includes(file.ext);
+      const tab: FileTab = { id: 'file_' + rootId + '_' + relative, rootId, path: relative, name: file.name, language: file.language, content: file.content, binary: file.binary, ext: file.ext, preview: file.preview, mode: viewOnly ? 'view' : 'edit', dirty: false, fontSize: 13 };
       tabs.push(tab);
       await activateFile(tab.id);
     } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
@@ -467,7 +491,12 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       group.appendChild(children);
       panel.appendChild(group);
     }
-    if (!roots.length) panel.innerHTML = '<p class="files-empty">No workspace folders</p>';
+    if (roots.length) {
+      const hint = document.createElement('p');
+      hint.className = 'files-empty-hint';
+      hint.textContent = 'Expand a folder to browse files.';
+      panel.appendChild(hint);
+    } else panel.innerHTML = '<p class="files-empty">No workspace folders</p>';
   }
 
   async function renderDirectory(rootId: string, relative: string, host: HTMLElement): Promise<void> {

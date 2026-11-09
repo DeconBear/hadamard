@@ -1041,3 +1041,27 @@ body.sidebar-section-resizing { cursor:row-resize !important; user-select:none; 
 .file-save-status.saving { color:var(--accent); }
 .file-save-status.saved { color:#2f7d4a; }
 .file-save-status.error { color:#b42318; }
+
+/* Polished resizable sidebar cards. */
+.sidebar-sections { gap:6px; padding:6px 6px 4px; }
+.sidebar-sections > .side-section { background:#fbf9f4; border:1px solid rgba(80,70,55,.10); border-radius:11px; box-shadow:0 1px 2px rgba(31,36,48,.03); padding:8px 9px; }
+.sidebar-sections > .side-section:hover { border-color:rgba(109,91,208,.18); }
+.section-title { display:flex; align-items:center; gap:7px; margin-right:auto; color:var(--ink-2); font-weight:750; letter-spacing:.13em; }
+.section-title::before { width:20px; height:20px; display:grid; place-items:center; border-radius:6px; background:var(--accent-soft); color:var(--accent); font-size:11px; line-height:1; letter-spacing:0; }
+[data-sidebar-section="canvases"] .section-title::before { content:"▦"; }
+[data-sidebar-section="pages"] .section-title::before { content:"▤"; }
+[data-sidebar-section="files"] .section-title::before { content:"▣"; }
+[data-sidebar-section="plugins"] .section-title::before { content:"⊕"; }
+.side-head { padding:0 2px 7px; }
+.side-head-actions .icon-btn, .files-head-actions .icon-btn { width:22px; height:22px; border-radius:6px; }
+.side-head-actions .icon-btn:hover, .files-head-actions .icon-btn:hover { background:var(--accent-soft); color:var(--accent); }
+.sidebar-section-splitter { flex-basis:8px; }
+.sidebar-section-splitter::after { left:26%; right:26%; background:rgba(80,70,55,.10); }
+.sidebar-section-splitter:hover::after { background:rgba(109,91,208,.45); }
+.sidebar-sections .docs-list:empty::after, .sidebar-sections .pages-list:empty::after { content:"Nothing here yet"; display:block; margin:10px 6px; color:var(--muted); font-size:10px; }
+.file-tree-node { min-height:24px; }
+.file-tree-label { font-size:10.8px; }
+.plugins-panel { padding-top:4px; }
+
+.files-empty-hint { margin:10px 6px 4px; color:var(--muted); font-size:10px; line-height:1.45; }
+.file-preview-loading { position:absolute; inset:0; z-index:2; display:grid; place-items:center; background:rgba(250,248,242,.94); color:var(--muted); font:600 11px/1.4 Inter,sans-serif; pointer-events:none; }

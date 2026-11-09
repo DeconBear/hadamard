@@ -1,7 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { HcValidationError } from './store.js';
 
 export interface HcFileRoot {
@@ -19,6 +21,8 @@ export interface HcFileEntry {
   modified?: number;
 }
 
+export type HcFilePreview = 'text' | 'image' | 'pdf' | 'office' | 'binary';
+
 export interface HcFileContent {
   path: string;
   name: string;
@@ -27,9 +31,13 @@ export interface HcFileContent {
   binary: boolean;
   content: string;
   language: string;
+  preview: HcFilePreview;
 }
 
 const MAX_EDITABLE = 4 * 1024 * 1024;
+const MAX_PREVIEW = 64 * 1024 * 1024;
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.avif']);
+const OFFICE_EXTENSIONS = new Set(['.doc', '.docx', '.odt', '.rtf', '.ppt', '.pptx', '.odp', '.xls', '.xlsx', '.ods']);
 const SKIP_NAMES = new Set(['.git', 'node_modules', '.hcanvas', 'dist_electron']);
 
 const LANGUAGE_BY_EXT: Record<string, string> = {
@@ -53,12 +61,51 @@ function languageFor(filePath: string): string {
   return LANGUAGE_BY_EXT[path.extname(filePath).toLowerCase()] || 'text';
 }
 
+function previewFor(filePath: string): HcFilePreview {
+  const ext = path.extname(filePath).toLowerCase();
+  if (IMAGE_EXTENSIONS.has(ext)) return 'image';
+  if (ext === '.pdf') return 'pdf';
+  if (OFFICE_EXTENSIONS.has(ext)) return 'office';
+  return 'text';
+}
+
+function spawnAndWait(command: string, args: string[], timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const child = spawn(command, args, { windowsHide: true });
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      reject(new Error('LibreOffice conversion timed out'));
+    }, timeoutMs);
+    let stderr = '';
+    child.stderr?.on('data', chunk => { stderr += String(chunk); });
+    child.on('error', error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', code => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || 'LibreOffice exited with code ' + code));
+    });
+  });
+}
+
 export class HcFileService {
   private roots: HcFileRoot[] = [];
   private readonly rootsFile: string;
+  private readonly previewDir: string;
+  private officeJobs = new Map<string, Promise<string>>();
 
   constructor(private readonly workspaceDir: string) {
     this.rootsFile = path.join(workspaceDir, 'file-roots.json');
+    this.previewDir = path.join(workspaceDir, 'previews');
   }
 
   async init(): Promise<void> {
@@ -129,17 +176,22 @@ export class HcFileService {
     const filePath = await this.resolveExisting(root, relative);
     const info = await stat(filePath);
     if (!info.isFile()) throw new HcValidationError('Not a file');
-    if (info.size > MAX_EDITABLE) throw new HcValidationError('File is too large to open (max 4 MB)');
-    const buffer = await readFile(filePath);
-    const binary = buffer.includes(0);
+    const ext = path.extname(filePath).toLowerCase();
+    const preview = previewFor(filePath);
+    if (info.size > MAX_PREVIEW) throw new HcValidationError('File is too large to preview (max 64 MB)');
+    if (preview === 'text' && info.size > MAX_EDITABLE) throw new HcValidationError('File is too large to edit (max 4 MB)');
+    const buffer = preview === 'text' ? await readFile(filePath) : Buffer.alloc(0);
+    const binary = preview !== 'text' || buffer.includes(0);
+    const resolvedPreview: HcFilePreview = preview === 'text' && binary ? 'binary' : preview;
     return {
       path: relative,
       name: path.basename(filePath),
-      ext: path.extname(filePath).toLowerCase(),
+      ext,
       size: info.size,
       binary,
       content: binary ? '' : buffer.toString('utf8'),
-      language: languageFor(filePath),
+      language: preview === 'text' ? languageFor(filePath) : ext.replace(/^\./, '') || 'file',
+      preview: resolvedPreview,
     };
   }
 
@@ -158,6 +210,76 @@ export class HcFileService {
     if (!info.isFile()) throw new HcValidationError('Not a file');
     const type = MIME_BY_EXT[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
     return { stream: createReadStream(filePath), type, size: info.size };
+  }
+
+  async officePreviewPdf(rootId: string, relative: string): Promise<{ stream: ReturnType<typeof createReadStream>; type: string; size: number }> {
+    const root = this.root(rootId);
+    const source = await this.resolveExisting(root, relative);
+    const ext = path.extname(source).toLowerCase();
+    if (!OFFICE_EXTENSIONS.has(ext)) throw new HcValidationError('Office preview is available for Word, PowerPoint and Excel files');
+    const info = await stat(source);
+    if (info.size > MAX_PREVIEW) throw new HcValidationError('File is too large to preview (max 64 MB)');
+    const pdfPath = await this.convertOfficeToPdf(source, info.mtimeMs, info.size);
+    const pdfInfo = await stat(pdfPath);
+    return { stream: createReadStream(pdfPath), type: 'application/pdf', size: pdfInfo.size };
+  }
+
+  private async convertOfficeToPdf(source: string, mtimeMs: number, size: number): Promise<string> {
+    const key = createHash('sha1').update(source + ':' + mtimeMs + ':' + size).digest('hex').slice(0, 20);
+    const target = path.join(this.previewDir, key + '.pdf');
+    const existing = await stat(target).catch(() => null);
+    if (existing?.isFile()) return target;
+    const pending = this.officeJobs.get(key);
+    if (pending) return pending;
+    const job = this.runOfficeConversion(source, key, target);
+    this.officeJobs.set(key, job);
+    try { return await job; } finally { this.officeJobs.delete(key); }
+  }
+
+  private async runOfficeConversion(source: string, key: string, target: string): Promise<string> {
+    await mkdir(this.previewDir, { recursive: true });
+    const outDir = path.join(this.previewDir, 'out-' + key);
+    const profileDir = path.join(this.previewDir, 'profile-' + key);
+    await rm(outDir, { recursive: true, force: true });
+    await mkdir(outDir, { recursive: true });
+    await mkdir(profileDir, { recursive: true });
+    const args = [
+      '-env:UserInstallation=' + pathToFileURL(profileDir).href,
+      '--headless',
+      '--norestore',
+      '--convert-to',
+      'pdf',
+      '--outdir',
+      outDir,
+      source,
+    ];
+    const candidates = [
+      process.env.LIBREOFFICE_PATH,
+      process.env.SOFFICE_PATH,
+      'soffice.com',
+      'soffice',
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'LibreOffice', 'program', 'soffice.com'),
+      '/Applications/LibreOffice.app/Contents/MacOS/soffice',
+      '/usr/bin/soffice',
+    ].filter((value): value is string => Boolean(value));
+    let lastError = '';
+    for (const candidate of candidates) {
+      try {
+        await spawnAndWait(candidate, args, 90_000);
+        const files = await readdir(outDir);
+        const pdf = files.find(file => file.toLowerCase().endsWith('.pdf'));
+        if (!pdf) throw new Error('LibreOffice did not produce a PDF');
+        const generated = path.join(outDir, pdf);
+        await rm(target, { force: true });
+        await writeFile(target, await readFile(generated));
+        await rm(outDir, { recursive: true, force: true });
+        await rm(profileDir, { recursive: true, force: true });
+        return target;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    throw new HcValidationError('Office preview requires LibreOffice (soffice). ' + lastError);
   }
 
   private root(id: string): HcFileRoot {
