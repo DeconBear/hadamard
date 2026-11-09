@@ -12,6 +12,7 @@ import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, isHcShape, shapeSvgMarkup } from '../shapes.js';
 import { insertHtmlPreset, installHtmlHoverHighlight, installHtmlKeyboardShortcuts, type HtmlEditingContext } from './htmlEditing.js';
 import { renderHtmlInspectorPanel } from './htmlInspector.js';
+import { previewHtmlDocument, renderHtmlPageReader } from './htmlPageReader.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import type { HcBlockPlugin } from '../blockPlugins.js';
@@ -1625,6 +1626,16 @@ function renderArtboard(): void {
   const page = activePage();
   artboard.textContent = '';
   if (!page) return;
+  const htmlReading = page.mode === 'html' && !state.editing;
+  if (!htmlReading) viewport.querySelector('.html-reader')?.remove();
+  viewport.classList.toggle('html-reader-mode', htmlReading);
+  if (htmlReading) {
+    artboard.style.display = 'none';
+    renderHtmlPageReader(viewport, page);
+    renderToolbarState();
+    return;
+  }
+  artboard.style.display = '';
   const whiteboardSurface = page.mode === 'whiteboard';
   const infiniteSurface = page.mode === 'infinite';
   const viewportRect = viewport.getBoundingClientRect();
@@ -1871,20 +1882,13 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
     }
   }
 }
-function htmlPreviewDocument(html: string, pageId: string): string {
-  // The preview iframe is cross-origin (sandbox without allow-same-origin), so
-  // the parent cannot attach a dblclick listener. Post a small navigation event
-  // from inside the iframe instead; this keeps the page scrollable like a browser.
-  const bridge = '<script>(function(){var last=0;function edit(){parent.postMessage({type:"hcanvas:edit-html",pageId:' + JSON.stringify(pageId) + '},"*")}window.addEventListener("dblclick",function(event){event.preventDefault();event.stopPropagation();edit()},true);window.addEventListener("click",function(event){var now=Date.now();if(now-last<420){event.preventDefault();event.stopPropagation();edit()}last=now},true)})();<' + '/script>';
-  return html.includes('</body>') ? html.replace('</body>', bridge + '</body>') : html + bridge;
-}
 function renderHtmlPage(container: HTMLElement, page: HcPage): void {
   const editing = state.editing?.pageId === page.id && !state.editing?.blockId;
   const iframe = document.createElement('iframe');
   iframe.className = 'page-frame' + (editing ? '' : ' preview');
   iframe.setAttribute('sandbox', editing ? 'allow-same-origin' : 'allow-scripts');
   iframe.setAttribute('title', page.name || 'HTML page');
-  iframe.srcdoc = editing ? (page.html || '') : htmlPreviewDocument(page.html || '', page.id);
+  iframe.srcdoc = editing ? (page.html || '') : previewHtmlDocument(page.html || '', page.id);
   iframe.addEventListener('load', () => { if (editing) setupHtmlEditing(iframe, page.id); });
   container.appendChild(iframe);
 }
@@ -2324,6 +2328,7 @@ function enterHtmlEdit(pageId: string, blockId?: string): void {
   if (!page) return;
   state.editing = blockId ? { pageId, blockId } : { pageId };
   state.activeBlockId = blockId || null;
+  state.fittedPageId = null;
   state.selectedHtmlId = null;
   state.iframeDoc = null;
   state.iframeElement = null;
