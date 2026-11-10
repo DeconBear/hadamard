@@ -1,6 +1,6 @@
 {
   "name": "actoviq-agent-sdk",
-  "version": "0.4.22",
+  "version": "0.5.0",
   "description": "Agent team platform — multi-agent, multi-runtime, model team collaboration with TUI, GUI, and MCP.",
   "author": "Hadamard",
   "repository": {
@@ -183,8 +183,8 @@
     "build:gui-canvas": "node scripts/build-gui-canvas.mjs",
     "hcanvas": "node bin/hcanvas.js",
     "hcanvas:desktop": "node bin/hcanvas-desktop.js",
-    "build:hcanvas:desktop": "npm run build && electron-builder --config electron-builder.hcanvas.yml --win portable --x64",
-    "build:hcanvas:installer": "npm run build && electron-builder --config electron-builder.hcanvas.yml --win nsis --x64",
+    "build:hcanvas:desktop": "node scripts/build-hcanvas-installer.mjs portable",
+    "build:hcanvas:installer": "node scripts/build-hcanvas-installer.mjs nsis",
     "hcanvas:app": "node bin/hcanvas.js app",
     "gui:canvas": "node bin/hadamard-canvas.js",
     "gui:harness": "node bin/hadamard-harness.js",
@@ -258,7 +258,8 @@
     "example:bridge-session-messages": "npm run build && tsx examples/bridge-session-messages.ts",
     "example:hadamard-buddy": "npm run build && tsx examples/hadamard-buddy.ts",
     "example:bridge-sdk": "npm run build && tsx examples/bridge-sdk.ts",
-    "example:profiles": "tsx examples/profiles/all-profiles.ts"
+    "example:profiles": "tsx examples/profiles/all-profiles.ts",
+    "build:hcanvas:all": "node scripts/build-hcanvas-installer.mjs portable nsis"
   },
   "keywords": [
     "agent",
