@@ -85,11 +85,11 @@ export class SandboxExecutor {
         '--dev', '/dev',
       ];
       for (const root of LINUX_SYSTEM_READ_ROOTS) {
-        args.push('--ro-bind-try', root, root);
+        if (!isFilesystemRoot(root)) args.push('--ro-bind-try', root, root);
       }
       // PATH / interpreter dirs may be absent on some hosts — bind-try them.
       for (const root of hostToolReadRoots(request)) {
-        args.push('--ro-bind-try', root, root);
+        if (!isFilesystemRoot(root)) args.push('--ro-bind-try', root, root);
       }
       const writable = uniqueResolved(this.policy.writableRoots);
       const readable = uniqueResolved([
@@ -99,11 +99,11 @@ export class SandboxExecutor {
         path.dirname(request.executable),
       ]);
       for (const root of readable) {
-        if (writable.has(root)) continue;
+        if (writable.has(root) || isFilesystemRoot(root)) continue;
         args.push('--ro-bind', root, root);
       }
       for (const root of writable) {
-        args.push('--bind', root, root);
+        if (!isFilesystemRoot(root)) args.push('--bind', root, root);
       }
       if (this.policy.network.mode === 'deny') args.push('--unshare-net');
       args.push('--chdir', request.cwd, '--', request.executable, ...request.args);
@@ -292,6 +292,11 @@ function macosProfile(policy: SandboxPolicy, request: SandboxExecutionRequest): 
 
 function uniqueResolved(roots: Iterable<string>): Set<string> {
   return new Set([...roots].map(root => path.resolve(root)));
+}
+
+function isFilesystemRoot(root: string): boolean {
+  const resolved = path.resolve(root);
+  return resolved === path.parse(resolved).root;
 }
 
 function escapeProfile(value: string): string {
