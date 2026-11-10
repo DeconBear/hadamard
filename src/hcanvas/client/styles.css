@@ -1142,3 +1142,17 @@ body.sidebar-section-reordering { cursor:grabbing !important; user-select:none; 
 .section-drop-before::before, .section-drop-after::after { content:""; position:absolute; left:10px; right:10px; height:2px; border-radius:2px; background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); z-index:20; pointer-events:none; }
 .section-drop-before::before { top:-5px; }
 .section-drop-after::after { bottom:-5px; }
+
+/* Page cards: direct drag sorting and a native-feeling context menu. */
+.page-item { cursor:grab; }
+.page-item:active { cursor:grabbing; }
+.page-item.dragging { opacity:.42; background:var(--surface-2); }
+body.page-list-reordering { cursor:grabbing !important; user-select:none; }
+.page-item.page-drop-before::before, .page-item.page-drop-after::after { content:""; position:absolute; left:4px; right:4px; height:2px; border-radius:2px; background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); z-index:30; pointer-events:none; }
+.page-item.page-drop-before::before { top:-4px; }
+.page-item.page-drop-after::after { bottom:-4px; }
+.page-context-menu { position:fixed; z-index:1200; min-width:164px; padding:5px; display:flex; flex-direction:column; gap:1px; background:var(--panel); border:1px solid var(--border); border-radius:9px; box-shadow:0 12px 32px rgba(31,36,48,.18); }
+.page-context-menu button { border:0; background:transparent; color:var(--ink); text-align:left; padding:7px 9px; border-radius:6px; font:500 11px/1.2 Inter,sans-serif; cursor:pointer; }
+.page-context-menu button:hover:not(:disabled) { background:var(--surface-2); }
+.page-context-menu button[data-page-menu="delete"] { color:var(--red); }
+.page-context-menu button:disabled { opacity:.35; cursor:default; }

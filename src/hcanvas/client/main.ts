@@ -16,6 +16,7 @@ import { installFileBrowser, type FileBrowserController } from './fileBrowser.js
 import { createHtmlSelectionEditor } from './htmlSelectionEditor.js';
 import { bindSidebarSections } from './sidebarCollapse.js';
 import { installPluginSidebar } from './pluginSidebar.js';
+import { installPageListInteractions } from './pageListInteractions.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
@@ -126,9 +127,7 @@ interface PageItemCache {
   item: HTMLDivElement;
   thumb: HTMLDivElement;
   info: HTMLDivElement;
-  actions: HTMLDivElement;
   index: number;
-  pagesLength: number;
 }
 
 const pageItemCache = new Map<string, PageItemCache>();
@@ -733,6 +732,13 @@ function bindStaticActions(): void {
   el('workspacePath').addEventListener('click', () => { void openWorkspaceModal(); });
   el('addPageMini').addEventListener('click', () => openAddPageModal());
   bindSidebarSections();
+  installPageListInteractions({
+    root: el('pagesList'),
+    onReorder: (pageId, index) => movePageToIndex(pageId, index),
+    onDuplicate: pageId => { const page = state.doc?.pages.find(item => item.id === pageId); if (page) duplicatePage(page); },
+    onDelete: pageId => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(pageId); }); },
+    canDelete: () => (state.doc?.pages.length || 0) > 1,
+  });
   installPluginSidebar({ request: api, openModal: html => openModal(html), closeModal: () => closeModal(), confirm: message => confirmDialog(message), toast, reload: () => loadExternalPlugins(api), onChanged: () => renderInspector() });
   fileBrowser = installFileBrowser({
     mount: el('filesPanel'), tabs: el('workspaceTabs'), viewport: el('viewport'),
@@ -1387,8 +1393,15 @@ function duplicatePage(page: HcPage): void {
     toast('Page duplicated', 'success');
   });
 }
-function movePage(pageId: string, direction: 'up' | 'down'): void {
-  void applyOps([{ op: 'reorder_page', pageId, direction }], { refreshArtboard: false }).then(result => {
+function movePageToIndex(pageId: string, toIndex: number): void {
+  const pages = state.doc?.pages;
+  if (!pages) return;
+  const from = pages.findIndex(page => page.id === pageId);
+  const target = Math.max(0, Math.min(pages.length - 1, toIndex));
+  if (from < 0 || from === target) return;
+  const direction = target > from ? 'down' : 'up';
+  const ops = Array.from({ length: Math.abs(target - from) }, () => ({ op: 'reorder_page' as const, pageId, direction: direction as 'up' | 'down' }));
+  void applyOps(ops, { refreshArtboard: false }).then(result => {
     if (!result) return;
     renderPages();
     renderTop();
@@ -1408,26 +1421,6 @@ function pageFingerprint(page: HcPage): string {
   if (page.mode === 'html') return base + '|' + hashString(page.html || '');
   return base + '|' + hashString(JSON.stringify(page.blocks || []));
 }
-function makePageActions(page: HcPage, index: number, pagesLength: number): HTMLDivElement {
-  const actions = document.createElement('div');
-  actions.className = 'page-actions';
-  const addAction = (label: string, title: string, handler: () => void, disabled = false, danger = false): void => {
-    const action = document.createElement('button');
-    action.type = 'button';
-    action.className = 'page-action' + (danger ? ' danger' : '');
-    action.textContent = label;
-    action.title = title;
-    action.disabled = disabled;
-    action.addEventListener('click', event => { event.stopPropagation(); if (!disabled) handler(); });
-    actions.appendChild(action);
-  };
-  addAction('↑', 'Move page up', () => movePage(page.id, 'up'), index === 0);
-  addAction('↓', 'Move page down', () => movePage(page.id, 'down'), index === pagesLength - 1);
-  addAction('⧉', 'Duplicate page', () => duplicatePage(page));
-  addAction('×', 'Delete page', () => { void confirmDialog('Delete page "' + (page.name || 'Page') + '"?').then(ok => { if (ok) void deletePage(page.id); }); }, pagesLength <= 1, true);
-  return actions;
-}
-
 const pageThumbHydrators = new WeakMap<HTMLElement, () => void>();
 let pageThumbObserver: IntersectionObserver | null = null;
 function observePageThumb(item: HTMLElement, thumb: HTMLDivElement, page: HcPage, force = false): void {
@@ -1456,11 +1449,12 @@ function observePageThumb(item: HTMLElement, thumb: HTMLDivElement, page: HcPage
   }
   pageThumbObserver.observe(item);
 }
-function createPageItem(page: HcPage, index: number, pagesLength: number): PageItemCache {
+function createPageItem(page: HcPage, index: number): PageItemCache {
   const item = document.createElement('div');
   item.className = 'page-item' + (page.id === state.activePageId ? ' active' : '');
   item.dataset.pageId = page.id;
   item.style.order = String(index);
+  item.title = 'Drag to reorder · right-click for actions';
   const thumb = document.createElement('div');
   thumb.className = 'page-thumb';
   thumb.innerHTML = '<div class="page-thumb-loading"></div>';
@@ -1473,10 +1467,8 @@ function createPageItem(page: HcPage, index: number, pagesLength: number): PageI
   button.className = 'page-open';
   button.append(thumb, info);
   item.appendChild(button);
-  item.addEventListener('click', event => { if (!(event.target as Element).closest('.page-actions')) selectPage(page.id); });
-  const actions = makePageActions(page, index, pagesLength);
-  item.appendChild(actions);
-  return { fingerprint: pageFingerprint(page), item, thumb, info, actions, index, pagesLength };
+  item.addEventListener('click', () => selectPage(page.id));
+  return { fingerprint: pageFingerprint(page), item, thumb, info, index };
 }
 function schedulePagesRender(): void {
   if (pagesRenderTimer !== undefined) return;
@@ -1517,7 +1509,7 @@ function renderPages(): void {
         pageThumbObserver?.unobserve(previous.item);
         pageThumbHydrators.delete(previous.item);
       }
-      const next = createPageItem(page, index, pages.length);
+      const next = createPageItem(page, index);
       if (previous) previous.item.replaceWith(next.item);
       else root.appendChild(next.item);
       pageItemCache.set(page.id, next);
@@ -1526,16 +1518,9 @@ function renderPages(): void {
     } else if (page.id === state.activePageId) {
       observePageThumb(cached.item, cached.thumb, page, true);
     }
-    const previousIndex = cached.index;
     cached.index = index;
     cached.item.style.order = String(index);
     cached.item.classList.toggle('active', page.id === state.activePageId);
-    if (cached.pagesLength !== pages.length || previousIndex !== index) {
-      const nextActions = makePageActions(page, index, pages.length);
-      cached.actions.replaceWith(nextActions);
-      cached.actions = nextActions;
-      cached.pagesLength = pages.length;
-    }
   });
 }
 function notifyCanvasTab(): void {
