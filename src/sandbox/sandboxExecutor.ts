@@ -247,7 +247,7 @@ const MACOS_SYSTEM_WRITE_ROOTS = [
  */
 function hostToolReadRoots(
   request: SandboxExecutionRequest,
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = request.env ?? process.env,
 ): string[] {
   const pathDirs = (env.PATH ?? env.Path ?? '')
     .split(path.delimiter)
