@@ -1646,7 +1646,7 @@ function renderArtboard(): void {
     renderToolbarState();
     return;
   }
-  viewport.querySelectorAll('.html-page-surface').forEach(node => node.remove());
+  viewport.querySelectorAll('.html-page-surface, .html-reader-badge').forEach(node => node.remove());
   artboard.style.display = '';
   const whiteboardSurface = page.mode === 'whiteboard';
   const infiniteSurface = page.mode === 'infinite';

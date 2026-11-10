@@ -12,9 +12,15 @@ export interface HtmlPageSurfaceOptions {
   onEdit?(pageId: string): void;
 }
 
+let activeResizeObserver: ResizeObserver | null = null;
+let activeResizeFrame = 0;
+
 /** HTML pages own the whole workspace: no artboard, no canvas tool rail. */
 export function renderHtmlPageSurface(container: HTMLElement, page: HcPage, options: HtmlPageSurfaceOptions): void {
-  container.querySelectorAll('.html-page-surface').forEach(node => node.remove());
+  activeResizeObserver?.disconnect();
+  activeResizeObserver = null;
+  if (activeResizeFrame) cancelAnimationFrame(activeResizeFrame);
+  container.querySelectorAll('.html-page-surface, .html-reader-badge').forEach(node => node.remove());
   const surface = document.createElement('div');
   surface.className = 'html-page-surface';
   surface.style.background = page.background || '#fff';
@@ -25,14 +31,30 @@ export function renderHtmlPageSurface(container: HTMLElement, page: HcPage, opti
   iframe.srcdoc = options.editing ? (page.html || '') : previewHtmlDocument(page.html || '', page.id);
   if (options.editing) iframe.addEventListener('load', () => options.onLoad?.(iframe));
   surface.appendChild(iframe);
+  container.appendChild(surface);
   if (!options.editing) {
     const badge = document.createElement('div');
     badge.className = 'html-reader-badge';
     badge.innerHTML = '<span>HTML PAGE</span><strong>' + escapeHtml(page.name || 'Page') + '</strong><small>select text · Edit</small><button type="button" class="html-reader-edit" title="Edit this HTML page">Edit</button>';
     badge.querySelector<HTMLButtonElement>('.html-reader-edit')?.addEventListener('click', () => options.onEdit?.(page.id));
-    surface.appendChild(badge);
+    container.appendChild(badge);
   }
-  container.appendChild(surface);
+  const fit = (): void => {
+    if (!iframe.isConnected) return;
+    const width = Math.max(320, surface.clientWidth);
+    const height = Math.max(240, surface.clientHeight, page.height);
+    iframe.style.width = width + 'px';
+    iframe.style.height = height + 'px';
+  };
+  const schedule = (): void => {
+    if (activeResizeFrame) cancelAnimationFrame(activeResizeFrame);
+    activeResizeFrame = requestAnimationFrame(() => { activeResizeFrame = 0; fit(); });
+  };
+  schedule();
+  if (typeof ResizeObserver !== 'undefined') {
+    activeResizeObserver = new ResizeObserver(schedule);
+    activeResizeObserver.observe(surface);
+  }
 }
 
 function escapeHtml(value: string): string {
