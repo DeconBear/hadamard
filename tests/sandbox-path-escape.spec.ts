@@ -72,7 +72,14 @@ describe('sandbox path validation', () => {
     });
     expect(invocation.executable).toBe('bwrap');
     expect(invocation.args).toContain('--tmpfs');
-    expect(invocation.args).not.toEqual(expect.arrayContaining(['--ro-bind', '/', '/']));
+    const hasWholeHostBind = invocation.args.some((arg, index, args) =>
+      arg === '--ro-bind' && args[index + 1] === '/' && args[index + 2] === '/',
+    );
+    const hasWholeHostWritableBind = invocation.args.some((arg, index, args) =>
+      arg === '--bind' && args[index + 1] === '/' && args[index + 2] === '/',
+    );
+    expect(hasWholeHostBind).toBe(false);
+    expect(hasWholeHostWritableBind).toBe(false);
     expect(invocation.args).toEqual(expect.arrayContaining(['--bind', workspace, workspace]));
     expect(invocation.args).toEqual(
       expect.arrayContaining(['--ro-bind-try', toolBin, toolBin]),
