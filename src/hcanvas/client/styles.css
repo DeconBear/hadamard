@@ -1128,3 +1128,17 @@ body.sidebar-section-resizing { cursor:row-resize !important; user-select:none; 
 .side-head .section-drag-grip { opacity:0; }
 .side-section:hover .side-head .section-drag-grip { opacity:.5; }
 .page-info small, .doc-item small { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+
+/* VS Code-like sidebar resizing and reordering. */
+.sidebar-section-splitter { flex:0 0 9px; cursor:row-resize; touch-action:none; }
+.sidebar-section-splitter::after { left:12px; right:12px; top:4px; height:1px; background:transparent; transition:background .12s ease; }
+.sidebar-section-splitter:hover::after, .sidebar-section-splitter.active::after { background:var(--accent); opacity:.7; }
+body.sidebar-section-resizing { cursor:row-resize !important; user-select:none; }
+body.sidebar-section-reordering { cursor:grabbing !important; user-select:none; }
+.section-drag-grip { width:14px; height:20px; display:grid; place-items:center; touch-action:none; }
+.side-head .section-title { cursor:grab; user-select:none; }
+.side-section.section-dragging { opacity:.42; background:var(--surface-2); }
+.section-drop-before, .section-drop-after { position:relative; box-shadow:none !important; }
+.section-drop-before::before, .section-drop-after::after { content:""; position:absolute; left:10px; right:10px; height:2px; border-radius:2px; background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); z-index:20; pointer-events:none; }
+.section-drop-before::before { top:-5px; }
+.section-drop-after::after { bottom:-5px; }
