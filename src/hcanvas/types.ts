@@ -166,6 +166,8 @@ export interface HcPage {
   background: string;
   /** full page HTML source when mode === 'html' */
   html?: string;
+  /** Markdown source when this HTML page is a Markdown document; html is the rendered snapshot. */
+  markdown?: string;
   /** blocks when mode === 'canvas' or 'infinite' */
   blocks?: HcBlock[];
   /** user layers ordered bottom → top; omitted means one implicit default layer */
@@ -185,6 +187,7 @@ export interface HcMaster {
   height: number;
   background: string;
   html?: string;
+  markdown?: string;
   blocks?: HcBlock[];
   scene?: HcWhiteboardScene;
   notes?: string;
@@ -247,6 +250,7 @@ export type HcOp =
   | { op: 'update_block'; pageId: string; blockId: string; patch: Partial<Omit<HcBlock, 'id' | 'type'>> }
   | { op: 'delete_block'; pageId: string; blockId: string }
   | { op: 'set_page_html'; pageId: string; html: string }
+  | { op: 'set_page_markdown'; pageId: string; markdown: string }
   | { op: 'set_whiteboard_scene'; pageId: string; scene: HcWhiteboardScene }
   | { op: 'set_block_html'; pageId: string; blockId: string; html: string }
   | { op: 'set_block_text'; pageId: string; blockId: string; text: string }
@@ -264,6 +268,7 @@ export interface HcPagePreset {
   background: string;
   mode?: HcPageMode;
   html?: string;
+  markdown?: string;
   blocks?: HcBlock[];
   scene?: HcWhiteboardScene;
 }

@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { createAiModelTemplate } from '../canvas/packs/aiModel.js';
 import { sceneFromDoc } from '../canvas/excalidrawScene.js';
 import { applyHtmlPatches, normalizeHtml } from './html.js';
+import { markdownPageHtml } from './markdownPage.js';
 import {
   DEMO_SLIDE_HTML,
   HCANVAS_SCHEMA,
@@ -99,13 +100,16 @@ function ensurePage(page: HcPage): HcPage {
   if (page.mode === 'whiteboard') {
     delete page.blocks;
     delete page.html;
+    delete page.markdown;
     page.scene = normalizeWhiteboardScene(page.scene);
   } else if (page.mode === 'html') {
     delete page.blocks;
     delete page.scene;
-    page.html = normalizeHtml(page.html || '<div style="padding:48px;font-family:Inter,sans-serif"><h1>Untitled page</h1><p>Double-click to edit.</p></div>');
+    if (typeof page.markdown === 'string') page.html = normalizeHtml(markdownPageHtml(page.markdown, page));
+    else { delete page.markdown; page.html = normalizeHtml(page.html || '<div style="padding:48px;font-family:Inter,sans-serif"><h1>Untitled page</h1><p>Double-click to edit.</p></div>'); }
   } else {
     delete page.html;
+    delete page.markdown;
     delete page.scene;
     page.blocks = (page.blocks || []).map(block => ensureBlock(block));
     if (page.mode === 'infinite') {
@@ -172,7 +176,8 @@ export function createDocument(title = 'Untitled canvas', preset: HcPagePreset |
       width,
       height,
       background: preset?.background ?? '#ffffff',
-      html: preset?.html ?? STARTER_HTML,
+      html: preset?.markdown !== undefined ? markdownPageHtml(preset.markdown, { background: preset?.background ?? '#ffffff' }) : preset?.html ?? STARTER_HTML,
+      markdown: preset?.markdown,
       blocks: preset?.blocks ? structuredClone(preset.blocks) : [],
       scene: preset?.scene ? structuredClone(preset.scene) : undefined,
     })],
@@ -344,6 +349,16 @@ export function applyOpsToDocument(doc: HcDocument, ops: HcOp[]): HcDocument {
         const page = pageOrThrow(next, op.pageId);
         page.mode = 'html';
         page.html = normalizeHtml(op.html);
+        delete page.markdown;
+        delete page.blocks;
+        delete page.scene;
+        break;
+      }
+      case 'set_page_markdown': {
+        const page = pageOrThrow(next, op.pageId);
+        page.mode = 'html';
+        page.markdown = op.markdown;
+        page.html = normalizeHtml(markdownPageHtml(op.markdown, page));
         delete page.blocks;
         delete page.scene;
         break;
@@ -501,6 +516,7 @@ export class HcStore {
       height: page.height,
       background: page.background,
       html: page.html,
+      markdown: page.markdown,
       blocks: page.blocks ? JSON.parse(JSON.stringify(page.blocks)) as HcBlock[] : undefined,
       scene: page.scene ? JSON.parse(JSON.stringify(page.scene)) as HcWhiteboardScene : undefined,
       notes: page.notes,
@@ -531,6 +547,7 @@ export class HcStore {
       height: master.height,
       background: master.background,
       html: master.html,
+      markdown: master.markdown,
       blocks: master.blocks ? master.blocks.map(block => ({ ...JSON.parse(JSON.stringify(block)) as HcBlock, id: hcId('block') })) : undefined,
       scene: master.scene ? JSON.parse(JSON.stringify(master.scene)) as HcWhiteboardScene : undefined,
       notes: master.notes,

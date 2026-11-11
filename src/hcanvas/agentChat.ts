@@ -126,9 +126,9 @@ async function callModel(config: LlmConfig, messages: OpenAiMessage[]): Promise<
   return message;
 }
 
-function summarizeDoc(doc: { id: string; title: string; revision: number; pages: Array<{ id: string; name: string; mode: string; width: number; height: number; blocks?: unknown[] }> }): string {
+function summarizeDoc(doc: { id: string; title: string; revision: number; pages: Array<{ id: string; name: string; mode: string; width: number; height: number; blocks?: unknown[]; markdown?: string }> }): string {
   return '# ' + doc.title + '\nrevision: ' + doc.revision + '\ndoc: ' + doc.id + '\n\n' + doc.pages.map(page =>
-    '- ' + page.name + ' [' + page.mode + ' ' + page.width + 'x' + page.height + '] id=' + page.id + (page.blocks ? ' blocks=' + page.blocks.length : ''),
+    '- ' + page.name + ' [' + (page.markdown !== undefined ? 'markdown' : page.mode) + ' ' + page.width + 'x' + page.height + '] id=' + page.id + (page.blocks ? ' blocks=' + page.blocks.length : ''),
   ).join('\n');
 }
 
@@ -154,9 +154,9 @@ async function executeTool(store: HcStore, args: { docId?: string; pageId?: stri
   const page = args.pageId ? doc.pages.find(item => item.id === args.pageId) : doc.pages[0];
   const format = args.format || 'outline';
   if (format === 'outline') {
-    return summarizeDoc(doc) + (page ? '\n\n## Active page: ' + page.name + '\n' + (page.mode === 'html' ? htmlOutline(page.html || '').slice(0, 12000) : JSON.stringify({ mode: page.mode, blocks: page.blocks?.map(block => ({ id: block.id, type: block.type, x: block.x, y: block.y, name: block.name, text: block.text || block.markdown || block.code })) }).slice(0, 12000)) : '');
+    return summarizeDoc(doc) + (page ? '\n\n## Active page: ' + page.name + '\n' + (page.markdown !== undefined ? page.markdown.slice(0, 16000) : page.mode === 'html' ? htmlOutline(page.html || '').slice(0, 12000) : JSON.stringify({ mode: page.mode, blocks: page.blocks?.map(block => ({ id: block.id, type: block.type, x: block.x, y: block.y, name: block.name, text: block.text || block.markdown || block.code })) }).slice(0, 12000)) : '');
   }
-  if (format === 'html') return page?.html || '';
+  if (format === 'html') return page?.markdown ?? page?.html ?? '';
   if (format === 'scene') return page?.scene || { elements: [] };
   return page || doc;
 }

@@ -1,4 +1,4 @@
-﻿import type { HcBlock } from '../types.js';
+import type { HcBlock } from '../types.js';
 import { esc, genId } from './utils.js';
 
 export interface HcClientPagePreset {
@@ -10,6 +10,7 @@ export interface HcClientPagePreset {
   background: string;
   hint: string;
   template?: string;
+  markdown?: string;
 }
 
 /** Primary page-creation presets: one generic canvas surface per size, not use-case templates. */
@@ -21,6 +22,7 @@ export const CANVAS_PAGE_PRESETS: HcClientPagePreset[] = [
   { id: 'canvas-wide', title: 'Canvas · 16:9 wide', mode: 'canvas', width: 1920, height: 1080, background: '#ffffff', hint: 'Full-HD presentations' },
   { id: 'infinite', title: 'Infinite canvas', mode: 'infinite', width: 4800, height: 3200, background: '#f8f6f1', hint: 'No bounds · pan & zoom' },
   { id: 'html-page', title: 'HTML page', mode: 'html', width: 1280, height: 720, background: '#ffffff', hint: 'Directly editable HTML / CSS' },
+  { id: 'markdown-a4', title: 'Markdown · A4', mode: 'html', width: 794, height: 1123, background: '#ffffff', hint: 'Markdown document · rendered + source editing', markdown: '# Untitled document\n\nStart writing in Markdown.\n\n## Section\n\n- Point one\n- Point two\n' },
 ];
 
 /** Legacy decorated templates, kept for existing documents/API compatibility. New UI uses CANVAS_PAGE_PRESETS. */

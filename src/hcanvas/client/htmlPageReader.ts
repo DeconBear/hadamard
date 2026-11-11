@@ -8,6 +8,8 @@ export function previewHtmlDocument(html: string, pageId: string): string {
 
 export interface HtmlPageSurfaceOptions {
   editing: boolean;
+  label?: string;
+  hint?: string;
   onLoad?(iframe: HTMLIFrameElement): void;
   onEdit?(pageId: string): void;
 }
@@ -35,7 +37,7 @@ export function renderHtmlPageSurface(container: HTMLElement, page: HcPage, opti
   if (!options.editing) {
     const badge = document.createElement('div');
     badge.className = 'html-reader-badge';
-    badge.innerHTML = '<span>HTML PAGE</span><strong>' + escapeHtml(page.name || 'Page') + '</strong><small>select text · Edit</small><button type="button" class="html-reader-edit" title="Edit this HTML page">Edit</button>';
+    badge.innerHTML = '<span>' + escapeHtml(options.label || 'HTML PAGE') + '</span><strong>' + escapeHtml(page.name || 'Page') + '</strong><small>' + escapeHtml(options.hint || 'select text · Edit') + '</small><button type="button" class="html-reader-edit" title="Edit this page">Edit</button>';
     badge.querySelector<HTMLButtonElement>('.html-reader-edit')?.addEventListener('click', () => options.onEdit?.(page.id));
     container.appendChild(badge);
   }

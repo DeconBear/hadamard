@@ -19,6 +19,7 @@ import { installPluginSidebar } from './pluginSidebar.js';
 import { installPageListInteractions } from './pageListInteractions.js';
 import { renderCopilotPanel } from './copilotPanel.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
+import { markdownPageHtml } from '../markdownPage.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import type { HcBlockPlugin } from '../blockPlugins.js';
@@ -1461,7 +1462,7 @@ function createPageItem(page: HcPage, index: number): PageItemCache {
   thumb.innerHTML = '<div class="page-thumb-loading"></div>';
   const info = document.createElement('div');
   info.className = 'page-info';
-  const meta = page.mode === 'infinite' ? '∞ · no page bounds' : page.mode === 'whiteboard' ? 'legacy · convert to native' : esc(page.mode) + ' · ' + page.width + '×' + page.height;
+  const meta = page.mode === 'infinite' ? '∞ · no page bounds' : page.mode === 'whiteboard' ? 'legacy · convert to native' : esc(page.markdown !== undefined ? 'markdown' : page.mode) + ' · ' + page.width + '×' + page.height;
   info.innerHTML = '<strong>' + esc(page.name || 'Page ' + (index + 1)) + '</strong><small>' + meta + '</small>';
   const button = document.createElement('button');
   button.type = 'button';
@@ -1637,11 +1638,14 @@ function renderArtboard(): void {
   if (!page) return;
   document.body.classList.toggle('html-page-mode', page.mode === 'html');
   viewport.classList.toggle('html-page-mode', page.mode === 'html');
+  const markdownPage = page.mode === 'html' && page.markdown !== undefined;
   if (page.mode === 'html') {
     artboard.style.display = 'none';
     renderHtmlPageSurface(viewport, page, {
-      editing: Boolean(state.editing),
-      onLoad: iframe => { if (state.editing) setupHtmlEditing(iframe, page.id); htmlSelectionEditor.applyPending(page.id); },
+      editing: markdownPage ? false : Boolean(state.editing),
+      label: markdownPage ? 'MARKDOWN PAGE' : undefined,
+      hint: markdownPage ? 'rendered Markdown · Edit' : undefined,
+      onLoad: iframe => { if (state.editing && !markdownPage) setupHtmlEditing(iframe, page.id); htmlSelectionEditor.applyPending(page.id); },
       onEdit: pageId => enterHtmlEdit(pageId),
     });
     renderToolbarState();
@@ -1897,7 +1901,7 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
 window.addEventListener('message', event => {
   const data = event.data as { type?: string; pageId?: string; text?: string; hcId?: string; rect?: { left: number; top: number; width: number; height: number } } | null;
   if (data?.type === 'hcanvas:html-selection') {
-    if (state.editing || !data.pageId || data.pageId !== state.activePageId || activePage()?.mode !== 'html' || !data.text || !data.hcId || !data.rect) { htmlSelectionEditor.hide(); return; }
+    if (state.editing || !data.pageId || data.pageId !== state.activePageId || activePage()?.mode !== 'html' || activePage()?.markdown !== undefined || !data.text || !data.hcId || !data.rect) { htmlSelectionEditor.hide(); return; }
     htmlSelectionEditor.show(data.pageId, data.hcId, data.rect);
     return;
   }
@@ -2333,6 +2337,7 @@ async function renameDocument(title: string): Promise<void> {
 function enterHtmlEdit(pageId: string, blockId?: string): void {
   const page = state.doc?.pages.find(item => item.id === pageId);
   if (!page) return;
+  if (!blockId && page.markdown !== undefined) { openMarkdownPageEditor(page); return; }
   htmlSelectionEditor.hide();
   state.editing = blockId ? { pageId, blockId } : { pageId };
   state.activeBlockId = blockId || null;
@@ -2549,7 +2554,7 @@ function renderPageInspector(): void {
   else if (page.mode === 'whiteboard') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Legacy preview · native blocks">');
   else html += '<div class="field-row">' + field('pageWidth', 'Width', '<input id="pageWidth" type="number" value="' + page.width + '">') + field('pageHeight', 'Height', '<input id="pageHeight" type="number" value="' + page.height + '">') + '</div>';
   html += '<div class="field"><span>Background</span><div class="swatch-row"><input id="pageBgPicker" type="color" value="' + esc(toHex(page.background)) + '"><input id="pageBg" value="' + esc(page.background) + '"></div></div>';
-  html += '<div class="field"><span>Mode</span><input readonly value="' + esc(page.mode === 'infinite' ? 'infinite canvas' : page.mode) + '"></div>';
+  html += '<div class="field"><span>Mode</span><input readonly value="' + esc(page.markdown !== undefined ? 'markdown document' : page.mode === 'infinite' ? 'infinite canvas' : page.mode) + '"></div>';
   html += '<div class="field"><span>Notes for agent</span><textarea id="pageNotes" rows="2">' + esc(page.notes || '') + '</textarea></div>';
   html += '<div class="actions-row">';
   if (page.mode === 'html') html += '<button id="pageSourceBtn" class="btn tiny">Edit HTML source</button>';
@@ -2775,7 +2780,7 @@ function renderAgent(): void {
   const allSessions = state.presence;
   const context = {
     workspace: boot.workspace,
-    active: state.doc && page ? { docId: state.doc.id, title: state.doc.title, revision: state.doc.revision, pageId: page.id, pageName: page.name, pageMode: page.mode, blockId: state.activeBlockId, selection: state.selectedHtmlId ? [state.selectedHtmlId] : [] } : null,
+    active: state.doc && page ? { docId: state.doc.id, title: state.doc.title, revision: state.doc.revision, pageId: page.id, pageName: page.name, pageMode: page.markdown !== undefined ? 'markdown' : page.mode, blockId: state.activeBlockId, selection: state.selectedHtmlId ? [state.selectedHtmlId] : [] } : null,
     protocol: { cli: 'hcanvas', read: 'hcanvas read <doc> --format outline', write: 'hcanvas apply <doc> --ops-file ops.json --base-revision <rev>', propose: 'hcanvas propose <doc> ...' },
   };
   const docId = state.doc?.id || '<docId>';
@@ -2787,7 +2792,7 @@ function renderAgent(): void {
     revision,
     pageId: page?.id,
     pageName: page?.name,
-    pageMode: page?.mode,
+    pageMode: page?.markdown !== undefined ? 'markdown' : page?.mode,
   });
   const contextText = JSON.stringify(context, null, 2);
   const count = activeSessions.length;
@@ -3219,7 +3224,11 @@ async function createPage(preset: typeof CANVAS_PAGE_PRESETS[number]): Promise<v
   const page: HcPage = {
     id: genId('page'), name: preset.title, mode: preset.mode,
     width: preset.width, height: preset.height, background: preset.background,
-    ...(preset.mode === 'html' ? { html: preset.template ? pageTemplateHtml(preset.template, '') : starterHtml(preset.title) } : { blocks: preset.template?.startsWith('canvas-') ? canvasTemplateBlocks(preset.template, preset.width, preset.height) : [] }),
+    ...(preset.mode === 'html'
+      ? preset.markdown !== undefined
+        ? { html: markdownPageHtml(preset.markdown, { background: preset.background }), markdown: preset.markdown }
+        : { html: preset.template ? pageTemplateHtml(preset.template, '') : starterHtml(preset.title) }
+      : { blocks: preset.template?.startsWith('canvas-') ? canvasTemplateBlocks(preset.template, preset.width, preset.height) : [] }),
   };
   const result = await applyOps([{ op: 'add_page', page }], { refreshArtboard: false });
   if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); void syncActive(); }
@@ -3247,7 +3256,8 @@ function openNewDocModal(): void {
             height: preset.height,
             background: preset.background,
             mode: preset.mode,
-            html: preset.mode === 'html' ? preset.template ? pageTemplateHtml(preset.template, '') : starterHtml(preset.title) : undefined,
+            html: preset.mode === 'html' ? preset.markdown !== undefined ? markdownPageHtml(preset.markdown, { background: preset.background }) : preset.template ? pageTemplateHtml(preset.template, '') : starterHtml(preset.title) : undefined,
+            markdown: preset.markdown,
             blocks: preset.mode === 'canvas' || preset.mode === 'infinite'
               ? preset.template?.startsWith('canvas-') ? canvasTemplateBlocks(preset.template, preset.width, preset.height) : []
               : undefined,
@@ -3262,6 +3272,7 @@ function openNewDocModal(): void {
 function openSourceEditor(target: { pageId: string; blockId?: string }): void {
   const page = state.doc?.pages.find(item => item.id === target.pageId);
   if (!page) return;
+  if (!target.blockId && page.markdown !== undefined) { openMarkdownPageEditor(page); return; }
   if (target.blockId) {
     const block = page.blocks?.find(item => item.id === target.blockId);
     if (!block) return;
@@ -3281,6 +3292,18 @@ function openSourceEditor(target: { pageId: string; blockId?: string }): void {
     return;
   }
   openCodeModal({ title: page.name + ' · HTML source', kind: 'html', value: page.html || '', language: 'html', save: async next => { await applyOps([{ op: 'set_page_html', pageId: page.id, html: next }], { refreshArtboard: true }); } });
+}
+
+function openMarkdownPageEditor(page: HcPage): void {
+  openCodeModal({
+    title: page.name + ' · Markdown',
+    kind: 'markdown',
+    language: 'markdown',
+    value: page.markdown || '',
+    save: async next => {
+      await applyOps([{ op: 'set_page_markdown', pageId: page.id, markdown: next }], { refreshArtboard: true });
+    },
+  });
 }
 
 function openFormulaModal(block: HcBlock): void {
