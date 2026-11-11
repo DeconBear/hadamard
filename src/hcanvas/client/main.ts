@@ -18,6 +18,10 @@ import { bindSidebarSections } from './sidebarCollapse.js';
 import { installPluginSidebar } from './pluginSidebar.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
+import { insertAssetIntoPage } from './assetInsert.js';
+import { openMarkdownPageEditor as showMarkdownPageEditor } from './markdownPageEditor.js';
+import { openNewDocModal as showNewDocModal } from './newDocModal.js';
+import { openSourceEditorFor } from './sourceEditor.js';
 import { installPageListInteractions } from './pageListInteractions.js';
 import { renderCopilotPanel } from './copilotPanel.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
@@ -2360,7 +2364,7 @@ async function renameDocument(title: string): Promise<void> {
 function enterHtmlEdit(pageId: string, blockId?: string): void {
   const page = state.doc?.pages.find(item => item.id === pageId);
   if (!page) return;
-  if (!blockId && page.markdown !== undefined) { openMarkdownPageEditor(page); return; }
+  if (!blockId && page.markdown !== undefined) { showMarkdownPageEditor({ page, openCodeModal, applyOps: (ops, options) => applyOps(ops, options) }); return; }
   htmlSelectionEditor.hide();
   state.editing = blockId ? { pageId, blockId } : { pageId };
   state.activeBlockId = blockId || null;
@@ -3242,44 +3246,19 @@ async function addPluginPage(page: HcPage): Promise<void> {
   if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); void syncActive(); }
 }
 
-function assetHtml(asset: HcAssetView, style = ''): string {
-  const src = asset.url.replace(/"/g, '&quot;');
-  const name = asset.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  return '<img src="' + src + '" alt="' + name + '"' + (style ? ' style="' + style + '"' : '') + '>';
-}
-
 async function insertAsset(asset: HcAssetView, point?: { clientX: number; clientY: number }): Promise<void> {
-  const page = activePage();
-  if (!page) return;
-  if (!asset.mime.startsWith('image/') && page.mode !== 'html') {
-    await copyText(asset.url).catch(() => undefined);
-    toast('Attachment URL copied; insert it as a link', 'info');
-    return;
-  }
-  const pageId = page.id;
-  if (page.mode === 'html' && page.markdown !== undefined) {
-    const markdown = (page.markdown || '').replace(/\s+$/, '') + '\n\n![' + asset.name.replace(/]/g, '\\]') + '](' + asset.url + ')\n';
-    await applyOps([{ op: 'set_page_markdown', pageId, markdown }], { refreshArtboard: true });
-    return;
-  }
-  if (page.mode === 'html') {
-    const snippet = '<figure style="margin:24px 0;text-align:center">' + assetHtml(asset, 'max-width:100%;height:auto;border-radius:8px') + '</figure>';
-    const html = page.html || '';
-    const next = html.includes('</body>') ? html.replace('</body>', snippet + '</body>') : html + snippet;
-    await applyOps([{ op: 'set_page_html', pageId, html: next }], { refreshArtboard: true });
-    return;
-  }
-  if (page.mode !== 'canvas' && page.mode !== 'infinite') { toast('Images can be inserted on canvas, HTML, or Markdown pages', 'info'); return; }
-  const rect = el('viewport').getBoundingClientRect();
-  const worldX = point ? (point.clientX - rect.left - state.panX) / state.zoom : page.width / 2 - 180;
-  const worldY = point ? (point.clientY - rect.top - state.panY) / state.zoom : page.height / 2 - 120;
-  const block: HcBlock = {
-    id: genId('block'), type: 'image', src: asset.url, alt: asset.name,
-    x: Math.max(0, worldX - 180), y: Math.max(0, worldY - 120), w: 360, h: 240,
-    z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1,
-  };
-  const result = await applyOps([{ op: 'add_block', pageId, block }], { refreshArtboard: true });
-  if (result) setBlockSelection([block.id], block.id);
+  await insertAssetIntoPage(asset, point, {
+    getPage: () => activePage(),
+    viewport: el('viewport'),
+    zoom: () => state.zoom,
+    panX: () => state.panX,
+    panY: () => state.panY,
+    genId,
+    copyText,
+    toast,
+    applyOps: (ops, options) => applyOps(ops, options),
+    setBlockSelection,
+  });
 }
 
 async function createPage(preset: typeof CANVAS_PAGE_PRESETS[number]): Promise<void> {
@@ -3298,75 +3277,15 @@ async function createPage(preset: typeof CANVAS_PAGE_PRESETS[number]): Promise<v
 }
 
 function openNewDocModal(): void {
-  let html = '<div class="modal small"><div class="modal-head"><div><strong>New canvas</strong><small>Start with a canvas size.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>Title</span><input id="newDocTitle" value="Untitled canvas"></div><div class="field"><span>First page</span><select id="newDocPreset">';
-  for (const preset of CANVAS_PAGE_PRESETS) html += '<option value="' + esc(preset.id) + '">' + esc(preset.title) + ' · ' + esc(preset.hint) + '</option>';
-  html += '</select></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="createDocBtn" class="btn primary">Create</button></div></div>';
-  openModal(html);
-  qs<HTMLButtonElement>('#createDocBtn')?.addEventListener('click', async () => {
-    const title = qs<HTMLInputElement>('#newDocTitle')?.value || 'Untitled canvas';
-    const presetId = qs<HTMLSelectElement>('#newDocPreset')?.value || 'canvas-16-9';
-    const preset = CANVAS_PAGE_PRESETS.find(item => item.id === presetId);
-    closeModal();
-    try {
-      const result = await api<{ doc: HcDocument }>('/api/docs', {
-        method: 'POST',
-        body: JSON.stringify({
-          title,
-          preset: preset ? {
-            id: preset.id,
-            title: preset.title,
-            width: preset.width,
-            height: preset.height,
-            background: preset.background,
-            mode: preset.mode,
-            html: preset.mode === 'html' ? preset.markdown !== undefined ? markdownPageHtml(preset.markdown, { background: preset.background }) : preset.template ? pageTemplateHtml(preset.template, '') : starterHtml(preset.title) : undefined,
-            markdown: preset.markdown,
-            blocks: preset.mode === 'canvas' || preset.mode === 'infinite'
-              ? preset.template?.startsWith('canvas-') ? canvasTemplateBlocks(preset.template, preset.width, preset.height) : []
-              : undefined,
-          } : undefined,
-        }),
-      });
-      await openDoc(result.doc.id);
-    } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
-  });
+  showNewDocModal({ openModal: html => openModal(html), closeModal, request: api, openDoc, toast });
 }
 
 function openSourceEditor(target: { pageId: string; blockId?: string }): void {
   const page = state.doc?.pages.find(item => item.id === target.pageId);
   if (!page) return;
-  if (!target.blockId && page.markdown !== undefined) { openMarkdownPageEditor(page); return; }
-  if (target.blockId) {
-    const block = page.blocks?.find(item => item.id === target.blockId);
-    if (!block) return;
-    const kind = block.type;
-    const value = kind === 'markdown' ? (block.markdown || '') : kind === 'code' ? (block.code || '') : kind === 'text' ? (block.text || '') : (block.html || '');
-    openCodeModal({
-      title: block.name || kind + ' block', kind, value,
-      language: kind === 'markdown' ? 'markdown' : kind === 'code' ? 'code' : kind === 'text' ? 'text' : 'html',
-      save: async next => {
-        const op: HcOp = kind === 'markdown' ? { op: 'set_block_markdown', pageId: page.id, blockId: block.id, markdown: next }
-          : kind === 'code' ? { op: 'set_block_code', pageId: page.id, blockId: block.id, code: next }
-          : kind === 'text' ? { op: 'set_block_text', pageId: page.id, blockId: block.id, text: next }
-          : { op: 'set_block_html', pageId: page.id, blockId: block.id, html: next };
-        await applyOps([op], { refreshArtboard: true });
-      },
-    });
-    return;
-  }
-  openCodeModal({ title: page.name + ' · HTML source', kind: 'html', value: page.html || '', language: 'html', save: async next => { await applyOps([{ op: 'set_page_html', pageId: page.id, html: next }], { refreshArtboard: true }); } });
-}
-
-function openMarkdownPageEditor(page: HcPage): void {
-  openCodeModal({
-    title: page.name + ' · Markdown',
-    kind: 'markdown',
-    language: 'markdown',
-    value: page.markdown || '',
-    save: async next => {
-      await applyOps([{ op: 'set_page_markdown', pageId: page.id, markdown: next }], { refreshArtboard: true });
-    },
-  });
+  const block = target.blockId ? page.blocks?.find(item => item.id === target.blockId) : undefined;
+  if (target.blockId && !block) return;
+  openSourceEditorFor({ page, block, openCodeModal, applyOps: (ops, options) => applyOps(ops, options) });
 }
 
 function openFormulaModal(block: HcBlock): void {
