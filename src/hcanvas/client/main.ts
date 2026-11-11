@@ -16,6 +16,7 @@ import { installFileBrowser, type FileBrowserController } from './fileBrowser.js
 import { createHtmlSelectionEditor } from './htmlSelectionEditor.js';
 import { bindSidebarSections } from './sidebarCollapse.js';
 import { installPluginSidebar } from './pluginSidebar.js';
+import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installPageListInteractions } from './pageListInteractions.js';
 import { renderCopilotPanel } from './copilotPanel.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
@@ -749,6 +750,16 @@ function bindStaticActions(): void {
     canvasLabel: () => activePage()?.name || state.doc?.title || 'Canvas',
     onShowCanvas: () => { renderArtboard(); },
     openCanvas: (docId, pageId) => { void openDoc(docId, pageId); },
+  });
+  installAssetLibrary({
+    mount: el('assetsPanel'),
+    dropTarget: el('viewport'),
+    request: api,
+    serveUrl: id => '/api/assets/raw/' + encodeURIComponent(boot.token) + '/' + id,
+    onInsert: asset => insertAsset(asset),
+    isReferenced: url => JSON.stringify(state.doc || {}).includes(url),
+    toast,
+    confirm: message => confirmDialog(message),
   });
   el('presentBtn').addEventListener('click', () => openPresent());
   sliceTool = createSliceTool({
@@ -3217,6 +3228,46 @@ async function openAddPageModal(): Promise<void> {
 async function addPluginPage(page: HcPage): Promise<void> {
   const result = await applyOps([{ op: 'add_page', page }], { refreshArtboard: false });
   if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); void syncActive(); }
+}
+
+function assetHtml(asset: HcAssetView, style = ''): string {
+  const src = asset.url.replace(/"/g, '&quot;');
+  const name = asset.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return '<img src="' + src + '" alt="' + name + '"' + (style ? ' style="' + style + '"' : '') + '>';
+}
+
+async function insertAsset(asset: HcAssetView, point?: { clientX: number; clientY: number }): Promise<void> {
+  const page = activePage();
+  if (!page) return;
+  if (!asset.mime.startsWith('image/') && page.mode !== 'html') {
+    await copyText(asset.url).catch(() => undefined);
+    toast('Attachment URL copied; insert it as a link', 'info');
+    return;
+  }
+  const pageId = page.id;
+  if (page.mode === 'html' && page.markdown !== undefined) {
+    const markdown = (page.markdown || '').replace(/\s+$/, '') + '\n\n![' + asset.name.replace(/]/g, '\\]') + '](' + asset.url + ')\n';
+    await applyOps([{ op: 'set_page_markdown', pageId, markdown }], { refreshArtboard: true });
+    return;
+  }
+  if (page.mode === 'html') {
+    const snippet = '<figure style="margin:24px 0;text-align:center">' + assetHtml(asset, 'max-width:100%;height:auto;border-radius:8px') + '</figure>';
+    const html = page.html || '';
+    const next = html.includes('</body>') ? html.replace('</body>', snippet + '</body>') : html + snippet;
+    await applyOps([{ op: 'set_page_html', pageId, html: next }], { refreshArtboard: true });
+    return;
+  }
+  if (page.mode !== 'canvas' && page.mode !== 'infinite') { toast('Images can be inserted on canvas, HTML, or Markdown pages', 'info'); return; }
+  const rect = el('viewport').getBoundingClientRect();
+  const worldX = point ? (point.clientX - rect.left - state.panX) / state.zoom : page.width / 2 - 180;
+  const worldY = point ? (point.clientY - rect.top - state.panY) / state.zoom : page.height / 2 - 120;
+  const block: HcBlock = {
+    id: genId('block'), type: 'image', src: asset.url, alt: asset.name,
+    x: Math.max(0, worldX - 180), y: Math.max(0, worldY - 120), w: 360, h: 240,
+    z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1,
+  };
+  const result = await applyOps([{ op: 'add_block', pageId, block }], { refreshArtboard: true });
+  if (result) setBlockSelection([block.id], block.id);
 }
 
 async function createPage(preset: typeof CANVAS_PAGE_PRESETS[number]): Promise<void> {

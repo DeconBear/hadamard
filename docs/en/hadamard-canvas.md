@@ -470,6 +470,10 @@ A workspace (usually `<project>/.hcanvas`) is a plain directory:
 ```
 
 Documents use the JSON schema `hadamard-canvas/1`. HTML pages store their full source in `page.html`; canvas/infinite pages store `page.blocks`; Excalidraw pages store `page.scene`. Without a project, the desktop app falls back to `~/.hcanvas`; `--workspace <dir>` still addresses a store root directly. `--project <dir>` is the recommended project-scoped mode.
+## Assets
+
+The **Assets** sidebar section stores workspace-scoped images and attachments under `.hcanvas/assets/`. Upload with **+** or drop files on the panel; images show thumbnails, other files show a type badge. Every asset gets a stable token URL that survives server restarts and can be inserted into the current Markdown/HTML page or dropped onto a canvas/infinite page as an image block. Deleting an asset warns when the current document still references it.
+
 ## Workspace panels
 
 The left **Canvases / Pages** sidebar and the right inspector sidebar can both be resized by dragging their inner edge. Drag a splitter to set the width; double-click it to collapse the panel. The top-bar ▤ / ▥ buttons toggle the left and right sidebars; widths and collapsed state are remembered per browser profile.

@@ -23,6 +23,7 @@ import { blockAgentSummary } from './builtinBlocks.js';
 import { createPluginScaffold } from './pluginScaffold.js';
 import { listProjects } from './projectRegistry.js';
 import { HcFileService } from './fileWorkspace.js';
+import { HcAssetService } from './assets.js';
 
 export interface HcServerOptions {
   workspace: string;
@@ -60,12 +61,12 @@ function text(res: ServerResponse, status: number, body: string, type = 'text/pl
   res.end(body);
 }
 
-async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readBody(req: IncomingMessage, limit = MAX_BODY): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BODY) throw new HcValidationError('Request body too large');
+    if (size > limit) throw new HcValidationError('Request body too large');
     chunks.push(chunk as Buffer);
   }
   if (!chunks.length) return {};
@@ -175,6 +176,8 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
   await store.init();
   const files = new HcFileService(options.workspace);
   await files.init();
+  const assets = new HcAssetService(options.workspace);
+  await assets.init();
   const host = options.host || '127.0.0.1';
   const token = options.token || randomBytes(18).toString('hex');
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -196,7 +199,8 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         const cookie = String(req.headers.cookie || '');
         const cookieToken = cookie.split(';').map(part => part.trim()).find(part => part.startsWith('hc_files_token='))?.slice('hc_files_token='.length);
         const rawPathToken = pathname.match(/^\/api\/files\/raw\/root_[A-Za-z0-9]+\/([^/]+)\//)?.[1];
-        if (provided !== token && rawPathToken !== token && !(pathname.startsWith('/api/files/raw/') && cookieToken === token)) {
+        const rawAssetPathToken = pathname.match(/^\/api\/assets\/raw\/([^/]+)\//)?.[1];
+        if (provided !== token && rawPathToken !== token && rawAssetPathToken !== assets.urlToken && !(pathname.startsWith('/api/files/raw/') && cookieToken === token) && !(pathname.startsWith('/api/assets/raw/') && cookieToken === assets.urlToken)) {
           json(res, 401, { error: 'Unauthorized' });
           return;
         }
@@ -290,6 +294,36 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       }
       if (pathname === '/api/files/search' && req.method === 'GET') {
         json(res, 200, { ok: true, results: await files.searchAll(url.searchParams.get('q') || '') });
+        return;
+      }
+      if (pathname === '/api/assets' && req.method === 'GET') {
+        json(res, 200, { ok: true, assets: assets.list().map(asset => ({ ...asset, url: '/api/assets/raw/' + assets.urlToken + '/' + asset.id })) });
+        return;
+      }
+      if (pathname === '/api/assets' && req.method === 'POST') {
+        const body = await readBody(req, 48 * 1024 * 1024);
+        const data = Buffer.from(String(body.data || ''), 'base64');
+        const asset = await assets.save({ name: String(body.name || 'asset'), mime: typeof body.mime === 'string' ? body.mime : undefined, data });
+        json(res, 201, { ok: true, asset: { ...asset, url: '/api/assets/raw/' + assets.urlToken + '/' + asset.id } });
+        return;
+      }
+      const assetMatch = pathname.match(/^\/api\/assets\/(asset_[A-Za-z0-9]+)$/);
+      if (assetMatch && req.method === 'DELETE') {
+        await assets.remove(assetMatch[1]!);
+        json(res, 200, { ok: true });
+        return;
+      }
+      const rawAssetMatch = pathname.match(/^\/api\/assets\/raw\/([^/]+)\/(asset_[A-Za-z0-9]+)$/);
+      if (rawAssetMatch && req.method === 'GET') {
+        if (rawAssetMatch[1] !== assets.urlToken) throw new HcNotFoundError('Asset not found');
+        const served = await assets.serve(rawAssetMatch[2]!);
+        res.writeHead(200, {
+          'content-type': served.type,
+          'content-length': served.size,
+          'cache-control': 'public, max-age=3600',
+          'set-cookie': 'hc_assets_token=' + assets.urlToken + '; Path=/api/assets/raw/; SameSite=Lax',
+        });
+        served.stream.pipe(res);
         return;
       }
       const rawMatch = pathname.match(/^\/api\/files\/raw\/(root_[A-Za-z0-9]+)\/([^/]+)\/(.+)$/);
