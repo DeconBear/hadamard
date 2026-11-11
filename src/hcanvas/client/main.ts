@@ -17,6 +17,7 @@ import { createHtmlSelectionEditor } from './htmlSelectionEditor.js';
 import { bindSidebarSections } from './sidebarCollapse.js';
 import { installPluginSidebar } from './pluginSidebar.js';
 import { installPageListInteractions } from './pageListInteractions.js';
+import { renderCopilotPanel } from './copilotPanel.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
@@ -2796,7 +2797,8 @@ function renderAgent(): void {
     agentCount.classList.toggle('hidden', count === 0);
   }
 
-  let html = '<section class="inspector-section agent-hero">';
+  let html = '<section class="inspector-section copilot-section"><div id="copilotPanel"></div></section>';
+  html += '<section class="inspector-section agent-hero">';
   html += '<div class="agent-hero-head"><span class="agent-mark">A</span><div><div class="inspector-title">Agent bridge</div><p class="agent-lede">Copy the prompt and send it to your coding agent in its chat. hcanvas does not start an agent; it observes the sessions and changes they report.</p></div></div>';
   html += '<div class="agent-status-row">';
   html += '<span class="agent-chip ' + (count ? 'online' : 'off') + '"><span class="agent-dot"></span>' + (count ? count + ' connected' : 'No agent connected') + '</span>';
@@ -2862,6 +2864,13 @@ function renderAgent(): void {
   html += '<p class="agent-muted">Always read first and pass the returned revision to <code>apply</code>. Sessions heartbeat automatically on context/read/apply.</p>';
   html += '</section>';
   root.innerHTML = html;
+  renderCopilotPanel({
+    root: el('copilotPanel'),
+    request: api,
+    getDocId: () => state.doc?.id || '',
+    getPageId: () => state.activePageId || '',
+    onChanged: async docId => { await openDoc(docId, state.activePageId || undefined); },
+  });
 
   qs<HTMLButtonElement>('#copyConnectBtn')?.addEventListener('click', () => { void copyText(agentPrompt); });
   qs<HTMLButtonElement>('#copyAgentPromptBtn')?.addEventListener('click', () => { void copyText(agentPrompt); });

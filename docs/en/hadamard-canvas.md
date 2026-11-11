@@ -39,20 +39,20 @@ Package a Windows portable build with the Canvas icon:
 
 ```bash
 npm run build:hcanvas:desktop
-# dist_electron/canvas/Hadamard-Canvas-0.4.22-portable.exe
+# dist_electron/canvas/Hadamard-Canvas-0.1.0-portable.exe
 ```
 
 Run the portable exe with an explicit workspace when you want a self-contained copy:
 
 ```powershell
-.\Hadamard-Canvas-0.4.22-portable.exe --workspace C:\Users\me\hcanvas --port 4319
+.\Hadamard-Canvas-0.1.0-portable.exe --workspace C:\Users\me\hcanvas --port 4319
 ```
 
 Build the Windows installer instead of the portable exe:
 
 ```bash
 npm run build:hcanvas:installer
-# dist_electron/canvas/Hadamard-Canvas-Setup-0.4.22.exe
+# dist_electron/canvas/Hadamard-Canvas-Setup-0.1.0.exe
 ```
 
 The installer is a normal NSIS wizard: choose the install directory, creates Start Menu and desktop shortcuts, and includes an uninstaller. It does not require a system-wide install.
@@ -148,20 +148,20 @@ Package a Windows portable build with the Canvas icon:
 
 ```bash
 npm run build:hcanvas:desktop
-# dist_electron/canvas/Hadamard-Canvas-0.4.22-portable.exe
+# dist_electron/canvas/Hadamard-Canvas-0.1.0-portable.exe
 ```
 
 Run the portable exe with an explicit workspace when you want a self-contained copy:
 
 ```powershell
-.\Hadamard-Canvas-0.4.22-portable.exe --workspace C:\Users\me\hcanvas --port 4319
+.\Hadamard-Canvas-0.1.0-portable.exe --workspace C:\Users\me\hcanvas --port 4319
 ```
 
 Build the Windows installer instead of the portable exe:
 
 ```bash
 npm run build:hcanvas:installer
-# dist_electron/canvas/Hadamard-Canvas-Setup-0.4.22.exe
+# dist_electron/canvas/Hadamard-Canvas-Setup-0.1.0.exe
 ```
 
 The installer is a normal NSIS wizard: choose the install directory, creates Start Menu and desktop shortcuts, and includes an uninstaller. It does not require a system-wide install.
@@ -323,10 +323,34 @@ hcanvas sessions heartbeat <id> --doc <doc> --page <page> --block <block>
 hcanvas sessions delete <id>
 ```
 
-The Agent tab is an onboarding and observability surface: status chips for the current document/page and connected sessions, a **Copy agent prompt** action that puts workspace, document, page and revision into a ready-to-paste prompt for any coding agent's chat, live session cards, recent edits, context JSON, and a CLI reference. No vendor-specific agent name is hard-coded. It never starts an agent itself; stale sessions are dimmed after 10 minutes.
+The Agent tab starts with **Canvas Copilot** (see below) and then shows the external-agent onboarding and observability surface: status chips for the current document/page and connected sessions, a **Copy agent prompt** action that puts workspace, document, page and revision into a ready-to-paste prompt for any coding agent's chat, live session cards, recent edits, context JSON, and a CLI reference. No vendor-specific agent name is hard-coded. It never starts an agent itself; stale sessions are dimmed after 10 minutes.
 
 Agents with a session on the current page appear as colored cursors inside the canvas. Canvas/infinite cursors anchor to their block; HTML cursors are measured against the rendered page and anchored to the reported `data-hc-id` element; Excalidraw whiteboard cursors are projected from the scene element's position through the whiteboard scroll/zoom state. Click a cursor to **follow** that agent: hcanvas opens its document/page and selects the reported block or HTML element.
 
+
+## Canvas Copilot
+
+The **Agent** tab includes an in-app **Canvas Copilot** chat for the current document. It runs a small read/apply tool loop against the same revision-checked API used by external agents:
+
+- `canvas_read` inspects the active document/page.
+- `canvas_apply` writes a revision-checked ops array.
+- Copilot replies are shown with the tools it called; when a write succeeds the document reloads.
+
+Configure a model in one of two ways:
+
+```bash
+export HCANVAS_LLM_BASE_URL=https://api.example.com/v1
+export HCANVAS_LLM_API_KEY=...
+export HCANVAS_LLM_MODEL=...
+```
+
+or create `<workspace>/agent.json`:
+
+```json
+{ "baseUrl": "https://api.example.com/v1", "apiKey": "...", "model": "..." }
+```
+
+The Copilot is optional: without this configuration the panel shows setup guidance, while the external-agent CLI workflow remains fully available.
 
 ## Agent protocol (CLI-first)
 

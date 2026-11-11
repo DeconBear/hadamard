@@ -1156,3 +1156,14 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .page-context-menu button:hover:not(:disabled) { background:var(--surface-2); }
 .page-context-menu button[data-page-menu="delete"] { color:var(--red); }
 .page-context-menu button:disabled { opacity:.35; cursor:default; }
+
+/* Canvas Copilot panel */
+.copilot-section { padding-top:10px; }
+.copilot-status-line { display:flex; align-items:center; gap:6px; margin-top:8px; color:var(--muted); font-size:9.5px; }
+.copilot-status-line .agent-dot { position:static; }
+.copilot-status-sep { opacity:.5; }
+.copilot-setup { margin-top:10px; padding:10px; border:1px solid #fde68a; background:#fffbeb; border-radius:9px; color:#92400e; }
+.copilot-setup strong { display:block; font-size:11px; }
+.copilot-setup p { margin:5px 0 0; font-size:9.5px; line-height:1.5; }
+.copilot-setup code { font:9px/1.4 ui-monospace,Consolas,monospace; background:rgba(255,255,255,.6); padding:1px 3px; border-radius:3px; }
+.copilot-error { color:#991b1b !important; }
