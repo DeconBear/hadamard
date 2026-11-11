@@ -89,7 +89,7 @@ The left page rail renders live thumbnails: HTML pages are previewed in a sandbo
 
 ## Markdown document pages
 
-A **Markdown** page is a full A4 document, not a Markdown block. Create one from **+ Page → Markdown · A4**. The page renders through `markdownPageHtml`; **Edit** opens a full-screen Markdown source workspace with live preview. Saving uses the revision-checked `set_page_markdown` op, which regenerates the rendered HTML snapshot used by Present/PDF/PPTX/HTML export. The Markdown source is stored alongside the page as `page.markdown`.
+A **Markdown** page is a full A4 document, not a Markdown block. Create one from **+ Page → Markdown · A4**. The page renders through `markdownPageHtml` and its body is directly editable: click into the prose to edit it as rich text; changes save automatically through the revision-checked `set_page_markdown` op. Right-click the page in the page rail or right-click any blank area of the rendered document to choose **Edit Markdown source** and edit the Markdown source in a full-screen workspace with live preview. Each save regenerates the HTML snapshot used by Present/PDF/PPTX/HTML export. The Markdown source is stored alongside the page as `page.markdown`.
 
 ## Page types and local HTML
 
@@ -361,36 +361,10 @@ hcanvas sessions heartbeat <id> --doc <doc> --page <page> --block <block>
 hcanvas sessions delete <id>
 ```
 
-The Agent tab starts with **Canvas Copilot** (see below) and then shows the external-agent onboarding and observability surface: status chips for the current document/page and connected sessions, a **Copy agent prompt** action that puts workspace, document, page and revision into a ready-to-paste prompt for any coding agent's chat, live session cards, recent edits, context JSON, and a CLI reference. No vendor-specific agent name is hard-coded. It never starts an agent itself; stale sessions are dimmed after 10 minutes.
+The Agent tab is the external-agent onboarding and observability surface: status chips for the current document/page and connected sessions, a **Copy agent prompt** action that puts workspace, document, page and revision into a ready-to-paste prompt for any coding agent's chat, live session cards, recent edits, context JSON, and a CLI reference. No vendor-specific agent name is hard-coded. It never starts an agent itself; stale sessions are dimmed after 10 minutes.
 
 Agents with a session on the current page appear as colored cursors inside the canvas. Canvas/infinite cursors anchor to their block; HTML cursors are measured against the rendered page and anchored to the reported `data-hc-id` element; Excalidraw whiteboard cursors are projected from the scene element's position through the whiteboard scroll/zoom state. Click a cursor to **follow** that agent: hcanvas opens its document/page and selects the reported block or HTML element.
 
-
-## Canvas Copilot
-
-The **Agent** tab includes an in-app **Canvas Copilot** chat for the current document. It runs a small read/apply tool loop against the same revision-checked API used by external agents:
-
-- `canvas_read` inspects the active document/page.
-- `canvas_apply` writes a revision-checked ops array.
-- Copilot replies are shown with the tools it called; when a write succeeds the document reloads.
-
-Configure a model in one of two ways:
-
-```bash
-export HCANVAS_LLM_BASE_URL=https://api.example.com/v1
-export HCANVAS_LLM_API_KEY=...
-export HCANVAS_LLM_MODEL=...
-```
-
-or create `<workspace>/agent.json`:
-
-```json
-{ "baseUrl": "https://api.example.com/v1", "apiKey": "...", "model": "..." }
-```
-
-If no Hcanvas-specific configuration is present, Copilot reuses the local Hadamard model configuration from `~/.hadamard/settings.json` (`HADAMARD_BASE_URL` / `HADAMARD_API_KEY` / `HADAMARD_MODEL`, or `ANTHROPIC_*`). Both OpenAI-compatible and Anthropic wire formats are supported; the Agent panel shows which source supplied the model.
-
-The Copilot is optional: without any configuration the panel shows setup guidance, while the external-agent CLI workflow remains fully available.
 
 ## Agent protocol (CLI-first)
 

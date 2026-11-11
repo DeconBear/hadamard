@@ -152,6 +152,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   let collapsed = false;
   let searchQuery = '';
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  const expandedRoots = new Set<string>();
+  const expandedDirs = new Set<string>();
   const autoSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const saveQueues = new Map<string, Promise<boolean>>();
   const AUTO_SAVE_DELAY = 700;
@@ -501,6 +503,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const name = window.prompt(kind === 'directory' ? 'New folder name' : 'New file name');
     if (!name?.trim()) return;
     const relative = directory ? directory + '/' + name.trim() : name.trim();
+    expandedRoots.add(rootId);
+    if (directory) expandedDirs.add(rootId + ':' + directory);
     try {
       await options.request('/api/files/create', { method: 'POST', body: JSON.stringify({ root: rootId, path: relative, kind }) });
       await refreshTree();
@@ -583,9 +587,10 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       children.className = 'file-tree-children hidden';
       const toggle = (): void => {
         const open = !children.classList.contains('hidden');
-        if (open) { children.classList.add('hidden'); head.querySelector('.file-tree-disclosure')!.textContent = '▸'; return; }
+        if (open) { children.classList.add('hidden'); head.querySelector('.file-tree-disclosure')!.textContent = '▸'; expandedRoots.delete(root.id); return; }
         children.classList.remove('hidden');
         head.querySelector('.file-tree-disclosure')!.textContent = '▾';
+        expandedRoots.add(root.id);
         if (!children.dataset.loaded) { children.dataset.loaded = '1'; void renderDirectory(root.id, '', children); }
       };
       head.querySelector('.file-tree-disclosure')!.addEventListener('click', toggle);
@@ -600,6 +605,12 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       group.appendChild(head);
       group.appendChild(children);
       panel.appendChild(group);
+      if (expandedRoots.has(root.id)) {
+        children.classList.remove('hidden');
+        head.querySelector('.file-tree-disclosure')!.textContent = '▾';
+        children.dataset.loaded = '1';
+        void renderDirectory(root.id, '', children);
+      }
     }
     if (roots.length) {
       const hint = document.createElement('p');
@@ -622,13 +633,20 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
         row.addEventListener('contextmenu', event => fileContextMenu(event, rootId, entry.path, entry.type, rootId));
         if (entry.type === 'directory') {
           const nested = document.createElement('div');
-          nested.className = 'file-tree-nested hidden';
+          const dirKey = rootId + ':' + entry.path;
+          nested.className = 'file-tree-nested' + (expandedDirs.has(dirKey) ? '' : ' hidden');
           row.after(nested);
+          if (expandedDirs.has(dirKey)) {
+            row.querySelector('.file-tree-icon')!.textContent = '▾';
+            nested.dataset.loaded = '1';
+            void renderDirectory(rootId, entry.path, nested);
+          }
           row.addEventListener('click', () => {
             const open = !nested.classList.contains('hidden');
-            if (open) { nested.classList.add('hidden'); row.querySelector('.file-tree-icon')!.textContent = '▸'; return; }
+            if (open) { nested.classList.add('hidden'); row.querySelector('.file-tree-icon')!.textContent = '▸'; expandedDirs.delete(dirKey); return; }
             nested.classList.remove('hidden');
             row.querySelector('.file-tree-icon')!.textContent = '▾';
+            expandedDirs.add(dirKey);
             if (!nested.dataset.loaded) { nested.dataset.loaded = '1'; void renderDirectory(rootId, entry.path, nested); }
           });
         } else row.addEventListener('click', () => void openFile(rootId, entry.path));

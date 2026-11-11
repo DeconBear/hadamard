@@ -82,31 +82,28 @@ async function main() {
   });
 
   const promptValues = [];
-  await page.route('**/api/agent/status', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, configured: true, model: 'e2e-copilot', provider: 'openai', source: 'hcanvas' }) }));
-  await page.route('**/api/agent/chat', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, reply: 'E2E Copilot reply.', steps: [{ type: 'tool', name: 'canvas_read' }], changed: false }) }));
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1600);
   assert('UI loads', (await page.title()).includes('Hadamard Canvas'), await page.title());
 
-  // File CRUD + search.
+  // File CRUD + search. Creation must reveal the new entry without re-expanding the root.
   const rootName = page.locator('#filesPanel .file-tree-root-name').first();
   await rootName.click({ button: 'right' });
   await page.waitForTimeout(150);
   promptValues.push('e2e-created.md');
   await page.locator('.file-context-menu button', { hasText: 'New file' }).click();
-  await page.waitForTimeout(600);
-  await rootName.click();
-  await page.waitForTimeout(500);
-  assert('File created', await page.locator('#filesPanel .file-tree-node', { hasText: 'e2e-created.md' }).count() > 0);
+  await page.waitForTimeout(700);
+  const closeFileSurface = page.locator('[data-file-action="close"]');
+  if (await closeFileSurface.count()) await closeFileSurface.first().click();
+  await page.waitForTimeout(200);
+  assert('File created and visible', await page.locator('#filesPanel .file-tree-node', { hasText: 'e2e-created.md' }).count() > 0);
   const createdRow = page.locator('#filesPanel .file-tree-node', { hasText: 'e2e-created.md' });
   await createdRow.click({ button: 'right' });
   await page.waitForTimeout(150);
   promptValues.push('e2e-renamed.md');
   await page.locator('.file-context-menu button', { hasText: 'Rename' }).click();
-  await page.waitForTimeout(600);
-  await rootName.click();
-  await page.waitForTimeout(500);
-  assert('File renamed', await page.locator('#filesPanel .file-tree-node', { hasText: 'e2e-renamed.md' }).count() > 0);
+  await page.waitForTimeout(700);
+  assert('File renamed and visible', await page.locator('#filesPanel .file-tree-node', { hasText: 'e2e-renamed.md' }).count() > 0);
   await page.locator('#fileSearchInput').fill('e2e-renamed');
   await page.waitForTimeout(1400);
   assert('File search finds renamed file', await page.locator('.file-search-result', { hasText: 'e2e-renamed.md' }).count() > 0);
@@ -115,34 +112,50 @@ async function main() {
   await page.locator('.file-context-menu button', { hasText: 'Delete' }).click();
   await page.waitForTimeout(700);
   assert('File deleted', await page.locator('.file-search-result', { hasText: 'e2e-renamed.md' }).count() === 0);
-  const closeFileSurface = page.locator('[data-file-action="close"]');
-  if (await closeFileSurface.count()) await closeFileSurface.first().click();
-  await page.waitForTimeout(200);
+  await page.locator('#fileSearchClear').click();
+  await page.waitForTimeout(300);
+  await rootName.click({ button: 'right' });
+  await page.waitForTimeout(150);
+  promptValues.push('e2e-folder');
+  await page.locator('.file-context-menu button', { hasText: 'New folder' }).click();
+  await page.waitForTimeout(700);
+  assert('Folder created and visible', await page.locator('#filesPanel .file-tree-node.directory', { hasText: 'e2e-folder' }).count() > 0);
+  const folderRow = page.locator('#filesPanel .file-tree-node.directory', { hasText: 'e2e-folder' });
+  await folderRow.click({ button: 'right' });
+  await page.waitForTimeout(150);
+  await page.locator('.file-context-menu button', { hasText: 'Delete' }).click();
+  await page.waitForTimeout(700);
+  assert('Folder deleted', await page.locator('#filesPanel .file-tree-node.directory', { hasText: 'e2e-folder' }).count() === 0);
 
-  // Markdown document page + editor.
+  // Markdown page: direct rich-text editing, no top Edit button.
   await page.locator('#addPageBtn').click();
   await page.waitForTimeout(300);
   await page.locator('[data-preset="markdown-a4"]').click();
   await page.waitForTimeout(800);
   assert('Markdown page badge', (await page.locator('.html-reader-badge').innerText()).includes('MARKDOWN PAGE'));
-  await page.locator('.html-reader-edit').click();
-  await page.waitForTimeout(700);
-  assert('Markdown editor opens', await page.locator('.markdown-workspace .cm-content').count() > 0);
-  await page.locator('.markdown-workspace .cm-content').click();
+  assert('Markdown page has no top Edit', await page.locator('.html-reader-edit').count() === 0);
+  const frame = page.frameLocator('.html-page-surface iframe');
+  await frame.locator('body').click();
   await page.keyboard.press('Control+End');
-  await page.keyboard.type('\n\nE2E markdown edit');
-  await page.locator('#saveCodeBtn').click();
-  await page.waitForTimeout(1000);
-  assert('Markdown edit renders', (await page.frameLocator('.html-page-surface iframe').locator('body').innerText()).includes('E2E markdown edit'));
+  await page.keyboard.type('\n\nE2E rich markdown edit');
+  await page.waitForTimeout(1400);
+  assert('Markdown rich edit renders', (await frame.locator('body').innerText()).includes('E2E rich markdown edit'));
+  await frame.locator('body').click({ button: 'right' });
+  await page.waitForTimeout(250);
+  assert('Markdown body source menu present', await page.locator('.page-context-menu button', { hasText: 'Edit Markdown source' }).count() > 0);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
 
-  // Copilot panel (mock model).
-  await page.locator('[data-tab="agent"]').click();
-  await page.waitForTimeout(500);
-  assert('Copilot configured', (await page.locator('#copilotPanel').innerText()).includes('E2E-Copilot') || (await page.locator('#copilotPanel').innerText()).includes('e2e-copilot'));
-  await page.locator('#copilotInput').fill('Summarize this page');
-  await page.locator('#copilotSend').click();
-  await page.waitForTimeout(500);
-  assert('Copilot reply rendered', (await page.locator('#copilotPanel').innerText()).includes('E2E Copilot reply.'));
+  // Source editing via page-list right-click.
+  const activePageItem = page.locator('.page-item.active').first();
+  await activePageItem.click({ button: 'right' });
+  await page.waitForTimeout(200);
+  assert('Page source menu present', await page.locator('.page-context-menu button', { hasText: 'Edit Markdown source' }).count() > 0);
+  await page.locator('.page-context-menu button', { hasText: 'Edit Markdown source' }).click();
+  await page.waitForTimeout(700);
+  assert('Markdown source editor opens', await page.locator('.markdown-workspace .cm-content').count() > 0);
+  await page.locator('.markdown-workspace [data-close]').first().click();
+  await page.waitForTimeout(300);
 
   // Assets upload + insert.
   const assetInput = page.locator('input[type=file]').last();

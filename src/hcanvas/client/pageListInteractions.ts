@@ -4,6 +4,8 @@ export interface PageListInteractionOptions {
   onDuplicate(pageId: string): void;
   onDelete(pageId: string): void;
   canDelete(): boolean;
+  canEditSource?(pageId: string): boolean;
+  onEditSource?(pageId: string): void;
 }
 
 /** Page cards: right-click actions and direct pointer dragging. */
@@ -26,7 +28,8 @@ export function installPageListInteractions(options: PageListInteractionOptions)
     const node = document.createElement('div');
     node.className = 'page-context-menu';
     node.setAttribute('role', 'menu');
-    node.innerHTML = '<button type="button" data-page-menu="duplicate" role="menuitem">Duplicate page</button>' +
+    node.innerHTML = (options.canEditSource?.(pageId) ? '<button type="button" data-page-menu="source" role="menuitem">Edit Markdown source</button>' : '') +
+      '<button type="button" data-page-menu="duplicate" role="menuitem">Duplicate page</button>' +
       '<button type="button" data-page-menu="delete" role="menuitem"' + (options.canDelete() ? '' : ' disabled') + '>Delete page</button>';
     document.body.appendChild(node);
     const rect = node.getBoundingClientRect();
@@ -35,6 +38,10 @@ export function installPageListInteractions(options: PageListInteractionOptions)
     node.style.left = Math.max(8, left) + 'px';
     node.style.top = Math.max(8, top) + 'px';
     menu = node;
+    node.querySelector('[data-page-menu="source"]')?.addEventListener('click', () => {
+      closeMenu();
+      options.onEditSource?.(pageId);
+    });
     node.querySelector('[data-page-menu="duplicate"]')?.addEventListener('click', () => {
       closeMenu();
       options.onDuplicate(pageId);

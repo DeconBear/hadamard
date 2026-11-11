@@ -22,10 +22,11 @@ import { insertAssetIntoPage } from './assetInsert.js';
 import { openMarkdownPageEditor as showMarkdownPageEditor } from './markdownPageEditor.js';
 import { openNewDocModal as showNewDocModal } from './newDocModal.js';
 import { openSourceEditorFor } from './sourceEditor.js';
+import { createPageFromPreset } from './pageCreation.js';
+import { CANVAS_PAGE_PRESETS, type HcClientPagePreset } from './pageTemplates.js';
+import { MarkdownPageController } from './markdownPageController.js';
 import { installPageListInteractions } from './pageListInteractions.js';
-import { renderCopilotPanel } from './copilotPanel.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
-import { markdownPageHtml } from '../markdownPage.js';
 import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import type { HcBlockPlugin } from '../blockPlugins.js';
@@ -46,7 +47,6 @@ import { addLineEndpointHandles } from './lineEndpoints.js';
 import { cloneBlocksForPlacement, parseBlocksFromClipboard, serializeBlocksForClipboard } from '../blockClipboard.js';
 import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawing.js';
 import { invertOps as invertDocumentOps } from './documentHistory.js';
-import { CANVAS_PAGE_PRESETS, canvasTemplateBlocks, pageTemplateHtml, starterHtml } from './pageTemplates.js';
 import { SHORTCUTS_MODAL_HTML } from './shortcuts.js';
 import { esc, genId, toHex } from './utils.js';
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
@@ -159,6 +159,12 @@ const state: UiState = {
   presenting: false, presentIndex: 0, sourceModalOpen: false,
   tool: 'select', showGrid: true, snap: true, spaceHeld: false, pendingInsert: null, pendingShape: null,
 };
+const markdownPages = new MarkdownPageController({
+  getPage: pageId => state.doc?.pages.find(page => page.id === pageId) || null,
+  applyOps: (ops, options) => applyOps(ops, options),
+  openSource: page => showMarkdownPageEditor({ page, openCodeModal, applyOps: (ops, options) => applyOps(ops, options) }),
+});
+
 const htmlSelectionEditor = createHtmlSelectionEditor({
   getIframe: () => state.iframeElement || document.querySelector<HTMLIFrameElement>('.html-page-surface iframe'),
   isEditing: () => Boolean(state.editing),
@@ -747,6 +753,8 @@ function bindStaticActions(): void {
     onDuplicate: pageId => { const page = state.doc?.pages.find(item => item.id === pageId); if (page) duplicatePage(page); },
     onDelete: pageId => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(pageId); }); },
     canDelete: () => (state.doc?.pages.length || 0) > 1,
+    canEditSource: pageId => state.doc?.pages.find(page => page.id === pageId)?.markdown !== undefined,
+    onEditSource: pageId => { void markdownPages.openSource(pageId); },
   });
   installPluginSidebar({ request: api, openModal: html => openModal(html), closeModal: () => closeModal(), confirm: message => confirmDialog(message), toast, reload: () => loadExternalPlugins(api), onChanged: () => renderInspector() });
   fileBrowser = installFileBrowser({
@@ -1670,10 +1678,15 @@ function renderArtboard(): void {
     artboard.style.display = 'none';
     renderHtmlPageSurface(viewport, page, {
       editing: markdownPage ? false : Boolean(state.editing),
+      richMarkdown: markdownPage,
+      showEdit: !markdownPage,
       label: markdownPage ? 'MARKDOWN PAGE' : undefined,
-      hint: markdownPage ? 'rendered Markdown · Edit' : undefined,
+      hint: markdownPage ? 'click text to edit · right-click for source' : undefined,
       onLoad: iframe => { if (state.editing && !markdownPage) setupHtmlEditing(iframe, page.id); htmlSelectionEditor.applyPending(page.id); },
       onEdit: pageId => enterHtmlEdit(pageId),
+      onMarkdownChange: markdown => markdownPages.schedule(page.id, markdown),
+      onMarkdownCommit: markdown => markdownPages.commit(page.id, markdown),
+      onMarkdownSource: (pageId, x, y) => markdownPages.showSourceMenu(pageId, x, y),
     });
     renderToolbarState();
     return;
@@ -1926,10 +1939,14 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
   }
 }
 window.addEventListener('message', event => {
-  const data = event.data as { type?: string; pageId?: string; text?: string; hcId?: string; rect?: { left: number; top: number; width: number; height: number } } | null;
+  const data = event.data as { type?: string; pageId?: string; text?: string; hcId?: string; x?: number; y?: number; rect?: { left: number; top: number; width: number; height: number } } | null;
   if (data?.type === 'hcanvas:html-selection') {
     if (state.editing || !data.pageId || data.pageId !== state.activePageId || activePage()?.mode !== 'html' || activePage()?.markdown !== undefined || !data.text || !data.hcId || !data.rect) { htmlSelectionEditor.hide(); return; }
     htmlSelectionEditor.show(data.pageId, data.hcId, data.rect);
+    return;
+  }
+  if (data?.type === 'hcanvas:markdown-context' && typeof data.pageId === 'string') {
+    markdownPages.showSourceMenu(data.pageId, Number(data.x) || 0, Number(data.y) || 0);
     return;
   }
   if (!data || data.type !== 'hcanvas:edit-html' || typeof data.pageId !== 'string') return;
@@ -2829,8 +2846,7 @@ function renderAgent(): void {
     agentCount.classList.toggle('hidden', count === 0);
   }
 
-  let html = '<section class="inspector-section copilot-section"><div id="copilotPanel"></div></section>';
-  html += '<section class="inspector-section agent-hero">';
+  let html = '<section class="inspector-section agent-hero">';
   html += '<div class="agent-hero-head"><span class="agent-mark">A</span><div><div class="inspector-title">Agent bridge</div><p class="agent-lede">Copy the prompt and send it to your coding agent in its chat. hcanvas does not start an agent; it observes the sessions and changes they report.</p></div></div>';
   html += '<div class="agent-status-row">';
   html += '<span class="agent-chip ' + (count ? 'online' : 'off') + '"><span class="agent-dot"></span>' + (count ? count + ' connected' : 'No agent connected') + '</span>';
@@ -2896,13 +2912,6 @@ function renderAgent(): void {
   html += '<p class="agent-muted">Always read first and pass the returned revision to <code>apply</code>. Sessions heartbeat automatically on context/read/apply.</p>';
   html += '</section>';
   root.innerHTML = html;
-  renderCopilotPanel({
-    root: el('copilotPanel'),
-    request: api,
-    getDocId: () => state.doc?.id || '',
-    getPageId: () => state.activePageId || '',
-    onChanged: async docId => { await openDoc(docId, state.activePageId || undefined); },
-  });
 
   qs<HTMLButtonElement>('#copyConnectBtn')?.addEventListener('click', () => { void copyText(agentPrompt); });
   qs<HTMLButtonElement>('#copyAgentPromptBtn')?.addEventListener('click', () => { void copyText(agentPrompt); });
@@ -3261,19 +3270,12 @@ async function insertAsset(asset: HcAssetView, point?: { clientX: number; client
   });
 }
 
-async function createPage(preset: typeof CANVAS_PAGE_PRESETS[number]): Promise<void> {
+async function createPage(preset: HcClientPagePreset): Promise<void> {
   if (!state.doc) return;
-  const page: HcPage = {
-    id: genId('page'), name: preset.title, mode: preset.mode,
-    width: preset.width, height: preset.height, background: preset.background,
-    ...(preset.mode === 'html'
-      ? preset.markdown !== undefined
-        ? { html: markdownPageHtml(preset.markdown, { background: preset.background }), markdown: preset.markdown }
-        : { html: preset.template ? pageTemplateHtml(preset.template, '') : starterHtml(preset.title) }
-      : { blocks: preset.template?.startsWith('canvas-') ? canvasTemplateBlocks(preset.template, preset.width, preset.height) : [] }),
-  };
-  const result = await applyOps([{ op: 'add_page', page }], { refreshArtboard: false });
-  if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); void syncActive(); }
+  await createPageFromPreset(preset, {
+    applyOps: (ops, options) => applyOps(ops, options),
+    onCreated: page => { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); void syncActive(); },
+  });
 }
 
 function openNewDocModal(): void {
