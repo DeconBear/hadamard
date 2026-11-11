@@ -143,8 +143,9 @@ async function main() {
   await frame.locator('body').click({ button: 'right' });
   await page.waitForTimeout(250);
   assert('Markdown body source menu present', await page.locator('.page-context-menu button', { hasText: 'Edit Markdown source' }).count() > 0);
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(200);
+  await frame.locator('body').click({ position: { x: 40, y: 40 } });
+  await page.waitForTimeout(250);
+  assert('Markdown source menu dismisses on outside click', await page.locator('.page-context-menu').count() === 0);
 
   // Source editing via page-list right-click.
   const activePageItem = page.locator('.page-item.active').first();

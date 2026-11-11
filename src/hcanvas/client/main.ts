@@ -137,7 +137,6 @@ interface PageItemCache {
   info: HTMLDivElement;
   index: number;
 }
-
 const pageItemCache = new Map<string, PageItemCache>();
 const htmlCursorCache = new Map<string, { left: number; top: number }>();
 let htmlCursorCacheKey = '';
@@ -1945,6 +1944,7 @@ window.addEventListener('message', event => {
     htmlSelectionEditor.show(data.pageId, data.hcId, data.rect);
     return;
   }
+  if (data?.type === 'hcanvas:dismiss-context-menus') { markdownPages.dismissAllMenus(); return; }
   if (data?.type === 'hcanvas:markdown-context' && typeof data.pageId === 'string') {
     markdownPages.showSourceMenu(data.pageId, Number(data.x) || 0, Number(data.y) || 0);
     return;

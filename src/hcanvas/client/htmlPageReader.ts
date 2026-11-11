@@ -87,6 +87,9 @@ function setupMarkdownRichEditing(iframe: HTMLIFrameElement, page: HcPage, optio
     if (commit) options.onMarkdownCommit?.(markdown);
     else options.onMarkdownChange?.(markdown);
   };
+  doc.addEventListener('pointerdown', () => {
+    parent.postMessage({ type: 'hcanvas:dismiss-context-menus' }, '*');
+  }, true);
   doc.addEventListener('input', () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => emit(false), 450);

@@ -10,6 +10,7 @@ export interface MarkdownPageControllerOptions {
 export class MarkdownPageController {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private draft: { pageId: string; markdown: string } | null = null;
+  private sourceMenuClose: (() => void) | null = null;
 
   constructor(private readonly options: MarkdownPageControllerOptions) {}
 
@@ -36,7 +37,17 @@ export class MarkdownPageController {
     await this.options.applyOps([{ op: 'set_page_markdown', pageId: draft.pageId, markdown: draft.markdown }], { refreshArtboard: false });
   }
 
+  dismissSourceMenu(): void {
+    this.sourceMenuClose?.();
+  }
+
+  dismissAllMenus(): void {
+    this.dismissSourceMenu();
+    document.querySelectorAll('.page-context-menu').forEach(node => node.remove());
+  }
+
   showSourceMenu(pageId: string, x: number, y: number): void {
+    this.dismissSourceMenu();
     document.querySelectorAll('.page-context-menu').forEach(node => node.remove());
     const menu = document.createElement('div');
     menu.className = 'page-context-menu';
@@ -45,9 +56,15 @@ export class MarkdownPageController {
     const rect = menu.getBoundingClientRect();
     menu.style.left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 10)) + 'px';
     menu.style.top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 10)) + 'px';
-    const close = (): void => { menu.remove(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape, true); };
+    const close = (): void => {
+      menu.remove();
+      document.removeEventListener('pointerdown', outside, true);
+      document.removeEventListener('keydown', escape, true);
+      if (this.sourceMenuClose === close) this.sourceMenuClose = null;
+    };
     const outside = (event: PointerEvent): void => { if (!menu.contains(event.target as Node)) close(); };
     const escape = (event: KeyboardEvent): void => { if (event.key === 'Escape') close(); };
+    this.sourceMenuClose = close;
     menu.querySelector('button')?.addEventListener('click', () => { close(); void this.openSource(pageId); });
     setTimeout(() => { document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', escape, true); }, 0);
   }
