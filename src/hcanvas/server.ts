@@ -391,6 +391,28 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
           return;
         }
       }
+      const revisionsMatch = pathname.match(/^\/api\/docs\/(doc_[A-Za-z0-9]+)\/revisions$/);
+      if (revisionsMatch && req.method === 'GET') {
+        json(res, 200, { ok: true, revisions: await store.listRevisions(revisionsMatch[1]!) });
+        return;
+      }
+      const revisionMatch = pathname.match(/^\/api\/docs\/(doc_[A-Za-z0-9]+)\/revisions\/(\d+)$/);
+      if (revisionMatch && req.method === 'GET') {
+        json(res, 200, { ok: true, doc: await store.readRevision(revisionMatch[1]!, Number(revisionMatch[2])) });
+        return;
+      }
+      const restoreMatch = pathname.match(/^\/api\/docs\/(doc_[A-Za-z0-9]+)\/restore$/);
+      if (restoreMatch && req.method === 'POST') {
+        const body = await readBody(req);
+        const revision = Number(body.revision);
+        if (!Number.isInteger(revision) || revision < 0) throw new HcValidationError('revision is required');
+        const doc = await store.restoreRevision(restoreMatch[1]!, revision, {
+          baseRevision: Number.isFinite(Number(body.baseRevision)) ? Number(body.baseRevision) : undefined,
+          actor: typeof body.actor === 'string' ? body.actor : 'human',
+        });
+        json(res, 200, { ok: true, doc });
+        return;
+      }
       match = pathname.match(/^\/api\/docs\/(doc_[A-Za-z0-9]+)\/read$/);
       if (match && req.method === 'GET') {
         const doc = await store.readDoc(match[1]!);

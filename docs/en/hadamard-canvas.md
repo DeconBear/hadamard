@@ -421,6 +421,10 @@ Proposals are the review path: an agent submits ops with `hcanvas propose`, and 
 
 Requests require the `x-hcanvas-token` header (or `?token=` for SSE), and the service binds localhost by default.
 
+## Revision history
+
+The **History** tab lists saved revisions (revision number, actor, summary, timestamp). Selecting a revision renders a unified line diff against the current document for HTML/Markdown pages and block coordinate changes for canvas/infinite pages. **Restore** creates a new revision from the selected snapshot; the current document and all later revisions remain in history. Snapshot storage lives under `.hcanvas/history/<docId>/` and is capped to the most recent 120 revisions per document.
+
 ## Security
 
 - Localhost-only server with a per-process token; `daemon.json` stores URL/token for CLI discovery.

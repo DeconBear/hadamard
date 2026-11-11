@@ -17,6 +17,7 @@ import { createHtmlSelectionEditor } from './htmlSelectionEditor.js';
 import { bindSidebarSections } from './sidebarCollapse.js';
 import { installPluginSidebar } from './pluginSidebar.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
+import { installHistoryPanel } from './historyPanel.js';
 import { installPageListInteractions } from './pageListInteractions.js';
 import { renderCopilotPanel } from './copilotPanel.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
@@ -110,7 +111,7 @@ interface UiState {
   panX: number;
   panY: number;
   fittedPageId: string | null;
-  tab: 'inspector' | 'layers' | 'agent' | 'proposals';
+  tab: 'inspector' | 'layers' | 'agent' | 'proposals' | 'history';
   saveKind: 'idle' | 'saving' | 'saved' | 'error';
   context: Record<string, unknown> | null;
   presence: PresenceEntry[];
@@ -144,6 +145,7 @@ let shapePicker: ShapePicker | null = null;
 let fileBrowser: FileBrowserController | null = null;
 let presentInteractions: PresentInteractions | null = null;
 let sliceTool: SliceTool | null = null;
+let historyPanel: { render(): void } | null = null;
 
 const state: UiState = {
   docs: [], doc: null, activePageId: null, activeBlockId: null, selectedBlockIds: [], editing: null,
@@ -751,6 +753,14 @@ function bindStaticActions(): void {
     onShowCanvas: () => { renderArtboard(); },
     openCanvas: (docId, pageId) => { void openDoc(docId, pageId); },
   });
+  historyPanel = installHistoryPanel({
+    mount: el('historyPanel'),
+    request: api,
+    getDoc: () => state.doc,
+    onRestored: async docId => { await openDoc(docId); },
+    confirm: message => confirmDialog(message),
+    toast,
+  });
   installAssetLibrary({
     mount: el('assetsPanel'),
     dropTarget: el('viewport'),
@@ -1307,6 +1317,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
 function renderActivePanel(): void {
   if (state.tab === 'agent') renderAgent();
   else if (state.tab === 'proposals') renderProposals();
+  else if (state.tab === 'history') historyPanel?.render();
   else if (state.tab === 'layers') renderLayersPanel();
   else renderInspector();
 }
@@ -1343,6 +1354,7 @@ function renderTabs(): void {
   el('layersPanel').classList.toggle('hidden', state.tab !== 'layers');
   el('agentPanel').classList.toggle('hidden', state.tab !== 'agent');
   el('proposalsPanel').classList.toggle('hidden', state.tab !== 'proposals');
+  el('historyPanel').classList.toggle('hidden', state.tab !== 'history');
 }
 function renderDocs(): void {
   const root = el('docsList');

@@ -70,6 +70,15 @@ export interface HcDocSummary {
   pendingProposals: number;
 }
 
+export interface HcRevisionSummary {
+  revision: number;
+  actor: string;
+  summary: string;
+  createdAt: string;
+  opCount: number;
+  bytes: number;
+}
+
 export interface HcResolveCandidate {
   docId: string;
   title: string;
@@ -442,6 +451,7 @@ export class HcStore {
   readonly exportsDir: string;
   readonly statePath: string;
   readonly mastersPath: string;
+  readonly historyDir: string;
   readonly events = new EventEmitter();
   private masters: HcMaster[] = [];
   private state: HcStateFile = {
@@ -455,11 +465,13 @@ export class HcStore {
     this.exportsDir = path.join(root, 'exports');
     this.statePath = path.join(root, 'state.json');
     this.mastersPath = path.join(root, 'masters.json');
+    this.historyDir = path.join(root, 'history');
   }
 
   async init(): Promise<void> {
     await mkdir(this.docsDir, { recursive: true });
     await mkdir(this.exportsDir, { recursive: true });
+    await mkdir(this.historyDir, { recursive: true });
     try {
       const parsed = JSON.parse(await readFile(this.statePath, 'utf8')) as Partial<HcStateFile>;
       if (parsed.active) this.state.active = { ...this.state.active, ...parsed.active };
@@ -473,6 +485,7 @@ export class HcStore {
     if (docs.length === 0) {
       const demo = createDemoDocument();
       await this.saveDocument(demo);
+      await this.saveRevisionSnapshot(demo);
       this.state.active = { docId: demo.id, pageId: demo.pages[0]!.id, blockId: null, actor: 'human', updatedAt: nowIso() };
       await this.saveState();
     } else {
@@ -616,9 +629,89 @@ export class HcStore {
     if (lastError && !(await readFile(file, 'utf8').catch(() => '')).includes(doc.id)) throw lastError;
   }
 
+  private revisionDir(docId: string): string {
+    if (!/^doc_[A-Za-z0-9]+$/.test(docId)) throw new HcNotFoundError('Invalid document id: ' + docId);
+    return path.join(this.historyDir, docId);
+  }
+
+  private revisionPath(docId: string, revision: number): string {
+    if (!Number.isInteger(revision) || revision < 0) throw new HcValidationError('Invalid revision: ' + revision);
+    return path.join(this.revisionDir(docId), 'rev-' + revision + '.json');
+  }
+
+  private async saveRevisionSnapshot(doc: HcDocument): Promise<void> {
+    const dir = this.revisionDir(doc.id);
+    await mkdir(dir, { recursive: true });
+    const file = this.revisionPath(doc.id, doc.revision);
+    const data = JSON.stringify(doc, null, 2);
+    await writeFile(file, data, 'utf8');
+    const entries = (await readdir(dir).catch(() => [] as string[])).filter(name => /^rev-\d+\.json$/.test(name));
+    const numbers = entries.map(name => Number(name.slice(4, -5))).sort((a, b) => a - b);
+    for (const old of numbers.slice(0, Math.max(0, numbers.length - 120))) await rm(this.revisionPath(doc.id, old), { force: true });
+  }
+
+  async listRevisions(docId: string): Promise<HcRevisionSummary[]> {
+    const doc = await this.readDoc(docId);
+    const dir = this.revisionDir(docId);
+    const entries = (await readdir(dir).catch(() => [] as string[])).filter(name => /^rev-\d+\.json$/.test(name));
+    const result: HcRevisionSummary[] = [];
+    for (const name of entries) {
+      const revision = Number(name.slice(4, -5));
+      const snapshot = await this.readRevision(docId, revision).catch(() => null);
+      if (!snapshot) continue;
+      const meta = doc.history.find(item => item.revision === revision);
+      result.push({
+        revision,
+        actor: meta?.actor || 'human',
+        summary: meta?.summary || (revision === 0 ? 'Initial revision' : 'Revision ' + revision),
+        createdAt: meta?.createdAt || snapshot.updatedAt,
+        opCount: meta?.opCount || 0,
+        bytes: Buffer.byteLength(JSON.stringify(snapshot), 'utf8'),
+      });
+    }
+    return result.sort((a, b) => b.revision - a.revision);
+  }
+
+  async readRevision(docId: string, revision: number): Promise<HcDocument> {
+    const raw = await readFile(this.revisionPath(docId, revision), 'utf8');
+    const doc = JSON.parse(raw) as HcDocument;
+    if (doc.id !== docId || doc.revision !== revision) throw new HcNotFoundError('Revision not found: ' + revision);
+    return doc;
+  }
+
+  async restoreRevision(docId: string, revision: number, input: { baseRevision?: number; actor?: string } = {}): Promise<HcDocument> {
+    return this.withLock(docId, async () => {
+      const current = await this.readDoc(docId);
+      if (input.baseRevision !== undefined && input.baseRevision !== current.revision) throw new HcRevisionConflictError(current);
+      const snapshot = await this.readRevision(docId, revision);
+      const next = clone(current);
+      next.title = snapshot.title;
+      next.pages = clone(snapshot.pages);
+      next.revision = current.revision + 1;
+      next.updatedAt = nowIso();
+      next.history = [...next.history, {
+        revision: next.revision,
+        actor: input.actor || 'human',
+        summary: 'Restore revision ' + revision,
+        createdAt: next.updatedAt,
+        opCount: 0,
+      } satisfies HcHistoryEntry].slice(-200);
+      if (this.state.active.docId === docId && !next.pages.some(page => page.id === this.state.active.pageId)) {
+        this.state.active.pageId = next.pages[0]?.id ?? null;
+        this.state.active.blockId = null;
+        await this.saveState();
+      }
+      await this.saveDocument(next);
+      await this.saveRevisionSnapshot(next);
+      this.emit({ type: 'doc.changed', docId, revision: next.revision, actor: input.actor || 'human', source: 'restore' });
+      return next;
+    });
+  }
+
   async createDoc(input: { title?: string; preset?: HcPagePreset } = {}): Promise<HcDocument> {
     const doc = createDocument(input.title, input.preset);
     await this.saveDocument(doc);
+    await this.saveRevisionSnapshot(doc);
     this.state.active = { docId: doc.id, pageId: doc.pages[0]?.id ?? null, blockId: null, actor: 'human', updatedAt: nowIso() };
     await this.saveState();
     this.emit({ type: 'doc.created', docId: doc.id });
@@ -630,6 +723,7 @@ export class HcStore {
     const temp = file + '.deleted.' + randomUUID();
     await rename(file, temp);
     await rm(temp, { force: true });
+    await rm(this.revisionDir(docId), { recursive: true, force: true });
     const docs = await this.listDocs();
     if (this.state.active.docId === docId) {
       const next = docs[0];
@@ -673,6 +767,7 @@ export class HcStore {
         createdAt: next.updatedAt, opCount: input.ops.length,
       } satisfies HcHistoryEntry].slice(-200);
       await this.saveDocument(next);
+      await this.saveRevisionSnapshot(next);
       if (this.state.active.docId === docId) {
         const actor = input.actor || this.state.active.actor;
         const actorChanged = actor !== this.state.active.actor;
@@ -745,6 +840,7 @@ export class HcStore {
         createdAt: next.updatedAt, opCount: proposal.ops.length,
       } satisfies HcHistoryEntry].slice(-200);
       await this.saveDocument(next);
+      await this.saveRevisionSnapshot(next);
       this.emit({ type: 'proposal.resolved', docId, proposalId, status: 'accepted' });
       this.emit({ type: 'doc.changed', docId, revision: next.revision, actor });
       return { doc: next, proposal: resolved ?? proposal };
