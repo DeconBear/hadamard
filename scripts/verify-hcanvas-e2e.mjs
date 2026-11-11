@@ -162,6 +162,13 @@ async function main() {
   await page.keyboard.press('Enter');
   await page.waitForTimeout(500);
   assert('Formula command renders math', await frame.locator('.hc-math-inline').count() > 0);
+  const formulaCaret = await frame.locator('body').evaluate(() => {
+    const sel = window.getSelection();
+    const node = sel?.anchorNode;
+    const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return { inMath: Boolean(element?.closest('.hc-math-inline')) };
+  });
+  assert('Caret leaves the formula', formulaCaret.inMath === false);
   await frame.locator('body').click({ button: 'right' });
   await page.waitForTimeout(250);
   assert('Markdown body source menu present', await page.locator('.page-context-menu button', { hasText: 'Edit Markdown source' }).count() > 0);
@@ -169,7 +176,8 @@ async function main() {
   await page.waitForTimeout(250);
   assert('Markdown source menu dismisses on outside click', await page.locator('.page-context-menu').count() === 0);
 
-  // Source editing via page-list right-click.
+  // Source editing via page-list right-click. Let the formula autosave settle before page-list rerender.
+  await page.waitForTimeout(1200);
   const activePageItem = page.locator('.page-item.active').first();
   await activePageItem.click({ button: 'right' });
   await page.waitForTimeout(200);

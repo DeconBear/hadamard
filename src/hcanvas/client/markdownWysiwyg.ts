@@ -176,9 +176,15 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
         math.className = 'hc-math-inline';
         math.dataset.tex = tex;
         math.contentEditable = 'false';
+        math.style.userSelect = 'none';
         math.innerHTML = renderMathHtml(tex, false);
         p.appendChild(math);
-        replaceBlock(block, p);
+        const after = doc.createElement('p');
+        after.appendChild(doc.createElement('br'));
+        block.replaceWith(p, after);
+        closeMenu();
+        placeCaret(after);
+        emit();
         return;
       }
     }
