@@ -15,6 +15,8 @@ interface CopilotStatus {
   configured: boolean;
   model?: string | null;
   baseUrl?: string | null;
+  provider?: 'openai' | 'anthropic' | null;
+  source?: 'hcanvas' | 'hadamard' | 'openai' | null;
 }
 
 export interface CopilotPanelOptions {
@@ -60,9 +62,10 @@ export function renderCopilotPanel(options: CopilotPanelOptions): void {
     const badgeClass = statusLoading ? '' : configured ? 'ready' : 'setup';
     let html = '<div class="copilot-head"><div><div class="inspector-title">Canvas Copilot</div><small>Chat with an agent that can read and patch this document.</small></div><span class="copilot-badge ' + badgeClass + '">' + badge + '</span></div>';
     if (status?.configured) {
-      html += '<div class="copilot-status-line"><span class="agent-dot online"></span><span>' + escapeHtml(status.model || 'model ready') + '</span><span class="copilot-status-sep">·</span><span>revision-checked edits</span></div>';
+      const sourceLabel = status.source === 'hadamard' ? 'Hadamard settings' : status.source === 'openai' ? 'OpenAI env' : 'Hcanvas agent.json';
+      html += '<div class="copilot-status-line"><span class="agent-dot online"></span><span>' + escapeHtml(status.model || 'model ready') + '</span><span class="copilot-status-sep">·</span><span>' + escapeHtml(sourceLabel) + '</span><span class="copilot-status-sep">·</span><span>revision-checked edits</span></div>';
     } else if (!statusLoading) {
-      html += '<div class="copilot-setup"><strong>Configure a model to use Copilot.</strong><p>Set <code>HCANVAS_LLM_BASE_URL</code>, <code>HCANVAS_LLM_API_KEY</code>, <code>HCANVAS_LLM_MODEL</code>, or create <code>&lt;workspace&gt;/agent.json</code>.</p>' + (statusError ? '<p class="copilot-error">' + escapeHtml(statusError) + '</p>' : '') + '</div>';
+      html += '<div class="copilot-setup"><strong>Configure a model to use Copilot.</strong><p>Set <code>HCANVAS_LLM_BASE_URL</code>, <code>HCANVAS_LLM_API_KEY</code>, <code>HCANVAS_LLM_MODEL</code>, or create <code>&lt;workspace&gt;/agent.json</code>. Hcanvas also reads an existing Hadamard model configuration.</p>' + (statusError ? '<p class="copilot-error">' + escapeHtml(statusError) + '</p>' : '') + '</div>';
     }
     html += '<div class="copilot-log">';
     if (!messages.length && !busy) {

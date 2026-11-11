@@ -362,7 +362,9 @@ or create `<workspace>/agent.json`:
 { "baseUrl": "https://api.example.com/v1", "apiKey": "...", "model": "..." }
 ```
 
-The Copilot is optional: without this configuration the panel shows setup guidance, while the external-agent CLI workflow remains fully available.
+If no Hcanvas-specific configuration is present, Copilot reuses the local Hadamard model configuration from `~/.hadamard/settings.json` (`HADAMARD_BASE_URL` / `HADAMARD_API_KEY` / `HADAMARD_MODEL`, or `ANTHROPIC_*`). Both OpenAI-compatible and Anthropic wire formats are supported; the Agent panel shows which source supplied the model.
+
+The Copilot is optional: without any configuration the panel shows setup guidance, while the external-agent CLI workflow remains fully available.
 
 ## Agent protocol (CLI-first)
 

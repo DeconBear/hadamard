@@ -492,7 +492,7 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       }
       if (pathname === '/api/agent/status' && req.method === 'GET') {
         const config = await resolveLlmConfig(store.root);
-        json(res, 200, { ok: true, configured: Boolean(config), model: config?.model || null, baseUrl: config?.baseUrl || null });
+        json(res, 200, { ok: true, configured: Boolean(config), model: config?.model || null, baseUrl: config?.baseUrl || null, provider: config?.provider || null, source: config?.source || null });
         return;
       }
       if (pathname === '/api/agent/chat' && req.method === 'POST') {
