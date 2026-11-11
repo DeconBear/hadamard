@@ -1,0 +1,85 @@
+name: Publish Hadamard Suite Installer
+
+# Windows suite installer with the optional standalone Hcanvas component.
+# Runs beside the normal multi-platform GUI publish workflow.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Hadamard tag (v0.5.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-hadamard-suite-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+jobs:
+  suite:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then TAG="${{ inputs.tag }}"; else TAG="${GITHUB_REF_NAME}"; fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$ ]]; then
+            echo "Tag must match v<semver> (got: $TAG)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          if ! gh api "repos/${{ github.repository }}/releases/tags/$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "${{ github.repository }}" --title "$TAG" --generate-notes || true
+          fi
+          for attempt in {1..30}; do
+            if gh api "repos/${{ github.repository }}/releases/tags/$TAG" >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          gh api "repos/${{ github.repository }}/releases/tags/$TAG" >/dev/null
+
+      - name: Build suite installer
+        run: npm run build:desktop:suite
+
+      - name: Upload suite installer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          gh release upload "$TAG" \
+            dist_electron/suite/Hadamard-*-win-x64.exe \
+            dist_electron/suite/Hadamard-*-win-x64.exe.blockmap \
+            --repo "${{ github.repository }}" \
+            --clobber
