@@ -27,7 +27,6 @@ import { CANVAS_PAGE_PRESETS, type HcClientPagePreset } from './pageTemplates.js
 import { MarkdownPageController } from './markdownPageController.js';
 import { installPageListInteractions } from './pageListInteractions.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
-import { buildAgentPrompt } from './agentPrompt.js';
 import { startShapeTextEdit } from './shapeText.js';
 import type { HcBlockPlugin } from '../blockPlugins.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
@@ -115,7 +114,7 @@ interface UiState {
   panX: number;
   panY: number;
   fittedPageId: string | null;
-  tab: 'inspector' | 'layers' | 'agent' | 'proposals' | 'history';
+  tab: 'inspector' | 'layers' | 'proposals' | 'history';
   saveKind: 'idle' | 'saving' | 'saved' | 'error';
   context: Record<string, unknown> | null;
   presence: PresenceEntry[];
@@ -1326,8 +1325,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   }
 }
 function renderActivePanel(): void {
-  if (state.tab === 'agent') renderAgent();
-  else if (state.tab === 'proposals') renderProposals();
+  if (state.tab === 'proposals') renderProposals();
   else if (state.tab === 'history') historyPanel?.render();
   else if (state.tab === 'layers') renderLayersPanel();
   else renderInspector();
@@ -1363,7 +1361,6 @@ function renderTabs(): void {
   });
   el('inspectorPanel').classList.toggle('hidden', state.tab !== 'inspector');
   el('layersPanel').classList.toggle('hidden', state.tab !== 'layers');
-  el('agentPanel').classList.toggle('hidden', state.tab !== 'agent');
   el('proposalsPanel').classList.toggle('hidden', state.tab !== 'proposals');
   el('historyPanel').classList.toggle('hidden', state.tab !== 'history');
 }
@@ -2762,26 +2759,11 @@ function bindBlockInspector(block: HcBlock): void {
   if (arrowhead) arrowhead.addEventListener('change', () => { void update({ arrowhead: arrowhead.value === 'none' ? 'none' : 'arrow' }); });
 }
 
-function relativeTime(iso: string): string {
-  const delta = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(delta)) return 'unknown';
-  if (delta < 60_000) return 'just now';
-  if (delta < 3_600_000) return Math.round(delta / 60_000) + 'm ago';
-  if (delta < 86_400_000) return Math.round(delta / 3_600_000) + 'h ago';
-  return Math.round(delta / 86_400_000) + 'd ago';
-}
-
 function initials(value: string): string {
   return value.split(/[\s_-]+/).filter(Boolean).slice(0, 2).map(part => part[0]!.toUpperCase()).join('') || 'A';
 }
 
 function renderPresence(): void {
-  const agentBadge = qs<HTMLElement>('#agentCount');
-  if (agentBadge) {
-    const connected = state.presence.filter(item => !item.stale).length;
-    agentBadge.textContent = String(connected);
-    agentBadge.classList.toggle('hidden', connected === 0);
-  }
   const bar = el('presenceBar');
   if (!bar) return;
   const active = state.presence.filter(item => !item.stale);
@@ -2802,7 +2784,6 @@ function renderPresence(): void {
     more.textContent = '+' + (active.length - 5);
     bar.appendChild(more);
   }
-  bar.onclick = () => { state.tab = 'agent'; renderTabs(); renderAgent(); };
 }
 
 async function refreshPresence(): Promise<void> {
@@ -2811,120 +2792,10 @@ async function refreshPresence(): Promise<void> {
     state.presence = snapshot.presence || [];
     if (snapshot.docs) state.docs = snapshot.docs;
     renderPresence();
-    if (state.tab === 'agent') renderAgent();
     renderDocs();
 
   } catch { /* presence is best effort */ }
 }
-
-function renderAgent(): void {
-  const root = el('agentPanel');
-  const page = activePage();
-  const activeSessions = state.presence.filter(item => !item.stale);
-  const allSessions = state.presence;
-  const context = {
-    workspace: boot.workspace,
-    active: state.doc && page ? { docId: state.doc.id, title: state.doc.title, revision: state.doc.revision, pageId: page.id, pageName: page.name, pageMode: page.markdown !== undefined ? 'markdown' : page.mode, blockId: state.activeBlockId, selection: state.selectedHtmlId ? [state.selectedHtmlId] : [] } : null,
-    protocol: { cli: 'hcanvas', read: 'hcanvas read <doc> --format outline', write: 'hcanvas apply <doc> --ops-file ops.json --base-revision <rev>', propose: 'hcanvas propose <doc> ...' },
-  };
-  const docId = state.doc?.id || '<docId>';
-  const revision = state.doc?.revision ?? 0;
-  const agentPrompt = buildAgentPrompt({
-    workspace: boot.workspace,
-    docId,
-    title: state.doc?.title,
-    revision,
-    pageId: page?.id,
-    pageName: page?.name,
-    pageMode: page?.markdown !== undefined ? 'markdown' : page?.mode,
-  });
-  const contextText = JSON.stringify(context, null, 2);
-  const count = activeSessions.length;
-  const agentCount = el('agentCount');
-  if (agentCount) {
-    agentCount.textContent = String(count);
-    agentCount.classList.toggle('hidden', count === 0);
-  }
-
-  let html = '<section class="inspector-section agent-hero">';
-  html += '<div class="agent-hero-head"><span class="agent-mark">A</span><div><div class="inspector-title">Agent bridge</div><p class="agent-lede">Copy the prompt and send it to your coding agent in its chat. hcanvas does not start an agent; it observes the sessions and changes they report.</p></div></div>';
-  html += '<div class="agent-status-row">';
-  html += '<span class="agent-chip ' + (count ? 'online' : 'off') + '"><span class="agent-dot"></span>' + (count ? count + ' connected' : 'No agent connected') + '</span>';
-  html += '<span class="agent-chip">rev ' + revision + '</span>';
-  html += '<span class="agent-chip">' + esc(page ? page.name : 'No page') + '</span>';
-  html += '</div>';
-  html += '<div class="agent-hero-actions"><button id="copyConnectBtn" class="btn tiny primary">Copy agent prompt</button><button id="refreshPresenceBtn" class="btn tiny">Refresh</button></div>';
-  html += '</section>';
-
-  html += '<section class="inspector-section"><div class="inspector-title">Live sessions <span class="presence-count">' + count + '</span></div>';
-  html += '<p class="agent-section-lede">Each row is a terminal or API client that has recently read or written this document.</p>';
-  html += '<div class="presence-list">';
-  html += '<div class="presence-card human"><span class="presence-avatar" style="background:#1f2430">Y</span><div class="presence-copy"><strong>You · this window</strong><small>' + esc(page ? page.name : 'No page') + ' · editing in the browser</small></div><span class="presence-status">local</span></div>';
-  for (const session of allSessions) {
-    html += '<div class="presence-card' + (session.stale ? ' stale' : '') + '" data-session-id="' + esc(session.id) + '">' +
-      '<span class="presence-avatar" style="background:hsl(' + (session.actor.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360) + ',55%,58%)">' + esc(initials(session.actor)) + '</span>' +
-      '<div class="presence-copy"><strong>' + esc(session.actor) + '</strong><small>' + esc(session.docTitle) + (session.pageName ? ' / ' + esc(session.pageName) : '') + ' · ' + relativeTime(session.updatedAt) + '</small>' +
-      (session.selection && session.selection.length ? '<small class="presence-selection">selection: ' + esc(session.selection.join(', ')) + '</small>' : '') +
-      '</div><span class="presence-status ' + (session.stale ? 'idle' : 'online') + '">' + (session.stale ? 'idle' : 'active') + '</span>' +
-      '<button class="presence-copy-btn" data-copy-session="' + esc(session.id) + '" title="Copy session id">⧉</button></div>';
-  }
-  if (!allSessions.length) {
-    html += '<div class="agent-empty"><strong>No agent sessions yet</strong><p>Copy the agent prompt above and send it to your coding agent in its chat. It will read the document and can optionally create a live session.</p><button type="button" class="btn tiny" data-copy-command="' + esc(agentPrompt) + '">Copy agent prompt</button></div>';
-  }
-  html += '</div></section>';
-
-  html += '<section class="inspector-section"><div class="inspector-title">Recent edits</div>';
-  const history = state.doc?.history?.slice(-8).reverse() || [];
-  if (history.length) {
-    html += '<div class="history-list">';
-    for (const entry of history) {
-      html += '<div class="history-row"><span class="history-actor">' + esc(entry.actor) + '</span><span class="history-summary">' + esc(entry.summary) + '</span><span class="history-time">rev ' + entry.revision + ' · ' + relativeTime(entry.createdAt) + '</span></div>';
-    }
-    html += '</div>';
-  } else {
-    html += '<p class="agent-muted">No edits recorded yet. Changes made by this window or by an agent will appear here.</p>';
-  }
-  html += '</section>';
-
-  html += '<section class="inspector-section"><details class="agent-context-details" open><summary><span>Agent prompt</span><span class="agent-summary-meta">paste into the agent chat</span></summary>';
-  html += '<p class="agent-muted">Ready-to-send prompt with the current workspace, document, page and revision.</p>';
-  html += '<pre class="agent-context-pre">' + esc(agentPrompt) + '</pre>';
-  html += '<div class="agent-copy"><button id="copyAgentPromptBtn" class="btn tiny primary">Copy agent prompt</button></div></details></section>';
-  html += '<section class="inspector-section"><details class="agent-context-details"><summary><span>Context JSON</span><span class="agent-summary-meta">' + (state.doc ? 'current doc/page' : 'no active doc') + '</span></summary>';
-  html += '<p class="agent-muted">Paste this into an agent prompt, or let it run <code>hcanvas context --json</code>.</p>';
-  html += '<pre class="agent-context-pre">' + esc(contextText) + '</pre>';
-  html += '<div class="agent-copy"><button id="copyContextBtn" class="btn tiny">Copy context JSON</button></div></details></section>';
-
-  html += '<section class="inspector-section"><div class="inspector-title">CLI reference</div>';
-  html += '<p class="agent-section-lede">The prompt already contains these commands. Use them in the terminal only when you want to drive hcanvas yourself.</p>';
-  html += '<ol class="agent-steps">';
-  const commands: Array<[string, string, string]> = [
-    ['1', 'Optional: live presence session', 'hcanvas sessions create ' + docId + ' --actor <your-agent-name>'],
-    ['2', 'Use the session id', 'export HCANVAS_SESSION=<sessionId>'],
-    ['3', 'Read the current page', 'hcanvas context --json'],
-    ['4', 'Inspect the document', 'hcanvas read ' + docId + ' --format outline'],
-    ['5', 'Apply changes safely', 'hcanvas apply ' + docId + ' --ops-file ops.json --base-revision ' + revision],
-  ];
-  for (const [step, label, command] of commands) {
-    html += '<li><span class="agent-step-no">' + step + '</span><div class="agent-step-body"><strong>' + label + '</strong><code>' + esc(command) + '</code></div><button type="button" class="agent-copy-btn" data-copy-command="' + esc(command) + '" title="Copy command">Copy</button></li>';
-  }
-  html += '</ol>';
-  html += '<p class="agent-muted">Always read first and pass the returned revision to <code>apply</code>. Sessions heartbeat automatically on context/read/apply.</p>';
-  html += '</section>';
-  root.innerHTML = html;
-
-  qs<HTMLButtonElement>('#copyConnectBtn')?.addEventListener('click', () => { void copyText(agentPrompt); });
-  qs<HTMLButtonElement>('#copyAgentPromptBtn')?.addEventListener('click', () => { void copyText(agentPrompt); });
-  qs<HTMLButtonElement>('#copyContextBtn')?.addEventListener('click', () => { void copyText(contextText); });
-  qs<HTMLButtonElement>('#refreshPresenceBtn')?.addEventListener('click', () => { void refreshPresence(); });
-  root.querySelectorAll<HTMLButtonElement>('[data-copy-session]').forEach(button => {
-    button.addEventListener('click', event => { event.stopPropagation(); void copyText(button.dataset.copySession || ''); });
-  });
-  root.querySelectorAll<HTMLButtonElement>('[data-copy-command]').forEach(button => {
-    button.addEventListener('click', () => { void copyText(button.dataset.copyCommand || ''); });
-  });
-}
-
 
 function renderProposalBadge(): void {
   const proposals = state.doc?.proposals || [];

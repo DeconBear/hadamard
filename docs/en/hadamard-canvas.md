@@ -373,7 +373,7 @@ hcanvas sessions heartbeat <id> --doc <doc> --page <page> --block <block>
 hcanvas sessions delete <id>
 ```
 
-The Agent tab is the external-agent onboarding and observability surface: status chips for the current document/page and connected sessions, a **Copy agent prompt** action that puts workspace, document, page and revision into a ready-to-paste prompt for any coding agent's chat, live session cards, recent edits, context JSON, and a CLI reference. No vendor-specific agent name is hard-coded. It never starts an agent itself; stale sessions are dimmed after 10 minutes.
+Agents are external clients: Hcanvas has no in-app Agent or Copilot tab. Agents use the JSON-first CLI/HTTP protocol below; live sessions still appear as presence avatars in the top bar, and `hcanvas context --json` provides the active document/page/revision. No vendor-specific agent name is hard-coded.
 
 Agents with a session on the current page appear as colored cursors inside the canvas. Canvas/infinite cursors anchor to their block; HTML cursors are measured against the rendered page and anchored to the reported `data-hc-id` element; Excalidraw whiteboard cursors are projected from the scene element's position through the whiteboard scroll/zoom state. Click a cursor to **follow** that agent: hcanvas opens its document/page and selects the reported block or HTML element.
 
