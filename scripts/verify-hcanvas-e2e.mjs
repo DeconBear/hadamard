@@ -162,6 +162,14 @@ async function main() {
   await page.keyboard.press('Enter');
   await page.waitForTimeout(500);
   assert('Formula command renders math', await frame.locator('.hc-math-inline').count() > 0);
+  assert('Formula editor opens', await frame.locator('.hc-formula-editor').count() > 0);
+  const formulaInput = frame.locator('.hc-formula-input');
+  await formulaInput.fill('a = b + c');
+  await page.waitForTimeout(250);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  assert('Formula editor commits edited LaTeX', await frame.locator('.hc-math-inline').getAttribute('data-tex') === 'a = b + c');
+  assert('Formula editor closes', await frame.locator('.hc-formula-editor').count() === 0);
   const formulaCaret = await frame.locator('body').evaluate(() => {
     const sel = window.getSelection();
     const node = sel?.anchorNode;
@@ -169,6 +177,13 @@ async function main() {
     return { inMath: Boolean(element?.closest('.hc-math-inline')) };
   });
   assert('Caret leaves the formula', formulaCaret.inMath === false);
+  await frame.locator('.hc-math-inline').first().click();
+  await page.waitForTimeout(300);
+  assert('Clicking formula reopens editor', await frame.locator('.hc-formula-editor').count() > 0);
+  await frame.locator('.hc-formula-input').fill('x^2 + y^2');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(400);
+  assert('Existing formula can be edited', await frame.locator('.hc-math-inline').getAttribute('data-tex') === 'x^2 + y^2');
   await frame.locator('body').click({ button: 'right' });
   await page.waitForTimeout(250);
   assert('Markdown body source menu present', await page.locator('.page-context-menu button', { hasText: 'Edit Markdown source' }).count() > 0);

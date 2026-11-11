@@ -40,6 +40,12 @@ function injectStyle(doc: Document): void {
     '.hc-slash-icon{width:22px;height:22px;flex:0 0 22px;display:grid;place-items:center;border-radius:5px;background:#f4f0ff;color:#5b4ac0;font:700 10px/1 ui-monospace,Consolas,monospace;}',
     '.hc-slash-item:hover .hc-slash-icon,.hc-slash-item.active .hc-slash-icon{background:#e2d9ff;}',
     '.hc-slash-empty{padding:18px 10px;text-align:center;color:#8a8173;font-size:11px;}',
+    '.hc-formula-editor{position:fixed;z-index:2147483647;width:360px;padding:10px 12px;border:1px solid rgba(80,70,55,.16);border-radius:10px;background:#fffdf9;box-shadow:0 14px 40px rgba(31,36,48,.16);font:12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;color:#252a34;}',
+    '.hc-formula-preview{min-height:34px;padding:8px 2px 9px;font-size:19px;display:flex;align-items:center;overflow:auto;}',
+    '.hc-formula-empty{color:#8a8173;font-size:11px;}',
+    '.hc-formula-input{box-sizing:border-box;width:100%;height:30px;padding:0 9px;border:1px solid #ded8cc;border-radius:6px;background:#fff;color:#252a34;font:12px/1.4 ui-monospace,Consolas,monospace;outline:none;}',
+    '.hc-formula-input:focus{border-color:#6d5bd0;box-shadow:0 0 0 2px rgba(109,91,208,.13);}',
+    '.hc-formula-hint{margin-top:6px;color:#8a8173;font-size:9px;}',
   ].join('\n');
   (doc.head || doc.documentElement).appendChild(style);
 }
@@ -57,6 +63,8 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
   let activeIndex = 0;
   let slashBlock: HTMLElement | null = null;
   let menuQuery = '';
+  let formulaEditor: HTMLElement | null = null;
+  let formulaTarget: HTMLElement | null = null;
 
   const textBeforeCaret = (block: HTMLElement): string => {
     const sel = doc.getSelection();
@@ -102,6 +110,63 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
     list.appendChild(item);
     return list;
   };
+
+  function closeFormulaEditor(commit = true): void {
+    if (!formulaEditor) return;
+    const editor = formulaEditor;
+    const target = formulaTarget;
+    formulaEditor = null;
+    formulaTarget = null;
+    if (commit && target) {
+      const input = editor.querySelector<HTMLInputElement>('.hc-formula-input');
+      const tex = input?.value.trim() || '';
+      if (tex) {
+        target.dataset.tex = tex;
+        target.innerHTML = renderMathHtml(tex, false);
+        target.contentEditable = 'false';
+        target.style.userSelect = 'none';
+        const range = doc.createRange();
+        range.setStartAfter(target);
+        range.collapse(true);
+        const sel = doc.getSelection();
+        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+        emit();
+      }
+    }
+    editor.remove();
+  }
+
+  function placeFormulaEditor(math: HTMLElement): void {
+    closeFormulaEditor(false);
+    closeMenu();
+    formulaTarget = math;
+    const editor = doc.createElement('div');
+    editor.className = 'hc-formula-editor';
+    editor.contentEditable = 'false';
+    editor.innerHTML = '<div class="hc-formula-preview"></div><input class="hc-formula-input" type="text" autocomplete="off" spellcheck="false" value="' + (math.dataset.tex || 'E = mc^2').replace(/"/g, '&quot;') + '"><div class="hc-formula-hint">ESC / Enter 完成输入 · LaTeX</div>';
+    const preview = editor.querySelector<HTMLElement>('.hc-formula-preview')!;
+    const input = editor.querySelector<HTMLInputElement>('.hc-formula-input')!;
+    const paint = (): void => { preview.innerHTML = input.value.trim() ? renderMathHtml(input.value.trim(), false) : '<span class="hc-formula-empty">Enter LaTeX</span>'; };
+    paint();
+    const finish = (): void => { closeFormulaEditor(true); };
+    input.addEventListener('input', paint);
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Escape' || event.key === 'Enter') { event.preventDefault(); finish(); }
+    });
+    doc.body.appendChild(editor);
+    formulaEditor = editor;
+    const rect = math.getBoundingClientRect();
+    const width = 360;
+    const left = Math.max(12, Math.min(rect.left, doc.documentElement.clientWidth - width - 12));
+    const top = Math.min(rect.bottom + 8, doc.documentElement.clientHeight - 170);
+    editor.style.left = left + 'px';
+    editor.style.top = Math.max(12, top) + 'px';
+    const outside = (event: PointerEvent): void => {
+      if (formulaEditor !== editor) return;
+      if (!editor.contains(event.target as Node)) { closeFormulaEditor(true); doc.removeEventListener('pointerdown', outside, true); }
+    };
+    setTimeout(() => { doc.addEventListener('pointerdown', outside, true); input.focus(); input.select(); }, 0);
+  }
 
   function execute(id: string): void {
     const block = slashBlock || blockOf(doc.getSelection()?.anchorNode || null);
@@ -184,7 +249,7 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
         block.replaceWith(p, after);
         closeMenu();
         placeCaret(after);
-        emit();
+        requestAnimationFrame(() => placeFormulaEditor(math));
         return;
       }
     }
@@ -291,6 +356,14 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
     if (event.key === 'Enter') { event.preventDefault(); if (items[activeIndex]) execute(items[activeIndex]!.id); return; }
     if (event.key === 'Escape') { event.preventDefault(); closeMenu(); return; }
   }, true);
+
+  doc.addEventListener('click', event => {
+    const math = (event.target as Element)?.closest?.('.hc-math-inline[data-tex]') as HTMLElement | null;
+    if (!math) return;
+    event.preventDefault();
+    event.stopPropagation();
+    placeFormulaEditor(math);
+  });
 
   doc.addEventListener('pointerdown', event => {
     if (menu && !menu.contains(event.target as Node)) closeMenu();
