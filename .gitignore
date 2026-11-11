@@ -52,3 +52,6 @@ scripts/rebrand-to-hadamard.mjs
 
 # Local playwright-cli debug logs
 .playwright-cli/
+
+# Local packaging inputs/outputs
+build-artifacts/

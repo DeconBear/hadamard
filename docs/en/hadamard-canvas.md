@@ -57,6 +57,19 @@ npm run build:hcanvas:installer
 
 The installer is a normal NSIS wizard: choose the install directory, creates Start Menu and desktop shortcuts, and includes an uninstaller. It does not require a system-wide install.
 
+### Hadamard suite installer (optional Hcanvas component)
+
+```bash
+npm run build:desktop:suite
+# dist_electron/suite/Hadamard-<hadamard-version>-win-x64.exe
+```
+
+The suite installer builds the current Hcanvas `hcanvas.version.json` installer first, embeds it as `resources/hcanvas-setup.exe`, and adds an optional **Install Hadamard Canvas (standalone)** choice to the Hadamard installer. Choosing it runs the standalone Hcanvas NSIS installer silently. Hcanvas keeps its own version, Start Menu entry and uninstaller; uninstalling Hadamard does not remove Hcanvas.
+
+### Independent releases
+
+Hcanvas releases use their own tag namespace and workflow: `hcanvas-v<version>` (for example `hcanvas-v0.1.0`). The workflow checks that the tag matches `hcanvas.version.json`, builds the standalone installers, and uploads them to the Hcanvas release. It never writes Hadamard `v*` releases. Browser E2E is available with `npm run test:hcanvas:e2e` or the **Hcanvas E2E** workflow.
+
 The workspace stores documents, state and exports:
 
 ```
@@ -171,6 +184,19 @@ npm run build:hcanvas:installer
 ```
 
 The installer is a normal NSIS wizard: choose the install directory, creates Start Menu and desktop shortcuts, and includes an uninstaller. It does not require a system-wide install.
+
+### Hadamard suite installer (optional Hcanvas component)
+
+```bash
+npm run build:desktop:suite
+# dist_electron/suite/Hadamard-<hadamard-version>-win-x64.exe
+```
+
+The suite installer builds the current Hcanvas `hcanvas.version.json` installer first, embeds it as `resources/hcanvas-setup.exe`, and adds an optional **Install Hadamard Canvas (standalone)** choice to the Hadamard installer. Choosing it runs the standalone Hcanvas NSIS installer silently. Hcanvas keeps its own version, Start Menu entry and uninstaller; uninstalling Hadamard does not remove Hcanvas.
+
+### Independent releases
+
+Hcanvas releases use their own tag namespace and workflow: `hcanvas-v<version>` (for example `hcanvas-v0.1.0`). The workflow checks that the tag matches `hcanvas.version.json`, builds the standalone installers, and uploads them to the Hcanvas release. It never writes Hadamard `v*` releases. Browser E2E is available with `npm run test:hcanvas:e2e` or the **Hcanvas E2E** workflow.
 
 The workspace stores documents, state and exports:
 

@@ -259,7 +259,9 @@
     "example:hadamard-buddy": "npm run build && tsx examples/hadamard-buddy.ts",
     "example:bridge-sdk": "npm run build && tsx examples/bridge-sdk.ts",
     "example:profiles": "tsx examples/profiles/all-profiles.ts",
-    "build:hcanvas:all": "node scripts/build-hcanvas-installer.mjs portable nsis"
+    "build:hcanvas:all": "node scripts/build-hcanvas-installer.mjs portable nsis",
+    "build:desktop:suite": "node scripts/build-hadamard-suite.mjs",
+    "test:hcanvas:e2e": "node scripts/verify-hcanvas-e2e.mjs"
   },
   "keywords": [
     "agent",
