@@ -12,7 +12,8 @@ function inline(node: Node): string {
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
   const element = node as HTMLElement;
   const tag = element.tagName.toLowerCase();
-  if (tag === 'script' || tag === 'style') return '';
+  if (tag === 'script' || tag === 'style' || element.classList.contains('hc-slash-menu')) return '';
+  if (tag === 'mark') return element.outerHTML;
   if (tag === 'br') return '  \n';
   if (tag === 'strong' || tag === 'b') return '**' + Array.from(element.childNodes).map(inline).join('') + '**';
   if (tag === 'em' || tag === 'i') return '*' + Array.from(element.childNodes).map(inline).join('') + '*';
@@ -51,7 +52,7 @@ function blockMarkdown(node: Node): string {
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
   const element = node as HTMLElement;
   const tag = element.tagName.toLowerCase();
-  if (tag === 'script' || tag === 'style') return '';
+  if (tag === 'script' || tag === 'style' || element.classList.contains('hc-slash-menu')) return '';
   if (/^h[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + blockText(element);
   if (tag === 'p') return blockText(element);
   if (tag === 'blockquote') return blockText(element).split('\n').map(line => '> ' + line).join('\n');

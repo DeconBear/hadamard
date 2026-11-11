@@ -61,6 +61,7 @@ async function main() {
   await mkdir(path.join(workspace, 'notes'), { recursive: true });
   await writeFile(path.join(workspace, 'README.md'), '# E2E workspace\n\nSeed file.\n', 'utf8');
   await writeFile(path.join(workspace, 'notes', 'plan.md'), '# Plan\n', 'utf8');
+  await writeFile(path.join(workspace, '.hidden.md'), '# Hidden file\n', 'utf8');
 
   const started = await startServer(workspace);
   server = started.child;
@@ -76,12 +77,13 @@ async function main() {
   const context = await browser.newContext({ viewport: { width: 1500, height: 1000 } });
   page = await context.newPage();
   page.setDefaultTimeout(timeout);
-  page.on('dialog', async dialog => {
-    if (dialog.type() === 'prompt') await dialog.accept(promptValues.shift() || '');
-    else await dialog.accept();
-  });
+  page.on('dialog', async dialog => { await dialog.accept(); });
 
-  const promptValues = [];
+  const fillFilePrompt = async (value) => {
+    await page.locator('#filePromptInput').waitFor({ state: 'visible' });
+    await page.locator('#filePromptInput').fill(value);
+    await page.locator('#filePromptOk').click();
+  };
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1600);
   assert('UI loads', (await page.title()).includes('Hadamard Canvas'), await page.title());
@@ -90,18 +92,19 @@ async function main() {
   const rootName = page.locator('#filesPanel .file-tree-root-name').first();
   await rootName.click({ button: 'right' });
   await page.waitForTimeout(150);
-  promptValues.push('e2e-created.md');
   await page.locator('.file-context-menu button', { hasText: 'New file' }).click();
+  await fillFilePrompt('e2e-created.md');
   await page.waitForTimeout(700);
   const closeFileSurface = page.locator('[data-file-action="close"]');
   if (await closeFileSurface.count()) await closeFileSurface.first().click();
   await page.waitForTimeout(200);
   assert('File created and visible', await page.locator('#filesPanel .file-tree-node', { hasText: 'e2e-created.md' }).count() > 0);
+  assert('Hidden file visible', await page.locator('#filesPanel .file-tree-node', { hasText: '.hidden.md' }).count() > 0);
   const createdRow = page.locator('#filesPanel .file-tree-node', { hasText: 'e2e-created.md' });
   await createdRow.click({ button: 'right' });
   await page.waitForTimeout(150);
-  promptValues.push('e2e-renamed.md');
   await page.locator('.file-context-menu button', { hasText: 'Rename' }).click();
+  await fillFilePrompt('e2e-renamed.md');
   await page.waitForTimeout(700);
   assert('File renamed and visible', await page.locator('#filesPanel .file-tree-node', { hasText: 'e2e-renamed.md' }).count() > 0);
   await page.locator('#fileSearchInput').fill('e2e-renamed');
@@ -116,8 +119,8 @@ async function main() {
   await page.waitForTimeout(300);
   await rootName.click({ button: 'right' });
   await page.waitForTimeout(150);
-  promptValues.push('e2e-folder');
   await page.locator('.file-context-menu button', { hasText: 'New folder' }).click();
+  await fillFilePrompt('e2e-folder');
   await page.waitForTimeout(700);
   assert('Folder created and visible', await page.locator('#filesPanel .file-tree-node.directory', { hasText: 'e2e-folder' }).count() > 0);
   const folderRow = page.locator('#filesPanel .file-tree-node.directory', { hasText: 'e2e-folder' });
@@ -140,6 +143,19 @@ async function main() {
   await page.keyboard.type('\n\nE2E rich markdown edit');
   await page.waitForTimeout(1400);
   assert('Markdown rich edit renders', (await frame.locator('body').innerText()).includes('E2E rich markdown edit'));
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('# ');
+  await page.waitForTimeout(350);
+  assert('Markdown # shortcut creates heading', await frame.locator('h1').count() >= 2);
+  await page.keyboard.type('Shortcut heading');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/');
+  await page.waitForTimeout(350);
+  assert('Slash menu opens', await frame.locator('.hc-slash-menu').count() > 0);
+  await frame.locator('.hc-slash-menu .hc-slash-item', { hasText: 'Heading 2' }).click();
+  await page.waitForTimeout(400);
+  assert('Slash command creates heading', await frame.locator('h2').count() > 0);
   await frame.locator('body').click({ button: 'right' });
   await page.waitForTimeout(250);
   assert('Markdown body source menu present', await page.locator('.page-context-menu button', { hasText: 'Edit Markdown source' }).count() > 0);

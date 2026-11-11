@@ -4,7 +4,7 @@ import { createReadStream } from 'node:fs';
 import { mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { HcValidationError } from './store.js';
+import { HcNotFoundError, HcValidationError } from './store.js';
 
 export interface HcFileRoot {
   id: string;
@@ -22,6 +22,27 @@ export interface HcFileEntry {
 }
 
 export type HcFilePreview = 'text' | 'image' | 'pdf' | 'office' | 'binary';
+
+export interface HcPdfWord {
+  text: string;
+  /** normalized 0..1 coordinates relative to the page */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface HcPdfPageInfo {
+  page: number;
+  width: number;
+  height: number;
+  image: string;
+  words: HcPdfWord[];
+}
+
+export interface HcPdfPreview {
+  pages: HcPdfPageInfo[];
+}
 
 export interface HcFileSearchResult {
   rootId: string;
@@ -46,7 +67,8 @@ const MAX_EDITABLE = 4 * 1024 * 1024;
 const MAX_PREVIEW = 64 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp', '.avif']);
 const OFFICE_EXTENSIONS = new Set(['.doc', '.docx', '.odt', '.rtf', '.ppt', '.pptx', '.odp', '.xls', '.xlsx', '.ods']);
-const SKIP_NAMES = new Set(['.git', 'node_modules', '.hcanvas', 'dist_electron']);
+// Hidden is a browser affordance, not a file-system rule: show dotfiles/dotfolders.
+const SKIP_NAMES = new Set(['node_modules', 'dist_electron']);
 
 const LANGUAGE_BY_EXT: Record<string, string> = {
   '.ts': 'typescript', '.tsx': 'typescript', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
@@ -75,6 +97,24 @@ function previewFor(filePath: string): HcFilePreview {
   if (ext === '.pdf') return 'pdf';
   if (OFFICE_EXTENSIONS.has(ext)) return 'office';
   return 'text';
+}
+
+function decodeXmlEntity(value: string): string {
+  return value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+}
+
+async function runPdfTool(name: 'pdftoppm' | 'pdftotext', args: string[], timeoutMs: number): Promise<void> {
+  const candidates = name === 'pdftoppm'
+    ? [process.env.PDFTOPPM_PATH, 'pdftoppm', 'pdftoppm.exe']
+    : [process.env.PDFTOTEXT_PATH, 'pdftotext', 'pdftotext.exe'];
+  let lastError = '';
+  for (const candidate of candidates.filter((value): value is string => Boolean(value))) {
+    try {
+      await spawnAndWait(candidate, args, timeoutMs);
+      return;
+    } catch (error) { lastError = error instanceof Error ? error.message : String(error); }
+  }
+  throw new HcValidationError('PDF annotation preview requires Poppler (' + name + '). ' + lastError);
 }
 
 function spawnAndWait(command: string, args: string[], timeoutMs: number): Promise<void> {
@@ -272,6 +312,60 @@ export class HcFileService {
     if (!info.isFile()) throw new HcValidationError('Not a file');
     const type = MIME_BY_EXT[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
     return { stream: createReadStream(filePath), type, size: info.size };
+  }
+
+  async pdfPreview(rootId: string, relative: string): Promise<HcPdfPreview> {
+    const root = this.root(rootId);
+    const source = await this.resolveExisting(root, relative);
+    if (path.extname(source).toLowerCase() !== '.pdf') throw new HcValidationError('Not a PDF file');
+    const info = await stat(source);
+    if (info.size > MAX_PREVIEW) throw new HcValidationError('File is too large to preview (max 64 MB)');
+    const key = createHash('sha1').update(source + ':' + info.mtimeMs + ':' + info.size).digest('hex').slice(0, 20);
+    const dir = path.join(this.previewDir, 'pdf-' + key);
+    const metaFile = path.join(dir, 'meta.json');
+    const cached = await readFile(metaFile, 'utf8').then(raw => JSON.parse(raw) as HcPdfPreview).catch(() => null);
+    if (cached) return cached;
+    await rm(dir, { recursive: true, force: true });
+    await mkdir(dir, { recursive: true });
+    await runPdfTool('pdftoppm', ['-png', '-r', '120', '-f', '1', '-l', '50', source, path.join(dir, 'page')], 90_000);
+    await runPdfTool('pdftotext', ['-bbox', '-f', '1', '-l', '50', source, path.join(dir, 'words.html')], 60_000);
+    const xml = await readFile(path.join(dir, 'words.html'), 'utf8');
+    const images = (await readdir(dir)).filter(name => /^page-\d+\.png$/.test(name)).sort((a, b) => Number(a.match(/\d+/)![0]) - Number(b.match(/\d+/)![0]));
+    const pages: HcPdfPageInfo[] = [];
+    let index = 0;
+    for (const pageMatch of xml.matchAll(/<page width="([^"]+)" height="([^"]+)">([\s\S]*?)<\/page>/g)) {
+      const width = Number(pageMatch[1]);
+      const height = Number(pageMatch[2]);
+      const words: HcPdfWord[] = [];
+      for (const wordMatch of pageMatch[3]!.matchAll(/<word xMin="([^"]+)" yMin="([^"]+)" xMax="([^"]+)" yMax="([^"]+)">([\s\S]*?)<\/word>/g)) {
+        const xMin = Number(wordMatch[1]);
+        const yMin = Number(wordMatch[2]);
+        const xMax = Number(wordMatch[3]);
+        const yMax = Number(wordMatch[4]);
+        const text = decodeXmlEntity(wordMatch[5] || '');
+        if (!text.trim() || !width || !height) continue;
+        words.push({ text, x: xMin / width, y: yMin / height, w: Math.max(0, (xMax - xMin) / width), h: Math.max(0, (yMax - yMin) / height) });
+      }
+      pages.push({ page: index + 1, width, height, image: images[index] || '', words });
+      index += 1;
+      if (index >= 50) break;
+    }
+    const preview: HcPdfPreview = { pages };
+    await writeFile(metaFile, JSON.stringify(preview), 'utf8');
+    return preview;
+  }
+
+  async pdfPage(rootId: string, relative: string, page: number): Promise<{ stream: ReturnType<typeof createReadStream>; type: string; size: number }> {
+    const preview = await this.pdfPreview(rootId, relative);
+    const info = preview.pages.find(item => item.page === page);
+    if (!info?.image) throw new HcNotFoundError('PDF page not found');
+    const root = this.root(rootId);
+    const source = await this.resolveExisting(root, relative);
+    const statInfo = await stat(source);
+    const key = createHash('sha1').update(source + ':' + statInfo.mtimeMs + ':' + statInfo.size).digest('hex').slice(0, 20);
+    const file = path.join(this.previewDir, 'pdf-' + key, info.image);
+    const pageInfo = await stat(file);
+    return { stream: createReadStream(file), type: 'image/png', size: pageInfo.size };
   }
 
   async officePreviewPdf(rootId: string, relative: string): Promise<{ stream: ReturnType<typeof createReadStream>; type: string; size: number }> {

@@ -27,6 +27,7 @@ import { xml } from '@codemirror/lang-xml';
 import { php } from '@codemirror/lang-php';
 import { yaml } from '@codemirror/lang-yaml';
 import { renderMarkdownHtml } from '../markdown.js';
+import { mountPdfPreview } from './pdfPreview.js';
 
 interface FileRoot { id: string; name: string; path: string; }
 interface FileEntry { name: string; path: string; type: 'file' | 'directory'; ext?: string; size?: number; }
@@ -405,11 +406,13 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     surface.querySelector('[data-file-action="close"]')?.addEventListener('click', () => { void closeTab(tab.id); });
     if (image) { body.innerHTML = '<div class="file-image-view"><img src="' + escapeAttr(options.serveUrl(tab.rootId, tab.path)) + '" alt="' + escapeAttr(tab.name) + '"></div>'; return; }
     if (tab.preview === 'pdf') {
-      const frame = document.createElement('iframe');
-      frame.className = 'file-html-frame';
-      frame.title = tab.name;
-      frame.setAttribute('src', options.serveUrl(tab.rootId, tab.path));
-      body.appendChild(frame);
+      void mountPdfPreview(body, {
+        rootId: tab.rootId,
+        path: tab.path,
+        request: options.request,
+        fallbackUrl: options.serveUrl(tab.rootId, tab.path),
+        toast: options.toast,
+      });
       return;
     }
     if (tab.preview === 'office') {
@@ -499,8 +502,33 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     await loadRoots();
   }
 
+  function askText(title: string, defaultValue = ''): Promise<string | null> {
+    return new Promise(resolve => {
+      const modal = document.createElement('div');
+      modal.className = 'modal small file-prompt-modal';
+      modal.innerHTML = '<div class="modal-head"><div><strong>' + escapeHtml(title) + '</strong><small>Use / for folders, or just enter a name.</small></div></div><div class="modal-body"><div class="field"><span>Name</span><input id="filePromptInput" autocomplete="off" spellcheck="false"></div></div><div class="modal-foot"><button type="button" class="btn" id="filePromptCancel">Cancel</button><button type="button" class="btn primary" id="filePromptOk">OK</button></div>';
+      document.body.appendChild(modal);
+      const input = modal.querySelector<HTMLInputElement>('#filePromptInput')!;
+      input.value = defaultValue;
+      let settled = false;
+      const finish = (value: string | null): void => {
+        if (settled) return;
+        settled = true;
+        modal.remove();
+        resolve(value);
+      };
+      modal.querySelector('#filePromptCancel')?.addEventListener('click', () => finish(null));
+      modal.querySelector('#filePromptOk')?.addEventListener('click', () => finish(input.value));
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') { event.preventDefault(); finish(input.value); }
+        else if (event.key === 'Escape') { event.preventDefault(); finish(null); }
+      });
+      setTimeout(() => { input.focus(); input.select(); }, 0);
+    });
+  }
+
   async function createEntry(rootId: string, directory: string, kind: 'file' | 'directory'): Promise<void> {
-    const name = window.prompt(kind === 'directory' ? 'New folder name' : 'New file name');
+    const name = await askText(kind === 'directory' ? 'New folder' : 'New file');
     if (!name?.trim()) return;
     const relative = directory ? directory + '/' + name.trim() : name.trim();
     expandedRoots.add(rootId);
@@ -514,7 +542,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   }
 
   async function renameEntry(rootId: string, relative: string): Promise<void> {
-    const name = window.prompt('Rename to', relative.split('/').pop() || '');
+    const name = await askText('Rename', relative.split('/').pop() || '');
     if (!name?.trim() || name.trim() === relative.split('/').pop()) return;
     try {
       await options.request('/api/files/rename', { method: 'POST', body: JSON.stringify({ root: rootId, path: relative, name: name.trim() }) });
@@ -660,7 +688,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   async function addRoot(): Promise<void> {
     let chosen: string | null = null;
     if (options.chooseDirectory) chosen = await options.chooseDirectory();
-    if (!chosen) chosen = window.prompt('Workspace folder path');
+    if (!chosen) chosen = await askText('Add workspace folder');
     if (!chosen) return;
     try {
       await options.request('/api/files/roots', { method: 'POST', body: JSON.stringify({ path: chosen }) });

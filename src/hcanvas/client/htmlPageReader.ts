@@ -1,5 +1,6 @@
 import type { HcPage } from '../types.js';
 import { htmlToMarkdown } from './markdownEditing.js';
+import { attachMarkdownWysiwyg } from './markdownWysiwyg.js';
 
 export function previewHtmlDocument(html: string, pageId: string): string {
   const pid = JSON.stringify(pageId);
@@ -78,6 +79,7 @@ function setupMarkdownRichEditing(iframe: HTMLIFrameElement, page: HcPage, optio
   doc.body.contentEditable = 'true';
   doc.body.spellcheck = true;
   doc.body.style.outline = 'none';
+  attachMarkdownWysiwyg(doc, page.id);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastMarkdown = '';
   const emit = (commit: boolean): void => {

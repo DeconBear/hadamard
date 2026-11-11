@@ -326,6 +326,28 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         served.stream.pipe(res);
         return;
       }
+      if (pathname === '/api/files/pdf-preview' && req.method === 'GET') {
+        const rootId = url.searchParams.get('root') || '';
+        const filePath = url.searchParams.get('path') || '';
+        const preview = await files.pdfPreview(rootId, filePath);
+        json(res, 200, {
+          ok: true,
+          pages: preview.pages.map(page => ({
+            ...page,
+            url: '/api/files/pdf-page?root=' + encodeURIComponent(rootId) + '&path=' + encodeURIComponent(filePath) + '&page=' + page.page + '&token=' + encodeURIComponent(token),
+          })),
+        });
+        return;
+      }
+      if (pathname === '/api/files/pdf-page' && req.method === 'GET') {
+        const rootId = url.searchParams.get('root') || '';
+        const filePath = url.searchParams.get('path') || '';
+        const page = Number(url.searchParams.get('page') || '1');
+        const served = await files.pdfPage(rootId, filePath, page);
+        res.writeHead(200, { 'content-type': served.type, 'content-length': served.size, 'cache-control': 'public, max-age=3600' });
+        served.stream.pipe(res);
+        return;
+      }
       const rawMatch = pathname.match(/^\/api\/files\/raw\/(root_[A-Za-z0-9]+)\/([^/]+)\/(.+)$/);
       if (rawMatch && rawMatch[2] === token && req.method === 'GET') {
         const served = url.searchParams.get('office') === '1'
