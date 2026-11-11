@@ -1,5 +1,7 @@
 /** Markdown WYSIWYG shortcuts and slash commands for the editable page body. */
 
+import { renderMathHtml } from '../markdown.js';
+
 interface Command {
   id: string;
   label: string;
@@ -169,7 +171,13 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
       }
       case 'formula': {
         const p = doc.createElement('p');
-        p.textContent = '$E = mc^2$';
+        const tex = 'E = mc^2';
+        const math = doc.createElement('span');
+        math.className = 'hc-math-inline';
+        math.dataset.tex = tex;
+        math.contentEditable = 'false';
+        math.innerHTML = renderMathHtml(tex, false);
+        p.appendChild(math);
         replaceBlock(block, p);
         return;
       }

@@ -13,6 +13,8 @@ function inline(node: Node): string {
   const element = node as HTMLElement;
   const tag = element.tagName.toLowerCase();
   if (tag === 'script' || tag === 'style' || element.classList.contains('hc-slash-menu')) return '';
+  const tex = element.getAttribute('data-tex');
+  if (tex) return '$' + tex + '$';
   if (tag === 'mark') return element.outerHTML;
   if (tag === 'br') return '  \n';
   if (tag === 'strong' || tag === 'b') return '**' + Array.from(element.childNodes).map(inline).join('') + '**';
@@ -53,6 +55,8 @@ function blockMarkdown(node: Node): string {
   const element = node as HTMLElement;
   const tag = element.tagName.toLowerCase();
   if (tag === 'script' || tag === 'style' || element.classList.contains('hc-slash-menu')) return '';
+  const tex = element.getAttribute('data-tex');
+  if (tex) return '$$' + tex + '$$';
   if (/^h[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + blockText(element);
   if (tag === 'p') return blockText(element);
   if (tag === 'blockquote') return blockText(element).split('\n').map(line => '> ' + line).join('\n');

@@ -156,6 +156,12 @@ async function main() {
   await frame.locator('.hc-slash-menu .hc-slash-item', { hasText: 'Heading 2' }).click();
   await page.waitForTimeout(400);
   assert('Slash command creates heading', await frame.locator('h2').count() > 0);
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/formula');
+  await page.waitForTimeout(350);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(500);
+  assert('Formula command renders math', await frame.locator('.hc-math-inline').count() > 0);
   await frame.locator('body').click({ button: 'right' });
   await page.waitForTimeout(250);
   assert('Markdown body source menu present', await page.locator('.page-context-menu button', { hasText: 'Edit Markdown source' }).count() > 0);
