@@ -64,6 +64,23 @@ describe('HcFileService', () => {
     expect(service.listRoots().map(root => root.id)).not.toContain(added.id);
   });
 
+  it('creates, renames, searches and deletes workspace entries', async () => {
+    const project = await tempDir();
+    const service = new HcFileService(path.join(project, '.hcanvas'));
+    await service.init();
+    const root = service.listRoots()[0]!;
+    await service.create(root.id, 'notes', 'directory');
+    await service.create(root.id, 'notes/readme.md', 'file');
+    expect((await service.read(root.id, 'notes/readme.md')).content).toBe('');
+    await service.renameEntry(root.id, 'notes/readme.md', 'guide.md');
+    expect(await readFile(path.join(project, 'notes', 'guide.md'), 'utf8')).toBe('');
+    const results = await service.searchAll('guide');
+    expect(results.some(entry => entry.path === 'notes/guide.md')).toBe(true);
+    await expect(service.renameEntry(root.id, 'notes/guide.md', '../escape.md')).rejects.toThrow(/Invalid file name/);
+    await service.deleteEntry(root.id, 'notes');
+    expect((await service.list(root.id)).some(entry => entry.name === 'notes')).toBe(false);
+  });
+
   it('rejects binary and oversized files', async () => {
     const project = await tempDir();
     const service = new HcFileService(path.join(project, '.hcanvas'));

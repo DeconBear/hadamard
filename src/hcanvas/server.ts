@@ -270,6 +270,28 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         json(res, 200, { ok: true });
         return;
       }
+      if (pathname === '/api/files/create' && req.method === 'POST') {
+        const body = await readBody(req);
+        await files.create(String(body.root || ''), String(body.path || ''), body.kind === 'directory' ? 'directory' : 'file');
+        json(res, 201, { ok: true });
+        return;
+      }
+      if (pathname === '/api/files/rename' && req.method === 'POST') {
+        const body = await readBody(req);
+        await files.renameEntry(String(body.root || ''), String(body.path || ''), String(body.name || ''));
+        json(res, 200, { ok: true });
+        return;
+      }
+      if (pathname === '/api/files/delete' && req.method === 'POST') {
+        const body = await readBody(req);
+        await files.deleteEntry(String(body.root || ''), String(body.path || ''));
+        json(res, 200, { ok: true });
+        return;
+      }
+      if (pathname === '/api/files/search' && req.method === 'GET') {
+        json(res, 200, { ok: true, results: await files.searchAll(url.searchParams.get('q') || '') });
+        return;
+      }
       const rawMatch = pathname.match(/^\/api\/files\/raw\/(root_[A-Za-z0-9]+)\/([^/]+)\/(.+)$/);
       if (rawMatch && rawMatch[2] === token && req.method === 'GET') {
         const served = url.searchParams.get('office') === '1'

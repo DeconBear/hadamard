@@ -1167,3 +1167,16 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .copilot-setup p { margin:5px 0 0; font-size:9.5px; line-height:1.5; }
 .copilot-setup code { font:9px/1.4 ui-monospace,Consolas,monospace; background:rgba(255,255,255,.6); padding:1px 3px; border-radius:3px; }
 .copilot-error { color:#991b1b !important; }
+
+/* File tree search and CRUD affordances. */
+.file-search-row { display:flex; align-items:center; gap:4px; padding:1px 0 6px; }
+.file-search-row input { flex:1; min-width:0; height:24px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--ink); padding:0 7px; font:10.5px/1 Inter,sans-serif; outline:none; }
+.file-search-row input:focus { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+.file-search-row button { width:18px; height:22px; border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:13px; }
+.file-search-row button:hover { color:var(--ink); }
+.file-search-results { display:flex; flex-direction:column; gap:1px; padding:1px 0; }
+.file-search-result { display:flex; align-items:center; gap:6px; min-height:30px; padding:4px 6px; border-radius:5px; cursor:pointer; }
+.file-search-result:hover { background:var(--surface-2); }
+.file-search-copy { min-width:0; display:flex; flex-direction:column; gap:1px; }
+.file-search-copy strong { font-size:10.8px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.file-search-copy small { color:var(--muted); font-size:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

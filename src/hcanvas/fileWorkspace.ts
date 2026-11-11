@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { HcValidationError } from './store.js';
@@ -22,6 +22,14 @@ export interface HcFileEntry {
 }
 
 export type HcFilePreview = 'text' | 'image' | 'pdf' | 'office' | 'binary';
+
+export interface HcFileSearchResult {
+  rootId: string;
+  rootName: string;
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+}
 
 export interface HcFileContent {
   path: string;
@@ -201,6 +209,60 @@ export class HcFileService {
     const filePath = await this.resolveForWrite(root, relative);
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, content, 'utf8');
+  }
+
+  async create(rootId: string, relative: string, kind: 'file' | 'directory'): Promise<void> {
+    if (!relative.trim()) throw new HcValidationError('A file name is required');
+    const root = this.root(rootId);
+    const filePath = await this.resolveForWrite(root, relative);
+    const existing = await stat(filePath).catch(() => null);
+    if (existing) throw new HcValidationError('A file or folder with that name already exists');
+    await mkdir(path.dirname(filePath), { recursive: true });
+    if (kind === 'directory') await mkdir(filePath, { recursive: true });
+    else await writeFile(filePath, '', 'utf8');
+  }
+
+  async renameEntry(rootId: string, relative: string, nextName: string): Promise<void> {
+    const name = nextName.trim();
+    if (!name || name === '.' || name === '..' || /[\\/]/.test(name)) throw new HcValidationError('Invalid file name');
+    const root = this.root(rootId);
+    const source = await this.resolveExisting(root, relative);
+    if (source === (await realpath(root.path))) throw new HcValidationError('Cannot rename the workspace root');
+    const target = path.join(path.dirname(source), name);
+    if (!target.startsWith(await realpath(root.path))) throw new HcValidationError('Path escapes workspace root');
+    const existing = await stat(target).catch(() => null);
+    if (existing) throw new HcValidationError('A file or folder with that name already exists');
+    await rename(source, target);
+  }
+
+  async deleteEntry(rootId: string, relative: string): Promise<void> {
+    if (!relative.trim()) throw new HcValidationError('Cannot delete the workspace root');
+    const root = this.root(rootId);
+    const target = await this.resolveExisting(root, relative);
+    if (target === (await realpath(root.path))) throw new HcValidationError('Cannot delete the workspace root');
+    await rm(target, { recursive: true, force: false });
+  }
+
+  async searchAll(query: string, limit = 80): Promise<HcFileSearchResult[]> {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+    const results: HcFileSearchResult[] = [];
+    const walk = async (root: HcFileRoot, directory: string, depth: number): Promise<void> => {
+      if (results.length >= limit || depth > 8) return;
+      const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (results.length >= limit) return;
+        if (SKIP_NAMES.has(entry.name)) continue;
+        const fullPath = path.join(directory, entry.name);
+        const relative = path.relative(root.path, fullPath).split(path.sep).join('/');
+        if (entry.name.toLowerCase().includes(needle) || relative.toLowerCase().includes(needle)) {
+          results.push({ rootId: root.id, rootName: root.name, name: entry.name, path: relative, type: entry.isDirectory() ? 'directory' : 'file' });
+        }
+        if (entry.isDirectory()) await walk(root, fullPath, depth + 1);
+      }
+    };
+    for (const root of this.roots) await walk(root, root.path, 0);
+    return results.sort((a, b) => (a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'directory' ? -1 : 1));
   }
 
   async serve(rootId: string, relative: string): Promise<{ stream: ReturnType<typeof createReadStream>; type: string; size: number }> {

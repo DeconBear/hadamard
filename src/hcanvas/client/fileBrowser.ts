@@ -150,6 +150,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   let surface: HTMLElement | null = null;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let collapsed = false;
+  let searchQuery = '';
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
   const autoSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const saveQueues = new Map<string, Promise<boolean>>();
   const AUTO_SAVE_DELAY = 700;
@@ -462,8 +464,115 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
   }
 
+  function fileContextMenu(event: MouseEvent, rootId: string, relative: string, type: 'file' | 'directory', rootName: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    document.querySelectorAll('.page-context-menu').forEach(node => node.remove());
+    const menu = document.createElement('div');
+    menu.className = 'page-context-menu file-context-menu';
+    const actions: Array<[string, () => void]> = [];
+    if (type === 'directory') {
+      actions.push(['New file', () => void createEntry(rootId, relative, 'file')]);
+      actions.push(['New folder', () => void createEntry(rootId, relative, 'directory')]);
+    } else actions.push(['Open', () => void openFile(rootId, relative)]);
+    if (relative) {
+      actions.push(['Rename', () => void renameEntry(rootId, relative)]);
+      actions.push(['Delete', () => void deleteEntry(rootId, relative)]);
+    }
+    menu.innerHTML = actions.map(([label]) => '<button type="button">' + escapeHtml(label) + '</button>').join('');
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(event.clientX, window.innerWidth - rect.width - 10)) + 'px';
+    menu.style.top = Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 10)) + 'px';
+    menu.querySelectorAll<HTMLButtonElement>('button').forEach((button, index) => {
+      button.addEventListener('click', () => { menu.remove(); actions[index]![1](); });
+    });
+    const close = (): void => { menu.remove(); document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape, true); };
+    const outside = (down: PointerEvent): void => { if (!menu.contains(down.target as Node)) close(); };
+    const escape = (key: KeyboardEvent): void => { if (key.key === 'Escape') close(); };
+    setTimeout(() => { document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', escape, true); }, 0);
+  }
+
+  async function refreshTree(): Promise<void> {
+    await loadRoots();
+  }
+
+  async function createEntry(rootId: string, directory: string, kind: 'file' | 'directory'): Promise<void> {
+    const name = window.prompt(kind === 'directory' ? 'New folder name' : 'New file name');
+    if (!name?.trim()) return;
+    const relative = directory ? directory + '/' + name.trim() : name.trim();
+    try {
+      await options.request('/api/files/create', { method: 'POST', body: JSON.stringify({ root: rootId, path: relative, kind }) });
+      await refreshTree();
+      if (kind === 'file') await openFile(rootId, relative);
+      options.toast((kind === 'directory' ? 'Folder' : 'File') + ' created', 'success');
+    } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
+  }
+
+  async function renameEntry(rootId: string, relative: string): Promise<void> {
+    const name = window.prompt('Rename to', relative.split('/').pop() || '');
+    if (!name?.trim() || name.trim() === relative.split('/').pop()) return;
+    try {
+      await options.request('/api/files/rename', { method: 'POST', body: JSON.stringify({ root: rootId, path: relative, name: name.trim() }) });
+      await refreshTree();
+      options.toast('Renamed', 'success');
+    } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
+  }
+
+  async function deleteEntry(rootId: string, relative: string): Promise<void> {
+    if (!window.confirm('Delete "' + relative + '" from disk?')) return;
+    try {
+      await options.request('/api/files/delete', { method: 'POST', body: JSON.stringify({ root: rootId, path: relative }) });
+      await refreshTree();
+      options.toast('Deleted', 'success');
+    } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
+  }
+
+  function renderToolbar(): void {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'file-search-row';
+    toolbar.innerHTML = '<input id="fileSearchInput" type="search" placeholder="Search files" value="' + escapeAttr(searchQuery) + '"><button type="button" id="fileSearchClear" title="Clear search">×</button>';
+    panel.appendChild(toolbar);
+    const input = toolbar.querySelector<HTMLInputElement>('#fileSearchInput')!;
+    const clear = toolbar.querySelector<HTMLButtonElement>('#fileSearchClear')!;
+    clear.style.visibility = searchQuery ? 'visible' : 'hidden';
+    input.addEventListener('input', () => {
+      searchQuery = input.value;
+      clear.style.visibility = searchQuery ? 'visible' : 'hidden';
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { if (searchQuery.trim()) void renderSearchResults(); else renderRoots(); }, 180);
+    });
+    input.addEventListener('keydown', event => { if (event.key === 'Escape') { searchQuery = ''; input.value = ''; clear.style.visibility = 'hidden'; renderRoots(); } });
+    clear.addEventListener('click', () => { searchQuery = ''; input.value = ''; clear.style.visibility = 'hidden'; renderRoots(); });
+  }
+
+  async function renderSearchResults(): Promise<void> {
+    for (const child of Array.from(panel.children)) {
+      if (!child.classList.contains('file-search-row')) child.remove();
+    }
+    const host = document.createElement('div');
+    host.className = 'file-search-results';
+    host.innerHTML = '<p class="files-empty">Searching…</p>';
+    panel.appendChild(host);
+    try {
+      const result = await options.request<{ results: Array<{ rootId: string; rootName: string; name: string; path: string; type: 'file' | 'directory' }> }>('/api/files/search?q=' + encodeURIComponent(searchQuery));
+      host.innerHTML = '';
+      for (const entry of result.results || []) {
+        const row = document.createElement('div');
+        row.className = 'file-search-result ' + entry.type;
+        row.innerHTML = '<span class="file-tree-icon">' + (entry.type === 'directory' ? '▸' : escapeHtml(iconFor(entry.name))) + '</span><span class="file-search-copy"><strong>' + escapeHtml(entry.name) + '</strong><small>' + escapeHtml(entry.rootName + ' / ' + entry.path) + '</small></span>';
+        row.addEventListener('click', () => { if (entry.type === 'file') void openFile(entry.rootId, entry.path); });
+        row.addEventListener('contextmenu', event => fileContextMenu(event, entry.rootId, entry.path, entry.type, entry.rootName));
+        host.appendChild(row);
+      }
+      if (!result.results?.length) host.innerHTML = '<p class="files-empty">No matching files</p>';
+    } catch (error) { host.innerHTML = '<p class="files-empty">' + escapeHtml(error instanceof Error ? error.message : String(error)) + '</p>'; }
+  }
+
   function renderRoots(): void {
     panel.innerHTML = '';
+    renderToolbar();
+    if (searchQuery.trim()) { void renderSearchResults(); return; }
     for (const root of roots) {
       const group = document.createElement('div');
       group.className = 'file-tree-root';
@@ -481,6 +590,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       };
       head.querySelector('.file-tree-disclosure')!.addEventListener('click', toggle);
       head.querySelector('.file-tree-root-name')!.addEventListener('click', toggle);
+      head.addEventListener('contextmenu', event => fileContextMenu(event, root.id, '', 'directory', root.name));
       head.querySelector('.file-tree-root-remove')!.addEventListener('click', async event => {
         event.stopPropagation();
         if (!window.confirm('Remove workspace folder ' + root.path + '?')) return;
@@ -509,6 +619,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
         row.className = 'file-tree-node ' + entry.type;
         row.innerHTML = '<span class="file-tree-icon">' + (entry.type === 'directory' ? '▸' : escapeHtml(iconFor(entry.name))) + '</span><span class="file-tree-label">' + escapeHtml(entry.name) + '</span>';
         host.appendChild(row);
+        row.addEventListener('contextmenu', event => fileContextMenu(event, rootId, entry.path, entry.type, rootId));
         if (entry.type === 'directory') {
           const nested = document.createElement('div');
           nested.className = 'file-tree-nested hidden';
