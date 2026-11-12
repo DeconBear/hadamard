@@ -335,6 +335,7 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
   }
 
   doc.addEventListener('input', event => {
+    if ((event as InputEvent).isComposing) return;
     if ((event.target as HTMLElement)?.closest('.hc-slash-menu')) return;
     const sel = doc.getSelection();
     if (!sel?.anchorNode) return;
@@ -342,15 +343,13 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
     const block = blockOf(sel.anchorNode);
     if (!block) { closeMenu(); return; }
     const before = textBeforeCaret(block);
-    if (before.startsWith('/') && !/\s/.test(before)) {
-      showMenu(block, before.slice(1));
-    } else {
-      closeMenu();
-    }
+    const command = /(?:^|\s)\/([^\s]*)$/.exec(before);
+    if (command) showMenu(block, command[1] || '');
+    else closeMenu();
   });
 
   doc.addEventListener('keydown', event => {
-    if (!menu) return;
+    if (!menu || event.isComposing || event.keyCode === 229) return;
     if (event.key === 'ArrowDown') { event.preventDefault(); activeIndex = (activeIndex + 1) % Math.max(1, items.length); renderMenu(menuQuery); return; }
     if (event.key === 'ArrowUp') { event.preventDefault(); activeIndex = (activeIndex - 1 + items.length) % Math.max(1, items.length); renderMenu(menuQuery); return; }
     if (event.key === 'Enter') { event.preventDefault(); if (items[activeIndex]) execute(items[activeIndex]!.id); return; }
