@@ -1,7 +1,8 @@
 /**
  * Hcanvas standalone UI E2E.
- * Starts an isolated Hcanvas server, then exercises Markdown pages, Copilot,
- * file CRUD/search, assets and revision history through the real browser UI.
+ * Starts an isolated Hcanvas server, then exercises the workspace navigator,
+ * Markdown editing, presentations, file CRUD/search, assets and revision history
+ * through the real browser UI.
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -206,6 +207,9 @@ async function main() {
   assert('Markdown help can be dismissed', await page.locator('.markdown-help-popover').isHidden());
   await page.locator('.markdown-help-trigger').click();
   assert('Markdown help can be reopened', await page.locator('.markdown-help-popover').isVisible());
+  await page.locator('#docTitle').click();
+  assert('Markdown help closes on an outside click', await page.locator('.markdown-help-popover').isHidden());
+  await page.locator('.markdown-help-trigger').click();
   await page.locator('[data-help-never]').click();
   assert('Markdown do-not-show preference persists', await page.evaluate(() => localStorage.getItem('hcanvas.markdownHelp.hidden.v1') === '1'));
   await page.locator('.markdown-help-trigger').click();
@@ -475,6 +479,9 @@ async function main() {
   await page.mouse.wheel(0, 400);
   await page.waitForTimeout(200);
   assert('HTML presentation wheel scrolls the document', await htmlPresentation.locator('body').evaluate(() => window.scrollY > 0));
+  await page.keyboard.press('l');
+  assert('Laser shortcut works inside a document presentation', await page.locator('#presentRoot').evaluate(node => node.classList.contains('laser-active')));
+  await page.keyboard.press('l');
   await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(300);
   assert('Arrow keys advance a document presentation from inside the iframe', await page.locator('#presentRoot').getAttribute('data-present-mode') === 'canvas');
