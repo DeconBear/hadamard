@@ -329,6 +329,11 @@ hcanvas 可以加载声明式 block 插件，不需要执行 JavaScript bundle�
 `render` 是 HTML 模板，`{{fieldKey}}` 占位符会被 HTML 转义；脚本、iframe、事件属性和 `javascript:` URL 会被拒绝。支持字段类型：`text`、`textarea`、`color`、`select`、`number`。新增或修改 manifest 后，在 Canvas/Infinite 页面的 Inspector 点击 **Reload plugins**，插件 block 会出现在 **Plugin blocks** 区域。
 
 点击 **Plugin blocks** 旁边的 **Manage** 可以启用/禁用已安装插件，也可以用 **Create block sample** / **Create page sample** 在 `.hcanvas/plugins/` 下生成合法 manifest；**Gallery** 可一键安装内置示例（Sticky Notes、Starter Pages），**Import JSON** 可粘贴或选择 manifest 安装到当前项目；项目插件可在管理器中点 **Remove** 卸载（不会删除用户级插件）；状态保存在 `.hcanvas/plugin-settings.json`，禁用后插件 block 会显示安全的 unknown-block fallback。完整示例见 `examples/hcanvas-plugins/sticky-notes/manifest.json`。插件 block 以普通 block + `data` 保存，因此支持保存/重载、撤销/重做、复制粘贴和 Present。声明式模板是本地可信 UI 内容，只安装你理解的 manifest。
+
+### 组件与插件块
+
+**插件块**是带 manifest 字段的声明式 HTML 模板，可渲染自定义卡片并通过字段编辑，但不会执行 JavaScript。**组件**是标记了 `component: true` 的插件，会出现在 Inspector 的 Components 区域而不是普通块选择器。内置的 **Slider** 组件在画布上可交互：拖动滑轨或点击位置即可改变数值；数值保存在 `block.data.value` 中，并同步到 Inspector 和导出结果。其他插件块/组件目前仍是声明式静态内容，暂无自定义交互。
+
 ### 页面模板插件
 
 插件还可以贡献整套页面模板，在 manifest 中加入 `pagePresets`：

@@ -415,6 +415,11 @@ Project plugins take precedence; duplicate block types are skipped and reported.
 `render` is an HTML template; `{{fieldKey}}` placeholders are HTML-escaped. Inline scripts, iframes, event-handler attributes and `javascript:` URLs are rejected. Supported field kinds are `text`, `textarea`, `color`, `select` and `number`. After adding or editing a manifest, open a Canvas/Infinite page Inspector and click **Reload plugins**; plugin blocks appear under **Plugin blocks**.
 
 Open **Manage** next to the Plugin blocks section to enable/disable installed plugins and use **Create block sample** / **Create page sample** to generate a valid manifest under `.hcanvas/plugins/`. **Gallery** installs the bundled samples (Sticky Notes, Starter Pages); **Import JSON** accepts a pasted or selected manifest and installs it into the project. Project plugins can be removed from the manager with **Remove** (user-level plugins are never removed from a project). Toggle state is persisted in `.hcanvas/plugin-settings.json`; disabled plugins are not registered, so their blocks show the safe unknown-block fallback. A working sample lives at [examples/hcanvas-plugins/sticky-notes/manifest.json](https://github.com/DeconBear/hadamard/blob/main/examples/hcanvas-plugins/sticky-notes/manifest.json). Plugin blocks are stored in the document as normal blocks with a `data` payload, so they survive save/reload, undo/redo, copy/paste and Present. Declarative templates are local, trusted UI content; only install manifests you understand.
+
+### Components and plugin blocks
+
+A **plugin block** is a declarative HTML template with manifest-defined fields; it can render custom cards and be edited through its fields, but it does not execute JavaScript. **Components** are plugins marked `component: true`; they appear in the Inspector’s Components section instead of the normal block picker. The built-in **Slider** component is interactive on canvas: drag the track or click a position to change its value; the value is stored in `block.data.value` and is reflected in the Inspector and exports. Other plugin blocks and components are declarative/static unless they add their own interaction in the future.
+
 ### Page-template plugins
 
 A plugin can also contribute whole page templates. Add `pagePresets` to the same manifest:
