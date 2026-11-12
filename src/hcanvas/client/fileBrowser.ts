@@ -146,6 +146,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   let roots: FileRoot[] = [];
   let tabs: FileTab[] = [];
   let canvasTabs: CanvasTab[] = [];
+  const closedCanvasTabs = new Set<string>();
   let activeId = '';
   let canvasLabel = options.canvasLabel();
   let surface: HTMLElement | null = null;
@@ -163,38 +164,49 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   tabRoot.className = 'workspace-tab-list';
   options.tabs.appendChild(tabRoot);
 
+  function bindTabClose(tab: HTMLElement, close: HTMLButtonElement, onClose: () => void): void {
+    close.addEventListener('click', event => { event.stopPropagation(); onClose(); });
+    tab.addEventListener('auxclick', event => {
+      if (event.button !== 1) return;
+      event.preventDefault();
+      onClose();
+    });
+  }
+
   function renderTabs(): void {
     tabRoot.textContent = '';
     for (const tab of canvasTabs) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'workspace-tab canvas-tab' + (activeId === tab.id ? ' active' : '');
-      button.innerHTML = '<span class="tab-dot"></span><span class="tab-name"></span>';
-      button.querySelector('.tab-name')!.textContent = tab.label;
-      button.addEventListener('click', () => activateCanvasTab(tab));
-      tabRoot.appendChild(button);
+      const wrapper = document.createElement('div');
+      wrapper.className = 'workspace-tab canvas-tab' + (activeId === tab.id ? ' active' : '');
+      wrapper.dataset.tabId = tab.id;
+      wrapper.innerHTML = '<button type="button" class="tab-open"><span class="tab-dot"></span><span class="tab-name"></span></button><button type="button" class="tab-close" title="Close tab · middle-click" aria-label="Close ' + escapeHtml(tab.label) + '">×</button>';
+      wrapper.querySelector('.tab-name')!.textContent = tab.label;
+      wrapper.addEventListener('click', event => {
+        if ((event.target as HTMLElement).closest('.tab-close')) return;
+        activateCanvasTab(tab);
+      });
+      bindTabClose(wrapper, wrapper.querySelector<HTMLButtonElement>('.tab-close')!, () => closeCanvasTab(tab.id));
+      tabRoot.appendChild(wrapper);
     }
     for (const tab of tabs) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'workspace-tab file-tab' + (activeId === tab.id ? ' active' : '') + (tab.dirty ? ' dirty' : '');
-      button.innerHTML = '<span class="tab-file-icon">' + escapeHtml(iconFor(tab.name)) + '</span><span class="tab-name"></span><span class="tab-close" title="Close">×</span>';
-      button.querySelector('.tab-name')!.textContent = tab.name;
-      button.addEventListener('click', event => {
-        if ((event.target as HTMLElement).classList.contains('tab-close')) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'workspace-tab file-tab' + (activeId === tab.id ? ' active' : '') + (tab.dirty ? ' dirty' : '');
+      wrapper.innerHTML = '<button type="button" class="tab-open"><span class="tab-file-icon">' + escapeHtml(iconFor(tab.name)) + '</span><span class="tab-name"></span></button><button type="button" class="tab-close" title="Close tab · middle-click" aria-label="Close ' + escapeHtml(tab.name) + '">×</button>';
+      wrapper.querySelector('.tab-name')!.textContent = tab.name;
+      wrapper.addEventListener('click', event => {
+        if ((event.target as HTMLElement).closest('.tab-close')) return;
         void activateFile(tab.id);
       });
-      button.querySelector('.tab-close')!.addEventListener('click', event => {
-        event.stopPropagation();
-        void closeTab(tab.id);
-      });
-      tabRoot.appendChild(button);
+      bindTabClose(wrapper, wrapper.querySelector<HTMLButtonElement>('.tab-close')!, () => { void closeTab(tab.id); });
+      tabRoot.appendChild(wrapper);
     }
   }
 
-  function syncCanvasTab(docId: string, pageId: string, label: string): void {
+  function syncCanvasTab(docId: string, pageId: string, label: string, reopen = false): void {
     if (!docId || !pageId) return;
     const id = 'canvas:' + docId + ':' + pageId;
+    if (closedCanvasTabs.has(id) && !reopen) return;
+    closedCanvasTabs.delete(id);
     let tab = canvasTabs.find(item => item.id === id);
     if (!tab) { tab = { id, docId, pageId, label: label || 'Canvas' }; canvasTabs.push(tab); }
     tab.label = label || tab.label;
@@ -205,12 +217,30 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
 
   function activateCanvasTab(tab: CanvasTab): void {
     flushActiveSave();
+    closedCanvasTabs.delete(tab.id);
     activeId = tab.id;
     surface?.remove();
     surface = null;
     document.body.classList.remove('file-browser-mode');
     renderTabs();
     if (tab.docId && tab.pageId) options.openCanvas(tab.docId, tab.pageId);
+  }
+
+  function closeCanvasTab(id: string): void {
+    const index = canvasTabs.findIndex(tab => tab.id === id);
+    if (index < 0) return;
+    closedCanvasTabs.add(id);
+    canvasTabs.splice(index, 1);
+    if (activeId !== id) { renderTabs(); return; }
+    const nextCanvas = canvasTabs[Math.min(index, canvasTabs.length - 1)];
+    if (nextCanvas) { activateCanvasTab(nextCanvas); return; }
+    if (tabs[0]) { void activateFile(tabs[0].id); return; }
+    activeId = '';
+    surface?.remove();
+    surface = null;
+    document.body.classList.remove('file-browser-mode');
+    renderTabs();
+    options.onShowCanvas();
   }
 
   async function activateFile(id: string): Promise<void> {
@@ -227,7 +257,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const tab = tabs.find(item => item.id === id);
     if (!tab) return;
     if (tab.dirty) {
-      const saved = await saveTab(tab, true);
+      const saved = await saveTab(tab);
       if (!saved) return;
     }
     clearAutoSave(tab);
@@ -247,7 +277,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const current = tabs.find(item => item.id === activeId);
     if (!current || current.id === excludeId || !current.dirty) return;
     clearAutoSave(current);
-    void saveTab(current, true);
+    void saveTab(current);
   }
 
   function setFileSaveStatus(text: string, tone?: 'saving' | 'saved' | 'error'): void {
@@ -267,26 +297,26 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     clearAutoSave(tab);
     autoSaveTimers.set(tab.id, setTimeout(() => {
       autoSaveTimers.delete(tab.id);
-      if (tab.dirty) void saveTab(tab, true);
+      if (tab.dirty) void saveTab(tab);
     }, AUTO_SAVE_DELAY));
   }
 
-  function saveTab(tab: FileTab, auto = false): Promise<boolean> {
+  function saveTab(tab: FileTab): Promise<boolean> {
     const previous = saveQueues.get(tab.id) || Promise.resolve(true);
-    const next = previous.then(() => performSave(tab, auto), () => performSave(tab, auto));
+    const next = previous.then(() => performSave(tab), () => performSave(tab));
     saveQueues.set(tab.id, next);
     void next.finally(() => { if (saveQueues.get(tab.id) === next) saveQueues.delete(tab.id); });
     return next;
   }
 
-  async function performSave(tab: FileTab, auto: boolean): Promise<boolean> {
+  async function performSave(tab: FileTab): Promise<boolean> {
     clearAutoSave(tab);
     const content = tab.editor?.state.doc.toString() ?? tab.content;
     if (!tab.dirty) {
-      if (auto && activeId === tab.id) setFileSaveStatus('Saved', 'saved');
+      if (activeId === tab.id) setFileSaveStatus('Auto-save on', 'saved');
       return true;
     }
-    if (activeId === tab.id) setFileSaveStatus(auto ? 'Auto-saving…' : 'Saving…', 'saving');
+    if (activeId === tab.id) setFileSaveStatus('Saving…', 'saving');
     try {
       await options.request('/api/files/write', { method: 'POST', body: JSON.stringify({ root: tab.rootId, path: tab.path, content }) });
       tab.content = content;
@@ -294,8 +324,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       tab.dirty = latest !== content;
       if (tab.dirty) scheduleAutoSave(tab);
       renderTabs();
-      if (activeId === tab.id) setFileSaveStatus(auto ? 'Auto-saved' : 'Saved', 'saved');
-      if (!auto) options.toast('Saved ' + tab.name, 'success');
+      if (activeId === tab.id) setFileSaveStatus('Auto-save on', 'saved');
       return true;
     } catch (error) {
       if (activeId === tab.id) setFileSaveStatus('Save failed', 'error');
@@ -379,8 +408,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const editorActive = editable && tab.mode === 'edit';
     const toggle = canToggle ? '<button type="button" class="btn tiny" data-file-action="toggle">' + (tab.mode === 'edit' ? 'Preview' : isHtml ? 'Source' : 'Edit') + '</button>' : '';
     const zoom = editorActive ? '<span class="file-zoom-group" title="Ctrl/Cmd + wheel to zoom"><button type="button" class="file-zoom-btn" data-file-action="zoom-out">−</button><span class="file-zoom-value" data-file-zoom>' + Math.round(tab.fontSize / 13 * 100) + '%</span><button type="button" class="file-zoom-btn" data-file-action="zoom-in">+</button></span>' : '';
-    const history = editorActive ? '<button type="button" class="btn tiny" data-file-action="undo" title="Undo (Ctrl/Cmd+Z)">Undo</button><button type="button" class="btn tiny" data-file-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button><button type="button" class="btn tiny primary" data-file-action="save">Save</button>' : '';
-    const saveStatus = editorActive ? '<span class="file-save-status" data-file-save-status>Auto-save</span>' : '';
+    const history = editorActive ? '<button type="button" class="btn tiny" data-file-action="undo" title="Undo (Ctrl/Cmd+Z)">Undo</button><button type="button" class="btn tiny" data-file-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button>' : '';
+    const saveStatus = editorActive ? '<span class="file-save-status" data-file-save-status>Auto-save on</span>' : '';
     surface.innerHTML = '<div class="file-surface-head"><div class="file-surface-title"><span class="file-type">' + escapeHtml(iconFor(tab.name)) + '</span><div><strong>' + escapeHtml(tab.name) + '</strong><small>' + escapeHtml(tab.language) + ' · ' + escapeHtml(tab.path) + '</small></div></div><div class="file-surface-actions">' + saveStatus + zoom + toggle + history + '<button type="button" class="btn tiny" data-file-action="close">Close</button></div></div><div class="file-surface-body"></div>';
     options.viewport.appendChild(surface);
     for (const eventName of ['pointerdown', 'mousedown', 'click', 'wheel']) {
@@ -402,7 +431,6 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       event.stopPropagation();
       setEditorZoom(tab, tab.fontSize + (event.deltaY < 0 ? 1 : -1));
     }, { passive: false });
-    surface.querySelector('[data-file-action="save"]')?.addEventListener('click', () => { void saveTab(tab, false); });
     surface.querySelector('[data-file-action="close"]')?.addEventListener('click', () => { void closeTab(tab.id); });
     if (image) { body.innerHTML = '<div class="file-image-view"><img src="' + escapeAttr(options.serveUrl(tab.rootId, tab.path)) + '" alt="' + escapeAttr(tab.name) + '"></div>'; return; }
     if (tab.preview === 'pdf') {
@@ -711,10 +739,10 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     }
   });
   window.addEventListener('hcanvas:canvas-opened', event => {
-    const detail = (event as CustomEvent<{ docId?: string; pageId?: string; label?: string }>).detail || {};
+    const detail = (event as CustomEvent<{ docId?: string; pageId?: string; label?: string; reopen?: boolean }>).detail || {};
     if (!detail.docId || !detail.pageId) return;
     const id = 'canvas:' + detail.docId + ':' + detail.pageId;
-    syncCanvasTab(detail.docId, detail.pageId, detail.label || 'Canvas');
+    syncCanvasTab(detail.docId, detail.pageId, detail.label || 'Canvas', detail.reopen === true);
     const tab = canvasTabs.find(item => item.id === id);
     if (tab) {
       activeId = tab.id;

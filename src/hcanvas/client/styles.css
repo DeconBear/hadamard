@@ -901,12 +901,16 @@ body.html-page-mode #toolRail, body.html-page-mode #selectionToolbar, body.html-
 /* Workspace files and page/file tabs. */
 .workspace-tabs { flex:0 0 auto; min-height:34px; border-bottom:1px solid var(--border); background:rgba(250,248,242,.94); overflow:hidden; }
 .workspace-tab-list { display:flex; align-items:stretch; gap:1px; height:34px; overflow-x:auto; padding:0 8px; }
-.workspace-tab { display:flex; align-items:center; gap:6px; max-width:220px; border:1px solid transparent; border-bottom:0; border-radius:7px 7px 0 0; background:transparent; color:var(--muted); padding:0 10px; font:11px/1 Inter,sans-serif; white-space:nowrap; cursor:pointer; }
+.workspace-tab { display:flex; align-items:center; gap:2px; max-width:220px; border:1px solid transparent; border-bottom:0; border-radius:7px 7px 0 0; background:transparent; color:var(--muted); padding:0; font:11px/1 Inter,sans-serif; white-space:nowrap; cursor:pointer; }
+.workspace-tab .tab-open { display:flex; align-items:center; gap:6px; min-width:0; height:100%; padding:0 10px; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.workspace-tab .tab-close { border:0; background:transparent; color:inherit; cursor:pointer; padding:2px 4px; border-radius:3px; }
+.workspace-tab .tab-open:focus-visible, .workspace-tab .tab-close:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .workspace-tab:hover { background:var(--surface-2); color:var(--ink-2); }
 .workspace-tab.active { background:var(--panel); border-color:var(--border); color:var(--ink); box-shadow:0 -1px 0 var(--accent) inset; }
 .workspace-tab .tab-name { overflow:hidden; text-overflow:ellipsis; max-width:150px; }
 .workspace-tab .tab-close { opacity:.55; font-size:14px; line-height:1; padding:1px 2px; border-radius:3px; }
-.workspace-tab .tab-close:hover { background:#f1d8d4; color:#9b2c2c; opacity:1; }
+.workspace-tab .tab-close:hover { background:var(--surface-2); color:var(--ink); opacity:1; }
+.workspace-tab .tab-close:focus-visible { outline:1px solid var(--accent); opacity:1; }
 .workspace-tab .tab-dot { width:6px; height:6px; border-radius:50%; background:var(--accent); }
 .workspace-tab.file-tab .tab-file-icon { display:grid; place-items:center; width:18px; height:16px; border-radius:4px; background:var(--accent-soft); color:var(--accent); font:700 8px/1 Inter,sans-serif; }
 .files-head-actions { display:flex; gap:2px; align-items:center; }
