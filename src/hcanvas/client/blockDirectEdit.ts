@@ -371,14 +371,18 @@ function renderTransformHandle(): void {
   const artboard = document.querySelector<HTMLElement>('#artboard');
   if (!artboard || !context) return;
   const angle = Number(block.rotation) || 0;
+  const zoom = Math.max(0.1, context.getZoom());
   const radians = angle * Math.PI / 180;
   const centerX = block.x + block.w / 2;
   const centerY = block.y + block.h / 2;
-  const radius = block.h / 2 + 30;
+  // Keep a constant screen-space gap above the rotated block at every zoom level.
+  const radius = block.h / 2 + 28 / zoom;
   const handle = document.createElement('div');
   handle.className = 'hc-rotate-handle';
-  handle.style.transform = 'scale(' + 1 / Math.max(0.1, context.getZoom()) + ')';
-  handle.title = 'Drag to rotate · Shift snaps 15°';
+  handle.style.transform = 'scale(' + 1 / zoom + ')';
+  handle.title = 'Drag to rotate · Shift snaps 15° · Esc cancels';
+  handle.setAttribute('role', 'button');
+  handle.setAttribute('aria-label', 'Rotate selection');
   handle.style.left = (centerX + Math.sin(radians) * radius) + 'px';
   handle.style.top = (centerY - Math.cos(radians) * radius) + 'px';
   handle.addEventListener('pointerdown', event => {
@@ -390,32 +394,77 @@ function renderTransformHandle(): void {
     const startAngle = angle;
     const startPoint = context.getWorldPoint(event.clientX, event.clientY);
     const startVector = Math.atan2(startPoint.y - centerY, startPoint.x - centerX) * 180 / Math.PI;
-    const move = (moveEvent: PointerEvent): void => {
-      if (!context) return;
-      const point = context.getWorldPoint(moveEvent.clientX, moveEvent.clientY);
-      const current = Math.atan2(point.y - centerY, point.x - centerX) * 180 / Math.PI;
-      let next = startAngle + current - startVector;
-      if (moveEvent.shiftKey) next = Math.round(next / 15) * 15;
-      handle.style.left = (centerX + Math.sin(next * Math.PI / 180) * radius) + 'px';
-      handle.style.top = (centerY - Math.cos(next * Math.PI / 180) * radius) + 'px';
-      wrap.style.transform = (next ? 'rotate(' + next + 'deg) ' : '') + (block.style?.flipX ? 'scaleX(-1) ' : '') + (block.style?.flipY ? 'scaleY(-1)' : '');
-      wrap.dataset.previewRotation = String(next);
+    const originalTransform = wrap.style.transform;
+    const pivot = document.createElement('div');
+    pivot.className = 'hc-rotate-pivot';
+    pivot.style.left = centerX + 'px';
+    pivot.style.top = centerY + 'px';
+    pivot.style.transform = 'scale(' + 1 / zoom + ')';
+    const readout = document.createElement('div');
+    readout.className = 'hc-rotate-readout';
+    readout.style.transform = 'translate(-50%, -50%) scale(' + 1 / zoom + ')';
+    artboard.append(pivot, readout);
+    document.body.classList.add('hc-rotating');
+    const zoomAtStart = zoom;
+    const paint = (degrees: number): void => {
+      const rad = degrees * Math.PI / 180;
+      const left = centerX + Math.sin(rad) * radius;
+      const top = centerY - Math.cos(rad) * radius;
+      handle.style.left = left + 'px';
+      handle.style.top = top + 'px';
+      readout.textContent = Math.round(((degrees % 360) + 360) % 360) + '°';
+      readout.style.left = (left + 18 / zoomAtStart) + 'px';
+      readout.style.top = (top - 14 / zoomAtStart) + 'px';
+      wrap.style.transform = (degrees ? 'rotate(' + degrees + 'deg) ' : '') + (block.style?.flipX ? 'scaleX(-1) ' : '') + (block.style?.flipY ? 'scaleY(-1)' : '');
+      wrap.dataset.previewRotation = String(degrees);
     };
-    const up = (upEvent: PointerEvent): void => {
+    let cancelled = false;
+    const cleanup = (): void => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      if (!context) return;
+      window.removeEventListener('keydown', cancel, true);
+      pivot.remove();
+      readout.remove();
+      document.body.classList.remove('hc-rotating');
+      try { handle.releasePointerCapture(event.pointerId); } catch { /* pointer capture is best-effort */ }
+    };
+    const cancel = (keyEvent: KeyboardEvent): void => {
+      if (keyEvent.key !== 'Escape' || cancelled) return;
+      keyEvent.preventDefault();
+      keyEvent.stopPropagation();
+      cancelled = true;
+      cleanup();
+      wrap.style.transform = originalTransform;
+      delete wrap.dataset.previewRotation;
+      updateDirectEditUI();
+    };
+    const move = (moveEvent: PointerEvent): void => {
+      if (!context || cancelled) return;
+      const point = context.getWorldPoint(moveEvent.clientX, moveEvent.clientY);
+      const current = Math.atan2(point.y - centerY, point.x - centerX) * 180 / Math.PI;
+      let degrees = startAngle + current - startVector;
+      if (moveEvent.shiftKey) degrees = Math.round(degrees / 15) * 15;
+      paint(degrees);
+    };
+    const up = (upEvent: PointerEvent): void => {
+      if (cancelled) return;
+      if (!context) { cleanup(); return; }
       const point = context.getWorldPoint(upEvent.clientX, upEvent.clientY);
       const current = Math.atan2(point.y - centerY, point.x - centerX) * 180 / Math.PI;
-      let next = startAngle + current - startVector;
-      if (upEvent.shiftKey) next = Math.round(next / 15) * 15;
-      next = ((next % 360) + 360) % 360;
+      let degrees = startAngle + current - startVector;
+      if (upEvent.shiftKey) degrees = Math.round(degrees / 15) * 15;
+      degrees = ((degrees % 360) + 360) % 360;
+      cleanup();
       const page = context.getPage();
       if (!page) return;
-      void context.applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { rotation: next } }]).then(() => updateDirectEditUI());
+      void context.applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { rotation: degrees } }]).then(() => updateDirectEditUI());
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('keydown', cancel, true);
+    Object.assign(handle.style, { cursor: 'grabbing' });
+    paint(startAngle);
+    try { handle.setPointerCapture(event.pointerId); } catch { /* pointer capture is best-effort */ }
   });
   artboard.appendChild(handle);
 }
