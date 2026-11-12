@@ -13,6 +13,10 @@ export function renderMathHtml(tex: string, displayMode = false): string {
   return renderLatexHtml(tex, displayMode);
 }
 
+function mathAttribute(tex: string): string {
+  return tex.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function mathTokens(source: string): { source: string; tokens: Array<{ marker: string; html: string; display: boolean }> } {
   const tokens: Array<{ marker: string; html: string; display: boolean }> = [];
   const pattern = /\\\[([\s\S]+?)\\\]|\$\$([\s\S]+?)\$\$|\\\(([\s\S]+?)\\\)|\$([^$\n]+?)\$/g;
@@ -20,7 +24,7 @@ function mathTokens(source: string): { source: string; tokens: Array<{ marker: s
     const tex = bracket ?? dollar ?? paren ?? inline ?? '';
     const display = bracket !== undefined || dollar !== undefined;
     const marker = '\uE000HCMATH' + tokens.length + '\uE001';
-    tokens.push({ marker, html: display ? '<div class="hc-math hc-math-block">' + renderLatexHtml(tex, true) + '</div>' : '<span class="hc-math hc-math-inline">' + renderLatexHtml(tex, false) + '</span>', display });
+    tokens.push({ marker, html: display ? '<div class="hc-math hc-math-block" data-tex="' + mathAttribute(tex) + '" data-display="true">' + renderLatexHtml(tex, true) + '</div>' : '<span class="hc-math hc-math-inline" data-tex="' + mathAttribute(tex) + '">' + renderLatexHtml(tex, false) + '</span>', display });
     return marker;
   });
   return { source: escaped, tokens };
