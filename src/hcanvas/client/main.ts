@@ -1,7 +1,3 @@
-import { basicSetup, EditorView } from 'codemirror';
-import { html as htmlLang } from '@codemirror/lang-html';
-import { oneDark } from '@codemirror/theme-one-dark';
-import { renderMarkdownHtml, renderMathHtml } from '../markdown.js';
 import { installCurveTool } from './curveTool.js';
 import { activeLayerId, configureLayersPanel, renderLayersPanel } from './layersPanel.js';
 import { blockRenderZ, blocksInStackOrder, isBlockLocked } from '../layers.js';
@@ -22,6 +18,7 @@ import { insertAssetIntoPage } from './assetInsert.js';
 import { openMarkdownPageEditor as showMarkdownPageEditor } from './markdownPageEditor.js';
 import { openNewDocModal as showNewDocModal } from './newDocModal.js';
 import { openSourceEditorFor } from './sourceEditor.js';
+import { openSourceModal, type SourceModalOptions } from './sourceModal.js';
 import { createPageFromPreset } from './pageCreation.js';
 import { CANVAS_PAGE_PRESETS, type HcClientPagePreset } from './pageTemplates.js';
 import { MarkdownPageController } from './markdownPageController.js';
@@ -38,6 +35,7 @@ import { openPluginGallery } from './pluginGallery.js';
 import { installImageInsert } from './imageInsert.js';
 import { bindPluginPagePicker, pluginPagePickerMarkup } from './pluginPages.js';
 import { renderPresentCanvasHtml } from './presentCanvas.js';
+import { fitPresentView, renderPresentView } from './presentView.js';
 import { installPresentInteractions, type PresentInteractions } from './presentControls.js';
 import { createSliceTool, type SliceTool } from './sliceTool.js';
 import { snapMove } from './smartGuides.js';
@@ -45,7 +43,7 @@ import { bindResizeHandle as bindBlockResizeHandle, type ResizeDirection } from 
 import { addLineEndpointHandles } from './lineEndpoints.js';
 import { cloneBlocksForPlacement, parseBlocksFromClipboard, serializeBlocksForClipboard } from '../blockClipboard.js';
 import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawing.js';
-import { invertOps as invertDocumentOps } from './documentHistory.js';
+import { applyOpLocally, invertOps as invertDocumentOps } from './documentHistory.js';
 import { SHORTCUTS_MODAL_HTML } from './shortcuts.js';
 import { esc, genId, toHex } from './utils.js';
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
@@ -80,13 +78,6 @@ function qs<T extends Element>(selector: string, root: ParentNode = document): T
   return root.querySelector<T>(selector);
 }
 const clientId = genId('client');
-function debounce<T extends (...args: never[]) => void>(fn: T, wait: number): (...args: Parameters<T>) => void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  return (...args: Parameters<T>) => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), wait);
-  };
-}
 async function api<T = Record<string, unknown>>(pathname: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { 'x-hcanvas-token': boot.token };
   if (init.body !== undefined) headers['content-type'] = 'application/json';
@@ -140,6 +131,8 @@ const pageItemCache = new Map<string, PageItemCache>();
 const htmlCursorCache = new Map<string, { left: number; top: number }>();
 let htmlCursorCacheKey = '';
 let remoteReloadTimer: ReturnType<typeof setTimeout> | undefined;
+let pendingRemoteDocId = '';
+let pendingRemoteRevision = 0;
 let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 let pagesRenderTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -273,7 +266,7 @@ async function loadMasters(): Promise<void> {
   } catch { /* masters are optional */ }
 }
 
-async function openDoc(docId: string, pageId?: string): Promise<void> {
+async function openDoc(docId: string, pageId?: string, reopenTab = true): Promise<void> {
   const result = await api<{ doc: HcDocument }>('/api/docs/' + docId);
   state.doc = result.doc;
   state.activePageId = pageId && result.doc.pages.some(page => page.id === pageId) ? pageId : result.doc.pages[0]?.id || null;
@@ -290,7 +283,7 @@ async function openDoc(docId: string, pageId?: string): Promise<void> {
   redoStack = [];
   patchDocSummary(result.doc);
   renderAll();
-  notifyCanvasTab();
+  notifyCanvasTab(reopenTab);
   void syncActive();
 }
 
@@ -710,6 +703,14 @@ function initSidebarLayout(): void {
   };
   qs<HTMLButtonElement>('#toggleLeftSidebarBtn')?.addEventListener('click', () => { prefs.leftCollapsed = !prefs.leftCollapsed; apply(); save(); });
   qs<HTMLButtonElement>('#toggleRightSidebarBtn')?.addEventListener('click', () => { prefs.rightCollapsed = !prefs.rightCollapsed; apply(); save(); });
+  window.addEventListener('keydown', event => {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'b') return;
+    if ((event.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable="true"], .cm-content')) return;
+    event.preventDefault();
+    prefs.leftCollapsed = !prefs.leftCollapsed;
+    apply();
+    save();
+  });
   bindResize('leftbarResizer', 'left');
   bindResize('rightbarResizer', 'right');
   apply();
@@ -731,9 +732,7 @@ function bindStaticActions(): void {
     },
     toast,
   });
-  el('newDocBtn').addEventListener('click', () => openNewDocModal());
   el('newDocMini').addEventListener('click', () => openNewDocModal());
-  el('addPageBtn').addEventListener('click', () => openAddPageModal());
   el('projectMenuBtn').addEventListener('click', event => { event.stopPropagation(); void openProjectHub(); });
   el('openProjectFolderBtn').addEventListener('click', () => { void revealProjectFolder(undefined, 'project'); });
   qs<HTMLButtonElement>('#hubCloseBtn')?.addEventListener('click', () => closeProjectHub());
@@ -767,6 +766,7 @@ function bindStaticActions(): void {
     mount: el('historyPanel'),
     request: api,
     getDoc: () => state.doc,
+    getActivePageId: () => state.activePageId,
     onRestored: async docId => { await openDoc(docId); },
     confirm: message => confirmDialog(message),
     toast,
@@ -806,6 +806,7 @@ function bindStaticActions(): void {
   presentInteractions = installPresentInteractions({
     root: el('presentRoot'),
     isActive: () => state.presenting,
+    isDocument: () => state.doc?.pages[state.presentIndex]?.mode === 'html',
     next: delta => nextPresent(delta),
     close: () => closePresent(),
     toggleNotes: () => togglePresentNotes(),
@@ -1349,7 +1350,6 @@ function renderTop(): void {
   const banner = el('editingBanner');
   if (state.editing) banner.classList.remove('hidden'); else banner.classList.add('hidden');
   el('editingLabel').textContent = state.editing?.blockId ? 'Editing HTML block' : 'Editing HTML page';
-  el('addPageBtn').style.display = state.doc ? '' : 'none';
   el('presentBtn').style.display = state.doc ? '' : 'none';
   el('exportBtn').style.display = state.doc ? '' : 'none';
   fileBrowser?.syncCanvasTab(state.doc?.id || '', state.activePageId || '', activePage()?.name || state.doc?.title || 'Canvas');
@@ -1378,7 +1378,9 @@ function renderDocs(): void {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'doc-item' + (state.doc?.id === doc.id ? ' active' : '');
-    button.innerHTML = '<strong>' + esc(doc.title) + '</strong><small>rev ' + doc.revision + ' · ' + doc.pages + ' page' + (doc.pages === 1 ? '' : 's') + (doc.pendingProposals ? ' · ' + doc.pendingProposals + ' pending' : '') + '</small>';
+    button.dataset.docId = doc.id;
+    if (state.doc?.id === doc.id) button.setAttribute('aria-current', 'page');
+    button.innerHTML = '<span class="doc-mark" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="3" y="4" width="12" height="10" rx="2"/><path d="M7 16v1m2-9h7v9H9"/></svg></span><span class="doc-copy"><strong>' + esc(doc.title) + '</strong><small>' + doc.pages + ' page' + (doc.pages === 1 ? '' : 's') + ' · rev ' + doc.revision + (doc.pendingProposals ? ' · ' + doc.pendingProposals + ' pending' : '') + '</small></span>';
     button.addEventListener('click', () => {
       if (state.doc?.id === doc.id) return;
       void openDoc(doc.id);
@@ -1498,9 +1500,25 @@ function createPageItem(page: HcPage, index: number): PageItemCache {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'page-open';
+  button.dataset.pageId = page.id;
+  if (page.id === state.activePageId) button.setAttribute('aria-current', 'page');
+  button.title = 'Open ' + (page.name || 'page') + ' · ↑↓ to browse · F2 to rename';
   button.append(thumb, info);
   item.appendChild(button);
   item.addEventListener('click', () => selectPage(page.id));
+  item.addEventListener('keydown', event => {
+    if (event.key !== 'F2' && event.key !== 'Delete') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === 'F2') {
+      if (state.activePageId !== page.id) selectPage(page.id);
+      state.tab = 'inspector';
+      renderTabs();
+      renderInspector();
+      const input = document.getElementById('pageName');
+      if (input instanceof HTMLInputElement) { input.focus(); input.select(); }
+    } else if ((state.doc?.pages.length || 0) > 1) void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); });
+  });
   return { fingerprint: pageFingerprint(page), item, thumb, info, index };
 }
 function schedulePagesRender(): void {
@@ -1554,10 +1572,13 @@ function renderPages(): void {
     cached.index = index;
     cached.item.style.order = String(index);
     cached.item.classList.toggle('active', page.id === state.activePageId);
+    const open = cached.item.querySelector<HTMLButtonElement>('.page-open');
+    if (page.id === state.activePageId) open?.setAttribute('aria-current', 'page');
+    else open?.removeAttribute('aria-current');
   });
 }
-function notifyCanvasTab(): void {
-  window.dispatchEvent(new CustomEvent('hcanvas:canvas-opened', { detail: { docId: state.doc?.id, pageId: state.activePageId, label: activePage()?.name || 'Canvas' } }));
+function notifyCanvasTab(reopen = true): void {
+  window.dispatchEvent(new CustomEvent('hcanvas:canvas-opened', { detail: { docId: state.doc?.id, pageId: state.activePageId, label: activePage()?.name || 'Canvas', reopen } }));
 }
 function selectPage(pageId: string): void {
   if (state.activePageId === pageId) { notifyCanvasTab(); return; }
@@ -2290,10 +2311,17 @@ function applyOps(ops: HcOp[], options: ApplyOptions = {}): Promise<HcDocument |
 
 async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcDocument | null> {
   if (!state.doc) return null;
-  const finalOps = augmentBindingOps(ops);
-  const historyInverse = options.recordHistory !== false && options.silent !== true && !applyingHistory ? invertOps(finalOps, options.historyBase || state.doc) : null;
+  try { await settleRemoteChange(); }
+  catch (error) {
+    setSaveStatus('Sync failed', 'error');
+    toast(error instanceof Error ? error.message : String(error), 'error');
+    return null;
+  }
+  if (!state.doc) return null;
   setSaveStatus('Saving…', 'saving');
   try {
+    const finalOps = augmentBindingOps(ops);
+    const historyInverse = options.recordHistory !== false && options.silent !== true && !applyingHistory ? invertOps(finalOps, options.historyBase || state.doc) : null;
     const result = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id + '/apply', {
       method: 'POST',
       body: JSON.stringify({ ops: finalOps, baseRevision: state.doc.revision, actor: options.actor || 'human', source: clientId }),
@@ -2309,6 +2337,7 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
     setSaveStatus('Saved · rev ' + result.doc.revision, 'saved');
     if (options.silent) {
       renderTop();
+      if (state.tab === 'history') historyPanel?.refresh();
       return result.doc;
     }
     renderTop();
@@ -2316,6 +2345,7 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
     schedulePagesRender();
     renderProposalBadge();
     if (state.tab === 'proposals') renderProposals();
+    else if (state.tab === 'history') historyPanel?.refresh();
     if (options.refreshArtboard !== false) renderArtboard();
     if (state.tab === 'inspector' && !(state.editing && options.refreshArtboard === false)) renderInspector();
     else if (state.tab === 'layers') renderLayersPanel();
@@ -2323,6 +2353,15 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
     return result.doc;
   } catch (error) {
     if (error instanceof ApiError && error.status === 409) {
+      const latest = (error.payload as ApiErrorShape).latestDoc;
+      if (state.sourceModalOpen && latest) {
+        state.doc = latest;
+        patchDocSummary(latest);
+        renderTop();
+        setSaveStatus('Changed elsewhere · edit to retry', 'error');
+        toast('Canvas changed elsewhere. Your source editor remains open; continue editing to save the latest text.', 'error');
+        return null;
+      }
       setSaveStatus('Revision conflict — reloading', 'error');
       toast('Someone else changed this canvas. Reloading the latest revision.', 'error');
       await reloadActiveDoc();
@@ -2338,8 +2377,29 @@ async function reloadActiveDoc(): Promise<void> {
   if (!state.doc) return;
   const docId = state.doc.id;
   const pageId = state.activePageId || undefined;
-  await openDoc(docId, pageId);
+  if (state.sourceModalOpen || state.editing) {
+    const result = await api<{ doc: HcDocument }>('/api/docs/' + docId);
+    if (state.doc?.id !== docId || result.doc.revision < state.doc.revision) return;
+    state.doc = result.doc;
+    patchDocSummary(result.doc);
+    renderTop();
+    setSaveStatus('Synced · editor kept open', 'saved');
+    return;
+  }
+  await openDoc(docId, pageId, false);
   setSaveStatus('Reloaded', 'idle');
+}
+
+async function settleRemoteChange(): Promise<void> {
+  if (!remoteReloadTimer) return;
+  clearTimeout(remoteReloadTimer);
+  remoteReloadTimer = undefined;
+  const docId = pendingRemoteDocId;
+  const revision = pendingRemoteRevision;
+  pendingRemoteDocId = '';
+  pendingRemoteRevision = 0;
+  if (!state.doc || state.doc.id !== docId || (revision > 0 && state.doc.revision > revision)) return;
+  await reloadActiveDoc();
 }
 
 let activeSyncKey = '';
@@ -2843,8 +2903,21 @@ function connectEvents(): void {
       if (payload.type === 'doc.changed' && payload.docId === state.doc?.id) {
         if (payload.source === clientId) return;
         if (state.editing) { toast('Canvas changed elsewhere. Exit HTML edit to reload.', 'info'); return; }
+        const docId = state.doc.id;
+        const revision = Number(payload.revision) || 0;
+        pendingRemoteDocId = docId;
+        pendingRemoteRevision = Math.max(pendingRemoteRevision, revision);
         if (remoteReloadTimer) clearTimeout(remoteReloadTimer);
-        remoteReloadTimer = setTimeout(() => { remoteReloadTimer = undefined; void reloadActiveDoc(); }, 120);
+        remoteReloadTimer = setTimeout(() => {
+          remoteReloadTimer = undefined;
+          const pendingRevision = pendingRemoteRevision;
+          pendingRemoteDocId = '';
+          pendingRemoteRevision = 0;
+          void enqueueMutation(async () => {
+            if (!state.doc || state.doc.id !== docId || (pendingRevision > 0 && state.doc.revision > pendingRevision)) return;
+            await reloadActiveDoc();
+          }).catch(error => { setSaveStatus('Reload failed', 'error'); toast(error instanceof Error ? error.message : String(error), 'error'); });
+        }, 120);
       }
       if (payload.type === 'session.changed') {
         if (presenceRefreshTimer) clearTimeout(presenceRefreshTimer);
@@ -3080,11 +3153,20 @@ async function openAddPageModal(): Promise<void> {
   html += '</div><div class="modal-foot"><button class="btn" data-close>Cancel</button></div></div>';
   openModal(html);
   document.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach(button => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       const preset = CANVAS_PAGE_PRESETS.find(item => item.id === button.dataset.preset);
-      if (!preset) return;
-      closeModal();
-      void createPage(preset);
+      if (!preset || button.disabled) return;
+      const buttons = document.querySelectorAll<HTMLButtonElement>('[data-preset]');
+      buttons.forEach(option => { option.disabled = true; });
+      button.setAttribute('aria-busy', 'true');
+      try {
+        await createPage(preset);
+        closeModal();
+      } catch (error) {
+        buttons.forEach(option => { option.disabled = false; });
+        button.removeAttribute('aria-busy');
+        toast(error instanceof Error ? error.message : String(error), 'error');
+      }
     });
   });
   bindPluginPagePicker(document, page => { closeModal(); void addPluginPage(page); });
@@ -3168,44 +3250,20 @@ function openFormulaModal(block: HcBlock): void {
     value: String(block.data?.tex || ''),
     language: 'tex',
     save: async next => {
-      await applyOps([{ op: 'update_block', pageId: activePage()!.id, blockId: block.id, patch: { data: { ...(block.data || {}), tex: next } } } as HcOp], { refreshArtboard: true });
+      const result = await applyOps([{ op: 'update_block', pageId: activePage()!.id, blockId: block.id, patch: { data: { ...(block.data || {}), tex: next } } } as HcOp], { refreshArtboard: true });
+      if (!result) throw new Error('Formula changes were not saved.');
+      return true;
     },
   });
 }
 
-function openCodeModal(options: { title: string; kind: string; value: string; language: string; save: (next: string) => Promise<void> }): void {
-  const modalClass = 'modal split' + (options.kind === 'markdown' ? ' markdown-workspace' : '');
-  const modalHtml = '<div class="' + modalClass + '"><div class="modal-head"><div><strong>' + esc(options.title) + '</strong><small>' + esc(options.kind.toUpperCase()) + ' · source and live preview</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="editor-pane"><span>Source</span><div id="codeEditorHost" class="editor-host"></div></div><div class="editor-pane"><span>Preview</span><div class="preview-host"><iframe id="codePreview" sandbox="allow-scripts"></iframe></div></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="saveCodeBtn" class="btn primary">Save changes</button></div></div>';
-  openModal(modalHtml);
-  state.sourceModalOpen = true;
-  const host = el('codeEditorHost');
-  const extensions = [basicSetup, EditorView.lineWrapping, oneDark];
-  if (options.language === 'html') extensions.push(htmlLang());
-  const view = new EditorView({ doc: options.value, extensions, parent: host });
-  const preview = el<HTMLIFrameElement>('codePreview');
-  const setPreview = (kind: string, value: string): void => {
-    try { preview.srcdoc = previewHtmlFor(kind, value); }
-    catch (error) { preview.srcdoc = '<!doctype html><html><body style="margin:0;padding:16px;color:#b42318;font:12px Inter,sans-serif">Preview unavailable: ' + esc(error instanceof Error ? error.message : String(error)) + '</body></html>'; }
-  };
-  const updatePreview = debounce(() => { setPreview(options.kind, view.state.doc.toString()); }, 280);
-  setPreview(options.kind, options.value);
-  view.dom.addEventListener('keyup', updatePreview);
-  const originalClose = closeModal;
-  const realClose = (): void => { view.destroy(); state.sourceModalOpen = false; originalClose(); };
-  (window as unknown as { __hcCloseModal?: () => void }).__hcCloseModal = realClose;
-  qs<HTMLButtonElement>('#saveCodeBtn')?.addEventListener('click', async () => {
-    const next = view.state.doc.toString();
-    realClose();
-    try { await options.save(next); toast('Saved', 'success'); } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
+function openCodeModal(options: SourceModalOptions): void {
+  openSourceModal(options, {
+    open: openModal,
+    close: closeModal,
+    toast,
+    onOpenChange: open => { state.sourceModalOpen = open; },
   });
-  document.querySelectorAll<HTMLElement>('[data-close]').forEach(button => button.addEventListener('click', () => realClose()));
-}
-
-function previewHtmlFor(kind: string, value: string): string {
-  if (kind === 'html') return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0}</style></head><body>' + value + '</body></html>';
-  if (kind === 'markdown') return '<!doctype html><html><head><meta charset="utf-8"><style>body{font:16px/1.6 Inter,sans-serif;padding:24px;color:#334155}h1,h2,h3{font-family:Georgia,serif}code{background:#f1f5f9;padding:1px 4px;border-radius:4px}blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid #a855f7;background:#faf7ff;color:#4b4058}blockquote p{margin:0}.hc-math-block{margin:14px 0;overflow-x:auto}.hc-math-inline{display:inline-block;vertical-align:middle}</style></head><body>' + renderMarkdownHtml(value) + '</body></html>';
-  if (kind === 'math') return '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:24px;color:#1f2430;font-family:Inter,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;box-sizing:border-box}.katex-display{margin:0;font-size:1.35em}</style></head><body>' + renderMathHtml(value, true) + '</body></html>';
-  return '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:16px;background:#171923;color:#e2e8f0;font:12px/1.6 ui-monospace,Consolas,monospace;white-space:pre-wrap}</style></head><body>' + esc(value) + '</body></html>';
 }
 
 function openModal(html: string): void {
@@ -3310,57 +3368,15 @@ function nextPresent(delta: number): void {
   renderPresent();
 }
 function renderPresent(): void {
-  const doc = state.doc;
-  if (!doc) return;
-  let page = doc.pages[state.presentIndex];
-  if (!page) return;
-  if (page.mode === 'whiteboard') page = legacyWhiteboardNativePage(page);
-  const root = el('presentRoot');
-  root.classList.remove('hidden');
-  root.innerHTML = '<div class="present-stage"><div id="presentFit" class="present-fit"><div id="presentPage" class="present-page"></div></div></div><div id="presentNotes" class="present-notes hidden"></div><div class="present-bar"><span>' + esc(doc.title) + ' · ' + esc(page.name) + ' · ' + (state.presentIndex + 1) + ' / ' + doc.pages.length + '</span><span><button id="presentNotesBtn" class="btn">Notes</button> <button id="presentPrev" class="btn">← Previous</button> <button id="presentNext" class="btn">Next →</button> <button id="presentClose" class="btn">Exit</button></span></div>';
-  qs<HTMLButtonElement>('#presentPrev')?.addEventListener('click', () => nextPresent(-1));
-  qs<HTMLButtonElement>('#presentNext')?.addEventListener('click', () => nextPresent(1));
-  qs<HTMLButtonElement>('#presentClose')?.addEventListener('click', () => closePresent());
-  qs<HTMLButtonElement>('#presentNotesBtn')?.addEventListener('click', () => togglePresentNotes());
-  el('presentNotes').textContent = page.notes || '';
-  const presentPage = page.mode === 'infinite' ? (() => {
-    const metrics = pageMetrics(page);
-    const content = metrics.content;
-    if (!content) return { ...page, width: 1280, height: 720 };
-    const padding = 80;
-    return {
-      ...page,
-      width: Math.max(640, Math.ceil(content.maxX - content.minX) + padding * 2),
-      height: Math.max(480, Math.ceil(content.maxY - content.minY) + padding * 2),
-      blocks: (page.blocks || []).map(block => ({ ...block, x: block.x - content.minX + padding, y: block.y - content.minY + padding })),
-    };
-  })() : page;
-  const host = el('presentPage');
-  host.style.width = presentPage.width + 'px';
-  host.style.height = presentPage.height + 'px';
-  host.style.transformOrigin = 'top left';
-  if (page.mode === 'html') {
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('sandbox', 'allow-scripts');
-    iframe.srcdoc = page.html || '';
-    host.appendChild(iframe);
-  } else host.innerHTML = renderPresentCanvasHtml(presentPage);
-  fitPresentPage();
+  renderPresentView({
+    root: el('presentRoot'), doc: state.doc, index: state.presentIndex,
+    normalizePage: page => page.mode === 'whiteboard' ? legacyWhiteboardNativePage(page) : page,
+    next: nextPresent, close: closePresent, toggleNotes: togglePresentNotes,
+  });
 }
 
 function fitPresentPage(): void {
-  const stage = qs<HTMLElement>('.present-stage');
-  const fit = qs<HTMLElement>('#presentFit');
-  const host = qs<HTMLElement>('#presentPage');
-  if (!stage || !fit || !host) return;
-  const pageWidth = host.offsetWidth;
-  const pageHeight = host.offsetHeight;
-  if (!pageWidth || !pageHeight) return;
-  const rect = stage.getBoundingClientRect();
-  const scale = Math.min((rect.width - 56) / pageWidth, (rect.height - 56) / pageHeight);
-  fit.style.width = Math.max(1, pageWidth * scale) + 'px';
-  fit.style.height = Math.max(1, pageHeight * scale) + 'px';
-  host.style.transform = 'scale(' + scale + ')';
+  fitPresentView(el('presentRoot'));
 }
 async function copyText(text: string): Promise<void> {
   try { await navigator.clipboard.writeText(text); toast('Copied to clipboard', 'success'); }
