@@ -2365,9 +2365,7 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
     if (error instanceof ApiError && error.status === 409) {
       const latest = (error.payload as ApiErrorShape).latestDoc;
       if (state.sourceModalOpen && latest) {
-        state.doc = latest;
-        patchDocSummary(latest);
-        renderTop();
+        adoptLatestDoc(latest, true);
         setSaveStatus('Changed elsewhere · edit to retry', 'error');
         toast('Canvas changed elsewhere. Your source editor remains open; continue editing to save the latest text.', 'error');
         return null;
@@ -2383,6 +2381,21 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
   }
 }
 
+function adoptLatestDoc(latest: HcDocument, refreshArtboard: boolean): void {
+  state.doc = latest;
+  if (state.activePageId && !latest.pages.some(page => page.id === state.activePageId)) state.activePageId = latest.pages[0]?.id || null;
+  patchDocSummary(latest);
+  renderTop();
+  renderDocs();
+  schedulePagesRender();
+  renderProposalBadge();
+  if (state.tab === 'proposals') renderProposals();
+  else if (state.tab === 'history') historyPanel?.refresh();
+  if (refreshArtboard) renderArtboard();
+  if (state.tab === 'inspector') renderInspector();
+  else if (state.tab === 'layers') renderLayersPanel();
+}
+
 async function reloadActiveDoc(): Promise<void> {
   if (!state.doc) return;
   const docId = state.doc.id;
@@ -2390,9 +2403,7 @@ async function reloadActiveDoc(): Promise<void> {
   if (state.sourceModalOpen || state.editing) {
     const result = await api<{ doc: HcDocument }>('/api/docs/' + docId);
     if (state.doc?.id !== docId || result.doc.revision < state.doc.revision) return;
-    state.doc = result.doc;
-    patchDocSummary(result.doc);
-    renderTop();
+    adoptLatestDoc(result.doc, state.sourceModalOpen);
     setSaveStatus('Synced · editor kept open', 'saved');
     return;
   }
