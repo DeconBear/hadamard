@@ -151,7 +151,6 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   let canvasLabel = options.canvasLabel();
   let surface: HTMLElement | null = null;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
-  let collapsed = false;
   let searchQuery = '';
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   const expandedRoots = new Set<string>();
@@ -726,12 +725,6 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   }
 
   document.getElementById('addRootBtn')?.addEventListener('click', () => void addRoot());
-  document.getElementById('collapseFilesBtn')?.addEventListener('click', () => {
-    collapsed = !collapsed;
-    panel.classList.toggle('files-collapsed', collapsed);
-    const button = document.getElementById('collapseFilesBtn');
-    if (button) button.textContent = collapsed ? '▸' : '▾';
-  });
   window.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && activeId !== '') {
       const tab = tabs.find(item => item.id === activeId);

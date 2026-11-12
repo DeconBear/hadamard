@@ -126,13 +126,6 @@ export function installAssetLibrary(options: AssetLibraryOptions): void {
   }
 
   document.getElementById('uploadAssetBtn')?.addEventListener('click', () => input.click());
-  document.getElementById('collapseAssetsBtn')?.addEventListener('click', () => {
-    options.mount.classList.toggle('hidden');
-    const collapsed = options.mount.classList.contains('hidden');
-    options.mount.closest('.side-section')?.classList.toggle('section-collapsed', collapsed);
-    const button = document.getElementById('collapseAssetsBtn');
-    if (button) button.textContent = collapsed ? '▸' : '▾';
-  });
   input.addEventListener('change', () => { if (input.files) void uploadFiles(input.files); input.value = ''; });
   options.mount.addEventListener('dragover', event => {
     if (Array.from(event.dataTransfer?.types || []).includes('Files')) { event.preventDefault(); event.dataTransfer!.dropEffect = 'copy'; }

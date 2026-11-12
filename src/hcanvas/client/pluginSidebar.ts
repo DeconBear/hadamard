@@ -52,17 +52,5 @@ export function installPluginSidebar(options: PluginSidebarOptions): void {
   });
   for (const id of ['managePluginsBtn', 'pluginManagePanelBtn']) document.getElementById(id)?.addEventListener('click', event => { event.stopPropagation(); openManager(); });
   for (const id of ['pluginGalleryBtn', 'pluginGalleryPanelBtn']) document.getElementById(id)?.addEventListener('click', event => { event.stopPropagation(); openGallery(); });
-  const collapseButton = document.getElementById('collapsePluginsBtn');
-  collapseButton?.addEventListener('click', event => {
-    event.stopPropagation();
-    const panel = document.getElementById('pluginsPanel');
-    const section = panel?.closest('.side-section');
-    if (!panel) return;
-    panel.classList.toggle('hidden');
-    const collapsed = panel.classList.contains('hidden');
-    section?.classList.toggle('section-collapsed', collapsed);
-    collapseButton.textContent = collapsed ? '▸' : '▾';
-    collapseButton.title = collapsed ? 'Expand plugins' : 'Collapse plugins';
-  });
   updateCount();
 }
