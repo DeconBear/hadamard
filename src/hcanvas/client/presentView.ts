@@ -66,7 +66,7 @@ export function renderPresentView(options: PresentViewOptions): void {
 }
 
 function withPresentKeyBridge(html: string): string {
-  const script = '<script>(function(){var keys={Escape:1,ArrowLeft:1,ArrowRight:1,PageUp:1,PageDown:1};window.addEventListener("keydown",function(event){if(!keys[event.key])return;event.preventDefault();event.stopPropagation();parent.postMessage({type:"hcanvas:present-key",key:event.key},"*");},true);})();<' + '/script>';
+  const script = '<script>(function(){var keys={Escape:1,ArrowLeft:1,ArrowRight:1,PageUp:1,PageDown:1,l:1,L:1};window.addEventListener("keydown",function(event){if(!keys[event.key])return;event.preventDefault();event.stopPropagation();parent.postMessage({type:"hcanvas:present-key",key:event.key},"*");},true);})();<' + '/script>';
   return html.includes('</body>') ? html.replace('</body>', script + '</body>') : html + script;
 }
 

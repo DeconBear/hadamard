@@ -313,6 +313,7 @@ async function initialize(): Promise<void> {
     if (data.key === 'Escape') closePresent();
     else if (data.key === 'ArrowRight' || data.key === 'PageDown') nextPresent(1);
     else if (data.key === 'ArrowLeft' || data.key === 'PageUp') nextPresent(-1);
+    else if (data.key === 'l' || data.key === 'L') presentInteractions?.toggleLaser();
   });
   const title = el<HTMLInputElement>('docTitle');
   title.addEventListener('keydown', event => {

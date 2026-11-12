@@ -12,6 +12,7 @@ export interface PresentInteractionOptions {
 export interface PresentInteractions {
   reset(): void;
   closeMenu(): boolean;
+  toggleLaser(): void;
 }
 
 export function installPresentInteractions(options: PresentInteractionOptions): PresentInteractions {
@@ -129,5 +130,5 @@ export function installPresentInteractions(options: PresentInteractionOptions): 
     }
   }, true);
 
-  return { reset, closeMenu: () => { const open = Boolean(menu); hideMenu(); return open; } };
+  return { reset, closeMenu: () => { const open = Boolean(menu); hideMenu(); return open; }, toggleLaser: () => setLaser(!laserActive) };
 }
