@@ -496,6 +496,22 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
   }
 
+  async function refreshFiles(showToast = false): Promise<void> {
+    await loadRoots();
+    if (showToast) options.toast('Files refreshed', 'success');
+  }
+
+  let focusRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleFocusRefresh(): void {
+    if (document.hidden) return;
+    const section = document.querySelector<HTMLElement>('[data-sidebar-section="files"]');
+    if (section?.hidden) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active && panel.contains(active) && active.matches('input, textarea, [contenteditable="true"]')) return;
+    if (focusRefreshTimer) clearTimeout(focusRefreshTimer);
+    focusRefreshTimer = setTimeout(() => { focusRefreshTimer = undefined; void loadRoots(); }, 250);
+  }
+
   function fileContextMenu(event: MouseEvent, rootId: string, relative: string, type: 'file' | 'directory', rootName: string): void {
     event.preventDefault();
     event.stopPropagation();
@@ -724,6 +740,9 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
   }
 
+  document.getElementById('refreshFilesBtn')?.addEventListener('click', () => { void refreshFiles(true); });
+  window.addEventListener('focus', scheduleFocusRefresh);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleFocusRefresh(); });
   document.getElementById('addRootBtn')?.addEventListener('click', () => void addRoot());
   window.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && activeId !== '') {
