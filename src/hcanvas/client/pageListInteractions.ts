@@ -68,7 +68,13 @@ export function installPageListInteractions(options: PageListInteractionOptions)
     if (event.key === 'Escape') closeMenu();
   });
   root.addEventListener('scroll', closeMenu, { passive: true });
-  const observer = new MutationObserver(() => closeMenu());
+  const observer = new MutationObserver(mutations => {
+    const pagesChanged = mutations.some(mutation => [...mutation.addedNodes, ...mutation.removedNodes].some(node => {
+      if (!(node instanceof HTMLElement)) return false;
+      return node.matches('.page-item') || Boolean(node.querySelector('.page-item'));
+    }));
+    if (pagesChanged) closeMenu();
+  });
   observer.observe(root, { childList: true, subtree: true });
 
   root.addEventListener('pointerdown', event => {
@@ -77,7 +83,6 @@ export function installPageListInteractions(options: PageListInteractionOptions)
     if (!item) return;
     const pageId = pageIdOf(item);
     if (!pageId) return;
-    event.preventDefault();
     closeMenu();
     const startX = event.clientX;
     const startY = event.clientY;
