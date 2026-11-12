@@ -158,8 +158,12 @@
       <div class="hub-head-actions"><button id="hubNewProjectBtn" class="btn primary">New Project…</button><button id="hubCloseBtn" class="btn">Back to canvas</button></div>
     </header>
     <div class="hub-meta"><span id="hubCurrentWorkspace"></span><button id="hubRefreshBtn" class="btn tiny">Refresh</button></div>
+    <div class="hub-data-root hidden" title="Default workspace and project registry location. Stored in the app profile, so reinstall/upgrade keeps it.">
+      <span>Data location</span><code id="hubDataRoot">…</code>
+      <button id="hubChangeDataRoot" class="btn tiny">Change…</button>
+    </div>
     <div id="hubProjectGrid" class="hub-grid"></div>
-    <footer class="hub-foot"><span>Projects are registered in <code>~/.hcanvas/projects.json</code>. Each project stores its data in <code>.hcanvas/</code>.</span></footer>
+    <footer class="hub-foot"><span>Projects are registered in the data location shown above. Each project stores its data in <code>.hcanvas/</code>.</span></footer>
   </div>
 </div>
 <div id="modalRoot"></div>

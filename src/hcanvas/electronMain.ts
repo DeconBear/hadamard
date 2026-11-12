@@ -1,7 +1,9 @@
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
-import os from 'node:os';
+import { cp, mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { hcanvasSettingsPath, resolveDataRootSync, writeDataRootSetting } from './dataRoot.js';
 
 import { startHcanvasServer, type HcServer } from './server.js';
 import { initWorkspace, projectWorkspaceDir } from './workspace.js';
@@ -14,11 +16,13 @@ function argValue(argv: string[], name: string): string | undefined {
   return index >= 0 ? argv[index + 1] : undefined;
 }
 
+const configuredDataRoot = resolveDataRootSync();
+if (!process.env.HCANVAS_HOME) process.env.HCANVAS_HOME = configuredDataRoot;
 const initialProjectArg = argValue(process.argv, '--project') || process.env.HCANVAS_PROJECT;
 const initialProject = initialProjectArg ? path.resolve(initialProjectArg) : null;
 const initialWorkspace = initialProject
   ? projectWorkspaceDir(initialProject)
-  : path.resolve(argValue(process.argv, '--workspace') || process.env.HCANVAS_WORKSPACE || path.join(os.homedir(), '.hcanvas'));
+  : path.resolve(argValue(process.argv, '--workspace') || process.env.HCANVAS_WORKSPACE || configuredDataRoot);
 const requestedPort = Number(argValue(process.argv, '--port') || process.env.HCANVAS_PORT || 4319);
 const staticDir = path.resolve(here, '..', '..', 'hcanvas');
 
@@ -114,6 +118,40 @@ if (!gotLock) {
   });
 
   ipcMain.handle('hcanvas:list-projects', async () => listProjects());
+
+  ipcMain.handle('hcanvas:get-data-root', () => ({ dataRoot: resolveDataRootSync(), settingsPath: hcanvasSettingsPath() }));
+
+  ipcMain.handle('hcanvas:choose-data-root', async () => {
+    const parent = focusedWindow();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, { title: 'Choose Hcanvas data location', buttonLabel: 'Use this folder', properties: ['openDirectory', 'createDirectory'] })
+      : await dialog.showOpenDialog({ title: 'Choose Hcanvas data location', buttonLabel: 'Use this folder', properties: ['openDirectory', 'createDirectory'] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const selected = path.resolve(result.filePaths[0]);
+    const current = resolveDataRootSync();
+    if (selected === current) return { dataRoot: current, migrated: false, existingData: true, restartRequired: false };
+    await mkdir(selected, { recursive: true });
+    const entries = await readdir(selected).catch(() => [] as string[]);
+    const existingData = entries.includes('projects.json') || entries.includes('docs');
+    let migrated = false;
+    if (!existingData) {
+      const currentEntries = await readdir(current).catch(() => [] as string[]);
+      for (const name of currentEntries) {
+        try {
+          await cp(path.join(current, name), path.join(selected, name), { recursive: true, force: false, errorOnExist: false });
+          migrated = true;
+        } catch { /* a single unreadable entry must not block the location change */ }
+      }
+    }
+    await writeDataRootSetting(selected);
+    return { dataRoot: selected, migrated, existingData, restartRequired: true };
+  });
+
+  ipcMain.handle('hcanvas:restart-app', () => {
+    app.relaunch();
+    app.exit(0);
+    return true;
+  });
 
   ipcMain.handle('hcanvas:choose-directory', async () => {
     const parent = focusedWindow();

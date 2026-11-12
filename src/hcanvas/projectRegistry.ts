@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import { resolveDataRootSync } from './dataRoot.js';
 
 export interface HcProjectRecord {
   id: string;
@@ -19,7 +19,7 @@ interface RegistryFile {
 }
 
 function registryRoot(): string {
-  return process.env.HCANVAS_HOME || path.join(os.homedir(), '.hcanvas');
+  return resolveDataRootSync();
 }
 
 function registryPath(): string {

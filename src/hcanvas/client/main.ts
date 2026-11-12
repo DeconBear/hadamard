@@ -64,6 +64,9 @@ declare global {
       chooseProject: () => Promise<{ projectPath: string | null; workspace: string } | null>;
     chooseDirectory: () => Promise<string | null>;
       listProjects: () => Promise<Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }>>;
+      getDataRoot: () => Promise<{ dataRoot: string; settingsPath: string }>;
+      chooseDataRoot: () => Promise<{ dataRoot: string; migrated: boolean; existingData: boolean; restartRequired: boolean } | null>;
+      restartApp: () => Promise<boolean>;
       platform?: string;
     };
   }
@@ -747,6 +750,7 @@ function bindStaticActions(): void {
   el('openProjectFolderBtn').addEventListener('click', () => { void revealProjectFolder(undefined, 'project'); });
   qs<HTMLButtonElement>('#hubCloseBtn')?.addEventListener('click', () => closeProjectHub());
   qs<HTMLButtonElement>('#hubRefreshBtn')?.addEventListener('click', () => { void renderProjectHub(); });
+  qs<HTMLButtonElement>('#hubChangeDataRoot')?.addEventListener('click', () => { void changeHubDataRoot(); });
   qs<HTMLButtonElement>('#hubNewProjectBtn')?.addEventListener('click', () => {
     if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject();
     else toast('Browser mode: run hcanvas app --project <folder> to create a project.', 'info');
@@ -3065,8 +3069,35 @@ async function revealProjectFolder(projectPath?: string, kind: 'project' | 'work
   }
 }
 
+async function changeHubDataRoot(): Promise<void> {
+  const bridge = window.hcanvasDesktop;
+  if (!bridge?.chooseDataRoot) { toast('Data location can be changed in the desktop app.', 'info'); return; }
+  try {
+    const result = await bridge.chooseDataRoot();
+    if (!result) return;
+    await renderProjectHub();
+    const copied = result.migrated ? 'Existing data was copied to the new location. ' : result.existingData ? 'Existing Hcanvas data was found there. ' : '';
+    const restart = result.restartRequired ? 'Restart Hadamard Canvas to use the new location for this window.' : '';
+    const html = '<div class="modal small"><div class="modal-head"><div><strong>Data location changed</strong><small>Stored in the app profile, outside the install directory.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>New data location</span><input readonly value="' + esc(result.dataRoot) + '"></div><p class="hint-card">' + esc(copied + restart) + '</p><p class="history-restore-note">The previous location is left untouched as a safety copy.</p></div><div class="modal-foot"><button class="btn" data-close>Later</button><button id="restartForDataRootBtn" class="btn primary">Restart now</button></div></div>';
+    openModal(html);
+    qs<HTMLButtonElement>('#restartForDataRootBtn')?.addEventListener('click', () => { void bridge.restartApp(); });
+    toast('Data location updated.', 'success');
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), 'error');
+  }
+}
+
 async function renderProjectHub(): Promise<void> {
   const grid = el('hubProjectGrid');
+  const dataRootRow = document.querySelector<HTMLElement>('.hub-data-root');
+  const dataRootCode = qs<HTMLElement>('#hubDataRoot');
+  if (window.hcanvasDesktop?.getDataRoot) {
+    try {
+      const info = await window.hcanvasDesktop.getDataRoot();
+      if (dataRootCode) dataRootCode.textContent = info.dataRoot;
+      if (dataRootRow) { dataRootRow.classList.remove('hidden'); dataRootRow.title = 'Default workspace and project registry. Settings: ' + info.settingsPath; }
+    } catch { dataRootRow?.classList.add('hidden'); }
+  } else dataRootRow?.classList.add('hidden');
   const current = await api<{ current: { workspace: string; project?: string | null }; projects: Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }> }>('/api/projects').catch(() => null);
   if (!current) { grid.innerHTML = '<p class="empty-state">Could not read the project registry.</p>'; return; }
   let projects = current.projects;

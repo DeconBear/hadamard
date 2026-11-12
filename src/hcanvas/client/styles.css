@@ -535,7 +535,11 @@ button { cursor: pointer; }
 .hub-head h1 { margin: 8px 0 6px; font: 500 42px/1.05 Georgia, serif; letter-spacing: -.04em; color: var(--ink); }
 .hub-head p { margin: 0; font: 13px/1.5 Inter, sans-serif; color: var(--muted); }
 .hub-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
-.hub-meta { display: flex; align-items: center; justify-content: space-between; margin: 30px 0 14px; padding-top: 16px; border-top: 1px solid var(--border); font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--muted); }
+.hub-meta { display: flex; align-items: center; justify-content: space-between; margin: 30px 0 10px; padding-top: 16px; border-top: 1px solid var(--border); font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--muted); }
+.hub-data-root { display: flex; align-items: center; gap: 9px; min-width: 0; margin: 0 0 16px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255, 255, 255, .48); color: var(--ink-2); font: 10.5px/1.4 Inter, sans-serif; }
+.hub-data-root > span { flex: 0 0 auto; font-weight: 600; }
+.hub-data-root code { flex: 1; min-width: 0; overflow: hidden; padding: 0; background: transparent; color: var(--muted); font: 10px/1.4 ui-monospace, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.hub-data-root .btn { flex: 0 0 auto; }
 .hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
 .hub-card { display: flex; flex-direction: column; gap: 7px; min-height: 150px; text-align: left; padding: 18px; border-radius: 16px; border: 1px solid var(--border); background: #fffdf8; box-shadow: 0 3px 12px rgba(30,25,20,.05); color: var(--ink); cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
 .hub-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

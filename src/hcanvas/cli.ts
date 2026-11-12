@@ -13,6 +13,7 @@ import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from './sc
 import { parseExcalidrawScene } from '../canvas/excalidrawScene.js';
 import type { HcDocument } from './types.js';
 import { listProjects, registerProject, registryFilePath, touchProject } from './projectRegistry.js';
+import { resolveDataRootSync } from './dataRoot.js';
 
 interface ParsedArgs {
   positionals: string[];
@@ -24,6 +25,7 @@ interface Connection {
   token: string;
 }
 
+if (!process.env.HCANVAS_HOME) process.env.HCANVAS_HOME = resolveDataRootSync();
 const DEFAULT_WORKSPACE = process.env.HCANVAS_HOME || path.join(os.homedir(), '.hcanvas');
 
 function usage(): string {
