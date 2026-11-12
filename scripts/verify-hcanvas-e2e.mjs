@@ -96,6 +96,7 @@ async function main() {
   assert('Pages panel is the focused default', await page.locator('[data-sidebar-section="pages"]').isVisible() && !(await page.locator('[data-sidebar-section="canvases"]').isVisible()));
   await page.locator('[data-sidebar-target="canvases"]').click();
   assert('Canvas section switches panels', await page.locator('#docsList').isVisible() && !(await page.locator('#pagesList').isVisible()));
+  assert('Canvas list uses the full navigator height', await page.locator('#docsList').evaluate(node => node.clientHeight) > 250, 'height=' + await page.locator('#docsList').evaluate(node => node.clientHeight));
   await page.locator('.sidebar-filter input').fill('Welcome');
   await page.waitForTimeout(200);
   assert('Canvas filter narrows visible rows', await page.locator('#docsList .doc-item:visible').count() === 1);
@@ -195,6 +196,10 @@ async function main() {
   await page.locator('.file-context-menu button', { hasText: 'Delete' }).click();
   await page.waitForTimeout(700);
   assert('Folder deleted', await page.locator('#filesPanel .file-tree-node.directory', { hasText: 'e2e-folder' }).count() === 0);
+  await writeFile(path.join(workspace, 'external-refresh.md'), '# external refresh\n', 'utf8');
+  await page.locator('#refreshFilesBtn').click();
+  await page.waitForTimeout(700);
+  assert('Files refresh discovers external changes', await page.locator('#filesPanel .file-tree-node', { hasText: 'external-refresh.md' }).count() > 0);
 
   // Markdown page: direct rich-text editing and reopenable help.
   await page.locator('[data-sidebar-target="pages"]').click();
@@ -409,6 +414,11 @@ async function main() {
   await assetInput.setInputFiles(path.join(root, 'assets', 'hcanvas-icon.png'));
   await page.waitForTimeout(900);
   assert('Asset uploaded', await page.locator('.asset-row').count() > 0);
+  await page.locator('.asset-row').first().click();
+  await page.waitForTimeout(300);
+  assert('Asset row opens an image preview', await page.locator('.asset-preview-modal .asset-preview-image').count() === 1);
+  await page.locator('.asset-preview-modal [data-close]').first().click();
+  await page.waitForTimeout(200);
   await page.locator('.asset-insert').first().click();
   await page.waitForTimeout(900);
   const imgs = page.frameLocator('.html-page-surface iframe').locator('img');
