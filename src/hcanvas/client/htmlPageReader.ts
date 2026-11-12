@@ -20,6 +20,7 @@ export interface HtmlPageSurfaceOptions {
   onMarkdownChange?(markdown: string): void;
   onMarkdownCommit?(markdown: string): void;
   onMarkdownSource?(pageId: string, x: number, y: number): void;
+  language?: 'en' | 'zh';
 }
 
 let activeResizeObserver: ResizeObserver | null = null;
@@ -83,7 +84,7 @@ function setupMarkdownRichEditing(iframe: HTMLIFrameElement, page: HcPage, optio
     checkbox.disabled = false;
     checkbox.contentEditable = 'false';
   });
-  attachMarkdownWysiwyg(doc, page.id);
+  attachMarkdownWysiwyg(doc, page.id, options.language);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastMarkdown = '';
   const emit = (commit: boolean): void => {

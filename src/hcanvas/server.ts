@@ -24,6 +24,7 @@ import { createPluginScaffold } from './pluginScaffold.js';
 import { listProjects } from './projectRegistry.js';
 import { HcFileService } from './fileWorkspace.js';
 import { HcAssetService } from './assets.js';
+import { readHcanvasLanguageSync, writeHcanvasLanguage } from './dataRoot.js';
 
 export interface HcServerOptions {
   workspace: string;
@@ -207,8 +208,10 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
           workspace: options.workspace,
           mode: 'standalone',
           version: '0.1.0',
+          language: readHcanvasLanguageSync(),
         };
         html = html.replace('__HCANVAS_BOOT_JSON__', escapeJsonForHtml(boot));
+        html = html.replace('<html lang="en">', '<html lang="' + (boot.language === 'zh' ? 'zh-CN' : 'en') + '">');
         text(res, 200, html, 'text/html; charset=utf-8');
         return;
       }
@@ -514,6 +517,12 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
           sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
         });
         json(res, 200, { ok: true, active });
+        return;
+      }
+      if (pathname === '/api/settings/language' && req.method === 'POST') {
+        const body = await readBody(req);
+        const language = await writeHcanvasLanguage(body.language === 'zh' ? 'zh' : 'en');
+        json(res, 200, { ok: true, language });
         return;
       }
       if (pathname === '/api/workspace' && req.method === 'GET') {

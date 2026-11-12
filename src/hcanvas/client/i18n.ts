@@ -1,0 +1,820 @@
+export type Language = 'en' | 'zh';
+
+let currentLanguage: Language = 'en';
+let started = false;
+let observer: MutationObserver | null = null;
+const textState = new WeakMap<Text, { original: string; translated: string }>();
+const originalAttrs = new WeakMap<Element, Map<string, string>>();
+const TRANSLATABLE_ATTRS = ['title', 'placeholder', 'aria-label', 'alt'];
+const SKIP_SELECTOR = [
+  '.artboard',
+  '.present-page',
+  '.present-notes',
+  '.history-preview',
+  '.history-preview-canvas',
+  '.file-markdown-view',
+  '.cm-editor',
+  '.cm-content',
+  '.file-editor-host',
+  '.html-page-surface',
+  '.page-frame',
+  '.block-content',
+  '.block-wrap',
+  '.asset-preview-body',
+  'iframe',
+  'svg',
+  'canvas',
+  'script',
+  'style',
+  '[data-no-i18n]',
+].join(',');
+
+const zh: Record<string, string> = {
+  'AI-native canvas · standalone': 'AI 原生画布 · 独立版',
+  'AI-native canvas': 'AI 原生画布',
+  'Open a project in a new window, or create one from a folder.': '在新窗口打开项目，或从文件夹创建新项目。',
+  'Back to canvas': '返回画布',
+  'New Project…': '新建项目…',
+  'New Project...': '新建项目…',
+  'Open folder': '打开文件夹',
+  'Open Folder': '打开文件夹',
+  'Projects': '项目',
+  'Project': '项目',
+  'Current workspace:': '当前工作区：',
+  'Data location': '数据位置',
+  'Language': '语言',
+  'Refresh': '刷新',
+  'Canvases': '画布',
+  'Pages': '页面',
+  'Files': '文件',
+  'Assets': '资源',
+  'Plugins': '插件',
+  'Inspector': '检查器',
+  'Layers': '图层',
+  'Proposals': '提案',
+  'History': '历史',
+  'Find a canvas…': '搜索画布…',
+  'Find a page…': '搜索页面…',
+  'Find a canvas...': '搜索画布…',
+  'Find a page...': '搜索页面…',
+  'Filters sidebar items': '筛选侧栏项目',
+  'New canvas': '新建画布',
+  'Add page': '添加页面',
+  'Add a folder as workspace root': '添加工作区文件夹',
+  'Refresh files and folders': '刷新文件和文件夹',
+  'Upload assets': '上传资源',
+  'Browse plugin gallery': '浏览插件库',
+  'Manage plugins': '管理插件',
+  'Collapse left sidebar': '收起左侧栏',
+  'Collapse right sidebar': '收起右侧栏',
+  'Toggle left sidebar': '切换左侧栏',
+  'Toggle right sidebar': '切换右侧栏',
+  'Present this canvas': '演示画布',
+  'Export this canvas': '导出画布',
+  'Ready': '就绪',
+  'Saved': '已保存',
+  'Saving…': '保存中…',
+  'Saving...': '保存中…',
+  'Save failed': '保存失败',
+  'Offline': '离线',
+  'Editing HTML': '正在编辑 HTML',
+  'Editing HTML page': '正在编辑 HTML 页面',
+  'Editing HTML block': '正在编辑 HTML 块',
+  'Insert +': '插入 +',
+  'Source': '源码',
+  'Done': '完成',
+  'Select': '选择',
+  'Pan': '平移',
+  'Pen': '画笔',
+  'Curve': '曲线',
+  'Erase': '擦除',
+  'Arrow': '箭头',
+  'Text': '文本',
+  'HTML': 'HTML',
+  'Markdown': 'Markdown',
+  'Code': '代码',
+  'Formula': '公式',
+  'Shape': '形状',
+  'Undo': '撤销',
+  'Redo': '重做',
+  'Grid': '网格',
+  'Snap': '吸附',
+  'Help': '帮助',
+  'Slice': '切片',
+  'Group': '分组',
+  'Ungroup': '取消分组',
+  'Front': '置前',
+  'Back': '置后',
+  'Delete': '删除',
+  'Duplicate': '复制',
+  'Edit': '编辑',
+  'Gallery': '插件库',
+  'Manage': '管理',
+  'Close': '关闭',
+  'Cancel': '取消',
+  'OK': '确定',
+  'Save': '保存',
+  'done': '完成',
+  'current': '当前',
+  'running': '运行中',
+  'closed': '已关闭',
+  'Back to Canvas': '返回画布',
+  'Open in new window': '在新窗口打开',
+  'Open in new window ↗': '在新窗口打开 ↗',
+  'Return to this canvas →': '返回此画布 →',
+  'Not running': '未运行',
+  'Page master': '页面母版',
+  'Welcome': '欢迎',
+  'Untitled canvas': '未命名画布',
+  'No projects yet': '还没有项目',
+  'Create a project from a folder. hcanvas will initialize .hcanvas/ inside it and keep all data there.': '从文件夹创建项目，hcanvas 会在其中初始化 .hcanvas/ 并保存所有数据。',
+  'Choose a project folder…': '选择项目文件夹…',
+  'Projects are registered in the data location shown above. Each project stores its data in': '项目注册在上方显示的数据位置中。每个项目的数据保存在',
+  'New file': '新建文件',
+  'New folder': '新建文件夹',
+  'Rename': '重命名',
+  'Open': '打开',
+  'Remove folder': '移除文件夹',
+  'Loading…': '加载中…',
+  'Loading...': '加载中…',
+  'Empty folder': '空文件夹',
+  'No workspace folders': '没有工作区文件夹',
+  'Expand a folder to browse files.': '展开文件夹以浏览文件。',
+  'Search files…': '搜索文件…',
+  'Search files...': '搜索文件…',
+  'No matching files': '没有匹配文件',
+  'Drop files here or click + to upload': '拖入文件，或点击 + 上传',
+  'No assets yet': '还没有资源',
+  'Insert': '插入',
+  'Close preview': '关闭预览',
+  'Insert into page': '插入页面',
+  'No inline preview for this file type': '此文件类型不支持内嵌预览',
+  'Revision history': '修订历史',
+  'Filter edits…': '筛选修改…',
+  'Filter edits...': '筛选修改…',
+  'Refresh history': '刷新历史',
+  'Current': '当前',
+  'This edit': '本次修改',
+  'Vs current': '与当前对比',
+  'Restore': '恢复',
+  'READ-ONLY': '只读',
+  'Initial snapshot · no earlier version to compare.': '初始快照 · 没有更早版本可对比。',
+  'Restoring creates a new revision. Your current work remains in history.': '恢复会创建一个新修订，当前工作仍会保留在历史中。',
+  'No content changes in this comparison.': '此对比中没有内容变化。',
+  'No revision snapshots yet. New edits will appear here.': '还没有修订快照。新的编辑会显示在这里。',
+  'No revisions match this filter.': '没有匹配此筛选的修订。',
+  'Canvas title': '画布标题',
+  'Page order': '页面顺序',
+  'Added page': '新增页面',
+  'Removed page': '删除页面',
+  'Block ·': '块 ·',
+  'Style': '样式',
+  'Name': '名称',
+  'Optional label': '可选标签',
+  'Rotation': '旋转',
+  'Font': '字体',
+  'Font size': '字号',
+  'Color': '颜色',
+  'Fill': '填充',
+  'Stroke': '描边',
+  'Width': '宽度',
+  'Shape text': '形状文字',
+  'Arrowhead': '箭头样式',
+  'LaTeX': 'LaTeX',
+  'Opacity': '透明度',
+  'Cutout': '抠图',
+  'Edit source': '编辑源码',
+  'Edit HTML': '编辑 HTML',
+  'Edit formula': '编辑公式',
+  'Set image URL': '设置图片 URL',
+  'Dissolve frame': '拆解画框',
+  'Add HTML block': '添加 HTML 块',
+  'Add text': '添加文本',
+  'Fit content': '适配内容',
+  'Open page files': '打开页面文件',
+  'Save as master': '保存为母版',
+  'Delete page': '删除页面',
+  'Edit HTML source': '编辑 HTML 源码',
+  'Page': '页面',
+  'Background': '背景',
+  'Mode': '模式',
+  'Notes for agent': '给 Agent 的备注',
+  'Page structure': '页面结构',
+  'HTML page · direct edit enabled': 'HTML 页面 · 已启用直接编辑',
+  'Double-click anywhere in the page to enter HTML edit mode. Esc exits.': '双击页面任意位置进入 HTML 编辑模式，按 Esc 退出。',
+  'Text block': '文本块',
+  'Markdown block': 'Markdown 块',
+  'Code block': '代码块',
+  'Image': '图片',
+  'Frame': '画框',
+  'Delete this page?': '删除此页面？',
+  'Delete this block?': '删除此块？',
+  'Plugins:': '插件：',
+  'loaded': '已加载',
+  'error': '错误',
+  'errors': '错误',
+  'Page duplicated': '页面已复制',
+  'Page created from master': '已从母版创建页面',
+  'Page saved as master': '页面已保存为母版',
+  'Master deleted': '母版已删除',
+  'Snap: 8px': '吸附：8px',
+  'Snap off': '吸附关闭',
+  'Copied to clipboard': '已复制到剪贴板',
+  'Clipboard unavailable': '剪贴板不可用',
+  'Export failed': '导出失败',
+  'Export ready:': '导出完成：',
+  'Rendering': '正在渲染',
+  'Open a page first.': '请先打开一个页面。',
+  'Select at least two blocks to group.': '至少选择两个块才能分组。',
+  'No grouped blocks selected.': '没有选中已分组的块。',
+  'This block is on a locked layer.': '此块位于锁定的图层上。',
+  'Cannot enter HTML edit mode.': '无法进入 HTML 编辑模式。',
+  'Switch to a Canvas or Infinite page to add blocks.': '请切换到 Canvas 或 Infinite 页面添加块。',
+  'Add blocks on a canvas or infinite page, not an HTML page.': '请在 Canvas 或 Infinite 页面添加块，而不是 HTML 页面。',
+  'Canvas changed elsewhere. Your source editor remains open; continue editing to save the latest text.': '画布已在其他地方更改。源码编辑器仍然打开；继续编辑并保存最新文本。',
+  'Someone else changed this canvas. Reloading the latest revision.': '其他人更改了此画布，正在重新加载最新修订。',
+  'Canvas changed elsewhere. Exit HTML edit to reload.': '画布已在其他地方更改，退出 HTML 编辑以重新加载。',
+  'Reload failed': '重新加载失败',
+  'Opened folder:': '已打开文件夹：',
+  'Data location updated.': '数据位置已更新。',
+  'Data location can be changed in the desktop app.': '数据位置只能在桌面应用中修改。',
+  'Export': '导出',
+  'Present': '演示',
+  'HTML file': 'HTML 文件',
+  'PDF (browser)': 'PDF（浏览器）',
+  'Print PDF · 3mm bleed': '打印 PDF · 3mm 出血',
+  'PNG image': 'PNG 图片',
+  'PowerPoint deck (visual .pptx)': 'PowerPoint 演示文稿（视觉 .pptx）',
+  'PowerPoint editable (.pptx)': 'PowerPoint 可编辑（.pptx）',
+  'Word résumé (.docx)': 'Word 简历（.docx）',
+  'Excalidraw scene (.excalidraw)': 'Excalidraw 场景（.excalidraw）',
+  'Share': '分享',
+  'Fit': '适配',
+  'Zoom in': '放大',
+  'Zoom out': '缩小',
+  'Previous page': '上一页',
+  'Next page': '下一页',
+  'Speaker notes': '演讲者备注',
+  'Exit presentation': '退出演示',
+  'Laser pointer': '激光笔',
+  'No speaker notes for this page.': '此页面没有演讲者备注。',
+  'Shortcuts': '快捷键',
+  'Canvas shortcuts': '画布快捷键',
+  'Works when you are not typing in a field.': '当焦点不在输入框中时生效。',
+  'This help': '此帮助',
+  'Plugin blocks': '插件块',
+  'Reload plugins': '重新加载插件',
+  'Create block sample': '创建块示例',
+  'Create page sample': '创建页面示例',
+  'Plugin gallery': '插件库',
+  'Install': '安装',
+  'Import JSON': '导入 JSON',
+  'Plugin page templates': '插件页面模板',
+  'Add Page': '添加页面',
+  'Create page': '创建页面',
+  'Page presets': '页面预设',
+  'A clear idea, told well.': '清晰的想法，优雅地表达。',
+  'The next section': '下一节',
+  'What we will cover': '本次内容',
+  'Start writing in Markdown.': '开始用 Markdown 写作。',
+  'Double-click to edit.': '双击编辑。',
+  'Edit Markdown source': '编辑 Markdown 源码',
+  'Duplicate page': '复制页面',
+  'Close tab · middle-click': '关闭标签 · 中键点击',
+  'Remove workspace folder': '移除工作区文件夹',
+};
+
+Object.assign(zh, {
+  'Confirm': '确认',
+  'Later': '稍后',
+  'Restart now': '立即重启',
+  'Data location changed': '数据位置已更改',
+  'New data location': '新的数据位置',
+  'Stored in the app profile, outside the install directory.': '存储在应用配置目录中，不在安装目录内。',
+  'The previous location is left untouched as a safety copy.': '原位置会保留作为安全副本。',
+  'Existing Hcanvas data was found there.': '已找到现有的 Hcanvas 数据。',
+  'Existing data was copied to the new location.': '已有数据已复制到新位置。',
+  'Restart Hadamard Canvas to use the new location for this window.': '重启 Hadamard Canvas 后此窗口会使用新位置。',
+  'Could not read the project registry.': '无法读取项目注册表。',
+  'Choose a project folder…': '选择项目文件夹…',
+  'Open project folder': '打开项目文件夹',
+  'No projects yet': '还没有项目',
+  'Create a project from a folder. hcanvas will initialize': '从文件夹创建项目，hcanvas 会在其中初始化',
+  'inside it and keep all data there.': '并保存所有数据。',
+  'Open in new tab ↗': '在新标签页打开 ↗',
+  'Not running': '未运行',
+  'Workspace': '工作区',
+  'All hcanvas content lives in this directory.': '所有 hcanvas 内容都保存在此目录。',
+  'CLI guide': 'CLI 指南',
+  'Start another app on a project folder:': '在项目文件夹上启动另一个应用：',
+  'The project gets a': '项目会获得一个',
+  'directory with docs, state, masters, exports and CLI.md.': '目录，包含文档、状态、母版、导出和 CLI.md。',
+  'Open Project…': '打开项目…',
+  'Copy CLI guide': '复制 CLI 指南',
+  'Drop files here or click + to upload': '将文件拖到这里，或点击 + 上传',
+  'No assets yet': '还没有资源',
+  'Search files…': '搜索文件…',
+  'Search files...': '搜索文件…',
+  'No matching files': '没有匹配文件',
+  'Remove': '移除',
+  'Plugin manager': '插件管理器',
+  'Plugin blocks': '插件块',
+  'Reload plugins': '重新加载插件',
+  'Create block sample': '创建块示例',
+  'Create page sample': '创建页面示例',
+  'Plugin gallery': '插件库',
+  'Install': '安装',
+  'Import JSON': '导入 JSON',
+  'Plugin page templates': '插件页面模板',
+  'Page presets': '页面预设',
+  'New page': '新建页面',
+  'New canvas': '新建画布',
+  'Add page': '添加页面',
+  'Shortcuts': '快捷键',
+  'Canvas shortcuts': '画布快捷键',
+  'Works when you are not typing in a field.': '当焦点不在输入框中时生效。',
+  'Close editor': '关闭编辑器',
+  'Auto-save on': '自动保存已开启',
+  'Editing…': '编辑中…',
+  'Not saved · edit or retry': '未保存 · 编辑或重试',
+  'Changes save automatically · Ctrl/Cmd+S to save now': '修改会自动保存 · 按 Ctrl/Cmd+S 立即保存',
+  'Preview': '预览',
+  'Source': '源码',
+  'No inline preview for this file type': '此文件类型不支持内嵌预览',
+  'Edit Markdown source': '编辑 Markdown 源码',
+  'Edit HTML source': '编辑 HTML 源码',
+  'Duplicate page': '复制页面',
+  'Delete page': '删除页面',
+  'No revision snapshots yet. New edits will appear here.': '还没有修订快照，新的编辑会显示在这里。',
+  'No revisions match this filter.': '没有匹配此筛选的修订。',
+  'No content changes in this comparison.': '此对比中没有内容变化。',
+  'Initial snapshot · no earlier version to compare.': '初始快照 · 没有更早版本可对比。',
+  'Restoring creates a new revision. Your current work remains in history.': '恢复会创建新的修订，当前工作仍保留在历史中。',
+  'Revision history': '修订历史',
+  'Filter edits…': '筛选修改…',
+  'Filter edits...': '筛选修改…',
+  'This edit': '本次修改',
+  'Vs current': '与当前对比',
+  'Restore': '恢复',
+  'READ-ONLY': '只读',
+  'Current': '当前',
+  'Page order': '页面顺序',
+  'Canvas title': '画布标题',
+  'Added page': '新增页面',
+  'Removed page': '删除页面',
+  'Block ·': '块 ·',
+  'Style': '样式',
+  'Name': '名称',
+  'Optional label': '可选标签',
+  'Rotation': '旋转',
+  'Font': '字体',
+  'Font size': '字号',
+  'Color': '颜色',
+  'Fill': '填充',
+  'Stroke': '描边',
+  'Width': '宽度',
+  'Shape text': '形状文字',
+  'Arrowhead': '箭头样式',
+  'Opacity': '透明度',
+  'Cutout': '抠图',
+  'Edit source': '编辑源码',
+  'Edit HTML': '编辑 HTML',
+  'Edit formula': '编辑公式',
+  'Set image URL': '设置图片 URL',
+  'Dissolve frame': '拆解画框',
+  'Add HTML block': '添加 HTML 块',
+  'Add text': '添加文本',
+  'Fit content': '适配内容',
+  'Open page files': '打开页面文件',
+  'Save as master': '保存为母版',
+  'Page': '页面',
+  'Background': '背景',
+  'Mode': '模式',
+  'Notes for agent': '给 Agent 的备注',
+  'Page structure': '页面结构',
+  'HTML page · direct edit enabled': 'HTML 页面 · 已启用直接编辑',
+  'Double-click anywhere in the page to enter HTML edit mode. Esc exits.': '双击页面任意位置进入 HTML 编辑模式，按 Esc 退出。',
+  'Plugins:': '插件：',
+  'loaded': '已加载',
+  'error': '错误',
+  'errors': '错误',
+  'Page duplicated': '页面已复制',
+  'Page created from master': '已从母版创建页面',
+  'Page saved as master': '页面已保存为母版',
+  'Master deleted': '母版已删除',
+  'Snap: 8px': '吸附：8px',
+  'Snap off': '吸附关闭',
+  'Copied to clipboard': '已复制到剪贴板',
+  'Clipboard unavailable': '剪贴板不可用',
+  'Export failed': '导出失败',
+  'Open a page first.': '请先打开一个页面。',
+  'Select at least two blocks to group.': '至少选择两个块才能分组。',
+  'No grouped blocks selected.': '没有选中已分组的块。',
+  'This block is on a locked layer.': '此块位于锁定的图层上。',
+  'Cannot enter HTML edit mode.': '无法进入 HTML 编辑模式。',
+  'Switch to a Canvas or Infinite page to add blocks.': '请切换到 Canvas 或 Infinite 页面添加块。',
+  'Add blocks on a canvas or infinite page, not an HTML page.': '请在 Canvas 或 Infinite 页面添加块，而不是 HTML 页面。',
+  'Canvas changed elsewhere. Exit HTML edit to reload.': '画布已在其他地方更改，退出 HTML 编辑以重新加载。',
+  'Reload failed': '重新加载失败',
+  'Opened folder:': '已打开文件夹：',
+  'Data location updated.': '数据位置已更新。',
+  'Data location can be changed in the desktop app.': '数据位置只能在桌面应用中修改。',
+  'Page master': '页面母版',
+  'Page height': '页面高度',
+  'Page width': '页面宽度',
+  'Speaker notes': '演讲者备注',
+  'Exit presentation': '退出演示',
+  'Laser pointer': '激光笔',
+  'Previous page': '上一页',
+  'Next page': '下一页',
+  'No speaker notes for this page.': '此页面没有演讲者备注。',
+});
+
+Object.assign(zh, {
+  'Height': '高度',
+  'Width': '宽度',
+  '📁 Open folder': '📁 打开文件夹',
+  'HTML PAGE · EDITABLE': 'HTML 页面 · 可编辑',
+  'HTML PAGE': 'HTML 页面',
+  'MARKDOWN PAGE': 'MARKDOWN 页面',
+  'HTML · interactive view': 'HTML · 交互视图',
+  'Markdown · reading view': 'Markdown · 阅读视图',
+  'select text · Edit': '选择文本 · 编辑',
+  'Double-click anywhere in the page to enter HTML edit mode. Esc exits. The Agent tab exposes the CLI protocol.': '双击页面任意位置进入 HTML 编辑模式，按 Esc 退出。Agent 标签页提供 CLI 协议。',
+  'Double-click any text to edit it in place. Toggle source mode to change HTML and CSS. The agent reads and patches the same document through the hcanvas CLI.': '双击任意文本即可原地编辑。切换源码模式可修改 HTML 和 CSS。Agent 通过 hcanvas CLI 读取和修改同一份文档。',
+  'Open the page HTML source, or double-click text in the preview.': '打开页面 HTML 源码，或双击预览中的文本。',
+  'Direct manipulation, real typography, HTML/CSS.': '直接操作、真实排版、HTML/CSS。',
+  'Stable data-hc-id, structured patches, revisions.': '稳定的 data-hc-id、结构化补丁、修订历史。',
+  'One document, visual and textual, no lock-in.': '同一份文档，可视与文本兼得，不锁定格式。',
+});
+
+Object.assign(zh, {
+  'Add a page': '添加页面',
+  'HTML pages are directly editable; canvas pages accept blocks.': 'HTML 页面可直接编辑；画布页面可添加块。',
+  'Save any page as a reusable master from the Page inspector, then it appears here.': '在页面检查器里把任意页面保存为可复用母版，它就会出现在这里。',
+  'Cancel': '取消',
+  'Canvas · 16:9': '画布 · 16:9',
+  'Canvas · A4': '画布 · A4',
+  'Canvas · 4:5': '画布 · 4:5',
+  'Canvas · 1:1': '画布 · 1:1',
+  'Canvas · 16:9 wide': '画布 · 16:9 宽屏',
+  'Infinite canvas': '无限画布',
+  'HTML page': 'HTML 页面',
+  'Markdown · A4': 'Markdown · A4',
+  'Slides & presentations': '幻灯片与演示',
+  'Documents, resumes & printables': '文档、简历与打印',
+  'Posters & social': '海报与社交媒体',
+  'Square graphics': '方形图形',
+  'Full-HD presentations': '全高清演示',
+  'No bounds - pan & zoom': '无边界 · 平移缩放',
+  'Directly editable HTML / CSS': '可直接编辑 HTML / CSS',
+  'Markdown document - rendered + source editing': 'Markdown 文档 · 渲染 + 源码编辑',
+  'Search files': '搜索文件',
+  'Initial revision': '初始版本',
+  'human · just now': 'human · 刚刚',
+  'READ-ONLY': '只读',
+  'EDITABLE': '可编辑',
+  'Align…': '对齐…',
+  'Left': '左对齐',
+  'Center': '居中',
+  'Right': '右对齐',
+  'Top': '顶部',
+  'Middle': '垂直居中',
+  'Bottom': '底部',
+  'Select / Hand tool': '选择 / 抓手工具',
+  'Pan from anywhere, including over blocks': '从任意位置平移，包括块上方',
+  'Zoom at pointer': '在指针处缩放',
+  'Pan horizontally': '水平平移',
+  'Show or hide the workspace navigator': '显示/隐藏工作区导航',
+  'Browse canvases or pages; F2 renames a page; Ctrl/Cmd+F filters the list': '浏览画布或页面；F2 重命名页面；Ctrl/Cmd+F 筛选列表',
+  'Click or drag to draw rectangle / ellipse': '单击或拖拽绘制矩形 / 椭圆',
+  'Insert text / block / formula, then click to place': '插入文本 / 块 / 公式，然后点击放置',
+  'Insert image from a folder or clipboard': '从文件夹或剪贴板插入图片',
+  'Keep proportions / draw from center': '保持比例 / 从中心绘制',
+  'Marquee / add to selection': '框选 / 追加到选择',
+  'Pen / Arrow / Bezier Curve / Eraser; Shift angles arrows': '画笔 / 箭头 / 贝塞尔曲线 / 橡皮擦；Shift 约束箭头角度',
+  'Drag anchors/controls; arrows nudge; Alt+click or Delete removes anchors': '拖动锚点/控制柄；方向键微调；Alt+单击或 Delete 删除锚点',
+  'HTML editing': 'HTML 编辑',
+  'Click selects; click selected text again or press Enter to edit; Ctrl/Cmd+C/X/V/D and Delete work in the frame': '单击选中；再次单击选中文本或按 Enter 编辑；框内支持 Ctrl/Cmd+C/X/V/D 和 Delete',
+  'Select all blocks': '选择所有块',
+  'Copy / cut / paste selected blocks': '复制 / 剪切 / 粘贴选中的块',
+  'Duplicate selected blocks': '复制选中的块',
+  'Group / Shift = ungroup': '分组 / Shift = 取消分组',
+  'Undo; Ctrl/Cmd+Shift+Z or Y = redo': '撤销；Ctrl/Cmd+Shift+Z 或 Y = 重做',
+  '100% zoom / fit; Shift+1 also fits': '100% 缩放 / 适配；Shift+1 也可适配',
+  'Delete / nudge selection (Shift = 10px)': '删除 / 微调选中项（Shift = 10px）',
+  'Lock movement axis / keep aspect ratio when resizing': '锁定移动方向 / 缩放时保持宽高比',
+  'Duplicate while dragging / resize from center': '拖拽时复制 / 从中心缩放',
+  'Space / Middle drag': '空格 / 中键拖动',
+  'Shift + Wheel': 'Shift + 滚轮',
+  'Sidebar: ↑ / ↓': '侧栏：↑ / ↓',
+  'Drop / paste image': '拖入 / 粘贴图片',
+  'Shift / Alt while drawing': '绘制时按 Shift / Alt',
+  'Drag empty / Shift+click': '拖拽空白 / Shift+单击',
+  'Curve points': '曲线控制点',
+  'Delete / Arrow keys': 'Delete / 方向键',
+  'Shift + drag': 'Shift + 拖拽',
+  'Text': '文本',
+  'Markdown': 'Markdown',
+  'Code': '代码',
+  'Shape': '形状',
+  'Math': '公式',
+  'Formula': '公式',
+  'Freehand': '手绘',
+  'Arrow': '箭头',
+  'Curve': '曲线',
+  'Frame': '画框',
+  'Group': '分组',
+  'Image block': '图片块',
+  'HTML block': 'HTML 块',
+  'Markdown block': 'Markdown 块',
+  'Text block': '文本块',
+  'Code block': '代码块',
+  'Formula block': '公式块',
+  'Shape block': '形状块',
+  'Unsupported plugin block': '不支持的插件块',
+  'Block type': '块类型',
+});
+
+Object.assign(zh, {
+  'No bounds · pan & zoom': '无边界 · 平移缩放',
+  'Markdown document · rendered + source editing': 'Markdown 文档 · 渲染 + 源码编辑',
+  'Inter · Bundled · clean sans': 'Inter · 内置 · 简洁无衬线',
+  'Source Serif 4 · Bundled · editorial serif': 'Source Serif 4 · 内置 · 编辑衬线',
+  'JetBrains Mono · Bundled · monospace': 'JetBrains Mono · 内置 · 等宽',
+  'Georgia · System serif': 'Georgia · 系统衬线',
+  'System UI · System interface font': 'System UI · 系统界面字体',
+  'Canvas tools': '画布工具',
+  'Document title': '文档标题',
+  'Live agents': '在线 Agent',
+  'Project manager': '项目管理器',
+  'Refresh files': '刷新文件',
+  'Selection actions': '选择操作',
+  'Toggle left sidebar': '切换左侧栏',
+  'Toggle right sidebar': '切换右侧栏',
+  'Align selected block': '对齐选中块',
+  'Arrow (A)': '箭头 (A)',
+  'Bring to front': '置于顶层',
+  'Browse plugin gallery': '浏览插件库',
+  'Browse, diff and restore saved revisions': '浏览、对比并恢复保存的修订',
+  'Click to select · click selected text again to edit · Ctrl+C/X/V · Esc to finish': '点击选择 · 再次点击选中文本编辑 · Ctrl+C/X/V · Esc 结束',
+  'Collapse left sidebar': '收起左侧栏',
+  'Collapse right sidebar': '收起右侧栏',
+  'Curve tool (C): drag a curved stroke': '曲线工具 (C)：拖拽绘制曲线',
+  'Cut the selected rectangle/polygon with a line': '用切割线切开选中的矩形/多边形',
+  'Default workspace and project registry location. Stored in the app profile, so reinstall/upgrade keeps it.': '默认工作区和项目注册位置。保存在应用配置中，重装或升级不会丢失。',
+  'Delete': '删除',
+  'Drag to resize · double-click to collapse': '拖动调整大小 · 双击收起',
+  'Duplicate (Ctrl/Cmd+D)': '复制 (Ctrl/Cmd+D)',
+  'Eraser (E)': '橡皮擦 (E)',
+  'Freehand pen (P)': '自由画笔 (P)',
+  'Group (Ctrl/Cmd+G)': '分组 (Ctrl/Cmd+G)',
+  'Hand / pan (H, or hold Space)': '抓手/平移 (H，或按住空格)',
+  'Insert code block (4)': '插入代码块 (4)',
+  'Insert HTML block (1)': '插入 HTML 块 (1)',
+  'Insert LaTeX formula (7)': '插入 LaTeX 公式 (7)',
+  'Insert Markdown block (3)': '插入 Markdown 块 (3)',
+  'Insert shape (6)': '插入形状 (6)',
+  'Insert text block (2)': '插入文本块 (2)',
+  'Inspect and edit page and block properties': '查看和编辑页面/块属性',
+  'Keyboard shortcuts & help': '键盘快捷键与帮助',
+  'Layers: stacking order, select and reorder blocks': '图层：堆叠顺序、选择和调整块顺序',
+  'Manage plugins': '管理插件',
+  'New canvas': '新建画布',
+  'Open the current project folder': '打开当前项目文件夹',
+  'Open the project manager': '打开项目管理器',
+  'Redo (Ctrl/Cmd + Shift + Z)': '重做 (Ctrl/Cmd + Shift + Z)',
+  'Refresh files and folders': '刷新文件和文件夹',
+  'Review pending agent proposals before applying them': '应用前审查待处理的 Agent 提案',
+  'Select (V)': '选择 (V)',
+  'Send to back': '置于底层',
+  'Snap to 8px': '吸附到 8px',
+  'Toggle dot grid': '切换点网格',
+  'Undo (Ctrl/Cmd + Z)': '撤销 (Ctrl/Cmd + Z)',
+  'Ungroup (Ctrl/Cmd+Shift+G)': '取消分组 (Ctrl/Cmd+Shift+G)',
+  'Zoom in': '放大',
+  'Zoom out': '缩小',
+  'Current r0 · automatic snapshots': '当前 r0 · 自动快照',
+  'Initial revision': '初始版本',
+  'human · just now': 'human · 刚刚',
+  'just now': '刚刚',
+  'Page presets': '页面预设',
+  'Plugin pages': '插件页面',
+  'Plugin blocks': '插件块',
+});
+
+Object.assign(zh, {
+  'Read-only': '只读',
+  'This revision has no pages.': '此修订没有页面。',
+  'Preview page': '预览页面',
+  'Revision comparison': '修订对比',
+  'Open a document to see history.': '打开文档以查看历史。',
+  'Loading': '加载中',
+  'Restore revision': '恢复修订',
+  'No pages': '没有页面',
+  'Page presets': '页面预设',
+  'Plugin pages': '插件页面',
+  'Add a page': '添加页面',
+  'New page': '新建页面',
+  'New folder': '新建文件夹',
+  'New file': '新建文件',
+  'Rename': '重命名',
+  'Remove': '移除',
+  'Open project folder': '打开项目文件夹',
+  'Open in new tab ↗': '在新标签页打开 ↗',
+  'Current project': '当前项目',
+  'Create': '创建',
+  'Create page': '创建页面',
+  'Later': '稍后',
+  'Restart now': '立即重启',
+  'Change…': '更改…',
+  'Current workspace:': '当前工作区：',
+});
+
+Object.assign(zh, {
+  'Markdown editing help': 'Markdown 编辑帮助',
+  'Click text to edit directly.': '点击文本即可直接编辑。',
+  'Right-click to open Markdown source.': '右键打开 Markdown 源码。',
+  'Dismiss': '知道了',
+  'Don’t show again': '不再显示',
+  'Don\'t show again': '不再显示',
+  'Edit text': '编辑文本',
+  'Apply': '应用',
+  'Update': '更新',
+  'Insert': '插入',
+  'Insert formula': '插入公式',
+  'Edit formula': '编辑公式',
+  'Formula (LaTeX)': '公式（LaTeX）',
+  'Click a formula to edit it': '点击公式即可编辑',
+  'Enter applies · Esc cancels': 'Enter 应用 · Esc 取消',
+  'Enter applies, Esc cancels': 'Enter 应用，Esc 取消',
+  'Clear': '清除',
+  'Search': '搜索',
+  'Search plugins': '搜索插件',
+  'No plugins installed yet.': '还没有安装插件。',
+  'All plugins': '全部插件',
+});
+
+const patterns: Array<[RegExp, string]> = [
+  [/^rev (\d+)$/, 'rev $1'],
+  [/^r(\d+)$/, 'r$1'],
+  [/^Saved · rev (\d+)$/, '已保存 · rev $1'],
+  [/^r(\d+)$/, 'r$1'],
+  [/^Rev (\d+)$/, '修订 $1'],
+  [/^Current r(\d+) · automatic snapshots$/, '当前 r$1 · 自动快照'],
+  [/^(\d+) pages? · rev (\d+)$/, '$1 页 · rev $2'],
+  [/^(\d+) page(?:s)?$/, '$1 页'],
+  [/^(\d+) blocks?$/, '$1 个块'],
+  [/^(\d+) revisions$/, '$1 个修订'],
+  [/^(\d+) of (\d+)$/, '$1 / $2'],
+  [/^(\d+) edited$/, '$1 处修改'],
+  [/^(\d+) pages?$/, '$1 页'],
+  [/^(\d+) changes$/, '$1 处修改'],
+  [/^Loading r(\d+)…$/, '正在加载 r$1…'],
+  [/^Restore revision (\d+)\? This creates a new revision and keeps the current one in history\.$/, '恢复修订 $1？这会创建新修订，当前版本仍保留在历史中。'],
+  [/^(\d+) child block\(s\) kept$/, '保留 $1 个子块'],
+  [/^Copied (\d+) blocks?$/, '已复制 $1 个块'],
+  [/^Cut (\d+) blocks?$/, '已剪切 $1 个块'],
+  [/^Grouped (\d+) blocks$/, '已分组 $1 个块'],
+  [/^Ungrouped (\d+) blocks$/, '已取消分组 $1 个块'],
+  [/^(\d+) plugins? loaded$/, '$1 个插件已加载'],
+  [/^(\d+) of (\d+) projects$/, '$1 / $2 个项目'],
+  [/^Plugin page templates \((\d+)\)$/, '插件页面模板（$1）'],
+  [/^Page (\d+)$/, '第 $1 页'],
+  [/^Block · (\w+)$/, '块 · $1'],
+  [/^(\d+) native blocks?$/, '$1 个原生块'],
+  [/^(\d+) more$/, '还有 $1 个'],
+  [/^(\d+) child blocks? kept$/, '保留 $1 个子块'],
+  [/^(\d+) pages · rev (\d+)$/, '$1 页 · rev $2'],
+];
+
+const BLOCK_TYPE_ZH: Record<string, string> = {
+  text: '文本', markdown: 'Markdown', code: '代码', shape: '形状', html: 'HTML', image: '图片', math: '公式',
+  freehand: '手绘', arrow: '箭头', curve: '曲线', frame: '画框', group: '分组', component: '组件', plugin: '插件',
+};
+
+function translateBlockType(type: string): string {
+  return BLOCK_TYPE_ZH[type.toLowerCase()] || type;
+}
+
+function translatePattern(value: string): string | null {
+  for (const [pattern, replacement] of patterns) {
+    if (pattern.test(value)) return value.replace(pattern, replacement);
+  }
+  return null;
+}
+
+export function getLanguage(): Language { return currentLanguage; }
+
+export function translatePhrase(value: string): string {
+  if (currentLanguage !== 'zh' || !value) return value;
+  const leading = value.match(/^\s*/)?.[0] || '';
+  const trailing = value.match(/\s*$/)?.[0] || '';
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  const blockMatch = trimmed.match(/^Block · (.+)$/);
+  if (blockMatch) return leading + '块 · ' + translateBlockType(blockMatch[1]!) + trailing;
+  const direct = zh[trimmed];
+  if (direct) return leading + direct + trailing;
+  const patterned = translatePattern(trimmed);
+  if (patterned) return leading + patterned + trailing;
+  return value;
+}
+
+export function t(value: string, vars?: Record<string, string | number>): string {
+  let result = translatePhrase(value);
+  if (vars) for (const [key, valuePart] of Object.entries(vars)) result = result.split('{' + key + '}').join(String(valuePart));
+  return result;
+}
+
+function skipped(node: Node): boolean {
+  const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
+  if (!element) return true;
+  if (element.closest(SKIP_SELECTOR)) return true;
+  return false;
+}
+
+function localizeText(node: Text): void {
+  const value = node.nodeValue || '';
+  const state = textState.get(node);
+  if (currentLanguage === 'en') {
+    if (state && value === state.translated) node.nodeValue = state.original;
+    textState.delete(node);
+    return;
+  }
+  if (state && value === state.translated) return;
+  if (state && value !== state.original) textState.delete(node);
+  const translated = translatePhrase(value);
+  if (translated !== value) {
+    textState.set(node, { original: value, translated });
+    node.nodeValue = translated;
+  }
+}
+
+function localizeAttributes(element: Element): void {
+  for (const attr of TRANSLATABLE_ATTRS) {
+    if (!element.hasAttribute(attr)) continue;
+    let saved = originalAttrs.get(element);
+    if (!saved) { saved = new Map(); originalAttrs.set(element, saved); }
+    const current = element.getAttribute(attr) || '';
+    if (currentLanguage === 'en') {
+      const original = saved.get(attr);
+      if (original !== undefined) { element.setAttribute(attr, original); saved.delete(attr); }
+      continue;
+    }
+    const translated = translatePhrase(current);
+    if (translated !== current) {
+      if (!saved.has(attr)) saved.set(attr, current);
+      element.setAttribute(attr, translated);
+    }
+  }
+}
+
+function walk(node: Node): void {
+  if (skipped(node)) return;
+  if (node.nodeType === Node.TEXT_NODE) { localizeText(node as Text); return; }
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+  const element = node as Element;
+  localizeAttributes(element);
+  for (const child of Array.from(node.childNodes)) walk(child);
+}
+
+export function translateDocument(): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = currentLanguage === 'zh' ? 'zh-CN' : 'en';
+  walk(document.body);
+}
+
+export function setLanguage(language: Language): void {
+  const next: Language = language === 'zh' ? 'zh' : 'en';
+  if (next === currentLanguage) { translateDocument(); return; }
+  currentLanguage = next;
+  translateDocument();
+}
+
+export function startLocalization(language: Language): void {
+  if (started) return;
+  started = true;
+  setLanguage(language);
+  if (typeof MutationObserver === 'undefined') return;
+  let queued = false;
+  observer = new MutationObserver(mutations => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      for (const mutation of mutations) {
+        if (mutation.type === 'characterData') localizeText(mutation.target as Text);
+        else if (mutation.type === 'attributes' && mutation.target.nodeType === Node.ELEMENT_NODE) localizeAttributes(mutation.target as Element);
+        else for (const added of Array.from(mutation.addedNodes)) if (added.isConnected) walk(added);
+      }
+    });
+  });
+  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: TRANSLATABLE_ATTRS });
+}
+
+export function stopLocalization(): void {
+  observer?.disconnect();
+  observer = null;
+  started = false;
+}

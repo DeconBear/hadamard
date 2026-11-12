@@ -535,6 +535,9 @@ button { cursor: pointer; }
 .hub-data-root > span { flex: 0 0 auto; font-weight: 600; }
 .hub-data-root code { flex: 1; min-width: 0; overflow: hidden; padding: 0; background: transparent; color: var(--muted); font: 10px/1.4 ui-monospace, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .hub-data-root .btn { flex: 0 0 auto; }
+.hub-language { display:flex; align-items:center; gap:10px; margin:-8px 0 16px; color:var(--ink-2); font:10.5px/1.4 Inter,sans-serif; }
+.hub-language > span { font-weight:600; }
+.hub-language select { height:28px; min-width:110px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--ink); padding:2px 8px; font:11px Inter,sans-serif; }
 .hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
 .hub-card { display: flex; flex-direction: column; gap: 7px; min-height: 150px; text-align: left; padding: 18px; border-radius: 16px; border: 1px solid var(--border); background: #fffdf8; box-shadow: 0 3px 12px rgba(30,25,20,.05); color: var(--ink); cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
 .hub-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

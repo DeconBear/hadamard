@@ -3,8 +3,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+export type HcanvasLanguage = 'en' | 'zh';
+
 export interface HcanvasSettings {
   dataRoot?: string;
+  language?: HcanvasLanguage;
 }
 
 /** Stable per-user config location; deliberately outside the install directory. */
@@ -52,5 +55,17 @@ export async function writeDataRootSetting(dataRoot: string): Promise<string> {
   const current = await readHcanvasSettings();
   await writeFile(hcanvasSettingsPath(), JSON.stringify({ ...current, dataRoot: next }, null, 2), 'utf8');
   process.env.HCANVAS_HOME = next;
+  return next;
+}
+
+export function readHcanvasLanguageSync(): HcanvasLanguage {
+  return readHcanvasSettingsSync().language === 'zh' ? 'zh' : 'en';
+}
+
+export async function writeHcanvasLanguage(language: HcanvasLanguage): Promise<HcanvasLanguage> {
+  const next: HcanvasLanguage = language === 'zh' ? 'zh' : 'en';
+  await mkdir(hcanvasConfigDir(), { recursive: true });
+  const current = await readHcanvasSettings();
+  await writeFile(hcanvasSettingsPath(), JSON.stringify({ ...current, language: next }, null, 2), 'utf8');
   return next;
 }

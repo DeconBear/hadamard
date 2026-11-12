@@ -19,6 +19,7 @@ import { openMarkdownPageEditor as showMarkdownPageEditor } from './markdownPage
 import { openNewDocModal as showNewDocModal } from './newDocModal.js';
 import { openSourceEditorFor } from './sourceEditor.js';
 import { FONT_OPTIONS, fontOptionFor } from './fonts.js';
+import { getLanguage, setLanguage, startLocalization, translatePhrase } from './i18n.js';
 import { openSourceModal, type SourceModalOptions } from './sourceModal.js';
 import { createPageFromPreset } from './pageCreation.js';
 import { CANVAS_PAGE_PRESETS, type HcClientPagePreset } from './pageTemplates.js';
@@ -47,7 +48,7 @@ import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawi
 import { applyOpLocally, invertOps as invertDocumentOps } from './documentHistory.js';
 import { SHORTCUTS_MODAL_HTML } from './shortcuts.js';
 import { esc, genId, toHex } from './utils.js';
-interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
+interface BootConfig { token: string; workspace: string; mode?: string; version?: string; language?: 'en' | 'zh'; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
 interface PresenceEntry { id: string; actor: string; docId: string; docTitle: string; pageId?: string; pageName: string; selection?: string[]; createdAt: string; updatedAt: string; stale: boolean; }
 interface MasterSummary { id: string; name: string; mode: string; width: number; height: number; background?: string; createdAt: string; html?: string; blocks?: HcBlock[]; }
@@ -73,6 +74,7 @@ declare global {
   }
 }
 const boot = JSON.parse(document.getElementById('hc-boot')?.textContent || '{}') as BootConfig;
+startLocalization(boot.language === 'zh' ? 'zh' : 'en');
 function el<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) throw new Error('Missing element #' + id);
@@ -234,6 +236,7 @@ function clampBlockPosition(page: HcPage, block: HcBlock, x: number, y: number):
   };
 }
 function toast(message: string, kind: 'info' | 'success' | 'error' = 'info'): void {
+  message = translatePhrase(message);
   const root = el('toastRoot');
   Array.from(root.children).find(item => item.textContent === message)?.remove();
   const node = document.createElement('div');
@@ -750,6 +753,7 @@ function bindStaticActions(): void {
   el('openProjectFolderBtn').addEventListener('click', () => { void revealProjectFolder(undefined, 'project'); });
   qs<HTMLButtonElement>('#hubCloseBtn')?.addEventListener('click', () => closeProjectHub());
   qs<HTMLButtonElement>('#hubRefreshBtn')?.addEventListener('click', () => { void renderProjectHub(); });
+  qs<HTMLSelectElement>('#hubLanguageSelect')?.addEventListener('change', event => { void changeAppLanguage((event.target as HTMLSelectElement).value === 'zh' ? 'zh' : 'en'); });
   qs<HTMLButtonElement>('#hubChangeDataRoot')?.addEventListener('click', () => { void changeHubDataRoot(); });
   qs<HTMLButtonElement>('#hubNewProjectBtn')?.addEventListener('click', () => {
     if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject();
@@ -1710,6 +1714,7 @@ function renderArtboard(): void {
       showEdit: !markdownPage,
       label: markdownPage ? 'MARKDOWN PAGE' : undefined,
       hint: markdownPage ? 'click text to edit · right-click for source' : undefined,
+      language: getLanguage(),
       onLoad: iframe => { if (state.editing && !markdownPage) setupHtmlEditing(iframe, page.id); htmlSelectionEditor.applyPending(page.id); },
       onEdit: pageId => enterHtmlEdit(pageId),
       onMarkdownChange: markdown => markdownPages.schedule(page.id, markdown),
@@ -2955,6 +2960,18 @@ async function revealProjectFolder(projectPath?: string, kind: 'project' | 'work
   }
 }
 
+async function changeAppLanguage(language: 'en' | 'zh'): Promise<void> {
+  try {
+    await api('/api/settings/language', { method: 'POST', body: JSON.stringify({ language }) });
+    setLanguage(language);
+    renderAll();
+    await renderProjectHub();
+    toast(language === 'zh' ? '语言已切换为中文' : 'Language set to English', 'success');
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), 'error');
+  }
+}
+
 async function changeHubDataRoot(): Promise<void> {
   const bridge = window.hcanvasDesktop;
   if (!bridge?.chooseDataRoot) { toast('Data location can be changed in the desktop app.', 'info'); return; }
@@ -2975,6 +2992,8 @@ async function changeHubDataRoot(): Promise<void> {
 
 async function renderProjectHub(): Promise<void> {
   const grid = el('hubProjectGrid');
+  const languageSelect = qs<HTMLSelectElement>('#hubLanguageSelect');
+  if (languageSelect) languageSelect.value = getLanguage();
   const dataRootRow = document.querySelector<HTMLElement>('.hub-data-root');
   const dataRootCode = qs<HTMLElement>('#hubDataRoot');
   if (window.hcanvasDesktop?.getDataRoot) {
@@ -2993,7 +3012,7 @@ async function renderProjectHub(): Promise<void> {
       if (nativeProjects.length) projects = nativeProjects.map(project => ({ ...project, workspaceExists: project.workspaceExists, runningUrl: project.runningUrl }));
     } catch { /* use server registry */ }
   }
-  el('hubCurrentWorkspace').textContent = 'Current workspace: ' + current.current.workspace;
+  el('hubCurrentWorkspace').textContent = translatePhrase('Current workspace:') + ' ' + current.current.workspace;
   if (!projects.length) {
     grid.innerHTML = '<div class="hub-empty"><h2>No projects yet</h2><p>Create a project from a folder. hcanvas will initialize <code>.hcanvas/</code> inside it and keep all data there.</p><button id="hubEmptyNewBtn" class="btn primary">Choose a project folder…</button></div>';
     qs<HTMLButtonElement>('#hubEmptyNewBtn')?.addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject(); else toast('Browser mode: run hcanvas app --project <folder>.', 'info'); });
@@ -3249,7 +3268,7 @@ function closeModal(): void {
 
 function confirmDialog(message: string): Promise<boolean> {
   return new Promise(resolve => {
-    const html = '<div class="modal small"><div class="modal-head"><div><strong>Confirm</strong><small>' + esc(message) + '</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-foot"><button class="btn" id="confirmCancel">Cancel</button><button class="btn primary" id="confirmOk">Confirm</button></div></div>';
+    const html = '<div class="modal small"><div class="modal-head"><div><strong>Confirm</strong><small>' + esc(translatePhrase(message)) + '</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-foot"><button class="btn" id="confirmCancel">Cancel</button><button class="btn primary" id="confirmOk">Confirm</button></div></div>';
     openModal(html);
     let settled = false;
     const finish = (value: boolean): void => { if (settled) return; settled = true; closeModal(); resolve(value); };

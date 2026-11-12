@@ -27,6 +27,21 @@ const COMMANDS: Command[] = [
   { id: 'formula', label: 'Formula', icon: 'fx', group: 'Common' },
 ];
 
+
+const COMMAND_ZH: Record<string, string> = {
+  text: '文本', h1: '标题 1', h2: '标题 2', h3: '标题 3', ol: '有序列表', ul: '无序列表',
+  code: '代码块', quote: '引用', divider: '分割线', link: '链接', task: '任务列表', table: '表格', highlight: '高亮', formula: '公式',
+};
+
+function commandLabel(command: Command, language: 'en' | 'zh'): string {
+  return language === 'zh' ? (COMMAND_ZH[command.id] || command.label) : command.label;
+}
+
+function groupLabel(group: string, language: 'en' | 'zh'): string {
+  if (language !== 'zh') return group;
+  return group === 'Basic' ? '基础' : group === 'Common' ? '常用' : group;
+}
+
 const STYLE_ID = 'hc-wysiwyg-style';
 
 function injectStyle(doc: Document): void {
@@ -61,7 +76,7 @@ function blockOf(node: Node | null): HTMLElement | null {
   return element?.closest('p,h1,h2,h3,h4,h5,h6,li,blockquote,pre,div,td,th') || null;
 }
 
-export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
+export function attachMarkdownWysiwyg(doc: Document, pageId: string, language: 'en' | 'zh' = 'en'): void {
   injectStyle(doc);
   doc.querySelectorAll<HTMLElement>('.hc-math-inline[data-tex], .hc-math-block[data-tex]').forEach(math => {
     math.contentEditable = 'false';
@@ -225,9 +240,9 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
   function renderMenu(query: string): void {
     if (!menu) return;
     const normalized = query.trim().toLowerCase();
-    items = COMMANDS.filter(command => !normalized || command.label.toLowerCase().includes(normalized) || command.id.startsWith(normalized));
+    items = COMMANDS.filter(command => !normalized || commandLabel(command, language).toLowerCase().includes(normalized) || command.id.startsWith(normalized));
     if (!items.length) {
-      menu.innerHTML = '<div class="hc-slash-empty">No matching commands</div>';
+      menu.innerHTML = '<div class="hc-slash-empty">' + (language === 'zh' ? '没有匹配的命令' : 'No matching commands') + '</div>';
       return;
     }
     activeIndex = Math.min(activeIndex, items.length - 1);
@@ -236,10 +251,10 @@ export function attachMarkdownWysiwyg(doc: Document, pageId: string): void {
     for (let index = 0; index < items.length; index += 1) {
       const command = items[index]!;
       if (command.group !== lastGroup) {
-        html += '<div class="hc-slash-group">' + command.group + '</div>';
+        html += '<div class="hc-slash-group">' + groupLabel(command.group, language) + '</div>';
         lastGroup = command.group;
       }
-      html += '<button type="button" class="hc-slash-item' + (index === activeIndex ? ' active' : '') + '" data-command="' + command.id + '"><span class="hc-slash-icon">' + command.icon + '</span>' + command.label + '</button>';
+      html += '<button type="button" class="hc-slash-item' + (index === activeIndex ? ' active' : '') + '" data-command="' + command.id + '"><span class="hc-slash-icon">' + command.icon + '</span>' + commandLabel(command, language) + '</button>';
     }
     menu.innerHTML = html;
     menu.querySelectorAll<HTMLButtonElement>('[data-command]').forEach(button => {
