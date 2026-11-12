@@ -236,6 +236,7 @@ export function installHistoryPanel(options: HistoryPanelOptions): HistoryPanelC
       selected = Number(revisionButton.dataset.historyRev);
       previewPageId = null;
       renderList();
+      options.mount.querySelector<HTMLButtonElement>('[data-history-rev="' + selected + '"]')?.focus();
       void showRevision(selected);
       return;
     }
