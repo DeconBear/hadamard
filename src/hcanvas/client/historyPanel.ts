@@ -99,6 +99,11 @@ export function renderRevisionDiff(before: HcDocument, after: HcDocument): strin
   }).length;
   sections.push('<div class="history-diff-title"><span>r' + before.revision + ' → r' + after.revision + '</span><span>' + changed + ' edited' + (added ? ' · ' + added + ' added' : '') + (removed ? ' · ' + removed + ' removed' : '') + '</span></div>');
   if (before.title !== after.title) sections.push('<div class="history-diff-section"><h4>Canvas title</h4><pre><span class="diff-del">- ' + escapeHtml(before.title) + '</span>\n<span class="diff-add">+ ' + escapeHtml(after.title) + '</span></pre></div>');
+  const beforeOrder = before.pages.map(page => page.id).join(',');
+  const afterOrder = after.pages.map(page => page.id).join(',');
+  if (!added && !removed && beforeOrder !== afterOrder) {
+    sections.push('<div class="history-diff-section"><h4>Page order</h4><pre><span class="diff-del">- ' + escapeHtml(before.pages.map(page => page.name).join(' → ')) + '</span>\n<span class="diff-add">+ ' + escapeHtml(after.pages.map(page => page.name).join(' → ')) + '</span></pre></div>');
+  }
   for (const page of after.pages) {
     const old = beforePages.get(page.id);
     if (!old) { sections.push('<div class="history-diff-section"><h4><span class="diff-add">Added page</span> · ' + escapeHtml(page.name) + '</h4></div>'); continue; }
