@@ -284,6 +284,11 @@ hcanvas desktop --project ~/projects/my-deck
 
 打开 **项目** 页面，在 **语言** 中选择 **English / 中文**。设置保存在应用配置目录的 `hcanvas-settings.json` 中，跨项目、窗口和升级共享。切换后界面、Inspector、弹窗、快捷键、历史、插件管理器和 toast 都会使用对应语言；文档内容（页面文字、HTML、文件名）不会被机器翻译。桌面窗口会按保存的语言启动，项目页面始终提供语言选择器。
 
+
+## 取色器
+
+Inspector 中的颜色（文字颜色、填充、描边和页面背景）不再打开系统原生颜色对话框，而是打开内联取色器。拖动明度/饱和度区域或色相滑条时画布会**实时变化**，关闭取色器时才作为一次修订提交。面板显示 HEX、RGB 和颜色名称；支持 EyeDropper API 的 Chromium 版本还提供屏幕取色按钮。
+
 ## 字体
 
 Hcanvas 内置 **Inter**、**Source Serif 4**、**JetBrains Mono** 三个可变 WOFF2 字体，并提供系统 **Georgia**、**System UI**、**微软雅黑**、**宋体** 选项。选中文本、形状或 Markdown block 后，Inspector 会出现 **Font** 下拉框，选择结果以 CSS font-family 栈保存在 block 上。HTML 页/block 仍可使用任意 CSS 字体；Canvas 渲染可直接使用内置字体。独立 HTML/PDF/PNG 导出会内嵌内置字体，PPTX 会把内置字体映射到 Arial/Georgia/Consolas，保证目标机器没有这些字体时仍可读。中文会回退到系统 CJK 字体。

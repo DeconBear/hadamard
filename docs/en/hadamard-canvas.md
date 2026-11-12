@@ -370,6 +370,11 @@ The right sidebar has four tabs:
 
 Open **Projects** and choose **Language → English / 中文**. The choice is stored in the app profile (`hcanvas-settings.json`) and shared across projects, windows and upgrades. It switches the interface, Inspector, modals, shortcuts, history, plugin manager and toasts; document content (page text, HTML, file names) is never machine-translated. The desktop window boots in the saved language and the Projects page always exposes the selector.
 
+
+## Color picker
+
+Color swatches in Inspector (text color, fill, stroke and page background) open an inline picker instead of the native dialog. The saturation/value area and hue slider update the canvas **live** while dragging; the edit is committed as one revision when the picker closes. The picker shows the HEX value, RGB triplet and a readable color name, and includes an eyedropper button on Chromium builds that support the EyeDropper API.
+
 ## Typography
 
 Hcanvas bundles **Inter**, **Source Serif 4** and **JetBrains Mono** as variable WOFF2 fonts, and also offers system **Georgia**, **System UI**, **Microsoft YaHei** and **Songti** choices. Selecting a text, shape or Markdown block exposes **Font** in the Inspector; the choice is stored as a CSS font-family stack on the block. HTML pages/blocks can still use arbitrary CSS fonts, but bundled fonts are available for canvas rendering. Standalone HTML/PDF/PNG exports embed the bundled fonts; PPTX maps bundled families to Arial/Georgia/Consolas so decks remain readable on machines without the fonts. Chinese glyphs fall back to installed system CJK fonts.

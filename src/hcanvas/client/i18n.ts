@@ -675,6 +675,15 @@ Object.assign(zh, {
   'Delete asset': '删除资源',
 });
 
+Object.assign(zh, {
+  'Color picker': '取色器',
+  'Hex color': '十六进制颜色',
+  'Pick color from screen': '从屏幕取色',
+  'Hue': '色相',
+  'Choose color': '选择颜色',
+  'Black': '黑色', 'White': '白色', 'Gray': '灰色', 'Red': '红色', 'Orange': '橙色', 'Yellow': '黄色', 'Green': '绿色', 'Cyan': '青色', 'Blue': '蓝色', 'Purple': '紫色', 'Pink': '粉色', 'Brown': '棕色',
+});
+
 const patterns: Array<[RegExp, string]> = [
   [/^rev (\d+)$/, 'rev $1'],
   [/^r(\d+)$/, 'r$1'],

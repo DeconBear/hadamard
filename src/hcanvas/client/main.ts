@@ -26,6 +26,7 @@ import { CANVAS_PAGE_PRESETS, type HcClientPagePreset } from './pageTemplates.js
 import { MarkdownPageController } from './markdownPageController.js';
 import { installPageListInteractions } from './pageListInteractions.js';
 import { installListSelection } from './listSelection.js';
+import { installColorPickers } from './colorPicker.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
 import { startShapeTextEdit } from './shapeText.js';
 import type { HcBlockPlugin } from '../blockPlugins.js';
@@ -341,6 +342,7 @@ async function openDoc(docId: string, pageId?: string, reopenTab = true): Promis
 }
 
 async function initialize(): Promise<void> {
+  installColorPickers();
   bindStaticActions();
   const pluginLoad = await loadExternalPlugins(api);
   if (pluginLoad.errors.length) console.warn('hcanvas plugins:', pluginLoad.errors);
@@ -2001,6 +2003,25 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
     container.appendChild(wrap);
   }
 }
+function previewBlockStyle(blockId: string, stylePatch: Record<string, unknown>): void {
+  const page = activePage();
+  if (!page) return;
+  const block = (page.blocks || []).find(item => item.id === blockId);
+  const wrap = document.querySelector<HTMLElement>('.block-wrap[data-block-id="' + CSS.escape(blockId) + '"]');
+  const content = wrap?.querySelector<HTMLElement>('.block-content');
+  if (!block || !content) return;
+  const preview = { ...block, style: { ...(block.style || {}), ...stylePatch } };
+  content.replaceChildren(renderCanvasBlockContent(preview, page, { editing: false, wrapHtml: wrapBlockHtml, setupHtmlEditing }));
+}
+
+function previewPageBackground(color: string): void {
+  const page = activePage();
+  el('artboard').style.background = color;
+  if (page?.mode === 'infinite') el('viewport').style.backgroundColor = color;
+  const surface = document.querySelector<HTMLElement>('.html-page-surface');
+  if (surface) surface.style.background = color;
+}
+
 function wrapBlockHtml(html: string): string {
   return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,sans-serif}</style></head><body>' + html + '</body></html>';
 }
@@ -2689,7 +2710,7 @@ function bindPageInspector(page: HcPage): void {
   qs<HTMLInputElement>('#pageHeight')?.addEventListener('change', event => { void applyPage({ height: Math.max(100, Number((event.target as HTMLInputElement).value) || page.height) }, true); });
   const bg = el<HTMLInputElement>('pageBg');
   const picker = el<HTMLInputElement>('pageBgPicker');
-  picker.addEventListener('input', () => { bg.value = picker.value; });
+  picker.addEventListener('input', () => { bg.value = picker.value; previewPageBackground(picker.value); });
   bg.addEventListener('change', () => { picker.value = toHex(bg.value); void applyPage({ background: bg.value }, true); });
   el<HTMLTextAreaElement>('pageNotes').addEventListener('change', event => { void applyPage({ notes: (event.target as HTMLTextAreaElement).value }); });
   qs<HTMLButtonElement>('#pageSourceBtn')?.addEventListener('click', () => openSourceEditor({ pageId: page.id }));
@@ -2819,8 +2840,11 @@ function bindBlockInspector(block: HcBlock): void {
   qs<HTMLTextAreaElement>('#blockShapeText')?.addEventListener('change', () => { void update({ text: qs<HTMLTextAreaElement>('#blockShapeText')?.value || '' }); });
   if (fontSize) fontSize.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fontSize: Number(fontSize.value) || 20 } }); });
   if (fontFamily) fontFamily.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fontFamily: fontFamily.value } }); });
+  if (color) color.addEventListener('input', () => previewBlockStyle(block.id, { color: color.value }));
   if (color) color.addEventListener('change', () => { void update({ style: { ...(block.style || {}), color: color.value } }); });
+  if (fill) fill.addEventListener('input', () => previewBlockStyle(block.id, { fill: fill.value }));
   if (fill) fill.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fill: fill.value } }); });
+  if (stroke) stroke.addEventListener('input', () => previewBlockStyle(block.id, { stroke: stroke.value }));
   if (stroke) stroke.addEventListener('change', () => { void update({ style: { ...(block.style || {}), stroke: stroke.value } }); });
   if (vectorWidth) vectorWidth.addEventListener('change', () => { void update({ style: { ...(block.style || {}), strokeWidth: Math.max(1, Math.min(40, Number(vectorWidth.value) || 2)) } }); });
   if (arrowhead) arrowhead.addEventListener('change', () => { void update({ arrowhead: arrowhead.value === 'none' ? 'none' : 'arrow' }); });
