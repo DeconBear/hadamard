@@ -1,3 +1,25 @@
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/Inter-Variable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/SourceSerif4-Variable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("fonts/JetBrainsMono-Variable.woff2") format("woff2");
+}
+
 :root {
   --bg: #f1efe9;
   --panel: #fbfaf7;
@@ -169,8 +191,8 @@ button { cursor: pointer; }
   overflow: hidden; border-radius: inherit;
 }
 .block-text[contenteditable="true"] { background: rgba(255,255,255,.86); outline: 2px solid var(--accent); }
-.block-md { width: 100%; height: 100%; overflow: hidden; padding: 22px 24px; font-family: var(--sans); }
-.block-md h1, .block-md h2, .block-md h3 { font-family: var(--serif); letter-spacing: -.03em; line-height: 1.15; margin: 0 0 10px; font-weight: 500; }
+.block-md { width: 100%; height: 100%; overflow: hidden; padding: 22px 24px; font-family: var(--hc-md-font, var(--sans)); }
+.block-md h1, .block-md h2, .block-md h3 { font-family: var(--hc-md-font, var(--serif)); letter-spacing: -.03em; line-height: 1.15; margin: 0 0 10px; font-weight: 500; }
 .block-md h1 { font-size: 32px; } .block-md h2 { font-size: 25px; } .block-md h3 { font-size: 19px; }
 .block-md p { margin: 0 0 9px; line-height: 1.6; }
 .block-md ul, .block-md ol { margin: 0 0 9px; padding-left: 20px; }

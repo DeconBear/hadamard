@@ -14,6 +14,7 @@ import { blocksInStackOrder } from './layers.js';
 import { blockPlugin } from './blockPlugins.js';
 import { renderBlockBody } from './builtinBlocks.js';
 import { extractHtmlLayout, type HtmlLayout } from './htmlLayout.js';
+import { bundledFontFaceCss, pptxSafeFont } from './fontAssets.js';
 import type { HcBlock, HcDocument, HcPage } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -107,7 +108,7 @@ function buildPrintHtml(doc: HcDocument, pageInput: HcPage, options: { bleedMm?:
     add(0, sheetH - offset - t, mark, t); add(offset, sheetH - mark, t, mark);
     add(sheetW - mark, sheetH - offset - t, mark, t); add(sheetW - offset - t, sheetH - mark, t, mark);
   }
-  return '<!doctype html><html><head><meta charset="utf-8"><style>' + parts.styles + '</style><style data-hc-print>' +
+  return '<!doctype html><html><head><meta charset="utf-8"><style data-hc-fonts>' + bundledFontFaceCss() + '</style><style>' + parts.styles + '</style><style data-hc-print>' +
     '@page{size:' + sheetW + 'px ' + sheetH + 'px;margin:0;}' +
     'html,body{margin:0!important;padding:0!important;width:' + sheetW + 'px!important;height:' + sheetH + 'px!important;overflow:hidden!important;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
     '.hc-print-sheet{position:relative;width:' + sheetW + 'px;height:' + sheetH + 'px;overflow:hidden;background:' + escapeHtml(page.background) + ';}' +
@@ -120,7 +121,7 @@ export function buildStandalonePageHtml(doc: HcDocument, pageInput: HcPage): str
   const page = exportPage(pageInput);
   if (page.mode === 'html') {
     const source = page.html || '<!doctype html><html><body></body></html>';
-    const printCss = '<style data-hc-export>html,body{margin:0;padding:0;} @page{size:' + page.width + 'px ' + page.height + 'px;margin:0;} .hc-page{width:' + page.width + 'px;height:' + page.height + 'px;overflow:hidden;}</style>';
+    const printCss = '<style data-hc-fonts>' + bundledFontFaceCss() + '</style><style data-hc-export>html,body{margin:0;padding:0;} @page{size:' + page.width + 'px ' + page.height + 'px;margin:0;} .hc-page{width:' + page.width + 'px;height:' + page.height + 'px;overflow:hidden;}</style>';
     if (/<\/head>/i.test(source)) return source.replace(/<\/head>/i, printCss + '</head>');
     if (/<html[^>]*>/i.test(source)) return source.replace(/<html([^>]*)>/i, '<html$1><head>' + printCss + '</head>');
     return '<!doctype html><html><head>' + printCss + '</head><body>' + source + '</body></html>';
@@ -130,6 +131,7 @@ export function buildStandalonePageHtml(doc: HcDocument, pageInput: HcPage): str
 
 export function exportCss(): string {
   return [
+    bundledFontFaceCss(),
     '*{box-sizing:border-box}',
     'html,body{margin:0;padding:0;background:#f3f1ec;}',
     '.hc-doc{display:flex;flex-direction:column;align-items:center;gap:24px;padding:24px;background:#f3f1ec;}',
@@ -380,7 +382,7 @@ function addEditableHtmlSlide(pptx: { addSlide: () => any; ShapeType: { roundRec
       w: Math.max(0.1, text.w * scale),
       h: Math.max(0.1, text.h * scale),
       margin: 0,
-      fontFace: text.fontFamily,
+      fontFace: pptxSafeFont(text.fontFamily),
       fontSize: Math.max(5, text.fontSize * pxToPt),
       color: pptxPxColor(text.color, '1F2430'),
       bold: text.fontWeight >= 600,
@@ -451,7 +453,7 @@ function addEditableCanvasSlide(pptx: { addSlide: () => any; ShapeType: { roundR
     slide.addText(text, {
       x: x + 8 * scale, y: y + 8 * scale, w: Math.max(0.1, w - 16 * scale), h: Math.max(0.1, h - 16 * scale),
       margin: 0,
-      fontFace: block.type === 'code' ? 'Consolas' : String(style.fontFamily || 'Arial').replace(/['"]/g, '').split(',')[0]!.trim(),
+      fontFace: block.type === 'code' ? 'Consolas' : pptxSafeFont(String(style.fontFamily || 'Arial')),
       fontSize: Math.max(8, Math.round((style.fontSize || (block.type === 'code' ? 13 : 18)) * pxToPt)),
       color: pptxColor(style.color, block.type === 'code' ? 'E2E8F0' : '1D232E'),
       bold: Number(style.fontWeight || 400) >= 600,

@@ -359,6 +359,11 @@ The right sidebar has four tabs:
 - **Proposals** — review queue for changes proposed by agents; accept or reject before they are applied to the document.
 - **History** — revision list, read-only preview, diff comparison and restore (see Revision history).
 
+
+## Typography
+
+Hcanvas bundles **Inter**, **Source Serif 4** and **JetBrains Mono** as variable WOFF2 fonts, and also offers system **Georgia**, **System UI**, **Microsoft YaHei** and **Songti** choices. Selecting a text, shape or Markdown block exposes **Font** in the Inspector; the choice is stored as a CSS font-family stack on the block. HTML pages/blocks can still use arbitrary CSS fonts, but bundled fonts are available for canvas rendering. Standalone HTML/PDF/PNG exports embed the bundled fonts; PPTX maps bundled families to Arial/Georgia/Consolas so decks remain readable on machines without the fonts. Chinese glyphs fall back to installed system CJK fonts.
+
 ## Plugin blocks
 
 hcanvas can load declarative block plugins without executing a JavaScript bundle. A plugin is a folder with a `manifest.json`:

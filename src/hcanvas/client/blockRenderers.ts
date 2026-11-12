@@ -45,6 +45,7 @@ function renderMarkdown(block: HcBlock): HTMLElement {
   const md = document.createElement('div');
   md.className = 'block-md';
   md.style.background = String(block.style?.fill || '#ffffff');
+  if (block.style?.fontFamily) md.style.setProperty('--hc-md-font', String(block.style.fontFamily));
   md.style.borderRadius = String(block.style?.radius || 16) + 'px';
   md.style.border = '1px solid #e7e0d2';
   md.innerHTML = renderMarkdownHtml(block.markdown || '');

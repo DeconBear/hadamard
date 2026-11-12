@@ -18,6 +18,7 @@ import { insertAssetIntoPage } from './assetInsert.js';
 import { openMarkdownPageEditor as showMarkdownPageEditor } from './markdownPageEditor.js';
 import { openNewDocModal as showNewDocModal } from './newDocModal.js';
 import { openSourceEditorFor } from './sourceEditor.js';
+import { FONT_OPTIONS, fontOptionFor } from './fonts.js';
 import { openSourceModal, type SourceModalOptions } from './sourceModal.js';
 import { createPageFromPreset } from './pageCreation.js';
 import { CANVAS_PAGE_PRESETS, type HcClientPagePreset } from './pageTemplates.js';
@@ -2667,6 +2668,8 @@ function renderBlockInspector(): void {
     html += '<div class="field"><span>Shape text</span><textarea id="blockShapeText" rows="2">' + esc(block.text || '') + '</textarea></div>';
   }
   if (block.type === 'text' || block.type === 'markdown' || block.type === 'shape') {
+    const selectedFont = fontOptionFor(block.style?.fontFamily);
+    html += '<div class="field"><span>Font</span><select id="blockFontFamily">' + FONT_OPTIONS.map(option => '<option value="' + esc(option.family) + '"' + (option.id === selectedFont.id ? ' selected' : '') + '>' + esc(option.label) + ' · ' + esc(option.description) + '</option>').join('') + '</select></div>';
     html += '<div class="field-row">' + field('blockFontSize', 'Font size', '<input id="blockFontSize" type="number" value="' + (block.style?.fontSize || (block.type === 'shape' ? 18 : 20)) + '">') + field('blockColor', 'Color', '<input id="blockColor" type="color" value="' + esc(toHex(String(block.style?.color || '#1d232e'))) + '">') + '</div>';
   }
   if (block.type === 'shape' || block.type === 'html' || block.type === 'markdown') {
@@ -2710,6 +2713,7 @@ function bindBlockInspector(block: HcBlock): void {
   qs<HTMLButtonElement>('#blockFrontBtn')?.addEventListener('click', () => { void update({ z: Math.max(...(page.blocks || []).map(item => item.z)) + 1 }); });
   qs<HTMLButtonElement>('#blockBackBtn')?.addEventListener('click', () => { void update({ z: Math.min(...(page.blocks || []).map(item => item.z)) - 1 }); });
   const fontSize = qs<HTMLInputElement>('#blockFontSize');
+  const fontFamily = qs<HTMLSelectElement>('#blockFontFamily');
   const color = qs<HTMLInputElement>('#blockColor');
   const fill = qs<HTMLInputElement>('#blockFill');
   const stroke = qs<HTMLInputElement>('#blockStroke');
@@ -2719,6 +2723,7 @@ function bindBlockInspector(block: HcBlock): void {
   if (shapeSelect) shapeSelect.addEventListener('change', () => { if (isHcShape(shapeSelect.value)) void update({ shape: shapeSelect.value }, true); });
   qs<HTMLTextAreaElement>('#blockShapeText')?.addEventListener('change', () => { void update({ text: qs<HTMLTextAreaElement>('#blockShapeText')?.value || '' }); });
   if (fontSize) fontSize.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fontSize: Number(fontSize.value) || 20 } }); });
+  if (fontFamily) fontFamily.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fontFamily: fontFamily.value } }); });
   if (color) color.addEventListener('change', () => { void update({ style: { ...(block.style || {}), color: color.value } }); });
   if (fill) fill.addEventListener('change', () => { void update({ style: { ...(block.style || {}), fill: fill.value } }); });
   if (stroke) stroke.addEventListener('change', () => { void update({ style: { ...(block.style || {}), stroke: stroke.value } }); });

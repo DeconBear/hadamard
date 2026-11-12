@@ -273,6 +273,11 @@ hcanvas desktop --project ~/projects/my-deck
 - **Proposals**：Agent 提交的修改提案审核队列；接受或拒绝后才会写入文档。
 - **History**：revision 列表、只读预览、diff 对比与恢复（见「修订历史」）。
 
+
+## 字体
+
+Hcanvas 内置 **Inter**、**Source Serif 4**、**JetBrains Mono** 三个可变 WOFF2 字体，并提供系统 **Georgia**、**System UI**、**微软雅黑**、**宋体** 选项。选中文本、形状或 Markdown block 后，Inspector 会出现 **Font** 下拉框，选择结果以 CSS font-family 栈保存在 block 上。HTML 页/block 仍可使用任意 CSS 字体；Canvas 渲染可直接使用内置字体。独立 HTML/PDF/PNG 导出会内嵌内置字体，PPTX 会把内置字体映射到 Arial/Georgia/Consolas，保证目标机器没有这些字体时仍可读。中文会回退到系统 CJK 字体。
+
 ## 插件 block
 
 hcanvas 可以加载声明式 block 插件，不需要执行 JavaScript bundle。插件是一个带 `manifest.json` 的目录：
