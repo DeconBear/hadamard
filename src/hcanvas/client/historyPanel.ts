@@ -186,7 +186,7 @@ export function installHistoryPanel(options: HistoryPanelOptions): HistoryPanelC
       const current = revision.revision === doc.revision;
       const active = selected === revision.revision;
       const summary = historyEntryLabel(revision.summary);
-      return '<div class="history-item' + (active ? ' selected' : '') + '" role="presentation"><button type="button" class="history-main" data-history-rev="' + revision.revision + '" aria-pressed="' + active + '"><span class="history-rev">r' + revision.revision + '</span><span class="history-copy"><strong title="' + escapeHtml(summary) + '">' + escapeHtml(summary) + '</strong><small>' + escapeHtml(revision.actor) + ' · <span title="' + escapeHtml(new Date(revision.createdAt).toLocaleString()) + '">' + escapeHtml(relativeTime(revision.createdAt)) + '</span></small></span>' + (current ? '<span class="history-current">Current</span>' : '') + '</button></div>';
+      return '<div class="history-item' + (active ? ' selected' : '') + '" role="listitem"><button type="button" class="history-main" data-history-rev="' + revision.revision + '" aria-pressed="' + active + '"><span class="history-rev">r' + revision.revision + '</span><span class="history-copy"><strong title="' + escapeHtml(summary) + '">' + escapeHtml(summary) + '</strong><small>' + escapeHtml(revision.actor) + ' · <span title="' + escapeHtml(new Date(revision.createdAt).toLocaleString()) + '">' + escapeHtml(relativeTime(revision.createdAt)) + '</span></small></span>' + (current ? '<span class="history-current">Current</span>' : '') + '</button></div>';
     }).join('') : '<p class="empty-state">' + (revisions.length ? 'No revisions match this filter.' : 'No revision snapshots yet. New edits will appear here.') + '</p>';
   }
 
@@ -194,7 +194,7 @@ export function installHistoryPanel(options: HistoryPanelOptions): HistoryPanelC
     const doc = options.getDoc();
     if (!doc) { options.mount.innerHTML = '<p class="empty-state">Open a document to see history.</p>'; return; }
     if (!options.mount.querySelector('.history-head')) {
-      options.mount.innerHTML = '<div class="history-head"><div><strong>Revision history</strong><small id="historyHeadMeta"></small></div><button type="button" class="btn tiny history-refresh" title="Refresh history" aria-label="Refresh history">↻</button></div><div class="history-tools"><input id="historySearch" type="search" placeholder="Filter edits…" aria-label="Filter revision history" /><span id="historyMatchCount"></span></div><div id="historyList" class="history-list" role="listbox" aria-label="Saved revisions"></div><div id="historyDetail" class="history-detail"></div>';
+      options.mount.innerHTML = '<div class="history-head"><div><strong>Revision history</strong><small id="historyHeadMeta"></small></div><button type="button" class="btn tiny history-refresh" title="Refresh history" aria-label="Refresh history">↻</button></div><div class="history-tools"><input id="historySearch" type="search" placeholder="Filter edits…" aria-label="Filter revision history" /><span id="historyMatchCount"></span></div><div id="historyList" class="history-list" role="list" aria-label="Saved revisions"></div><div id="historyDetail" class="history-detail"></div>';
       options.mount.querySelector<HTMLInputElement>('#historySearch')?.addEventListener('input', event => { query = (event.target as HTMLInputElement).value; renderList(); });
     }
     const search = options.mount.querySelector<HTMLInputElement>('#historySearch');
