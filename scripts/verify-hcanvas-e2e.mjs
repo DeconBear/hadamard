@@ -142,6 +142,7 @@ async function main() {
   await page.locator('.page-open').nth(1).click();
   await page.waitForTimeout(300);
   assert('Canvas tabs expose close controls', await page.locator('.canvas-tab.active .tab-close').count() === 1);
+  assert('Canvas tabs do not imply unsaved changes', await page.locator('.canvas-tab .tab-dot').count() === 0);
   const pageCountBeforeClosingTabs = await page.locator('.page-item').count();
   await page.locator('.canvas-tab.active .tab-close').click();
   await page.waitForTimeout(300);

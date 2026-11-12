@@ -955,7 +955,6 @@ body.html-page-mode #toolRail, body.html-page-mode #selectionToolbar, body.html-
 .workspace-tab .tab-close { opacity:.55; font-size:14px; line-height:1; padding:1px 2px; border-radius:3px; }
 .workspace-tab .tab-close:hover { background:var(--surface-2); color:var(--ink); opacity:1; }
 .workspace-tab .tab-close:focus-visible { outline:1px solid var(--accent); opacity:1; }
-.workspace-tab .tab-dot { width:6px; height:6px; border-radius:50%; background:var(--accent); }
 .workspace-tab.file-tab .tab-file-icon { display:grid; place-items:center; width:18px; height:16px; border-radius:4px; background:var(--accent-soft); color:var(--accent); font:700 8px/1 Inter,sans-serif; }
 .files-head-actions { display:flex; gap:2px; align-items:center; }
 .files-panel { display:flex; flex-direction:column; gap:1px; max-height:290px; overflow:auto; padding:2px 0 8px; }

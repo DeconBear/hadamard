@@ -178,7 +178,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       const wrapper = document.createElement('div');
       wrapper.className = 'workspace-tab canvas-tab' + (activeId === tab.id ? ' active' : '');
       wrapper.dataset.tabId = tab.id;
-      wrapper.innerHTML = '<button type="button" class="tab-open"><span class="tab-dot"></span><span class="tab-name"></span></button><button type="button" class="tab-close" title="Close tab · middle-click" aria-label="Close ' + escapeHtml(tab.label) + '">×</button>';
+      wrapper.innerHTML = '<button type="button" class="tab-open"><span class="tab-name"></span></button><button type="button" class="tab-close" title="Close tab · middle-click" aria-label="Close ' + escapeHtml(tab.label) + '">×</button>';
       wrapper.querySelector('.tab-name')!.textContent = tab.label;
       wrapper.addEventListener('click', event => {
         if ((event.target as HTMLElement).closest('.tab-close')) return;
