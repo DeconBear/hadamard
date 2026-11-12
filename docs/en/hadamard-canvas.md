@@ -85,19 +85,23 @@ Whiteboard pages are **legacy read-only pages**. hcanvas renders their stored Ex
 
 ## Page thumbnails and deck management
 
-The left page rail renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks, and legacy whiteboard pages render a native conversion of their scene. Hovering a page reveals **move up / move down / duplicate / delete** actions, so a deck can be reordered and duplicated like a slide sorter.
+The **Pages** panel in the workspace navigator renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks, and legacy whiteboard pages render a native conversion of their scene. Drag a page to reorder the deck; right-click a page for **Edit Markdown source** (Markdown pages), **Duplicate page** and **Delete page**, and press **F2** to rename the active page.
 
 ## Markdown document pages
 
-A **Markdown** page is a full A4 document, not a Markdown block. Create one from **+ Page → Markdown · A4**. The page renders through `markdownPageHtml` and its body is directly editable: click into the prose to edit it as rich text; changes save automatically through the revision-checked `set_page_markdown` op. Right-click the page in the page rail or right-click any blank area of the rendered document to choose **Edit Markdown source** and edit the Markdown source in a full-screen workspace with live preview. Each save regenerates the HTML snapshot used by Present/PDF/PPTX/HTML export. The Markdown source is stored alongside the page as `page.markdown`.
+A **Markdown** page is a full A4 document, not a Markdown block. Create one from **+ Page → Markdown · A4**. The page renders through `markdownPageHtml` and its body is directly editable: click into the prose to edit it as rich text; changes save automatically through the revision-checked `set_page_markdown` op. Right-click the page in the **Pages** panel or right-click any blank area of the rendered document to choose **Edit Markdown source** and edit the Markdown source in a full-screen workspace with live preview. The source workspace auto-saves: there is no Save button, pending edits are flushed when you press **Done**, the **×** close control or **Esc**, and **Ctrl/Cmd+S** saves immediately. Each save regenerates the HTML snapshot used by Present/PDF/PPTX/HTML export. The Markdown source is stored alongside the page as `page.markdown`.
 
 In rich-text mode, Markdown shortcuts work as you type: `# `, `## ` and `### ` create headings; `- ` / `* ` create bullet lists; `1. ` creates a numbered list; `> ` creates a quote; a fenced-code marker creates a code block; `---` creates a divider. Type `/` at the start of a block to open the slash-command menu (Text, headings, lists, code, quote, divider, link, task list, table, highlight and formula), with arrow keys/Enter and Escape support.
+
+A **?** help button sits on every Markdown page. It opens a short editing-help popover (shown automatically on first visit) with **Dismiss** and **Don't show again** actions, and stays available to reopen the help later.
+
+Click an inline or display formula in a Markdown page to edit it in a small LaTeX popover with a live preview. **Enter** applies the change, **Esc** cancels, clearing the input removes the formula, and clicking outside the popover applies the edit.
 
 ## Page types and local HTML
 
 Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (legacy Excalidraw scene; new pages use native Infinite). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. Select blocks with **drag-marquee**, **Shift+click**, or by clicking a grouped block; **Ctrl/Cmd+G** groups / **Ctrl/Cmd+Shift+G** ungroups, and dragging any selected block moves the whole selection. Frames contain converted Excalidraw children: dragging a frame moves its `frameId` children with it. **Arrow (A)** snaps its endpoints to shapes, text, images and frames when dropped on them; bindings are stored as `startBinding` / `endBinding` and the arrow follows when a bound block is moved or resized. Text blocks can be dragged by their body after selection or by the small **label handle** above the block; double-click edits in place, `Esc` finishes. When blocks overlap, **Alt+click** cycles through the stacked blocks. On Infinite pages, choosing an insert type (HTML/Text/Markdown/Code/Shape) enters **click-to-place** mode: the next canvas click creates the block at that world coordinate. Infinite coordinates are unbounded (negative x/y are valid) and frames never clip or constrain blocks; a frame can be **dissolved** from its Inspector while keeping its children. **Pen (P)**, **Arrow (A)** and **Eraser (E)** draw/erase native vectors directly on Infinite pages; freehand strokes are smoothed into paths, stored in the document JSON as block points, resizable, and use stroke color/width from the Inspector. **Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** undo and redo block edits, **Ctrl/Cmd+C/V** copy and paste the selected block. Add Page also provides 19 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/... (line truncated to 2000 chars)
 
-The **Files** panel in the left sidebar browses workspace folders directly; add more folders with **+**. Open an HTML file to preview it as a page, or open Markdown/code/text files for direct editing; code and text open editable immediately, with undo/redo, automatic save after edits, dirty-tab state, and **Ctrl/Cmd + wheel** font zoom. The original file stays authoritative on disk. Text editing is capped at 4 MB because the whole document is loaded into the editor and written back as a whole file; Office/PDF/image previews use a separate 64 MB preview limit. Word, PowerPoint, Excel and PDF files open as read-only previews (Office formats are converted to PDF through LibreOffice; LibreOffice must be installed on the machine).
+The **Files** section of the workspace navigator browses workspace folders directly; add more folders with **+**. Open an HTML file to preview it as a page, or open Markdown/code/text files for direct editing; code and text open editable immediately, with undo/redo, automatic save after edits, dirty-tab state, and **Ctrl/Cmd + wheel** font zoom. The original file stays authoritative on disk. Text editing is capped at 4 MB because the whole document is loaded into the editor and written back as a whole file; Office/PDF/image previews use a separate 64 MB preview limit. Word, PowerPoint, Excel and PDF files open as read-only previews (Office formats are converted to PDF through LibreOffice; LibreOffice must be installed on the machine).
 
 The **Files** tree supports search, right-click new file/folder, rename and delete, in addition to opening, editing and autosaving files. Hidden dotfiles and dotfolders are listed too. The new-file/new-folder/rename prompts are in-app dialogs (Electron does not support `window.prompt`).
 
@@ -105,7 +109,15 @@ The **Files** tree supports search, right-click new file/folder, rename and dele
 
 PDF files open in an annotated preview built from `pdftoppm` page images plus a `pdftotext -bbox` selection layer. Select text on a page and choose **Highlight** or **Underline** in the preview toolbar. Annotations are stored locally per workspace/file; **Clear annotations** removes them. PDF annotation preview requires Poppler (`pdftoppm` and `pdftotext`, available in TeX Live on this machine); when Poppler is unavailable the preview falls back to the browser PDF viewer without annotations.
 
-The **Canvases**, **Pages**, **Files** and **Plugins** sidebar sections are independently resizable by dragging the divider between them and reorderable by dragging the grip in their header. The **Plugins** section opens the plugin manager and gallery without leaving the current document.
+## Workspace navigator
+
+The left sidebar is a single-panel workspace navigator with five sections: **Canvases**, **Pages**, **Files**, **Assets** and **Plugins**. Click a section icon to switch panels, and press **Ctrl/Cmd+B** to show or hide the navigator. The active section is remembered per browser profile. **Canvases** and **Pages** show a live item count; the **Plugins** section opens the plugin manager and gallery without leaving the current document.
+
+Only one section is visible at a time. With a section tab focused, **←/→/↑/↓** move between sections and **Home/End** jump to the first/last section; **↑/↓** browse the items of the active panel, **Enter** opens the focused item and **F2** renames a page. **Ctrl/Cmd+F** focuses the panel filter. The filter (labelled **Find a canvas…** or **Find a page…**) matches names as you type, reports the number of matches, and **Esc** clears it; **Canvases** and **Pages** each keep their own filter text.
+
+### Workspace tabs
+
+Canvases and files open as tabs above the canvas. Every tab has a **×** close control and can also be closed by middle-clicking the tab; closing a canvas tab only closes the tab and never deletes the page. Opening a page again from **Pages** reopens its closed canvas tab, while selecting a file tab switches from the canvas to the file viewer.
 
 ## Direct HTML editing
 
@@ -113,7 +125,7 @@ HTML pages and HTML blocks render in a sandboxed iframe:
 
 - **Selection edit**: select text in the page preview and click the floating **Edit text** chip, or click **Edit** in the page badge, to enter direct text editing.
 - **Visual mode**: click once to select an element, then click the selected text again (or press Enter) to edit it in place; hover any element to see its hit outline and click to inspect it. The edit banner's **Insert +** opens a compact element palette (heading, paragraph, button, link, image, list, quote, card, divider); the Inspector also shows the element path, element tree, quick actions and a live style panel. Style changes apply automatically (no Apply button); Title/Body/Muted/Accent/Card presets cover common typography and surface styles, with color, background, size, weight, spacing, padding, radius and alignment controls. Changes are patched back to the HTML source with stable `data-hc-id` targets.
-- **Source mode**: open the source editor (CodeMirror) for full HTML/CSS editing with a live preview.
+- **Source mode**: open the source editor (CodeMirror) for full HTML/CSS editing with a live preview. The editor auto-saves: there is no Save button, edits save shortly after you stop typing (the status shows **Editing…**, **Saving…** or **Auto-save on**), and **Ctrl/Cmd+S** saves now. **Done**, **×** or **Esc** flush pending changes before closing; if a save fails, the editor stays open so you can retry.
 - Stable IDs mean an agent can patch one element without rewriting the page.
 - In edit mode scripts are disabled; in preview mode the iframe runs with a sandboxed opaque origin.
 
@@ -132,141 +144,7 @@ Canvas pages contain absolutely positioned blocks:
 
 Hover the left-rail **Shape** tool to open a categorized flyout with 60+ PowerPoint-like shapes (Basic, Lines, Flowchart, Stars & Banners, Callouts, Action Buttons). Select a rectangle or polygon and use **Slice** in the selection toolbar to draw a cutting line; the shape becomes two editable polygon blocks (undo restores it). A **Components** section in the page Inspector adds style-linked components such as the Slider, whose label/value/min/max/accent/track/text can be adjusted in the Inspector. Click a shape in the flyout, then click/drag on the canvas to place it. The same flyout opens from the Shape click/6 shortcut.
 
-Markdown supports blockquotes (`> quote`), GFM, and LaTeX math: inline `$E=mc^2# Hadamard Canvas (hcanvas)
-
-Hadamard Canvas is a standalone, AI-native canvas application. It runs independently from the desktop GUI (`hadamard-gui`) and exposes one document model to humans and agents:
-
-- **HTML pages** are rendered in a sandbox and can be edited directly in place (text, element styles) or through a full HTML/CSS source editor.
-- **Canvas pages** mix HTML, text, Markdown, code, image, shape, native freehand and arrow blocks.
-- **Agents** read and patch the same document through a small JSON-first CLI; no MCP or browser automation is required.
-
-## Run it
-
-```bash
-# Start the app (local server + browser UI)
-npx hcanvas app --workspace ~/.hcanvas
-
-# Or start the headless service for agents/UI clients
-npx hcanvas serve --workspace /path/to/workspace --port 4319
-```
-
-In this repository, build and run from source:
-
-```bash
-npm run build          # compiles the service/CLI and bundles the UI
-node bin/hcanvas.js app --workspace plan/hcanvas-demo
-```
-
-### Standalone desktop app
-
-Hadamard Canvas can run as its own Electron window, not just a browser tab:
-
-```bash
-hcanvas desktop --workspace <dir> [--port 4319]
-# or: npm run hcanvas:desktop -- --workspace <dir>
-# or: node bin/hcanvas-desktop.js --workspace <dir>
-```
-
-The desktop entry starts the local hcanvas service, opens a native window and closes the server when the window closes; the browser workflow (`hcanvas app`) remains available.
-
-Package a Windows portable build with the Canvas icon:
-
-```bash
-npm run build:hcanvas:desktop
-# dist_electron/canvas/Hadamard-Canvas-0.1.0-portable.exe
-```
-
-Run the portable exe with an explicit workspace when you want a self-contained copy:
-
-```powershell
-.\Hadamard-Canvas-0.1.0-portable.exe --workspace C:\Users\me\hcanvas --port 4319
-```
-
-Build the Windows installer instead of the portable exe:
-
-```bash
-npm run build:hcanvas:installer
-# dist_electron/canvas/Hadamard-Canvas-Setup-0.1.0.exe
-```
-
-The installer is a normal NSIS wizard: choose the install directory, creates Start Menu and desktop shortcuts, and includes an uninstaller. It does not require a system-wide install.
-
-### Hadamard suite installer (optional Hcanvas component)
-
-```bash
-npm run build:desktop:suite
-# dist_electron/suite/Hadamard-<hadamard-version>-win-x64.exe
-```
-
-The suite installer builds the current Hcanvas `hcanvas.version.json` installer first, embeds it as `resources/hcanvas-setup.exe`, and adds an optional **Install Hadamard Canvas (standalone)** choice to the Hadamard installer. Choosing it runs the standalone Hcanvas NSIS installer silently. Hcanvas keeps its own version, Start Menu entry and uninstaller; uninstalling Hadamard does not remove Hcanvas.
-
-### Independent releases
-
-Hcanvas releases use their own tag namespace and workflow: `hcanvas-v<version>` (for example `hcanvas-v0.1.0`). The workflow checks that the tag matches `hcanvas.version.json`, builds the standalone installers, and uploads them to the Hcanvas release. It never writes Hadamard `v*` releases. Browser E2E is available with `npm run test:hcanvas:e2e` or the **Hcanvas E2E** workflow.
-
-The workspace stores documents, state and exports:
-
-```
-<workspace>/docs/<docId>.json     # document model (pages, blocks, HTML)
-<workspace>/state.json            # active document/page/block and agent sessions
-<workspace>/daemon.json           # URL + token for the running local service
-<workspace>/exports/              # HTML/PDF/PNG output
-```
-
-## Legacy whiteboard preview
-
-Whiteboard pages are **legacy read-only pages**. hcanvas renders their stored Excalidraw scene through the native block renderer — no Excalidraw bundle or runtime is loaded or served. The Inspector exposes **Convert to native Infinite**; converted pages become normal editable Infinite pages.
-
-## Page thumbnails and deck management
-
-The left page rail renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks, and legacy whiteboard pages render a native conversion of their scene. Hovering a page reveals **move up / move down / duplicate / delete** actions, so a deck can be reordered and duplicated like a slide sorter.
-
-## Markdown document pages
-
-A **Markdown** page is a full A4 document, not a Markdown block. Create one from **+ Page → Markdown · A4**. The page renders through `markdownPageHtml`; **Edit** opens a full-screen Markdown source workspace with live preview. Saving uses the revision-checked `set_page_markdown` op, which regenerates the rendered HTML snapshot used by Present/PDF/PPTX/HTML export. The Markdown source is stored alongside the page as `page.markdown`.
-
-In rich-text mode, Markdown shortcuts work as you type: `# `, `## ` and `### ` create headings; `- ` / `* ` create bullet lists; `1. ` creates a numbered list; `> ` creates a quote; a fenced-code marker creates a code block; `---` creates a divider. Type `/` at the start of a block to open the slash-command menu (Text, headings, lists, code, quote, divider, link, task list, table, highlight and formula), with arrow keys/Enter and Escape support.
-
-## Page types and local HTML
-
-Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (legacy Excalidraw scene; new pages use native Infinite). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. Select blocks with **drag-marquee**, **Shift+click**, or by clicking a grouped block; **Ctrl/Cmd+G** groups / **Ctrl/Cmd+Shift+G** ungroups, and dragging any selected block moves the whole selection. Frames contain converted Excalidraw children: dragging a frame moves its `frameId` children with it. **Arrow (A)** snaps its endpoints to shapes, text, images and frames when dropped on them; bindings are stored as `startBinding` / `endBinding` and the arrow follows when a bound block is moved or resized. Text blocks can be dragged by their body after selection or by the small **label handle** above the block; double-click edits in place, `Esc` finishes. When blocks overlap, **Alt+click** cycles through the stacked blocks. On Infinite pages, choosing an insert type (HTML/Text/Markdown/Code/Shape) enters **click-to-place** mode: the next canvas click creates the block at that world coordinate. Infinite coordinates are unbounded (negative x/y are valid) and frames never clip or constrain blocks; a frame can be **dissolved** from its Inspector while keeping its children. **Pen (P)**, **Arrow (A)** and **Eraser (E)** draw/erase native vectors directly on Infinite pages; freehand strokes are smoothed into paths, stored in the document JSON as block points, resizable, and use stroke color/width from the Inspector. **Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** undo and redo block edits, **Ctrl/Cmd+C/V** copy and paste the selected block. Add Page also provides 19 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/... (line truncated to 2000 chars)
-
-The **Files** panel in the left sidebar browses workspace folders directly; add more folders with **+**. Open an HTML file to preview it as a page, or open Markdown/code/text files for direct editing; code and text open editable immediately, with undo/redo, automatic save after edits, dirty-tab state, and **Ctrl/Cmd + wheel** font zoom. The original file stays authoritative on disk. Text editing is capped at 4 MB because the whole document is loaded into the editor and written back as a whole file; Office/PDF/image previews use a separate 64 MB preview limit. Word, PowerPoint, Excel and PDF files open as read-only previews (Office formats are converted to PDF through LibreOffice; LibreOffice must be installed on the machine).
-
-The **Files** tree supports search, right-click new file/folder, rename and delete, in addition to opening, editing and autosaving files. Hidden dotfiles and dotfolders are listed too. The new-file/new-folder/rename prompts are in-app dialogs (Electron does not support `window.prompt`).
-
-### PDF preview and annotations
-
-PDF files open in an annotated preview built from `pdftoppm` page images plus a `pdftotext -bbox` selection layer. Select text on a page and choose **Highlight** or **Underline** in the preview toolbar. Annotations are stored locally per workspace/file; **Clear annotations** removes them. PDF annotation preview requires Poppler (`pdftoppm` and `pdftotext`, available in TeX Live on this machine); when Poppler is unavailable the preview falls back to the browser PDF viewer without annotations.
-
-The **Canvases**, **Pages**, **Files** and **Plugins** sidebar sections are independently resizable by dragging the divider between them and reorderable by dragging the grip in their header. The **Plugins** section opens the plugin manager and gallery without leaving the current document.
-
-## Direct HTML editing
-
-HTML pages and HTML blocks render in a sandboxed iframe:
-
-- **Selection edit**: select text in the page preview and click the floating **Edit text** chip, or click **Edit** in the page badge, to enter direct text editing.
-- **Visual mode**: click once to select an element, then click the selected text again (or press Enter) to edit it in place; hover any element to see its hit outline and click to inspect it. The edit banner's **Insert +** opens a compact element palette (heading, paragraph, button, link, image, list, quote, card, divider); the Inspector also shows the element path, element tree, quick actions and a live style panel. Style changes apply automatically (no Apply button); Title/Body/Muted/Accent/Card presets cover common typography and surface styles, with color, background, size, weight, spacing, padding, radius and alignment controls. Changes are patched back to the HTML source with stable `data-hc-id` targets.
-- **Source mode**: open the source editor (CodeMirror) for full HTML/CSS editing with a live preview.
-- Stable IDs mean an agent can patch one element without rewriting the page.
-- In edit mode scripts are disabled; in preview mode the iframe runs with a sandboxed opaque origin.
-
-## Canvas pages
-
-Canvas pages contain absolutely positioned blocks:
-
-| Block | Content |
-|---|---|
-| HTML | Sandboxed HTML fragment, directly editable |
-| Text | Plain text with font/color controls |
-| Markdown | Markdown source rendered on the canvas |
-| Code | Syntax-preserved code preview |
-| Image | Drop an image file from a folder, or paste an image from the clipboard; URL still editable in Inspector |
-| Shape | Rectangle, ellipse, diamond, triangle, parallelogram, trapezoid, hexagon, octagon, star, cross, line or frame; fill, stroke, stroke style, radius; optional centered text label |
-
-Hover the left-rail **Shape** tool to open a categorized flyout with 60+ PowerPoint-like shapes (Basic, Lines, Flowchart, Stars & Banners, Callouts, Action Buttons). Select a rectangle or polygon and use **Slice** in the selection toolbar to draw a cutting line; the shape becomes two editable polygon blocks (undo restores it). A **Components** section in the page Inspector adds style-linked components such as the Slider, whose label/value/min/max/accent/track/text can be adjusted in the Inspector. Click a shape in the flyout, then click/drag on the canvas to place it. The same flyout opens from the Shape click/6 shortcut.
-
- / `\(x^2\)`, display `$...$` / `\[...\]`. Math is rendered through KaTeX to MathML, so it also works in exports and Present. The left-rail **∑ Formula** tool (or key `7`) inserts a dedicated LaTeX block; double-click or **Edit formula** opens a source + live-math editor.
+Markdown supports blockquotes (`> quote`), GFM, and LaTeX math: inline `$E=mc^2` / `\(x^2\)`, display `$...$` / `\[...\]`. Math is rendered through KaTeX to MathML, so it also works in exports and Present. The left-rail **∑ Formula** tool (or key `7`) inserts a dedicated LaTeX block; double-click or **Edit formula** opens a source + live-math editor.
 
 Images are inserted by dragging a file from the filesystem directly onto a Canvas/Infinite page, or by pasting an image from the clipboard. The old sidebar Image insertion button has been removed; selecting an existing image still lets you replace its URL in the Inspector.
 
@@ -288,13 +166,13 @@ Pages can use slide (16:9), A4, poster (4:5), square and custom sizes. Present m
 
 ## Infinite canvas and tools
 
-Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas page). It has no page bounds: pan with the Hand tool, hold Space, or middle-drag; zoom with the mouse wheel at the pointer or the zoom controls, and place any block anywhere. The dot grid and 8px snapping can be toggled from the tool rail. Exports and Present crop infinite pages to their content bounds.
+Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas page). It has no page bounds: pan with the Hand tool, hold Space, or middle-drag; zoom with the mouse wheel at the pointer or the zoom controls, and place any block anywhere. The dot grid and 8px snapping can be toggled from the tool rail. Exports crop infinite pages to their content bounds, and Present fits them to their content.
 
 ## Presentation workflow
 
 - **Slide templates**: Cover, Section, Two columns, Quote and Agenda (16:9 HTML pages), plus blank slide/A4/poster.
 - **Speaker notes**: edit per-page notes in the Inspector; Present mode has a Notes toggle and PPTX export writes notes into the deck.
-- **Present**: full-screen page navigation with notes; click the screen or scroll the wheel to go forward/back, right-click for previous/next/laser/notes/exit, and press L to toggle the laser pointer. Legacy whiteboard pages render through the native conversion.
+- **Present**: full-screen presentation with speaker notes. Document-style pages use a dedicated layout instead of slide scaling: Markdown pages open as a **Markdown · reading view** with a centered reading column that scrolls naturally, and HTML pages open as an **HTML · interactive view** — a responsive viewport that keeps scripts and page scrolling. On those pages the wheel scrolls the document instead of changing slides, and clicks interact with the page. Canvas pages fit the whole page, while Infinite pages fit their content bounds. Use **←/→** or **PageUp/PageDown** to change pages and **Esc** to exit; on slide-style pages (canvas, Infinite, legacy whiteboard) click or wheel still advance. Right-click for previous/next, laser pointer, notes and exit, and press **L** to toggle the laser pointer. Legacy whiteboard pages render through the native conversion.
 - **PowerPoint export**: `hcanvas export <doc> --format pptx` produces a 16:9 PPTX with one slide per page and speaker notes.
   - **Canvas pages** with text/shape/image blocks become **editable PowerPoint** text boxes and shapes (no HTML blocks).
   - `format=pptx-editable` additionally maps HTML headings, paragraphs, lists, inline labels and background cards to native PowerPoint text boxes/shapes using real browser layout data; pages with no extractable text fall back to images.
@@ -360,7 +238,7 @@ For an A4 résumé, build a Canvas page (794×1123) from native text/shape/image
 
 ### Multi-agent presence
 
-Create a session per agent and keep it alive; hcanvas shows live actors in the **Agent** tab and as avatars in the top bar:
+Create a session per agent and keep it alive; hcanvas shows live actors as avatars in the top bar:
 
 ```bash
 hcanvas sessions create <doc> --actor your-agent
@@ -435,7 +313,11 @@ Requests require the `x-hcanvas-token` header (or `?token=` for SSE), and the se
 
 ## Revision history
 
-The **History** tab lists saved revisions (revision number, actor, summary, timestamp). Selecting a revision renders a unified line diff against the current document for HTML/Markdown pages and block coordinate changes for canvas/infinite pages. **Restore** creates a new revision from the selected snapshot; the current document and all later revisions remain in history. Snapshot storage lives under `.hcanvas/history/<docId>/` and is capped to the most recent 120 revisions per document.
+The right-sidebar **History** tab lists saved revisions newest first: **rN**, a readable edit summary (for example **Edit Markdown**, **Add shape**, **Rename page** or **Restore revision 4**), the actor and a relative timestamp, with the current revision marked **Current**. The **Filter edits…** box narrows the list by summary, actor or revision number and reports how many revisions match; **↑/↓** move through the list and **↻** refreshes it.
+
+Selecting a revision shows a read-only page preview (pick the page from the preview selector) plus a diff. The comparison buttons switch between **This edit** (the selected revision against its predecessor) and **Vs current** (against the live document). Added and removed pages are called out, unchanged content is collapsed, and the initial revision reports that there is no earlier version to compare. HTML/Markdown pages are diffed line by line; canvas and Infinite pages are diffed as block summaries.
+
+**Restore** applies the selected snapshot as a **new revision**: it never rewrites history, so the current document and all later revisions stay available. Restore is disabled on the current revision, and a confirmation notes that a new revision will be created. Snapshots live in the workspace's `history/<docId>/` directory (`.hcanvas/history/<docId>/` in a project workspace) and are capped to the most recent 120 revisions per document.
 
 ## Security
 
@@ -446,11 +328,12 @@ The **History** tab lists saved revisions (revision number, actor, summary, time
 
 ## Limits
 
-- hcanvas is currently a local web app (Electron packaging and multi-window are future work).
+- The browser UI shows one workspace at a time; the standalone desktop app can open each project in its own native window.
 - Visual HTML editing focuses on text and style; structural edits use the source editor.
 - No real-time multi-user CRDT yet; multiple agents/hosts coordinate through revisions and proposals.
-- PPTX visual deck keeps HTML pages as images; the separate editable deck maps HTML text to native PowerPoint objects (layout is approximate; complex CSS effects are not reconstructed). Page masters, assets library and vector PDF remain extensions.
+- PPTX visual deck keeps HTML pages as images; the separate editable deck maps HTML text to native PowerPoint objects (layout is approximate; complex CSS effects are not reconstructed).
 - DOCX export is intentionally text-first/ATS-oriented; it does not reproduce visual layout, cards or decorative graphics.
+
 ## Project workspaces
 
 Select a project folder and let hcanvas initialize it; all product data lives inside `<project>/.hcanvas`:
@@ -481,24 +364,28 @@ A workspace (usually `<project>/.hcanvas`) is a plain directory:
 <workspace>/docs/<docId>.json   # document: pages, html/blocks/scene, history, proposals
 <workspace>/state.json         # active canvas/page and agent sessions
 <workspace>/masters.json        # reusable page masters
+<workspace>/history/<docId>/   # revision snapshots (most recent 120)
 <workspace>/daemon.json         # local URL + token for the running service
 <workspace>/exports/            # HTML/PDF/PNG/PPTX/DOCX outputs
 ```
 
 Documents use the JSON schema `hadamard-canvas/1`. HTML pages store their full source in `page.html`; canvas/infinite pages store `page.blocks`; Excalidraw pages store `page.scene`. Without a project, the desktop app falls back to `~/.hcanvas`; `--workspace <dir>` still addresses a store root directly. `--project <dir>` is the recommended project-scoped mode.
+
 ## Assets
 
-The **Assets** sidebar section stores workspace-scoped images and attachments under `.hcanvas/assets/`. Upload with **+** or drop files on the panel; images show thumbnails, other files show a type badge. Every asset gets a stable token URL that survives server restarts and can be inserted into the current Markdown/HTML page or dropped onto a canvas/infinite page as an image block. Deleting an asset warns when the current document still references it.
+The **Assets** section of the workspace navigator stores workspace-scoped images and attachments under `.hcanvas/assets/`. Upload with **+** or drop files on the panel; images show thumbnails, other files show a type badge. Every asset gets a stable token URL that survives server restarts and can be inserted into the current Markdown/HTML page or dropped onto a canvas/infinite page as an image block. Deleting an asset warns when the current document still references it.
 
 ## Workspace panels
 
-The left **Canvases / Pages** sidebar and the right inspector sidebar can both be resized by dragging their inner edge. Drag a splitter to set the width; double-click it to collapse the panel. The top-bar ▤ / ▥ buttons toggle the left and right sidebars; widths and collapsed state are remembered per browser profile.
+The left workspace navigator and the right inspector sidebar can both be resized by dragging their inner edge; double-click the splitter to collapse a panel. The top-bar ▤ / ▥ buttons toggle the left and right sidebars, and **Ctrl/Cmd+B** toggles the left navigator. Widths and collapsed state are remembered per browser profile.
 
 The right sidebar has four tabs:
 
 - **Inspector** — page/block properties, layout, styles, grouping, history and export controls.
-- **Agent** — onboarding + live sessions + recent edits + context JSON + CLI quick start. It is the observability surface for external CLI agents, not a chat box.
+- **Layers** — the page's user-layer tree (create, rename, reorder, hide, lock).
 - **Proposals** — review queue for changes proposed by agents; accept or reject before they are applied to the document.
+- **History** — revision list, read-only preview, diff comparison and restore (see Revision history).
+
 ## Plugin blocks
 
 hcanvas can load declarative block plugins without executing a JavaScript bundle. A plugin is a folder with a `manifest.json`:
