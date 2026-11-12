@@ -193,7 +193,10 @@ async function main() {
   await page.locator('#presentBtn').click();
   assert('Markdown presentation uses natural reading layout', await page.locator('#presentRoot').getAttribute('data-present-mode') === 'markdown' && (await page.locator('#presentPage').evaluate(element => getComputedStyle(element).transform)) === 'none');
   assert('Markdown presentation is scrollable', await page.frameLocator('#presentPage iframe').locator('body').evaluate(body => body.scrollHeight >= body.clientHeight));
-  await page.locator('#presentClose').click();
+  await page.frameLocator('#presentPage iframe').locator('body').click();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  assert('Escape exits a document presentation from inside the iframe', await page.locator('#presentRoot').isHidden());
   const frame = page.frameLocator('.html-page-surface iframe');
   await frame.locator('body').click();
   await page.keyboard.press('Control+End');
@@ -431,6 +434,9 @@ async function main() {
   await page.mouse.wheel(0, 400);
   await page.waitForTimeout(200);
   assert('HTML presentation wheel scrolls the document', await htmlPresentation.locator('body').evaluate(() => window.scrollY > 0));
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(300);
+  assert('Arrow keys advance a document presentation from inside the iframe', await page.locator('#presentRoot').getAttribute('data-present-mode') === 'canvas');
   await page.locator('#presentClose').click();
   await page.locator('.page-item[data-page-id="page_present_canvas"] .page-open').click();
   await page.locator('#presentBtn').click();

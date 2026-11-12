@@ -305,6 +305,15 @@ async function initialize(): Promise<void> {
     toast(error instanceof Error ? error.message : String(error), 'error');
     setSaveStatus('Offline', 'error');
   }
+  window.addEventListener('message', event => {
+    const data = event.data as { type?: string; key?: string } | null;
+    if (!data || data.type !== 'hcanvas:present-key' || !state.presenting) return;
+    const frame = document.querySelector<HTMLIFrameElement>('#presentPage iframe');
+    if (!frame || event.source !== frame.contentWindow) return;
+    if (data.key === 'Escape') closePresent();
+    else if (data.key === 'ArrowRight' || data.key === 'PageDown') nextPresent(1);
+    else if (data.key === 'ArrowLeft' || data.key === 'PageUp') nextPresent(-1);
+  });
   const title = el<HTMLInputElement>('docTitle');
   title.addEventListener('keydown', event => {
     if (event.key === 'Enter') { event.preventDefault(); title.blur(); }
