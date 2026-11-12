@@ -282,7 +282,7 @@ hcanvas desktop --project ~/projects/my-deck
 
 左侧边栏是单面板的 workspace 导航，分为 **Canvases**、**Pages**、**Files**、**Assets**、**Plugins** 五个区块。点击区块图标切换面板，按 **Ctrl/Cmd+B** 显示/隐藏整个导航；当前区块会按浏览器配置记住。**Canvases** 和 **Pages** 会显示条目数量，**Plugins** 区块可在不离开当前文档的情况下打开插件管理器与 Gallery。
 
-同一时间只显示一个区块。焦点在区块 Tab 上时，**←/→/↑/↓** 切换区块，**Home/End** 跳到第一个/最后一个区块；**↑/↓** 在当前面板的条目之间浏览，**Enter** 打开焦点条目，**F2** 重命名页面。**Ctrl/Cmd+F** 聚焦面板过滤器；过滤器（占位符 **Find a canvas…** / **Find a page…**）按名称实时过滤并显示匹配数量，**Esc** 清空；**Canvases** 和 **Pages** 分别记住自己的过滤文本。
+同一时间只显示一个区块。焦点在区块 Tab 上时，**←/→/↑/↓** 切换区块，**Home/End** 跳到第一个/最后一个区块；**↑/↓** 在当前面板的条目之间浏览，**Enter** 打开焦点条目，**F2** 重命名页面。**Ctrl/Cmd+F** 聚焦面板过滤器；过滤器（占位符 **Find a canvas…** / **Find a page…**）按名称实时过滤并显示匹配数量，**Esc** 清空；**Canvases** 和 **Pages** 分别记住自己的过滤文本。Files 不会持续监听文件系统：外部新增/删除文件后，点 Files 标题栏的 **↻** 手动刷新，或等窗口重新获得焦点时自动刷新。Assets 中点击图片/视频行可先预览，再点 Insert 或拖拽插入页面。
 
 ### 工作区标签页
 

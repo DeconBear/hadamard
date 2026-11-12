@@ -103,7 +103,7 @@ Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-si
 
 The **Files** section of the workspace navigator browses workspace folders directly; add more folders with **+**. Open an HTML file to preview it as a page, or open Markdown/code/text files for direct editing; code and text open editable immediately, with undo/redo, automatic save after edits, dirty-tab state, and **Ctrl/Cmd + wheel** font zoom. The original file stays authoritative on disk. Text editing is capped at 4 MB because the whole document is loaded into the editor and written back as a whole file; Office/PDF/image previews use a separate 64 MB preview limit. Word, PowerPoint, Excel and PDF files open as read-only previews (Office formats are converted to PDF through LibreOffice; LibreOffice must be installed on the machine).
 
-The **Files** tree supports search, right-click new file/folder, rename and delete, in addition to opening, editing and autosaving files. Hidden dotfiles and dotfolders are listed too. The new-file/new-folder/rename prompts are in-app dialogs (Electron does not support `window.prompt`).
+The **Files** tree supports search, right-click new file/folder, rename and delete, in addition to opening, editing and autosaving files. Hidden dotfiles and dotfolders are listed too. The new-file/new-folder/rename prompts are in-app dialogs (Electron does not support `window.prompt`). Files are not watched continuously: use the ↻ button in the Files header to reload the tree, or let the app refresh it when the window regains focus. Click an image or video asset row to preview it before using Insert or drag-and-drop.
 
 ### PDF preview and annotations
 
