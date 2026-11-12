@@ -81,7 +81,7 @@ function inverseOfOp(doc: HcDocument, op: HcOp): HcOp | null {
   }
 }
 
-function applyOpLocally(doc: HcDocument, op: HcOp): void {
+export function applyOpLocally(doc: HcDocument, op: HcOp): void {
   if (op.op === 'add_page') {
     const index = op.index === undefined ? doc.pages.length : op.index;
     doc.pages.splice(index, 0, cloneJson(op.page));

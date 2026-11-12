@@ -20,4 +20,14 @@ describe('hcanvas markdown math', () => {
   it('renders standalone latex', () => {
     expect(renderMathHtml('x^2')).toContain('<math');
   });
+  it('keeps editable TeX metadata on inline and display formulas', () => {
+    const inline = renderMarkdownHtml('Energy $E=mc^2$');
+    expect(inline).toContain('class="hc-math hc-math-inline" data-tex="E=mc^2"');
+    const display = renderMarkdownHtml(String.raw`$$\frac{a}{b}=c$$`);
+    expect(display).toContain('class="hc-math hc-math-block" data-tex="\\frac{a}{b}=c" data-display="true"');
+  });
+  it('escapes formula metadata attributes', () => {
+    const html = renderMarkdownHtml('$x < y & "z"$');
+    expect(html).toContain('data-tex="x &lt; y &amp; &quot;z&quot;"');
+  });
 });

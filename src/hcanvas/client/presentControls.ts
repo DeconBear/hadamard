@@ -1,6 +1,7 @@
 export interface PresentInteractionOptions {
   root: HTMLElement;
   isActive(): boolean;
+  isDocument(): boolean;
   next(delta: number): void;
   close(): void;
   toggleNotes(): void;
@@ -85,7 +86,7 @@ export function installPresentInteractions(options: PresentInteractionOptions): 
   };
 
   options.root.addEventListener('click', event => {
-    if (!options.isActive()) return;
+    if (!options.isActive() || options.isDocument()) return;
     const target = event.target as Element;
     if (target.closest('.present-bar, .present-notes, .present-context-menu, button, a, input, select, textarea')) return;
     options.next(1);
@@ -97,7 +98,7 @@ export function installPresentInteractions(options: PresentInteractionOptions): 
     showMenu(event.clientX, event.clientY);
   });
   options.root.addEventListener('wheel', event => {
-    if (!options.isActive()) return;
+    if (!options.isActive() || options.isDocument()) return;
     const target = event.target as Element;
     if (target.closest('.present-notes')) return;
     event.preventDefault();

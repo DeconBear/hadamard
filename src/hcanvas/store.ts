@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { summarizeHistoryOps } from './historySummary.js';
 
 import { createAiModelTemplate } from '../canvas/packs/aiModel.js';
 import { sceneFromDoc } from '../canvas/excalidrawScene.js';
@@ -654,22 +655,25 @@ export class HcStore {
     const doc = await this.readDoc(docId);
     const dir = this.revisionDir(docId);
     const entries = (await readdir(dir).catch(() => [] as string[])).filter(name => /^rev-\d+\.json$/.test(name));
-    const result: HcRevisionSummary[] = [];
-    for (const name of entries) {
+    const metadata = new Map(doc.history.map(item => [item.revision, item]));
+    const result = await Promise.all(entries.map(async (name): Promise<HcRevisionSummary | null> => {
       const revision = Number(name.slice(4, -5));
-      const snapshot = await this.readRevision(docId, revision).catch(() => null);
-      if (!snapshot) continue;
-      const meta = doc.history.find(item => item.revision === revision);
-      result.push({
+      const meta = metadata.get(revision);
+      const [info, snapshot] = await Promise.all([
+        stat(this.revisionPath(docId, revision)).catch(() => null),
+        meta ? Promise.resolve(null) : this.readRevision(docId, revision).catch(() => null),
+      ]);
+      if (!info || (!meta && !snapshot)) return null;
+      return {
         revision,
         actor: meta?.actor || 'human',
         summary: meta?.summary || (revision === 0 ? 'Initial revision' : 'Revision ' + revision),
-        createdAt: meta?.createdAt || snapshot.updatedAt,
+        createdAt: meta?.createdAt || snapshot?.updatedAt || info.mtime.toISOString(),
         opCount: meta?.opCount || 0,
-        bytes: Buffer.byteLength(JSON.stringify(snapshot), 'utf8'),
-      });
-    }
-    return result.sort((a, b) => b.revision - a.revision);
+        bytes: info.size,
+      };
+    }));
+    return result.filter((item): item is HcRevisionSummary => item !== null).sort((a, b) => b.revision - a.revision);
   }
 
   async readRevision(docId: string, revision: number): Promise<HcDocument> {
@@ -763,7 +767,7 @@ export class HcStore {
       next.updatedAt = nowIso();
       next.history = [...next.history, {
         revision: next.revision, actor: input.actor || 'human',
-        summary: input.summary || (input.ops.length + ' op(s)'),
+        summary: input.summary || summarizeHistoryOps(doc, input.ops),
         createdAt: next.updatedAt, opCount: input.ops.length,
       } satisfies HcHistoryEntry].slice(-200);
       await this.saveDocument(next);
