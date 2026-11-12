@@ -210,11 +210,14 @@ button { cursor: pointer; }
 
 .editing-banner {
   position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 60;
-  display: flex; align-items: center; gap: 9px; padding: 7px 9px 7px 12px;
+  display: flex; align-items: center; gap: 7px; padding: 6px 8px 6px 10px;
+  max-width: calc(100% - 32px);
   background: rgba(29,35,46,.94); color: #f8f7f3; border-radius: 10px; box-shadow: var(--shadow-md);
   font-size: 11.5px; white-space: nowrap; backdrop-filter: blur(8px);
 }
-.editing-hint { color: rgba(255,255,255,.6); font-size: 10.5px; }
+#editingLabel { flex: 0 0 auto; font-weight: 600; }
+.editing-hint { min-width: 0; overflow: hidden; color: rgba(255,255,255,.6); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.editing-banner .btn { flex: 0 0 auto; }
 .editing-banner kbd { font-family: var(--mono); font-size: 9.5px; background: rgba(255,255,255,.12); border-radius: 4px; padding: 1px 4px; }
 .editing-banner .btn { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.18); color: #fff; }
 .editing-banner .btn.primary { background: #fff; color: var(--ink); border-color: #fff; }
@@ -871,8 +874,17 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .block-wrap.type-curve.selected > .block-hit { box-shadow: none !important; }
 .block-wrap.type-curve.selected .block-vector-host svg { overflow: visible; }
 
-.editing-banner { max-width: calc(100% - 110px); }
-.editing-hint { white-space: normal; line-height: 1.4; }
+@media (max-width: 1180px) { .editing-hint { display: none; } }
+@media (max-width: 760px) {
+  .editing-banner { top: 8px; left: 8px; right: 8px; max-width: none; transform: none; justify-content: flex-end; }
+  .editing-banner .pulse-dot { display: none; }
+  #editingLabel { margin-right: auto; font-size: 11px; }
+}
+@media (max-width: 560px) {
+  .editing-banner { gap: 5px; padding: 5px 6px; }
+  #editingLabel { max-width: 76px; overflow: hidden; text-overflow: ellipsis; }
+  .editing-banner .btn { padding: 3px 6px !important; }
+}
 .html-editor-overview { padding: 10px 11px; border: 1px solid #ded6f4; border-radius: 10px; background: linear-gradient(135deg, #f5f1ff, #fbfaf7); }
 .html-selected-section { padding-top: 12px; border-top: 1px solid var(--border); }
 .html-keyboard-hint { margin: 8px 0 0; color: var(--muted); font: 9px/1.6 var(--mono); }
