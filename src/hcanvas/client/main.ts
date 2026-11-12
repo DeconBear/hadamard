@@ -1521,6 +1521,7 @@ function createPageItem(page: HcPage, index: number): PageItemCache {
     event.stopPropagation();
     if (event.key === 'F2') {
       if (state.activePageId !== page.id) selectPage(page.id);
+      if (document.getElementById('app')?.classList.contains('right-collapsed')) qs<HTMLButtonElement>('#toggleRightSidebarBtn')?.click();
       state.tab = 'inspector';
       renderTabs();
       renderInspector();
