@@ -4,7 +4,11 @@ const TICK = String.fromCharCode(96);
 const FENCE = TICK + TICK + TICK;
 
 function escapeMarkdownText(value: string): string {
-  return value.replace(/\u00a0/g, ' ').replace(/([\\*_[\]])/g, '\\$1');
+  return value.replace(/\u00a0/g, ' ').replace(/\u200B/g, '').replace(/([\\*_[\]])/g, '\\$1');
+}
+
+function isTransientUi(element: HTMLElement): boolean {
+  return element.classList.contains('hc-slash-menu') || element.classList.contains('hc-formula-editor');
 }
 
 function inline(node: Node): string {
@@ -12,7 +16,7 @@ function inline(node: Node): string {
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
   const element = node as HTMLElement;
   const tag = element.tagName.toLowerCase();
-  if (tag === 'script' || tag === 'style' || element.classList.contains('hc-slash-menu')) return '';
+  if (tag === 'script' || tag === 'style' || isTransientUi(element)) return '';
   const tex = element.getAttribute('data-tex');
   if (tex) return '$' + tex + '$';
   if (tag === 'mark') return element.outerHTML;
@@ -41,8 +45,10 @@ function listMarkdown(element: HTMLElement, ordered: boolean): string {
   const items = Array.from(element.children).filter(child => child.tagName.toLowerCase() === 'li');
   return items.map((item, index) => {
     const prefix = ordered ? (index + 1) + '. ' : '- ';
+    const checkbox = item.querySelector<HTMLInputElement>(':scope > input[type="checkbox"]');
+    const task = checkbox ? '[' + (checkbox.checked ? 'x' : ' ') + '] ' : '';
     const text = blockText(item as HTMLElement).replace(/\n/g, '\n  ');
-    return prefix + text;
+    return prefix + task + text;
   }).join('\n');
 }
 
@@ -54,9 +60,9 @@ function blockMarkdown(node: Node): string {
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
   const element = node as HTMLElement;
   const tag = element.tagName.toLowerCase();
-  if (tag === 'script' || tag === 'style' || element.classList.contains('hc-slash-menu')) return '';
+  if (tag === 'script' || tag === 'style' || isTransientUi(element)) return '';
   const tex = element.getAttribute('data-tex');
-  if (tex) return '$$' + tex + '$$';
+  if (tex) return element.classList.contains('hc-math-block') ? '$$' + tex + '$$' : '$' + tex + '$';
   if (/^h[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + blockText(element);
   if (tag === 'p') return blockText(element);
   if (tag === 'blockquote') return blockText(element).split('\n').map(line => '> ' + line).join('\n');
