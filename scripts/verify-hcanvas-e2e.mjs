@@ -110,11 +110,35 @@ async function main() {
   assert('Arrow keys and Enter open pages', await page.locator('.page-item.active .page-open').evaluate(node => node.dataset.pageId) === await page.locator('.page-open').nth(1).getAttribute('data-page-id'));
   await page.keyboard.press('F2');
   assert('F2 focuses page rename', await page.locator('#pageName').evaluate(node => document.activeElement === node));
+  await page.locator('#toggleRightSidebarBtn').click();
+  await page.waitForTimeout(150);
+  assert('Right sidebar can be collapsed before the F2 test', await page.locator('#app').evaluate(node => node.classList.contains('right-collapsed')));
+  await page.locator('[data-sidebar-target="pages"]').click();
+  await page.locator('.page-open').nth(1).click();
+  await page.waitForTimeout(300);
+  assert('Mouse-clicked page keeps focus for arrow navigation', await page.locator('.page-open').nth(1).evaluate(node => document.activeElement === node));
+  const mouseSelectedPage = await page.locator('.page-item.active .page-open').getAttribute('data-page-id');
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  assert('Arrow navigation works after a mouse click', await page.locator('.page-item.active .page-open').getAttribute('data-page-id') !== mouseSelectedPage);
+  await page.keyboard.press('F2');
+  await page.waitForTimeout(300);
+  assert('F2 expands a collapsed inspector', !(await page.locator('#app').evaluate(node => node.classList.contains('right-collapsed'))) && await page.locator('#pageName').evaluate(node => document.activeElement === node));
   await page.locator('[data-sidebar-target="pages"]').click();
   await page.keyboard.press('Control+b');
   assert('Ctrl+B hides the workspace navigator', await page.locator('#app').evaluate(node => node.classList.contains('left-collapsed')));
   await page.keyboard.press('Control+b');
   assert('Ctrl+B restores the workspace navigator', !(await page.locator('#app').evaluate(node => node.classList.contains('left-collapsed'))));
+  while (await page.locator('.canvas-tab').count() > 1) {
+    await page.locator('.canvas-tab .tab-close').last().click();
+    await page.waitForTimeout(200);
+  }
+  await page.locator('.page-open').nth(0).click();
+  await page.waitForTimeout(300);
+  await page.locator('.page-open').nth(1).click();
+  await page.waitForTimeout(300);
   assert('Canvas tabs expose close controls', await page.locator('.canvas-tab.active .tab-close').count() === 1);
   const pageCountBeforeClosingTabs = await page.locator('.page-item').count();
   await page.locator('.canvas-tab.active .tab-close').click();
@@ -259,6 +283,16 @@ async function main() {
   await page.keyboard.press('Enter');
   await page.waitForTimeout(500);
   assert('Formula inserts beside existing text', (await frame.locator('body').innerText()).includes('Distance') && await frame.locator('.hc-math-inline').last().getAttribute('data-tex') === 'd = rt');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('\nBare /');
+  await page.waitForTimeout(350);
+  await frame.locator('.hc-slash-menu [data-command="formula"]').click();
+  await page.waitForTimeout(250);
+  await frame.locator('.hc-formula-input').fill('x = 1');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(500);
+  const bareSlashText = await frame.locator('body').innerText();
+  assert('Bare slash command removes its trigger', bareSlashText.includes('Bare') && !bareSlashText.includes('Bare /'), bareSlashText.slice(-140));
   await frame.locator('.hc-math-inline').last().click();
   await page.waitForTimeout(300);
   await page.waitForTimeout(1300);
@@ -338,7 +372,7 @@ async function main() {
     });
     console.log('Reload formula debug:', JSON.stringify(debug));
   }
-  await reloaded.locator('.hc-math-inline').last().click();
+  await reloaded.locator('.hc-math-inline[data-tex="d = rt"]').click();
   await page.waitForTimeout(300);
   if (await reloaded.locator('.hc-formula-editor').count() === 0) {
     console.log('Formula click debug:', await reloaded.locator('body').evaluate(() => ({ editable: document.body.contentEditable, formulas: Array.from(document.querySelectorAll('.hc-math-inline')).map(item => item.outerHTML.slice(0, 400)) })));
@@ -407,6 +441,13 @@ async function main() {
   await page.waitForTimeout(1000);
   assert('Restore creates a new revision', (await page.locator('#docRevision').innerText()).includes('rev ' + (beforeRestore + 1)));
   assert('Restore remains non-destructive', (await page.locator('#historyPanel').innerText()).includes('Restore revision ' + selectedRevision));
+  await page.locator('[data-history-rev]').nth(1).click();
+  await page.waitForTimeout(500);
+  const historyFocusBefore = await page.evaluate(() => document.activeElement?.getAttribute('data-history-rev'));
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(500);
+  const historyFocusAfter = await page.evaluate(() => document.activeElement?.getAttribute('data-history-rev'));
+  assert('History keyboard navigation survives a mouse selection', Boolean(historyFocusBefore) && Boolean(historyFocusAfter) && historyFocusBefore !== historyFocusAfter, historyFocusBefore + ' -> ' + historyFocusAfter);
 
   // Presentation uses a dedicated layout for documents, slides, and Infinite content.
   await page.evaluate(async () => {
