@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 export const HCANVAS_SCHEMA = 'hadamard-canvas/1';
 
-export type HcPageMode = 'canvas' | 'html' | 'infinite' | 'whiteboard';
+export type HcPageMode = 'canvas' | 'html' | 'infinite';
 export type HcBlockType = 'html' | 'text' | 'markdown' | 'code' | 'image' | 'shape' | 'freehand' | 'arrow' | 'curve' | (string & {});
 export type HcShape =
   | 'rect'
@@ -151,12 +151,6 @@ export interface HcLayer {
   color?: string;
 }
 
-export interface HcWhiteboardScene {
-  elements: unknown[];
-  appState?: Record<string, unknown>;
-  files?: Record<string, unknown>;
-}
-
 export interface HcPage {
   id: string;
   name: string;
@@ -172,8 +166,6 @@ export interface HcPage {
   blocks?: HcBlock[];
   /** user layers ordered bottom → top; omitted means one implicit default layer */
   layers?: HcLayer[];
-  /** Excalidraw scene when mode === 'whiteboard' */
-  scene?: HcWhiteboardScene;
   notes?: string;
   hidden?: boolean;
 }
@@ -189,7 +181,6 @@ export interface HcMaster {
   html?: string;
   markdown?: string;
   blocks?: HcBlock[];
-  scene?: HcWhiteboardScene;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -251,7 +242,6 @@ export type HcOp =
   | { op: 'delete_block'; pageId: string; blockId: string }
   | { op: 'set_page_html'; pageId: string; html: string }
   | { op: 'set_page_markdown'; pageId: string; markdown: string }
-  | { op: 'set_whiteboard_scene'; pageId: string; scene: HcWhiteboardScene }
   | { op: 'set_block_html'; pageId: string; blockId: string; html: string }
   | { op: 'set_block_text'; pageId: string; blockId: string; text: string }
   | { op: 'set_block_markdown'; pageId: string; blockId: string; markdown: string }
@@ -270,7 +260,6 @@ export interface HcPagePreset {
   html?: string;
   markdown?: string;
   blocks?: HcBlock[];
-  scene?: HcWhiteboardScene;
 }
 
 export const HCANVAS_PAGE_PRESETS: HcPagePreset[] = [

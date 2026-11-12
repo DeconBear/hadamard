@@ -73,12 +73,11 @@ HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
 ## Canvas 页面
 
-块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、曲线（curve）、箭头（arrow）。左侧 **Curve (C)** 工具可拖出平滑的三次贝塞尔曲线；曲线使用紧包围盒，点选/移动/缩放正常，可改描边颜色、宽度和线型。选中曲线后会显示起点、终点和两个贝塞尔控制柄，直接拖动即可原位改形。形状支持矩形、椭圆、菱形、三角形、平行四边形、梯形、六边形、八边形、星形、十字、直线和 frame，可设置填充、描边、线型与圆角；左侧 **Shape** 按钮悬停时会在右侧展开按 Basic / Lines / Flowchart / Stars & Banners / Callouts / Action Buttons 分组的 60+ 个 PPT 类形状；选中矩形/polygon 后点击选择工具栏的 **Slice**，拖一条切割线即可切成两个可编辑 polygon block（撤销可恢复）。无选中 block 时，Page Inspector 的 **Components** 区域可添加 Slider 等样式关联组件，并在 Inspector 调整 label/value/min/max/accent/track/text。在气泡中点选形状后，在画布上点击/拖拽放置；点击 Shape 或按 6 也会打开同一选择器。可用 **框选**、**Shift+click** 或点击组成员多选；**Ctrl/Cmd+G** 成组、**Ctrl/Cmd+Shift+G** 解组，拖动任一选中 block 会整体移动。Markdown 支持引用块（`> 引用`）、GFM 和 LaTeX 数学公式：行内 `$E=mc^2` / `\(x^2\)`，独立公式 `$...$` / `\[...\]`，通过 KaTeX 输出 MathML，因此导出和 Present 也能正常显示。左侧 **∑ Formula** 工具或快捷键 `7` 可插入独立 LaTeX block，双击或 **Edit formula** 打开源码 + 实时公式编辑器。图片可从文件夹直接拖入 Canvas/Infinite 页，或从剪贴板粘贴；侧边栏的图片插入按钮已移除，已有图片仍可在 Inspector 改 URL。形状选中后有 8 个角/边缩放手柄；直线则只有两个端点手柄，可自由拖动任一端改变方向和长度；拖动标签可移动，双击形状可直接编辑居中文字，Inspector 可改字体/字号/颜色；拖动时会显示并吸附到其他 block 或页面中心的智能参考线。转换后的 Excalidraw frame 会记录子元素 `frameId`，拖动 frame 时子元素跟随。**Arrow (A)** 落在 shape/text/image/frame 上时会自动绑定两端（`startBinding` / `endBinding`），移动或缩放被绑定元素时箭头端点自动跟随；文字 block 选中后可拖 block 本体，也可拖上方的小 **label 把手** 移动；双击就地编辑，`Esc` 结束。block 重叠时 **Alt+click** 会在叠放层之间循环选择。Infinite 页选择插入类型（HTML/Text/Markdown/Code/Shape）后进入 **click-to-place**：下一次点击画布才在该位置创建 block；坐标无边界，负 x/y 也有效，frame 不裁剪/限制 block，可在 Inspector 里 **Dissolve frame** 保留子元素。**Pen (P)** / **Arrow (A)** / **Eraser (E)** 可直接绘制、擦除原生矢量；手绘会平滑成 path，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。**Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** 撤销重做 block 编辑，**Ctrl/Cmd+C/V** 复制粘贴选中 block。Add Page 不再提供 Excalidraw Whiteboard，新画板请用 Infinite；已有旧白板可一键迁移。拖拽遵循主流画布/PPT 习惯：移动时按 **Shift** 锁定主方向，**Ctrl/Cmd+拖拽** 复制一份；缩放时按 **Shift** 保持宽高比，按 **Ctrl/Cmd** 从中心缩放。选中 block 后会出现旋转手柄，固定在旋转后选择框上方的屏幕间距；拖动时显示中心基准点和实时角度，按 **Shift** 吸附 15°，按 **Esc** 取消；旋转后的缩放沿 block 自身坐标轴进行。右键 Transform 区域可旋转 90° 和 **水平/垂直镜像**。
+块类型：HTML、文本、Markdown、代码、图片、形状、原生手绘（freehand）、曲线（curve）、箭头（arrow）。左侧 **Curve (C)** 工具可拖出平滑的三次贝塞尔曲线；曲线使用紧包围盒，点选/移动/缩放正常，可改描边颜色、宽度和线型。选中曲线后会显示起点、终点和两个贝塞尔控制柄，直接拖动即可原位改形。形状支持矩形、椭圆、菱形、三角形、平行四边形、梯形、六边形、八边形、星形、十字、直线和 frame，可设置填充、描边、线型与圆角；左侧 **Shape** 按钮悬停时会在右侧展开按 Basic / Lines / Flowchart / Stars & Banners / Callouts / Action Buttons 分组的 60+ 个 PPT 类形状；选中矩形/polygon 后点击选择工具栏的 **Slice**，拖一条切割线即可切成两个可编辑 polygon block（撤销可恢复）。无选中 block 时，Page Inspector 的 **Components** 区域可添加 Slider 等样式关联组件，并在 Inspector 调整 label/value/min/max/accent/track/text。在气泡中点选形状后，在画布上点击/拖拽放置；点击 Shape 或按 6 也会打开同一选择器。可用 **框选**、**Shift+click** 或点击组成员多选；**Ctrl/Cmd+G** 成组、**Ctrl/Cmd+Shift+G** 解组，拖动任一选中 block 会整体移动。Markdown 支持引用块（`> 引用`）、GFM 和 LaTeX 数学公式：行内 `$E=mc^2` / `\(x^2\)`，独立公式 `$...$` / `\[...\]`，通过 KaTeX 输出 MathML，因此导出和 Present 也能正常显示。左侧 **∑ Formula** 工具或快捷键 `7` 可插入独立 LaTeX block，双击或 **Edit formula** 打开源码 + 实时公式编辑器。图片可从文件夹直接拖入 Canvas/Infinite 页，或从剪贴板粘贴；侧边栏的图片插入按钮已移除，已有图片仍可在 Inspector 改 URL。形状选中后有 8 个角/边缩放手柄；直线则只有两个端点手柄，可自由拖动任一端改变方向和长度；拖动标签可移动，双击形状可直接编辑居中文字，Inspector 可改字体/字号/颜色；拖动时会显示并吸附到其他 block 或页面中心的智能参考线。转换后的 Excalidraw frame 会记录子元素 `frameId`，拖动 frame 时子元素跟随。**Arrow (A)** 落在 shape/text/image/frame 上时会自动绑定两端（`startBinding` / `endBinding`），移动或缩放被绑定元素时箭头端点自动跟随；文字 block 选中后可拖 block 本体，也可拖上方的小 **label 把手** 移动；双击就地编辑，`Esc` 结束。block 重叠时 **Alt+click** 会在叠放层之间循环选择。Infinite 页选择插入类型（HTML/Text/Markdown/Code/Shape）后进入 **click-to-place**：下一次点击画布才在该位置创建 block；坐标无边界，负 x/y 也有效，frame 不裁剪/限制 block，可在 Inspector 里 **Dissolve frame** 保留子元素。**Pen (P)** / **Arrow (A)** / **Eraser (E)** 可直接绘制、擦除原生矢量；手绘会平滑成 path，数据以 block points 存在 JSON 中，可缩放、改线色/线宽。**Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** 撤销重做 block 编辑，**Ctrl/Cmd+C/V** 复制粘贴选中 block。新画板请使用 Infinite。拖拽遵循主流画布/PPT 习惯：移动时按 **Shift** 锁定主方向，**Ctrl/Cmd+拖拽** 复制一份；缩放时按 **Shift** 保持宽高比，按 **Ctrl/Cmd** 从中心缩放。选中 block 后会出现旋转手柄，固定在旋转后选择框上方的屏幕间距；拖动时显示中心基准点和实时角度，按 **Shift** 吸附 15°，按 **Esc** 取消；旋转后的缩放沿 block 自身坐标轴进行。右键 Transform 区域可旋转 90° 和 **水平/垂直镜像**。
 
 在画布中选中 block 后，顶部浮动工具栏会出现 **Opacity**、**Color**、取色器；选中图片还会出现 **Cutout**。Opacity 是 0–100% 的实时样式控制，可一键恢复 100%。图片内置 **Remove image background** 抠图：右键图片或点 Cutout，调整背景容差和软边，在棋盘格上预览透明结果后应用为新的 PNG data URL。抠图会采样边缘背景色，适合纯色背景；跨域图片需要先本地化上传。右键 block 可打开编辑菜单：Edit、Duplicate、上移一层 / 下移一层 / 置顶 / 置底、Change color、Stroke color、屏幕取色、Solid/Dashed/Dotted 线型和 Delete。线型会写入原生 `strokeStyle`，对形状、曲线、手绘和箭头生效，并支持撤销。颜色与层级都写回原生 blo... (line truncated to 2000 chars)
 
 右侧 **Layers** 是用户图层树：新页面默认有一个包含所有元素的 **Default layer**；用 **+** 新建图层，用 **−** 删除非默认图层（确认后连同内容删除），双击图层名重命名，点击图层头设为新元素的活动图层。每层有显示/锁定开关；隐藏层不会出现在编辑、导出和 Present 中，锁定层不能选中或填充。拖动图层头可调整层序，也可以把元素拖到其他图层；图层顺序和层内 `z` 都支持撤销/重做。**Color** 支持纯色填充，同一面板的 **Fill / gradient** 可给形状和闭合曲线应用线性渐变；工具栏 **▣ Fill** 可直接在画布上填充闭合形状/路径，右键 **Fill / gradient…** 也可。渐变通过原生 SVG 渲染，并用于 Present/导出。
-
 
 页面支持 slide 16:9、A4、海报 4:5、方形和自定义尺寸。提供全屏 Present 模式，导出 HTML/PDF/PNG（使用本机 Chrome/Edge/Chromium）。PPTX/母版等后续扩展。
 
@@ -100,14 +99,13 @@ Markdown 页右上角有 **?** 帮助按钮：首次进入会自动弹出简短�
 
 - **画布尺寸**：新建时可选择 Canvas · 16:9、A4、4:5、1:1、16:9 wide、Infinite 或 HTML page；用途由尺寸和内容决定，不再区分 Slide / Résumé 页面类型。
 - **Speaker notes**：在 Inspector 编辑每页备注；Present 模式有 Notes 开关，PPTX 导出会写入 notes。
-- **Present**：全屏演示并支持 speaker notes。文档型页面使用专门的阅读布局而不是整页缩放：Markdown 页进入 **Markdown · reading view**，以居中的阅读栏自然滚动；HTML 页进入 **HTML · interactive view**，按响应式视口展示并保留脚本与页面滚动。这两类页面中滚轮用于滚动文档、不会翻页，点击也会与页面交互。Canvas 页整页适配，Infinite 页按内容边界适配。用 **←/→** 或 **PageUp/PageDown** 翻页、**Esc** 退出；在幻灯片式页面（Canvas、Infinite、旧白板）上仍可单击屏幕或滚轮翻页。右键菜单提供上一页/下一页/激光笔/备注/退出，按 **L** 切换激光笔；Excalidraw 白板页以原生转换后的只读视图展示。
+- **Present**：全屏演示并支持 speaker notes。文档型页面使用专门的阅读布局而不是整页缩放：Markdown 页进入 **Markdown · reading view**，以居中的阅读栏自然滚动；HTML 页进入 **HTML · interactive view**，按响应式视口展示并保留脚本与页面滚动。这两类页面中滚轮用于滚动文档、不会翻页，点击也会与页面交互。Canvas 页整页适配，Infinite 页按内容边界适配。用 **←/→** 或 **PageUp/PageDown** 翻页、**Esc** 退出；在幻灯片式页面（Canvas、Infinite）上仍可单击屏幕或滚轮翻页。右键菜单提供上一页/下一页/激光笔/备注/退出，按 **L** 切换激光笔。
 - **PowerPoint 导出**：`hcanvas export <doc> --format pptx` 生成 16:9 PPTX，一页一张 slide，并带 speaker notes。
   - **Canvas 页面**（文本/形状/图片块，不含 HTML 块）会导出为**可编辑的 PowerPoint 文本框和形状**；
   - `format=pptx-editable` 还会用真实浏览器布局数据，把 HTML 标题、段落、列表、内联标签和卡片背景映射为原生 PowerPoint 文本框/形状；无文本可提取的页面回退为图片；
-  - HTML、Infinite、Excalidraw 白板页在默认视觉 deck 中以高保真整页图片嵌入；
+  - HTML、Infinite 页在默认视觉 deck 中以高保真整页图片嵌入；
   - 在 **+ Page** 创建 **Canvas · 16:9** 页面，添加文本/形状 blocks 即可导出可编辑 PowerPoint；
-  - Legacy 白板页在图片/PPTX 渲染前会先转换为原生 blocks，不再使用 Excalidraw CLI。
-
+  
 ## 文档、简历与海报
 
 使用通用的 **Canvas · A4** 做文档/简历，**Canvas · 4:5** 做海报。它们就是普通 canvas 页面：添加文本/形状/图片 blocks、直接编辑，然后导出。用途由画布尺寸和内容决定，不再有独立的“简历”或“幻灯片”页面类型。
@@ -119,7 +117,7 @@ Markdown 页右上角有 **?** 帮助按钮：首次进入会自动弹出简短�
 
 ## 页面母版
 
-任意页面（HTML、Canvas、Infinite、Excalidraw 白板）都可以保存为 **workspace 级页面母版**，作为新页面的起点复用：
+任意页面（HTML、Canvas、Infinite）都可以保存为 **workspace 级页面母版**，作为新页面的起点复用：
 
 - UI：Page inspector → **Save as master**；**+ Page** → **My page masters** 显示 HTML/Canvas 母版实时缩略图，并提供 **Use** / **Delete** 操作。
 - CLI：
@@ -132,37 +130,16 @@ hcanvas masters delete <masterId>
 
 母版存储在 `<workspace>/masters.json`；应用母版会创建新页，重新生成 page/block ID，并保留原 mode、尺寸、背景、HTML/blocks/scene 与 speaker notes。之后编辑新页面不会改动母版。
 
-## Legacy Excalidraw 白板页
+## Excalidraw 场景导入/导出
 
-旧文档可能仍包含 **Excalidraw whiteboard** 页。新建页面已不再提供此预设，hcanvas 也不再加载或提供 Excalidraw 运行时。旧白板以只读原生预览显示（形状、箭头、手绘、文本、图片、frame、旋转/透明度/虚线）；点击 **Convert to native Infinite** 后可编辑。原始 scene 仍保存在文档中用于迁移。场景随文档保存：
-
-```bash
-hcanvas read <doc> --format scene --page <白板页 id>
-hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor your-agent
-```
-
-```json
-[{ "op": "set_whiteboard_scene", "pageId": "page_...", "scene": { "elements": [], "appState": {}, "files": {} } }]
-```
-
-页面 Inspector 可下载原始 `.excalidraw`；白板的 HTML/PDF/PNG/PPTX 导出会先内部转换为原生 blocks，不再依赖 Excalidraw CLI。
-
-### 迁移到原生 Infinite
-
-在白板页 Inspector 点击 **Convert to native Infinite**，会把 Excalidraw 元素转换为原生 Infinite blocks：freehand、箭头及 binding、文本、矩形/椭圆/菱形/frame、旋转/透明度/虚线以及图片 data URL，并打开新页面；原白板保持不变。
-
-CLI 同样支持转换与原生 scene 导入/导出：
+hcanvas 可以把 `.excalidraw` 文件作为原生 Infinite 页导入，也可以把 Canvas/Infinite 页反向导出为 `.excalidraw`。这是兼容性桥接。
 
 ```bash
-hcanvas migrate-whiteboards <doc> --delete-source
-hcanvas convert-whiteboard <doc> --page <白板页 id> --title "Board · Native"
-hcanvas import-scene ./board.excalidraw <doc> --title "导入画板"
-hcanvas export-scene <doc> --page <infinite 页 id> --out ./exports/board.excalidraw
+hcanvas import-scene ./board.excalidraw <doc> --title "Imported board"
+hcanvas export-scene <doc> --page <infinitePageId> --out ./exports/board.excalidraw
 ```
 
-Infinite 页顶栏 **Export → Excalidraw scene** 也可下载反向兼容文件。
-
-A4 简历推荐用 Canvas 页（794×1123）由原生 text/shape/image block 搭建；PDF/PNG 保留固定版式，visual PPTX 每页嵌入整页图片，editable PPTX 使用原生 text/shape，DOCX 输出语义文本版。PPTX 会保持页面宽高比（A4 仍是 A4），不再强制 16:9。暂不支持的原生元素（极少数 embed）会跳过并记录在页面 notes。
+Infinite 页顶栏也提供 **Export → Excalidraw scene**。暂时没有原生对应物的元素会被跳过，并在页面 notes 中报告。
 
 ### 多 Agent 实时 Presence
 
@@ -181,8 +158,7 @@ hcanvas sessions delete <id>
 
 Agent 是外部客户端：Hcanvas 没有内置的 Agent/Copilot 面板。Agent 使用下面的 JSON-first CLI/HTTP 协议；在线 session 仍以头像显示在顶栏，`hcanvas context --json` 提供当前文档/页面/revision。不硬编码任何厂商的 agent 名称；10 分钟无心跳会显示为 stale。
 
-当前页有 session 的 agent 会显示为画布内的彩色光标。Canvas/Infinite 页锚定到 block；HTML 页会测量真实渲染布局，锚定到上报的 `data-hc-id` 元素；Excalidraw 白板会用 scene 元素位置 + 当前 scroll/zoom 投影出光标。点击光标即可 **follow** 该 agent：hcanvas 会切换到它的文档/页面并选中它上报的 block 或 HTML 元素。
-
+当前页有 session 的 agent 会显示为画布内的彩色光标。Canvas/Infinite 页锚定到 block；HTML 页会测量真实渲染布局，锚定到上报的 `data-hc-id` 元素。点击光标即可 **follow** 该 agent：hcanvas 会切换到它的文档/页面并选中它上报的 block 或 HTML 元素。
 
 ## Agent 协议（CLI-first）
 
@@ -276,7 +252,7 @@ hcanvas desktop --project ~/projects/my-deck
 <workspace>/exports/            # HTML/PDF/PNG/PPTX/DOCX 输出
 ```
 
-文档使用 JSON schema `hadamard-canvas/1`：HTML 页把完整源码存在 `page.html`；Canvas/Infinite 页存 `page.blocks`；Excalidraw 页存 `page.scene`。未选择项目时，桌面应用回退到配置的数据目录（默认 `~/.hcanvas`）；`--workspace <dir>` 仍可直接指定 store 根目录，推荐使用项目化模式 `--project <dir>`。
+文档使用 JSON schema `hadamard-canvas/1`：HTML 页把完整源码存在 `page.html`；Canvas/Infinite 页存 `page.blocks`。未选择项目时，桌面应用回退到配置的数据目录（默认 `~/.hcanvas`）；`--workspace <dir>` 仍可直接指定 store 根目录，推荐使用项目化模式 `--project <dir>`。
 
 ## 工作区导航与面板
 

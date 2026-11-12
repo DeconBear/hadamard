@@ -13,7 +13,6 @@ import { htmlToPlainDocument } from './html.js';
 import { blocksInStackOrder } from './layers.js';
 import { blockPlugin } from './blockPlugins.js';
 import { renderBlockBody } from './builtinBlocks.js';
-import { excalidrawSceneToNativePage } from './sceneBridge.js';
 import { extractHtmlLayout, type HtmlLayout } from './htmlLayout.js';
 import type { HcBlock, HcDocument, HcPage } from './types.js';
 
@@ -74,16 +73,6 @@ function exportPage(page: HcPage): HcPage {
   };
 }
 
-function nativePageFromWhiteboard(page: HcPage): HcPage {
-  if (page.mode !== 'whiteboard') return page;
-  const native = excalidrawSceneToNativePage({ elements: (page.scene?.elements || []) as never[], appState: page.scene?.appState, files: page.scene?.files }, page.name || 'Legacy whiteboard');
-  native.id = page.id;
-  native.name = page.name;
-  native.notes = page.notes;
-  native.background = page.background || native.background;
-  return native;
-}
-
 function renderCanvasPage(page: HcPage): string {
   const blocks = blocksInStackOrder(page).map((block, index) => renderBlock({ ...block, z: index + 1 })).join('');
   return '<div class="hc-page hc-page-canvas" style="width:' + page.width + 'px;height:' + page.height + 'px;background:' + escapeHtml(page.background) + '">' + blocks + '</div>';
@@ -101,7 +90,6 @@ const MM_TO_PX = 96 / 25.4;
 
 function buildPrintHtml(doc: HcDocument, pageInput: HcPage, options: { bleedMm?: number; cropMarks?: boolean }): string {
   const page = exportPage(pageInput);
-  if (page.mode === 'whiteboard') throw new Error('Print bleed export is not supported for whiteboard pages');
   const bleed = Math.max(0, options.bleedMm ?? 3) * MM_TO_PX;
   const mark = options.cropMarks ? 4 * MM_TO_PX : 0;
   const offset = bleed + mark;
@@ -480,7 +468,7 @@ function addEditableCanvasSlide(pptx: { addSlide: () => any; ShapeType: { roundR
 
 async function exportPptx(doc: HcDocument, outDir: string, options: { pageId?: string; outPath?: string; editableHtml?: boolean }): Promise<HcExportResult> {
   const sourcePages = options.pageId ? doc.pages.filter(page => page.id === options.pageId) : doc.pages;
-  const pages = sourcePages.map(page => nativePageFromWhiteboard(page));
+  const pages = sourcePages;
   if (!pages.length) throw new Error('No pages to export');
   const safeTitle = (doc.title || 'hadamard-canvas').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 60) || 'hadamard-canvas';
   const outDirAbs = path.resolve(outDir);
@@ -561,7 +549,7 @@ export async function exportFile(
     const result = await exportPptx(doc, outDir, { ...options, editableHtml: true });
     return { ...result, format: 'pptx-editable' };
   }
-  const page = exportPage(nativePageFromWhiteboard(firstPage(doc, options.pageId)));
+  const page = exportPage(firstPage(doc, options.pageId));
   const safeTitle = (page.name || 'page').replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 40) || 'page';
   if (format === 'html') {
     const html = buildDocumentHtml(doc, options.pageId);
@@ -570,7 +558,7 @@ export async function exportFile(
     const stat = await readFile(outPath);
     return { format, path: outPath, pageId: page.id, width: page.width, height: page.height, bytes: stat.byteLength };
   }
-  const sourcePage = nativePageFromWhiteboard(firstPage(doc, options.pageId));
+  const sourcePage = firstPage(doc, options.pageId);
   const html = format === 'png'
     ? buildStandalonePageHtml(doc, sourcePage)
     : buildPrintHtml(doc, sourcePage, { bleedMm: (options.bleedMm || 0) > 0 ? options.bleedMm : 0, cropMarks: options.cropMarks });

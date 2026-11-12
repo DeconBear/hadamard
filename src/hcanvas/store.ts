@@ -4,8 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { summarizeHistoryOps } from './historySummary.js';
 
-import { createAiModelTemplate } from '../canvas/packs/aiModel.js';
-import { sceneFromDoc } from '../canvas/excalidrawScene.js';
+import { excalidrawSceneToNativePage } from './sceneBridge.js';
 import { applyHtmlPatches, normalizeHtml } from './html.js';
 import { markdownPageHtml } from './markdownPage.js';
 import {
@@ -21,7 +20,6 @@ import {
   type HcPage,
   type HcProposal,
   type HcPagePreset,
-  type HcWhiteboardScene,
 } from './types.js';
 
 export class HcNotFoundError extends Error {}
@@ -92,35 +90,58 @@ function cleanTitle(title: string | undefined, fallback: string): string {
   return (title || '').trim() || fallback;
 }
 
-function normalizeWhiteboardScene(scene: HcWhiteboardScene | undefined): HcWhiteboardScene {
-  return {
-    elements: Array.isArray(scene?.elements) ? (scene!.elements as unknown[]).slice(0, 10000) : [],
-    appState: scene?.appState && typeof scene.appState === 'object' ? { ...scene.appState } : { viewBackgroundColor: '#ffffff' },
-    files: scene?.files && typeof scene.files === 'object' ? { ...scene.files } : {},
+interface LegacyWhiteboardPage extends Omit<HcPage, 'mode'> {
+  mode: string;
+  scene?: {
+    elements?: unknown[];
+    appState?: Record<string, unknown>;
+    files?: Record<string, unknown>;
   };
 }
 
-function ensurePage(page: HcPage): HcPage {
+/** Convert a legacy stored Excalidraw whiteboard page into an editable native Infinite page. */
+function migrateLegacyWhiteboardPage(page: HcPage): HcPage {
+  const legacy = page as LegacyWhiteboardPage;
+  if (legacy.mode !== 'whiteboard') return page;
+  const elements = Array.isArray(legacy.scene?.elements) ? legacy.scene!.elements! : [];
+  if (elements.length) {
+    const native = excalidrawSceneToNativePage({
+      elements: elements as never[],
+      appState: legacy.scene?.appState,
+      files: legacy.scene?.files,
+    }, page.name || 'Whiteboard');
+    native.id = page.id;
+    native.name = page.name || native.name;
+    native.notes = page.notes;
+    native.hidden = page.hidden;
+    return native;
+  }
+  const empty: HcPage = { ...page, mode: 'infinite', blocks: [], width: 4800, height: 3200 };
+  delete (empty as LegacyWhiteboardPage).scene;
+  return empty;
+}
+
+function clearLegacyScene(page: HcPage): void {
+  delete (page as HcPage & { scene?: unknown }).scene;
+}
+
+function ensurePage(input: HcPage): HcPage {
+  let page = migrateLegacyWhiteboardPage(input);
   if (!page.id) page.id = hcId('page');
   if (!page.name) page.name = 'Page';
-  if (page.mode !== 'canvas' && page.mode !== 'html' && page.mode !== 'infinite' && page.mode !== 'whiteboard') page.mode = 'canvas';
+  if (page.mode !== 'canvas' && page.mode !== 'html' && page.mode !== 'infinite') page.mode = 'canvas';
   if (!Number.isFinite(page.width) || page.width <= 0) page.width = 1280;
   if (!Number.isFinite(page.height) || page.height <= 0) page.height = 720;
   if (!page.background) page.background = '#ffffff';
-  if (page.mode === 'whiteboard') {
+  if (page.mode === 'html') {
     delete page.blocks;
-    delete page.html;
-    delete page.markdown;
-    page.scene = normalizeWhiteboardScene(page.scene);
-  } else if (page.mode === 'html') {
-    delete page.blocks;
-    delete page.scene;
+    clearLegacyScene(page);
     if (typeof page.markdown === 'string') page.html = normalizeHtml(markdownPageHtml(page.markdown, page));
     else { delete page.markdown; page.html = normalizeHtml(page.html || '<div style="padding:48px;font-family:Inter,sans-serif"><h1>Untitled page</h1><p>Double-click to edit.</p></div>'); }
   } else {
     delete page.html;
     delete page.markdown;
-    delete page.scene;
+    clearLegacyScene(page);
     page.blocks = (page.blocks || []).map(block => ensureBlock(block));
     if (page.mode === 'infinite') {
       if (!Number.isFinite(page.width) || page.width < 1280) page.width = 4800;
@@ -128,6 +149,11 @@ function ensurePage(page: HcPage): HcPage {
     }
   }
   return page;
+}
+
+function normalizeDocumentPages(doc: HcDocument): HcDocument {
+  doc.pages = doc.pages.map(page => ensurePage(page));
+  return doc;
 }
 
 function ensureBlock(block: HcBlock): HcBlock {
@@ -189,7 +215,6 @@ export function createDocument(title = 'Untitled canvas', preset: HcPagePreset |
       html: preset?.markdown !== undefined ? markdownPageHtml(preset.markdown, { background: preset?.background ?? '#ffffff' }) : preset?.html ?? STARTER_HTML,
       markdown: preset?.markdown,
       blocks: preset?.blocks ? structuredClone(preset.blocks) : [],
-      scene: preset?.scene ? structuredClone(preset.scene) : undefined,
     })],
     proposals: [],
     history: [],
@@ -270,17 +295,6 @@ export function createDemoDocument(): HcDocument {
       }),
     ],
   });
-  const template = createAiModelTemplate('hcanvas-demo', 'Transformer whiteboard');
-  const templateScene = sceneFromDoc(template);
-  const whiteboardPage = ensurePage({
-    id: hcId('page'),
-    name: 'Whiteboard',
-    mode: 'whiteboard',
-    width: 1280,
-    height: 720,
-    background: '#ffffff',
-    scene: { elements: templateScene.elements as unknown[], appState: templateScene.appState || { viewBackgroundColor: '#ffffff' }, files: templateScene.files || {} },
-  });
   const doc: HcDocument = {
     schema: HCANVAS_SCHEMA,
     id: hcId('doc'),
@@ -288,7 +302,7 @@ export function createDemoDocument(): HcDocument {
     revision: 0,
     createdAt: now,
     updatedAt: now,
-    pages: [slidePage, playground, infinitePage, whiteboardPage],
+    pages: [slidePage, playground, infinitePage],
     proposals: [],
     history: [],
   };
@@ -335,7 +349,7 @@ export function applyOpsToDocument(doc: HcDocument, ops: HcOp[]): HcDocument {
       }
       case 'add_block': {
         const page = pageOrThrow(next, op.pageId);
-        if (page.mode === 'html' || page.mode === 'whiteboard') throw new HcValidationError('Blocks require a canvas or infinite page');
+        if (page.mode === 'html') throw new HcValidationError('Blocks require a canvas or infinite page');
         const block = ensureBlock(clone(op.block));
         if (block.id && (page.blocks || []).some(item => item.id === block.id)) throw new HcValidationError('Duplicate block id: ' + block.id);
         page.blocks = page.blocks || [];
@@ -361,7 +375,7 @@ export function applyOpsToDocument(doc: HcDocument, ops: HcOp[]): HcDocument {
         page.html = normalizeHtml(op.html);
         delete page.markdown;
         delete page.blocks;
-        delete page.scene;
+        clearLegacyScene(page);
         break;
       }
       case 'set_page_markdown': {
@@ -370,15 +384,7 @@ export function applyOpsToDocument(doc: HcDocument, ops: HcOp[]): HcDocument {
         page.markdown = op.markdown;
         page.html = normalizeHtml(markdownPageHtml(op.markdown, page));
         delete page.blocks;
-        delete page.scene;
-        break;
-      }
-      case 'set_whiteboard_scene': {
-        const page = pageOrThrow(next, op.pageId);
-        page.mode = 'whiteboard';
-        page.scene = normalizeWhiteboardScene(op.scene);
-        delete page.blocks;
-        delete page.html;
+        clearLegacyScene(page);
         break;
       }
       case 'set_block_html': {
@@ -532,7 +538,6 @@ export class HcStore {
       html: page.html,
       markdown: page.markdown,
       blocks: page.blocks ? JSON.parse(JSON.stringify(page.blocks)) as HcBlock[] : undefined,
-      scene: page.scene ? JSON.parse(JSON.stringify(page.scene)) as HcWhiteboardScene : undefined,
       notes: page.notes,
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -563,7 +568,6 @@ export class HcStore {
       html: master.html,
       markdown: master.markdown,
       blocks: master.blocks ? master.blocks.map(block => ({ ...JSON.parse(JSON.stringify(block)) as HcBlock, id: hcId('block') })) : undefined,
-      scene: master.scene ? JSON.parse(JSON.stringify(master.scene)) as HcWhiteboardScene : undefined,
       notes: master.notes,
     };
     const result = await this.applyOps(docId, {
@@ -599,7 +603,7 @@ export class HcStore {
       const raw = await readFile(this.docPath(docId), 'utf8');
       const doc = JSON.parse(raw) as HcDocument;
       if (doc.schema !== HCANVAS_SCHEMA) throw new HcValidationError('Unsupported document schema');
-      return doc;
+      return normalizeDocumentPages(doc);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new HcNotFoundError('Document not found: ' + docId);
       throw error;
@@ -680,7 +684,7 @@ export class HcStore {
     const raw = await readFile(this.revisionPath(docId, revision), 'utf8');
     const doc = JSON.parse(raw) as HcDocument;
     if (doc.id !== docId || doc.revision !== revision) throw new HcNotFoundError('Revision not found: ' + revision);
-    return doc;
+    return normalizeDocumentPages(doc);
   }
 
   async restoreRevision(docId: string, revision: number, input: { baseRevision?: number; actor?: string } = {}): Promise<HcDocument> {

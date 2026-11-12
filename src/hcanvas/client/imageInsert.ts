@@ -43,7 +43,7 @@ export function installImageInsert(options: ImageInsertOptions): void {
   const canInsert = (): boolean => {
     const page = options.getPage();
     if (!page) return false;
-    if (page.mode === 'html' || page.mode === 'whiteboard') {
+    if (page.mode === 'html') {
       options.toast('Switch to a Canvas or Infinite page to insert images.', 'info');
       return false;
     }

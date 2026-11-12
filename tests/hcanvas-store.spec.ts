@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -21,13 +21,40 @@ describe('hcanvas store', () => {
     const docs = await store.listDocs();
     expect(docs).toHaveLength(1);
     const doc = await store.readDoc(docs[0]!.id);
-    expect(doc.pages).toHaveLength(4);
+    expect(doc.pages).toHaveLength(3);
     expect(doc.pages[0]!.mode).toBe('html');
     expect(doc.pages[1]!.mode).toBe('canvas');
     expect(doc.pages[2]!.mode).toBe('infinite');
-    expect(doc.pages[3]!.mode).toBe('whiteboard');
-    expect(doc.pages[3]!.scene?.elements.length).toBeGreaterThan(0);
     expect(doc.pages[0]!.html).toContain('data-hc-id=');
+  });
+
+
+  it('auto-migrates a legacy whiteboard page when it is read', async () => {
+    const store = await makeStore();
+    const legacy = {
+      schema: 'hadamard-canvas/1',
+      id: 'doc_legacywhiteboard',
+      title: 'Legacy document',
+      revision: 0,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      pages: [{
+        id: 'page_legacywhiteboard',
+        name: 'Whiteboard',
+        mode: 'whiteboard',
+        width: 1280,
+        height: 720,
+        background: '#ffffff',
+        scene: { elements: [{ id: 'el_1', type: 'rectangle', x: 10, y: 20, width: 100, height: 60 }], appState: { viewBackgroundColor: '#ffffff' }, files: {} },
+      }],
+      proposals: [],
+      history: [],
+    };
+    await writeFile(path.join(store.docsDir, 'doc_legacywhiteboard.json'), JSON.stringify(legacy, null, 2), 'utf8');
+    const doc = await store.readDoc('doc_legacywhiteboard');
+    expect(doc.pages[0]!.mode).toBe('infinite');
+    expect(doc.pages[0]!.blocks?.length).toBeGreaterThan(0);
+    expect((doc.pages[0] as unknown as { scene?: unknown }).scene).toBeUndefined();
   });
 
   it('applies ops with revision CAS and records history', async () => {
@@ -56,20 +83,6 @@ describe('hcanvas store', () => {
     const next = result.doc.pages.find(page => page.id === infinite.id)!;
     expect(next.blocks?.length).toBe(before + 1);
     expect(next.blocks?.some(block => block.id === 'block_inf')).toBe(true);
-  });
-
-  it('replaces a whiteboard scene with revision checks', async () => {
-    const store = await makeStore();
-    const doc = await store.readDoc((await store.listDocs())[0]!.id);
-    const whiteboard = doc.pages.find(page => page.mode === 'whiteboard')!;
-    const result = await store.applyOps(doc.id, {
-      baseRevision: 0, actor: 'claude-code',
-      ops: [{ op: 'set_whiteboard_scene', pageId: whiteboard.id, scene: { elements: [{ id: 'el_test', type: 'rectangle', x: 10, y: 10, width: 100, height: 50 }], appState: { viewBackgroundColor: '#ffffff' }, files: {} } }],
-    });
-    const next = result.doc.pages.find(page => page.id === whiteboard.id)!;
-    expect(next.mode).toBe('whiteboard');
-    expect(next.scene?.elements).toHaveLength(1);
-    expect((next.scene?.elements[0] as { id: string }).id).toBe('el_test');
   });
 
   it('creates proposals and resolves them against the current revision', async () => {

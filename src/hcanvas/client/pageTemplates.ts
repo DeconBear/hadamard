@@ -4,7 +4,7 @@ import { esc, genId } from './utils.js';
 export interface HcClientPagePreset {
   id: string;
   title: string;
-  mode: 'html' | 'canvas' | 'infinite' | 'whiteboard';
+  mode: 'html' | 'canvas' | 'infinite';
   width: number;
   height: number;
   background: string;

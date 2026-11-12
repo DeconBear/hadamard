@@ -109,17 +109,6 @@ function outlineDocument(doc: HcDocument, pageId?: string): string {
         lines.push('  '.repeat(Math.min(6, row.depth)) + '- <' + row.tag + '>' + (row.hcId ? ' #' + row.hcId : '') + (row.text ? ' ' + row.text : '') + (row.classes ? ' .' + row.classes.split(/\s+/).join('.') : ''));
       }
       if (rows.length > 120) lines.push('  ... ' + (rows.length - 120) + ' more elements');
-    } else if (page.mode === 'whiteboard') {
-      const elements = (page.scene?.elements || []) as Array<Record<string, unknown>>;
-      for (const element of elements.slice(0, 160)) {
-        if (element.isDeleted === true) continue;
-        const type = String(element.type || 'element');
-        const id = String(element.id || '');
-        const text = typeof element.text === 'string' ? element.text.replace(/\s+/g, ' ').slice(0, 90) : '';
-        const bounds = typeof element.x === 'number' ? ' at ' + Math.round(Number(element.x)) + ',' + Math.round(Number(element.y)) + ' ' + Math.round(Number(element.width || 0)) + '×' + Math.round(Number(element.height || 0)) : '';
-        lines.push('  - ' + type + ' ' + id + (text ? ' "' + text + '"' : '') + bounds);
-      }
-      if (elements.length > 160) lines.push('  ... ' + (elements.length - 160) + ' more elements');
     } else {
       for (const block of [...(page.blocks || [])].sort((left, right) => left.z - right.z)) {
         lines.push(' ' + blockLine(block));
@@ -448,13 +437,6 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         if (format === 'html') {
           const html = readHtmlFor(doc, pageId, blockId);
           json(res, 200, { ok: true, format, ...html, docId: doc.id, revision: doc.revision });
-          return;
-        }
-        if (format === 'scene') {
-          const page = pageId ? doc.pages.find(item => item.id === pageId) : doc.pages[0];
-          if (!page) throw new HcValidationError('Page not found');
-          if (page.mode !== 'whiteboard') throw new HcValidationError('Page is not a whiteboard page');
-          json(res, 200, { ok: true, format, pageId: page.id, revision: doc.revision, scene: page.scene });
           return;
         }
         if (format === 'page') {

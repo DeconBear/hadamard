@@ -38,11 +38,9 @@ describe('hcanvas server', () => {
     const state = await api<{ active: { docId: string; pageId: string }; docs: unknown[] }>(server, '/api/state');
     expect(state.docs).toHaveLength(1);
     const docId = state.active.docId;
-    const doc = await api<{ doc: { revision: number; pages: Array<{ id: string; html?: string; mode: string; scene?: { elements: unknown[] } }> } }>(server, '/api/docs/' + docId);
+    const doc = await api<{ doc: { revision: number; pages: Array<{ id: string; html?: string; mode: string }> } }>(server, '/api/docs/' + docId);
     expect(doc.doc.revision).toBe(0);
-    const whiteboard = doc.doc.pages.find(page => page.mode === 'whiteboard')!;
-    const sceneRead = await api<{ scene: { elements: unknown[] } }>(server, '/api/docs/' + docId + '/read?format=scene&pageId=' + whiteboard.id);
-    expect(sceneRead.scene.elements.length).toBeGreaterThan(0);
+    const infinite = doc.doc.pages.find(page => page.mode === 'infinite')!;
     const html = doc.doc.pages[0]!.html || '';
     const target = html.match(/data-hc-id="([^"]+)"[^>]*>H/)?.[1] ?? html.match(/data-hc-id="([^"]+)"/)?.[1];
     expect(target).toBeTruthy();
@@ -55,8 +53,8 @@ describe('hcanvas server', () => {
     const session = await api<{ session: { id: string } }>(server, '/api/sessions', { method: 'POST', body: JSON.stringify({ docId, actor: 'claude-code' }) });
     const sessions = await api<{ sessions: Array<{ id: string; actor: string }> }>(server, '/api/sessions');
     expect(sessions.sessions.some(item => item.id === session.session.id)).toBe(true);
-    const heartbeat = await api<{ session: { pageId?: string } }>(server, '/api/sessions/' + session.session.id + '/heartbeat', { method: 'POST', body: JSON.stringify({ pageId: whiteboard.id, selection: ['block_x'] }) });
-    expect(heartbeat.session.pageId).toBe(whiteboard.id);
+    const heartbeat = await api<{ session: { pageId?: string } }>(server, '/api/sessions/' + session.session.id + '/heartbeat', { method: 'POST', body: JSON.stringify({ pageId: infinite.id, selection: ['block_x'] }) });
+    expect(heartbeat.session.pageId).toBe(infinite.id);
     await api(server, '/api/sessions/' + session.session.id, { method: 'DELETE' });
 
     const applied = await api<{ doc: { revision: number } }>(server, '/api/docs/' + docId + '/apply', {
@@ -72,12 +70,12 @@ describe('hcanvas server', () => {
     const accepted = await api<{ doc: { revision: number } }>(server, '/api/docs/' + docId + '/proposals/' + proposal.proposal.id + '/accept', { method: 'POST', body: '{}' });
     expect(accepted.doc.revision).toBe(2);
 
-    const master = await api<{ master: { id: string; name: string } }>(server, '/api/masters', { method: 'POST', body: JSON.stringify({ docId, pageId: whiteboard.id, name: 'Whiteboard master' }) });
+    const master = await api<{ master: { id: string; name: string } }>(server, '/api/masters', { method: 'POST', body: JSON.stringify({ docId, pageId: infinite.id, name: 'Infinite master' }) });
     const masters = await api<{ masters: Array<{ id: string }> }>(server, '/api/masters');
     expect(masters.masters.some(item => item.id === master.master.id)).toBe(true);
     const latest = await api<{ doc: { revision: number } }>(server, '/api/docs/' + docId);
     const fromMaster = await api<{ page: { name: string }; doc: { pages: unknown[] } }>(server, '/api/masters/' + master.master.id + '/pages', { method: 'POST', body: JSON.stringify({ docId, baseRevision: latest.doc.revision }) });
-    expect(fromMaster.page.name).toBe('Whiteboard master');
+    expect(fromMaster.page.name).toBe('Infinite master');
     await api(server, '/api/masters/' + master.master.id, { method: 'DELETE' });
 
     const created = await api<{ doc: { id: string } }>(server, '/api/docs', { method: 'POST', body: JSON.stringify({ title: 'PPTX test', preset: { width: 1280, height: 720, background: '#ffffff', title: 'Slide' } }) });

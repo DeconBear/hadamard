@@ -55,10 +55,6 @@ function inverseOfOp(doc: HcDocument, op: HcOp): HcOp | null {
       const page = findPageInDoc(doc, op.pageId);
       return page ? { op: 'set_page_html', pageId: op.pageId, html: page.html || '' } : null;
     }
-    case 'set_whiteboard_scene': {
-      const page = findPageInDoc(doc, op.pageId);
-      return page?.scene ? { op: 'set_whiteboard_scene', pageId: op.pageId, scene: cloneJson(page.scene) } : null;
-    }
     case 'set_block_html': {
       const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
       return block ? { op: 'set_block_html', pageId: op.pageId, blockId: op.blockId, html: block.html || '' } : null;
@@ -101,7 +97,7 @@ export function applyOpLocally(doc: HcDocument, op: HcOp): void {
     if (block) Object.assign(block, cloneJson(op.patch));
   } else if (op.op === 'set_page_html') {
     const page = findPageInDoc(doc, op.pageId);
-    if (page) { page.mode = 'html'; page.html = op.html; delete page.blocks; delete page.scene; }
+    if (page) { page.mode = 'html'; page.html = op.html; delete page.blocks; }
   } else if (op.op === 'set_block_html') {
     const block = findPageInDoc(doc, op.pageId)?.blocks?.find(item => item.id === op.blockId);
     if (block) block.html = op.html;

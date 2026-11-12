@@ -1,5 +1,4 @@
 import type { HcBlock, HcPage } from '../types.js';
-import { excalidrawSceneToNativePage } from '../sceneBridge.js';
 import { blockRenderZ, blocksInStackOrder } from '../layers.js';
 import { renderCanvasBlockContent } from './blockRenderers.js';
 
@@ -36,20 +35,8 @@ function previewBlock(block: HcBlock, page: HcPage, bounds: PreviewBounds): HTML
   return wrap;
 }
 
-function canvasPage(page: HcPage): HcPage {
-  if (page.mode !== 'whiteboard') return page;
-  const native = excalidrawSceneToNativePage({
-    elements: (page.scene?.elements || []) as never[],
-    appState: page.scene?.appState,
-    files: page.scene?.files,
-  }, page.name);
-  native.id = page.id;
-  native.background = page.background;
-  return native;
-}
-
 export function renderHistoryPreview(mount: HTMLElement, source: HcPage): void {
-  const page = canvasPage(source);
+  const page = source;
   const screen = document.createElement('div');
   screen.className = 'history-preview-screen';
   screen.setAttribute('aria-label', 'Read-only preview of ' + page.name);

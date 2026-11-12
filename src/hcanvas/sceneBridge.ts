@@ -257,7 +257,7 @@ export function excalidrawSceneToBlocks(scene: ExcalidrawScene, options: { pageN
   };
 }
 
-export function excalidrawSceneToNativePage(scene: ExcalidrawScene, name = 'Imported whiteboard'): HcPage {
+export function excalidrawSceneToNativePage(scene: ExcalidrawScene, name = 'Imported scene'): HcPage {
   const conversion = excalidrawSceneToBlocks(scene, { pageName: name });
   return {
     id: nativeId('page'),

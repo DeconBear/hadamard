@@ -50,9 +50,9 @@ interface OpenAiMessage {
 const SYSTEM_PROMPT = [
   'You are Canvas Copilot inside Hadamard Canvas, an AI-native visual canvas.',
   'You can inspect and modify the current canvas through tools. Prefer reading before writing.',
-  'Use canvas_read to inspect pages/outline/html/scene. Use canvas_apply with a full valid ops array and the current revision to make changes.',
+  'Use canvas_read to inspect pages/outline/html. Use canvas_apply with a full valid ops array and the current revision to make changes.',
   'Never invent a revision: call canvas_read first and use the revision it returns. Keep changes focused and explain them briefly.',
-  'When the user asks for visual design, prefer HTML pages and the existing slide templates. When they ask for diagrams, prefer whiteboard scene updates.',
+  'When the user asks for visual design, prefer HTML pages and the existing slide templates. Draw diagrams with native shape/arrow blocks on Canvas or Infinite pages.',
   'Reply in the same language as the user, concise and concrete.',
 ].join(' ');
 
@@ -61,13 +61,13 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'canvas_read',
-      description: 'Read a canvas document. Returns outline/html/page/scene plus current revision. Use this before applying changes.',
+      description: 'Read a canvas document. Returns outline/html/page plus current revision. Use this before applying changes.',
       parameters: {
         type: 'object',
         properties: {
           docId: { type: 'string', description: 'Document id. Omit for the active document.' },
           pageId: { type: 'string', description: 'Optional page id.' },
-          format: { type: 'string', enum: ['outline', 'html', 'page', 'scene'], description: 'Read format.' },
+          format: { type: 'string', enum: ['outline', 'html', 'page'], description: 'Read format.' },
         },
       },
     },
@@ -293,7 +293,6 @@ async function executeTool(store: HcStore, args: { docId?: string; pageId?: stri
     return summarizeDoc(doc) + (page ? '\n\n## Active page: ' + page.name + '\n' + (page.markdown !== undefined ? page.markdown.slice(0, 16000) : page.mode === 'html' ? htmlOutline(page.html || '').slice(0, 12000) : JSON.stringify({ mode: page.mode, blocks: page.blocks?.map(block => ({ id: block.id, type: block.type, x: block.x, y: block.y, name: block.name, text: block.text || block.markdown || block.code })) }).slice(0, 12000)) : '');
   }
   if (format === 'html') return page?.markdown ?? page?.html ?? '';
-  if (format === 'scene') return page?.scene || { elements: [] };
   return page || doc;
 }
 

@@ -3,7 +3,7 @@ import { activeLayerId, configureLayersPanel, renderLayersPanel } from './layers
 import { blockRenderZ, blocksInStackOrder, isBlockLocked } from '../layers.js';
 import { installBlockDirectEdit, updateDirectEditUI } from './blockDirectEdit.js';
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
-import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
+import { nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, isHcShape, shapeSvgMarkup } from '../shapes.js';
 import { insertHtmlPreset, installHtmlHoverHighlight, installHtmlKeyboardShortcuts, type HtmlEditingContext } from './htmlEditing.js';
@@ -49,7 +49,7 @@ import { esc, genId, toHex } from './utils.js';
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
 interface PresenceEntry { id: string; actor: string; docId: string; docTitle: string; pageId?: string; pageName: string; selection?: string[]; createdAt: string; updatedAt: string; stale: boolean; }
-interface MasterSummary { id: string; name: string; mode: string; width: number; height: number; background?: string; createdAt: string; html?: string; blocks?: HcBlock[]; scene?: { elements?: unknown[] }; }
+interface MasterSummary { id: string; name: string; mode: string; width: number; height: number; background?: string; createdAt: string; html?: string; blocks?: HcBlock[]; }
 interface ApiErrorShape { error?: string; latestRevision?: number; latestDoc?: HcDocument; }
 class ApiError extends Error {
   constructor(message: string, public readonly status: number, public readonly payload: unknown) {
@@ -327,7 +327,6 @@ async function initialize(): Promise<void> {
   window.addEventListener('keydown', handleGlobalKeydown);
   window.addEventListener('keydown', event => {
     if (event.code !== 'Space') return;
-    if (activePage()?.mode === 'whiteboard') return;
     const target = event.target as HTMLElement;
     if (target.matches('input, textarea, [contenteditable="true"], select') || target.closest('.cm-editor')) return;
     state.spaceHeld = true;
@@ -937,7 +936,6 @@ function bindStaticActions(): void {
     const targetElement = event.target as Element;
     if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
     if (event.button === 1) {
-      if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
       event.preventDefault();
       beginPan(event);
       return;
@@ -958,7 +956,6 @@ function bindStaticActions(): void {
   viewport.addEventListener('wheel', event => {
     const targetElement = event.target as Element;
     if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
-    if (activePage()?.mode === 'whiteboard' || targetElement.closest('.whiteboard-host')) return;
     // Let an HTML page own wheel scrolling in browse mode; canvas zoom remains available in edit mode.
     if (activePage()?.mode === 'html' && !state.editing) return;
     event.preventDefault();
@@ -991,7 +988,6 @@ function bindStaticActions(): void {
     event.stopPropagation();
     beginVectorDraw(event);
   }, { capture: true });
-  window.addEventListener('resize', () => { resizeWhiteboardSurface(); });
 }
 function viewportWorldBounds(): { minX: number; minY: number; maxX: number; maxY: number } {
   const rect = el('viewport').getBoundingClientRect();
@@ -1022,7 +1018,7 @@ function renderToolbarState(): void {
   el('toggleSnap').classList.toggle('active', state.snap);
   el('infiniteBadge').classList.toggle('hidden', page?.mode !== 'infinite');
   document.querySelectorAll<HTMLElement>('[data-block]').forEach(button => {
-    button.classList.toggle('disabled', page?.mode === 'whiteboard' || page?.mode === 'html');
+    button.classList.toggle('disabled', page?.mode === 'html');
   });
   el('viewport').classList.toggle('tool-hand', state.tool === 'hand' || state.spaceHeld);
   const selection = el('selectionToolbar');
@@ -1058,7 +1054,7 @@ function editActiveBlock(): void {
 async function copySelectedBlocks(cut = false): Promise<void> {
   const page = activePage();
   const blocks = selectedBlocks();
-  if (!page || !blocks.length || page.mode === 'html' || page.mode === 'whiteboard') return;
+  if (!page || !blocks.length || page.mode === 'html') return;
   clipboardBlocks = cloneJson(blocks);
   clipboardPasteCount = 0;
   try { await navigator.clipboard?.writeText(serializeBlocksForClipboard(blocks)); } catch { /* in-memory clipboard remains available */ }
@@ -1072,7 +1068,7 @@ async function copySelectedBlocks(cut = false): Promise<void> {
 
 async function pasteBlock(clipboardText?: string): Promise<void> {
   const page = activePage();
-  if (!page || page.mode === 'html' || page.mode === 'whiteboard') return;
+  if (!page || page.mode === 'html') return;
   let source = clipboardText ? (parseBlocksFromClipboard(clipboardText) || []) : clipboardBlocks;
   if (!source.length && !clipboardText) {
     try { source = parseBlocksFromClipboard(await navigator.clipboard?.readText() || '') || []; } catch { source = []; }
@@ -1230,7 +1226,7 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
     if (state.tool !== 'select') { state.tool = 'select'; renderToolbarState(); }
     return;
   }
-  if (typing || activePage()?.mode === 'whiteboard') return;
+  if (typing) return;
   const key = event.key.toLowerCase();
   const command = event.ctrlKey || event.metaKey;
   if (command && key === 'z') {
@@ -1408,15 +1404,14 @@ function pageThumbHtml(page: HcPage): string {
   if (page.mode === 'html' && page.html) {
     return '<iframe sandbox srcdoc="' + esc(page.html) + '" style="width:' + page.width + 'px;height:' + page.height + 'px;transform:scale(' + ratio + ');transform-origin:top left" tabindex="-1"></iframe>';
   }
-  if (page.mode === 'canvas' || page.mode === 'infinite' || page.mode === 'whiteboard') {
-    const native = page.mode === 'whiteboard' ? legacyWhiteboardNativePage(page) : page;
-    const source = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}</style></head><body>' + renderPresentCanvasHtml(exportPageForThumb(native)) + '</body></html>';
-    return '<iframe sandbox srcdoc="' + esc(source) + '" style="width:' + native.width + 'px;height:' + native.height + 'px;transform:scale(' + Math.min(46 / native.width, 30 / native.height) + ');transform-origin:top left" tabindex="-1"></iframe>';
+  if (page.mode === 'canvas' || page.mode === 'infinite') {
+    const source = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}</style></head><body>' + renderPresentCanvasHtml(exportPageForThumb(page)) + '</body></html>';
+    return '<iframe sandbox srcdoc="' + esc(source) + '" style="width:' + page.width + 'px;height:' + page.height + 'px;transform:scale(' + Math.min(46 / page.width, 30 / page.height) + ');transform-origin:top left" tabindex="-1"></iframe>';
   }
   return '<div class="page-thumb-placeholder">Page</div>';
 }
 function exportPageForThumb(page: HcPage): HcPage {
-  if (page.mode !== 'infinite' && page.mode !== 'whiteboard') return page;
+  if (page.mode !== 'infinite') return page;
   const blocks = page.blocks || [];
   if (!blocks.length) return { ...page, width: 1280, height: 720 };
   const minX = Math.min(...blocks.map(block => block.x));
@@ -1467,7 +1462,6 @@ function hashString(value: string): string {
 }
 function pageFingerprint(page: HcPage): string {
   const base = page.name + '|' + page.mode + '|' + page.width + '|' + page.height + '|' + page.background;
-  if (page.mode === 'whiteboard') return base + '|' + (page.scene?.elements?.length || 0);
   if (page.mode === 'html') return base + '|' + hashString(page.html || '');
   return base + '|' + hashString(JSON.stringify(page.blocks || []));
 }
@@ -1510,7 +1504,7 @@ function createPageItem(page: HcPage, index: number): PageItemCache {
   thumb.innerHTML = '<div class="page-thumb-loading"></div>';
   const info = document.createElement('div');
   info.className = 'page-info';
-  const meta = page.mode === 'infinite' ? '∞ · no page bounds' : page.mode === 'whiteboard' ? 'legacy · convert to native' : esc(page.markdown !== undefined ? 'markdown' : page.mode) + ' · ' + page.width + '×' + page.height;
+  const meta = page.mode === 'infinite' ? '∞ · no page bounds' : esc(page.markdown !== undefined ? 'markdown' : page.mode) + ' · ' + page.width + '×' + page.height;
   info.innerHTML = '<strong>' + esc(page.name || 'Page ' + (index + 1)) + '</strong><small>' + meta + '</small>';
   const button = document.createElement('button');
   button.type = 'button';
@@ -1726,13 +1720,11 @@ function renderArtboard(): void {
   }
   viewport.querySelectorAll('.html-page-surface, .html-reader-badge').forEach(node => node.remove());
   artboard.style.display = '';
-  const whiteboardSurface = page.mode === 'whiteboard';
   const infiniteSurface = page.mode === 'infinite';
   const viewportRect = viewport.getBoundingClientRect();
-  const metrics = whiteboardSurface || infiniteSurface ? { width: Math.max(320, viewportRect.width), height: Math.max(240, viewportRect.height) } : pageMetrics(page);
-  viewport.classList.toggle('whiteboard-surface', whiteboardSurface);
+  const metrics = infiniteSurface ? { width: Math.max(320, viewportRect.width), height: Math.max(240, viewportRect.height) } : pageMetrics(page);
   viewport.classList.toggle('infinite-surface', infiniteSurface);
-  artboard.className = 'artboard mode-' + page.mode + (state.editing ? ' editing' : '') + (whiteboardSurface ? ' whiteboard-surface' : '') + (infiniteSurface ? ' infinite-surface' : '');
+  artboard.className = 'artboard mode-' + page.mode + (state.editing ? ' editing' : '') + (infiniteSurface ? ' infinite-surface' : '');
   artboard.style.width = metrics.width + 'px';
   artboard.style.height = metrics.height + 'px';
   artboard.style.background = infiniteSurface ? 'transparent' : page.background;
@@ -1747,119 +1739,15 @@ function renderArtboard(): void {
     viewport.style.backgroundImage = '';
     viewport.style.backgroundSize = '';
   }
-  if (whiteboardSurface) {
-    state.zoom = 1;
-    state.panX = 0;
-    state.panY = 0;
-    state.fittedPageId = state.activePageId;
-    artboard.style.backgroundImage = '';
-    artboard.style.backgroundSize = '';
-  } else if (page.mode === 'infinite') {
-    artboard.style.backgroundImage = '';
-    artboard.style.backgroundSize = '';
-  } else {
-    artboard.style.backgroundImage = '';
-    artboard.style.backgroundSize = '';
-  }
-  if (whiteboardSurface) renderWhiteboardPage(artboard, page);
-  else renderCanvasPage(artboard, page);
+  artboard.style.backgroundImage = '';
+  artboard.style.backgroundSize = '';
+  renderCanvasPage(artboard, page);
   renderAgentCursors(artboard, page);
-  if (whiteboardSurface) applyStageTransform();
-  else if (state.fittedPageId !== state.activePageId) fitPage();
+  if (state.fittedPageId !== state.activePageId) fitPage();
   else applyStageTransform();
   renderToolbarState();
 }
 
-let whiteboardResizing = false;
-function resizeWhiteboardSurface(): void {
-  if (whiteboardResizing || state.presenting) return;
-  const page = activePage();
-  if (!page || page.mode !== 'whiteboard') return;
-  const artboard = el('artboard');
-  const rect = el('viewport').getBoundingClientRect();
-  const nextWidth = Math.max(320, rect.width);
-  const nextHeight = Math.max(240, rect.height);
-  if (Math.abs(Number.parseFloat(artboard.style.width) - nextWidth) < 0.5 && Math.abs(Number.parseFloat(artboard.style.height) - nextHeight) < 0.5) return;
-  whiteboardResizing = true;
-  try {
-    artboard.style.width = nextWidth + 'px';
-    artboard.style.height = nextHeight + 'px';
-    state.zoom = 1;
-    state.panX = 0;
-    state.panY = 0;
-    applyStageTransform();
-  } finally {
-    whiteboardResizing = false;
-  }
-}
-function legacyWhiteboardNativePage(page: HcPage): HcPage {
-  const native = excalidrawSceneToNativePage({ elements: (page.scene?.elements || []) as never[], appState: page.scene?.appState, files: page.scene?.files }, page.name || 'Legacy whiteboard');
-  native.id = page.id;
-  native.background = page.scene?.appState && typeof (page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor === 'string'
-    ? String((page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor)
-    : page.background || '#ffffff';
-  return native;
-}
-function renderWhiteboardPage(container: HTMLElement, page: HcPage): void {
-  const native = legacyWhiteboardNativePage(page);
-  const blocks = native.blocks || [];
-  if (!blocks.length) {
-    container.innerHTML = '<div class="legacy-whiteboard-empty">This legacy whiteboard is empty. Use <strong>Convert to native Infinite</strong> to start a native page.</div>';
-    return;
-  }
-  const host = document.createElement('div');
-  host.className = 'legacy-whiteboard-preview';
-  host.style.width = native.width + 'px';
-  host.style.height = native.height + 'px';
-  container.appendChild(host);
-  renderCanvasPage(host, native);
-  host.querySelectorAll<HTMLElement>('.block-wrap').forEach(node => { node.style.pointerEvents = 'none'; node.classList.remove('selected'); });
-  const bounds = pageMetrics(native).content || { minX: 0, minY: 0, maxX: native.width, maxY: native.height };
-  const rect = container.getBoundingClientRect();
-  const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
-  const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
-  const scale = Math.min(1, (rect.width - 120) / contentWidth, (rect.height - 140) / contentHeight);
-  host.style.left = ((rect.width - contentWidth * scale) / 2 - bounds.minX * scale) + 'px';
-  host.style.top = ((rect.height - contentHeight * scale) / 2 - bounds.minY * scale) + 'px';
-  host.style.transform = 'scale(' + scale + ')';
-  const banner = document.createElement('div');
-  banner.className = 'legacy-whiteboard-banner';
-  banner.innerHTML = '<strong>Legacy whiteboard preview</strong><span>' + blocks.length + ' native blocks · read-only</span><button type="button" id="legacyConvertBtn" class="btn tiny primary">Convert to native Infinite</button>';
-  container.appendChild(banner);
-  qs<HTMLButtonElement>('#legacyConvertBtn')?.addEventListener('click', () => { void convertWhiteboardPage(page); });
-}
-function whiteboardSceneJson(page: HcPage): string {
-  return JSON.stringify({ type: 'excalidraw', version: 2, source: 'hcanvas', elements: page.scene?.elements || [], appState: page.scene?.appState || {}, files: page.scene?.files || {} }, null, 2);
-}
-
-async function convertWhiteboardPage(page: HcPage): Promise<void> {
-  if (page.mode !== 'whiteboard') return;
-  const elements = page.scene?.elements || [];
-  if (!elements.length) { toast('This whiteboard has no elements to convert.', 'info'); return; }
-  const nativePage = excalidrawSceneToNativePage({ elements: elements as never[], appState: page.scene?.appState, files: page.scene?.files }, (page.name || 'Whiteboard') + ' · Native');
-  nativePage.background = page.scene?.appState && typeof (page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor === 'string'
-    ? String((page.scene.appState as { viewBackgroundColor?: unknown }).viewBackgroundColor)
-    : page.background || '#ffffff';
-  const result = await applyOps([{ op: 'add_page', page: nativePage } as HcOp], { refreshArtboard: false });
-  if (!result) return;
-  state.activePageId = nativePage.id;
-  state.activeBlockId = null;
-  state.selectedBlockIds = [];
-  state.tool = 'select';
-  renderAll();
-  void syncActive();
-  toast('Converted to a native Infinite page: ' + (nativePage.blocks?.length || 0) + ' blocks', 'success');
-}
-function downloadWhiteboardScene(): void {
-  const page = activePage();
-  if (!page || page.mode !== 'whiteboard') return;
-  const blob = new Blob([whiteboardSceneJson(page)], { type: 'application/vnd.excalidraw+json' });
-  const anchor = document.createElement('a');
-  anchor.href = URL.createObjectURL(blob);
-  anchor.download = (page.name || 'whiteboard').replace(/[^a-z0-9_-]+/gi, '-') + '.excalidraw';
-  document.body.appendChild(anchor); anchor.click(); anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(anchor.href), 2000);
-}
 function agentHue(actor: string): number {
   return actor.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360;
 }
@@ -1910,9 +1798,6 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
         left = Math.max(4, block.x + block.w - 8);
         top = Math.max(24, block.y - 6);
       }
-    } else if (page.mode === 'whiteboard') {
-      left = page.width - 190;
-      top = 18 + index * 30;
     } else if (page.mode === 'html') {
       left = 18;
       top = 14 + index * 30;
@@ -2679,23 +2564,20 @@ function renderPageInspector(): void {
   let html = '<section class="inspector-section"><div class="inspector-title">Page</div>';
   html += field('pageName', 'Name', '<input id="pageName" value="' + esc(page.name) + '">');
   if (page.mode === 'infinite') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Infinite · no page bounds">');
-  else if (page.mode === 'whiteboard') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Legacy preview · native blocks">');
   else html += '<div class="field-row">' + field('pageWidth', 'Width', '<input id="pageWidth" type="number" value="' + page.width + '">') + field('pageHeight', 'Height', '<input id="pageHeight" type="number" value="' + page.height + '">') + '</div>';
   html += '<div class="field"><span>Background</span><div class="swatch-row"><input id="pageBgPicker" type="color" value="' + esc(toHex(page.background)) + '"><input id="pageBg" value="' + esc(page.background) + '"></div></div>';
   html += '<div class="field"><span>Mode</span><input readonly value="' + esc(page.markdown !== undefined ? 'markdown document' : page.mode === 'infinite' ? 'infinite canvas' : page.mode) + '"></div>';
   html += '<div class="field"><span>Notes for agent</span><textarea id="pageNotes" rows="2">' + esc(page.notes || '') + '</textarea></div>';
   html += '<div class="actions-row">';
   if (page.mode === 'html') html += '<button id="pageSourceBtn" class="btn tiny">Edit HTML source</button>';
-  else if (page.mode !== 'whiteboard') html += '<button id="pageAddHtmlBtn" class="btn tiny">Add HTML block</button><button id="pageAddTextBtn" class="btn tiny">Add text</button>';
+  else html += '<button id="pageAddHtmlBtn" class="btn tiny">Add HTML block</button><button id="pageAddTextBtn" class="btn tiny">Add text</button>';
   if (page.mode === 'infinite') html += '<button id="pageFitContentBtn" class="btn tiny">Fit content</button>';
-  if (page.mode === 'whiteboard') html += '<button id="pageConvertWhiteboardBtn" class="btn tiny primary">Convert to native Infinite</button><button id="pageWhiteboardDownload" class="btn tiny">Download .excalidraw</button>';
   html += '<button id="pageOpenFolderBtn" class="btn tiny">Open page files</button>';
   html += '<button id="pageSaveMasterBtn" class="btn tiny">Save as master</button>';
   html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
-  html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : page.mode === 'whiteboard' ? 'Legacy whiteboard · native read-only preview · ' + ((page.scene?.elements || []).length) + ' scene element' + ((page.scene?.elements || []).length === 1 ? '' : 's') : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
+  html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
   if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Esc exits. The Agent tab exposes the CLI protocol.</div>';
   if (page.mode === 'infinite') html += '<div class="hint-card">Wheel to zoom at the pointer; Shift+Wheel or Hand tool to pan. Hold Space or middle-drag for temporary panning. Drag shapes to size them; exports crop to content.</div>';
-  if (page.mode === 'whiteboard') html += '<div class="hint-card"><strong>Legacy whiteboard.</strong> This page is rendered from its Excalidraw scene through the native block renderer — no Excalidraw runtime is loaded. Convert it with <strong>Convert to native Infinite</strong> above; use <code>hcanvas read &lt;doc&gt; --format scene --page ' + esc(page.id) + '</code> for raw scene access.</div>';
   html += '</section>';
   if (page.mode === 'canvas' || page.mode === 'infinite') { html += componentPickerMarkup(); html += pluginPickerMarkup(); }
   root.innerHTML = html;
@@ -2718,8 +2600,6 @@ function bindPageInspector(page: HcPage): void {
   qs<HTMLButtonElement>('#pageAddHtmlBtn')?.addEventListener('click', () => requestInsert('html'));
   qs<HTMLButtonElement>('#pageAddTextBtn')?.addEventListener('click', () => requestInsert('text'));
   qs<HTMLButtonElement>('#pageFitContentBtn')?.addEventListener('click', () => fitPage());
-  qs<HTMLButtonElement>('#pageWhiteboardDownload')?.addEventListener('click', () => downloadWhiteboardScene());
-  qs<HTMLButtonElement>('#pageConvertWhiteboardBtn')?.addEventListener('click', () => { void convertWhiteboardPage(page); });
   qs<HTMLButtonElement>('#pageOpenFolderBtn')?.addEventListener('click', () => { void revealProjectFolder(undefined, 'documents'); });
   qs<HTMLButtonElement>('#pageSaveMasterBtn')?.addEventListener('click', () => openSaveMasterModal(page));
   qs<HTMLButtonElement>('#pageDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); }); });
@@ -2987,7 +2867,7 @@ function requestInsert(type: HcBlock['type']): void {
   if (type === 'image') { openImageModal(); return; }
   const page = activePage();
   if (!page) return;
-  if (page.mode === 'html' || page.mode === 'whiteboard') { toast('Switch to a Canvas or Infinite page to add blocks.', 'info'); return; }
+  if (page.mode === 'html') { toast('Switch to a Canvas or Infinite page to add blocks.', 'info'); return; }
   state.pendingInsert = type;
   state.tool = 'select';
   setBlockSelection([]);
@@ -3187,7 +3067,7 @@ function masterPreviewHtml(master: MasterSummary): string {
     const source = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}</style></head><body>' + renderPresentCanvasHtml(page) + '</body></html>';
     return '<div class="master-thumb"><iframe sandbox srcdoc="' + esc(source) + '" style="width:' + master.width + 'px;height:' + master.height + 'px;transform:scale(' + ratio + ');transform-origin:top left;border:0;pointer-events:none" tabindex="-1"></iframe><span class="master-thumb-label">' + esc(master.mode) + '</span></div>';
   }
-  return '<div class="master-thumb placeholder" style="width:' + width + 'px;height:' + height + 'px"><span>' + esc(master.mode === 'whiteboard' ? 'Whiteboard scene' : 'Page master') + '</span></div>';
+  return '<div class="master-thumb placeholder" style="width:' + width + 'px;height:' + height + 'px"><span>Page master</span></div>';
 }
 
 async function openAddPageModal(): Promise<void> {
@@ -3386,7 +3266,6 @@ async function exportCurrent(format: string, options: { bleedMm?: number; cropMa
   const page = activePage();
   if (format === 'scene') {
     if (!page) { toast('Open a page first.', 'error'); return; }
-    if (page.mode === 'whiteboard') { downloadWhiteboardScene(); return; }
     if (page.mode === 'infinite') {
       const scene = nativeBlocksToExcalidrawScene(page);
       const blob = new Blob([JSON.stringify(scene, null, 2)], { type: 'application/vnd.excalidraw+json' });
@@ -3397,7 +3276,7 @@ async function exportCurrent(format: string, options: { bleedMm?: number; cropMa
       setTimeout(() => URL.revokeObjectURL(anchor.href), 2000);
       return;
     }
-    toast('Scene export is available for Infinite and Whiteboard pages.', 'error');
+    toast('Scene export is available for Canvas and Infinite pages.', 'error');
     return;
   }
   try {
@@ -3445,7 +3324,7 @@ function nextPresent(delta: number): void {
 function renderPresent(): void {
   renderPresentView({
     root: el('presentRoot'), doc: state.doc, index: state.presentIndex,
-    normalizePage: page => page.mode === 'whiteboard' ? legacyWhiteboardNativePage(page) : page,
+    normalizePage: page => page,
     next: nextPresent, close: closePresent, toggleNotes: togglePresentNotes,
   });
 }

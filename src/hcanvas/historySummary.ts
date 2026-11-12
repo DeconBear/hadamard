@@ -38,7 +38,6 @@ function operationKind(doc: HcDocument, op: HcOp): { action: string; target?: st
   if (op.op === 'set_page_html' || op.op === 'set_block_html' || op.op === 'html_patch') return { action: 'Edit HTML', pageId };
   if (op.op === 'set_block_text') return { action: 'Edit text', pageId };
   if (op.op === 'set_block_code') return { action: 'Edit code', pageId };
-  if (op.op === 'set_whiteboard_scene') return { action: 'Edit whiteboard', pageId };
   return { action: 'Reorder ' + blockLabel(block), pageId };
 }
 

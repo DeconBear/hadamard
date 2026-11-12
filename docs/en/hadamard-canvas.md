@@ -79,13 +79,9 @@ The workspace stores documents, state and exports:
 <workspace>/exports/              # HTML/PDF/PNG output
 ```
 
-## Legacy whiteboard preview
-
-Whiteboard pages are **legacy read-only pages**. hcanvas renders their stored Excalidraw scene through the native block renderer — no Excalidraw bundle or runtime is loaded or served. The Inspector exposes **Convert to native Infinite**; converted pages become normal editable Infinite pages.
-
 ## Page thumbnails and deck management
 
-The **Pages** panel in the workspace navigator renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks, and legacy whiteboard pages render a native conversion of their scene. Drag a page to reorder the deck; right-click a page for **Edit Markdown source** (Markdown pages), **Duplicate page** and **Delete page**, and press **F2** to rename the active page.
+The **Pages** panel in the workspace navigator renders live thumbnails: HTML pages are previewed in a sandboxed iframe, canvas/infinite pages render their blocks. Drag a page to reorder the deck; right-click a page for **Edit Markdown source** (Markdown pages), **Duplicate page** and **Delete page**, and press **F2** to rename the active page.
 
 ## Markdown document pages
 
@@ -99,7 +95,7 @@ Click an inline or display formula in a Markdown page to edit it in a small LaTe
 
 ## Page types and local HTML
 
-Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid) and **Whiteboard** (legacy Excalidraw scene; new pages use native Infinite). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. Select blocks with **drag-marquee**, **Shift+click**, or by clicking a grouped block; **Ctrl/Cmd+G** groups / **Ctrl/Cmd+Shift+G** ungroups, and dragging any selected block moves the whole selection. Frames contain converted Excalidraw children: dragging a frame moves its `frameId` children with it. **Arrow (A)** snaps its endpoints to shapes, text, images and frames when dropped on them; bindings are stored as `startBinding` / `endBinding` and the arrow follows when a bound block is moved or resized. Text blocks can be dragged by their body after selection or by the small **label handle** above the block; double-click edits in place, `Esc` finishes. When blocks overlap, **Alt+click** cycles through the stacked blocks. On Infinite pages, choosing an insert type (HTML/Text/Markdown/Code/Shape) enters **click-to-place** mode: the next canvas click creates the block at that world coordinate. Infinite coordinates are unbounded (negative x/y are valid) and frames never clip or constrain blocks; a frame can be **dissolved** from its Inspector while keeping its children. **Pen (P)**, **Arrow (A)** and **Eraser (E)** draw/erase native vectors directly on Infinite pages; freehand strokes are smoothed into paths, stored in the document JSON as block points, resizable, and use stroke color/width from the Inspector. **Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** undo and redo block edits, **Ctrl/Cmd+C/V** copy and paste the selected block. Add Page also provides 19 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/... (line truncated to 2000 chars)
+Page modes: **HTML** (one editable HTML document per page), **Canvas** (fixed-size block layout), **Infinite** (boundless block surface; blocks live in world coordinates, the viewport paints the grid). Canvas/infinite pages use **HTML, text, Markdown, code, image, shape, freehand and arrow blocks**. Select blocks with **drag-marquee**, **Shift+click**, or by clicking a grouped block; **Ctrl/Cmd+G** groups / **Ctrl/Cmd+Shift+G** ungroups, and dragging any selected block moves the whole selection. Frames contain converted Excalidraw children: dragging a frame moves its `frameId` children with it. **Arrow (A)** snaps its endpoints to shapes, text, images and frames when dropped on them; bindings are stored as `startBinding` / `endBinding` and the arrow follows when a bound block is moved or resized. Text blocks can be dragged by their body after selection or by the small **label handle** above the block; double-click edits in place, `Esc` finishes. When blocks overlap, **Alt+click** cycles through the stacked blocks. On Infinite pages, choosing an insert type (HTML/Text/Markdown/Code/Shape) enters **click-to-place** mode: the next canvas click creates the block at that world coordinate. Infinite coordinates are unbounded (negative x/y are valid) and frames never clip or constrain blocks; a frame can be **dissolved** from its Inspector while keeping its children. **Pen (P)**, **Arrow (A)** and **Eraser (E)** draw/erase native vectors directly on Infinite pages; freehand strokes are smoothed into paths, stored in the document JSON as block points, resizable, and use stroke color/width from the Inspector. **Ctrl/Cmd+Z** / **Ctrl/Cmd+Shift+Z** undo and redo block edits, **Ctrl/Cmd+C/V** copy and paste the selected block. Add Page also provides 19 presets: blank/HTML slides, Cover/Section/Two columns/Quote/Agenda, Canvas PPT cover/content, A4/square canvas, HTML A4, Résumé Classic/Modern/ATS, Event/... (line truncated to 2000 chars)
 
 The **Files** section of the workspace navigator browses workspace folders directly; add more folders with **+**. Open an HTML file to preview it as a page, or open Markdown/code/text files for direct editing; code and text open editable immediately, with undo/redo, automatic save after edits, dirty-tab state, and **Ctrl/Cmd + wheel** font zoom. The original file stays authoritative on disk. Text editing is capped at 4 MB because the whole document is loaded into the editor and written back as a whole file; Office/PDF/image previews use a separate 64 MB preview limit. Word, PowerPoint, Excel and PDF files open as read-only previews (Office formats are converted to PDF through LibreOffice; LibreOffice must be installed on the machine).
 
@@ -172,14 +168,13 @@ Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas
 
 - **Slide templates**: Cover, Section, Two columns, Quote and Agenda (16:9 HTML pages), plus blank slide/A4/poster.
 - **Speaker notes**: edit per-page notes in the Inspector; Present mode has a Notes toggle and PPTX export writes notes into the deck.
-- **Present**: full-screen presentation with speaker notes. Document-style pages use a dedicated layout instead of slide scaling: Markdown pages open as a **Markdown · reading view** with a centered reading column that scrolls naturally, and HTML pages open as an **HTML · interactive view** — a responsive viewport that keeps scripts and page scrolling. On those pages the wheel scrolls the document instead of changing slides, and clicks interact with the page. Canvas pages fit the whole page, while Infinite pages fit their content bounds. Use **←/→** or **PageUp/PageDown** to change pages and **Esc** to exit; on slide-style pages (canvas, Infinite, legacy whiteboard) click or wheel still advance. Right-click for previous/next, laser pointer, notes and exit, and press **L** to toggle the laser pointer. Legacy whiteboard pages render through the native conversion.
+- **Present**: full-screen presentation with speaker notes. Document-style pages use a dedicated layout instead of slide scaling: Markdown pages open as a **Markdown · reading view** with a centered reading column that scrolls naturally, and HTML pages open as an **HTML · interactive view** — a responsive viewport that keeps scripts and page scrolling. On those pages the wheel scrolls the document instead of changing slides, and clicks interact with the page. Canvas pages fit the whole page, while Infinite pages fit their content bounds. Use **←/→** or **PageUp/PageDown** to change pages and **Esc** to exit; on slide-style pages (canvas and Infinite) click or wheel still advance. Right-click for previous/next, laser pointer, notes and exit, and press **L** to toggle the laser pointer.
 - **PowerPoint export**: `hcanvas export <doc> --format pptx` produces a 16:9 PPTX with one slide per page and speaker notes.
   - **Canvas pages** with text/shape/image blocks become **editable PowerPoint** text boxes and shapes (no HTML blocks).
   - `format=pptx-editable` additionally maps HTML headings, paragraphs, lists, inline labels and background cards to native PowerPoint text boxes/shapes using real browser layout data; pages with no extractable text fall back to images.
-  - HTML, infinite and Excalidraw whiteboard pages are embedded as high-fidelity slide images in the default visual deck.
+  - HTML and Infinite pages are embedded as high-fidelity slide images in the default visual deck.
   - Create a **Canvas · 16:9** page from **+ Page**; add text/shape blocks for editable PowerPoint output.
-  - Legacy whiteboard pages are converted to native blocks before image/PPTX rendering; no Excalidraw CLI is used.
-
+  
 ## Documents, résumés and posters
 
 Use the generic **Canvas · A4** size for documents and résumés, and **Canvas · 4:5** for posters. These are ordinary canvas pages: add text/shape/image blocks, edit directly, then export. The purpose comes from the size and content, not a separate “Résumé” or “Slide” page type.
@@ -191,7 +186,7 @@ Use the generic **Canvas · A4** size for documents and résumés, and **Canvas 
 
 ## Page masters
 
-Any page (HTML, canvas, infinite or Excalidraw whiteboard) can be saved as a **workspace-scoped page master** and reused as a starting point:
+Any page (HTML, canvas or infinite) can be saved as a **workspace-scoped page master** and reused as a starting point:
 
 - UI: Page inspector → **Save as master**; **+ Page** → **My page masters** shows live thumbnails of saved HTML/canvas layouts, with **Use** and **Delete** actions.
 - CLI:
@@ -202,39 +197,18 @@ hcanvas masters apply <masterId> <doc> --base-revision <rev>
 hcanvas masters delete <masterId>
 ```
 
-Masters are stored in `<workspace>/masters.json`; applying a master creates a new page with fresh page/block IDs and the original mode, size, background, HTML/blocks/scene and speaker notes. Editing the new page never changes the master.
+Masters are stored in `<workspace>/masters.json`; applying a master creates a new page with fresh page/block IDs and the original mode, size, background, HTML/blocks and speaker notes. Editing the new page never changes the master.
 
-## Legacy Excalidraw whiteboard pages
+## Excalidraw scene import/export
 
-Legacy documents may still contain **Excalidraw whiteboard** pages. New pages cannot be created from this preset, and hcanvas no longer loads or serves the Excalidraw runtime. A legacy page is shown as a read-only native preview (shapes, arrows, freehand, text, images, frames, rotation, opacity, dashed strokes); use **Convert to native Infinite** to make it editable. The raw scene is still stored in the document for migration:
-
-```bash
-hcanvas read <doc> --format scene --page <whiteboard-page-id>
-hcanvas apply <doc> --ops-file scene-ops.json --base-revision <rev> --actor your-agent
-```
-
-```json
-[{ "op": "set_whiteboard_scene", "pageId": "page_...", "scene": { "elements": [], "appState": {}, "files": {} } }]
-```
-
-`Download .excalidraw` in the page inspector exports the raw scene. HTML/PDF/PNG/PPTX export converts legacy whiteboard pages to native blocks internally before rendering, so those exports no longer depend on Excalidraw.
-
-### Migrating a whiteboard to native Infinite
-
-Click **Convert to native Infinite** in a whiteboard page's Inspector. hcanvas converts Excalidraw elements into native Infinite blocks (freehand strokes, arrows and bindings, text, rectangles, ellipses, diamonds, frames, rotated/opacity/dashed elements and image data URLs) and opens the new page. The source whiteboard is left untouched.
-
-The same conversion is available from the CLI, together with native scene import/export:
+hcanvas can import an `.excalidraw` file as a native Infinite page and export Canvas/Infinite pages back to `.excalidraw`. This is a compatibility bridge.
 
 ```bash
-hcanvas migrate-whiteboards <doc> --delete-source
-hcanvas convert-whiteboard <doc> --page <whiteboardPageId> --title "Board · Native"
 hcanvas import-scene ./board.excalidraw <doc> --title "Imported board"
 hcanvas export-scene <doc> --page <infinitePageId> --out ./exports/board.excalidraw
 ```
 
 Infinite pages also expose **Export → Excalidraw scene** in the top bar. Elements that have no native representation yet (rare embeds) are skipped and reported in the page notes.
-
-For an A4 résumé, build a Canvas page (794×1123) from native text/shape/image blocks, then export PDF/PNG for a fixed-fidelity copy, visual PPTX for a deck containing whole-page images, editable PPTX for native shapes/text, or DOCX for a semantic text version. PPTX exports keep the page aspect ratio (A4 stays A4) instead of forcing 16:9.
 
 ### Multi-agent presence
 
@@ -253,8 +227,7 @@ hcanvas sessions delete <id>
 
 Agents are external clients: Hcanvas has no in-app Agent or Copilot tab. Agents use the JSON-first CLI/HTTP protocol below; live sessions still appear as presence avatars in the top bar, and `hcanvas context --json` provides the active document/page/revision. No vendor-specific agent name is hard-coded.
 
-Agents with a session on the current page appear as colored cursors inside the canvas. Canvas/infinite cursors anchor to their block; HTML cursors are measured against the rendered page and anchored to the reported `data-hc-id` element; Excalidraw whiteboard cursors are projected from the scene element's position through the whiteboard scroll/zoom state. Click a cursor to **follow** that agent: hcanvas opens its document/page and selects the reported block or HTML element.
-
+Agents with a session on the current page appear as colored cursors inside the canvas. Canvas/infinite cursors anchor to their block; HTML cursors are measured against the rendered page and anchored to the reported `data-hc-id` element; Click a cursor to **follow** that agent: hcanvas opens its document/page and selects the reported block or HTML element.
 
 ## Agent protocol (CLI-first)
 
@@ -369,7 +342,7 @@ A workspace (usually `<project>/.hcanvas`) is a plain directory:
 <workspace>/exports/            # HTML/PDF/PNG/PPTX/DOCX outputs
 ```
 
-Documents use the JSON schema `hadamard-canvas/1`. HTML pages store their full source in `page.html`; canvas/infinite pages store `page.blocks`; Excalidraw pages store `page.scene`. Without a project, the desktop app falls back to the configured data location (`~/.hcanvas` by default); `--workspace <dir>` still addresses a store root directly. `--project <dir>` is the recommended project-scoped mode.
+Documents use the JSON schema `hadamard-canvas/1`. HTML pages store their full source in `page.html`; canvas/infinite pages store `page.blocks`. Without a project, the desktop app falls back to the configured data location (`~/.hcanvas` by default); `--workspace <dir>` still addresses a store root directly. `--project <dir>` is the recommended project-scoped mode.
 
 ## Assets
 

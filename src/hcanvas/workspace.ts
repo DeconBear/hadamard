@@ -31,8 +31,7 @@ export function workspaceGuide(workspace: string, project: string | null): strin
     '## Read\n\n' +
     'hcanvas context --json\n' +
     'hcanvas read ' + example + ' --format outline\n' +
-    'hcanvas read ' + example + ' --format html --page <pageId>\n' +
-    'hcanvas read ' + example + ' --format scene --page <whiteboardPageId>\n\n' +
+    'hcanvas read ' + example + ' --format html --page <pageId>\n\n' +
     '## Write\n\n' +
     'hcanvas apply ' + example + ' --ops-file ops.json --base-revision <rev> --actor claude-code\n' +
     'hcanvas propose ' + example + ' --ops-file ops.json --base-revision <rev> --intent "Add a section"\n\n' +
@@ -43,8 +42,6 @@ export function workspaceGuide(workspace: string, project: string | null): strin
     '## Import / export\n\n' +
     'hcanvas export ' + example + ' --format pdf --out ./exports/deck.pdf\n' +
     'hcanvas import-scene ./board.excalidraw ' + example + '\n' +
-    'hcanvas convert-whiteboard ' + example + '\n' +
-    'hcanvas migrate-whiteboards ' + example + '\n' +
     'hcanvas export-scene ' + example + ' --out ./exports/board.excalidraw\n' +
     'hcanvas export ' + example + ' --format pptx\n\n' +
     'Read before writing: always pass the latest revision returned by hcanvas context/read.\n';

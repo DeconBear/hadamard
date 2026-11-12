@@ -43,15 +43,13 @@ function usage(): string {
     '  hcanvas context [--session <id>]',
     '  hcanvas resolve <query>',
     '  hcanvas docs list | create --title <t> [--preset slide|a4|poster|square|canvas|infinite] | delete <doc>',
-    '  hcanvas read [doc] [--format outline|html|json|page|scene] [--page <id>] [--block <id>]',
+    '  hcanvas read [doc] [--format outline|html|json|page] [--page <id>] [--block <id>]',
     '  hcanvas apply [doc] --ops-file <file|-> --base-revision <n> [--actor <name>] [--dry-run]',
     '  hcanvas propose [doc] --ops-file <file|-> --base-revision <n> --intent <text>',
     '  hcanvas proposal list [doc]',
     '  hcanvas proposal accept [doc] <proposalId> [--actor <name>]',
     '  hcanvas proposal reject [doc] <proposalId>',
     '  hcanvas import-scene <file.excalidraw> [doc] [--title <t>]',
-    '  hcanvas convert-whiteboard <doc> [--page <pageId>] [--title <t>]',
-    '  hcanvas migrate-whiteboards <doc> [--delete-source]',
     '  hcanvas export-scene <doc> [--page <pageId>] [--out <file.excalidraw>]',
     '  hcanvas export [doc] --format html|pdf|png|pptx|pptx-editable|docx [--page <id>] [--out <file>] [--bleed-mm <n>] [--crop-marks]',
     '  hcanvas masters list',
@@ -451,57 +449,16 @@ async function main(argv: string[]): Promise<void> {
     print({ ok: true, docId, pageId: page.id, name: page.name, blocks: page.blocks?.length || 0, result }, pretty);
     return;
   }
-  if (command === 'migrate-whiteboards') {
-    const docId = await resolveDoc(conn, args, args.positionals[1]);
-    const current = (await request<{ doc: HcDocument }>(conn, '/api/docs/' + docId)).doc;
-    const whiteboards = current.pages.filter(page => page.mode === 'whiteboard');
-    if (!whiteboards.length) { print({ ok: true, docId, migrated: 0, pages: [], message: 'No legacy whiteboards found.' }, pretty); return; }
-    const deleteSource = flagBool(args, 'delete-source');
-    const ops: unknown[] = [];
-    const migrated: Array<{ sourcePageId: string; pageId: string; name: string; blocks: number }> = [];
-    for (const source of whiteboards) {
-      const scene = parseExcalidrawScene({ elements: source.scene?.elements || [], appState: source.scene?.appState, files: source.scene?.files });
-      const page = excalidrawSceneToNativePage(scene, flagString(args, 'title-prefix') ? flagString(args, 'title-prefix') + ' ' + source.name : source.name + ' · Native');
-      page.background = source.background || page.background;
-      ops.push({ op: 'add_page', page });
-      if (deleteSource) ops.push({ op: 'delete_page', pageId: source.id });
-      migrated.push({ sourcePageId: source.id, pageId: page.id, name: page.name, blocks: page.blocks?.length || 0 });
-    }
-    const result = await request(conn, '/api/docs/' + docId + '/apply', {
-      method: 'POST',
-      body: JSON.stringify({ ops, baseRevision: current.revision, actor, summary: 'migrate legacy whiteboards to native Infinite' }),
-    });
-    print({ ok: true, docId, migrated: migrated.length, deleteSource, pages: migrated, result }, pretty);
-    return;
-  }
   if (command === 'export-scene') {
     const docId = await resolveDoc(conn, args, args.positionals[1]);
     const current = (await request<{ doc: HcDocument }>(conn, '/api/docs/' + docId)).doc;
     const requestedPage = flagString(args, 'page');
-    const source = requestedPage ? current.pages.find(page => page.id === requestedPage) : current.pages.find(page => page.mode === 'infinite') || current.pages.find(page => page.mode === 'whiteboard');
-    if (!source) throw new Error('No Infinite or whiteboard page found' + (requestedPage ? ': ' + requestedPage : ''));
-    const scene = source.mode === 'whiteboard'
-      ? { type: 'excalidraw', version: 2, source: 'hcanvas', elements: source.scene?.elements || [], appState: source.scene?.appState || {}, files: source.scene?.files || {} }
-      : nativeBlocksToExcalidrawScene(source);
+    const source = requestedPage ? current.pages.find(page => page.id === requestedPage) : current.pages.find(page => page.mode === 'infinite');
+    if (!source) throw new Error('No Infinite page found' + (requestedPage ? ': ' + requestedPage : ''));
+    const scene = nativeBlocksToExcalidrawScene(source);
     const out = path.resolve(flagString(args, 'out') || (source.name || 'scene').replace(/[^a-zA-Z0-9_-]+/g, '-') + '.excalidraw');
     await writeFile(out, JSON.stringify(scene, null, 2), 'utf8');
     print({ ok: true, docId, pageId: source.id, pageName: source.name, mode: source.mode, out, elements: scene.elements.length }, pretty);
-    return;
-  }
-  if (command === 'convert-whiteboard') {
-    const docId = await resolveDoc(conn, args, args.positionals[1]);
-    const current = (await request<{ doc: HcDocument }>(conn, '/api/docs/' + docId)).doc;
-    const requestedPage = flagString(args, 'page');
-    const source = requestedPage ? current.pages.find(page => page.id === requestedPage) : current.pages.find(page => page.mode === 'whiteboard');
-    if (!source || source.mode !== 'whiteboard') throw new Error('No whiteboard page found' + (requestedPage ? ': ' + requestedPage : ''));
-    const scene = parseExcalidrawScene({ elements: source.scene?.elements || [], appState: source.scene?.appState, files: source.scene?.files });
-    const page = excalidrawSceneToNativePage(scene, flagString(args, 'title') || (source.name + ' · Native'));
-    page.background = source.background || page.background;
-    const result = await request(conn, '/api/docs/' + docId + '/apply', {
-      method: 'POST',
-      body: JSON.stringify({ ops: [{ op: 'add_page', page }], baseRevision: current.revision, actor, summary: 'convert whiteboard to native Infinite' }),
-    });
-    print({ ok: true, docId, sourcePageId: source.id, pageId: page.id, name: page.name, blocks: page.blocks?.length || 0, result }, pretty);
     return;
   }
   if (command === 'export') {

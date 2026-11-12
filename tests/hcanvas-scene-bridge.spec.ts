@@ -42,7 +42,7 @@ describe('hcanvas native scene bridge', () => {
     expect(conversion.skipped).toBe(0);
   });
 
-  it('converts a whiteboard scene into an Infinite page and back to Excalidraw JSON', () => {
+  it('converts an Excalidraw scene into an Infinite page and back to Excalidraw JSON', () => {
     const page = excalidrawSceneToNativePage(scene(), 'Board');
     expect(page.mode).toBe('infinite');
     expect(page.name).toBe('Board');
