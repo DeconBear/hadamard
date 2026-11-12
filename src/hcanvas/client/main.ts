@@ -791,6 +791,7 @@ function bindStaticActions(): void {
     request: api,
     serveUrl: id => '/api/assets/raw/' + encodeURIComponent(boot.token) + '/' + id,
     onInsert: asset => insertAsset(asset),
+    openPreview: asset => openAssetPreview(asset),
     isReferenced: url => JSON.stringify(state.doc || {}).includes(url),
     toast,
     confirm: message => confirmDialog(message),
@@ -3259,6 +3260,27 @@ async function openAddPageModal(): Promise<void> {
 async function addPluginPage(page: HcPage): Promise<void> {
   const result = await applyOps([{ op: 'add_page', page }], { refreshArtboard: false });
   if (result) { state.activePageId = page.id; state.activeBlockId = null; state.fittedPageId = null; renderAll(); void syncActive(); }
+}
+
+function openAssetPreview(asset: HcAssetView): void {
+  const kind = asset.mime.startsWith('image/') ? 'image' : asset.mime.startsWith('video/') ? 'video' : asset.mime === 'application/pdf' ? 'pdf' : 'file';
+  const ext = (asset.name.split('.').pop() || 'file').toUpperCase().slice(0, 5);
+  const body = kind === 'image'
+    ? '<img class="asset-preview-image" src="' + esc(asset.url) + '" alt="' + esc(asset.name) + '">'
+    : kind === 'video'
+      ? '<video class="asset-preview-video" src="' + esc(asset.url) + '" controls autoplay playsinline></video>'
+      : kind === 'pdf'
+        ? '<iframe class="asset-preview-frame" src="' + esc(asset.url) + '" title="' + esc(asset.name) + '"></iframe>'
+        : '<div class="asset-preview-fallback"><span class="asset-preview-file-icon">' + esc(ext) + '</span><strong>' + esc(asset.name) + '</strong><small>No inline preview for this file type</small></div>';
+  const html = '<div class="modal asset-preview-modal"><div class="modal-head"><div><strong>' + esc(asset.name) + '</strong><small>' + esc(asset.mime) + ' · ' + esc(formatAssetSize(asset.size)) + '</small></div><button class="icon-btn" data-close title="Close preview" aria-label="Close preview">×</button></div><div class="modal-body asset-preview-body">' + body + '</div><div class="modal-foot"><button class="btn" data-close>Close</button><button id="assetPreviewInsert" class="btn primary">Insert into page</button></div></div>';
+  openModal(html);
+  qs<HTMLButtonElement>('#assetPreviewInsert')?.addEventListener('click', () => { closeModal(); void insertAsset(asset); });
+}
+
+function formatAssetSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 async function insertAsset(asset: HcAssetView, point?: { clientX: number; clientY: number }): Promise<void> {

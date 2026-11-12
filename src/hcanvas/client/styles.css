@@ -1158,7 +1158,7 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .assets-panel { display:flex; flex-direction:column; gap:3px; padding:1px 0; }
 .assets-empty { margin:4px; color:var(--muted); font-size:10px; line-height:1.5; }
 .assets-status { margin:4px; color:var(--muted); font-size:10px; }
-.asset-row { display:flex; align-items:center; gap:7px; min-height:42px; padding:3px 4px; border-radius:6px; cursor:grab; }
+.asset-row { display:flex; align-items:center; gap:7px; min-height:42px; padding:3px 4px; border-radius:6px; cursor:pointer; }
 .asset-row:hover { background:var(--surface-2); }
 .asset-row:active { cursor:grabbing; }
 .asset-thumb { width:34px; height:34px; flex:0 0 34px; border:1px solid var(--border); border-radius:5px; background:var(--surface); display:grid; place-items:center; overflow:hidden; }
@@ -1171,6 +1171,13 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .asset-row:hover .asset-insert { opacity:1; }
 .asset-delete { width:16px !important; height:16px !important; flex:0 0 16px; opacity:0; font-size:12px !important; }
 .asset-row:hover .asset-delete { opacity:.6; }
+.modal.asset-preview-modal { width:min(980px, 94vw); max-height:92vh; }
+.asset-preview-body { display:grid; place-items:center; min-height:240px; padding:14px; background:#1d232e; overflow:auto; }
+.asset-preview-image, .asset-preview-video { display:block; max-width:100%; max-height:70vh; border-radius:6px; }
+.asset-preview-frame { width:100%; height:70vh; border:0; border-radius:6px; background:#fff; }
+.asset-preview-fallback { display:flex; flex-direction:column; align-items:center; gap:10px; padding:42px; color:#f8f7f3; text-align:center; }
+.asset-preview-file-icon { display:grid; place-items:center; width:56px; height:56px; border:1px solid rgba(255,255,255,.24); border-radius:10px; background:rgba(255,255,255,.08); color:#fff; font:700 12px/1 ui-monospace, Consolas, monospace; }
+.asset-preview-fallback small { color:rgba(255,255,255,.55); font-size:10px; }
 .asset-delete:hover { opacity:1 !important; color:#b42318 !important; }
 
 /* Revision history */

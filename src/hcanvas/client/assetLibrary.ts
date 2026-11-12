@@ -13,6 +13,7 @@ export interface AssetLibraryOptions {
   request<T>(path: string, init?: RequestInit): Promise<T>;
   serveUrl(id: string): string;
   onInsert(asset: HcAssetView, point?: { clientX: number; clientY: number }): Promise<void> | void;
+  openPreview?(asset: HcAssetView): void;
   isReferenced(url: string): boolean;
   toast(message: string, kind?: 'success' | 'error' | 'info'): void;
   confirm(message: string): Promise<boolean>;
@@ -99,7 +100,7 @@ export function installAssetLibrary(options: AssetLibraryOptions): void {
       row.className = 'asset-row';
       row.draggable = true;
       row.dataset.assetId = asset.id;
-      row.title = asset.name + ' · ' + formatBytes(asset.size);
+      row.title = asset.name + ' · ' + formatBytes(asset.size) + ' · Click to preview';
       const thumb = isImage(asset)
         ? '<img src="' + escapeHtml(asset.url) + '" alt="" loading="lazy">'
         : '<span class="asset-file-icon">' + escapeHtml((asset.name.split('.').pop() || 'file').slice(0, 4).toUpperCase()) + '</span>';
@@ -107,6 +108,10 @@ export function installAssetLibrary(options: AssetLibraryOptions): void {
       row.addEventListener('dragstart', event => {
         event.dataTransfer?.setData('application/x-hcanvas-asset', JSON.stringify(asset));
         if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+      });
+      row.addEventListener('click', event => {
+        if ((event.target as HTMLElement).closest('button')) return;
+        options.openPreview?.(asset);
       });
       row.querySelector<HTMLButtonElement>('.asset-insert')!.addEventListener('click', () => void options.onInsert(asset));
       row.querySelector<HTMLButtonElement>('.asset-delete')!.addEventListener('click', async () => {
