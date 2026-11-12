@@ -1266,7 +1266,7 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .sidebar-sections > .side-section { border: 0; border-radius: 12px; background: transparent; padding: 5px 4px 7px; }
 .sidebar-sections > .side-section:hover { border-color: transparent; }
 .sidebar-sections > .side-section[hidden], .page-item[hidden], .doc-item[hidden], .workspace-nav-count[hidden], .sidebar-filter[hidden] { display: none !important; }
-.sidebar-sections > .side-section.sidebar-panel-active { flex: 1 1 auto; min-height: 0; }
+.sidebar-sections > .side-section.sidebar-panel-active { flex: 1 1 auto; min-height: 0; max-height: none; }
 .sidebar-sections > .side-section > .side-head { height: 31px; padding: 0 6px 5px; }
 .side-head .section-title { color: #736b5d; font-size: 10px; letter-spacing: .08em; }
 .side-head-actions .icon-btn, .files-head-actions .icon-btn { width: 23px; height: 23px; border-radius: 7px; color: #887e6d; opacity: 1; }
