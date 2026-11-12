@@ -2,7 +2,7 @@ import type { HcDocument, HcOp, HcPage } from '../types.js';
 
 export interface MarkdownPageEditorOptions {
   page: HcPage;
-  openCodeModal(options: { title: string; kind: string; value: string; language: string; save: (next: string) => Promise<void> }): void;
+  openCodeModal(options: { title: string; kind: string; value: string; language: string; save: (next: string) => Promise<boolean> }): void;
   applyOps(ops: HcOp[], options?: { refreshArtboard?: boolean }): Promise<HcDocument | null>;
 }
 
@@ -15,7 +15,9 @@ export function openMarkdownPageEditor(options: MarkdownPageEditorOptions): void
     language: 'markdown',
     value: page.markdown || '',
     save: async next => {
-      await options.applyOps([{ op: 'set_page_markdown', pageId: page.id, markdown: next }], { refreshArtboard: true });
+      const result = await options.applyOps([{ op: 'set_page_markdown', pageId: page.id, markdown: next }], { refreshArtboard: true });
+      if (!result) throw new Error('Markdown changes were not saved.');
+      return true;
     },
   });
 }

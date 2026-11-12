@@ -4,7 +4,7 @@ import { openMarkdownPageEditor } from './markdownPageEditor.js';
 export interface SourceEditorOptions {
   page: HcPage;
   block?: HcBlock;
-  openCodeModal(options: { title: string; kind: string; value: string; language: string; save: (next: string) => Promise<void> }): void;
+  openCodeModal(options: { title: string; kind: string; value: string; language: string; save: (next: string) => Promise<boolean> }): void;
   applyOps(ops: HcOp[], options?: { refreshArtboard?: boolean }): Promise<HcDocument | null>;
 }
 
@@ -25,7 +25,9 @@ export function openSourceEditorFor(options: SourceEditorOptions): void {
           : kind === 'code' ? { op: 'set_block_code', pageId: page.id, blockId: block.id, code: next }
           : kind === 'text' ? { op: 'set_block_text', pageId: page.id, blockId: block.id, text: next }
           : { op: 'set_block_html', pageId: page.id, blockId: block.id, html: next };
-        await options.applyOps([op], { refreshArtboard: true });
+        const result = await options.applyOps([op], { refreshArtboard: true });
+        if (!result) throw new Error('Source changes were not saved.');
+        return true;
       },
     });
     return;
@@ -35,6 +37,10 @@ export function openSourceEditorFor(options: SourceEditorOptions): void {
     kind: 'html',
     value: page.html || '',
     language: 'html',
-    save: async next => { await options.applyOps([{ op: 'set_page_html', pageId: page.id, html: next }], { refreshArtboard: true }); },
+    save: async next => {
+      const result = await options.applyOps([{ op: 'set_page_html', pageId: page.id, html: next }], { refreshArtboard: true });
+      if (!result) throw new Error('HTML changes were not saved.');
+      return true;
+    },
   });
 }

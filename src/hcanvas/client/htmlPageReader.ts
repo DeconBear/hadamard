@@ -1,6 +1,7 @@
 import type { HcPage } from '../types.js';
 import { htmlToMarkdown } from './markdownEditing.js';
 import { attachMarkdownWysiwyg } from './markdownWysiwyg.js';
+import { installMarkdownHelp } from './markdownHelp.js';
 
 export function previewHtmlDocument(html: string, pageId: string): string {
   const pid = JSON.stringify(pageId);
@@ -29,7 +30,7 @@ export function renderHtmlPageSurface(container: HTMLElement, page: HcPage, opti
   activeResizeObserver?.disconnect();
   activeResizeObserver = null;
   if (activeResizeFrame) cancelAnimationFrame(activeResizeFrame);
-  container.querySelectorAll('.html-page-surface, .html-reader-badge').forEach(node => node.remove());
+  container.querySelectorAll('.html-page-surface, .html-reader-badge, .markdown-help').forEach(node => node.remove());
   const surface = document.createElement('div');
   surface.className = 'html-page-surface';
   surface.style.background = page.background || '#fff';
@@ -48,7 +49,8 @@ export function renderHtmlPageSurface(container: HTMLElement, page: HcPage, opti
     });
   }
   container.appendChild(surface);
-  if (!options.editing) {
+  if (options.richMarkdown) installMarkdownHelp(container, page.name || 'Markdown page');
+  else if (!options.editing) {
     const badge = document.createElement('div');
     badge.className = 'html-reader-badge';
     badge.innerHTML = '<span>' + escapeHtml(options.label || 'HTML PAGE') + '</span><strong>' + escapeHtml(page.name || 'Page') + '</strong><small>' + escapeHtml(options.hint || 'select text · Edit') + '</small>' + (options.showEdit === false ? '' : '<button type="button" class="html-reader-edit" title="Edit this page">Edit</button>');
@@ -57,10 +59,8 @@ export function renderHtmlPageSurface(container: HTMLElement, page: HcPage, opti
   }
   const fit = (): void => {
     if (!iframe.isConnected) return;
-    const width = Math.max(320, surface.clientWidth);
-    const height = Math.max(240, surface.clientHeight, page.height);
-    iframe.style.width = width + 'px';
-    iframe.style.height = height + 'px';
+    iframe.style.width = Math.max(1, surface.clientWidth) + 'px';
+    iframe.style.height = Math.max(1, surface.clientHeight) + 'px';
   };
   const schedule = (): void => {
     if (activeResizeFrame) cancelAnimationFrame(activeResizeFrame);
@@ -79,6 +79,10 @@ function setupMarkdownRichEditing(iframe: HTMLIFrameElement, page: HcPage, optio
   doc.body.contentEditable = 'true';
   doc.body.spellcheck = true;
   doc.body.style.outline = 'none';
+  doc.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(checkbox => {
+    checkbox.disabled = false;
+    checkbox.contentEditable = 'false';
+  });
   attachMarkdownWysiwyg(doc, page.id);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastMarkdown = '';
