@@ -25,6 +25,7 @@ import { createPageFromPreset } from './pageCreation.js';
 import { CANVAS_PAGE_PRESETS, type HcClientPagePreset } from './pageTemplates.js';
 import { MarkdownPageController } from './markdownPageController.js';
 import { installPageListInteractions } from './pageListInteractions.js';
+import { installListSelection } from './listSelection.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
 import { startShapeTextEdit } from './shapeText.js';
 import type { HcBlockPlugin } from '../blockPlugins.js';
@@ -264,6 +265,51 @@ function patchDocSummary(doc: HcDocument): void {
 async function loadDocs(): Promise<void> {
   const result = await api<{ docs: DocSummary[] }>('/api/docs');
   state.docs = result.docs || [];
+}
+
+async function duplicateDocs(ids: string[]): Promise<void> {
+  const unique = [...new Set(ids)];
+  if (!unique.length) return;
+  try {
+    let last: HcDocument | null = null;
+    for (const docId of unique) {
+      const result = await api<{ doc: HcDocument }>('/api/docs/' + encodeURIComponent(docId) + '/duplicate', { method: 'POST' });
+      last = result.doc;
+    }
+    await loadDocs();
+    if (last) await openDoc(last.id);
+    else renderDocs();
+    toast(unique.length === 1 ? 'Canvas duplicated' : unique.length + ' canvases duplicated', 'success');
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), 'error');
+  }
+}
+
+async function deleteDocs(ids: string[]): Promise<void> {
+  const unique = [...new Set(ids)].filter(id => state.docs.some(doc => doc.id === id));
+  if (!unique.length) return;
+  const activeId = state.doc?.id;
+  const wasActive = Boolean(activeId && unique.includes(activeId));
+  const ok = await confirmDialog(unique.length === 1 ? 'Delete this canvas?' : 'Delete ' + unique.length + ' canvases?');
+  if (!ok) return;
+  try {
+    for (const docId of unique) await api('/api/docs/' + encodeURIComponent(docId), { method: 'DELETE' });
+    await loadDocs();
+    if (wasActive) {
+      const next = state.docs[0];
+      if (next) await openDoc(next.id);
+      else {
+        state.doc = null;
+        state.activePageId = null;
+        state.activeBlockId = null;
+        state.selectedBlockIds = [];
+        renderAll();
+      }
+    } else renderDocs();
+    toast(unique.length === 1 ? 'Canvas deleted' : unique.length + ' canvases deleted', 'success');
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), 'error');
+  }
 }
 
 async function loadMasters(): Promise<void> {
@@ -762,14 +808,30 @@ function bindStaticActions(): void {
   el('workspacePath').addEventListener('click', () => { void openWorkspaceModal(); });
   el('addPageMini').addEventListener('click', () => openAddPageModal());
   bindSidebarSections();
-  installPageListInteractions({
+  installPageListInteractions({ root: el('pagesList'), onReorder: (pageId, index) => movePageToIndex(pageId, index) });
+  installListSelection({
     root: el('pagesList'),
-    onReorder: (pageId, index) => movePageToIndex(pageId, index),
-    onDuplicate: pageId => { const page = state.doc?.pages.find(item => item.id === pageId); if (page) duplicatePage(page); },
-    onDelete: pageId => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(pageId); }); },
-    canDelete: () => (state.doc?.pages.length || 0) > 1,
-    canEditSource: pageId => state.doc?.pages.find(page => page.id === pageId)?.markdown !== undefined,
-    onEditSource: pageId => { void markdownPages.openSource(pageId); },
+    rowSelector: '.page-item[data-page-id]',
+    idOf: row => row.dataset.pageId || '',
+    noun: 'page',
+    orderRows: rows => rows.sort((a, b) => Number(a.style.order) - Number(b.style.order)),
+    onDuplicate: ids => { void duplicatePages(ids); },
+    onDelete: ids => { void deletePages(ids); },
+    canDelete: ids => (state.doc?.pages.length || 0) > ids.length,
+    menuActions: ids => {
+      if (ids.length !== 1) return [];
+      const page = state.doc?.pages.find(item => item.id === ids[0]);
+      if (!page || page.markdown === undefined) return [];
+      return [{ label: translatePhrase('Edit Markdown source'), action: () => { void markdownPages.openSource(page.id); } }];
+    },
+  });
+  installListSelection({
+    root: el('docsList'),
+    rowSelector: '.doc-item[data-doc-id]',
+    idOf: row => row.dataset.docId || '',
+    noun: 'canvas',
+    onDuplicate: ids => { void duplicateDocs(ids); },
+    onDelete: ids => { void deleteDocs(ids); },
   });
   installPluginSidebar({ request: api, openModal: html => openModal(html), closeModal: () => closeModal(), confirm: message => confirmDialog(message), toast, reload: () => loadExternalPlugins(api), onChanged: () => renderInspector() });
   fileBrowser = installFileBrowser({
@@ -1426,23 +1488,51 @@ function exportPageForThumb(page: HcPage): HcPage {
   const padding = 60;
   return { ...page, width: Math.max(320, Math.ceil(maxX - minX) + padding * 2), height: Math.max(240, Math.ceil(maxY - minY) + padding * 2), blocks: blocks.map(block => ({ ...block, x: block.x - minX + padding, y: block.y - minY + padding })) };
 }
-function duplicatePage(page: HcPage): void {
-  if (!state.doc) return;
-  const copy = JSON.parse(JSON.stringify(page)) as HcPage;
-  copy.id = genId('page');
-  copy.name = 'Copy of ' + page.name;
-  if (copy.blocks) copy.blocks = copy.blocks.map(block => ({ ...block, id: genId('block') }));
-  const index = state.doc.pages.findIndex(item => item.id === page.id);
-  void applyOps([{ op: 'add_page', page: copy, index: index + 1 }], { refreshArtboard: false }).then(result => {
+function duplicatePages(ids: string[]): void {
+  const doc = state.doc;
+  if (!doc) return;
+  const pages = ids.map(id => doc.pages.find(page => page.id === id)).filter((page): page is HcPage => Boolean(page));
+  const ops: HcOp[] = [];
+  let lastId = '';
+  pages.forEach((page, offset) => {
+    const copy = JSON.parse(JSON.stringify(page)) as HcPage;
+    copy.id = genId('page');
+    copy.name = 'Copy of ' + page.name;
+    if (copy.blocks) copy.blocks = copy.blocks.map(block => ({ ...block, id: genId('block') }));
+    const index = doc.pages.findIndex(item => item.id === page.id) + 1 + offset;
+    ops.push({ op: 'add_page', page: copy, index } as HcOp);
+    lastId = copy.id;
+  });
+  if (!ops.length) return;
+  void applyOps(ops, { refreshArtboard: false }).then(result => {
     if (!result) return;
-    state.activePageId = copy.id;
+    state.activePageId = lastId;
     state.activeBlockId = null;
-  state.selectedBlockIds = [];
+    state.selectedBlockIds = [];
     state.fittedPageId = null;
     renderAll();
-    toast('Page duplicated', 'success');
+    toast(pages.length === 1 ? 'Page duplicated' : pages.length + ' pages duplicated', 'success');
   });
 }
+
+async function deletePages(ids: string[]): Promise<void> {
+  const doc = state.doc;
+  if (!doc) return;
+  const unique = [...new Set(ids)].filter(id => doc.pages.some(page => page.id === id));
+  if (!unique.length) return;
+  if (unique.length >= doc.pages.length) { toast('Keep at least one page.', 'info'); return; }
+  const ok = await confirmDialog(unique.length === 1 ? 'Delete this page?' : 'Delete ' + unique.length + ' pages?');
+  if (!ok) return;
+  const deletingActive = Boolean(state.activePageId && unique.includes(state.activePageId));
+  const result = await applyOps(unique.map(pageId => ({ op: 'delete_page', pageId } as HcOp)), { refreshArtboard: false });
+  if (!result) return;
+  if (deletingActive) state.activePageId = result.pages[0]?.id ?? null;
+  state.activeBlockId = null;
+  state.selectedBlockIds = [];
+  renderAll();
+  toast(unique.length === 1 ? 'Page deleted' : unique.length + ' pages deleted', 'success');
+}
+
 function movePageToIndex(pageId: string, toIndex: number): void {
   const pages = state.doc?.pages;
   if (!pages) return;
@@ -1521,7 +1611,7 @@ function createPageItem(page: HcPage, index: number): PageItemCache {
   item.appendChild(button);
   item.addEventListener('click', () => selectPage(page.id));
   item.addEventListener('keydown', event => {
-    if (event.key !== 'F2' && event.key !== 'Delete') return;
+    if (event.key !== 'F2') return;
     event.preventDefault();
     event.stopPropagation();
     if (event.key === 'F2') {
@@ -1532,7 +1622,7 @@ function createPageItem(page: HcPage, index: number): PageItemCache {
       renderInspector();
       const input = document.getElementById('pageName');
       if (input instanceof HTMLInputElement) { input.focus(); input.select(); }
-    } else if ((state.doc?.pages.length || 0) > 1) void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); });
+    }
   });
   return { fingerprint: pageFingerprint(page), item, thumb, info, index };
 }
@@ -2608,7 +2698,7 @@ function bindPageInspector(page: HcPage): void {
   qs<HTMLButtonElement>('#pageFitContentBtn')?.addEventListener('click', () => fitPage());
   qs<HTMLButtonElement>('#pageOpenFolderBtn')?.addEventListener('click', () => { void revealProjectFolder(undefined, 'documents'); });
   qs<HTMLButtonElement>('#pageSaveMasterBtn')?.addEventListener('click', () => openSaveMasterModal(page));
-  qs<HTMLButtonElement>('#pageDeleteBtn')?.addEventListener('click', () => { void confirmDialog('Delete this page?').then(ok => { if (ok) void deletePage(page.id); }); });
+  qs<HTMLButtonElement>('#pageDeleteBtn')?.addEventListener('click', () => { void deletePages([page.id]); });
   const openGallery = (): void => openPluginGallery({
     request: api,
     reload: () => loadExternalPlugins(api),
@@ -2848,12 +2938,7 @@ function connectEvents(): void {
 }
 
 async function deletePage(pageId: string): Promise<void> {
-  const result = await applyOps([{ op: 'delete_page', pageId }], { refreshArtboard: false });
-  if (!result) return;
-  state.activePageId = result.pages[0]?.id || null;
-  state.activeBlockId = null;
-  state.selectedBlockIds = [];
-  renderAll();
+  await deletePages([pageId]);
 }
 
 async function deleteActiveBlock(): Promise<void> {

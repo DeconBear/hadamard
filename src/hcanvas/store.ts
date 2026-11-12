@@ -726,6 +726,25 @@ export class HcStore {
     return doc;
   }
 
+  async duplicateDoc(docId: string): Promise<HcDocument> {
+    const source = await this.readDoc(docId);
+    const now = nowIso();
+    const doc = clone(source);
+    doc.id = hcId('doc');
+    doc.title = source.title + ' copy';
+    doc.revision = 0;
+    doc.createdAt = now;
+    doc.updatedAt = now;
+    doc.proposals = [];
+    doc.history = [];
+    await this.saveDocument(doc);
+    await this.saveRevisionSnapshot(doc);
+    this.state.active = { docId: doc.id, pageId: doc.pages[0]?.id ?? null, blockId: null, actor: 'human', updatedAt: nowIso() };
+    await this.saveState();
+    this.emit({ type: 'doc.created', docId: doc.id, duplicatedFrom: docId });
+    return doc;
+  }
+
   async deleteDoc(docId: string): Promise<void> {
     const file = this.docPath(docId);
     const temp = file + '.deleted.' + randomUUID();

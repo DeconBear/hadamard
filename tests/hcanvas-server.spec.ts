@@ -79,6 +79,11 @@ describe('hcanvas server', () => {
     await api(server, '/api/masters/' + master.master.id, { method: 'DELETE' });
 
     const created = await api<{ doc: { id: string } }>(server, '/api/docs', { method: 'POST', body: JSON.stringify({ title: 'PPTX test', preset: { width: 1280, height: 720, background: '#ffffff', title: 'Slide' } }) });
+    const duplicated = await api<{ doc: { id: string; title: string; pages: unknown[] } }>(server, '/api/docs/' + created.doc.id + '/duplicate', { method: 'POST' });
+    expect(duplicated.doc.id).not.toBe(created.doc.id);
+    expect(duplicated.doc.title).toContain('copy');
+    expect(duplicated.doc.pages).toHaveLength(1);
+
     const pptx = await api<{ path: string; bytes: number }>(server, '/api/export', { method: 'POST', body: JSON.stringify({ docId: created.doc.id, format: 'pptx' }) });
     expect(pptx.bytes).toBeGreaterThan(1000);
     expect(pptx.path).toMatch(/\.pptx$/);

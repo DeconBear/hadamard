@@ -32,4 +32,17 @@ describe('HcAssetService', () => {
     await second.init();
     expect(second.list()[0]?.id).toBe(asset.id);
   });
+
+  it('duplicates an asset and keeps both files', async () => {
+    const workspace = await tempDir();
+    const service = new HcAssetService(workspace);
+    await service.init();
+    const original = await service.save({ name: 'source.png', mime: 'image/png', data: Buffer.from('89504e470d0a1a0a', 'hex') });
+    const copy = await service.duplicate(original.id);
+    expect(copy.id).not.toBe(original.id);
+    expect(copy.name).toContain('Copy');
+    expect(service.list()).toHaveLength(2);
+    await service.remove(original.id);
+    expect(service.list().map(item => item.id)).toEqual([copy.id]);
+  });
 });

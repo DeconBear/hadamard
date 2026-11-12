@@ -299,6 +299,12 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         json(res, 201, { ok: true, asset: { ...asset, url: '/api/assets/raw/' + assets.urlToken + '/' + asset.id } });
         return;
       }
+      const assetDuplicateMatch = pathname.match(/^\/api\/assets\/(asset_[A-Za-z0-9]+)\/duplicate$/);
+      if (assetDuplicateMatch && req.method === 'POST') {
+        const asset = await assets.duplicate(assetDuplicateMatch[1]!);
+        json(res, 201, { ok: true, asset: { ...asset, url: '/api/assets/raw/' + assets.urlToken + '/' + asset.id } });
+        return;
+      }
       const assetMatch = pathname.match(/^\/api\/assets\/(asset_[A-Za-z0-9]+)$/);
       if (assetMatch && req.method === 'DELETE') {
         await assets.remove(assetMatch[1]!);
@@ -383,6 +389,12 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
               }
             : undefined,
         });
+        json(res, 201, { ok: true, doc });
+        return;
+      }
+      const docDuplicateMatch = pathname.match(/^\/api\/docs\/(doc_[A-Za-z0-9]+)\/duplicate$/);
+      if (docDuplicateMatch && req.method === 'POST') {
+        const doc = await store.duplicateDoc(docDuplicateMatch[1]!);
         json(res, 201, { ok: true, doc });
         return;
       }

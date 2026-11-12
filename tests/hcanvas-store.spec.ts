@@ -29,6 +29,19 @@ describe('hcanvas store', () => {
   });
 
 
+
+  it('duplicates a document with fresh identity and no source history', async () => {
+    const store = await makeStore();
+    const source = await store.createDoc({ title: 'Original canvas' });
+    const copy = await store.duplicateDoc(source.id);
+    expect(copy.id).not.toBe(source.id);
+    expect(copy.title).toContain('copy');
+    expect(copy.revision).toBe(0);
+    expect(copy.pages).toHaveLength(source.pages.length);
+    expect(copy.history).toHaveLength(0);
+    expect((await store.readDoc(source.id)).title).toBe('Original canvas');
+  });
+
   it('auto-migrates a legacy whiteboard page when it is read', async () => {
     const store = await makeStore();
     const legacy = {

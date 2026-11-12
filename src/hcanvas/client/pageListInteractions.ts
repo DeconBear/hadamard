@@ -1,81 +1,16 @@
 export interface PageListInteractionOptions {
   root: HTMLElement;
   onReorder(pageId: string, toIndex: number): void;
-  onDuplicate(pageId: string): void;
-  onDelete(pageId: string): void;
-  canDelete(): boolean;
-  canEditSource?(pageId: string): boolean;
-  onEditSource?(pageId: string): void;
 }
 
-/** Page cards: right-click actions and direct pointer dragging. */
+/** Page cards: direct pointer dragging and reordering. */
 export function installPageListInteractions(options: PageListInteractionOptions): void {
   const root = options.root;
-  let menu: HTMLElement | null = null;
   let suppressClickUntil = 0;
 
   const pageItemAt = (target: Element | null): HTMLElement | null =>
     (target?.closest('.page-item[data-page-id]') as HTMLElement | null) || null;
   const pageIdOf = (item: HTMLElement): string => item.dataset.pageId || '';
-
-  function closeMenu(): void {
-    menu?.remove();
-    menu = null;
-  }
-
-  function openMenu(event: MouseEvent, pageId: string): void {
-    closeMenu();
-    const node = document.createElement('div');
-    node.className = 'page-context-menu';
-    node.setAttribute('role', 'menu');
-    node.innerHTML = (options.canEditSource?.(pageId) ? '<button type="button" data-page-menu="source" role="menuitem">Edit Markdown source</button>' : '') +
-      '<button type="button" data-page-menu="duplicate" role="menuitem">Duplicate page</button>' +
-      '<button type="button" data-page-menu="delete" role="menuitem"' + (options.canDelete() ? '' : ' disabled') + '>Delete page</button>';
-    document.body.appendChild(node);
-    const rect = node.getBoundingClientRect();
-    const left = Math.min(event.clientX, window.innerWidth - rect.width - 10);
-    const top = Math.min(event.clientY, window.innerHeight - rect.height - 10);
-    node.style.left = Math.max(8, left) + 'px';
-    node.style.top = Math.max(8, top) + 'px';
-    menu = node;
-    node.querySelector('[data-page-menu="source"]')?.addEventListener('click', () => {
-      closeMenu();
-      options.onEditSource?.(pageId);
-    });
-    node.querySelector('[data-page-menu="duplicate"]')?.addEventListener('click', () => {
-      closeMenu();
-      options.onDuplicate(pageId);
-    });
-    node.querySelector('[data-page-menu="delete"]')?.addEventListener('click', () => {
-      if (!options.canDelete()) return;
-      closeMenu();
-      options.onDelete(pageId);
-    });
-  }
-
-  root.addEventListener('contextmenu', event => {
-    const item = pageItemAt(event.target as Element);
-    if (!item) return;
-    event.preventDefault();
-    event.stopPropagation();
-    openMenu(event, pageIdOf(item));
-  });
-
-  document.addEventListener('pointerdown', event => {
-    if (menu && !menu.contains(event.target as Node)) closeMenu();
-  }, true);
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') closeMenu();
-  });
-  root.addEventListener('scroll', closeMenu, { passive: true });
-  const observer = new MutationObserver(mutations => {
-    const pagesChanged = mutations.some(mutation => [...mutation.addedNodes, ...mutation.removedNodes].some(node => {
-      if (!(node instanceof HTMLElement)) return false;
-      return node.matches('.page-item') || Boolean(node.querySelector('.page-item'));
-    }));
-    if (pagesChanged) closeMenu();
-  });
-  observer.observe(root, { childList: true, subtree: true });
 
   root.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
@@ -83,7 +18,6 @@ export function installPageListInteractions(options: PageListInteractionOptions)
     if (!item) return;
     const pageId = pageIdOf(item);
     if (!pageId) return;
-    closeMenu();
     const startX = event.clientX;
     const startY = event.clientY;
     let active = false;

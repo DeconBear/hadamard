@@ -105,6 +105,11 @@ The **Files** tree supports search, right-click new file/folder, rename and dele
 
 PDF files open in an annotated preview built from `pdftoppm` page images plus a `pdftotext -bbox` selection layer. Select text on a page and choose **Highlight** or **Underline** in the preview toolbar. Annotations are stored locally per workspace/file; **Clear annotations** removes them. PDF annotation preview requires Poppler (`pdftoppm` and `pdftotext`, available in TeX Live on this machine); when Poppler is unavailable the preview falls back to the browser PDF viewer without annotations.
 
+
+## Sidebar selection and actions
+
+**Canvases**, **Pages** and **Assets** support multi-selection in the left navigator: **Ctrl/Cmd+click** toggles items, **Shift+click** selects a range, and **Delete/Backspace** removes the selection. Right-click a row for **Duplicate** and **Delete** (the actions apply to the whole selection). Canvas duplication creates an independent document with fresh metadata; page duplication inserts copies after the originals; asset duplication copies the file. Pages always keep at least one page, while deleting every canvas leaves the empty-canvas state. Asset preview now opens on double-click so a single click can select.
+
 ## Workspace navigator
 
 The left sidebar is a single-panel workspace navigator with five sections: **Canvases**, **Pages**, **Files**, **Assets** and **Plugins**. Click a section icon to switch panels, and press **Ctrl/Cmd+B** to show or hide the navigator. The active section is remembered per browser profile. **Canvases** and **Pages** show a live item count; the **Plugins** section opens the plugin manager and gallery without leaving the current document.

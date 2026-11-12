@@ -90,6 +90,13 @@ export class HcAssetService {
     return asset;
   }
 
+  async duplicate(id: string): Promise<HcAsset> {
+    const asset = this.assets.find(item => item.id === id);
+    if (!asset) throw new Error('Asset not found');
+    const data = await readFile(path.join(this.root, asset.file));
+    return this.save({ name: 'Copy of ' + asset.name, mime: asset.mime, data });
+  }
+
   async remove(id: string): Promise<void> {
     const asset = this.assets.find(item => item.id === id);
     if (!asset) throw new Error('Asset not found');

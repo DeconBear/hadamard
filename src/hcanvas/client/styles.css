@@ -1301,3 +1301,10 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .source-save-status[data-state="error"]::before { background: var(--red); }
 .source-autosave-note { flex: 1; color: var(--muted); font-size: 10.5px; }
 @media (prefers-reduced-motion: reduce) { .workspace-nav-item, .sidebar-filter { transition: none; } }
+
+/* Sidebar multi-selection (Canvases / Pages / Assets). */
+.doc-item.is-selected, .page-item.is-selected, .asset-row.is-selected { background: var(--accent-soft) !important; box-shadow: inset 2px 0 0 var(--accent), 0 0 0 1px rgba(109,91,208,.22) !important; }
+.doc-item.is-selected:hover, .page-item.is-selected:hover, .asset-row.is-selected:hover { background: #e9e2ff !important; }
+.doc-item.is-selected small, .page-item.is-selected small { color: var(--accent); }
+.list-context-menu button.danger { color: var(--red); }
+.page-context-menu .list-context-menu { min-width: 154px; }

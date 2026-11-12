@@ -1,3 +1,5 @@
+import { installListSelection } from './listSelection.js';
+
 export interface HcAssetView {
   id: string;
   name: string;
@@ -73,6 +75,38 @@ export function installAssetLibrary(options: AssetLibraryOptions): void {
     }
   }
 
+  async function deleteAssets(ids: string[]): Promise<void> {
+    const unique = [...new Set(ids)];
+    const selected = assets.filter(asset => unique.includes(asset.id));
+    if (!selected.length) return;
+    const referenced = selected.filter(asset => options.isReferenced(asset.url));
+    const message = selected.length === 1
+      ? (referenced.length ? 'This asset is used in the document. Delete it anyway?' : 'Delete asset "' + selected[0]!.name + '"?')
+      : 'Delete ' + selected.length + ' assets?' + (referenced.length ? ' Some are used in the document.' : '');
+    if (!(await options.confirm(message))) return;
+    try {
+      for (const asset of selected) await options.request('/api/assets/' + encodeURIComponent(asset.id), { method: 'DELETE' });
+      assets = assets.filter(asset => !unique.includes(asset.id));
+      options.toast(selected.length === 1 ? 'Asset deleted' : selected.length + ' assets deleted', 'success');
+      render();
+    } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
+  }
+
+  async function duplicateAssets(ids: string[]): Promise<void> {
+    const unique = [...new Set(ids)];
+    if (!unique.length) return;
+    try {
+      const copies: HcAssetView[] = [];
+      for (const id of unique) {
+        const result = await options.request<{ asset: HcAssetView }>('/api/assets/' + encodeURIComponent(id) + '/duplicate', { method: 'POST' });
+        copies.unshift(result.asset);
+      }
+      assets = [...copies, ...assets];
+      options.toast(unique.length === 1 ? 'Asset duplicated' : unique.length + ' assets duplicated', 'success');
+      render();
+    } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
+  }
+
   async function load(): Promise<void> {
     try {
       const result = await options.request<{ assets: HcAssetView[] }>('/api/assets');
@@ -100,7 +134,7 @@ export function installAssetLibrary(options: AssetLibraryOptions): void {
       row.className = 'asset-row';
       row.draggable = true;
       row.dataset.assetId = asset.id;
-      row.title = asset.name + ' · ' + formatBytes(asset.size) + ' · Click to preview';
+      row.title = asset.name + ' · ' + formatBytes(asset.size) + ' · Click to select · double-click to preview';
       const thumb = isImage(asset)
         ? '<img src="' + escapeHtml(asset.url) + '" alt="" loading="lazy">'
         : '<span class="asset-file-icon">' + escapeHtml((asset.name.split('.').pop() || 'file').slice(0, 4).toUpperCase()) + '</span>';
@@ -109,26 +143,25 @@ export function installAssetLibrary(options: AssetLibraryOptions): void {
         event.dataTransfer?.setData('application/x-hcanvas-asset', JSON.stringify(asset));
         if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
       });
-      row.addEventListener('click', event => {
+      row.addEventListener('dblclick', event => {
         if ((event.target as HTMLElement).closest('button')) return;
         options.openPreview?.(asset);
       });
       row.querySelector<HTMLButtonElement>('.asset-insert')!.addEventListener('click', () => void options.onInsert(asset));
-      row.querySelector<HTMLButtonElement>('.asset-delete')!.addEventListener('click', async () => {
-        const used = options.isReferenced(asset.url);
-        const ok = await options.confirm(used ? 'This asset is used in the document. Delete it anyway?' : 'Delete asset "' + asset.name + '"?');
-        if (!ok) return;
-        try {
-          await options.request('/api/assets/' + encodeURIComponent(asset.id), { method: 'DELETE' });
-          assets = assets.filter(item => item.id !== asset.id);
-          options.toast('Asset deleted', 'success');
-          render();
-        } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
-      });
+      row.querySelector<HTMLButtonElement>('.asset-delete')!.addEventListener('click', () => { void deleteAssets([asset.id]); });
       options.mount.appendChild(row);
     }
     if (hadFocus) options.mount.querySelector<HTMLElement>('.asset-row')?.focus();
   }
+
+  installListSelection({
+    root: options.mount,
+    rowSelector: '.asset-row[data-asset-id]',
+    idOf: row => row.dataset.assetId || '',
+    noun: 'asset',
+    onDelete: ids => { void deleteAssets(ids); },
+    onDuplicate: ids => { void duplicateAssets(ids); },
+  });
 
   document.getElementById('uploadAssetBtn')?.addEventListener('click', () => input.click());
   input.addEventListener('change', () => { if (input.files) void uploadFiles(input.files); input.value = ''; });

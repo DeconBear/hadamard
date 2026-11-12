@@ -254,6 +254,11 @@ hcanvas desktop --project ~/projects/my-deck
 
 文档使用 JSON schema `hadamard-canvas/1`：HTML 页把完整源码存在 `page.html`；Canvas/Infinite 页存 `page.blocks`。未选择项目时，桌面应用回退到配置的数据目录（默认 `~/.hcanvas`）；`--workspace <dir>` 仍可直接指定 store 根目录，推荐使用项目化模式 `--project <dir>`。
 
+
+## 侧栏多选与操作
+
+左侧导航中的 **画布**、**页面**、**资源** 支持多选：**Ctrl/Cmd+单击** 切换选中项，**Shift+单击** 选择范围，**Delete/Backspace** 删除选中项。右键行可 **复制** 或 **删除**，操作会作用于整个选区。复制画布会创建独立文档并使用新的元数据；复制页面会在原页面后插入副本；复制资源会复制文件。页面至少保留一个；删除全部画布会进入空画布状态。资源预览改为双击打开，单击用于选择。
+
 ## 工作区导航与面板
 
 左侧边栏是单面板的 workspace 导航，分为 **Canvases**、**Pages**、**Files**、**Assets**、**Plugins** 五个区块。点击区块图标切换面板，按 **Ctrl/Cmd+B** 显示/隐藏整个导航；当前区块会按浏览器配置记住。**Canvases** 和 **Pages** 会显示条目数量，**Plugins** 区块可在不离开当前文档的情况下打开插件管理器与 Gallery。

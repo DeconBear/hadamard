@@ -32,7 +32,7 @@ function assert(name, condition, detail = '') {
 async function startServer(workspace) {
   const child = spawn(process.execPath, ['bin/hcanvas.js', 'serve', '--workspace', workspace, '--port', String(port)], {
     cwd: root,
-    env: { ...process.env },
+    env: { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.e2e-config') },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -417,7 +417,7 @@ async function main() {
   await assetInput.setInputFiles(path.join(root, 'assets', 'hcanvas-icon.png'));
   await page.waitForTimeout(900);
   assert('Asset uploaded', await page.locator('.asset-row').count() > 0);
-  await page.locator('.asset-row').first().click();
+  await page.locator('.asset-row').first().dblclick();
   await page.waitForTimeout(300);
   assert('Asset row opens an image preview', await page.locator('.asset-preview-modal .asset-preview-image').count() === 1);
   await page.locator('.asset-preview-modal [data-close]').first().click();
