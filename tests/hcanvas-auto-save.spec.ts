@@ -17,6 +17,20 @@ describe('hcanvas auto-save', () => {
     expect(save).toHaveBeenCalledWith('latest');
   });
 
+  it('coalesces duplicate flushes for the same revision', async () => {
+    let release: (() => void) | undefined;
+    const save = vi.fn(async () => { await new Promise<void>(resolve => { release = resolve; }); });
+    const autoSave = createAutoSave({ save, onStatus: () => undefined });
+    autoSave.change('same');
+    const first = autoSave.flush();
+    const second = autoSave.flush();
+    await vi.waitFor(() => { expect(save).toHaveBeenCalledTimes(1); });
+    release?.();
+    expect(await first).toBe(true);
+    expect(await second).toBe(true);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
   it('flushes edits made while another save is in flight', async () => {
     let release: (() => void) | undefined;
     const values: string[] = [];

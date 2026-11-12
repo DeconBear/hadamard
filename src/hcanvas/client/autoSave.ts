@@ -20,6 +20,8 @@ export function createAutoSave(options: AutoSaveOptions): AutoSaveController {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let queue = Promise.resolve();
   let closed = false;
+  let inFlightRevision = -1;
+  let inFlightPromise: Promise<boolean> | null = null;
 
   const clearTimer = (): void => {
     if (timer) clearTimeout(timer);
@@ -30,6 +32,7 @@ export function createAutoSave(options: AutoSaveOptions): AutoSaveController {
     clearTimer();
     const savingRevision = revision;
     if (savingRevision === savedRevision) return queue.then(() => savedRevision === revision);
+    if (inFlightPromise && inFlightRevision === savingRevision) return inFlightPromise;
     const value = latest;
     options.onStatus('saving');
     const result = queue.then(async () => {
@@ -44,6 +47,12 @@ export function createAutoSave(options: AutoSaveOptions): AutoSaveController {
       }
     });
     queue = result.then(() => undefined);
+    inFlightRevision = savingRevision;
+    inFlightPromise = result;
+    const clearInFlight = (): void => {
+      if (inFlightPromise === result) { inFlightPromise = null; inFlightRevision = -1; }
+    };
+    void result.then(clearInFlight, clearInFlight);
     return result;
   };
 
