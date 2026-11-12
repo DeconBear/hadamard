@@ -25,10 +25,9 @@
       <button id="toggleRightSidebarBtn" class="icon-btn panel-toggle" title="Collapse right sidebar" aria-label="Toggle right sidebar">▥</button>
       <button id="openProjectFolderBtn" class="btn ghost" title="Open the current project folder">Open folder</button>
       <button id="projectMenuBtn" class="btn ghost" title="Open the project manager">Projects</button>
-      <button id="addPageBtn" class="btn ghost" title="Add a page">+ Page</button>
-      <button id="presentBtn" class="btn ghost" title="Present this canvas">Present</button>
+      <button id="presentBtn" class="btn ghost top-action-icon" title="Present this canvas" aria-label="Present this canvas"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="15" height="11" rx="1.5"/><path d="M8 6.5 12 8.5 8 10.5v-4ZM7 17h6m-3-3v3"/></svg></button>
       <div class="menu-wrap">
-        <button id="exportBtn" class="btn ghost" aria-haspopup="menu" aria-expanded="false">Export</button>
+        <button id="exportBtn" class="btn ghost top-action-icon" title="Export this canvas" aria-label="Export this canvas" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M10 2.5v9m-3.5-3.5L10 11.5 13.5 8M3 12v4.5h14V12"/></svg></button>
         <div id="exportMenu" class="menu hidden" role="menu">
           <button data-export="html">HTML file</button>
           <button data-export="pdf">PDF (browser)</button>
@@ -40,30 +39,29 @@
           <button data-export="scene">Excalidraw scene (.excalidraw)</button>
         </div>
       </div>
-      <button id="newDocBtn" class="btn primary">New canvas</button>
     </div>
   </header>
 
   <aside id="leftbar">
     <div id="sidebarSections" class="sidebar-sections">
     <section class="side-section docs-section" data-sidebar-section="canvases">
-      <div class="side-head"><span class="section-title">Canvases</span><span class="side-head-actions"><button id="collapseDocsBtn" class="icon-btn section-collapse-btn" title="Collapse canvases">⌃</button><button id="newDocMini" class="icon-btn" title="New canvas">+</button></span></div>
+      <div class="side-head"><span class="section-title">Canvases</span><span class="side-head-actions"><button id="newDocMini" class="icon-btn" title="New canvas">+</button></span></div>
       <div id="docsList" class="docs-list"></div>
     </section>
     <section class="side-section pages-section" data-sidebar-section="pages">
-      <div class="side-head"><span class="section-title">Pages</span><span class="side-head-actions"><button id="collapsePagesBtn" class="icon-btn section-collapse-btn" title="Collapse pages">⌃</button><button id="addPageMini" class="icon-btn" title="Add page">+</button></span></div>
+      <div class="side-head"><span class="section-title">Pages</span><span class="side-head-actions"><button id="addPageMini" class="icon-btn" title="Add page">+</button></span></div>
       <div id="pagesList" class="pages-list"></div>
     </section>
     <section class="side-section files-section" data-sidebar-section="files">
-      <div class="side-head"><span class="section-title">Files</span><span class="files-head-actions"><button id="addRootBtn" class="icon-btn" title="Add a folder as workspace root">+</button><button id="collapseFilesBtn" class="icon-btn section-collapse-btn" title="Collapse files">⌃</button></span></div>
+      <div class="side-head"><span class="section-title">Files</span><span class="files-head-actions"><button id="addRootBtn" class="icon-btn" title="Add a folder as workspace root">+</button></span></div>
       <div id="filesPanel" class="files-panel"></div>
     </section>
     <section class="side-section assets-section" data-sidebar-section="assets">
-      <div class="side-head"><span class="section-title">Assets</span><span class="side-head-actions"><button id="uploadAssetBtn" class="icon-btn" title="Upload assets">+</button><button id="collapseAssetsBtn" class="icon-btn section-collapse-btn" title="Collapse assets">⌃</button></span></div>
+      <div class="side-head"><span class="section-title">Assets</span><span class="side-head-actions"><button id="uploadAssetBtn" class="icon-btn" title="Upload assets">+</button></span></div>
       <div id="assetsPanel" class="assets-panel"></div>
     </section>
     <section class="side-section plugins-section" data-sidebar-section="plugins">
-      <div class="side-head"><span class="section-title">Plugins</span><span class="side-head-actions"><button id="collapsePluginsBtn" class="icon-btn section-collapse-btn" title="Collapse plugins">⌃</button><button id="pluginGalleryBtn" class="icon-btn" title="Browse plugin gallery">⊕</button><button id="managePluginsBtn" class="icon-btn" title="Manage plugins">⚙</button></span></div>
+      <div class="side-head"><span class="section-title">Plugins</span><span class="side-head-actions"><button id="pluginGalleryBtn" class="icon-btn" title="Browse plugin gallery">⊕</button><button id="managePluginsBtn" class="icon-btn" title="Manage plugins">⚙</button></span></div>
       <div id="pluginsPanel" class="plugins-panel"><p id="pluginSidebarCount" class="plugin-sidebar-count">0 plugins loaded</p><div class="plugin-sidebar-actions"><button id="pluginManagePanelBtn" class="btn tiny">Manage plugins</button><button id="pluginGalleryPanelBtn" class="btn tiny">Gallery</button></div></div>
     </section>
     </div>

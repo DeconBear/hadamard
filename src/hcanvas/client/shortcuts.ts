@@ -4,6 +4,8 @@ export const SHORTCUTS_MODAL_HTML = '<div class="modal small"><div class="modal-
   '<kbd>Wheel</kbd><span>Zoom at pointer</span>' +
   '<kbd>Shift + Wheel</kbd><span>Pan horizontally</span>' +
   '<kbd>Ctrl/Cmd + Wheel</kbd><span>Zoom at pointer</span>' +
+  '<kbd>Ctrl/Cmd + B</kbd><span>Show or hide the workspace navigator</span>' +
+  '<kbd>Sidebar: ↑ / ↓</kbd><span>Browse canvases or pages; F2 renames a page; Ctrl/Cmd+F filters the list</span>' +
   '<kbd>R / O</kbd><span>Click or drag to draw rectangle / ellipse</span>' +
   '<kbd>T / 1 – 4, 6, 7</kbd><span>Insert text / block / formula, then click to place</span>' +
   '<kbd>Drop / paste image</kbd><span>Insert image from a folder or clipboard</span>' +
@@ -22,7 +24,7 @@ export const SHORTCUTS_MODAL_HTML = '<div class="modal small"><div class="modal-
   '<kbd>Shift + drag</kbd><span>Lock movement axis / keep aspect ratio when resizing</span>' +
   '<kbd>Ctrl/Cmd + drag</kbd><span>Duplicate while dragging / resize from center</span>' +
   '<kbd>Shift + rotate</kbd><span>Snap rotation to 15°</span>' +
-  '<kbd>Present: Click / Wheel</kbd><span>Next / previous page; right-click menu; L = laser pointer</span>' +
+  '<kbd>Present</kbd><span>Click / wheel advance slide pages; document pages scroll; ←/→/PageUp/PageDown navigate; Esc exits; L = laser</span>' +
   '<kbd>G / S</kbd><span>Toggle grid / snap</span>' +
   '<kbd>?</kbd><span>This help</span>' +
   '</div></div><div class="modal-foot"><button class="btn" data-close>Close</button></div></div>';
