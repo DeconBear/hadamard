@@ -110,7 +110,7 @@ export default defineConfig({
     zh: {
       label: '中文',
       lang: 'zh-CN',
-      link: '/zh/README',
+      link: '/zh/',
       themeConfig: {
         nav: [
           { text: '首页', link: '/' },
