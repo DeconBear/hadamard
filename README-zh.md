@@ -64,9 +64,13 @@ Hcanvas 独立运行，拥有自己的版本（0.1.2）和 release tag（hcanvas
 
 ## 运行 Hcanvas
 
-### Windows 安装包 / 便携版
+### 桌面安装包
 
-从 [GitHub Releases](https://github.com/DeconBear/hadamard/releases) 下载独立 Hcanvas 构建，查找 hcanvas-v0.1.2 release，选择安装包（Hadamard-Canvas-Setup-*.exe）或便携版 exe。
+从 [GitHub Releases](https://github.com/DeconBear/hadamard/releases) 下载独立 Hcanvas 构建，查找 hcanvas-v0.1.2 release：
+
+- **Windows：**Hadamard-Canvas-Setup-*.exe 安装包或 Hadamard-Canvas-*-portable.exe 便携版
+- **macOS：**Hadamard-Canvas-*.dmg 或 Hadamard-Canvas-*.zip（x64 与 arm64）
+- **Linux：**Hadamard-Canvas-*.AppImage 或 Hadamard-Canvas-*.deb（x64）
 
 ### npm
 

@@ -51,3 +51,31 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: Hadamard Canvas
   artifactName: Hadamard-Canvas-Setup-${version}.${ext}
+
+linux:
+  icon: assets/hcanvas-icon.png
+  category: Graphics
+  maintainer: Hadamard
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  artifactName: Hadamard-Canvas-${version}-${arch}.${ext}
+
+mac:
+  icon: assets/hcanvas-icon.png
+  category: public.app-category.graphics-design
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  artifactName: Hadamard-Canvas-${version}-${arch}.${ext}

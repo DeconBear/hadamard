@@ -1,7 +1,8 @@
 name: Publish Hcanvas
 
-# Independent Hcanvas release. Tags use hcanvas-v<version>; this workflow does
-# not touch Hadamard's v* releases or installers.
+# Independent Hcanvas release. Tags use hcanvas-v<version>.
+# Builds Windows, macOS and Linux installers in parallel, then attaches them
+# to the matching GitHub Release. The npm package is published separately.
 
 on:
   push:
@@ -22,11 +23,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
 jobs:
-  release:
-    runs-on: windows-latest
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
     steps:
       - name: Resolve tag
         id: tag
@@ -37,7 +41,7 @@ jobs:
           else
             TAG="${GITHUB_REF_NAME}"
           fi
-          if [[ ! "$TAG" =~ ^hcanvas-v[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$ ]]; then
+          if [[ ! "$TAG" =~ ^hcanvas-v[0-9]+[.][0-9]+[.][0-9]+([-+].*)?$ ]]; then
             echo "Tag must match hcanvas-v<semver> (got: $TAG)"
             exit 1
           fi
@@ -47,16 +51,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
+          ref: ${{ steps.tag.outputs.tag }}
 
       - name: Verify independent Hcanvas version
         shell: bash
@@ -69,31 +64,90 @@ jobs:
           fi
           echo "Hcanvas version: $ACTUAL"
 
-      - name: Build Hcanvas installers
-        run: npm run build:hcanvas:all
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: build:hcanvas:win
+            artifact: hcanvas-windows
+          - os: macos-latest
+            script: build:hcanvas:mac
+            artifact: hcanvas-macos
+          - os: ubuntu-latest
+            script: build:hcanvas:linux
+            artifact: hcanvas-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libarchive-tools fakeroot
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build installers
+        run: npm run ${{ matrix.script }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          path: |
+            dist_electron/canvas/Hadamard-Canvas-*.exe
+            dist_electron/canvas/Hadamard-Canvas-*.dmg
+            dist_electron/canvas/Hadamard-Canvas-*.zip
+            dist_electron/canvas/Hadamard-Canvas-*.AppImage
+            dist_electron/canvas/Hadamard-Canvas-*.deb
+            dist_electron/canvas/latest*.yml
+
+  release:
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
 
       - name: Ensure GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          if gh api "repos/${{ github.repository }}/releases/tags/$TAG" >/dev/null 2>&1; then
+          TAG="${{ needs.prepare.outputs.tag }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             echo "Release $TAG already exists."
           else
             gh release create "$TAG" --repo "${{ github.repository }}" --title "Hcanvas $TAG" --generate-notes
           fi
 
-      - name: Upload Hcanvas installers
+      - name: Upload release assets
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          VERSION="${{ steps.tag.outputs.version }}"
-          gh release upload "$TAG" \
-            "dist_electron/canvas/Hadamard-Canvas-Setup-${VERSION}.exe" \
-            "dist_electron/canvas/Hadamard-Canvas-${VERSION}-portable.exe" \
-            "dist_electron/canvas/latest.yml" \
-            --repo "${{ github.repository }}" \
-            --clobber
+          TAG="${{ needs.prepare.outputs.tag }}"
+          find release-assets -type f -print0 | while IFS= read -r -d '' file; do
+            echo "Uploading $file"
+            gh release upload "$TAG" "$file" --repo "${{ github.repository }}" --clobber
+          done

@@ -64,9 +64,13 @@ Hcanvas runs as its own app and keeps its own version (0.1.2) and release tags (
 
 ## Run Hcanvas
 
-### Windows installer and portable app
+### Desktop installers
 
-Download the standalone Hcanvas build from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) — look for the hcanvas-v0.1.2 release and choose the installer (Hadamard-Canvas-Setup-*.exe) or portable executable.
+Download the standalone Hcanvas build from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) — look for the hcanvas-v0.1.2 release:
+
+- **Windows:** Hadamard-Canvas-Setup-*.exe (installer) or Hadamard-Canvas-*-portable.exe
+- **macOS:** Hadamard-Canvas-*.dmg or Hadamard-Canvas-*.zip (x64 and arm64)
+- **Linux:** Hadamard-Canvas-*.AppImage or Hadamard-Canvas-*.deb (x64)
 
 ### npm
 

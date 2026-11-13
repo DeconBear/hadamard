@@ -14,6 +14,8 @@ Hadamard Canvas 是独立于桌面 GUI（`hadamard-gui`）的 AI-native 画布�
 npm install -g hadamard-canvas
 ```
 
+桌面版下载可从 [GitHub Releases](https://github.com/DeconBear/hadamard/releases) 获取：Windows（安装包/便携版）、macOS（DMG/ZIP，x64 与 arm64）、Linux（AppImage/DEB，x64）。
+
 ## 独立桌面应用
 
 Hadamard Canvas 可以作为独立 Electron 窗口运行，不只是一个浏览器标签页：
@@ -47,6 +49,22 @@ npm run build:hcanvas:installer
 ```
 
 安装包是标准 NSIS 向导：可选择安装目录、创建开始菜单与桌面快捷方式、自带卸载器，无需 system-wide 安装。
+
+在 macOS 上构建 macOS 包（x64 与 arm64 的 DMG 和 ZIP）：
+
+```bash
+npm run build:hcanvas:mac
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-<arch>.dmg
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-<arch>.zip
+```
+
+在 Linux 上构建 Linux 包（x64 的 AppImage 和 DEB）：
+
+```bash
+npm run build:hcanvas:linux
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-x64.AppImage
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-x64.deb
+```
 
 ## 启动
 

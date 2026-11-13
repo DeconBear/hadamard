@@ -183,8 +183,8 @@
     "build:gui-canvas": "node scripts/build-gui-canvas.mjs",
     "hcanvas": "node bin/hcanvas.js",
     "hcanvas:desktop": "node bin/hcanvas-desktop.js",
-    "build:hcanvas:desktop": "node scripts/build-hcanvas-installer.mjs portable",
-    "build:hcanvas:installer": "node scripts/build-hcanvas-installer.mjs nsis",
+    "build:hcanvas:desktop": "node scripts/build-hcanvas-installer.mjs --platform win portable",
+    "build:hcanvas:installer": "node scripts/build-hcanvas-installer.mjs --platform win nsis",
     "hcanvas:app": "node bin/hcanvas.js app",
     "gui:canvas": "node bin/hadamard-canvas.js",
     "gui:harness": "node bin/hadamard-harness.js",
@@ -259,11 +259,14 @@
     "example:hadamard-buddy": "npm run build && tsx examples/hadamard-buddy.ts",
     "example:bridge-sdk": "npm run build && tsx examples/bridge-sdk.ts",
     "example:profiles": "tsx examples/profiles/all-profiles.ts",
-    "build:hcanvas:all": "node scripts/build-hcanvas-installer.mjs portable nsis",
+    "build:hcanvas:all": "node scripts/build-hcanvas-installer.mjs --platform win portable nsis",
     "build:desktop:suite": "node scripts/build-hadamard-suite.mjs",
     "test:hcanvas:e2e": "node scripts/verify-hcanvas-e2e.mjs",
     "build:hcanvas:package": "node scripts/build-canvas-package.mjs",
-    "build:hcanvas:release": "npm run build:hcanvas:all && npm run build:hcanvas:package"
+    "build:hcanvas:release": "npm run build:hcanvas:all && npm run build:hcanvas:package",
+    "build:hcanvas:win": "node scripts/build-hcanvas-installer.mjs --platform win portable nsis",
+    "build:hcanvas:linux": "node scripts/build-hcanvas-installer.mjs --platform linux AppImage deb",
+    "build:hcanvas:mac": "node scripts/build-hcanvas-installer.mjs --platform mac dmg zip"
   },
   "keywords": [
     "agent",

@@ -14,6 +14,8 @@ The standalone CLI and desktop launcher are published as the `hadamard-canvas` n
 npm install -g hadamard-canvas
 ```
 
+Desktop downloads are available from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) for Windows (installer/portable), macOS (DMG/ZIP, x64 and arm64) and Linux (AppImage/DEB, x64).
+
 ## Run it
 
 ```bash
@@ -69,6 +71,22 @@ npm run build:hcanvas:installer
 
 The installer is a normal NSIS wizard: choose the install directory, creates Start Menu and desktop shortcuts, and includes an uninstaller. It does not require a system-wide install.
 
+Build macOS packages on macOS (DMG and ZIP for x64 and arm64):
+
+```bash
+npm run build:hcanvas:mac
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-<arch>.dmg
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-<arch>.zip
+```
+
+Build Linux packages on Linux (AppImage and DEB for x64):
+
+```bash
+npm run build:hcanvas:linux
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-x64.AppImage
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-x64.deb
+```
+
 ### Hadamard suite installer (optional Hcanvas component)
 
 ```bash
@@ -80,7 +98,7 @@ The suite installer builds the current Hcanvas `hcanvas.version.json` installer 
 
 ### Independent releases
 
-Hcanvas releases use their own tag namespace and workflow: `hcanvas-v<version>` (for example `hcanvas-v0.1.2`). The workflow checks that the tag matches `hcanvas.version.json`, builds the standalone installers, and uploads them to the Hcanvas release. It never writes Hadamard `v*` releases. Browser E2E is available with `npm run test:hcanvas:e2e` or the **Hcanvas E2E** workflow.
+Hcanvas releases use their own tag namespace and workflow: `hcanvas-v<version>` (for example `hcanvas-v0.1.2`). The workflow checks that the tag matches `hcanvas.version.json`, builds Windows, macOS and Linux installers in parallel, and uploads them to the Hcanvas release. It never writes Hadamard `v*` releases. Browser E2E is available with `npm run test:hcanvas:e2e` or the **Hcanvas E2E** workflow.
 
 The workspace stores documents, state and exports:
 
