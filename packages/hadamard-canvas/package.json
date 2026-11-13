@@ -1,0 +1,54 @@
+{
+  "name": "hadamard-canvas",
+  "version": "0.1.0",
+  "description": "AI-native visual canvas and document workspace with CLI for agents",
+  "keywords": [
+    "canvas",
+    "document",
+    "markdown",
+    "presentation",
+    "whiteboard",
+    "ai",
+    "agent",
+    "hadamard"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DeconBear/hadamard.git",
+    "directory": "packages/hadamard-canvas"
+  },
+  "bugs": {
+    "url": "https://github.com/DeconBear/hadamard/issues"
+  },
+  "homepage": "https://github.com/DeconBear/hadamard#readme",
+  "type": "module",
+  "main": "./dist/src/hcanvas/server.js",
+  "types": "./dist/src/hcanvas/server.d.ts",
+  "bin": {
+    "hcanvas": "bin/hcanvas.js",
+    "hcanvas-desktop": "bin/hcanvas-desktop.js",
+    "hadamard-canvas": "bin/hcanvas.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "assets",
+    "README.md"
+  ],
+  "dependencies": {
+    "docx": "^9.15.1",
+    "katex": "^0.16.47",
+    "marked": "^18.1.2",
+    "node-html-parser": "^9.0.6",
+    "pptxgenjs": "^4.0.1",
+    "puppeteer-core": "^25.16.0",
+    "zod": "^4.1.12"
+  },
+  "optionalDependencies": {
+    "electron": "^42.4.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
