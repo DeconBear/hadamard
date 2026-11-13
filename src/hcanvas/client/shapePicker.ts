@@ -76,7 +76,7 @@ export function createShapePicker(options: ShapePickerOptions): ShapePicker {
     const button = anchor();
     if (!button) return;
     const rect = button.getBoundingClientRect();
-    const width = Math.min(424, Math.max(320, window.innerWidth - 20));
+    const width = Math.min(500, Math.max(340, window.innerWidth - 20));
     popover.style.width = width + 'px';
     const height = popover.offsetHeight || 480;
     let left = rect.right + 12;

@@ -647,18 +647,18 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .shape-search input::-webkit-search-cancel-button { display: none; }
 .shape-search-clear { position: absolute; right: 5px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 15px; line-height: 1; }
 .shape-search-clear:hover { color: var(--ink); background: var(--surface-2); }
-.shape-popover-body { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 11px; min-height: 0; }
-.shape-category-tabs { display: flex; flex-direction: column; align-self: start; gap: 3px; padding: 4px; border-radius: 10px; background: #f4f2ed; }
-.shape-category-tab { display: flex; align-items: center; justify-content: space-between; gap: 5px; width: 100%; min-height: 32px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-2); text-align: left; font: 500 10px/1.2 var(--sans); transition: color .14s, background .14s; }
+.shape-popover-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.shape-category-tabs { display: flex; flex-direction: row; flex-wrap: wrap; align-self: stretch; gap: 4px; padding: 0; }
+.shape-category-tab { display: flex; align-items: center; justify-content: center; gap: 5px; width: auto; min-height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 999px; background: #f4f2ed; color: var(--ink-2); text-align: center; font: 500 9.5px/1.2 var(--sans); transition: color .14s, background .14s, border-color .14s; }
 .shape-category-tab span { min-width: 0; }
 .shape-category-tab small { color: #9a958c; font-size: 8.5px; font-variant-numeric: tabular-nums; }
-.shape-category-tab:hover { color: var(--ink); background: rgba(255,255,255,.72); }
-.shape-category-tab.active { color: var(--accent); background: #ebe6f8; box-shadow: inset 2px 0 0 var(--accent); }
+.shape-category-tab:hover { color: var(--ink); background: #eeece7; }
+.shape-category-tab.active { color: var(--accent); background: #ebe6f8; border-color: rgba(109,91,208,.18); box-shadow: none; }
 .shape-category-tab.active small { color: var(--accent); }
 .shape-library { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .shape-library-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px 7px; color: var(--ink-2); font-size: 10px; font-weight: 600; }
 .shape-library-meta small { color: var(--muted); font-size: 8.5px; font-weight: 400; white-space: nowrap; }
-.shape-popover-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; gap: 5px; height: clamp(210px, 45vh, 390px); padding: 2px 4px 4px 2px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #c9c4ba transparent; }
+.shape-popover-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; gap: 5px; height: clamp(210px, 40vh, 360px); padding: 2px 4px 4px 2px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #c9c4ba transparent; }
 .shape-popover .shape-choice { min-width: 0; min-height: 76px; padding: 4px 3px 6px; gap: 5px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink-2); font: 500 9px/1.25 var(--sans); transition: background .14s, border-color .14s, color .14s, transform .1s; }
 .shape-popover .shape-choice:hover { border-color: rgba(109,91,208,.12); color: var(--accent); background: #f7f5fc; }
 .shape-popover .shape-choice:active { transform: scale(.97); }
@@ -675,7 +675,7 @@ body.sidebar-resizing { cursor: col-resize !important; user-select: none; }
 .shape-popover-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 9px; border-top: 1px solid var(--border); color: var(--muted); font-size: 8.5px; line-height: 1.35; }
 .shape-popover-foot kbd { flex: 0 0 auto; padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); font: 8px/1.2 var(--mono); }
 @media (max-width: 420px) {
-  .shape-popover-body { grid-template-columns: 96px minmax(0, 1fr); gap: 7px; }
+
   .shape-category-tab { padding: 0 6px; font-size: 9px; }
   .shape-popover-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
