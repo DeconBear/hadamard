@@ -912,7 +912,7 @@ body.hc-rotating { cursor: grabbing !important; user-select: none; }
 
 .hc-node-guides { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1100; overflow: visible; pointer-events: none; }
 .hc-node-guides line { stroke: #7c3aed; stroke-width: 1.2; stroke-dasharray: 4 4; opacity: .72; }
-.block-wrap.type-curve.selected { outline: none !important; }
+.block-wrap.type-curve.selected { outline: 1px dashed rgba(109,91,208,.55) !important; outline-offset: 4px; border-radius: 4px; }
 .block-wrap.type-curve.selected > .block-hit { box-shadow: none !important; }
 .block-wrap.type-curve.selected .block-vector-host svg { overflow: visible; }
 

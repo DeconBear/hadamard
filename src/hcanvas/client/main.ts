@@ -700,7 +700,7 @@ function beginMarquee(event: PointerEvent): void {
     const hits = (page.blocks || []).filter(block => block.x + block.w >= minX && block.x <= maxX && block.y + block.h >= minY && block.y <= maxY);
     const ids = new Set<string>();
     for (const block of hits) for (const id of expandGroupSelection(block)) ids.add(id);
-    if (upEvent.shiftKey) for (const id of state.selectedBlockIds) ids.add(id);
+    if (upEvent.shiftKey || upEvent.ctrlKey || upEvent.metaKey) for (const id of state.selectedBlockIds) ids.add(id);
     setBlockSelection([...ids], hits[hits.length - 1]?.id ?? null);
   };
   viewport.addEventListener('pointermove', move);
@@ -2126,7 +2126,7 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
       cycleBlockSelectionAt(event.clientX, event.clientY, block.id);
       return;
     }
-    selectBlock(block.id, { additive: event.shiftKey && !state.selectedBlockIds.includes(block.id) });
+    selectBlock(block.id, { additive: (event.shiftKey || event.ctrlKey || event.metaKey) && !state.selectedBlockIds.includes(block.id) });
     if (!state.selectedBlockIds.includes(block.id)) return;
     beginBlockDrag(event, block, hit, wrap);
   });
