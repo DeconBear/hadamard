@@ -27,6 +27,24 @@ const CATEGORY_ZH: Record<string, string> = {
   'Action Buttons': '操作按钮',
 };
 
+const SHAPE_LABEL_ZH: Record<string, string> = {
+  Rectangle: '矩形', 'Rounded rectangle': '圆角矩形', Ellipse: '椭圆', Triangle: '三角形', 'Right triangle': '直角三角形',
+  Diamond: '菱形', Parallelogram: '平行四边形', Trapezoid: '梯形', Pentagon: '五边形', Hexagon: '六边形', Octagon: '八边形',
+  Cross: '十字', Plus: '加号', Minus: '减号', Multiply: '乘号', Divide: '除号', Equals: '等号', 'Not equal': '不等号',
+  Heart: '心形', Cloud: '云形', Cylinder: '圆柱', Cube: '立方体', Note: '便签', 'Arrow right': '右箭头', 'Arrow left': '左箭头',
+  Chevron: 'V 形箭头', Home: '主页', Pie: '饼图', Donut: '环形图', Arc: '弧形', Frame: '画框',
+  Line: '直线', 'Double arrow': '双向箭头', 'Arc line': '弧线', Polyline: '折线', 'Elbow connector': '直角连接线', 'Curve line': '曲线',
+  Process: '流程', Decision: '判断', Terminator: '开始/结束', Data: '数据', Document: '文档', Database: '数据库',
+  'Manual input': '手动输入', Preparation: '准备', Star: '星形', '4-point star': '四角星', '5-point star': '五角星', '6-point star': '六角星',
+  '8-point star': '八角星', '12-point star': '十二角星', '16-point star': '十六角星', '24-point star': '二十四角星', '32-point star': '三十二角星',
+  Ribbon: '横幅', Explosion: '爆炸形', 'Rectangle callout': '矩形标注', 'Rounded callout': '圆角标注', 'Cloud callout': '云形标注', Thought: '思考框',
+  'Play button': '播放按钮', 'Next button': '下一项按钮', 'Previous button': '上一项按钮', 'Home button': '主页按钮', 'Info button': '信息按钮', 'Help button': '帮助按钮', Polygon: '多边形',
+};
+
+function shapeLabel(label: string): string {
+  return getLanguage() === 'zh' ? (SHAPE_LABEL_ZH[label] || label) : label;
+}
+
 function categoryLabel(category: string): string {
   return getLanguage() === 'zh' ? (CATEGORY_ZH[category] || category) : category;
 }
@@ -119,7 +137,7 @@ export function createShapePicker(options: ShapePickerOptions): ShapePicker {
     const query = search.value.trim().toLocaleLowerCase();
     const shapes = VISIBLE_SHAPES.filter(shape => {
       if (!query) return shape.category === activeCategory;
-      return (shape.label + ' ' + shape.hint + ' ' + shape.category + ' ' + categoryLabel(shape.category)).toLocaleLowerCase().includes(query);
+      return (shape.label + ' ' + shape.hint + ' ' + shape.category + ' ' + categoryLabel(shape.category) + ' ' + shapeLabel(shape.label)).toLocaleLowerCase().includes(query);
     });
     popover.querySelectorAll<HTMLButtonElement>('[data-shape-category]').forEach(button => {
       const active = !query && button.dataset.shapeCategory === activeCategory;
@@ -135,9 +153,9 @@ export function createShapePicker(options: ShapePickerOptions): ShapePicker {
     grid.innerHTML = shapes.map(shape => {
       const preview = shapeSvgMarkup({ shape: shape.id, style: { fill: '#e8e9ed', stroke: '#626975', strokeWidth: 1.35, radius: 10 } })
         .replace('preserveAspectRatio="none"', 'preserveAspectRatio="xMidYMid meet"');
-      return '<button type="button" class="shape-choice" data-shape-choice="' + shape.id + '" aria-label="' + escapeHtml(shapeInsertLabel(shape.label)) + '" title="' + escapeHtml(shape.label + ' — ' + shape.hint) + '">' +
+      return '<button type="button" class="shape-choice" data-shape-choice="' + shape.id + '" aria-label="' + escapeHtml(shapeInsertLabel(shapeLabel(shape.label))) + '" title="' + escapeHtml(shapeLabel(shape.label) + ' — ' + shape.hint) + '">' +
         '<span class="shape-choice-preview">' + preview + '</span>' +
-        '<span class="shape-choice-label">' + escapeHtml(shape.label) + '</span></button>';
+        '<span class="shape-choice-label">' + escapeHtml(shapeLabel(shape.label)) + '</span></button>';
     }).join('');
     popover.querySelector('.shape-empty')?.classList.toggle('hidden', shapes.length > 0);
     grid.classList.toggle('hidden', shapes.length === 0);
