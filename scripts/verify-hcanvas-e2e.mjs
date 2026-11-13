@@ -92,6 +92,7 @@ async function main() {
   assert('UI loads', (await page.title()).includes('Hadamard Canvas'), await page.title());
   await page.evaluate(async () => { await document.fonts.ready; });
   assert('Bundled Inter font loads', await page.evaluate(() => document.fonts.check('16px Inter')));
+  assert('App brand and favicon use the simplified HCanvas logo', await page.locator('.brand-mark img').getAttribute('src') === '/assets/hcanvas-icon.svg' && await page.locator('.brand-mark img').evaluate(image => image.complete && image.naturalWidth === 1024) && await page.locator('link[rel="icon"]').getAttribute('href') === '/assets/hcanvas-icon.svg');
   assert('Top bar removes duplicate page and canvas actions', await page.locator('#addPageBtn, #newDocBtn').count() === 0);
   assert('Present and Export are accessible icon actions', await page.locator('#presentBtn svg, #exportBtn svg').count() === 2 && (await page.locator('#presentBtn').getAttribute('title')) === 'Present this canvas' && (await page.locator('#exportBtn').getAttribute('title')) === 'Export this canvas');
   assert('Workspace navigator renders all sections', await page.locator('.workspace-nav-item').count() === 5);

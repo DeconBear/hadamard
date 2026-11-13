@@ -74,12 +74,8 @@ button { cursor: pointer; }
   z-index: 40;
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 192px; }
-.brand-mark {
-  width: 30px; height: 30px; display: grid; place-items: center;
-  border-radius: 9px; color: #fff; font-weight: 800; font-size: 14px;
-  background: linear-gradient(135deg, #7c3aed, #2563eb);
-  box-shadow: 0 2px 8px rgba(109, 91, 208, .3);
-}
+.brand-mark { width: 32px; height: 32px; flex: 0 0 32px; display: block; }
+.brand-mark img { display: block; width: 100%; height: 100%; }
 .brand-copy { display: flex; flex-direction: column; line-height: 1.15; }
 .brand-copy strong { font-size: 13px; letter-spacing: -.01em; }
 .brand-copy small { font-size: 9.5px; color: var(--muted); letter-spacing: .04em; margin-top: 2px; }

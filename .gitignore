@@ -60,3 +60,29 @@ build-artifacts/
 packages/hadamard-canvas/*
 !packages/hadamard-canvas/package.json
 !packages/hadamard-canvas/npm-README.md
+
+# Local test output and generated test artifacts
+# Test sources under tests/ remain tracked for CI; these are local run products.
+test-results/
+playwright-report/
+.vitest/
+*.junit.xml
+
+# Local secrets and credentials (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+id_rsa*
+*.log
+
+# Local Hcanvas workspace state (never commit user documents/state)
+.hcanvas/
+/.hadamard/settings.json
+/.hadamard/sessions/
+/.hadamard/projects/
+/.hadamard/usage/

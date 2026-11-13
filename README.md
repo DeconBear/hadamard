@@ -95,7 +95,7 @@ hcanvas serve --workspace <dir> --port 4319
 ~~~bash
 npm install
 npm run build
-node bin/hcanvas-desktop.js --workspace ./plan/hcanvas-demo
+node bin/hcanvas-desktop.js --workspace ./hcanvas-demo
 ~~~
 
 ### Data and projects

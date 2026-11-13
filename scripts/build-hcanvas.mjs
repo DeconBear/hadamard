@@ -19,6 +19,7 @@ await build({
 });
 await copyFile(path.join(root, 'src', 'hcanvas', 'client', 'styles.css'), path.join(outDir, 'assets', 'app.css'));
 await copyFile(path.join(root, 'src', 'hcanvas', 'client', 'index.html'), path.join(outDir, 'index.html'));
+await copyFile(path.join(root, 'assets', 'hcanvas-icon.svg'), path.join(outDir, 'assets', 'hcanvas-icon.svg'));
 await cp(path.join(root, 'src', 'hcanvas', 'client', 'fonts'), path.join(outDir, 'assets', 'fonts'), { recursive: true });
 await mkdir(path.join(root, 'dist', 'src', 'hcanvas'), { recursive: true });
 await copyFile(path.join(root, 'src', 'hcanvas', 'preload.cjs'), path.join(root, 'dist', 'src', 'hcanvas', 'preload.cjs'));

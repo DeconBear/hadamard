@@ -26,6 +26,8 @@ describe('hcanvas store', () => {
     expect(doc.pages[1]!.mode).toBe('canvas');
     expect(doc.pages[2]!.mode).toBe('infinite');
     expect(doc.pages[0]!.html).toContain('data-hc-id=');
+    expect(doc.pages[0]!.html).toMatch(/<span class="mark"[^>]*><svg/);
+    expect(doc.pages[0]!.html).toContain('fill="#6657D9"');
   });
 
 

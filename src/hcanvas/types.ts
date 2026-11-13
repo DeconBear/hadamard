@@ -296,7 +296,8 @@ export const DEMO_SLIDE_HTML = `<!doctype html>
   .grain { position: absolute; inset: 0; background-image: radial-gradient(rgba(0,0,0,.055) 1px, transparent 1px); background-size: 22px 22px; opacity: .5; pointer-events: none; }
   .top { display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 1; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.02em; font-size: 18px; }
-  .mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: white; background: linear-gradient(135deg, #7c3aed, #2563eb); font-size: 15px; }
+  .mark { width: 32px; height: 32px; flex: 0 0 32px; }
+  .mark svg { display: block; width: 100%; height: 100%; }
   .tag { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #7a7468; border: 1px solid #d9d3c7; border-radius: 999px; padding: 6px 10px; background: rgba(255,255,255,.55); }
   h1 { position: relative; z-index: 1; font-family: Georgia, "Times New Roman", serif; font-weight: 500; font-size: 62px; line-height: 1.02; letter-spacing: -.045em; margin: 42px 0 18px; max-width: 760px; }
   h1 em { color: #6d28d9; font-style: italic; }
@@ -313,7 +314,7 @@ export const DEMO_SLIDE_HTML = `<!doctype html>
   <div class="slide">
     <div class="grain"></div>
     <div class="top">
-      <div class="brand"><span class="mark">H</span> Hadamard Canvas</div>
+      <div class="brand"><span class="mark"><svg viewBox="0 0 1024 1024" fill="none" aria-hidden="true"><rect x="64" y="64" width="896" height="896" rx="216" fill="#6657D9"/><path d="M334 310V714M690 310V714M334 512H690" stroke="#FFFFFF" stroke-width="76" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Hadamard Canvas</div>
       <span class="tag">HTML page · editable</span>
     </div>
     <h1>An <em>AI-native</em> canvas for serious visual work.</h1>
