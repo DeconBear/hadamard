@@ -57,4 +57,6 @@ scripts/rebrand-to-hadamard.mjs
 build-artifacts/
 
 # Generated npm package staging for hadamard-canvas
-packages/hadamard-canvas/
+packages/hadamard-canvas/*
+!packages/hadamard-canvas/package.json
+!packages/hadamard-canvas/npm-README.md
