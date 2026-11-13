@@ -14,7 +14,7 @@ The standalone CLI and desktop launcher are published as the `hadamard-canvas` n
 npm install -g hadamard-canvas
 ```
 
-Desktop downloads are available from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) for Windows (installer/portable), macOS (DMG/ZIP, x64 and arm64) and Linux (AppImage/DEB, x64).
+Desktop downloads are available from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) for Windows (installer/portable), macOS (DMG/ZIP, x64 and arm64) and Linux (AppImage/DEB, x64). The desktop installers include the Electron app only; they do not add the `hcanvas` / `hadamard-canvas` CLI to PATH. Install the npm package separately when you need CLI or agent commands.
 
 ## Run it
 

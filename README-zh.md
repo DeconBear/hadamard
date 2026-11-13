@@ -72,6 +72,8 @@ Hcanvas 独立运行，拥有自己的版本（0.1.2）和 release tag（hcanvas
 - **macOS：**Hadamard-Canvas-*.dmg 或 Hadamard-Canvas-*.zip（x64 与 arm64）
 - **Linux：**Hadamard-Canvas-*.AppImage 或 Hadamard-Canvas-*.deb（x64）
 
+桌面安装包只包含 Electron 应用，**不会**把 `hcanvas` / `hadamard-canvas` 加入 PATH。如果你需要 CLI 和 Agent 命令，仍需单独安装 npm 包（见下一节）。
+
 ### npm
 
 通过 npm 或源码运行 Hcanvas 需要 Node.js 22.13+ 或 Node.js 24。

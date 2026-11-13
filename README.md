@@ -72,6 +72,8 @@ Download the standalone Hcanvas build from [GitHub Releases](https://github.com/
 - **macOS:** Hadamard-Canvas-*.dmg or Hadamard-Canvas-*.zip (x64 and arm64)
 - **Linux:** Hadamard-Canvas-*.AppImage or Hadamard-Canvas-*.deb (x64)
 
+The desktop installers include the Electron app only. They do **not** add `hcanvas` / `hadamard-canvas` to your PATH. If you want the CLI and agent-facing commands, install the npm package separately (next section).
+
 ### npm
 
 Node.js 22.13+ or Node.js 24 is required when running Hcanvas from npm or source.
