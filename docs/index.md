@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "Hadamard"
-  text: "Agents as an Engineering Team"
-  tagline: "One TypeScript runtime for agents, agent teams, and every major agent CLI — with TUI and GUI included."
+  text: "Tools for LLM Harnesses"
+  tagline: "A family of tools around LLM harnesses: Hadamard Canvas for visual work, Hadamard Harness for agent runtime and orchestration, and more."
   actions:
     - theme: brand
       text: Start with English

@@ -1,5 +1,7 @@
 # Hadamard Agent SDK Tutorial
 
+> New to Hcanvas? Start with the [Hcanvas Quickstart](./hcanvas.md).
+
 This tutorial is a practical, step-by-step guide to the current SDK. It is organized so you can start with a working chat bot, then add tools, skills, sessions, MCP, and memory as needed.
 
 Recommended reading order:

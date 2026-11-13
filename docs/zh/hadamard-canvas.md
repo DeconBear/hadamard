@@ -1,5 +1,7 @@
 # Hadamard Canvas（hcanvas）
 
+第一次使用 Hcanvas？请从 [Hcanvas 快速上手](./hcanvas.md) 开始。
+
 Hadamard Canvas 是独立于桌面 GUI（`hadamard-gui`）的 AI-native 画布应用。人和 agent 操作同一份文档：
 
 - **HTML 页面**：沙箱渲染，可直接在页面上改文字/样式，也可用完整 HTML/CSS 源码编辑器；

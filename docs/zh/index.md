@@ -1,5 +1,7 @@
 # Hadamard Agent SDK 中文教程
 
+> 新用户可以从 [Hcanvas 快速上手](./hcanvas.md) 开始。
+
 这是一套面向当前 SDK 的中文上手教程，目标是让你从零开始，逐步掌握 Hadamard SDK、providers、tools、session、memory、MCP 与 orchestration。
 
 > 最近校对：2026-07-29。支持 Node.js `^22.13.0 || ^24.0.0`。

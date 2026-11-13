@@ -27,6 +27,20 @@ Most visual tools end up either human-only or agent-only. Hcanvas keeps a single
 
 Hcanvas runs as its own app and keeps its own version (0.1.2) and release tags (hcanvas-v*); it is independent from the Hadamard desktop GUI and its legacy canvas module.
 
+## Quick start with AI Agents
+
+If a user asks you to install or configure Hcanvas, use this checklist. The npm path installs both the CLI and the optional Electron desktop launcher.
+
+> **User prompt:** "Set up Hadamard Canvas for me. Read the 'Quick start with AI Agents' section at https://github.com/DeconBear/hadamard#quick-start-with-ai-agents, detect my OS, install Node.js 22.13+ if needed, install the CLI, verify it, and report the result. Ask before installing system packages or changing my PATH."
+
+1. Check `node --version` is >=22.13.0; Node 24 is also supported.
+2. Install the CLI with `npm install -g hadamard-canvas`.
+3. Verify `hcanvas` prints its command list, then launch `hcanvas desktop --workspace <dir>` (or `hcanvas app --workspace <dir>` for browser mode).
+4. Use a writable workspace (default `~/.hcanvas`) and do not delete existing documents.
+5. Report the Node/npm and `hadamard-canvas` versions, workspace path and launch mode.
+
+Desktop installers from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) include the GUI only; install the CLI separately with the npm command above when needed.
+
 ## Highlights
 
 ### Pages that fit the work
@@ -113,71 +127,6 @@ By default Hcanvas stores documents under ~/.hcanvas. The **Projects** page can 
 ~~~
 
 Each project keeps its data in .hcanvas/ inside the project folder.
-
-## For AI agents
-
-If the user asks you to install or configure Hcanvas, prefer the npm path: one command installs the CLI and the optional Electron desktop launcher. Use the desktop installers only when Node.js is unavailable or the user cannot use npm.
-
-### One-paste prompt for the user
-
-> Set up Hadamard Canvas for me. Read the "For AI agents" section at https://github.com/DeconBear/hadamard#for-ai-agents, detect my OS, install Node.js 22.13+ if needed, install the CLI, verify it, and report the result. Ask before installing system packages or changing my PATH.
-
-### Agent checklist
-
-1. Detect the OS and CPU architecture.
-2. Check Node.js and npm:
-
-~~~bash
-node --version   # must be >=22.13.0; Node 24 is also supported
-npm --version
-~~~
-
-3. Install the CLI. Prefer a user-level global install; if the user already has a Node version manager, use its npm:
-
-~~~bash
-npm install -g hadamard-canvas
-~~~
-
-4. Verify the package and CLI:
-
-~~~bash
-npm list -g hadamard-canvas --depth=0
-hcanvas
-~~~
-
-`hcanvas` with no arguments prints usage. A successful CLI prints the command list; the package version comes from `npm list`.
-
-5. Launch the desktop app:
-
-~~~bash
-hcanvas desktop --workspace <workspace>
-~~~
-
-If Electron was omitted or desktop launch is unavailable, use the browser mode instead:
-
-~~~bash
-hcanvas app --workspace <workspace>
-~~~
-
-6. For a headless local service (for agents or UI clients), run:
-
-~~~bash
-hcanvas serve --workspace <workspace> --port 4319
-~~~
-
-7. Use a writable workspace. The default is `~/.hcanvas`; pass `--workspace <dir>` or `--project <dir>` to use a project. Do not delete or overwrite existing documents.
-
-8. Report back: Node/npm versions, `hadamard-canvas` version, workspace path, and whether desktop, browser or headless mode was started.
-
-### If Node.js cannot be used
-
-Download the latest `hcanvas-v*` release from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) and install the asset for the detected platform:
-
-- Windows: `Hadamard-Canvas-Setup-*.exe`
-- macOS: `Hadamard-Canvas-*-<arch>.dmg`
-- Linux: `Hadamard-Canvas-*-x86_64.AppImage` or `Hadamard-Canvas-*-amd64.deb`
-
-This installs the desktop app only. The `hcanvas` CLI still requires the npm package above; do not claim the CLI is installed unless `hcanvas` resolves on PATH.
 
 ## Documentation
 

@@ -1,5 +1,7 @@
 # Hadamard Canvas (hcanvas)
 
+New to Hcanvas? Start with the [Hcanvas Quickstart](./hcanvas.md).
+
 Hadamard Canvas is a standalone, AI-native canvas application. It runs independently from the desktop GUI (`hadamard-gui`) and exposes one document model to humans and agents:
 
 - **HTML pages** are rendered in a sandbox and can be edited directly in place (text, element styles) or through a full HTML/CSS source editor.

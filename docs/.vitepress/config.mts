@@ -5,7 +5,8 @@ const zhSidebar = [
     text: '产品',
     items: [
       { text: 'Hadamard Harness：安装与开发', link: '/zh/hadamard-harness' },
-      { text: 'Hadamard Canvas', link: '/zh/hadamard-canvas' },
+      { text: 'Hcanvas 快速上手', link: '/zh/hcanvas' },
+      { text: 'Hadamard Canvas 参考', link: '/zh/hadamard-canvas' },
     ],
   },
   {
@@ -29,7 +30,8 @@ const enSidebar = [
     text: 'Products',
     items: [
       { text: 'Hadamard Harness: Installation and Development', link: '/en/hadamard-harness' },
-      { text: 'Hadamard Canvas', link: '/en/hadamard-canvas' },
+      { text: 'Hcanvas Quickstart', link: '/en/hcanvas' },
+      { text: 'Hadamard Canvas Reference', link: '/en/hadamard-canvas' },
     ],
   },
   {
@@ -69,6 +71,7 @@ export default defineConfig({
       { text: 'Home', link: '/' },
       { text: 'English', link: '/en/README' },
       { text: '中文', link: '/zh/README' },
+      { text: 'Hcanvas', link: '/en/hcanvas' },
       { text: 'Blog', link: '/blog/' },
       { text: 'GitHub', link: 'https://github.com/DeconBear/hadamard' },
       { text: 'npm', link: 'https://www.npmjs.com/package/actoviq-agent-sdk' },
@@ -93,6 +96,7 @@ export default defineConfig({
           { text: 'Home', link: '/' },
           { text: 'English Guide', link: '/en/README' },
           { text: '中文教程', link: '/zh/README' },
+          { text: 'Hcanvas', link: '/en/hcanvas' },
           { text: 'Blog', link: '/blog/' },
           { text: 'GitHub', link: 'https://github.com/DeconBear/hadamard' },
           { text: 'npm', link: 'https://www.npmjs.com/package/actoviq-agent-sdk' },
@@ -112,6 +116,7 @@ export default defineConfig({
           { text: '首页', link: '/' },
           { text: 'English', link: '/en/README' },
           { text: '中文教程', link: '/zh/README' },
+          { text: 'Hcanvas', link: '/zh/hcanvas' },
           { text: 'GitHub', link: 'https://github.com/DeconBear/hadamard' },
           { text: 'npm', link: 'https://www.npmjs.com/package/actoviq-agent-sdk' },
         ],
