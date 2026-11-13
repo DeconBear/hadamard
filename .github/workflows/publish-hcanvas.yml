@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Hcanvas tag (hcanvas-v0.1.1)
+        description: Hcanvas tag (hcanvas-v0.1.2)
         required: true
         type: string
 

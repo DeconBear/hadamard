@@ -3,7 +3,7 @@
 [![CI](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml)
 [![Publish npm Package](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml)
 [![npm version](https://img.shields.io/npm/v/hadamard-canvas)](https://www.npmjs.com/package/hadamard-canvas)
-[![Hcanvas](https://img.shields.io/badge/hcanvas-0.1.1-6d5bd0)](https://github.com/DeconBear/hadamard/releases)
+[![Hcanvas](https://img.shields.io/badge/hcanvas-0.1.2-6d5bd0)](https://github.com/DeconBear/hadamard/releases)
 [![Docs](https://img.shields.io/badge/docs-github%20pages-0f766e)](https://deconbear.github.io/hadamard/)
 
 [English](./README.md) | [Chinese](./README-zh.md)
@@ -25,7 +25,7 @@ Most visual tools end up either human-only or agent-only. Hcanvas keeps a single
 - **Agents** get a JSON-first CLI/HTTP protocol with stable IDs, patches, revisions and execution proposals.
 - **Both** work on the same pages without exporting to a second format.
 
-Hcanvas runs as its own app and keeps its own version (0.1.1) and release tags (hcanvas-v*); it is independent from the Hadamard desktop GUI and its legacy canvas module.
+Hcanvas runs as its own app and keeps its own version (0.1.2) and release tags (hcanvas-v*); it is independent from the Hadamard desktop GUI and its legacy canvas module.
 
 ## Highlights
 
@@ -66,7 +66,7 @@ Hcanvas runs as its own app and keeps its own version (0.1.1) and release tags (
 
 ### Windows installer and portable app
 
-Download the standalone Hcanvas build from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) — look for the hcanvas-v0.1.1 release and choose the installer (Hadamard-Canvas-Setup-*.exe) or portable executable.
+Download the standalone Hcanvas build from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) — look for the hcanvas-v0.1.2 release and choose the installer (Hadamard-Canvas-Setup-*.exe) or portable executable.
 
 ### npm
 

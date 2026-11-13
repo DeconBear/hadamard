@@ -30,20 +30,20 @@ hcanvas desktop --workspace <dir> [--port 4319]
 
 ```bash
 npm run build:hcanvas:desktop
-# dist_electron/canvas/Hadamard-Canvas-0.1.1-portable.exe
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-portable.exe
 ```
 
 需要独立工作区时显式传路径：
 
 ```powershell
-.\Hadamard-Canvas-0.1.1-portable.exe --workspace C:\Users\me\hcanvas --port 4319
+.\Hadamard-Canvas-0.1.2-portable.exe --workspace C:\Users\me\hcanvas --port 4319
 ```
 
 改为构建 Windows 安装包：
 
 ```bash
 npm run build:hcanvas:installer
-# dist_electron/canvas/Hadamard-Canvas-Setup-0.1.1.exe
+# dist_electron/canvas/Hadamard-Canvas-Setup-0.1.2.exe
 ```
 
 安装包是标准 NSIS 向导：可选择安装目录、创建开始菜单与桌面快捷方式、自带卸载器，无需 system-wide 安装。

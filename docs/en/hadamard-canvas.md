@@ -51,20 +51,20 @@ Package a Windows portable build with the Canvas icon:
 
 ```bash
 npm run build:hcanvas:desktop
-# dist_electron/canvas/Hadamard-Canvas-0.1.1-portable.exe
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-portable.exe
 ```
 
 Run the portable exe with an explicit workspace when you want a self-contained copy:
 
 ```powershell
-.\Hadamard-Canvas-0.1.1-portable.exe --workspace C:\Users\me\hcanvas --port 4319
+.\Hadamard-Canvas-0.1.2-portable.exe --workspace C:\Users\me\hcanvas --port 4319
 ```
 
 Build the Windows installer instead of the portable exe:
 
 ```bash
 npm run build:hcanvas:installer
-# dist_electron/canvas/Hadamard-Canvas-Setup-0.1.1.exe
+# dist_electron/canvas/Hadamard-Canvas-Setup-0.1.2.exe
 ```
 
 The installer is a normal NSIS wizard: choose the install directory, creates Start Menu and desktop shortcuts, and includes an uninstaller. It does not require a system-wide install.
@@ -80,7 +80,7 @@ The suite installer builds the current Hcanvas `hcanvas.version.json` installer 
 
 ### Independent releases
 
-Hcanvas releases use their own tag namespace and workflow: `hcanvas-v<version>` (for example `hcanvas-v0.1.1`). The workflow checks that the tag matches `hcanvas.version.json`, builds the standalone installers, and uploads them to the Hcanvas release. It never writes Hadamard `v*` releases. Browser E2E is available with `npm run test:hcanvas:e2e` or the **Hcanvas E2E** workflow.
+Hcanvas releases use their own tag namespace and workflow: `hcanvas-v<version>` (for example `hcanvas-v0.1.2`). The workflow checks that the tag matches `hcanvas.version.json`, builds the standalone installers, and uploads them to the Hcanvas release. It never writes Hadamard `v*` releases. Browser E2E is available with `npm run test:hcanvas:e2e` or the **Hcanvas E2E** workflow.
 
 The workspace stores documents, state and exports:
 
