@@ -1,7 +1,7 @@
 {
   "name": "hadamard-canvas",
   "version": "0.1.0",
-  "description": "AI-native visual canvas and document workspace — standalone Hadamard Canvas CLI and desktop app",
+  "description": "AI-native visual canvas and document workspace with CLI for agents",
   "keywords": [
     "canvas",
     "document",

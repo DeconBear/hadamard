@@ -1,4 +1,4 @@
-import { cp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, rm, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -10,9 +10,15 @@ async function main() {
   console.log('Building Hcanvas...');
   execSync('npm run build', { cwd: root, stdio: 'inherit' });
 
-  // Clean staging
+  // Clean generated staging outputs, but keep the tracked package source files
+  // (package.json / npm-README.md) so the script can be run repeatedly.
   console.log('Staging package...');
-  await rm(staging, { recursive: true, force: true });
+  for (const name of ['bin', 'dist', 'assets', 'README.md']) {
+    await rm(path.join(staging, name), { recursive: true, force: true });
+  }
+  for (const name of await readdir(staging).catch(() => [])) {
+    if (name.endsWith('.tgz')) await rm(path.join(staging, name), { force: true });
+  }
   await mkdir(path.join(staging, 'bin'), { recursive: true });
 
   // Copy bin scripts
