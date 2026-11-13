@@ -81,10 +81,13 @@ async function main() {
   };
   await writeFile(path.join(staging, 'package.json'), JSON.stringify(pkg, null, 2) + '\n', 'utf8');
 
-  // Dry-run pack
-  console.log('\nTarball preview:');
-  execSync('npm pack --dry-run', { cwd: staging, stdio: 'inherit' });
+  // Build the actual tarball consumed by npm publish or a manual upload.
+  console.log('\nPacking npm tarball:');
+  execSync('npm pack', { cwd: staging, stdio: 'inherit' });
+  const tarball = 'hadamard-canvas-' + hcanvasVersion + '.tgz';
   console.log('\nPackage staged at: ' + staging);
+  console.log('Tarball: ' + path.join(staging, tarball));
+  console.log('Publish with: npm publish ' + path.join(staging, tarball) + ' --access public');
 }
 
 main().catch(error => { console.error(error); process.exit(1); });

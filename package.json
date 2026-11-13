@@ -262,7 +262,8 @@
     "build:hcanvas:all": "node scripts/build-hcanvas-installer.mjs portable nsis",
     "build:desktop:suite": "node scripts/build-hadamard-suite.mjs",
     "test:hcanvas:e2e": "node scripts/verify-hcanvas-e2e.mjs",
-    "build:hcanvas:package": "node scripts/build-canvas-package.mjs"
+    "build:hcanvas:package": "node scripts/build-canvas-package.mjs",
+    "build:hcanvas:release": "npm run build:hcanvas:all && npm run build:hcanvas:package"
   },
   "keywords": [
     "agent",

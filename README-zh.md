@@ -1,9 +1,9 @@
-# Hadamard Canvas
+# Hadamard Harness & Canvas
 
 [![CI](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml)
 [![Publish npm Package](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml)
 [![npm version](https://img.shields.io/npm/v/hadamard-canvas)](https://www.npmjs.com/package/hadamard-canvas)
-[![Hcanvas](https://img.shields.io/badge/hcanvas-0.1.0-6d5bd0)](https://github.com/DeconBear/hadamard/releases)
+[![Hcanvas](https://img.shields.io/badge/hcanvas-0.1.1-6d5bd0)](https://github.com/DeconBear/hadamard/releases)
 [![Docs](https://img.shields.io/badge/docs-github%20pages-0f766e)](https://deconbear.github.io/hadamard/)
 
 [English](./README.md) | [中文](./README-zh.md)
@@ -25,7 +25,7 @@ Hadamard 是我们正在探索的、面向工程和科研的 harness。Hcanvas �
 - **Agent**可以使用 JSON-first 的 CLI/HTTP 协议，借助稳定 ID、patch、修订历史和提案机制工作。
 - **两者**编辑同一批页面，不需要导出成另一种格式。
 
-Hcanvas 独立运行，拥有自己的版本（0.1.0）和 release tag（hcanvas-v*）；它独立于 Hadamard 桌面 GUI 及其旧版 Canvas 模块。
+Hcanvas 独立运行，拥有自己的版本（0.1.1）和 release tag（hcanvas-v*）；它独立于 Hadamard 桌面 GUI 及其旧版 Canvas 模块。
 
 ## 主要能力
 
@@ -66,7 +66,7 @@ Hcanvas 独立运行，拥有自己的版本（0.1.0）和 release tag（hcanvas
 
 ### Windows 安装包 / 便携版
 
-从 [GitHub Releases](https://github.com/DeconBear/hadamard/releases) 下载独立 Hcanvas 构建，查找 hcanvas-v0.1.0 release，选择安装包（Hadamard-Canvas-Setup-*.exe）或便携版 exe。
+从 [GitHub Releases](https://github.com/DeconBear/hadamard/releases) 下载独立 Hcanvas 构建，查找 hcanvas-v0.1.1 release，选择安装包（Hadamard-Canvas-Setup-*.exe）或便携版 exe。
 
 ### npm
 

@@ -16,7 +16,7 @@ run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:hcanvas:ins
 const canvasDir = path.join(root, 'dist_electron', 'canvas');
 const setupFile = 'Hadamard-Canvas-Setup-' + hcanvasVersion + '.exe';
 const setup = readdirSync(canvasDir).includes(setupFile) ? setupFile : undefined;
-if (!setup) throw new Error('Hadamard Canvas 0.1.0 installer not found in ' + canvasDir);
+if (!setup) throw new Error('Hadamard Canvas ' + hcanvasVersion + ' installer not found in ' + canvasDir);
 mkdirSync(path.join(root, 'build-artifacts'), { recursive: true });
 copyFileSync(path.join(canvasDir, setup), path.join(root, 'build-artifacts', 'hcanvas-setup.exe'));
 console.log('Bundled component: ' + setup);
