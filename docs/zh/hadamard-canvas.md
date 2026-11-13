@@ -62,8 +62,8 @@ npm run build:hcanvas:mac
 
 ```bash
 npm run build:hcanvas:linux
-# dist_electron/canvas/Hadamard-Canvas-0.1.2-x64.AppImage
-# dist_electron/canvas/Hadamard-Canvas-0.1.2-x64.deb
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-x86_64.AppImage
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-amd64.deb
 ```
 
 ## 启动

@@ -83,8 +83,8 @@ Build Linux packages on Linux (AppImage and DEB for x64):
 
 ```bash
 npm run build:hcanvas:linux
-# dist_electron/canvas/Hadamard-Canvas-0.1.2-x64.AppImage
-# dist_electron/canvas/Hadamard-Canvas-0.1.2-x64.deb
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-x86_64.AppImage
+# dist_electron/canvas/Hadamard-Canvas-0.1.2-amd64.deb
 ```
 
 ### Hadamard suite installer (optional Hcanvas component)
