@@ -31,7 +31,11 @@ Hcanvas 独立运行，拥有自己的版本（0.1.2）和 release tag（hcanvas
 
 如果用户让你安装或配置 Hcanvas，按下面的精简清单操作。npm 路径会同时安装 CLI 和可选的 Electron 桌面启动器。
 
-> **给用户的提示词：**“帮我安装 Hadamard Canvas。请阅读 https://github.com/DeconBear/hadamard/blob/main/README-zh.md 的 Quick start with AI Agents 部分，识别我的操作系统；如有需要安装 Node.js 22.13+；安装 CLI；验证安装并汇报结果。安装系统软件或修改 PATH 前请先征求我的同意。”
+把下面这段提示词复制给你的 Agent：
+
+~~~text
+帮我安装 Hadamard Canvas。请阅读 https://github.com/DeconBear/hadamard/blob/main/README-zh.md 的 Quick start with AI Agents 部分，识别我的操作系统；如有需要安装 Node.js 22.13+；安装 CLI；验证安装并汇报结果。安装系统软件或修改 PATH 前请先征求我的同意。
+~~~
 
 1. 检查 `node --version` 是否为 22.13.0+；Node 24 同样受支持。
 2. 执行 `npm install -g hadamard-canvas` 安装 CLI。

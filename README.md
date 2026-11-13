@@ -31,7 +31,11 @@ Hcanvas runs as its own app and keeps its own version (0.1.2) and release tags (
 
 If a user asks you to install or configure Hcanvas, use this checklist. The npm path installs both the CLI and the optional Electron desktop launcher.
 
-> **User prompt:** "Set up Hadamard Canvas for me. Read the 'Quick start with AI Agents' section at https://github.com/DeconBear/hadamard#quick-start-with-ai-agents, detect my OS, install Node.js 22.13+ if needed, install the CLI, verify it, and report the result. Ask before installing system packages or changing my PATH."
+Copy this prompt into your agent:
+
+~~~text
+Set up Hadamard Canvas for me. Read the "Quick start with AI Agents" section at https://github.com/DeconBear/hadamard#quick-start-with-ai-agents, detect my OS, install Node.js 22.13+ if needed, install the CLI, verify it, and report the result. Ask before installing system packages or changing my PATH.
+~~~
 
 1. Check `node --version` is >=22.13.0; Node 24 is also supported.
 2. Install the CLI with `npm install -g hadamard-canvas`.
