@@ -6,14 +6,22 @@ Hadamard Canvas 是独立于桌面 GUI（`hadamard-gui`）的 AI-native 画布�
 - **Canvas 页面**：可混合 HTML、文本、Markdown、代码、图片、形状、原生手绘、曲线与箭头块；
 - **Agent**：通过 JSON-first CLI 读写同一文档，不需要 MCP 或浏览器自动化。
 
+## 安装
+
+独立的 CLI 与桌面启动器发布为 `hadamard-canvas` npm 包，提供 `hadamard-canvas`、`hcanvas`、`hcanvas-desktop` 三个命令：
+
+```bash
+npm install -g hadamard-canvas
+```
+
 ## 独立桌面应用
 
 Hadamard Canvas 可以作为独立 Electron 窗口运行，不只是一个浏览器标签页：
 
 ```bash
 hcanvas desktop --workspace <dir> [--port 4319]
-# 或: npm run hcanvas:desktop -- --workspace <dir>
-# 或: node bin/hcanvas-desktop.js --workspace <dir>
+# 或: npx hadamard-canvas desktop --workspace <dir>
+# 从本仓库运行: npm run hcanvas:desktop -- --workspace <dir>
 ```
 
 桌面入口会启动本地 hcanvas 服务并打开原生窗口：无菜单栏、外链交给系统浏览器、窗口关闭时服务退出。原有浏览器模式（`hcanvas app`）继续保留。
@@ -22,20 +30,20 @@ hcanvas desktop --workspace <dir> [--port 4319]
 
 ```bash
 npm run build:hcanvas:desktop
-# dist_electron/canvas/Hadamard-Canvas-0.4.22-portable.exe
+# dist_electron/canvas/Hadamard-Canvas-0.1.0-portable.exe
 ```
 
 需要独立工作区时显式传路径：
 
 ```powershell
-.\Hadamard-Canvas-0.4.22-portable.exe --workspace C:\Users\me\hcanvas --port 4319
+.\Hadamard-Canvas-0.1.0-portable.exe --workspace C:\Users\me\hcanvas --port 4319
 ```
 
 改为构建 Windows 安装包：
 
 ```bash
 npm run build:hcanvas:installer
-# dist_electron/canvas/Hadamard-Canvas-Setup-0.4.22.exe
+# dist_electron/canvas/Hadamard-Canvas-Setup-0.1.0.exe
 ```
 
 安装包是标准 NSIS 向导：可选择安装目录、创建开始菜单与桌面快捷方式、自带卸载器，无需 system-wide 安装。
@@ -43,8 +51,9 @@ npm run build:hcanvas:installer
 ## 启动
 
 ```bash
-npx hcanvas app --workspace ~/.hcanvas
-npx hcanvas serve --workspace /path/to/workspace --port 4319
+hcanvas app --workspace ~/.hcanvas
+# 或: npx hadamard-canvas app --workspace ~/.hcanvas
+hcanvas serve --workspace /path/to/workspace --port 4319
 ```
 
 从本仓库运行：

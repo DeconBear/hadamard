@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml)
 [![Publish npm Package](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml)
-[![npm version](https://img.shields.io/npm/v/actoviq-agent-sdk)](https://www.npmjs.com/package/actoviq-agent-sdk)
+[![npm version](https://img.shields.io/npm/v/hadamard-canvas)](https://www.npmjs.com/package/hadamard-canvas)
 [![Hcanvas](https://img.shields.io/badge/hcanvas-0.1.0-6d5bd0)](https://github.com/DeconBear/hadamard/releases)
 [![Docs](https://img.shields.io/badge/docs-github%20pages-0f766e)](https://deconbear.github.io/hadamard/)
 
@@ -73,17 +73,17 @@ Download the standalone Hcanvas build from [GitHub Releases](https://github.com/
 Node.js 22.13+ or Node.js 24 is required when running Hcanvas from npm or source.
 
 ~~~bash
-npm install -g actoviq-agent-sdk
+npm install -g hadamard-canvas
 hcanvas desktop --workspace C:\Users\<you>\hcanvas
 ~~~
 
 Or run it through npm without a global install:
 
 ~~~bash
-npx -p actoviq-agent-sdk hcanvas desktop --workspace C:\Users\<you>\hcanvas
+npx hadamard-canvas desktop --workspace C:\Users\<you>\hcanvas
 ~~~
 
-The same package also exposes the browser workflow:
+The `hadamard-canvas` package exposes the `hadamard-canvas`, `hcanvas` and `hcanvas-desktop` CLI entries. It also provides the browser workflow:
 
 ~~~bash
 hcanvas app --workspace <dir>       # local server + browser UI

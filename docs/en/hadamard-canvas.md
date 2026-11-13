@@ -6,14 +6,25 @@ Hadamard Canvas is a standalone, AI-native canvas application. It runs independe
 - **Canvas pages** mix HTML, text, Markdown, code, image, shape, native freehand, curve and arrow blocks. Use the **Curve (C)** tool to drag a smooth cubic Bezier; curves have tight selectable bounds (unlike full-page freehand strokes), editable stroke color/width/dash and move/resize handles. Selecting a curve exposes four native node handles (start, two Bezier controls, end); drag a handle to reshape the curve in place.
 - **Agents** read and patch the same document through a small JSON-first CLI; no MCP or browser automation is required.
 
+## Install
+
+The standalone CLI and desktop launcher are published as the `hadamard-canvas` npm package. It exposes `hadamard-canvas`, `hcanvas` and `hcanvas-desktop` commands:
+
+```bash
+npm install -g hadamard-canvas
+```
+
 ## Run it
 
 ```bash
 # Start the app (local server + browser UI)
-npx hcanvas app --workspace ~/.hcanvas
+hcanvas app --workspace ~/.hcanvas
 
-# Or start the headless service for agents/UI clients
-npx hcanvas serve --workspace /path/to/workspace --port 4319
+# Or without a global install
+npx hadamard-canvas app --workspace ~/.hcanvas
+
+# Start the headless service for agents/UI clients
+hcanvas serve --workspace /path/to/workspace --port 4319
 ```
 
 In this repository, build and run from source:
@@ -28,9 +39,10 @@ node bin/hcanvas.js app --workspace plan/hcanvas-demo
 Hadamard Canvas can run as its own Electron window, not just a browser tab:
 
 ```bash
+npm install -g hadamard-canvas
 hcanvas desktop --workspace <dir> [--port 4319]
-# or: npm run hcanvas:desktop -- --workspace <dir>
-# or: node bin/hcanvas-desktop.js --workspace <dir>
+# or: npx hadamard-canvas desktop --workspace <dir>
+# from this repository: npm run hcanvas:desktop -- --workspace <dir>
 ```
 
 The desktop entry starts the local hcanvas service, opens a native window and closes the server when the window closes; the browser workflow (`hcanvas app`) remains available.

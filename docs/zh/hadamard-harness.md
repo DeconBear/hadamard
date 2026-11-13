@@ -2,7 +2,7 @@
 
 Hadamard 是我们正在探索的面向工程和科研任务的 harness。它是一套 TypeScript agent runtime，服务于软件交付、AI for Science（AI4S）流程、实验编排以及围绕这些工作的工具链：持久会话、工具、skills、memory、MCP、多 agent workflow，以及连接已安装 agent CLI 的 bridge。
 
-> **包名说明：** npm 发布名为 [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk)。产品、仓库、CLI 与配置路径统一使用 **Hadamard**（[`hadamard-*`](https://github.com/DeconBear/hadamard)、`~/.hadamard`、`.hadamard/`）。
+> **包名说明：** Hadamard harness 发布为 [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk)；独立画布产品单独发布为 [`hadamard-canvas`](https://www.npmjs.com/package/hadamard-canvas)。产品、仓库、CLI 与配置路径统一使用 **Hadamard**（[`hadamard-*`](https://github.com/DeconBear/hadamard)、`~/.hadamard`、`.hadamard/`）。
 
 独立画布产品有单独文档：[Hadamard Canvas（hcanvas）](./hadamard-canvas.md)。
 
@@ -72,14 +72,21 @@ npx hadamard-gui [工作目录]
 Hadamard 也可以按模块单独启动：
 
 ```bash
-npx hadamard-harness [工作目录]   # 仅 agent 界面
-npx hadamard-canvas [工作目录]    # Hadamard 套件内的仅画布界面
+npx hadamard-harness [工作目录]               # 仅 agent 界面
+npx hadamard-gui --surface canvas [工作目录]  # Hadamard 套件内的仅画布界面
 # 或：npx hadamard-gui --surface harness|canvas [工作目录]
+```
+
+独立画布产品使用单独的包：
+
+```bash
+npm install -g hadamard-canvas
+hcanvas desktop --workspace <目录>
 ```
 
 主应用会组合所有已启用模块；在 **Settings → Personalization → Modules** 中配置 **Harness** / **Canvas**。详见 [Surface 与模块](./surfaces-and-modules.md)。
 
-> `hadamard-canvas` 是 Hadamard 套件内的画布模块界面，不是独立的 **Hadamard Canvas** 桌面产品；独立产品命令是 `hcanvas`。参见 [Hadamard Canvas](./hadamard-canvas.md)。
+> Hadamard 套件内的仅画布界面通过 `hadamard-gui --surface canvas` 启动；它不是独立的 **Hadamard Canvas** 产品。独立产品发布为单独的 `hadamard-canvas` npm 包，提供 `hcanvas` / `hadamard-canvas` 命令。参见 [Hadamard Canvas](./hadamard-canvas.md)。
 
 ## 开发
 

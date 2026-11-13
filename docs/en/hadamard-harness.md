@@ -2,7 +2,7 @@
 
 Hadamard is the experimental harness we are exploring for engineering and research work. It is a TypeScript agent runtime for software delivery, AI-for-Science pipelines, experiment orchestration and the tooling around them: durable sessions, tools, skills, memory, MCP, multi-agent workflows and optional bridges to installed agent CLIs.
 
-> **Package name:** the published npm package is [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk). Product, repository, CLI and config paths use **Hadamard** ([`hadamard-*`](https://github.com/DeconBear/hadamard), `~/.hadamard`, `.hadamard/`).
+> **Packages:** the Hadamard harness is published as [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk); the standalone canvas app is published separately as [`hadamard-canvas`](https://www.npmjs.com/package/hadamard-canvas). Product, repository, CLI and config paths use **Hadamard** ([`hadamard-*`](https://github.com/DeconBear/hadamard), `~/.hadamard`, `.hadamard/`).
 
 The standalone canvas product is documented separately: [Hadamard Canvas (hcanvas)](./hadamard-canvas.md).
 
@@ -72,14 +72,21 @@ Opens an Electron chat window backed by a localhost-only server. The visual Agen
 Hadamard can also be launched as a dedicated module window:
 
 ```bash
-npx hadamard-harness [work-dir]   # agent-only interface
-npx hadamard-canvas [work-dir]    # canvas-only interface in the Hadamard suite
+npx hadamard-harness [work-dir]          # agent-only interface
+npx hadamard-gui --surface canvas [work-dir]  # canvas-only interface in the Hadamard suite
 # or: npx hadamard-gui --surface harness|canvas [work-dir]
+```
+
+The standalone canvas product has its own package:
+
+```bash
+npm install -g hadamard-canvas
+hcanvas desktop --workspace <dir>
 ```
 
 The main app composes every enabled module; configure **Harness** / **Canvas** under **Settings → Personalization → Modules**. See [Surfaces and modules](./surfaces-and-modules.md).
 
-> `hadamard-canvas` is the canvas-only surface of the Hadamard suite. It is not the standalone **Hadamard Canvas** desktop product, whose command is `hcanvas`. See [Hadamard Canvas](./hadamard-canvas.md).
+> The suite’s canvas-only surface is launched through `hadamard-gui --surface canvas`. It is not the standalone **Hadamard Canvas** product, which is published as the separate `hadamard-canvas` npm package and exposes `hcanvas` / `hadamard-canvas` commands. See [Hadamard Canvas](./hadamard-canvas.md).
 
 ## Development
 

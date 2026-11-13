@@ -55,3 +55,6 @@ scripts/rebrand-to-hadamard.mjs
 
 # Local packaging inputs/outputs
 build-artifacts/
+
+# Generated npm package staging for hadamard-canvas
+packages/hadamard-canvas/

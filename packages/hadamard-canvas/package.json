@@ -1,7 +1,7 @@
 {
   "name": "hadamard-canvas",
   "version": "0.1.0",
-  "description": "AI-native visual canvas and document workspace with CLI for agents",
+  "description": "AI-native visual canvas and document workspace — standalone Hadamard Canvas CLI and desktop app",
   "keywords": [
     "canvas",
     "document",
@@ -15,8 +15,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DeconBear/hadamard.git",
-    "directory": "packages/hadamard-canvas"
+    "url": "git+https://github.com/DeconBear/hadamard.git"
   },
   "bugs": {
     "url": "https://github.com/DeconBear/hadamard/issues"
@@ -26,9 +25,9 @@
   "main": "./dist/src/hcanvas/server.js",
   "types": "./dist/src/hcanvas/server.d.ts",
   "bin": {
-    "hcanvas": "bin/hcanvas.js",
-    "hcanvas-desktop": "bin/hcanvas-desktop.js",
-    "hadamard-canvas": "bin/hcanvas.js"
+    "hcanvas": "./bin/hcanvas.js",
+    "hcanvas-desktop": "./bin/hcanvas-desktop.js",
+    "hadamard-canvas": "./bin/hcanvas.js"
   },
   "files": [
     "bin",
@@ -49,6 +48,9 @@
     "electron": "^42.4.1"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.13.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

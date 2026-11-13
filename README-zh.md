@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml)
 [![Publish npm Package](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml)
-[![npm version](https://img.shields.io/npm/v/actoviq-agent-sdk)](https://www.npmjs.com/package/actoviq-agent-sdk)
+[![npm version](https://img.shields.io/npm/v/hadamard-canvas)](https://www.npmjs.com/package/hadamard-canvas)
 [![Hcanvas](https://img.shields.io/badge/hcanvas-0.1.0-6d5bd0)](https://github.com/DeconBear/hadamard/releases)
 [![Docs](https://img.shields.io/badge/docs-github%20pages-0f766e)](https://deconbear.github.io/hadamard/)
 
@@ -73,17 +73,17 @@ Hcanvas 独立运行，拥有自己的版本（0.1.0）和 release tag（hcanvas
 通过 npm 或源码运行 Hcanvas 需要 Node.js 22.13+ 或 Node.js 24。
 
 ~~~bash
-npm install -g actoviq-agent-sdk
+npm install -g hadamard-canvas
 hcanvas desktop --workspace C:\Users\<you>\hcanvas
 ~~~
 
 不做全局安装时，也可以通过 npm 临时运行：
 
 ~~~bash
-npx -p actoviq-agent-sdk hcanvas desktop --workspace C:\Users\<you>\hcanvas
+npx hadamard-canvas desktop --workspace C:\Users\<you>\hcanvas
 ~~~
 
-同一个包也提供浏览器运行方式：
+`hadamard-canvas` 包提供 `hadamard-canvas`、`hcanvas`、`hcanvas-desktop` 三个 CLI 入口，也提供浏览器运行方式：
 
 ~~~bash
 hcanvas app --workspace <目录>       # 本地服务 + 浏览器界面
