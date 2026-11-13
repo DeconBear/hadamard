@@ -26,6 +26,7 @@ If you want a full clean-SDK project walkthrough, jump to:
 Advanced notes:
 
 - `buddy` and `dream` are documented inside the existing advanced chapters instead of being split into separate nav pages.
+- Harness installation and development: [Hadamard Harness](./hadamard-harness.md).
 - See [04-agents-swarm-memory-workspace.md](./04-agents-swarm-memory-workspace.md) for both.
 - Standalone Hadamard Canvas: [Hadamard Canvas](./hadamard-canvas.md) (AI-native HTML/canvas app, CLI-first).
 - Launch surfaces: [Surfaces and modules](./surfaces-and-modules.md) (full / harness-only / canvas-only, module personalization).

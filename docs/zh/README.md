@@ -35,6 +35,8 @@
 
 01–07 同时解释兼容路线和模块化 Runtime 路线。Bridge 只用于外部 CLI 兼容，不是 Hadamard SDK 的运行依赖。
 
+Hadamard Harness 的安装与开发：[Hadamard Harness](./hadamard-harness.md)。
+
 独立 Hadamard Canvas：[Hadamard Canvas](./hadamard-canvas.md)（AI-native HTML/画布应用，CLI-first）。
 启动界面：[Surface 与模块](./surfaces-and-modules.md)（完整 / 仅 harness / 仅 canvas，模块个性化）。
 可选模块：[画布模块](./canvas-module.md)（默认关闭；GUI 编辑器、AI 模型架构 pack、agent 工具）。

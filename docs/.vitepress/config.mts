@@ -2,6 +2,13 @@ import { defineConfig } from 'vitepress';
 
 const zhSidebar = [
   {
+    text: '产品',
+    items: [
+      { text: 'Hadamard Harness：安装与开发', link: '/zh/hadamard-harness' },
+      { text: 'Hadamard Canvas', link: '/zh/hadamard-canvas' },
+    ],
+  },
+  {
     text: '中文教程',
     items: [
       { text: '教程首页', link: '/zh/README' },
@@ -18,6 +25,13 @@ const zhSidebar = [
 ];
 
 const enSidebar = [
+  {
+    text: 'Products',
+    items: [
+      { text: 'Hadamard Harness: Installation and Development', link: '/en/hadamard-harness' },
+      { text: 'Hadamard Canvas', link: '/en/hadamard-canvas' },
+    ],
+  },
   {
     text: 'English Guide',
     items: [

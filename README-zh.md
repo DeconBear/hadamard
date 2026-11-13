@@ -1,115 +1,130 @@
-# Hadamard：让 Agent 像工程团队一样协作
+# Hadamard Canvas
 
 [![CI](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/ci.yml)
 [![Publish npm Package](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml/badge.svg?branch=main)](https://github.com/DeconBear/hadamard/actions/workflows/publish-npm.yml)
 [![npm version](https://img.shields.io/npm/v/actoviq-agent-sdk)](https://www.npmjs.com/package/actoviq-agent-sdk)
+[![Hcanvas](https://img.shields.io/badge/hcanvas-0.1.0-6d5bd0)](https://github.com/DeconBear/hadamard/releases)
 [![Docs](https://img.shields.io/badge/docs-github%20pages-0f766e)](https://deconbear.github.io/hadamard/)
 
 [English](./README.md) | [中文](./README-zh.md)
 
-如今的 LLM harness 越来越强，但在真实的工程与科研任务上仍难以管理——交付软件、跑 AI4S 流程、训练神经网络与调参实验。上下文溢出、工具调用失控、运行偏离预期，而单个 agent 闭环永远缺少第二意见。
+**Hadamard Canvas（Hcanvas）** 是一个面向工程与科研工作的本地优先 AI 原生画布。它是 Hadamard 仓库中的独立画布产品：人类和 Agent 共用同一份文档模型，既有桌面应用，也提供供 Agent 直接读取和修改的 CLI/HTTP 接口。
 
-**Hadamard** 的目标是让 Agent 的工程与科研变得可控：引入不同 provider 的多个 agent 相互交流，并行调查、评审与分派，把问题考虑得更加周全。同一套 TypeScript runtime 提供工具、skills、持久会话、记忆与 MCP，并能通过 bridge 把已安装的 agent CLI（Claude Code、Codex、Cursor、Pi、CodeWhale、Reasonix、Crush）作为子进程管理；终端 UI 与桌面 GUI 也构建在这套 runtime 之上。
-
-受 Claude Code、Codex、Deepagents 等项目启发。Hadamard 保持独立，拥有自己的公开 API 与文档。
+Hadamard 是我们正在探索的、面向工程和科研的 harness。Hcanvas 是其中专注于可视化文档的产品；harness 提供更完整的 agent runtime、工作流与桥接能力。Hadamard 的安装与开发说明已移到 [docs/zh/hadamard-harness.md](./docs/zh/hadamard-harness.md)。
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-home.png" alt="Hadamard 桌面 GUI——项目总览" width="49%">
-  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-chat.png" alt="Hadamard 桌面 GUI——模型对话" width="49%">
+  <img src="./docs/assets/screenshots/hcanvas-canvas.png" alt="Hadamard Canvas——Canvas 页面，包含 Markdown、HTML、代码和形状块，以及页面检查器和插件面板" width="100%">
 </p>
-<p align="center">
-  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/tui-home.png" alt="Hadamard TUI——终端启动界面" width="90%">
-</p>
-<p align="center"><em>桌面 GUI（上：项目总览与对话界面）和终端 UI（下）。</em></p>
+<p align="center"><em>Hcanvas：一份本地文档，人和 Agent 编辑同样的页面、块和 HTML。</em></p>
 
-> **包名说明：** npm 发布名为 [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk)。产品、仓库、CLI 与配置路径统一为 **Hadamard**（`hadamard-*`、`~/.hadamard`、`.hadamard/`）。
+## 为什么用 Hcanvas
 
-## 安装
+大多数可视化工具最终要么只面向人，要么只面向 Agent。Hcanvas 坚持一份本地文档模型：
 
-要求 Node.js 22.13+ 或 Node.js 24。
+- **人**可以拖拽、排版，直接编辑 HTML/CSS，使用形状、图片和演示模式。
+- **Agent**可以使用 JSON-first 的 CLI/HTTP 协议，借助稳定 ID、patch、修订历史和提案机制工作。
+- **两者**编辑同一批页面，不需要导出成另一种格式。
 
-```bash
-npm install actoviq-agent-sdk zod
-```
+Hcanvas 独立运行，拥有自己的版本（0.1.0）和 release tag（hcanvas-v*）；它独立于 Hadamard 桌面 GUI 及其旧版 Canvas 模块。
 
-上面的 `npm install` 面向 SDK 用法（`import 'actoviq-agent-sdk'`），命令行需通过 `npx` 调用（如 `npx hadamard-tui`）。若想让 `hadamard-tui` / `hadamard-gui` / `hadamard` / `actoviq` 直接出现在 PATH 上，请改用全局安装：
+## 主要能力
 
-```bash
+### 适合不同工作的页面类型
+
+- **HTML 页面**：沙箱渲染，可原地编辑文本/样式，也可打开源码编辑器。
+- **Canvas 页面**：固定尺寸的幻灯片/页面画布。
+- **Infinite 页面**：无边界坐标，可自由缩放和平移。
+- **Markdown 文档页**：适合长文、论文和研究报告。
+- 页面拖拽排序、缩略图、页面母版。
+
+### 完整的内容工具箱
+
+- HTML、文本、Markdown、代码、图片、LaTeX/MathML 公式和 66 个 PPT 风格形状。
+- 曲线、箭头、手绘、frame、连接线，支持原生控制点和绑定关系。
+- Markdown 富文本编辑、公式编辑和源码模式。
+- 内联实时取色器，支持饱和度/色相调整与屏幕取色。
+- 内置 **Inter**、**Source Serif 4**、**JetBrains Mono**，并提供系统字体选项。
+- 内置 **Slider** 组件和声明式插件块；支持页面模板插件。
+
+### Agent 原生设计
+
+- CLI-first 协议，可读取、修改和审阅文档。
+- HTML 使用稳定的 data-hc-id，Canvas 内容使用稳定 block ID。
+- 实时 Agent 在线状态与光标显示。
+- 提案机制，应用前可以先审阅。
+- 有上限的修订历史，支持恢复和对比。
+
+### 面向交付
+
+- HTML、PDF、PNG、视觉 PPTX、可编辑 PPTX 和 DOCX 导出。
+- 全屏演示，支持演讲者备注和文档阅读布局。
+- 本地文件、资源与项目目录，无需云账户。
+- 中英文界面，可在 **Projects** 页面切换。
+- 全局数据位置可配置，保存在安装目录之外。
+
+## 运行 Hcanvas
+
+### Windows 安装包 / 便携版
+
+从 [GitHub Releases](https://github.com/DeconBear/hadamard/releases) 下载独立 Hcanvas 构建，查找 hcanvas-v0.1.0 release，选择安装包（Hadamard-Canvas-Setup-*.exe）或便携版 exe。
+
+### npm
+
+通过 npm 或源码运行 Hcanvas 需要 Node.js 22.13+ 或 Node.js 24。
+
+~~~bash
 npm install -g actoviq-agent-sdk
-```
+hcanvas desktop --workspace C:\Users\<you>\hcanvas
+~~~
 
-将提供商配置放在 `~/.hadamard/settings.json` —— 任意 Anthropic 兼容或 OpenAI 兼容的提供商均可。
+不做全局安装时，也可以通过 npm 临时运行：
 
-## 快速开始
+~~~bash
+npx -p actoviq-agent-sdk hcanvas desktop --workspace C:\Users\<you>\hcanvas
+~~~
 
-### SDK
+同一个包也提供浏览器运行方式：
 
-```ts
-import { createAgentSdk, loadDefaultHadamardSettings } from 'actoviq-agent-sdk';
+~~~bash
+hcanvas app --workspace <目录>       # 本地服务 + 浏览器界面
+hcanvas serve --workspace <目录> --port 4319
+~~~
 
-await loadDefaultHadamardSettings();   // 读取 ~/.hadamard/settings.json
-const sdk = await createAgentSdk();
+### 从源码运行
 
-const result = await sdk.run('什么是 CAS？');
-console.log(result.text);
+~~~bash
+npm install
+npm run build
+node bin/hcanvas-desktop.js --workspace ./plan/hcanvas-demo
+~~~
 
-await sdk.close();
-```
+### 数据与项目
 
-在仓库内可用 `npm run example:hadamard-quickstart` 运行同样的示例。
+默认情况下，Hcanvas 将文档保存在 ~/.hcanvas。**Projects** 页面可以注册项目目录、在新窗口打开项目，并修改全局数据位置。Windows 上的应用设置位于：
 
-### 终端 UI（`hadamard-tui`）
+~~~text
+%APPDATA%\Hadamard Canvas\hcanvas-settings.json
+~~~
 
-```bash
-npx hadamard-tui [工作目录]
-```
-
-输入消息并回车，即可在 Claude Code 风格的终端 REPL 中与 agent 对话。输入 `/` 打开斜杠命令菜单（`/team`、`/bridge`、`/plan`、`/mcp`、`/doctor`……）。常用参数：`--model`、`--permission-mode`、`--resume <会话ID>`、`--continue`。
-
-### 桌面 GUI（`hadamard-gui`）
-
-```bash
-npx hadamard-gui [工作目录]
-```
-
-打开 Electron 聊天窗口（仅绑定 localhost 服务）—— 发送一条消息即可开始第一次对话。可视化 Agent graph 编辑器仍在迭代中；生产工作流请优先使用已保存的 team 与 `/team`。
-
-Hadamard 也可以按模块单独启动：
-
-```bash
-npx hadamard-harness [工作目录]   # 仅 agent 界面
-npx hadamard-canvas [工作目录]    # 仅画布界面
-# 或：npx hadamard-gui --surface harness|canvas [工作目录]
-```
-
-主应用会组合所有已启用模块；在 **Settings → Personalization → Modules** 中配置 **Harness** / **Canvas**。详见 [docs/zh/surfaces-and-modules.md](./docs/zh/surfaces-and-modules.md)。
-
-## 演示
-
-50 秒走一遍桌面 GUI：打开会话视图、新建对话、发送问题，观看流式回复、思考指示器与代码渲染。（[高清 MP4](https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.mp4)）
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/DeconBear/hadamard/main/docs/assets/screenshots/gui-demo.gif" alt="Hadamard 桌面 GUI 演示——从新建对话到流式回复与代码块" width="90%">
-</p>
+每个项目的数据保存在项目目录下的 .hcanvas/ 中。
 
 ## 文档
 
+- Hcanvas 完整指南：[docs/zh/hadamard-canvas.md](./docs/zh/hadamard-canvas.md)
+- Hcanvas English docs: [docs/en/hadamard-canvas.md](./docs/en/hadamard-canvas.md)
+- Hadamard harness 安装与开发：[docs/zh/hadamard-harness.md](./docs/zh/hadamard-harness.md) · [English](./docs/en/hadamard-harness.md)
 - 文档站：https://deconbear.github.io/hadamard/
-- 英文教程：[docs/en/README.md](./docs/en/README.md) · 中文教程：[docs/zh/README.md](./docs/zh/README.md)
-- External CLI bridge 指南（provider 参数、凭证、`HADAMARD_<PROVIDER>_PATH`）：[docs/en/05-bridge-runtime.md](./docs/en/05-bridge-runtime.md)
-- 启动界面（完整 / 仅 harness / 仅 canvas，模块个性化）：[docs/zh/surfaces-and-modules.md](./docs/zh/surfaces-and-modules.md)
-- 独立 Hadamard Canvas（hcanvas）：[docs/zh/hadamard-canvas.md](./docs/zh/hadamard-canvas.md)
-- 可选画布模块（默认关闭；Excalidraw 设计画布、AI 模型架构 pack、agent 工具与提案审阅）：[docs/zh/canvas-module.md](./docs/zh/canvas-module.md)
-- 示例：[hadamard-quickstart.ts](./examples/hadamard-quickstart.ts)、[hadamard-workflow.ts](./examples/hadamard-workflow.ts)、[hadamard-agent-helpers.ts](./examples/hadamard-agent-helpers.ts)
+- Harness 教程：[docs/zh/README.md](./docs/zh/README.md) · [docs/en/README.md](./docs/en/README.md)
 - 安全政策：[SECURITY.md](./SECURITY.md)
 
-## 开发
+## Hadamard Harness
 
-```bash
-npm run typecheck   # TypeScript 检查
-npm test            # Vitest 测试
-npm run build       # 清理 + 编译
-```
+Hadamard 是我们正在探索的、面向工程和科研的 harness：一套 TypeScript agent runtime，提供持久会话、工具、skills、memory、MCP、多 agent workflow，并可桥接已安装的 agent CLI（Claude Code、Codex、Cursor、Pi、CodeWhale、Reasonix、Crush），同时提供终端和桌面界面。
+
+它仍处于探索阶段，API 和界面还会变化。Hcanvas 是同一仓库中的独立可视化产品；如果你要找的是 runtime、SDK、TUI 或桌面 harness，请从这里开始：
+
+- [Hadamard Harness：安装与开发](./docs/zh/hadamard-harness.md)
+- [Hadamard harness English docs](./docs/en/hadamard-harness.md)
 
 ## 参与贡献
 
