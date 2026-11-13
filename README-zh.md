@@ -114,6 +114,71 @@ node bin/hcanvas-desktop.js --workspace ./hcanvas-demo
 
 每个项目的数据保存在项目目录下的 .hcanvas/ 中。
 
+## 给 AI Agent 的安装说明
+
+如果用户让你安装或配置 Hcanvas，优先使用 npm 路径：一条命令即可安装 CLI 和可选的 Electron 桌面启动器。只有在用户没有 Node.js 或无法使用 npm 时，才使用桌面安装包。
+
+### 给用户的复制提示词
+
+> 帮我安装 Hadamard Canvas。请阅读 https://github.com/DeconBear/hadamard/blob/main/README-zh.md 的“给 AI Agent 的安装说明”部分，识别我的操作系统；如有需要安装 Node.js 22.13+；安装 CLI；验证安装并汇报结果。安装系统软件或修改 PATH 前请先征求我的同意。
+
+### Agent 执行清单
+
+1. 识别操作系统和 CPU 架构。
+2. 检查 Node.js 和 npm：
+
+~~~bash
+node --version   # 必须 >=22.13.0，也支持 Node 24
+npm --version
+~~~
+
+3. 安装 CLI。优先使用用户级全局安装；如果用户已有 Node 版本管理器，使用对应 npm：
+
+~~~bash
+npm install -g hadamard-canvas
+~~~
+
+4. 验证包和 CLI：
+
+~~~bash
+npm list -g hadamard-canvas --depth=0
+hcanvas
+~~~
+
+`hcanvas` 不带参数会打印用法；成功时会看到命令列表，包版本由 `npm list` 给出。
+
+5. 启动桌面应用：
+
+~~~bash
+hcanvas desktop --workspace <工作目录>
+~~~
+
+如果 Electron 未安装或桌面启动不可用，改用浏览器模式：
+
+~~~bash
+hcanvas app --workspace <工作目录>
+~~~
+
+6. 需要 headless 本地服务（供 Agent 或其他 UI 客户端使用）时运行：
+
+~~~bash
+hcanvas serve --workspace <工作目录> --port 4319
+~~~
+
+7. 使用可写的工作目录。默认是 `~/.hcanvas`；通过 `--workspace <目录>` 或 `--project <目录>` 指定项目目录。不要删除或覆盖用户已有的文档。
+
+8. 汇报：Node/npm 版本、`hadamard-canvas` 版本、工作目录，以及启动的是桌面、浏览器还是 headless 模式。
+
+### 无法使用 Node.js 时
+
+从 [GitHub Releases](https://github.com/DeconBear/hadamard/releases) 下载最新的 `hcanvas-v*` release，并按识别到的平台安装：
+
+- Windows：`Hadamard-Canvas-Setup-*.exe`
+- macOS：`Hadamard-Canvas-*-<arch>.dmg`
+- Linux：`Hadamard-Canvas-*-x86_64.AppImage` 或 `Hadamard-Canvas-*-amd64.deb`
+
+这只会安装桌面应用。`hcanvas` CLI 仍需要上面的 npm 包；在 `hcanvas` 能从 PATH 解析之前，不要声称 CLI 已安装。
+
 ## 文档
 
 - Hcanvas 完整指南：[docs/zh/hadamard-canvas.md](./docs/zh/hadamard-canvas.md)
