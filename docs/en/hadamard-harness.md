@@ -1,6 +1,6 @@
 # Hadamard Harness: Installation and Development
 
-Hadamard is the experimental harness we are exploring for engineering and research work. It is a TypeScript agent runtime for software delivery, AI-for-Science pipelines, experiment orchestration and the tooling around them: durable sessions, tools, skills, memory, MCP, multi-agent workflows and optional bridges to installed agent CLIs.
+**Hadamard Harness** is one of the tools in the Hadamard family, which is built around LLM harnesses. Hadamard Harness is the experimental agent harness for engineering and research work: a TypeScript agent runtime for software delivery, AI-for-Science pipelines, experiment orchestration and the tooling around them — durable sessions, tools, skills, memory, MCP, multi-agent workflows and optional bridges to installed agent CLIs.
 
 > **Packages:** the Hadamard harness is published as [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk); the standalone canvas app is published separately as [`hadamard-canvas`](https://www.npmjs.com/package/hadamard-canvas). Product, repository, CLI and config paths use **Hadamard** ([`hadamard-*`](https://github.com/DeconBear/hadamard), `~/.hadamard`, `.hadamard/`).
 

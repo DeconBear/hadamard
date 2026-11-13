@@ -1,6 +1,6 @@
 # Hadamard Harness：安装与开发
 
-Hadamard 是我们正在探索的面向工程和科研任务的 harness。它是一套 TypeScript agent runtime，服务于软件交付、AI for Science（AI4S）流程、实验编排以及围绕这些工作的工具链：持久会话、工具、skills、memory、MCP、多 agent workflow，以及连接已安装 agent CLI 的 bridge。
+**Hadamard Harness** 是 Hadamard 系列中的工具之一，整个 Hadamard 围绕 LLM Harness 展开。Hadamard Harness 是面向工程和科研任务的探索性 agent harness：一套 TypeScript agent runtime，服务于软件交付、AI for Science（AI4S）流程、实验编排以及围绕这些工作的工具链——持久会话、工具、skills、memory、MCP、多 agent workflow，以及连接已安装 agent CLI 的 bridge。
 
 > **包名说明：** Hadamard harness 发布为 [`actoviq-agent-sdk`](https://www.npmjs.com/package/actoviq-agent-sdk)；独立画布产品单独发布为 [`hadamard-canvas`](https://www.npmjs.com/package/hadamard-canvas)。产品、仓库、CLI 与配置路径统一使用 **Hadamard**（[`hadamard-*`](https://github.com/DeconBear/hadamard)、`~/.hadamard`、`.hadamard/`）。
 

@@ -59,7 +59,7 @@ const blogSidebar = [
 
 export default defineConfig({
   title: 'Hadamard',
-  description: 'Hadamard — agents as an engineering team: one TypeScript runtime for agents, agent teams, and every major agent CLI.',
+  description: 'Hadamard is a family of tools built around LLM harnesses: Hadamard Harness, Hadamard Canvas, and more.',
   base: '/hadamard/',
   cleanUrls: true,
   lastUpdated: true,

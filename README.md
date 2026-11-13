@@ -10,7 +10,7 @@
 
 **Hadamard Canvas (Hcanvas)** is a local-first, AI-native canvas for engineering and research work. It is the standalone canvas product in the Hadamard repository: one document model for humans and agents, a desktop app, and a small CLI/HTTP surface that agents can read and patch directly.
 
-Hadamard itself is the experimental harness we are exploring for engineering and research. Hcanvas is the focused product surface for visual documents; the harness provides the broader agent runtime, workflows and bridges. Install and development notes for the harness have moved to [docs/en/hadamard-harness.md](./docs/en/hadamard-harness.md).
+Hadamard is a family of tools built around LLM harnesses: **Hadamard Harness** provides the agent runtime, workflows and bridges for engineering and research, while **Hadamard Canvas** is the standalone visual workspace. Other complementary tools can sit alongside them. Install and development notes for the harness have moved to [docs/en/hadamard-harness.md](./docs/en/hadamard-harness.md).
 
 <p align="center">
   <img src="./docs/assets/screenshots/hcanvas-canvas.png" alt="Hadamard Canvas — Canvas page with Markdown, HTML, code and shape blocks, page inspector, and agent plugin surfaces" width="100%">
@@ -121,11 +121,11 @@ Each project keeps its data in .hcanvas/ inside the project folder.
 - Harness tutorial: [docs/en/README.md](./docs/en/README.md) · [docs/zh/README.md](./docs/zh/README.md)
 - Security policy: [SECURITY.md](./SECURITY.md)
 
-## The Hadamard harness
+## Hadamard Harness
 
-Hadamard is the experimental harness we are building for engineering and research: a TypeScript agent runtime with durable sessions, tools, skills, memory, MCP, multi-agent workflows, a bridge to installed agent CLIs (Claude Code, Codex, Cursor, Pi, CodeWhale, Reasonix, Crush), and terminal/desktop surfaces.
+**Hadamard Harness** is the experimental agent harness in the Hadamard family: a TypeScript runtime with durable sessions, tools, skills, memory, MCP, multi-agent workflows, a bridge to installed agent CLIs (Claude Code, Codex, Cursor, Pi, CodeWhale, Reasonix, Crush), and terminal/desktop surfaces.
 
-It is intentionally exploratory — APIs and surfaces are still moving. Hcanvas is the standalone visual product in the same repository; if you are looking for the runtime layer, SDK, TUI or desktop harness, start here:
+It is intentionally exploratory — APIs and surfaces are still moving. Hcanvas is one of the tools in the same family; if you are looking for the runtime layer, SDK, TUI or desktop harness, start here:
 
 - [Hadamard harness: installation and development](./docs/en/hadamard-harness.md)
 - [Hadamard harness 中文文档](./docs/zh/hadamard-harness.md)

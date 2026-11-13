@@ -10,7 +10,7 @@
 
 **Hadamard Canvas（Hcanvas）** 是一个面向工程与科研工作的本地优先 AI 原生画布。它是 Hadamard 仓库中的独立画布产品：人类和 Agent 共用同一份文档模型，既有桌面应用，也提供供 Agent 直接读取和修改的 CLI/HTTP 接口。
 
-Hadamard 是我们正在探索的、面向工程和科研的 harness。Hcanvas 是其中专注于可视化文档的产品；harness 提供更完整的 agent runtime、工作流与桥接能力。Hadamard 的安装与开发说明已移到 [docs/zh/hadamard-harness.md](./docs/zh/hadamard-harness.md)。
+Hadamard 是一系列围绕 LLM Harness 展开的工具：**Hadamard Harness** 提供面向工程和科研的 agent runtime、工作流与桥接能力，**Hadamard Canvas** 则是独立的可视化工作台，未来还会有更多互补工具。Hadamard Harness 的安装与开发说明已移到 [docs/zh/hadamard-harness.md](./docs/zh/hadamard-harness.md)。
 
 <p align="center">
   <img src="./docs/assets/screenshots/hcanvas-canvas.png" alt="Hadamard Canvas——Canvas 页面，包含 Markdown、HTML、代码和形状块，以及页面检查器和插件面板" width="100%">
@@ -123,9 +123,9 @@ node bin/hcanvas-desktop.js --workspace ./hcanvas-demo
 
 ## Hadamard Harness
 
-Hadamard 是我们正在探索的、面向工程和科研的 harness：一套 TypeScript agent runtime，提供持久会话、工具、skills、memory、MCP、多 agent workflow，并可桥接已安装的 agent CLI（Claude Code、Codex、Cursor、Pi、CodeWhale、Reasonix、Crush），同时提供终端和桌面界面。
+**Hadamard Harness** 是 Hadamard 系列中探索性的 agent harness：一套 TypeScript runtime，提供持久会话、工具、skills、memory、MCP、多 agent workflow，并可桥接已安装的 agent CLI（Claude Code、Codex、Cursor、Pi、CodeWhale、Reasonix、Crush），同时提供终端和桌面界面。
 
-它仍处于探索阶段，API 和界面还会变化。Hcanvas 是同一仓库中的独立可视化产品；如果你要找的是 runtime、SDK、TUI 或桌面 harness，请从这里开始：
+它仍处于探索阶段，API 和界面还会变化。Hcanvas 是同一系列中的独立可视化工具；如果你要找的是 runtime、SDK、TUI 或桌面 harness，请从这里开始：
 
 - [Hadamard Harness：安装与开发](./docs/zh/hadamard-harness.md)
 - [Hadamard harness English docs](./docs/en/hadamard-harness.md)
