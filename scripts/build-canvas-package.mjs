@@ -33,7 +33,7 @@ async function main() {
   }
 
   // Copy docs
-  const readme = await readFile(path.join(root, 'docs', 'en', 'hadamard-canvas.md'), 'utf8').catch(() => '');
+  const readme = await readFile(path.join(root, 'packages', 'hadamard-canvas', 'npm-README.md'), 'utf8').catch(() => '');
   if (readme) {
     await writeFile(path.join(staging, 'README.md'), readme, 'utf8');
   }
