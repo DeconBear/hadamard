@@ -10,6 +10,9 @@ describe('hcanvas i18n', () => {
     expect(translatePhrase('Block · text')).toBe('块 · 文本');
     expect(t('Plugins:')).toBe('插件：');
     expect(translatePhrase('Read-only')).toBe('只读');
+    expect(translatePhrase('Shapes')).toBe('形状');
+    expect(translatePhrase('Search shapes')).toBe('搜索形状');
+    expect(translatePhrase('Find a shape…')).toBe('搜索形状…');
   });
 
   it('switches back to English without keeping Chinese strings', () => {

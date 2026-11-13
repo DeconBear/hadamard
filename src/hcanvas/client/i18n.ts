@@ -684,6 +684,23 @@ Object.assign(zh, {
   'Black': '黑色', 'White': '白色', 'Gray': '灰色', 'Red': '红色', 'Orange': '橙色', 'Yellow': '黄色', 'Green': '绿色', 'Cyan': '青色', 'Blue': '蓝色', 'Purple': '紫色', 'Pink': '粉色', 'Brown': '棕色',
 });
 
+Object.assign(zh, {
+  'Shapes': '形状',
+  'shapes': '形状',
+  'Search results': '搜索结果',
+  'Search shapes': '搜索形状',
+  'Find a shape…': '搜索形状…',
+  'Clear search': '清除搜索',
+  'Clear shape search': '清除形状搜索',
+  'Shape categories': '形状分类',
+  'Shape search results': '形状搜索结果',
+  'No matching shapes': '没有匹配的形状',
+  'Try a different name or category.': '尝试其他名称或分类。',
+  'Click a shape, then click or drag on the canvas': '点击形状，然后在画布上点击或拖拽',
+  'Close shape library': '关闭形状库',
+  'Close (Esc)': '关闭 (Esc)',
+});
+
 const patterns: Array<[RegExp, string]> = [
   [/^rev (\d+)$/, 'rev $1'],
   [/^r(\d+)$/, 'r$1'],

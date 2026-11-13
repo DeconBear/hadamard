@@ -157,6 +157,49 @@ async function main() {
   await page.waitForTimeout(400);
   assert('Pages intentionally reopen a closed canvas tab', await page.locator('.canvas-tab.active').count() === 1);
 
+  // Shape library: compact category navigation, filtering, keyboard use and insertion.
+  await page.locator('#addPageMini').click();
+  await page.locator('[data-preset="canvas-16-9"]').click();
+  await page.waitForTimeout(600);
+  await page.locator('[data-block="shape"]').click();
+  assert('Shape library opens with all categories', await page.locator('.shape-popover').isVisible() && await page.locator('[data-shape-category]').count() === 6);
+  assert('Shape library uses proportional neutral previews', await page.locator('.shape-choice-preview svg[preserveAspectRatio="xMidYMid meet"]').count() === await page.locator('[data-shape-choice]').count());
+  assert('Clicking the shape tool pins the library and focuses search', await page.locator('[data-shape-search]').evaluate(node => document.activeElement === node));
+  await page.mouse.move(900, 700);
+  await page.waitForTimeout(350);
+  assert('Pinned shape library does not disappear on pointer leave', await page.locator('.shape-popover').isVisible());
+  await page.locator('[data-shape-search]').fill('heart');
+  assert('Shape search filters across name and description', await page.locator('[data-shape-choice]').count() === 1 && await page.locator('[data-shape-choice="heart"]').isVisible());
+  await page.locator('[data-shape-search]').fill('not-a-real-shape');
+  assert('Shape search has an empty state', await page.locator('.shape-empty').isVisible() && await page.locator('[data-shape-choice]').count() === 0);
+  await page.locator('[data-shape-search-clear]').click();
+  const basicPickerHeight = await page.locator('.shape-popover').evaluate(node => node.getBoundingClientRect().height);
+  await page.locator('[data-shape-category="Basic"]').focus();
+  await page.keyboard.press('ArrowDown');
+  assert('Arrow keys switch shape categories', await page.locator('[data-shape-category="Lines"]').getAttribute('aria-selected') === 'true' && await page.locator('[data-shape-choice]').count() === 6);
+  assert('Category changes keep a stable panel height', await page.locator('.shape-popover').evaluate(node => node.getBoundingClientRect().height) === basicPickerHeight);
+  await page.keyboard.press('ArrowUp');
+  await page.locator('[data-shape-choice="rect"]').focus();
+  await page.keyboard.press('ArrowRight');
+  assert('Arrow keys navigate the shape grid', await page.locator('[data-shape-choice="roundRect"]').evaluate(node => document.activeElement === node));
+  await page.screenshot({ path: path.resolve('plan/hcanvas-shape-picker-ux-13Nov2026.png') });
+  await page.locator('[data-shape-search]').fill('heart');
+  await page.locator('[data-shape-choice="heart"]').click();
+  assert('Choosing a shape closes the library', await page.locator('.shape-popover').isHidden());
+  const shapePageBounds = await page.locator('.artboard').boundingBox();
+  await page.mouse.click(shapePageBounds.x + shapePageBounds.width / 2, shapePageBounds.y + shapePageBounds.height / 2);
+  await page.waitForTimeout(700);
+  assert('Filtered shape is inserted through the existing canvas flow', await page.locator('.block-wrap.type-shape.shape-heart').count() === 1);
+  await page.locator('[data-block="shape"]').click();
+  await page.waitForTimeout(300);
+  assert('Shape tool reflects expanded library state', (await page.locator('[data-block="shape"]').getAttribute('aria-expanded')) === 'true');
+  assert('Reopening the shape library resets the previous search', (await page.locator('[data-shape-search]').inputValue()) === '');
+  await page.locator('[data-shape-search]').fill('heart');
+  assert('Category tabs stay tabbable while searching', await page.locator('[data-shape-category][tabindex="0"]').count() === 6);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  assert('Closing the shape library clears expanded state', (await page.locator('[data-block="shape"]').getAttribute('aria-expanded')) === 'false');
+
   // File CRUD + search. Creation must reveal the new entry without re-expanding the root.
   await page.locator('[data-sidebar-target="files"]').click();
   const rootName = page.locator('#filesPanel .file-tree-root-name').first();
