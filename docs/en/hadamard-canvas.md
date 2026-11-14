@@ -159,6 +159,8 @@ HTML pages and HTML blocks render in a sandboxed iframe:
 - **Selection edit**: select text in the page preview and click the floating **Edit text** chip, or click **Edit** in the page badge, to enter direct text editing.
 - **Visual mode**: click once to select an element, then click the selected text again (or press Enter) to edit it in place; hover any element to see its hit outline and click to inspect it. The edit banner's **Insert +** opens a compact element palette (heading, paragraph, button, link, image, list, quote, card, divider); the Inspector also shows the element path, element tree, quick actions and a live style panel. Style changes apply automatically (no Apply button); Title/Body/Muted/Accent/Card presets cover common typography and surface styles, with color, background, size, weight, spacing, padding, radius and alignment controls. Changes are patched back to the HTML source with stable `data-hc-id` targets.
 - **Source mode**: open the source editor (CodeMirror) for full HTML/CSS editing with a live preview. The editor auto-saves: there is no Save button, edits save shortly after you stop typing (the status shows **Editing…**, **Saving…** or **Auto-save on**), and **Ctrl/Cmd+S** saves now. **Done**, **×** or **Esc** flush pending changes before closing; if a save fails, the editor stays open so you can retry.
+- **SVG text**: `<text>` / `<tspan>` labels open a compact floating editor. Browsers do not support `contenteditable` on SVG text, so axis names and diagram annotations remain directly editable.
+- **Agent IDs**: the Page Inspector shows **Canvas ID** and **Page ID** with copy buttons; right-click any page to copy either ID for an agent.
 - Stable IDs mean an agent can patch one element without rewriting the page.
 - In edit mode scripts are disabled; in preview mode the iframe runs with a sandboxed opaque origin.
 
@@ -199,7 +201,7 @@ Pages can use slide (16:9), A4, poster (4:5), square and custom sizes. Present m
 
 ## Infinite canvas and tools
 
-Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas page). It has no page bounds: pan with the Hand tool, hold Space, or middle-drag; zoom with the mouse wheel at the pointer or the zoom controls, and place any block anywhere. The dot grid and 8px snapping can be toggled from the tool rail. Exports crop infinite pages to their content bounds, and Present fits them to their content.
+Choose **Infinite canvas** when adding a page (or use the demo's Infinite canvas page). It has no page bounds: pan with the Hand tool, hold Space, middle-drag, or use a two-finger trackpad scroll; pinch or Ctrl/Cmd+wheel to zoom at the pointer; Shift+wheel pans horizontally. Place any block anywhere. The dot grid and 8px snapping can be toggled from the tool rail. Exports crop infinite pages to their content bounds, and Present fits them to their content.
 
 ## Presentation workflow
 
@@ -289,6 +291,8 @@ Addressing rules:
 4. otherwise the CLI returns candidates and the agent should ask, never guess for writes.
 
 Writes are revision-checked with `--base-revision`. A stale revision fails with exit code `2` and the latest revision. Agent sessions can be bound to a document/page/selection with `HCANVAS_SESSION`; the service records active context for `hcanvas context`.
+
+Use the Page Inspector's **Canvas ID** / **Page ID** copy buttons, or right-click a canvas/page in the sidebar, when telling an agent which document or page to edit.
 
 ### Patch example
 

@@ -9,7 +9,7 @@ import type { HcBlock, HcPage } from '../types.js';
 
 export interface ClientBlockRenderContext {
   editing: boolean;
-  wrapHtml(html: string): string;
+  wrapHtml(html: string, pageId?: string, blockId?: string): string;
   setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: string): void;
 }
 
@@ -23,7 +23,7 @@ function renderHtml(block: HcBlock, page: HcPage, context: ClientBlockRenderCont
   iframe.setAttribute('sandbox', context.editing ? 'allow-same-origin' : 'allow-scripts');
   iframe.setAttribute('title', block.name || 'HTML block');
   iframe.loading = 'lazy';
-  iframe.srcdoc = context.wrapHtml(block.html || '');
+  iframe.srcdoc = context.wrapHtml(block.html || '', page.id, block.id);
   iframe.addEventListener('load', () => { if (context.editing) context.setupHtmlEditing(iframe, page.id, block.id); });
   return iframe;
 }

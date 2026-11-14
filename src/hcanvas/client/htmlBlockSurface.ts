@@ -1,0 +1,5 @@
+export function wrapBlockHtml(html: string, pageId = '', blockId = ''): string {
+  const context = JSON.stringify({ pageId, blockId });
+  const bridge = '<script>(function(){var ctx=' + context + ';function edit(){parent.postMessage({type:"hcanvas:edit-html",pageId:ctx.pageId,blockId:ctx.blockId||null},"*")}window.addEventListener("dblclick",function(event){event.preventDefault();event.stopPropagation();edit()},true);window.addEventListener("wheel",function(event){var body=document.body;if(body&&body.scrollHeight>body.clientHeight+1)return;event.preventDefault();parent.postMessage({type:"hcanvas:block-wheel",pageId:ctx.pageId,blockId:ctx.blockId||null,deltaMode:event.deltaMode,deltaX:event.deltaX,deltaY:event.deltaY,ctrlKey:event.ctrlKey,metaKey:event.metaKey,shiftKey:event.shiftKey,clientX:event.clientX,clientY:event.clientY},"*")},{passive:false})})();<' + '/script>';
+  return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,sans-serif}</style></head><body>' + html + bridge + '</body></html>';
+}

@@ -77,6 +77,8 @@ hcanvas docs create --title "研究同步" --preset canvas
 hcanvas apply --ops-file changes.json --base-revision 5 --actor my-agent
 ~~~
 
+需要稳定目标？打开页面 Inspector 复制 **Canvas ID** / **Page ID**，或右键侧边栏中的页面使用同样的复制操作。
+
 <div class="hc-note"><strong>用 Agent 安装？</strong>让它阅读 README 的 <a href="https://github.com/DeconBear/hadamard#quick-start-with-ai-agents">Quick start with AI Agents</a> 部分。桌面版和 CLI 是分开安装的：桌面安装包提供 GUI，<code>npm install -g hadamard-canvas</code> 提供 CLI 和桌面启动器。</div>
 
 ## 继续探索

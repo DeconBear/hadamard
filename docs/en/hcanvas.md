@@ -77,6 +77,8 @@ hcanvas docs create --title "Research sync" --preset canvas
 hcanvas apply --ops-file changes.json --base-revision 5 --actor my-agent
 ~~~
 
+Need a stable target? Open the page Inspector and copy **Canvas ID** / **Page ID**, or right-click a page in the sidebar for the same copy actions.
+
 <div class="hc-note"><strong>Installing with an agent?</strong> Point it at the <a href="https://github.com/DeconBear/hadamard#quick-start-with-ai-agents">Quick start with AI Agents</a> section in the README. The desktop and CLI are separate installs: the desktop installer provides the GUI, while <code>npm install -g hadamard-canvas</code> provides the CLI and launcher.</div>
 
 ## Keep exploring

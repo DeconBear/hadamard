@@ -43,13 +43,15 @@ Hcanvas 独立运行，拥有自己的版本（0.1.2）和 release tag（hcanvas
 4. 使用可写的工作目录（默认 `~/.hcanvas`），不要删除用户已有文档。
 5. 汇报 Node/npm、`hadamard-canvas` 版本、工作目录和启动模式。
 
+Page Inspector 还会显示 **Canvas ID** 和 **Page ID** 及复制按钮；右键页面也可以复制。需要让 Agent 修改某个画布或页面时，把这些 ID 发给它。
+
 [GitHub Releases](https://github.com/DeconBear/hadamard/releases) 里的桌面安装包只包含 GUI；需要 CLI 时请单独执行上面的 npm 安装命令。
 
 ## 主要能力
 
 ### 适合不同工作的页面类型
 
-- **HTML 页面**：沙箱渲染，可原地编辑文本/样式，也可打开源码编辑器。
+- **HTML 页面**：沙箱渲染，可原地编辑文本/样式，也可打开源码编辑器；SVG 文本标签使用紧凑浮层编辑。
 - **Canvas 页面**：固定尺寸的幻灯片/页面画布。
 - **Infinite 页面**：无边界坐标，可自由缩放和平移。
 - **Markdown 文档页**：适合长文、论文和研究报告。
@@ -63,11 +65,13 @@ Hcanvas 独立运行，拥有自己的版本（0.1.2）和 release tag（hcanvas
 - 内联实时取色器，支持饱和度/色相调整与屏幕取色。
 - 内置 **Inter**、**Source Serif 4**、**JetBrains Mono**，并提供系统字体选项。
 - 内置 **Slider** 组件和声明式插件块；支持页面模板插件。
+- 触控板导航：双指平移、捏合缩放、Shift+滚轮横向平移。
 
 ### Agent 原生设计
 
 - CLI-first 协议，可读取、修改和审阅文档。
 - HTML 使用稳定的 data-hc-id，Canvas 内容使用稳定 block ID。
+- Page Inspector 和页面右键菜单可复制 **Canvas ID** 与 **Page ID**。
 - 实时 Agent 在线状态与光标显示。
 - 提案机制，应用前可以先审阅。
 - 有上限的修订历史，支持恢复和对比。

@@ -97,6 +97,8 @@ node bin/hcanvas.js app --workspace plan/hcanvas-demo
 HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
 - **可视化**：单击选中，再次单击文字或按 Enter 直接编辑；鼠标悬停元素会显示命中轮廓，点击后可在 Inspector 查看层级路径和元素树；编辑横幅的 **Insert +** 会展开紧凑的元素面板（标题、段落、按钮、链接、图片、列表、引用、卡片、分隔线）；选中的元素还可使用快捷操作和自动应用的样式面板（无需点 Apply），内置 Title/Body/Muted/Accent/Card 预设，并可调颜色、背景、字号/字重、字间距、padding、对齐、圆角、行高；修改通过稳定的 `data-hc-id` patch 回 HTML 源；
+- **SVG 文本**：`<text>` / `<tspan>` 标签会打开紧凑的浮动编辑器。浏览器不支持对 SVG 文本使用 `contenteditable`，因此坐标轴名称、图示标注等 SVG 文本也保持直接可编辑；
+- **Agent ID**：Page Inspector 会显示 **Canvas ID** 和 **Page ID**，并提供复制按钮；右键任意页面也可以复制这两个 ID 给 Agent；
 - **源码**：CodeMirror 编辑完整 HTML/CSS，右侧实时预览；源码编辑器自动保存，没有 Save 按钮：停止输入后稍等片刻即保存，状态会显示 **Editing…**、**Saving…** 或 **Auto-save on**，**Ctrl/Cmd+S** 立即保存；**Done**、**×** 或 **Esc** 关闭前会先写入未保存的修改，保存失败时编辑器保持打开以便重试；
 - 编辑模式下脚本禁用；预览模式使用带脚本、无同源的沙箱。
 
@@ -122,7 +124,7 @@ Markdown 页右上角有 **?** 帮助按钮：首次进入会自动弹出简短�
 
 ## 无限画布与工具栏
 
-新增页面时选择 **Infinite canvas**（演示文档里也有 Infinite canvas 页）。没有页面边界：用 Hand 工具、按住 Space 或中键拖动平移，鼠标滚轮指哪缩哪或用缩放按钮缩放，块可以放在任意位置。左侧工具栏可切换选择/抓手、插入 HTML/文本/Markdown/代码/图片/形状、切换点阵网格与 8px 吸附、查看快捷键。选中块后顶部出现浮动操作条（编辑、复制、置顶/置底、对齐、删除）。导出会按内容边界裁剪无限画布，Present 会按内容边界适配。撤销/重做会被串行化：拖动、缩放、文字编辑、HTML 元素 patch、分组、页面排序和换形状都记录正确 inverse；连续快速 Ctrl/Cmd+Z 会排队逐步回退。
+新增页面时选择 **Infinite canvas**（演示文档里也有 Infinite canvas 页）。没有页面边界：用 Hand 工具、按住 Space、中键拖动或双指触控板滑动平移；捏合或 Ctrl/Cmd+滚轮在指针位置缩放；Shift+滚轮横向平移。块可以放在任意位置。左侧工具栏可切换选择/抓手、插入 HTML/文本/Markdown/代码/图片/形状、切换点阵网格与 8px 吸附、查看快捷键。选中块后顶部出现浮动操作条（编辑、复制、置顶/置底、对齐、删除）。导出会按内容边界裁剪无限画布，Present 会按内容边界适配。撤销/重做会被串行化：拖动、缩放、文字编辑、HTML 元素 patch、分组、页面排序和换形状都记录正确 inverse；连续快速 Ctrl/Cmd+Z 会排队逐步回退。
 
 ## 演示工作流
 
@@ -202,6 +204,8 @@ hcanvas propose <doc> --ops-file ops.json --base-revision 7 --intent "Add a slid
 hcanvas proposal accept <doc> <proposalId>
 hcanvas export <doc> --format pdf --out deck.pdf
 ```
+
+请优先从 Page Inspector 的 **Canvas ID** / **Page ID** 复制按钮，或右键侧边栏中的画布/页面，获取要交给 Agent 的文档或页面 ID。
 
 寻址顺序：显式 id/标题/`hcanvas://doc/<id>` → `HCANVAS_DOC`/session context → 工作区唯一文档 → 否则返回候选让 agent 询问。写操作必须带 `--base-revision`，过期 revision 返回退出码 2 和最新 revision。session 通过 `HCANVAS_SESSION` 绑定文档/页面/选中项。
 

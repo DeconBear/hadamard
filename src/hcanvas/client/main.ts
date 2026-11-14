@@ -10,6 +10,8 @@ import { insertHtmlPreset, installHtmlHoverHighlight, installHtmlKeyboardShortcu
 import { renderHtmlInspectorPanel } from './htmlInspector.js';
 import { installFileBrowser, type FileBrowserController } from './fileBrowser.js';
 import { createHtmlSelectionEditor } from './htmlSelectionEditor.js';
+import { closeSvgTextEditor, isSvgTextElement, openSvgTextEditor } from './svgTextEditor.js';
+import { commitSvgText } from './svgTextCommit.js';
 import { bindSidebarSections } from './sidebarCollapse.js';
 import { installPluginSidebar } from './pluginSidebar.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
@@ -28,6 +30,9 @@ import { installPageListInteractions } from './pageListInteractions.js';
 import { installListSelection } from './listSelection.js';
 import { installColorPickers } from './colorPicker.js';
 import { bindSliderWidget } from './sliderWidget.js';
+import { handleBlockWheelMessage, installCanvasWheel } from './wheelNavigation.js';
+import { wrapBlockHtml } from './htmlBlockSurface.js';
+import { agentIdsMarkup, bindAgentIdButtons, canvasAgentIdMenuActions, pageAgentIdMenuActions } from './agentIds.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
 import { startShapeTextEdit } from './shapeText.js';
 import type { HcBlockPlugin } from '../blockPlugins.js';
@@ -144,13 +149,11 @@ let pendingRemoteDocId = '';
 let pendingRemoteRevision = 0;
 let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 let pagesRenderTimer: ReturnType<typeof setTimeout> | undefined;
-
 let shapePicker: ShapePicker | null = null;
 let fileBrowser: FileBrowserController | null = null;
 let presentInteractions: PresentInteractions | null = null;
 let sliceTool: SliceTool | null = null;
 let historyPanel: { render(): void } | null = null;
-
 const state: UiState = {
   docs: [], doc: null, activePageId: null, activeBlockId: null, selectedBlockIds: [], editing: null,
   selectedHtmlId: null, iframeDoc: null, iframeElement: null,
@@ -164,7 +167,6 @@ const markdownPages = new MarkdownPageController({
   applyOps: (ops, options) => applyOps(ops, options),
   openSource: page => showMarkdownPageEditor({ page, openCodeModal, applyOps: (ops, options) => applyOps(ops, options) }),
 });
-
 const htmlSelectionEditor = createHtmlSelectionEditor({
   getIframe: () => state.iframeElement || document.querySelector<HTMLIFrameElement>('.html-page-surface iframe'),
   isEditing: () => Boolean(state.editing),
@@ -263,12 +265,10 @@ function patchDocSummary(doc: HcDocument): void {
   if (index >= 0) state.docs[index] = summary;
   else state.docs.unshift(summary);
 }
-
 async function loadDocs(): Promise<void> {
   const result = await api<{ docs: DocSummary[] }>('/api/docs');
   state.docs = result.docs || [];
 }
-
 async function duplicateDocs(ids: string[]): Promise<void> {
   const unique = [...new Set(ids)];
   if (!unique.length) return;
@@ -286,7 +286,6 @@ async function duplicateDocs(ids: string[]): Promise<void> {
     toast(error instanceof Error ? error.message : String(error), 'error');
   }
 }
-
 async function deleteDocs(ids: string[]): Promise<void> {
   const unique = [...new Set(ids)].filter(id => state.docs.some(doc => doc.id === id));
   if (!unique.length) return;
@@ -824,8 +823,10 @@ function bindStaticActions(): void {
     menuActions: ids => {
       if (ids.length !== 1) return [];
       const page = state.doc?.pages.find(item => item.id === ids[0]);
-      if (!page || page.markdown === undefined) return [];
-      return [{ label: translatePhrase('Edit Markdown source'), action: () => { void markdownPages.openSource(page.id); } }];
+      if (!page) return [];
+      const actions = pageAgentIdMenuActions(page.id, state.doc?.id || '', (text, message) => { void copyText(text, message); });
+      if (page.markdown !== undefined) actions.push({ label: translatePhrase('Edit Markdown source'), action: () => { void markdownPages.openSource(page.id); } });
+      return actions;
     },
   });
   installListSelection({
@@ -835,6 +836,7 @@ function bindStaticActions(): void {
     noun: 'canvas',
     onDuplicate: ids => { void duplicateDocs(ids); },
     onDelete: ids => { void deleteDocs(ids); },
+    menuActions: ids => ids.length === 1 ? canvasAgentIdMenuActions(ids[0], (text, message) => { void copyText(text, message); }) : [],
   });
   installPluginSidebar({ request: api, openModal: html => openModal(html), closeModal: () => closeModal(), confirm: message => confirmDialog(message), toast, reload: () => loadExternalPlugins(api), onChanged: () => renderInspector() });
   fileBrowser = installFileBrowser({
@@ -1023,23 +1025,11 @@ function bindStaticActions(): void {
     beginMarquee(event);
   });
   viewport.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
-  viewport.addEventListener('wheel', event => {
-    const targetElement = event.target as Element;
-    if (targetElement.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle')) return;
-    // Let an HTML page own wheel scrolling in browse mode; canvas zoom remains available in edit mode.
-    if (activePage()?.mode === 'html' && !state.editing) return;
-    event.preventDefault();
-    const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? viewport.clientHeight : 1;
-    const deltaX = event.deltaX * unit;
-    const deltaY = event.deltaY * unit;
-    if (event.shiftKey) {
-      state.panX -= Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
-      scheduleStageTransform();
-      return;
-    }
-    setZoomAt(state.zoom * Math.exp(-deltaY * 0.002), event.clientX, event.clientY);
-  }, { passive: false });
-  // Eraser removes blocks under the pointer in a drag gesture.
+  installCanvasWheel(viewport, () => ({
+    mode: activePage()?.mode || '',
+    pan: (deltaX, deltaY) => { state.panX += deltaX; state.panY += deltaY; scheduleStageTransform(); },
+    zoomAt: (factor, clientX, clientY) => setZoomAt(factor, clientX, clientY),
+  }), '.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle');
   viewport.addEventListener('pointerdown', event => {
     if (event.button !== 0 || state.tool !== 'eraser') return;
     if (activePage()?.mode !== 'infinite' || state.editing) return;
@@ -1956,9 +1946,17 @@ function renderAgentCursors(container: HTMLElement, page: HcPage): void {
   }
 }
 window.addEventListener('message', event => {
-  const data = event.data as { type?: string; pageId?: string; text?: string; hcId?: string; x?: number; y?: number; rect?: { left: number; top: number; width: number; height: number } } | null;
+  const data = event.data as { type?: string; pageId?: string; blockId?: string; text?: string; hcId?: string; x?: number; y?: number; deltaMode?: number; deltaX?: number; deltaY?: number; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; clientX?: number; clientY?: number; rect?: { left: number; top: number; width: number; height: number } } | null;
+  if (data?.type === 'hcanvas:block-wheel' && typeof data.blockId === 'string' && activePage()?.mode !== 'html') {
+    handleBlockWheelMessage(data, {
+      mode: activePage()?.mode || '',
+      pan: (deltaX, deltaY) => { state.panX += deltaX; state.panY += deltaY; scheduleStageTransform(); },
+      zoomAt: (factor, clientX, clientY) => setZoomAt(factor, clientX, clientY),
+    });
+    return;
+  }
   if (data?.type === 'hcanvas:html-selection') {
-    if (state.editing || !data.pageId || data.pageId !== state.activePageId || activePage()?.mode !== 'html' || activePage()?.markdown !== undefined || !data.text || !data.hcId || !data.rect) { htmlSelectionEditor.hide(); return; }
+    if (state.editing || data.blockId || !data.pageId || data.pageId !== state.activePageId || activePage()?.mode !== 'html' || activePage()?.markdown !== undefined || !data.text || !data.hcId || !data.rect) { htmlSelectionEditor.hide(); return; }
     htmlSelectionEditor.show(data.pageId, data.hcId, data.rect);
     return;
   }
@@ -1968,8 +1966,9 @@ window.addEventListener('message', event => {
     return;
   }
   if (!data || data.type !== 'hcanvas:edit-html' || typeof data.pageId !== 'string') return;
-  if (state.editing || !state.doc?.pages.some(page => page.id === data.pageId)) return;
-  enterHtmlEdit(data.pageId);
+  if (state.editing || !data.pageId || !state.doc?.pages.some(page => page.id === data.pageId)) return;
+  if (data.blockId && !state.doc.pages.find(page => page.id === data.pageId)?.blocks?.some(block => block.id === data.blockId && block.type === 'html')) return;
+  enterHtmlEdit(data.pageId, data.blockId || undefined);
 });
 function blockWrapper(block: HcBlock, page: HcPage): HTMLDivElement {
   const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
@@ -2023,9 +2022,6 @@ function previewPageBackground(color: string): void {
   if (surface) surface.style.background = color;
 }
 
-function wrapBlockHtml(html: string): string {
-  return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,sans-serif}</style></head><body>' + html + '</body></html>';
-}
 function cycleBlockSelectionAt(clientX: number, clientY: number, currentId: string): void {
   const page = activePage();
   if (!page) return;
@@ -2492,6 +2488,7 @@ function enterHtmlEdit(pageId: string, blockId?: string): void {
 }
 function exitHtmlEdit(): void {
   if (!state.editing) return;
+  closeSvgTextEditor();
   htmlSelectionEditor.hide();
   const active = state.iframeDoc?.querySelector<HTMLElement>('[contenteditable="true"]');
   if (active) void commitHtmlElement(active);
@@ -2505,6 +2502,7 @@ function exitHtmlEdit(): void {
   renderInspector();
 }
 function canEditHtmlText(element: Element): boolean {
+  if (isSvgTextElement(element)) return Boolean(element.textContent?.trim());
   if (element === element.ownerDocument.body) return false;
   const tag = element.tagName.toLowerCase();
   if (['img', 'br', 'hr', 'input', 'textarea', 'select', 'option', 'iframe', 'svg', 'path', 'style', 'script'].includes(tag)) return false;
@@ -2588,7 +2586,7 @@ function selectHtmlElement(element: Element): void {
   renderInspector();
   void syncActive();
 }
-function startInlineTextEdit(element: HTMLElement): void {
+function startInlineTextEdit(element: Element): void {
   if (!state.iframeDoc) return;
   const previous = state.iframeDoc.querySelector('[contenteditable="true"]') as HTMLElement | null;
   if (previous && previous !== element) {
@@ -2596,13 +2594,27 @@ function startInlineTextEdit(element: HTMLElement): void {
     previous.removeAttribute('data-hc-editing');
     void commitHtmlElement(previous);
   }
-  selectHtmlElement(element);
-  element.setAttribute('contenteditable', 'true');
-  element.setAttribute('data-hc-editing', 'true');
-  element.focus();
+  if (isSvgTextElement(element)) {
+    if (!state.iframeElement) return;
+    openSvgTextEditor({
+      iframe: state.iframeElement,
+      element,
+      onCommit: text => {
+        element.textContent = text;
+        if (!state.editing) return;
+        void commitSvgText(element, text, { pageId: state.editing.pageId, blockId: state.editing.blockId, apply: ops => applyOps(ops, { refreshArtboard: false }), select: selectHtmlElement });
+      },
+    });
+    return;
+  }
+  const htmlElement = element as HTMLElement;
+  selectHtmlElement(htmlElement);
+  htmlElement.setAttribute('contenteditable', 'true');
+  htmlElement.setAttribute('data-hc-editing', 'true');
+  htmlElement.focus();
   try {
     const range = state.iframeDoc.createRange();
-    range.selectNodeContents(element);
+    range.selectNodeContents(htmlElement);
     range.collapse(false);
     const selection = state.iframeDoc.getSelection();
     selection?.removeAllRanges();
@@ -2689,7 +2701,8 @@ function renderPageInspector(): void {
   const page = activePage();
   if (!page) { root.innerHTML = '<p class="empty-state">No canvas open.</p>'; return; }
   const blocks = page.blocks || [];
-  let html = '<section class="inspector-section"><div class="inspector-title">Page</div>';
+  let html = agentIdsMarkup(state.doc?.id || '', page.id);
+  html += '<section class="inspector-section"><div class="inspector-title">Page</div>';
   html += field('pageName', 'Name', '<input id="pageName" value="' + esc(page.name) + '">');
   if (page.mode === 'infinite') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Infinite · no page bounds">');
   else html += '<div class="field-row">' + field('pageWidth', 'Width', '<input id="pageWidth" type="number" value="' + page.width + '">') + field('pageHeight', 'Height', '<input id="pageHeight" type="number" value="' + page.height + '">') + '</div>';
@@ -2704,8 +2717,9 @@ function renderPageInspector(): void {
   html += '<button id="pageSaveMasterBtn" class="btn tiny">Save as master</button>';
   html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
   html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
-  if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Esc exits. The Agent tab exposes the CLI protocol.</div>';
-  if (page.mode === 'infinite') html += '<div class="hint-card">Wheel to zoom at the pointer; Shift+Wheel or Hand tool to pan. Hold Space or middle-drag for temporary panning. Drag shapes to size them; exports crop to content.</div>';
+  if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Double-click text or SVG labels to edit them; Esc exits. The Agent tab exposes the CLI protocol.</div>';
+  if (page.mode === 'infinite') html += '<div class="hint-card">Two-finger scroll to pan, pinch or Ctrl/Cmd+wheel to zoom, Shift+wheel to pan horizontally. Hold Space or middle-drag for temporary panning. Drag shapes to size them; exports crop to content.</div>';
+  if (page.mode === 'canvas') html += '<div class="hint-card">Two-finger scroll to pan, pinch or Ctrl/Cmd+wheel to zoom. Hold Space or middle-drag for temporary panning.</div>';
   html += '</section>';
   if (page.mode === 'canvas' || page.mode === 'infinite') { html += componentPickerMarkup(); html += pluginPickerMarkup(); }
   root.innerHTML = html;
@@ -2716,6 +2730,7 @@ function bindPageInspector(page: HcPage): void {
   const applyPage = async (patch: Record<string, unknown>, refresh = false): Promise<void> => {
     await applyOps([{ op: 'update_page', pageId: page.id, patch } as HcOp], { refreshArtboard: refresh });
   };
+  bindAgentIdButtons(el('inspectorPanel'), state.doc?.id || '', page.id, (text, message) => { void copyText(text, message); });
   el<HTMLInputElement>('pageName').addEventListener('change', event => { void applyPage({ name: (event.target as HTMLInputElement).value }); });
   qs<HTMLInputElement>('#pageWidth')?.addEventListener('change', event => { void applyPage({ width: Math.max(100, Number((event.target as HTMLInputElement).value) || page.width) }, true); });
   qs<HTMLInputElement>('#pageHeight')?.addEventListener('change', event => { void applyPage({ height: Math.max(100, Number((event.target as HTMLInputElement).value) || page.height) }, true); });
@@ -3476,8 +3491,8 @@ function renderPresent(): void {
 function fitPresentPage(): void {
   fitPresentView(el('presentRoot'));
 }
-async function copyText(text: string): Promise<void> {
-  try { await navigator.clipboard.writeText(text); toast('Copied to clipboard', 'success'); }
+async function copyText(text: string, successMessage = 'Copied to clipboard'): Promise<void> {
+  try { await navigator.clipboard.writeText(text); toast(translatePhrase(successMessage), 'success'); }
   catch { toast('Clipboard unavailable', 'error'); }
 }
 

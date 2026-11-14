@@ -699,6 +699,21 @@ Object.assign(zh, {
   'Click a shape, then click or drag on the canvas': '点击形状，然后在画布上点击或拖拽',
   'Close shape library': '关闭形状库',
   'Close (Esc)': '关闭 (Esc)',
+  'Agent IDs': 'Agent 用 ID',
+  'Canvas ID': '画布 ID',
+  'Page ID': '页面 ID',
+  'Copy': '复制',
+  'Copy page ID': '复制页面 ID',
+  'Copy canvas ID': '复制画布 ID',
+  'Copy Canvas ID': '复制画布 ID',
+  'Copy Page ID': '复制页面 ID',
+  'Copied page ID': '已复制页面 ID',
+  'Copied canvas ID': '已复制画布 ID',
+  'Tell your agent which IDs to edit.': '把这些 ID 告诉你的 Agent。',
+  'SVG text': 'SVG 文本',
+  'Double-click anywhere in the page to enter HTML edit mode. Double-click text or SVG labels to edit them; Esc exits. The Agent tab exposes the CLI protocol.': '双击页面任意位置进入 HTML 编辑模式。双击文本或 SVG 标签即可编辑；Esc 退出。Agent 标签页提供 CLI 协议。',
+  'Two-finger scroll to pan, pinch or Ctrl/Cmd+wheel to zoom, Shift+wheel to pan horizontally. Hold Space or middle-drag for temporary panning. Drag shapes to size them; exports crop to content.': '双指滑动平移，捏合或 Ctrl/Cmd+滚轮缩放，Shift+滚轮横向平移。按住空格或中键拖拽可临时平移。拖拽形状调整大小；导出时会裁剪到内容。',
+  'Two-finger scroll to pan, pinch or Ctrl/Cmd+wheel to zoom. Hold Space or middle-drag for temporary panning.': '双指滑动平移，捏合或 Ctrl/Cmd+滚轮缩放；按住空格或中键拖拽可临时平移。'
 });
 
 const patterns: Array<[RegExp, string]> = [

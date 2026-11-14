@@ -43,13 +43,15 @@ Set up Hadamard Canvas for me. Read the "Quick start with AI Agents" section at 
 4. Use a writable workspace (default `~/.hcanvas`) and do not delete existing documents.
 5. Report the Node/npm and `hadamard-canvas` versions, workspace path and launch mode.
 
+The Page Inspector also exposes **Canvas ID** and **Page ID** with copy buttons; right-click a page for copy actions. Give those IDs to your agent when it should target a specific canvas or page.
+
 Desktop installers from [GitHub Releases](https://github.com/DeconBear/hadamard/releases) include the GUI only; install the CLI separately with the npm command above when needed.
 
 ## Highlights
 
 ### Pages that fit the work
 
-- **HTML pages** rendered in a sandbox, editable in place or in a source editor.
+- **HTML pages** rendered in a sandbox, editable in place or in a source editor; SVG text labels use a compact floating editor.
 - **Canvas pages** with a fixed-size slide/page surface.
 - **Infinite pages** with unbounded coordinates and pan/zoom.
 - **Markdown document pages** for long-form notes, papers and reports.
@@ -63,11 +65,13 @@ Desktop installers from [GitHub Releases](https://github.com/DeconBear/hadamard/
 - Live inline color picker with saturation/hue controls and screen eyedropper.
 - Bundled **Inter**, **Source Serif 4** and **JetBrains Mono**, plus system font choices.
 - Built-in **Slider** component and declarative plugin blocks; page-template plugins.
+- Trackpad navigation: two-finger pan, pinch zoom and Shift+wheel horizontal pan.
 
 ### Agent-native by design
 
 - A CLI-first protocol for reading, patching and reviewing documents.
 - Stable data-hc-id targets for HTML and block-level IDs for canvas content.
+- Copyable **Canvas ID** and **Page ID** in the page Inspector and page context menu.
 - Live agent presence and cursor tracking.
 - Proposals that can be reviewed before applying.
 - Bounded revision history with restore and diff.

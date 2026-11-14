@@ -16,7 +16,7 @@ export interface HtmlInspectorOptions {
   contentDocument: Document | null;
   editing: { pageId: string; blockId?: string } | null;
   context: HtmlEditingContext;
-  editText(element: HTMLElement): void;
+  editText(element: Element): void;
   openSource(target: { pageId: string; blockId?: string }): void;
 }
 
@@ -70,7 +70,7 @@ export function renderHtmlInspectorPanel(options: HtmlInspectorOptions): void {
     });
   });
   bindHtmlStyleControls(root, context);
-  root.querySelector<HTMLButtonElement>('#hcEditText')?.addEventListener('click', () => { if (selected) options.editText(selected as HTMLElement); });
+  root.querySelector<HTMLButtonElement>('#hcEditText')?.addEventListener('click', () => { if (selected) options.editText(selected); });
   root.querySelector<HTMLButtonElement>('#hcDuplicate')?.addEventListener('click', () => { void duplicateSelectedHtml(context); });
   root.querySelector<HTMLButtonElement>('#hcDelete')?.addEventListener('click', () => { void deleteSelectedHtml(context); });
   root.querySelectorAll<HTMLButtonElement>('[data-html-insert]').forEach(button => {
