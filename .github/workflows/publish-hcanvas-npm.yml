@@ -12,6 +12,9 @@ name: Publish Hcanvas npm Package
 #   Environment: leave empty
 
 on:
+  release:
+    types:
+      - published
   # The Hcanvas installer workflow creates the GitHub Release with GITHUB_TOKEN,
   # which does not emit a release event. Run after that workflow succeeds instead.
   workflow_run:
@@ -31,12 +34,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: publish-hcanvas-npm-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_sha }}
+  group: publish-hcanvas-npm-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event_name == 'release' && github.event.release.tag_name || github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && startsWith(github.event.release.tag_name || '', 'hcanvas-v')) || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
     steps:
       - name: Resolve ref
@@ -45,6 +48,9 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             TAG="${{ inputs.tag }}"
+            REF="$TAG"
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
             REF="$TAG"
           else
             TAG="${{ github.event.workflow_run.head_branch }}"
