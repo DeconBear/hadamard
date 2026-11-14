@@ -98,6 +98,8 @@ HTML 页面和 HTML block 在沙箱 iframe 中渲染：
 
 - **可视化**：单击选中，再次单击文字或按 Enter 直接编辑；鼠标悬停元素会显示命中轮廓，点击后可在 Inspector 查看层级路径和元素树；编辑横幅的 **Insert +** 会展开紧凑的元素面板（标题、段落、按钮、链接、图片、列表、引用、卡片、分隔线）；选中的元素还可使用快捷操作和自动应用的样式面板（无需点 Apply），内置 Title/Body/Muted/Accent/Card 预设，并可调颜色、背景、字号/字重、字间距、padding、对齐、圆角、行高；修改通过稳定的 `data-hc-id` patch 回 HTML 源；
 - **SVG 文本**：`<text>` / `<tspan>` 标签会打开紧凑的浮动编辑器。浏览器不支持对 SVG 文本使用 `contenteditable`，因此坐标轴名称、图示标注等 SVG 文本也保持直接可编辑；
+- **行内 LaTeX**：在 HTML 文本中输入 `$...$`、`\(...\)`、`$$...$$` 或 `\[...\]`，提交后会渲染为 KaTeX 公式；点击公式可打开实时预览并编辑源码。**Insert** 面板也提供 **Formula** 预设；
+- **SVG 公式**：编辑含 LaTeX 的 SVG 标签时，会自动转换为可继续编辑的 `foreignObject` 公式标签。浏览器渲染、PDF/PNG 导出和 Present 使用渲染后的 MathML；外部管线如果需要原生 SVG `<text>`，请保留纯文本标签。
 - **Agent ID**：Page Inspector 会显示 **Canvas ID** 和 **Page ID**，并提供复制按钮；右键任意页面也可以复制这两个 ID 给 Agent；
 - **源码**：CodeMirror 编辑完整 HTML/CSS，右侧实时预览；源码编辑器自动保存，没有 Save 按钮：停止输入后稍等片刻即保存，状态会显示 **Editing…**、**Saving…** 或 **Auto-save on**，**Ctrl/Cmd+S** 立即保存；**Done**、**×** 或 **Esc** 关闭前会先写入未保存的修改，保存失败时编辑器保持打开以便重试；
 - 编辑模式下脚本禁用；预览模式使用带脚本、无同源的沙箱。

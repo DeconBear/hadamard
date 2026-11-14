@@ -12,6 +12,8 @@ export interface HtmlInsertPreset {
   html: string;
 }
 
+import { formulaMarkup } from './formulaText.js';
+
 export const HTML_INSERT_PRESETS: HtmlInsertPreset[] = [
   { id: 'heading', label: 'Heading', hint: 'Section title', html: '<h2 style="margin:0 0 12px;font-family:Georgia,serif;font-size:28px;line-height:1.15;letter-spacing:-.03em;color:#1f2430">New heading</h2>' },
   { id: 'paragraph', label: 'Paragraph', hint: 'Body copy', html: '<p style="margin:0 0 12px;font:15px/1.65 Inter,sans-serif;color:#334155">New paragraph. Double-click to edit this text.</p>' },
@@ -22,6 +24,7 @@ export const HTML_INSERT_PRESETS: HtmlInsertPreset[] = [
   { id: 'quote', label: 'Quote', hint: 'Pull quote', html: '<blockquote style="margin:0 0 14px;padding:10px 14px;border-left:3px solid #a855f7;background:#f7f4ff;font:15px/1.6 Georgia,serif;color:#334155">A short, meaningful quote.</blockquote>' },
   { id: 'card', label: 'Card', hint: 'Bordered container', html: '<div style="padding:16px;border:1px solid #e7e0d2;border-radius:14px;background:#fffdf8;font:14px/1.6 Inter,sans-serif;color:#334155"><strong style="display:block;margin-bottom:4px;color:#1f2430">Card title</strong>Card body copy.</div>' },
   { id: 'divider', label: 'Divider', hint: 'Horizontal rule', html: '<hr style="border:0;border-top:1px solid #d9d3c7;margin:18px 0">' },
+  { id: 'formula', label: 'Formula', hint: 'Inline LaTeX formula', html: '<p style="margin:0 0 12px">' + formulaMarkup('E=mc^2') + '</p>' },
 ];
 
 export interface HtmlEditingContext {

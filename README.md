@@ -66,6 +66,7 @@ Desktop installers from [GitHub Releases](https://github.com/DeconBear/hadamard/
 - Bundled **Inter**, **Source Serif 4** and **JetBrains Mono**, plus system font choices.
 - Built-in **Slider** component and declarative plugin blocks; page-template plugins.
 - Trackpad navigation: two-finger pan, pinch zoom and Shift+wheel horizontal pan.
+- Inline KaTeX in HTML text and SVG diagram labels, with click-to-edit LaTeX source.
 
 ### Agent-native by design
 

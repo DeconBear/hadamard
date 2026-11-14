@@ -12,6 +12,9 @@ import { installFileBrowser, type FileBrowserController } from './fileBrowser.js
 import { createHtmlSelectionEditor } from './htmlSelectionEditor.js';
 import { closeSvgTextEditor, isSvgTextElement, openSvgTextEditor } from './svgTextEditor.js';
 import { commitSvgText } from './svgTextCommit.js';
+import { openFormulaEditing } from './formulaEditing.js';
+import { closeHtmlFormulaEditor } from './htmlFormulaEditor.js';
+import { renderLatexInElement } from './formulaText.js';
 import { bindSidebarSections } from './sidebarCollapse.js';
 import { installPluginSidebar } from './pluginSidebar.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
@@ -175,6 +178,7 @@ const htmlSelectionEditor = createHtmlSelectionEditor({
   startInline: startInlineTextEdit,
   enterEdit: pageId => enterHtmlEdit(pageId),
 });
+const formulaEditingContext = { getIframe: () => state.iframeElement, getEditing: () => state.editing, applyOps: (ops: Parameters<typeof applyOps>[0], options?: Parameters<typeof applyOps>[1]) => applyOps(ops, options), select: (element: Element) => selectHtmlElement(element), toast };
 function activePage(): HcPage | null {
   if (!state.doc) return null;
   return state.doc.pages.find(page => page.id === state.activePageId) ?? state.doc.pages[0] ?? null;
@@ -312,14 +316,12 @@ async function deleteDocs(ids: string[]): Promise<void> {
     toast(error instanceof Error ? error.message : String(error), 'error');
   }
 }
-
 async function loadMasters(): Promise<void> {
   try {
     const result = await api<{ masters: MasterSummary[] }>('/api/masters');
     state.masters = result.masters || [];
   } catch { /* masters are optional */ }
 }
-
 async function openDoc(docId: string, pageId?: string, reopenTab = true): Promise<void> {
   const result = await api<{ doc: HcDocument }>('/api/docs/' + docId);
   state.doc = result.doc;
@@ -340,7 +342,6 @@ async function openDoc(docId: string, pageId?: string, reopenTab = true): Promis
   notifyCanvasTab(reopenTab);
   void syncActive();
 }
-
 async function initialize(): Promise<void> {
   installColorPickers();
   bindStaticActions();
@@ -1110,7 +1111,6 @@ function editActiveBlock(): void {
   else if (block.type === 'image') openImageModal(block);
   else renderInspector();
 }
-
 async function copySelectedBlocks(cut = false): Promise<void> {
   const page = activePage();
   const blocks = selectedBlocks();
@@ -1125,7 +1125,6 @@ async function copySelectedBlocks(cut = false): Promise<void> {
   }
   toast((cut ? 'Cut ' : 'Copied ') + blocks.length + ' block' + (blocks.length === 1 ? '' : 's'), 'info');
 }
-
 async function pasteBlock(clipboardText?: string): Promise<void> {
   const page = activePage();
   if (!page || page.mode === 'html') return;
@@ -1150,7 +1149,6 @@ async function pasteBlock(clipboardText?: string): Promise<void> {
   const result = await applyOps(copies.map(copy => ({ op: 'add_block', pageId: page.id, block: copy } as HcOp)), { refreshArtboard: true });
   if (result) setBlockSelection(copies.map(copy => copy.id), copies[copies.length - 1]?.id ?? null);
 }
-
 async function groupSelectedBlocks(): Promise<void> {
   const page = activePage();
   const blocks = selectedBlocks();
@@ -1160,7 +1158,6 @@ async function groupSelectedBlocks(): Promise<void> {
   renderInspector();
   toast('Grouped ' + blocks.length + ' blocks', 'success');
 }
-
 async function ungroupSelectedBlocks(): Promise<void> {
   const page = activePage();
   const blocks = selectedBlocks().filter(block => block.groupId);
@@ -1169,7 +1166,6 @@ async function ungroupSelectedBlocks(): Promise<void> {
   renderInspector();
   toast('Ungrouped ' + blocks.length + ' blocks', 'success');
 }
-
 async function deleteSelectedBlocks(): Promise<void> {
   const page = activePage();
   const blocks = selectedBlocks();
@@ -2489,6 +2485,7 @@ function enterHtmlEdit(pageId: string, blockId?: string): void {
 function exitHtmlEdit(): void {
   if (!state.editing) return;
   closeSvgTextEditor();
+  closeHtmlFormulaEditor();
   htmlSelectionEditor.hide();
   const active = state.iframeDoc?.querySelector<HTMLElement>('[contenteditable="true"]');
   if (active) void commitHtmlElement(active);
@@ -2524,6 +2521,7 @@ function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: s
   installHtmlKeyboardShortcuts(contentDocument, htmlEditingContext());
   contentDocument.addEventListener('click', event => {
     const target = event.target as Element;
+    if (openFormulaEditing(target, formulaEditingContext)) { event.preventDefault(); event.stopPropagation(); return; }
     if (target.closest('[contenteditable="true"]')) return;
     event.preventDefault(); event.stopPropagation();
     const candidate = target.closest('[data-hc-id]') || contentDocument.body;
@@ -2588,6 +2586,7 @@ function selectHtmlElement(element: Element): void {
 }
 function startInlineTextEdit(element: Element): void {
   if (!state.iframeDoc) return;
+  if (openFormulaEditing(element, formulaEditingContext)) return;
   const previous = state.iframeDoc.querySelector('[contenteditable="true"]') as HTMLElement | null;
   if (previous && previous !== element) {
     previous.setAttribute('contenteditable', 'false');
@@ -2602,7 +2601,7 @@ function startInlineTextEdit(element: Element): void {
       onCommit: text => {
         element.textContent = text;
         if (!state.editing) return;
-        void commitSvgText(element, text, { pageId: state.editing.pageId, blockId: state.editing.blockId, apply: ops => applyOps(ops, { refreshArtboard: false }), select: selectHtmlElement });
+        void commitSvgText(element, text, { pageId: state.editing.pageId, blockId: state.editing.blockId, newId: genId, apply: ops => applyOps(ops, { refreshArtboard: false }), select: selectHtmlElement, toast });
       },
     });
     return;
@@ -2635,6 +2634,7 @@ async function commitHtmlElement(element: HTMLElement): Promise<void> {
   const targetId = element.getAttribute('data-hc-id');
   if (!targetId) return;
   if (htmlCommitTimer) { clearTimeout(htmlCommitTimer); htmlCommitTimer = undefined; }
+  renderLatexInElement(element, genId);
   const clone = element.cloneNode(true) as HTMLElement;
   clone.removeAttribute('contenteditable');
   clone.removeAttribute('data-hc-selected');

@@ -66,6 +66,7 @@ Page Inspector 还会显示 **Canvas ID** 和 **Page ID** 及复制按钮；右�
 - 内置 **Inter**、**Source Serif 4**、**JetBrains Mono**，并提供系统字体选项。
 - 内置 **Slider** 组件和声明式插件块；支持页面模板插件。
 - 触控板导航：双指平移、捏合缩放、Shift+滚轮横向平移。
+- HTML 文本与 SVG 图示标签支持行内 KaTeX，点击公式即可编辑 LaTeX 源码。
 
 ### Agent 原生设计
 
