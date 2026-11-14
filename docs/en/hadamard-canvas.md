@@ -102,6 +102,8 @@ The suite installer builds the current Hcanvas `hcanvas.version.json` installer 
 
 Hcanvas releases use their own tag namespace and workflow: `hcanvas-v<version>` (for example `hcanvas-v0.1.2`). The workflow checks that the tag matches `hcanvas.version.json`, builds Windows, macOS and Linux installers in parallel, and uploads them to the Hcanvas release. It never writes Hadamard `v*` releases. Browser E2E is available with `npm run test:hcanvas:e2e` or the **Hcanvas E2E** workflow.
 
+The npm package `hadamard-canvas` is published automatically by **Publish Hcanvas npm Package** (`publish-hcanvas-npm.yml`) after the installer workflow succeeds, using npm trusted publishing (OIDC) with no `NPM_TOKEN` secret. Configure it once on npmjs.com: **package → Settings → Trusted Publishing → GitHub Actions**, owner `DeconBear`, repository `hadamard`, workflow `publish-hcanvas-npm.yml`, environment empty. Bump `hcanvas.version.json` and push the matching `hcanvas-v<version>` tag to start both workflows. The npm workflow skips a version that is already published.
+
 The workspace stores documents, state and exports:
 
 ```

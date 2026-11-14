@@ -68,6 +68,13 @@ npm run build:hcanvas:linux
 # dist_electron/canvas/Hadamard-Canvas-0.1.2-amd64.deb
 ```
 
+## 发布（维护者）
+
+- **actoviq-agent-sdk**：推送 `v<version>` tag 后，`Publish GitHub Release` 创建 Release，`publish-npm.yml` 随后自动发布到 npm。
+- **hadamard-canvas**：更新 `hcanvas.version.json` 并推送 `hcanvas-v<version>` tag，`Publish Hcanvas` 构建安装包；成功后 `publish-hcanvas-npm.yml` 自动构建并发布 npm 包。
+- 两个工作流都使用 **npm trusted publishing (OIDC)**，不需要 `NPM_TOKEN` secret。首次配置在 npmjs.com 的包设置中完成：**Settings → Trusted Publishing → GitHub Actions**，owner `DeconBear`、repository `hadamard`，workflow 分别填 `publish-npm.yml` / `publish-hcanvas-npm.yml`，environment 留空。
+- npm 版本一旦发布不能覆盖；发布前先递增 `package.json` / `hcanvas.version.json` 的 version。工作流会跳过已发布的版本，也可在 Actions 页面用 `workflow_dispatch` 手动指定 tag。
+
 ## 启动
 
 ```bash

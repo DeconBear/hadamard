@@ -4,6 +4,13 @@ on:
   release:
     types:
       - published
+  # Publish GitHub Release creates the release with GITHUB_TOKEN, which does
+  # not emit a release event. Run after that workflow succeeds as well.
+  workflow_run:
+    workflows:
+      - Publish GitHub Release
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       tag:
@@ -17,11 +24,35 @@ permissions:
 
 jobs:
   publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'release' && !startsWith(github.event.release.tag_name || '', 'hcanvas-v')) }}
     runs-on: ubuntu-latest
 
     steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+            REF="$TAG"
+          elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            TAG="${{ github.event.workflow_run.head_branch }}"
+            REF="${{ github.event.workflow_run.head_sha }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+            REF="$TAG"
+          fi
+          if [[ ! "$TAG" =~ ^v?[0-9]+[.][0-9]+[.][0-9]+([-+].*)?$ ]]; then
+            echo "Tag must look like v<semver> or <semver> (got: $TAG)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -36,7 +67,7 @@ jobs:
         shell: bash
         run: |
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-          RELEASE_TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}"
+          RELEASE_TAG="${{ steps.tag.outputs.tag }}"
 
           if [[ "$RELEASE_TAG" != "$PACKAGE_VERSION" && "$RELEASE_TAG" != "v$PACKAGE_VERSION" ]]; then
             echo "Release tag '$RELEASE_TAG' does not match package version '$PACKAGE_VERSION'."

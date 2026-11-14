@@ -2,7 +2,8 @@ name: Publish Hcanvas
 
 # Independent Hcanvas release. Tags use hcanvas-v<version>.
 # Builds Windows, macOS and Linux installers in parallel, then attaches them
-# to the matching GitHub Release. The npm package is published separately.
+# to the matching GitHub Release. The npm package is published after this
+# workflow succeeds by publish-hcanvas-npm.yml (npm trusted publishing/OIDC).
 
 on:
   push:

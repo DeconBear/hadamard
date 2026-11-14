@@ -1,0 +1,129 @@
+name: Publish Hcanvas npm Package
+
+# Publishes the independent hadamard-canvas package on npm.
+# Triggered after the Publish Hcanvas workflow succeeds, or manually.
+# Uses npm trusted publishing (OIDC); no NPM_TOKEN secret is required.
+#
+# Required npmjs.com configuration (package: hadamard-canvas):
+#   Settings -> Trusted Publishing -> GitHub Actions
+#   Organization/User: DeconBear
+#   Repository: hadamard
+#   Workflow filename: publish-hcanvas-npm.yml
+#   Environment: leave empty
+
+on:
+  # The Hcanvas installer workflow creates the GitHub Release with GITHUB_TOKEN,
+  # which does not emit a release event. Run after that workflow succeeds instead.
+  workflow_run:
+    workflows:
+      - Publish Hcanvas
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Hcanvas tag to publish (for example hcanvas-v0.1.3)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-hcanvas-npm-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve ref
+        id: tag
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+            REF="$TAG"
+          else
+            TAG="${{ github.event.workflow_run.head_branch }}"
+            REF="${{ github.event.workflow_run.head_sha }}"
+          fi
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && ! "$TAG" =~ ^hcanvas-v[0-9]+[.][0-9]+[.][0-9]+([-+].*)?$ ]]; then
+            echo "Tag must match hcanvas-v<semver> (got: $TAG)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout release
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.tag.outputs.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate package version
+        id: version
+        shell: bash
+        run: |
+          ACTUAL="$(node -p "require('./hcanvas.version.json').version")"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            EXPECTED="${{ inputs.tag }}"
+            EXPECTED="${EXPECTED#hcanvas-v}"
+            if [[ "$EXPECTED" != "$ACTUAL" ]]; then
+              echo "Release version $EXPECTED does not match hcanvas.version.json $ACTUAL"
+              exit 1
+            fi
+          fi
+          if [[ ! "$ACTUAL" =~ ^[0-9]+[.][0-9]+[.][0-9]+([-+].*)?$ ]]; then
+            echo "Invalid hcanvas.version.json version: $ACTUAL"
+            exit 1
+          fi
+          echo "version=$ACTUAL" >> "$GITHUB_OUTPUT"
+          echo "Publishing hadamard-canvas@$ACTUAL"
+
+      - name: Check whether this version already exists on npm
+        id: npm_version
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if npm view "hadamard-canvas@$VERSION" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "hadamard-canvas@$VERSION is already published; skipping build and publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Typecheck
+        if: steps.npm_version.outputs.exists != 'true'
+        run: npm run typecheck
+
+      - name: Build and stage Hcanvas package
+        if: steps.npm_version.outputs.exists != 'true'
+        run: npm run build:hcanvas:package
+
+      - name: Verify npm trusted publishing setup
+        if: steps.npm_version.outputs.exists != 'true'
+        shell: bash
+        run: |
+          echo "Publishing with npm trusted publishing (OIDC)."
+          echo "Expected npmjs.com trusted publisher for hadamard-canvas:"
+          echo "  Owner/Org: DeconBear"
+          echo "  Repository: hadamard"
+          echo "  Workflow: publish-hcanvas-npm.yml"
+          echo "  Environment: leave empty"
+
+      - name: Publish to npm
+        if: steps.npm_version.outputs.exists != 'true'
+        working-directory: packages/hadamard-canvas
+        run: npm publish --access public
