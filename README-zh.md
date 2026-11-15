@@ -21,7 +21,7 @@ Hadamard 是一系列围绕 LLM Harness 展开的工具：**Hadamard Harness** �
 
 大多数可视化工具最终要么只面向人，要么只面向 Agent。Hcanvas 坚持一份本地文档模型：
 
-- **人**可以拖拽、排版，直接编辑 HTML/CSS，使用形状、图片和演示模式。
+- **人**可以拖拽、排版，直接编辑 HTML/CSS，使用形状、图片、演示模式，以及自动布局和智能连线。
 - **Agent**可以使用 JSON-first 的 CLI/HTTP 协议，借助稳定 ID、patch、修订历史和提案机制工作。
 - **两者**编辑同一批页面，不需要导出成另一种格式。
 
@@ -71,6 +71,8 @@ Page Inspector 还会显示 **Canvas ID** 和 **Page ID** 及复制按钮；右�
 ### Agent 原生设计
 
 - CLI-first 协议，可读取、修改和审阅文档。
+- 面向 Agent 的 `read --format layout` 紧凑视图、`lint` 检查、高层 `compose` 场景和机器可读 schema。
+- 简短上下文/搜索、紧凑幂等写回、compose 模板、文字自动适配、箭头路由和本地图片上传。
 - HTML 使用稳定的 data-hc-id，Canvas 内容使用稳定 block ID。
 - Page Inspector 和页面右键菜单可复制 **Canvas ID** 与 **Page ID**。
 - 实时 Agent 在线状态与光标显示。

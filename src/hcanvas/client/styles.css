@@ -1387,3 +1387,11 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .hc-svg-text-actions { display: flex; justify-content: flex-end; gap: 5px; }
 .hc-svg-text-actions button { padding: 5px 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--ink-2); font: 600 9px/1.2 var(--sans); }
 .hc-svg-text-actions button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+.block-arrow-label { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); padding:2px 5px; border-radius:4px; background:rgba(250,248,244,.92); border:1px solid rgba(148,163,199,.36); color:#475569; font:600 9px/1.2 Inter, ui-sans-serif, sans-serif; white-space:nowrap; pointer-events:none; box-shadow:0 2px 8px rgba(15,23,42,.08); }
+.block-layout-animating .block-wrap { transition: left .16s ease, top .16s ease, width .16s ease, height .16s ease; }
+.block-wrap.type-arrow .block-hit { pointer-events:none; }
+.block-wrap.type-arrow svg { pointer-events:none; }
+.block-wrap.type-arrow svg path, .block-wrap.type-arrow svg polyline, .block-wrap.type-arrow svg line { pointer-events:stroke; cursor:pointer; }
+.block-wrap.type-arrow, .block-wrap.type-arrow .block-vector-wrap { pointer-events:none; }
+.block-wrap.type-arrow svg path, .block-wrap.type-arrow svg polyline, .block-wrap.type-arrow svg line { pointer-events:stroke; cursor:pointer; }

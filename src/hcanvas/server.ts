@@ -25,6 +25,8 @@ import { listProjects } from './projectRegistry.js';
 import { HcFileService } from './fileWorkspace.js';
 import { HcAssetService } from './assets.js';
 import { readHcanvasLanguageSync, writeHcanvasLanguage } from './dataRoot.js';
+import { buildLayoutRead, buildLintReport } from './agentLayout.js';
+import { compactApplyResult } from './agentApply.js';
 
 export interface HcServerOptions {
   workspace: string;
@@ -168,6 +170,7 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
   await files.init();
   const assets = new HcAssetService(options.workspace);
   await assets.init();
+  const idempotency = new Map<string, { fingerprint: string; doc: HcDocument; ops: HcOp[]; dryRun: boolean; changed: boolean; summary?: string }>();
   const host = options.host || '127.0.0.1';
   const token = options.token || randomBytes(18).toString('hex');
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -445,6 +448,15 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         const format = url.searchParams.get('format') || 'outline';
         const pageId = url.searchParams.get('pageId') || undefined;
         const blockId = url.searchParams.get('blockId') || undefined;
+        const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : undefined;
+        if (format === 'layout') {
+          json(res, 200, buildLayoutRead(doc, { pageId, limit }));
+          return;
+        }
+        if (format === 'lint') {
+          json(res, 200, buildLintReport(doc, { pageId, limit }));
+          return;
+        }
         if (format === 'outline' || format === 'markdown') {
           json(res, 200, { ok: true, format, content: outlineDocument(doc, pageId), docId: doc.id, revision: doc.revision });
           return;
@@ -468,16 +480,53 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       }
       match = pathname.match(/^\/api\/docs\/(doc_[A-Za-z0-9]+)\/apply$/);
       if (match && req.method === 'POST') {
+        const docId = match[1]!;
         const body = await readBody(req);
-        const result = await store.applyOps(match[1]!, {
+        const ops = Array.isArray(body.ops) ? body.ops as HcOp[] : [];
+        const dryRun = body.dryRun === true;
+        const summary = typeof body.summary === 'string' ? body.summary : undefined;
+        const idempotencyKey = typeof body.idempotencyKey === 'string' ? body.idempotencyKey.trim() : '';
+        const compact = body.compact === true || url.searchParams.get('compact') === '1';
+        const fingerprint = JSON.stringify({ baseRevision: body.baseRevision, ops, dryRun, summary });
+        const cacheKey = idempotencyKey ? docId + ':' + idempotencyKey : '';
+        if (cacheKey) {
+          const cached = idempotency.get(cacheKey);
+          if (cached) {
+            if (cached.fingerprint !== fingerprint) {
+              json(res, 409, {
+                error: 'Idempotency key was reused with a different request',
+                code: 'idempotency_conflict',
+                hint: 'Use a new idempotency key for a different payload, or retry the original request.',
+              });
+              return;
+            }
+            const replay = compact
+              ? compactApplyResult(cached.doc, cached.ops, { dryRun: cached.dryRun, summary: cached.summary })
+              : { ok: true, doc: cached.doc, dryRun: cached.dryRun, changed: cached.changed, revision: cached.doc.revision };
+            json(res, 200, { ...replay, idempotent: true });
+            return;
+          }
+        }
+        const result = await store.applyOps(docId, {
           baseRevision: typeof body.baseRevision === 'number' ? body.baseRevision : undefined,
           actor: typeof body.actor === 'string' ? body.actor : 'cli',
-          ops: Array.isArray(body.ops) ? body.ops as HcOp[] : [],
-          dryRun: body.dryRun === true,
-          summary: typeof body.summary === 'string' ? body.summary : undefined,
+          ops,
+          dryRun,
+          summary,
           source: typeof body.source === 'string' ? body.source : undefined,
         });
-        json(res, 200, { ok: true, doc: result.doc, dryRun: result.dryRun, changed: result.changed, revision: result.doc.revision });
+        if (cacheKey && !dryRun) {
+          idempotency.set(cacheKey, { fingerprint, doc: result.doc, ops, dryRun: false, changed: result.changed, summary });
+          while (idempotency.size > 200) {
+            const oldest = idempotency.keys().next().value;
+            if (oldest === undefined) break;
+            idempotency.delete(oldest);
+          }
+        }
+        const response = compact
+          ? compactApplyResult(result.doc, ops, { dryRun: result.dryRun, summary })
+          : { ok: true, doc: result.doc, dryRun: result.dryRun, changed: result.changed, revision: result.doc.revision };
+        json(res, 200, response);
         return;
       }
       match = pathname.match(/^\/api\/docs\/(doc_[A-Za-z0-9]+)\/proposals$/);
@@ -516,7 +565,15 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       }
       if (pathname === '/api/context' && req.method === 'GET') {
         const session = url.searchParams.get('session') || undefined;
-        json(res, 200, { ok: true, ...(await store.getContext(session)) });
+        const context = await store.getContext(session);
+        if (url.searchParams.get('brief') === '1' || url.searchParams.get('brief') === 'true') {
+          const docs = Array.isArray(context.docs)
+            ? (context.docs as Array<{ updatedAt?: string }>).slice().sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))).slice(0, 5)
+            : [];
+          json(res, 200, { ok: true, brief: true, workspace: context.workspace, active: context.active, session: context.session, sessions: context.sessions, docs });
+          return;
+        }
+        json(res, 200, { ok: true, ...context });
         return;
       }
       if (pathname === '/api/context/activate' && req.method === 'POST') {
@@ -736,15 +793,15 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       json(res, 404, { error: 'Not found: ' + pathname });
     } catch (error) {
       if (error instanceof HcRevisionConflictError) {
-        json(res, 409, { error: error.message, latestRevision: error.latest.revision, latestDoc: error.latest });
+        json(res, 409, { error: error.message, code: 'revision_conflict', latestRevision: error.latest.revision, latestDoc: error.latest, hint: 'Re-read the document or page, then retry the same operation with latestRevision as baseRevision.' });
         return;
       }
       if (error instanceof HcNotFoundError) {
-        json(res, 404, { error: error.message });
+        json(res, 404, { error: error.message, code: 'not_found', hint: 'Run hcanvas read or hcanvas docs list to refresh the document/page identifiers.' });
         return;
       }
       if (error instanceof HcValidationError) {
-        json(res, 400, { error: error.message });
+        json(res, 400, { error: error.message, code: 'validation_error', hint: 'Check hcanvas schema scene and hcanvas schema ops, then retry with a valid payload.' });
         return;
       }
       json(res, 500, { error: error instanceof Error ? error.message : String(error) });

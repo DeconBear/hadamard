@@ -14,6 +14,9 @@ import { parseExcalidrawScene } from '../canvas/excalidrawScene.js';
 import type { HcDocument } from './types.js';
 import { listProjects, registerProject, registryFilePath, touchProject } from './projectRegistry.js';
 import { resolveDataRootSync } from './dataRoot.js';
+import { compileScene, type ComposeScene } from './composeScene.js';
+import { AGENT_SCHEMAS, SCENE_EXAMPLE } from './agentSchemas.js';
+import { getComposeTemplate, listComposeTemplates } from './composeTemplates.js';
 
 interface ParsedArgs {
   positionals: string[];
@@ -40,11 +43,16 @@ function usage(): string {
     '  hcanvas workspace info [projectDir]',
     '  hcanvas projects list',
     '  hcanvas status',
-    '  hcanvas context [--session <id>]',
+    '  hcanvas context [--session <id>] [--brief]',
     '  hcanvas resolve <query>',
-    '  hcanvas docs list | create --title <t> [--preset slide|a4|poster|square|canvas|infinite] | delete <doc>',
-    '  hcanvas read [doc] [--format outline|html|json|page] [--page <id>] [--block <id>]',
-    '  hcanvas apply [doc] --ops-file <file|-> --base-revision <n> [--actor <name>] [--dry-run]',
+    '  hcanvas docs list [--query <q>] [--recent] [--limit <n>] | create --title <t> [--preset slide|a4|poster|square|canvas|infinite] | delete <doc>',
+    '  hcanvas read [doc] [--format outline|layout|lint|html|json|page] [--page <id>] [--block <id>] [--limit <n>]',
+    '  hcanvas lint [doc] [--page <id>] [--limit <n>]',
+    '  hcanvas compose [scene.json|-|--template <name>] [doc] [--title <t>] [--base-revision <n>] [--dry-run]',
+    '  hcanvas template list',
+    '  hcanvas assets list | upload <file> [--name <name>] | delete <assetId>',
+    '  hcanvas schema [scene|ops|layout]',
+    '  hcanvas apply [doc] --ops-file <file|-> --base-revision <n> [--actor <name>] [--dry-run] [--compact] [--idempotency-key <key>]',
     '  hcanvas propose [doc] --ops-file <file|-> --base-revision <n> --intent <text>',
     '  hcanvas proposal list [doc]',
     '  hcanvas proposal accept [doc] <proposalId> [--actor <name>]',
@@ -228,6 +236,70 @@ async function readOps(args: ParsedArgs): Promise<unknown[]> {
   throw new Error('ops JSON must be an array or { "ops": [...] }');
 }
 
+async function readTextInput(file: string, label: string): Promise<string> {
+  if (file === '-') {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks).toString('utf8');
+  }
+  try {
+    return await readFile(path.resolve(file), 'utf8');
+  } catch {
+    throw new Error('Could not read ' + label + ' file: ' + file);
+  }
+}
+
+async function uploadAsset(conn: Connection, file: string, name?: string): Promise<{ id: string; name: string; mime: string; size: number; url: string }> {
+  const absolute = path.resolve(file);
+  const data = await readFile(absolute);
+  const response = await request<{ asset: { id: string; name: string; mime: string; size: number; url: string } }>(conn, '/api/assets', {
+    method: 'POST',
+    body: JSON.stringify({ name: name || path.basename(absolute), data: data.toString('base64') }),
+  });
+  return response.asset;
+}
+
+async function hydrateSceneAssets(conn: Connection, scene: ComposeScene, warnings: string[]): Promise<void> {
+  const uploaded = new Map<string, string>();
+  for (const page of scene.pages) {
+    for (const block of page.blocks || []) {
+      if (block.type !== 'image' || !block.srcFile) continue;
+      const file = block.srcFile;
+      if (!uploaded.has(file)) {
+        try {
+          const asset = await uploadAsset(conn, file, undefined);
+          uploaded.set(file, asset.url);
+        } catch (error) {
+          warnings.push('Could not upload image ' + file + ': ' + (error instanceof Error ? error.message : String(error)));
+          continue;
+        }
+      }
+      block.src = uploaded.get(file)!;
+    }
+  }
+}
+
+async function assetCommand(conn: Connection, args: ParsedArgs, pretty: boolean): Promise<void> {
+  const sub = args.positionals[1];
+  if (!sub || sub === 'list') {
+    print(await request(conn, '/api/assets'), pretty);
+    return;
+  }
+  if (sub === 'upload') {
+    const file = args.positionals[2];
+    if (!file) throw new Error('assets upload requires a file path');
+    print({ ok: true, asset: await uploadAsset(conn, file, flagString(args, 'name')) }, pretty);
+    return;
+  }
+  if (sub === 'delete') {
+    const id = args.positionals[2];
+    if (!id) throw new Error('assets delete requires an asset id');
+    print(await request(conn, '/api/assets/' + id, { method: 'DELETE' }), pretty);
+    return;
+  }
+  throw new Error('Unknown assets command: ' + sub);
+}
+
 function openBrowser(url: string): void {
   try {
     if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
@@ -335,11 +407,30 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
   if (command === 'guide') {
-    process.stdout.write(usage() + '\n\nAgent notes:\n- Always run "hcanvas context --json" first when the user refers to "this canvas".\n- If context is absent or ambiguous, list documents and ask the user; never guess for writes.\n- All writes are revision-checked; read, then apply with --base-revision.\n- HTML edits should patch data-hc-id targets, not rewrite whole documents.\n');
+    process.stdout.write(usage() + '\n\nAgent notes:\n- Always run "hcanvas context --json" first when the user refers to "this canvas".\n- If context is absent or ambiguous, list documents and ask the user; never guess for writes.\n- All writes are revision-checked; read, then apply with --base-revision.\n- HTML edits should patch data-hc-id targets, not rewrite whole documents.\n- Prefer "hcanvas read --format layout" for a compact page/block view, and "hcanvas lint" before presenting a result.\n- Prefer "hcanvas compose scene.json" for new pages instead of hand-computing x/y/w/h.\n');
     return;
+  }
+  if (command === 'schema') {
+    const name = sub as keyof typeof AGENT_SCHEMAS | undefined;
+    if (!name) {
+      print({ ok: true, schemas: Object.keys(AGENT_SCHEMAS) }, pretty);
+      return;
+    }
+    const schema = AGENT_SCHEMAS[name];
+    if (!schema) throw new Error('Unknown schema: ' + name + ' (expected scene, ops, layout)');
+    print({ ok: true, name, schema, ...(name === 'scene' ? { example: SCENE_EXAMPLE } : {}) }, pretty);
+    return;
+  }
+  if (command === 'template') {
+    if (!sub || sub === 'list') {
+      print({ ok: true, templates: listComposeTemplates() }, pretty);
+      return;
+    }
+    throw new Error('Unknown template command: ' + sub + ' (expected list)');
   }
   const conn = await findConnection(args);
   const actor = flagString(args, 'actor') || process.env.HCANVAS_ACTOR || 'cli';
+  if (command === 'assets' || command === 'asset') { await assetCommand(conn, args, pretty); return; }
 
   if (command === 'status') {
     print(await request(conn, '/api/state'), pretty);
@@ -347,7 +438,10 @@ async function main(argv: string[]): Promise<void> {
   }
   if (command === 'context') {
     const session = flagString(args, 'session') || process.env.HCANVAS_SESSION;
-    const context = await request<{ active?: { docId?: string; pageId?: string; selection?: string[] } }>(conn, '/api/context' + (session ? '?session=' + encodeURIComponent(session) : ''));
+    const params = new URLSearchParams();
+    if (session) params.set('session', session);
+    if (flagBool(args, 'brief')) params.set('brief', '1');
+    const context = await request<{ active?: { docId?: string; pageId?: string; selection?: string[] } }>(conn, '/api/context' + (params.toString() ? '?' + params.toString() : ''));
     print(context, pretty);
     await heartbeatIfSession(conn, args, context.active?.docId, context.active?.pageId, context.active?.selection);
     return;
@@ -358,7 +452,17 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
   if (command === 'docs') {
-    if (!sub || sub === 'list') { print(await request(conn, '/api/docs'), pretty); return; }
+    if (!sub || sub === 'list') {
+      const result = await request<{ docs?: Array<{ id: string; title: string; updatedAt?: string; revision?: number; pages?: number }> }>(conn, '/api/docs');
+      let docs = Array.isArray(result.docs) ? result.docs.slice() : [];
+      const query = (flagString(args, 'query') || flagString(args, 'q') || '').trim().toLowerCase();
+      if (query) docs = docs.filter(doc => doc.id.toLowerCase().includes(query) || doc.title.toLowerCase().includes(query));
+      if (flagBool(args, 'recent')) docs.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+      const limit = Number(flagString(args, 'limit'));
+      if (Number.isFinite(limit) && limit > 0) docs = docs.slice(0, Math.floor(limit));
+      print({ ok: true, docs }, pretty);
+      return;
+    }
     if (sub === 'create') {
       const title = flagString(args, 'title') || 'Untitled canvas';
       const presetId = flagString(args, 'preset');
@@ -390,17 +494,107 @@ async function main(argv: string[]): Promise<void> {
     const params = new URLSearchParams({ format });
     if (pageId) params.set('pageId', pageId);
     if (blockId) params.set('blockId', blockId);
+    if (flagString(args, 'limit')) params.set('limit', flagString(args, 'limit')!);
     print(await request(conn, '/api/docs/' + docId + '/read?' + params.toString()), pretty);
     await heartbeatIfSession(conn, args, docId, pageId, blockId ? [blockId] : undefined);
     return;
   }
+  if (command === 'lint') {
+    const docId = await resolveDoc(conn, args, args.positionals[1]);
+    const params = new URLSearchParams({ format: 'lint' });
+    if (flagString(args, 'page')) params.set('pageId', flagString(args, 'page')!);
+    if (flagString(args, 'limit')) params.set('limit', flagString(args, 'limit')!);
+    const result = await request<{ summary?: { errors?: number } }>(conn, '/api/docs/' + docId + '/read?' + params.toString());
+    print(result, pretty);
+    if ((result.summary?.errors || 0) > 0) process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'compose') {
+    const templateId = flagString(args, 'template');
+    let scene: ComposeScene;
+    if (templateId) {
+      const template = getComposeTemplate(templateId);
+      if (!template) throw new Error('Unknown compose template: ' + templateId + ' (run hcanvas template list)');
+      scene = template.scene;
+    } else {
+      const sceneFile = args.positionals[1];
+      if (!sceneFile) throw new Error('compose requires a scene JSON file, - for stdin, or --template <name>');
+      const rawScene = await readTextInput(sceneFile, 'scene');
+      let parsedScene: unknown;
+      try { parsedScene = JSON.parse(rawScene); } catch { throw new Error('Scene file is not valid JSON'); }
+      scene = parsedScene as ComposeScene;
+    }
+    const assetWarnings: string[] = [];
+    if (!flagBool(args, 'dry-run')) await hydrateSceneAssets(conn, scene, assetWarnings);
+    const compiled = compileScene(scene, { title: flagString(args, 'title') });
+    compiled.warnings.push(...assetWarnings);
+    const pageSummaries = compiled.pages.map(page => ({
+      id: page.id,
+      name: page.name,
+      mode: page.mode,
+      width: page.width,
+      height: page.height,
+      blocks: page.blocks?.map(block => ({ id: block.id, type: block.type, x: block.x, y: block.y, w: block.w, h: block.h })) || [],
+    }));
+    if (flagBool(args, 'dry-run')) {
+      print({ ok: true, dryRun: true, title: compiled.title, pages: pageSummaries, warnings: compiled.warnings, blockCount: compiled.blockCount }, pretty);
+      return;
+    }
+    const selector = templateId ? (args.positionals[1] || flagString(args, 'doc')) : (args.positionals[2] || flagString(args, 'doc'));
+    let finalDoc: HcDocument;
+    if (selector) {
+      const docId = await resolveDoc(conn, args, selector);
+      const baseRevision = await baseRevisionFor(conn, docId, args);
+      const ops = compiled.pages.map(page => ({ op: 'add_page', page }));
+      const applied = await request<{ doc: HcDocument }>(conn, '/api/docs/' + docId + '/apply', {
+        method: 'POST',
+        body: JSON.stringify({ ops, baseRevision, actor, summary: 'Compose ' + compiled.pages.length + ' page(s)' }),
+      });
+      finalDoc = applied.doc;
+    } else {
+      const created = await request<{ doc: HcDocument }>(conn, '/api/docs', {
+        method: 'POST',
+        body: JSON.stringify({ title: compiled.title, preset: compiled.firstPreset }),
+      });
+      finalDoc = created.doc;
+      if (compiled.pages.length > 1) {
+        const ops = compiled.pages.slice(1).map(page => ({ op: 'add_page', page }));
+        const applied = await request<{ doc: HcDocument }>(conn, '/api/docs/' + finalDoc.id + '/apply', {
+          method: 'POST',
+          body: JSON.stringify({ ops, baseRevision: finalDoc.revision, actor, summary: 'Compose ' + (compiled.pages.length - 1) + ' additional page(s)' }),
+        });
+        finalDoc = applied.doc;
+      }
+    }
+    await heartbeatIfSession(conn, args, finalDoc.id);
+    print({
+      ok: true,
+      docId: finalDoc.id,
+      revision: finalDoc.revision,
+      title: finalDoc.title,
+      pages: finalDoc.pages.slice(-compiled.pages.length).map(page => ({ id: page.id, name: page.name, mode: page.mode, blocks: page.blocks?.length || 0 })),
+      warnings: compiled.warnings,
+      blockCount: compiled.blockCount,
+    }, pretty);
+    return;
+  }
+
   if (command === 'apply') {
     const docId = await resolveDoc(conn, args, args.positionals[1]);
     const baseRevision = await baseRevisionFor(conn, docId, args);
     const ops = await readOps(args);
     const result = await request(conn, '/api/docs/' + docId + '/apply', {
       method: 'POST',
-      body: JSON.stringify({ ops, baseRevision, actor, summary: flagString(args, 'summary'), dryRun: flagBool(args, 'dry-run') }),
+      body: JSON.stringify({
+        ops,
+        baseRevision,
+        actor,
+        summary: flagString(args, 'summary'),
+        dryRun: flagBool(args, 'dry-run'),
+        compact: flagBool(args, 'compact'),
+        idempotencyKey: flagString(args, 'idempotency-key') || flagString(args, 'idempotencyKey'),
+      }),
     });
     print(result, pretty);
     await heartbeatIfSession(conn, args, docId);
@@ -544,6 +738,31 @@ async function main(argv: string[]): Promise<void> {
 main(process.argv.slice(2)).catch(error => {
   const status = (error as Error & { status?: number }).status;
   const payload = (error as Error & { payload?: unknown }).payload;
-  process.stderr.write(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error), status, payload }) + '\n');
+  const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  let outputPayload: unknown = payload;
+  if (record.latestDoc && typeof record.latestDoc === 'object') {
+    const latest = record.latestDoc as { id?: string; title?: string; revision?: number; pages?: unknown[] };
+    outputPayload = {
+      ...record,
+      latestDoc: { id: latest.id, title: latest.title, revision: latest.revision, pages: Array.isArray(latest.pages) ? latest.pages.length : 0 },
+    };
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  let hint = typeof record.hint === 'string' ? record.hint : undefined;
+  if (!hint) {
+    if (message.includes('No running hcanvas service')) hint = 'Start one with: hcanvas app --project <dir>';
+    else if (message.includes('No active document')) hint = 'Run hcanvas docs list or set HCANVAS_DOC / HCANVAS_SESSION.';
+    else if (message.includes('--base-revision')) hint = 'Read the document first (hcanvas read <doc>) and pass its revision.';
+    else if (message.includes('Ambiguous document')) hint = 'Use the exact document id from hcanvas docs list.';
+    else if (message.includes('compose requires')) hint = 'Pass a scene JSON file or --template <name>.';
+  }
+  process.stderr.write(JSON.stringify({
+    ok: false,
+    error: message,
+    status,
+    ...(typeof record.code === 'string' ? { code: record.code } : {}),
+    ...(hint ? { hint } : {}),
+    ...(Object.keys(record).length ? { payload: outputPayload } : {}),
+  }) + '\n');
   process.exit(status === 409 ? 2 : 1);
 });

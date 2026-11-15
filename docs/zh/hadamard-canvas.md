@@ -214,9 +214,78 @@ hcanvas proposal accept <doc> <proposalId>
 hcanvas export <doc> --format pdf --out deck.pdf
 ```
 
+### 面向 Agent 的紧凑读取与检查
+
+创作时优先使用紧凑视图，而不是原始 DOM：
+
+```bash
+hcanvas read <doc> --format layout --page <pageId> --limit 80
+hcanvas lint <doc> --page <pageId>
+hcanvas schema scene|ops|layout
+```
+
+`layout` 返回页面尺寸、block 边界、短文本预览、可编辑的 HTML/SVG target，并限制返回数量；它会过滤 KaTeX/MathML 内部节点和 SVG 几何细节，Agent 不需要读取完整源码就能找到目标标签。`lint` 会报告 `text-overflow`、`block-overlap`、`block-outside-page`、`empty-page` 和包含关系提示，不需要先导出截图。
+
+### 用 compose 代替手算坐标
+
+`compose` 接收高层场景并自动计算位置、尺寸、样式和 ID：
+
+```json
+{
+  "title": "Maxwell 方程",
+  "pages": [{
+    "name": "封面",
+    "layout": "stack",
+    "padding": 64,
+    "gap": 24,
+    "blocks": [
+      { "type": "heading", "level": 1, "text": "经典 Maxwell 方程组" },
+      { "type": "paragraph", "text": "电磁学的四条基本方程。" },
+      { "type": "divider" },
+      { "type": "markdown", "markdown": "## 四条方程\n\n- 电的高斯定律\n- 磁的高斯定律" }
+    ]
+  }]
+}
+```
+
+```bash
+hcanvas compose deck.json --dry-run                 # 查看自动布局结果
+hcanvas compose deck.json --title "Maxwell 方程"     # 创建新文档
+hcanvas compose extra.json <doc> --base-revision 7  # 追加页面到现有文档
+```
+
+布局支持 `stack`（默认）、带 `columns`/`span` 的 `grid`，以及显式 `x/y/w/h` 的 `free`。block 类型包括 heading、text、paragraph、caption、markdown、code、math/formula、image、shape、html、spacer、divider。`autoHeight` 可让页面高度跟随内容。
+
 请优先从 Page Inspector 的 **Canvas ID** / **Page ID** 复制按钮，或右键侧边栏中的画布/页面，获取要交给 Agent 的文档或页面 ID。
 
 寻址顺序：显式 id/标题/`hcanvas://doc/<id>` → `HCANVAS_DOC`/session context → 工作区唯一文档 → 否则返回候选让 agent 询问。写操作必须带 `--base-revision`，过期 revision 返回退出码 2 和最新 revision。session 通过 `HCANVAS_SESSION` 绑定文档/页面/选中项。
+
+### 上下文、检索与更安全的写回
+
+```bash
+hcanvas context --brief
+hcanvas docs list --query maxwell --recent --limit 5
+hcanvas apply <doc> --ops-file ops.json --base-revision 7 --compact --idempotency-key add-cover-v1
+```
+
+- `context --brief` 只返回当前上下文和最近更新的 5 篇文档。
+- `docs list` 支持按 id/标题过滤、按最近更新排序并限制数量。
+- `--compact` 返回 revision、页面摘要和创建/更新/删除的 ID，而不是整份文档。
+- `--idempotency-key` 让重试安全：重复提交相同请求会返回缓存结果；相同 key 提交不同 payload 会返回冲突。
+- 错误会带机器可读的 `code` 和可操作的 `hint`；revision 过期时会附带最新 revision，Agent 可以重新读取后重试。
+
+### 模板、自动字号、箭头和图片
+
+```bash
+hcanvas template list
+hcanvas compose --template cover --title "Quarterly review"
+hcanvas assets upload ./logo.png
+```
+
+- 内置模板：`cover`、`section`、`two-column`、`quote`、`agenda`。
+- 在 text/markdown/code block 上设置 `autoFit: true` 会自动缩小字号直到适配文本框。
+- 设置 `type: "arrow"`、`from`/`to` 指向显式 block ID，并可设置 `route: "orthogonal"`；compose 会计算 points、bounds 和起止绑定。
+- `image.srcFile` 会先上传本地图片，再替换为素材 URL；`hcanvas assets list|upload|delete` 可直接管理素材库。
 
 HTML patch 示例：
 
@@ -296,6 +365,27 @@ hcanvas desktop --project ~/projects/my-deck
 
 文档使用 JSON schema `hadamard-canvas/1`：HTML 页把完整源码存在 `page.html`；Canvas/Infinite 页存 `page.blocks`。未选择项目时，桌面应用回退到配置的数据目录（默认 `~/.hcanvas`）；`--workspace <dir>` 仍可直接指定 store 根目录，推荐使用项目化模式 `--project <dir>`。
 
+
+## 自动布局与智能连线
+
+Canvas 页面的选中工具栏现在提供布局与连线工具。选中两个及以上 block 后，在 **Auto layout** 菜单里可以：
+
+- **Stack**：纵向对齐，保持统一间距。
+- **Row**：横向对齐。
+- **Grid · 2 / Grid · 3**：按等宽列排成网格。
+- **Distribute H / Distribute V**：让所选 block 之间的间距相等。
+- **Frame · Stack / Frame · Grid 2**：在选中 frame 的边界内排列其子 block。
+
+自动布局带有过渡动画，并且是一次可撤销的普通编辑。文本 block 在文字或宽度变化时会自动增高，避免内容被悄悄裁掉。
+
+选中箭头后，Inspector 会显示 **Route**、**Start anchor**、**End anchor** 和 **Label**：
+
+- **Straight**：直线连接。
+- **Orthogonal**：直角折线，并尽量避开其他 block。
+- **Anchor**：自动选择，或固定到 block 的上/右/下/左/中心。
+- 箭头仍绑定源/目标 block；移动或缩放 block 时，关联箭头会自动重路由。
+
+同一个菜单还提供 **Theme · Neon / Paper / Mono** 主题预设、**Save component / Insert component** 可复用选区组件，以及 **Check layout** 页面检查（越界、重叠、可能的文字溢出）。frame 尺寸变化时子 block 会自动重排，布局变化带有短过渡动画。
 
 ## 侧栏多选与操作
 

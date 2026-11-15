@@ -1,4 +1,5 @@
 import type { HcBlock, HcPoint } from './types.js';
+import { routeArrowGeometry } from './arrowRouting.js';
 
 export interface HcArrowGeometry {
   x: number;
@@ -42,6 +43,7 @@ export function arrowEndpoints(arrow: HcBlock): { start: HcPoint; end: HcPoint }
 
 export function boundArrowGeometry(arrow: HcBlock, blocks: HcBlock[]): (HcArrowGeometry & { clearStart: boolean; clearEnd: boolean }) | null {
   if (!arrow.startBinding && !arrow.endBinding) return null;
+  if (arrow.connectorRoute || arrow.startPort || arrow.endPort) return routeArrowGeometry(arrow, blocks);
   const targets = new Map(blocks.filter(block => block.type !== 'arrow').map(block => [block.id, block]));
   const startTarget = arrow.startBinding ? targets.get(arrow.startBinding) : undefined;
   const endTarget = arrow.endBinding ? targets.get(arrow.endBinding) : undefined;

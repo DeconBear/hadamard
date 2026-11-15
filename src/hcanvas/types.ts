@@ -94,7 +94,19 @@ export interface HcBlockStyle {
   [key: string]: unknown;
 }
 
-export interface HcBlock {
+export type HcConnectorPort = 'auto' | 'top' | 'right' | 'bottom' | 'left' | 'center';
+export type HcConnectorRoute = 'straight' | 'orthogonal';
+
+export interface HcConnectorFields {
+  /** optional smart-connector anchor and route metadata */
+  startPort?: HcConnectorPort;
+  endPort?: HcConnectorPort;
+  connectorRoute?: HcConnectorRoute;
+  /** optional connector label */
+  label?: string;
+}
+
+export interface HcBlock extends HcConnectorFields {
   id: string;
   type: HcBlockType;
   x: number;

@@ -188,6 +188,69 @@ describe('hcanvas server', () => {
     expect(created.doc.pages[0]!.html).toBeUndefined();
   });
 
+  it('serves compact layout and lint views for agents', async () => {
+    const server = await start();
+    const created = await api<{ doc: { id: string; pages: Array<{ id: string }> } }>(server, '/api/docs', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: 'Agent layout test',
+        preset: {
+          id: 'agent-layout', title: 'Agent layout', width: 800, height: 600, background: '#ffffff', mode: 'canvas',
+          blocks: [
+            { id: 'agent_heading', type: 'text', x: 40, y: 40, w: 300, h: 48, z: 0, text: 'Agent heading' },
+            { id: 'agent_card', type: 'shape', shape: 'rect', x: 40, y: 120, w: 300, h: 120, z: 1 },
+          ],
+        },
+      }),
+    });
+    const pageId = created.doc.pages[0]!.id;
+    const layout = await api<{ format: string; page: { blockCount: number; blocks: Array<{ id: string }> }; issues: unknown[] }>(server, '/api/docs/' + created.doc.id + '/read?format=layout&pageId=' + pageId);
+    expect(layout.format).toBe('layout');
+    expect(layout.page.blockCount).toBe(2);
+    expect(layout.page.blocks.map(block => block.id)).toEqual(['agent_heading', 'agent_card']);
+    const lint = await api<{ summary: { pages: number; blocks: number } }>(server, '/api/docs/' + created.doc.id + '/read?format=lint&pageId=' + pageId);
+    expect(lint.summary).toMatchObject({ pages: 1, blocks: 2 });
+  });
+
+  it('serves compact idempotent apply, brief context and assets', async () => {
+    const server = await start();
+    const brief = await api<{ brief: boolean; docs: unknown[] }>(server, '/api/context?brief=1');
+    expect(brief.brief).toBe(true);
+    expect(brief.docs.length).toBeLessThanOrEqual(5);
+    const created = await api<{ doc: { id: string; pages: Array<{ id: string }>; revision: number } }>(server, '/api/docs', {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Idempotency test', preset: { id: 'test', title: 'Page', width: 800, height: 600, background: '#fff', mode: 'canvas', blocks: [] } }),
+    });
+    const docId = created.doc.id;
+    const pageId = created.doc.pages[0]!.id;
+    const request = {
+      baseRevision: 0,
+      actor: 'test',
+      compact: true,
+      idempotencyKey: 'apply-once',
+      ops: [{ op: 'add_block', pageId, block: { id: 'idem_block', type: 'text', x: 10, y: 10, w: 200, h: 40, z: 0, text: 'Once' } }],
+    };
+    const first = await api<{ revision: number; createdBlockIds: string[]; doc?: unknown; idempotent?: boolean }>(server, '/api/docs/' + docId + '/apply', { method: 'POST', body: JSON.stringify(request) });
+    expect(first.revision).toBe(1);
+    expect(first.createdBlockIds).toEqual(['idem_block']);
+    expect(first.doc).toBeUndefined();
+    const replay = await api<{ revision: number; idempotent: boolean; createdBlockIds: string[] }>(server, '/api/docs/' + docId + '/apply', { method: 'POST', body: JSON.stringify(request) });
+    expect(replay).toMatchObject({ revision: 1, idempotent: true });
+    expect(replay.createdBlockIds).toEqual(['idem_block']);
+    let conflictMessage = '';
+    try {
+      await api(server, '/api/docs/' + docId + '/apply', { method: 'POST', body: JSON.stringify({ ...request, ops: [{ op: 'add_block', pageId, block: { id: 'other', type: 'text', x: 0, y: 0, w: 10, h: 10, z: 0, text: 'Other' } }] }) });
+    } catch (error) {
+      conflictMessage = error instanceof Error ? error.message : String(error);
+    }
+    expect(conflictMessage).toContain('Idempotency key');
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+    const asset = await api<{ asset: { id: string; url: string } }>(server, '/api/assets', { method: 'POST', body: JSON.stringify({ name: 'pixel.png', data: png }) });
+    expect(asset.asset.url).toContain('/api/assets/raw/');
+    const assets = await api<{ assets: Array<{ id: string }> }>(server, '/api/assets');
+    expect(assets.assets.some(item => item.id === asset.asset.id)).toBe(true);
+  });
+
   it('honors ephemeral ports and closes with an active event stream', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'hcanvas-server-close-'));
     roots.push(root);

@@ -87,7 +87,19 @@ function renderShape(block: HcBlock): HTMLElement {
 function renderVector(block: HcBlock): HTMLElement {
   const host = document.createElement('div');
   host.innerHTML = vectorSvgMarkup(block);
-  return host.firstElementChild as HTMLElement || host;
+  const rendered = host.firstElementChild as HTMLElement || host;
+  if (block.type === 'arrow' && block.label) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'block-vector-wrap';
+    wrapper.style.cssText = 'position:relative;width:100%;height:100%';
+    wrapper.appendChild(rendered);
+    const label = document.createElement('span');
+    label.className = 'block-arrow-label';
+    label.textContent = block.label;
+    wrapper.appendChild(label);
+    return wrapper;
+  }
+  return rendered;
 }
 
 function renderMath(block: HcBlock): HTMLElement {

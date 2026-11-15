@@ -5,6 +5,9 @@ import { installBlockDirectEdit, updateDirectEditUI } from './blockDirectEdit.js
 import type { HcBlock, HcDocument, HcHtmlPatch, HcOp, HcPage, HcProposal, HcShape } from '../types.js';
 import { nativeBlocksToExcalidrawScene } from '../sceneBridge.js';
 import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
+import { augmentFrameLayoutOps, augmentTextAutoHeightOps } from '../canvasLayout.js';
+import { runCanvasAction, type CanvasActionContext } from './canvasActions.js';
+import { arrowInspectorMarkup, bindArrowInspector } from './arrowInspector.js';
 import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, isHcShape, shapeSvgMarkup } from '../shapes.js';
 import { insertHtmlPreset, installHtmlHoverHighlight, installHtmlKeyboardShortcuts, type HtmlEditingContext } from './htmlEditing.js';
 import { renderHtmlInspectorPanel } from './htmlInspector.js';
@@ -179,7 +182,20 @@ const htmlSelectionEditor = createHtmlSelectionEditor({
   enterEdit: pageId => enterHtmlEdit(pageId),
 });
 const formulaEditingContext = { getIframe: () => state.iframeElement, getEditing: () => state.editing, applyOps: (ops: Parameters<typeof applyOps>[0], options?: Parameters<typeof applyOps>[1]) => applyOps(ops, options), select: (element: Element) => selectHtmlElement(element), toast };
-function activePage(): HcPage | null {
+
+const canvasActionContext: CanvasActionContext = {
+  getPage: activePage,
+  getSelectedBlocks: selectedBlocks,
+  getActiveBlock: activeBlock,
+  getDocument: () => state.doc,
+  applyOps: (ops, options) => applyOps(ops, options),
+  cloneDocument: () => cloneJson(state.doc),
+  artboard: () => el('artboard'),
+  toast,
+  newId: genId,
+  select: (ids, primary) => setBlockSelection(ids, primary ?? null),
+  prompt: (message, defaultValue) => window.prompt(message, defaultValue),
+};function activePage(): HcPage | null {
   if (!state.doc) return null;
   return state.doc.pages.find(page => page.id === state.activePageId) ?? state.doc.pages[0] ?? null;
 }
@@ -393,7 +409,6 @@ async function initialize(): Promise<void> {
   });
   window.addEventListener('beforeunload', () => { if (state.doc) void syncActive(); });
 }
-
 const DEFAULT_VECTOR_STROKE = '#1f2430';
 const DEFAULT_VECTOR_STROKE_WIDTH = 2;
 function viewportToWorldPoint(clientX: number, clientY: number): { x: number; y: number } {
@@ -635,6 +650,7 @@ function beginVectorDraw(startEvent: PointerEvent): void {
       w: Math.max(8, Math.round(maxX - originX)), h: Math.max(8, Math.round(maxY - originY)),
       z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1,
       name: tool === 'freehand' ? 'Freehand' : 'Arrow',
+      ...(tool === 'arrow' ? { connectorRoute: 'orthogonal' as const } : {}),
       points: points.map(point => ({ x: point.x - originX, y: point.y - originY })),
       arrowhead: tool === 'arrow' ? 'arrow' : undefined,
       style: { stroke: DEFAULT_VECTOR_STROKE, strokeWidth: DEFAULT_VECTOR_STROKE_WIDTH },
@@ -961,6 +977,11 @@ function bindStaticActions(): void {
     if (value) void alignActiveBlock(value);
     (event.target as HTMLSelectElement).value = '';
   });
+  el('autoLayoutSelect').addEventListener('change', event => {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value) void runCanvasAction(value, canvasActionContext);
+    (event.target as HTMLSelectElement).value = '';
+  });
   qs<HTMLDivElement>('.tabs')?.addEventListener('click', event => {
     const target = (event.target as HTMLElement).closest('[data-tab]') as HTMLElement | null;
     if (!target) return;
@@ -1092,6 +1113,7 @@ function renderToolbarState(): void {
     editButton.style.display = selectedCount > 1 ? 'none' : '';
     const sliceButton = qs<HTMLElement>('#selSliceBtn');
     if (sliceButton) sliceButton.style.display = selectedCount === 1 && block.type === 'shape' && (block.shape === 'rect' || block.shape === 'polygon') && !block.rotation ? '' : 'none';
+    qs<HTMLElement>('#autoLayoutSelect')?.style.setProperty('display', '');
     qs<HTMLElement>('[data-sel-action="group"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
     qs<HTMLElement>('[data-sel-action="ungroup"]')?.style.setProperty('display', selectedCount > 1 ? '' : 'none');
   }
@@ -1173,7 +1195,6 @@ async function deleteSelectedBlocks(): Promise<void> {
   await applyOps(blocks.map(block => ({ op: 'delete_block', pageId: page.id, blockId: block.id } as HcOp)), { refreshArtboard: true });
   setBlockSelection([]);
 }
-
 async function duplicateActiveBlock(): Promise<void> {
   const page = activePage();
   const blocks = selectedBlocks();
@@ -1192,7 +1213,6 @@ async function duplicateActiveBlock(): Promise<void> {
   const result = await applyOps(copies.map(copy => ({ op: 'add_block', pageId: page.id, block: copy } as HcOp)), { refreshArtboard: true });
   if (result) setBlockSelection(copies.map(copy => copy.id), copies[copies.length - 1]?.id ?? null);
 }
-
 async function setActiveBlockLayer(direction: 'front' | 'back'): Promise<void> {
   const page = activePage();
   const blocks = selectedBlocks();
@@ -1201,7 +1221,6 @@ async function setActiveBlockLayer(direction: 'front' | 'back'): Promise<void> {
   await applyOps(blocks.map((block, index) => ({ op: 'update_block', pageId: page.id, blockId: block.id, patch: { z: z + index } } as HcOp)), { refreshArtboard: true });
   renderInspector();
 }
-
 async function alignActiveBlock(mode: string): Promise<void> {
   const page = activePage();
   const block = activeBlock();
@@ -1221,7 +1240,6 @@ async function alignActiveBlock(mode: string): Promise<void> {
   await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch: { x: next.x, y: next.y } }], { refreshArtboard: true, historyBase: historyBase || undefined });
   renderInspector();
 }
-
 async function nudgeSelectedBlocks(dx: number, dy: number): Promise<void> {
   const page = activePage();
   const blocks = selectedBlocks();
@@ -1235,7 +1253,6 @@ async function nudgeSelectedBlocks(dx: number, dy: number): Promise<void> {
     return { op: 'update_block', pageId: page.id, blockId: block.id, patch: { x: next.x, y: next.y } } as HcOp;
   }), { refreshArtboard: false, historyBase: historyBase || undefined });
 }
-
 async function nudgeActiveBlock(dx: number, dy: number): Promise<void> {
   const page = activePage();
   const block = activeBlock();
@@ -1503,7 +1520,6 @@ function duplicatePages(ids: string[]): void {
     toast(pages.length === 1 ? 'Page duplicated' : pages.length + ' pages duplicated', 'success');
   });
 }
-
 async function deletePages(ids: string[]): Promise<void> {
   const doc = state.doc;
   if (!doc) return;
@@ -1521,7 +1537,6 @@ async function deletePages(ids: string[]): Promise<void> {
   renderAll();
   toast(unique.length === 1 ? 'Page deleted' : unique.length + ' pages deleted', 'success');
 }
-
 function movePageToIndex(pageId: string, toIndex: number): void {
   const pages = state.doc?.pages;
   if (!pages) return;
@@ -1692,7 +1707,6 @@ function selectPage(pageId: string): void {
   notifyCanvasTab();
   void syncActive();
 }
-
 let stageFrame = 0;
 let undoStack: HcOp[][] = [];
 let redoStack: HcOp[][] = [];
@@ -1832,11 +1846,9 @@ function renderArtboard(): void {
   else applyStageTransform();
   renderToolbarState();
 }
-
 function agentHue(actor: string): number {
   return actor.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360;
 }
-
 async function followAgent(session: PresenceEntry): Promise<void> {
   if (!state.doc || session.docId !== state.doc.id) {
     await openDoc(session.docId, session.pageId);
@@ -2009,7 +2021,6 @@ function previewBlockStyle(blockId: string, stylePatch: Record<string, unknown>)
   const preview = { ...block, style: { ...(block.style || {}), ...stylePatch } };
   content.replaceChildren(renderCanvasBlockContent(preview, page, { editing: false, wrapHtml: wrapBlockHtml, setupHtmlEditing }));
 }
-
 function previewPageBackground(color: string): void {
   const page = activePage();
   el('artboard').style.background = color;
@@ -2017,7 +2028,6 @@ function previewPageBackground(color: string): void {
   const surface = document.querySelector<HTMLElement>('.html-page-surface');
   if (surface) surface.style.background = color;
 }
-
 function cycleBlockSelectionAt(clientX: number, clientY: number, currentId: string): void {
   const page = activePage();
   if (!page) return;
@@ -2111,7 +2121,7 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
       },
     });
   }
-  hit.addEventListener('pointerdown', event => {
+  const onPointerDown = (event: PointerEvent): void => {
     if (event.button !== 0 || state.tool !== 'select' || state.spaceHeld) return;
     event.stopPropagation();
     if (event.altKey) {
@@ -2120,8 +2130,10 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
     }
     selectBlock(block.id, { additive: (event.shiftKey || event.ctrlKey || event.metaKey) && !state.selectedBlockIds.includes(block.id) });
     if (!state.selectedBlockIds.includes(block.id)) return;
-    beginBlockDrag(event, block, hit, wrap);
-  });
+    beginBlockDrag(event, block, event.currentTarget as HTMLElement, wrap);
+  };
+  hit.addEventListener('pointerdown', onPointerDown);
+  if (block.type === 'arrow') wrap.querySelector('svg')?.addEventListener('pointerdown', onPointerDown);
   hit.addEventListener('dblclick', event => {
     event.stopPropagation();
     if (block.type === 'html') enterHtmlEdit(activePage()!.id, block.id);
@@ -2220,7 +2232,6 @@ function selectBlock(blockId: string | null, options: { additive?: boolean } = {
   }
   setBlockSelection(groupIds, blockId);
 }
-
 async function persistBlock(block: HcBlock, patch: Partial<HcBlock>, historyBase?: HcDocument): Promise<void> {
   const page = activePage();
   if (!page) return;
@@ -2240,7 +2251,6 @@ function updateHistoryButtons(): void {
   if (undoBtn) undoBtn.disabled = undoStack.length === 0;
   if (redoBtn) redoBtn.disabled = redoStack.length === 0;
 }
-
 async function undo(): Promise<void> {
   if (!undoStack.length || !state.doc) return;
   if (applyingHistory) { pendingHistoryUndo = Math.min(pendingHistoryUndo + 1, 10); return; }
@@ -2262,7 +2272,6 @@ async function undo(): Promise<void> {
     else pendingHistoryUndo = 0;
   }
 }
-
 async function redo(): Promise<void> {
   if (!redoStack.length || !state.doc) return;
   if (applyingHistory) { pendingHistoryRedo = Math.min(pendingHistoryRedo + 1, 10); return; }
@@ -2329,7 +2338,6 @@ type ApplyOptions = { refreshArtboard?: boolean; actor?: string; silent?: boolea
 function applyOps(ops: HcOp[], options: ApplyOptions = {}): Promise<HcDocument | null> {
   return enqueueMutation(() => applyOpsNow(ops, options));
 }
-
 async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcDocument | null> {
   if (!state.doc) return null;
   try { await settleRemoteChange(); }
@@ -2341,7 +2349,7 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
   if (!state.doc) return null;
   setSaveStatus('Saving…', 'saving');
   try {
-    const finalOps = augmentBindingOps(ops);
+    const finalOps = augmentBindingOps(augmentFrameLayoutOps(state.doc, augmentTextAutoHeightOps(state.doc, ops)));
     const historyInverse = options.recordHistory !== false && options.silent !== true && !applyingHistory ? invertOps(finalOps, options.historyBase || state.doc) : null;
     const result = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id + '/apply', {
       method: 'POST',
@@ -2391,7 +2399,6 @@ async function applyOpsNow(ops: HcOp[], options: ApplyOptions = {}): Promise<HcD
     return null;
   }
 }
-
 function adoptLatestDoc(latest: HcDocument, refreshArtboard: boolean): void {
   state.doc = latest;
   if (state.activePageId && !latest.pages.some(page => page.id === state.activePageId)) state.activePageId = latest.pages[0]?.id || null;
@@ -2406,7 +2413,6 @@ function adoptLatestDoc(latest: HcDocument, refreshArtboard: boolean): void {
   if (state.tab === 'inspector') renderInspector();
   else if (state.tab === 'layers') renderLayersPanel();
 }
-
 async function reloadActiveDoc(): Promise<void> {
   if (!state.doc) return;
   const docId = state.doc.id;
@@ -2421,7 +2427,6 @@ async function reloadActiveDoc(): Promise<void> {
   await openDoc(docId, pageId, false);
   setSaveStatus('Reloaded', 'idle');
 }
-
 async function settleRemoteChange(): Promise<void> {
   if (!remoteReloadTimer) return;
   clearTimeout(remoteReloadTimer);
@@ -2433,7 +2438,6 @@ async function settleRemoteChange(): Promise<void> {
   if (!state.doc || state.doc.id !== docId || (revision > 0 && state.doc.revision > revision)) return;
   await reloadActiveDoc();
 }
-
 let activeSyncKey = '';
 let activeSyncInFlight = false;
 let activeSyncQueued = false;
@@ -2458,7 +2462,6 @@ async function syncActive(): Promise<void> {
     activeSyncInFlight = false;
   }
 }
-
 async function renameDocument(title: string): Promise<void> {
   if (!state.doc) return;
   const result = await api<{ doc: HcDocument }>('/api/docs/' + state.doc.id, { method: 'PATCH', body: JSON.stringify({ title, source: clientId }) });
@@ -2507,7 +2510,6 @@ function canEditHtmlText(element: Element): boolean {
   const inlineTags = new Set(['A', 'SPAN', 'STRONG', 'EM', 'B', 'I', 'BR', 'CODE', 'SMALL', 'MARK', 'U', 'S']);
   return Array.from(element.children).every(child => inlineTags.has(child.tagName));
 }
-
 function setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: string): void {
   const contentDocument = iframe.contentDocument;
   if (!contentDocument) { toast('Cannot enter HTML edit mode.', 'error'); return; }
@@ -2628,7 +2630,6 @@ function scheduleHtmlCommit(element: HTMLElement): void {
   if (htmlCommitTimer) clearTimeout(htmlCommitTimer);
   htmlCommitTimer = setTimeout(() => { if (htmlCommitElement) void commitHtmlElement(htmlCommitElement); }, 700);
 }
-
 async function commitHtmlElement(element: HTMLElement): Promise<void> {
   if (!state.doc || !state.editing || !element.isConnected) return;
   const targetId = element.getAttribute('data-hc-id');
@@ -2725,7 +2726,6 @@ function renderPageInspector(): void {
   root.innerHTML = html;
   bindPageInspector(page);
 }
-
 function bindPageInspector(page: HcPage): void {
   const applyPage = async (patch: Record<string, unknown>, refresh = false): Promise<void> => {
     await applyOps([{ op: 'update_page', pageId: page.id, patch } as HcOp], { refreshArtboard: refresh });
@@ -2819,7 +2819,7 @@ function renderBlockInspector(): void {
   }
   if (block.type === 'freehand' || block.type === 'arrow' || block.type === 'curve' || block.type === 'arc') {
     html += '<div class="field-row">' + field('blockStroke', 'Stroke', '<input id="blockStroke" type="color" value="' + esc(toHex(String(block.style?.stroke || block.style?.color || '#1f2430'))) + '">') + field('blockVectorWidth', 'Width', '<input id="blockVectorWidth" type="number" min="1" max="40" value="' + (block.style?.strokeWidth || 2) + '">') + '</div>';
-    if (block.type === 'arrow') html += '<div class="field">' + '<span>Arrowhead</span><select id="blockArrowhead"><option value="arrow"' + ((block.arrowhead ?? 'arrow') === 'arrow' ? ' selected' : '') + '>Arrow</option><option value="none"' + (block.arrowhead === 'none' ? ' selected' : '') + '>None</option></select></div>';
+    if (block.type === 'arrow') html += arrowInspectorMarkup(block);
   }
   html += '</section>';
   html += pluginInspectorMarkup(block);
@@ -2860,7 +2860,7 @@ function bindBlockInspector(block: HcBlock): void {
   const fill = qs<HTMLInputElement>('#blockFill');
   const stroke = qs<HTMLInputElement>('#blockStroke');
   const vectorWidth = qs<HTMLInputElement>('#blockVectorWidth');
-  const arrowhead = qs<HTMLSelectElement>('#blockArrowhead');
+
   const shapeSelect = qs<HTMLSelectElement>('#blockShape');
   if (shapeSelect) shapeSelect.addEventListener('change', () => { if (isHcShape(shapeSelect.value)) void update({ shape: shapeSelect.value }, true); });
   qs<HTMLTextAreaElement>('#blockShapeText')?.addEventListener('change', () => { void update({ text: qs<HTMLTextAreaElement>('#blockShapeText')?.value || '' }); });
@@ -2873,7 +2873,7 @@ function bindBlockInspector(block: HcBlock): void {
   if (stroke) stroke.addEventListener('input', () => previewBlockStyle(block.id, { stroke: stroke.value }));
   if (stroke) stroke.addEventListener('change', () => { void update({ style: { ...(block.style || {}), stroke: stroke.value } }); });
   if (vectorWidth) vectorWidth.addEventListener('change', () => { void update({ style: { ...(block.style || {}), strokeWidth: Math.max(1, Math.min(40, Number(vectorWidth.value) || 2)) } }); });
-  if (arrowhead) arrowhead.addEventListener('change', () => { void update({ arrowhead: arrowhead.value === 'none' ? 'none' : 'arrow' }); });
+  if (block.type === 'arrow') bindArrowInspector(block, el('inspectorPanel'), patch => { void update(patch); });
 }
 
 function initials(value: string): string {

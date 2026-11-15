@@ -140,6 +140,27 @@ The **Files** tree supports search, right-click new file/folder, rename and dele
 PDF files open in an annotated preview built from `pdftoppm` page images plus a `pdftotext -bbox` selection layer. Select text on a page and choose **Highlight** or **Underline** in the preview toolbar. Annotations are stored locally per workspace/file; **Clear annotations** removes them. PDF annotation preview requires Poppler (`pdftoppm` and `pdftotext`, available in TeX Live on this machine); when Poppler is unavailable the preview falls back to the browser PDF viewer without annotations.
 
 
+## Auto layout and smart connectors
+
+Canvas pages now include layout and connector tools in the selection toolbar. Select two or more blocks, then choose an action from the **Auto layout** menu:
+
+- **Stack** — align selected blocks vertically with a consistent gap.
+- **Row** — align selected blocks horizontally.
+- **Grid · 2 / Grid · 3** — place blocks in equal-width columns.
+- **Distribute H / Distribute V** — equalize the spacing between selected blocks.
+- **Frame · Stack / Frame · Grid 2** — lay out the children of a selected frame inside its bounds.
+
+Auto layout is animated and recorded as a normal undoable edit. Text blocks grow vertically when their text or width changes so content does not silently overflow.
+
+Selecting an arrow exposes **Route**, **Start anchor**, **End anchor** and **Label** fields:
+
+- **Straight** keeps a direct line.
+- **Orthogonal** chooses a Manhattan route and avoids other blocks when a cleaner path exists.
+- **Anchors** may be automatic or fixed to the top, right, bottom, left or center of a block.
+- Arrows remain attached to their source and target blocks; moving or resizing a block re-routes connected arrows.
+
+The same menu also includes **Theme · Neon / Paper / Mono** presets, **Save component** / **Insert component** for reusable selection snippets, and **Check layout** for an in-page report of out-of-bounds blocks, overlaps and likely text overflow. Frame children reflow when the frame is resized, and layout changes use a short transition.
+
 ## Sidebar selection and actions
 
 **Canvases**, **Pages** and **Assets** support multi-selection in the left navigator: **Ctrl/Cmd+click** toggles items, **Shift+click** selects a range, and **Delete/Backspace** removes the selection. Right-click a row for **Duplicate** and **Delete** (the actions apply to the whole selection). Canvas duplication creates an independent document with fresh metadata; page duplication inserts copies after the originals; asset duplication copies the file. Pages always keep at least one page, while deleting every canvas leaves the empty-canvas state. Asset preview now opens on double-click so a single click can select.
@@ -287,6 +308,48 @@ hcanvas proposal accept <doc> <proposalId>
 hcanvas export <doc> --format pdf --out deck.pdf
 ```
 
+### Agent-friendly reads and checks
+
+For authoring, prefer the compact views over the raw DOM dump:
+
+```bash
+hcanvas read <doc> --format layout --page <pageId> --limit 80
+hcanvas lint <doc> --page <pageId>
+hcanvas schema scene|ops|layout
+```
+
+`layout` returns page dimensions, block bounds, short text previews, editable HTML/SVG targets and a limited number of blocks. It filters KaTeX/MathML internals and SVG geometry, so an agent can find the right label without reading the full source. `lint` reports `text-overflow`, `block-overlap`, `block-outside-page`, `empty-page` and containment warnings without exporting a screenshot.
+
+### Compose a page instead of calculating coordinates
+
+`compose` accepts a high-level scene and computes positions, sizes, styles and IDs:
+
+```json
+{
+  "title": "Maxwell 方程",
+  "pages": [{
+    "name": "封面",
+    "layout": "stack",
+    "padding": 64,
+    "gap": 24,
+    "blocks": [
+      { "type": "heading", "level": 1, "text": "经典 Maxwell 方程组" },
+      { "type": "paragraph", "text": "电磁学的四条基本方程。" },
+      { "type": "divider" },
+      { "type": "markdown", "markdown": "## 四条方程\n\n- 电的高斯定律\n- 磁的高斯定律" }
+    ]
+  }]
+}
+```
+
+```bash
+hcanvas compose deck.json --dry-run                 # inspect the computed layout
+hcanvas compose deck.json --title "Maxwell 方程"     # create a new document
+hcanvas compose extra.json <doc> --base-revision 7  # append pages to an existing document
+```
+
+Layouts: `stack` (default), `grid` with `columns`/`span`, and `free` with explicit `x/y/w/h`. Supported blocks include heading, text, paragraph, caption, markdown, code, math/formula, image, shape, html, spacer and divider. Use `autoHeight` for a page height that follows its content.
+
 Addressing rules:
 
 1. explicit document id / title / `hcanvas://doc/<id>` reference;
@@ -297,6 +360,33 @@ Addressing rules:
 Writes are revision-checked with `--base-revision`. A stale revision fails with exit code `2` and the latest revision. Agent sessions can be bound to a document/page/selection with `HCANVAS_SESSION`; the service records active context for `hcanvas context`.
 
 Use the Page Inspector's **Canvas ID** / **Page ID** copy buttons, or right-click a canvas/page in the sidebar, when telling an agent which document or page to edit.
+
+### Context, discovery and safer writes
+
+```bash
+hcanvas context --brief
+hcanvas docs list --query maxwell --recent --limit 5
+hcanvas apply <doc> --ops-file ops.json --base-revision 7 --compact --idempotency-key add-cover-v1
+```
+
+- `context --brief` returns the active context plus only the five most recently updated documents.
+- `docs list` filters by id/title, can sort by recency, and limits the result.
+- `--compact` returns revision, page summaries and created/updated/deleted ids instead of the whole document.
+- `--idempotency-key` makes retries safe: replaying the same apply returns the cached result, while reusing a key with a different payload returns a conflict.
+- Errors include a machine-readable `code` and a human/agent-readable `hint`; a stale write includes the latest revision so the agent can re-read and retry.
+
+### Templates, autofit, arrows and images
+
+```bash
+hcanvas template list
+hcanvas compose --template cover --title "Quarterly review"
+hcanvas assets upload ./logo.png
+```
+
+- Built-in templates: `cover`, `section`, `two-column`, `quote` and `agenda`.
+- Set `autoFit: true` on a text/markdown/code block to shrink its font until it fits the box.
+- Set `type: "arrow"`, `from`/`to` to explicit block ids, and optionally `route: "orthogonal"`; compose calculates points, bounds and start/end bindings.
+- `image.srcFile` uploads a local image and replaces it with the served asset URL. `hcanvas assets list|upload|delete` exposes the same asset library directly.
 
 ### Patch example
 

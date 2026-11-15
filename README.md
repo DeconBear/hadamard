@@ -21,7 +21,7 @@ Hadamard is a family of tools built around LLM harnesses: **Hadamard Harness** p
 
 Most visual tools end up either human-only or agent-only. Hcanvas keeps a single local document model:
 
-- **Humans** get direct manipulation, real typography, HTML/CSS, shapes, images and presentation.
+- **Humans** get direct manipulation, real typography, HTML/CSS, shapes, images, presentation, auto layout and smart connectors.
 - **Agents** get a JSON-first CLI/HTTP protocol with stable IDs, patches, revisions and execution proposals.
 - **Both** work on the same pages without exporting to a second format.
 
@@ -71,6 +71,8 @@ Desktop installers from [GitHub Releases](https://github.com/DeconBear/hadamard/
 ### Agent-native by design
 
 - A CLI-first protocol for reading, patching and reviewing documents.
+- Compact `read --format layout`, `lint` checks, high-level `compose` scenes and machine-readable schemas for agents.
+- Brief context/search, compact idempotent writes, compose templates, auto-fit text, arrow routing and local image upload.
 - Stable data-hc-id targets for HTML and block-level IDs for canvas content.
 - Copyable **Canvas ID** and **Page ID** in the page Inspector and page context menu.
 - Live agent presence and cursor tracking.
