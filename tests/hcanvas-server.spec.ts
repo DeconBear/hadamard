@@ -16,7 +16,7 @@ afterEach(async () => {
 async function start(): Promise<HcServer> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'hcanvas-server-'));
   roots.push(root);
-  const server = await startHcanvasServer({ workspace: root, port: 46000 + Math.floor(Math.random() * 5000), staticDir: path.resolve('dist/hcanvas') });
+  const server = await startHcanvasServer({ workspace: root, port: 0, staticDir: path.resolve('dist/hcanvas') });
   servers.push(server);
   return server;
 }
