@@ -7,7 +7,11 @@
   "engines": {
     "hcanvas": ">=0.2.0"
   },
-  "capabilities": {},
+  "capabilities": {
+    "ui": [
+      "view:tab"
+    ]
+  },
   "contributes": {
     "formats": [
       {

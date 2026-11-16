@@ -16,7 +16,10 @@
         "octave-runner"
       ],
       "tools": []
-    }
+    },
+    "ui": [
+      "view:tab"
+    ]
   },
   "contributes": {
     "viewers": [

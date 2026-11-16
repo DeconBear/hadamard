@@ -676,3 +676,148 @@ A plugin can also contribute whole page templates. Add `pagePresets` to the same
 ```
 
 Modes: `canvas`, `infinite` and `html`. Canvas/infinite templates provide blocks; HTML templates provide an `html` string. Open **Add a page** and use **Plugin page templates**; the new page is created through the normal document operation path and supports undo/redo. A page-template-only manifest does not need a `blocks` array. Sample: [examples/hcanvas-plugins/starter-pages/manifest.json](https://github.com/DeconBear/hadamard/blob/main/examples/hcanvas-plugins/starter-pages/manifest.json).
+
+## Extension platform (v2)
+
+Hcanvas also has a sandboxed extension platform (manifest schema `hcanvas-extension/1`) alongside the legacy declarative plugin blocks. Extensions are plain directories with a `manifest.json`; they can contribute file viewers, workspace tabs, commands, sidecar processes, language kernels, executable code cells and custom page formats. The legacy plugin-block format under `plugins/` keeps working.
+
+### Install locations
+
+| Scope | Directory |
+| --- | --- |
+| Workspace | `<workspace>/extensions/<id>/manifest.json` |
+| User | `~/.hadamard/hcanvas/extensions/<id>/manifest.json` |
+| Bundled | shipped first-party extensions (for example the notebook viewer) |
+| Legacy v1 plugins | `<workspace>/plugins`, `~/.hadamard/hcanvas/plugins` |
+
+For a project workspace the data directory is `.hcanvas`, so workspace extensions live in `.hcanvas/extensions/`. Use **Plugins → Extensions** to connect a folder, enable/disable, trust, and inspect diagnostics. Discovered extensions are untrusted by default when they declare process capabilities; a trusted workspace remembers the decision in `extensions.json`.
+
+### Trust and capabilities
+
+An extension declares what it needs in `capabilities` and can only use granted surfaces:
+
+- `document` — read/apply document operations through the host.
+- `workspace` — read/write files under workspace-relative allowlists.
+- `network` — fetch allowlisted hosts through the host proxy (viewers never get raw cross-origin network access).
+- `process` — start declared sidecars and terminals, and use user tools.
+- `commands`, `menus`, `keybindings`, `configuration` — UI contributions.
+
+The trust dialog shows the declared capabilities before anything is started. **Restricted Mode** blocks sidecars, kernels and process-backed commands for the workspace regardless of individual extension trust. Extension code never runs in the Node/Electron process:
+
+- iframe viewers run in an opaque-origin sandbox (`sandbox="allow-scripts"`, no `allow-same-origin`) with a CSP that only permits host-served assets.
+- sidecars are separate processes started with argv arrays (`shell: false`), a filtered environment, and supervised lifecycle.
+- declarative canvas blocks have no JavaScript execution.
+
+### Manifest
+
+```json
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.example.json-viewer",
+  "name": "JSON Viewer",
+  "version": "0.1.0",
+  "engines": { "hcanvas": ">=0.2.0" },
+  "capabilities": {},
+  "contributes": {
+    "formats": [{ "id": "json", "label": "JSON", "extensions": [".json"], "viewer": "json.viewer", "surfaces": ["file"] }],
+    "viewers": [{ "id": "json.viewer", "type": "iframe", "entry": "ui/entry.html", "surfaces": ["file"] }],
+    "views": [{ "id": "json.tools", "title": "JSON tools", "slot": "workspace-tab", "viewer": "json.viewer" }],
+    "commands": [{ "id": "json.open", "title": "JSON: Open tools", "category": "JSON", "exec": { "kind": "view", "viewId": "json.tools" } }]
+  }
+}
+```
+
+Contribution kinds include `formats`, `viewers`, `views`, `commands`, `menus`, `keybindings`, `sidecars`, `kernels`, `canvas.blocks`, `canvas.shapes`, `pagePresets`, `configuration`, `tools` and `terminals`. A viewer declares where it can render through `surfaces`: `file`, `tab` and/or `page`.
+
+### File viewers
+
+A format maps extensions to a viewer. Opening a matching file from **Files** mounts the viewer in a workspace tab:
+
+```html
+<script src="/api/extension-sdk/hc-extension-api.js"></script>
+<script>
+  const hc = await HcanvasView.acquire();
+  const { rootId, path } = hc.context.file;
+  const { content } = await hc.files.read(rootId, path);
+  document.getElementById('out').textContent = content;
+</script>
+```
+
+The SDK exposes `hc.context` (`surface`, `file`, `page`), `hc.files` (read/stat/write within the granted workspace), `hc.document` (read/apply ops for document surfaces), `hc.commands`, `hc.config`, `hc.ui` (toast/title), `hc.sidecars` and `hc.kernels`. Viewer requests time out after 30 seconds; sidecar-backed viewer requests use a longer host budget. Network access must go through `hc.network.fetch` and is host-allowlisted.
+
+### Commands and workspace views
+
+A contributed `view` mounts its viewer as a workspace tab. A `command` adds an entry to the command palette; `exec.kind` can be `view` (open a tab), `command` (run another host command) or `script` where supported. The examples below use this path to open a C++ toolbox or an Octave console without touching the app shell.
+
+### Sidecars
+
+Sidecars are supervised long-running services for toolchains, language servers and renderers. A manifest declares the executable, protocol and allowed requests:
+
+```json
+{
+  "sidecars": [{
+    "id": "cpp-runner",
+    "command": ["node", "sidecar/cpp_runner.mjs"],
+    "cwd": "extension",
+    "role": "service",
+    "protocol": "jsonrpc-stdio",
+    "requests": [{ "method": "run", "timeoutMs": 120000 }],
+    "limits": { "maxStdoutBytes": 4194304, "maxStderrBytes": 1048576 }
+  }]
+}
+```
+
+Supported protocols are JSON-RPC 2.0 over stdio (LSP `Content-Length` framing) and raw line protocols where declared. The host starts sidecars only after trust; it keeps stderr/stdout limits, request timeouts, a shutdown handshake and a tree kill. Viewers call them with `hc.sidecars.request(sidecarId, method, params)` and receive `onOutput`, `onProgress` and `done`.
+
+Examples: [C++ Toolbox](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-toolbox), [GNU Octave Console](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-console).
+
+### Kernels and executable cells
+
+A kernel contribution describes a language and a sidecar command implementing the Hcanvas kernel protocol (HKP): `initialize`, `execute`, `interrupt`, `shutdown` over the same framed stdio transport. Canvas `exec` blocks and the notebook viewer share one kernel session per scope (document or file), stream stdout/stderr/display MIME values, and persist the last outputs in the document or notebook cache.
+
+- **Cell: Insert code cell** adds an executable cell to a canvas page.
+- **Cell: Run all code cells** runs every cell on the page in order.
+- The Python kernel example is a real persistent kernel with globals, `hc_display(...)`, matplotlib figures and structured tracebacks: [python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel).
+- The bundled **Hadamard Notebook** viewer renders `.hnb.md` files: Markdown + fenced executable cells, Run / Run all / Restart, autosave, output caching and HTML export.
+- Kernel sessions are scoped and disposable; interrupts escalate from cooperative cancel to restart.
+
+### Custom page formats
+
+An extension viewer can render a whole page instead of a file. A page created for an extension stores `mode: "extension"` and `extension: { format, data }`; the viewer declares the `page` surface and reads the data through `hc.document.read()`. Use **Page: Add extension page** in the command palette to create one from installed page-capable formats.
+
+```json
+{
+  "formats": [{ "id": "board-page", "label": "Board page", "extensions": [".board.json"], "viewer": "board.viewer", "surfaces": ["file", "page"] }],
+  "viewers": [{ "id": "board.viewer", "type": "iframe", "entry": "ui/entry.html", "surfaces": ["file", "page"] }]
+}
+```
+
+Extension pages participate in the normal page list, undo/redo and revision history, but blocks cannot be added to them. Presenting and exporting extension pages is not supported yet; the app reports this instead of producing a broken file. Example: [page-board](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/page-board).
+
+### Bundled and example extensions
+
+| Example | What it demonstrates |
+| --- | --- |
+| [svg-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/svg-viewer) | Minimal sandboxed file viewer |
+| [json-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/json-viewer) | Formatted file viewer |
+| [manim-http](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/manim-http) | Viewer + host renderer bridge for Manim |
+| [python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel) | HKP kernel, charts, outputs |
+| [cpp-toolbox](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-toolbox) | Sidecar compilation/run UI |
+| [octave-console](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-console) | Sidecar REPL UI for GNU Octave |
+| [map-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/map-viewer) | Offline GeoJSON map viewer |
+| [three-d-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/three-d-viewer) | WebGL OBJ viewer |
+| [page-board](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/page-board) | Custom extension page format |
+
+Copy an example folder into `<workspace>/extensions/`, trust it if it declares process capabilities, and use the command palette or Files to open it. Legacy plugin blocks, renderers and page templates are documented in the sections above and remain supported.
+
+### Extension SDK and validation
+
+Type declarations and copy-paste templates for manifests, iframe viewers and sidecar services live in `src/hcanvas/sdk/`. Validate a manifest before installing:
+
+```bash
+npm run build
+npm run hcanvas:extension:validate -- path/to/extension/manifest.json
+```
+
+The validator uses the same schema as the app and reports diagnostics with a stable path. The runtime SDK served to viewers is always the host version at `/api/extension-sdk/hc-extension-api.js`; do not bundle your own copy.
+

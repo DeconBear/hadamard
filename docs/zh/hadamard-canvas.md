@@ -592,3 +592,148 @@ iframe 插件可以调用受信任的本地渲染服务，而不把宿主进程�
 ```
 
 支持 `canvas`、`infinite`、`html` 三种模式；canvas/infinite 模板提供 blocks，HTML 模板提供 `html` 字符串。打开 **Add a page**，在 **Plugin page templates** 区域选择模板；新页面通过正常文档操作创建，支持撤销/重做。纯页面模板插件可以不提供 `blocks`。示例：`examples/hcanvas-plugins/starter-pages/manifest.json`。
+
+## 扩展平台（v2）
+
+Hcanvas 除旧版声明式插件块外，还提供沙箱化扩展平台（manifest schema `hcanvas-extension/1`）。扩展是一个带 `manifest.json` 的目录，可贡献 file viewer、工作区标签页、命令、sidecar 进程、语言 kernel、可执行代码块和自定义页面格式；旧版 `plugins/` 插件继续兼容。
+
+### 安装位置
+
+| 作用域 | 目录 |
+| --- | --- |
+| 工作区 | `<workspace>/extensions/<id>/manifest.json` |
+| 用户 | `~/.hadamard/hcanvas/extensions/<id>/manifest.json` |
+| 内置 | 随应用发布的一等扩展（如 notebook viewer） |
+| 旧版 v1 插件 | `<workspace>/plugins`、`~/.hadamard/hcanvas/plugins` |
+
+项目工作区的数据目录是 `.hcanvas`，工作区扩展位于 `.hcanvas/extensions/`。在 **插件 → 扩展** 中连接目录、启用/禁用、信任并查看诊断。声明了进程能力的扩展默认未信任；信任决定记录在工作区 `extensions.json`。
+
+### 信任与能力
+
+扩展在 `capabilities` 中声明所需能力，且只能使用被授予的界面：
+
+- `document`：通过宿主读取/提交文档操作。
+- `workspace`：按工作区相对白名单读写文件。
+- `network`：通过宿主代理访问白名单主机；viewer 不能直接跨域联网。
+- `process`：启动声明的 sidecar/终端、使用用户工具。
+- `commands`、`menus`、`keybindings`、`configuration`：UI 贡献。
+
+信任确认框会先列出扩展声明的能力。**受限模式（Restricted Mode）** 会在工作区级别阻止 sidecar、kernel 与进程型命令，不受单个扩展信任状态影响。扩展代码不会进入 Node/Electron 主进程：
+
+- iframe viewer 运行在不透明源沙箱（`sandbox="allow-scripts"`，无 `allow-same-origin`），CSP 只允许宿主提供的资源。
+- sidecar 是独立进程，使用 argv 数组启动（`shell: false`）、环境变量过滤、受监督的生命周期。
+- 声明式 canvas block 不执行 JavaScript。
+
+### Manifest
+
+```json
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.example.json-viewer",
+  "name": "JSON Viewer",
+  "version": "0.1.0",
+  "engines": { "hcanvas": ">=0.2.0" },
+  "capabilities": {},
+  "contributes": {
+    "formats": [{ "id": "json", "label": "JSON", "extensions": [".json"], "viewer": "json.viewer", "surfaces": ["file"] }],
+    "viewers": [{ "id": "json.viewer", "type": "iframe", "entry": "ui/entry.html", "surfaces": ["file"] }],
+    "views": [{ "id": "json.tools", "title": "JSON tools", "slot": "workspace-tab", "viewer": "json.viewer" }],
+    "commands": [{ "id": "json.open", "title": "JSON: Open tools", "category": "JSON", "exec": { "kind": "view", "viewId": "json.tools" } }]
+  }
+}
+```
+
+贡献类型包括 `formats`、`viewers`、`views`、`commands`、`menus`、`keybindings`、`sidecars`、`kernels`、`canvas.blocks`、`canvas.shapes`、`pagePresets`、`configuration`、`tools`、`terminals`。viewer 通过 `surfaces` 声明渲染位置：`file`、`tab`、`page`。
+
+### File viewer
+
+format 把扩展名映射到 viewer；从 **文件** 面板打开匹配文件时，viewer 在工作区标签页中挂载：
+
+```html
+<script src="/api/extension-sdk/hc-extension-api.js"></script>
+<script>
+  const hc = await HcanvasView.acquire();
+  const { rootId, path } = hc.context.file;
+  const { content } = await hc.files.read(rootId, path);
+  document.getElementById('out').textContent = content;
+</script>
+```
+
+SDK 提供 `hc.context`（`surface`/`file`/`page`）、`hc.files`（授权范围内的 read/stat/write）、`hc.document`（文档表面 read/apply ops）、`hc.commands`、`hc.config`、`hc.ui`、`hc.sidecars` 与 `hc.kernels`。viewer 普通请求 30 秒超时；sidecar 型 viewer 请求使用更长的宿主预算。网络访问必须通过 `hc.network.fetch`，并受宿主白名单限制。
+
+### 命令与工作区视图
+
+贡献的 `view` 以工作区标签页挂载 viewer；`command` 会出现在命令面板，`exec.kind` 支持 `view`（打开标签页）、`command`（调用宿主命令）等。示例中的 C++ 工具箱、Octave 控制台都通过这一路径打开，无需改应用外壳。
+
+### Sidecar
+
+Sidecar 是受监督的常驻服务，用于工具链、语言服务器与渲染器。manifest 声明可执行文件、协议与允许的请求：
+
+```json
+{
+  "sidecars": [{
+    "id": "cpp-runner",
+    "command": ["node", "sidecar/cpp_runner.mjs"],
+    "cwd": "extension",
+    "role": "service",
+    "protocol": "jsonrpc-stdio",
+    "requests": [{ "method": "run", "timeoutMs": 120000 }],
+    "limits": { "maxStdoutBytes": 4194304, "maxStderrBytes": 1048576 }
+  }]
+}
+```
+
+支持 stdio 上的 JSON-RPC 2.0（LSP `Content-Length` 帧）以及声明的行协议。宿主只在信任后启动 sidecar，并负责 stdout/stderr 上限、请求超时、shutdown 握手与进程树终止。viewer 用 `hc.sidecars.request(sidecarId, method, params)` 调用，接收 `onOutput`、`onProgress` 与 `done`。
+
+示例：[C++ Toolbox](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-toolbox)、[GNU Octave Console](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-console)。
+
+### Kernel 与可执行代码块
+
+kernel 贡献描述语言与实现 Hcanvas kernel 协议（HKP）的 sidecar 命令：在同一 stdio 帧协议上处理 `initialize`、`execute`、`interrupt`、`shutdown`。画布 `exec` block 与 notebook viewer 按作用域（文档或文件）共享 kernel session，流式输出 stdout/stderr/display MIME，并把最近一次输出持久化到文档或 notebook 缓存。
+
+- **Cell: Insert code cell**：在画布页面插入可执行单元格。
+- **Cell: Run all code cells**：按顺序运行页面上的所有单元格。
+- Python kernel 示例是真正的持久 kernel，支持全局变量、`hc_display(...)`、matplotlib 图形和结构化 traceback：[python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel)。
+- 内置 **Hadamard Notebook** viewer 打开 `.hnb.md`：Markdown + fenced 可执行 cell，支持 Run / Run all / Restart、自动保存、输出缓存与 HTML 导出。
+- kernel session 有作用域且可回收；中断会从协作取消升级到重启。
+
+### 自定义页面格式
+
+扩展 viewer 可以渲染整页。为扩展创建的页面保存 `mode: "extension"` 与 `extension: { format, data }`；viewer 声明 `page` surface，并通过 `hc.document.read()` 读取页数据。命令面板的 **Page: Add extension page** 可从已安装的 page-capable format 创建页面。
+
+```json
+{
+  "formats": [{ "id": "board-page", "label": "Board page", "extensions": [".board.json"], "viewer": "board.viewer", "surfaces": ["file", "page"] }],
+  "viewers": [{ "id": "board.viewer", "type": "iframe", "entry": "ui/entry.html", "surfaces": ["file", "page"] }]
+}
+```
+
+扩展页会进入正常页面列表，支持撤销/重做与修订历史，但不能添加 block。Present 和导出暂不支持扩展页，应用会明确提示而不是产出损坏文件。示例：[page-board](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/page-board)。
+
+### 内置与示例扩展
+
+| 示例 | 演示内容 |
+| --- | --- |
+| [svg-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/svg-viewer) | 最小沙箱 file viewer |
+| [json-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/json-viewer) | 格式化文件 viewer |
+| [manim-http](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/manim-http) | viewer + 宿主 renderer 桥（Manim） |
+| [python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel) | HKP kernel、图表、输出 |
+| [cpp-toolbox](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-toolbox) | sidecar 编译/运行界面 |
+| [octave-console](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-console) | GNU Octave sidecar REPL |
+| [map-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/map-viewer) | 离线 GeoJSON 地图 viewer |
+| [three-d-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/three-d-viewer) | WebGL OBJ viewer |
+| [page-board](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/page-board) | 自定义页面格式 |
+
+把示例目录复制到 `<workspace>/extensions/`，如声明进程能力则在扩展管理器中信任，然后用命令面板或文件面板打开。旧版插件块、renderer、页面模板保持兼容，见上文各节。
+
+### 扩展 SDK 与校验
+
+manifest、iframe viewer、sidecar 服务的类型声明与复制模板位于 `src/hcanvas/sdk/`。安装前可先校验：
+
+```bash
+npm run build
+npm run hcanvas:extension:validate -- path/to/extension/manifest.json
+```
+
+校验器与运行时使用同一 schema，并给出稳定路径的诊断。viewer 运行时 SDK 始终由宿主提供（`/api/extension-sdk/hc-extension-api.js`），不要自行打包副本。
+

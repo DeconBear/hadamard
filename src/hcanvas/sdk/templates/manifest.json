@@ -1,0 +1,37 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.example.file-viewer",
+  "name": "Example File Viewer",
+  "version": "0.1.0",
+  "description": "Minimal Hcanvas file viewer template.",
+  "engines": {
+    "hcanvas": ">=0.2.0"
+  },
+  "capabilities": {},
+  "contributes": {
+    "formats": [
+      {
+        "id": "example",
+        "label": "Example",
+        "extensions": [
+          ".example"
+        ],
+        "viewer": "example.viewer",
+        "surfaces": [
+          "file"
+        ]
+      }
+    ],
+    "viewers": [
+      {
+        "id": "example.viewer",
+        "label": "Example viewer",
+        "type": "iframe",
+        "entry": "ui/entry.html",
+        "surfaces": [
+          "file"
+        ]
+      }
+    ]
+  }
+}

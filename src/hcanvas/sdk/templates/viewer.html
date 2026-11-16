@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Example viewer</title>
+  <style>
+    html, body { margin: 0; height: 100%; font: 13px/1.5 Inter, system-ui, sans-serif; background: #faf8f3; color: #1f2430; }
+    main { padding: 20px; }
+    pre { white-space: pre-wrap; background: #fff; border: 1px solid #e3ded3; border-radius: 8px; padding: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="title">Example viewer</h1>
+    <pre id="content">Loading…</pre>
+  </main>
+  <script src="/api/extension-sdk/hc-extension-api.js"></script>
+  <script>
+    (async () => {
+      const hc = await HcanvasView.acquire();
+      const file = hc.context.file;
+      document.getElementById('title').textContent = file ? file.path : 'Example viewer';
+      if (!file) return;
+      const result = await hc.files.read(file.rootId, file.path);
+      document.getElementById('content').textContent = result.content;
+    })().catch(error => {
+      document.getElementById('content').textContent = error && error.message ? error.message : String(error);
+    });
+  </script>
+</body>
+</html>
