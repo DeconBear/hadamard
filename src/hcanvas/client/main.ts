@@ -28,6 +28,7 @@ import { createPresentSession } from './presentSession.js';
 import { installCoreCommands } from './coreCommands.js';
 import { loadExtensionCatalog } from './extensionCatalog.js';
 import { installExtensionRuntime, type ExtensionRuntime } from './extensionRuntime.js';
+import { installCommandPalette } from './commandPalette.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
 import { insertAssetIntoPage } from './assetInsert.js';
@@ -820,6 +821,12 @@ function bindStaticActions(): void {
     toast,
     openViewTab: tab => { fileBrowser?.openViewTab(tab); },
     getLanguage: () => boot.language === 'zh' ? 'zh' : 'en',
+  });
+  installCommandPalette({
+    openModal: html => openModal(html),
+    closeModal: () => closeModal(),
+    toast,
+    openExtensionView: viewId => extensionRuntime?.openView(viewId) ?? false,
   });
   historyPanel = installHistoryPanel({
     mount: el('historyPanel'),

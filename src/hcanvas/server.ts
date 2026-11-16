@@ -33,6 +33,7 @@ import { discoverExtensions } from './extensions/loader.js';
 import { HcExtensionRegistry } from './extensions/registry.js';
 import { ExtensionViewService } from './extensions/viewInstances.js';
 import { handleExtensionViewRoute } from './extensions/viewRoutes.js';
+import { handleExtensionNetworkRoute } from './extensions/networkProxy.js';
 
 export interface HcServerOptions {
   workspace: string;
@@ -856,6 +857,20 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         try { await loadExtensionRegistry(); } catch { /* route reports unknown viewer */ }
         const origin = 'http://' + (req.headers.host || (host + ':' + boundPort));
         if (await handleExtensionViewRoute(req, res, url, { service: extensionViews, json, readBody, baseUrl: origin, sdkPath: '/assets/hc-extension-api.js', tokenAuthAlreadyChecked: true })) return;
+      }
+      if (pathname === '/api/extension-network') {
+        try { await loadExtensionRegistry(); } catch { /* route denies unknown extensions */ }
+        if (await handleExtensionNetworkRoute(req, res, url, {
+          json,
+          readBody,
+          resolveNetwork: (extensionId: string) => {
+            const entry = extensionRegistry?.catalogEntries.find(item => item.id === extensionId);
+            if (!entry) return null;
+            const capabilities = entry.capabilities as unknown as Record<string, unknown>;
+            const network = capabilities && typeof capabilities === 'object' ? capabilities.network : undefined;
+            return Array.isArray(network) ? network.map(String) : [];
+          },
+        })) return;
       }
       if (await handleExtensionRoute(req, res, url, { workspace: options.workspace, json, readBody })) {
         if (pathname.startsWith('/api/extensions')) { extensionRegistry = null; extensionRegistryLoading = null; }

@@ -1007,6 +1007,15 @@ body.file-browser-mode #toolRail, body.file-browser-mode #selectionToolbar, body
 body.file-browser-mode #viewport { background:#f4f2ec; }
 .file-surface { position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; background:#fff; }
 .extension-row { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); }
+.command-palette { max-width: 640px; }
+.palette-search { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
+.palette-search input { flex:1; border:0; outline:0; font:15px Inter,sans-serif; background:transparent; color:var(--text); }
+.palette-results { max-height: 380px; overflow:auto; padding:6px; }
+.palette-item { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:9px 12px; border:0; border-radius:8px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+.palette-item.active, .palette-item:hover { background:var(--surface-2, #f4f2ec); }
+.palette-title { font-size:13px; }
+.palette-meta { color:var(--muted); font-size:10.5px; }
+.palette-empty { margin:0; padding:16px; color:var(--muted); font-size:12px; text-align:center; }
 .extension-copy { display:flex; flex-direction:column; gap:3px; min-width:0; flex:1; }
 .extension-copy small { color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
 .extension-diagnostics { margin:4px 0 0 14px; padding:0; color:#b42318; font-size:10px; }

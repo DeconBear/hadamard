@@ -1,0 +1,71 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.hadamard.examples.manim-http",
+  "name": "Manim HTTP Renderer",
+  "version": "0.1.0",
+  "description": "Edit a Manim scene and render it through a user-run HTTP renderer service.",
+  "engines": {
+    "hcanvas": ">=0.2.0"
+  },
+  "capabilities": {
+    "document": {
+      "read": true
+    },
+    "network": [
+      "http://127.0.0.1:8765"
+    ]
+  },
+  "contributes": {
+    "formats": [
+      {
+        "id": "manim-scene",
+        "label": "Manim scene",
+        "extensions": [
+          ".manim.json"
+        ],
+        "viewer": "manim.viewer",
+        "surfaces": [
+          "file",
+          "tab"
+        ]
+      }
+    ],
+    "viewers": [
+      {
+        "id": "manim.viewer",
+        "label": "Manim scene editor",
+        "type": "iframe",
+        "entry": "ui/entry.html",
+        "surfaces": [
+          "file",
+          "tab"
+        ]
+      }
+    ],
+    "views": [
+      {
+        "id": "manim.scene",
+        "title": "Manim Scene",
+        "slot": "workspace-tab",
+        "viewer": "manim.viewer"
+      }
+    ],
+    "commands": [
+      {
+        "id": "manim.open",
+        "title": "Manim: Open scene editor",
+        "category": "Manim",
+        "exec": {
+          "kind": "view",
+          "viewId": "manim.scene"
+        }
+      }
+    ],
+    "configuration": {
+      "manim.endpoint": {
+        "type": "string",
+        "default": "http://127.0.0.1:8765/render"
+      }
+    }
+  }
+}

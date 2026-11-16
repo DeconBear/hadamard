@@ -22,11 +22,19 @@ export interface ExtensionRuntimeOptions {
 
 export interface ExtensionRuntime {
   resolveCustomViewer(input: CustomViewerInput): boolean;
+  /** Open a contributed shell view (workspace tab) by view id. */
+  openView(viewId: string): boolean;
 }
 
 interface FileViewerMatch {
   extension: ExtensionCatalogEntry;
   format: ExtensionFormatContribution;
+  viewer: ExtensionViewerContribution;
+}
+
+interface ShellViewMatch {
+  extension: ExtensionCatalogEntry;
+  view: { id: string; title: string; viewer: string; icon?: string; slot?: string };
   viewer: ExtensionViewerContribution;
 }
 
@@ -47,6 +55,18 @@ function findFileViewer(ext: string): FileViewerMatch | null {
       if (!viewer || viewer.type === 'builtin') continue;
       return { extension, format, viewer };
     }
+  }
+  return null;
+}
+
+function findShellView(viewId: string): ShellViewMatch | null {
+  for (const extension of getExtensionCatalog().extensions) {
+    if (!extension.enabled) continue;
+    const view = extension.contributes.views.find(item => item.id === viewId);
+    if (!view) continue;
+    const viewer = extension.contributes.viewers.find(item => item.id === view.viewer);
+    if (!viewer || viewer.type === 'builtin') continue;
+    return { extension, view, viewer };
   }
   return null;
 }
@@ -124,8 +144,22 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
           window.open(target, '_blank', 'noopener');
           return { ok: true };
         }
-        case 'network.fetch':
-          throw viewError('capability_denied', 'Viewer network access is not enabled in P1.');
+        case 'network.fetch': {
+          const url = String(record.url || '');
+          if (!/^https?:\/\//iu.test(url)) throw viewError('invalid_params', 'network.fetch requires an absolute http(s) URL.');
+          const headers = record.headers && typeof record.headers === 'object' && !Array.isArray(record.headers) ? record.headers as Record<string, unknown> : {};
+          const response = await options.request<{ status?: number; headers?: Record<string, string>; bodyBase64?: string }>('/api/extension-network', {
+            method: 'POST',
+            body: JSON.stringify({
+              extensionId: instance.extensionId,
+              url,
+              method: record.method || 'GET',
+              headers,
+              ...(typeof record.bodyBase64 === 'string' ? { bodyBase64: record.bodyBase64 } : {}),
+            }),
+          });
+          return { status: response.status ?? 0, headers: response.headers ?? {}, bodyBase64: response.bodyBase64 };
+        }
         case 'state.get': {
           const key = String(record.key || '');
           return { value: readStateValue(instance.instanceId, key) };
@@ -152,13 +186,12 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
     },
   });
 
-  function mountFileViewer(input: CustomViewerInput, match: FileViewerMatch, host: HTMLElement): MountedView {
+  function mountViewer(extension: ExtensionCatalogEntry, viewerId: string, label: string, context: ExtensionViewContext, host: HTMLElement): MountedView {
     let disposed = false;
     let handle: ViewInstance | null = null;
     host.classList.add('extension-viewer-host');
-    host.innerHTML = '<div class="extension-viewer-loading">Loading ' + escapeHtml(match.format.label || match.viewer.label || 'viewer') + '…</div>';
-    const context: ExtensionViewContext = { surface: 'file', format: match.format.id, file: { rootId: input.rootId, path: input.path, readOnly: true } };
-    void viewHost.create({ extensionId: match.extension.id, viewId: match.viewer.id, context }, host).then(view => {
+    host.innerHTML = '<div class="extension-viewer-loading">Loading ' + escapeHtml(label) + '…</div>';
+    void viewHost.create({ extensionId: extension.id, viewId: viewerId, context }, host).then(view => {
       if (disposed) { void view.destroy(); return; }
       handle = view;
       host.querySelector('.extension-viewer-loading')?.remove();
@@ -174,6 +207,11 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
     };
   }
 
+  function mountFileViewer(input: CustomViewerInput, match: FileViewerMatch, host: HTMLElement): MountedView {
+    const context: ExtensionViewContext = { surface: 'file', format: match.format.id, file: { rootId: input.rootId, path: input.path, readOnly: true } };
+    return mountViewer(match.extension, match.viewer.id, match.format.label || match.viewer.label || 'viewer', context, host);
+  }
+
   const resolveCustomViewer = (input: CustomViewerInput): boolean => {
     const match = findFileViewer(input.ext);
     if (!match) return false;
@@ -186,7 +224,19 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
     return true;
   };
 
-  return { resolveCustomViewer };
+  const openView = (viewId: string): boolean => {
+    const match = findShellView(viewId);
+    if (!match) return false;
+    options.openViewTab({
+      id: 'ext-view:' + match.extension.id + ':' + match.view.id,
+      title: match.view.title,
+      icon: match.view.icon || (match.view.title ? match.view.title.slice(0, 2) : 'EXT'),
+      mount: host => mountViewer(match.extension, match.viewer.id, match.view.title, { surface: 'tab' }, host),
+    });
+    return true;
+  };
+
+  return { resolveCustomViewer, openView };
 }
 
 function escapeHtml(value: string): string {

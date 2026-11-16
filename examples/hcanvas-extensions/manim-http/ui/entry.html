@@ -1,0 +1,108 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%; background: #faf8f3; color: #1f2430; font: 13px/1.5 Inter, system-ui, sans-serif; }
+  #app { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+  header { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #e3ded3; background: #fff; }
+  header strong { font-size: 12px; letter-spacing: .02em; margin-right: 8px; }
+  select, button { font: 12px Inter, sans-serif; padding: 5px 9px; border: 1px solid #d9d3c7; border-radius: 7px; background: #fff; color: #1f2430; }
+  button.primary { background: #6657D9; border-color: #6657D9; color: #fff; }
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(260px, 1fr) minmax(260px, 1.1fr); }
+  textarea { width: 100%; height: 100%; box-sizing: border-box; border: 0; border-right: 1px solid #e3ded3; resize: none; padding: 14px; font: 12px/1.55 ui-monospace, Consolas, monospace; background: #171923; color: #e2e8f0; outline: none; }
+  #result { position: relative; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  #result img, #result svg { max-width: 100%; max-height: 60vh; align-self: flex-start; background: #fff; border: 1px solid #e3ded3; border-radius: 8px; }
+  .status { color: #6b7280; font-size: 11px; }
+  .error { color: #b42318; white-space: pre-wrap; font-size: 12px; }
+  #log { font: 11px/1.5 ui-monospace, Consolas, monospace; color: #8a8276; white-space: pre-wrap; max-height: 120px; overflow: auto; }
+</style></head>
+<body><div id="app">
+  <header><strong>Manim</strong>
+    <select id="quality"><option value="low">low</option><option value="medium" selected>medium</option><option value="high">high</option></select>
+    <button id="render" class="primary">Render</button>
+    <span class="status" id="status">idle</span>
+  </header>
+  <main>
+    <textarea id="scene" spellcheck="false">{
+  "scene": "class Demo(Scene):\n    def construct(self):\n        self.play(Create(Circle()))",
+  "note": "This echo example renders a placeholder; point manim.endpoint at your own renderer service."
+}</textarea>
+    <div id="result"><div class="status">Render to see a frame. Configure the renderer endpoint in the extension config (default http://127.0.0.1:8765/render).</div><div id="log"></div></div>
+  </main>
+</div>
+<script>
+function encodeBase64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+function decodeBase64(text) {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+(async () => {
+  const hc = await HcanvasView.acquire();
+  const status = document.getElementById('status');
+  const result = document.getElementById('result');
+  const log = document.getElementById('log');
+  const render = document.getElementById('render');
+  render.addEventListener('click', async () => {
+    render.disabled = true;
+    status.textContent = 'rendering…';
+    result.querySelectorAll('img,svg,.error,.status').forEach(node => { if (node !== log) node.remove(); });
+    try {
+      const endpoint = (await hc.config.get('manim.endpoint')).value || 'http://127.0.0.1:8765/render';
+      const scene = document.getElementById('scene').value;
+      const payload = JSON.stringify({ scene, quality: document.getElementById('quality').value });
+      const response = await hc.network.fetch({
+        url: endpoint,
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        bodyBase64: encodeBase64(payload)
+      });
+      const text = decodeBase64(response.bodyBase64 || '');
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch { parsed = null; }
+      if (parsed && Array.isArray(parsed.artifacts) && parsed.artifacts.length) {
+        const artifact = parsed.artifacts[0];
+        if (artifact.mime && artifact.mime.startsWith('image/') && artifact.dataBase64) {
+          const img = document.createElement('img');
+          img.alt = 'render';
+          img.src = 'data:' + artifact.mime + ';base64,' + artifact.dataBase64;
+          result.prepend(img);
+          status.textContent = 'ok · ' + artifact.mime;
+        } else if (artifact.url) {
+          const img = document.createElement('img');
+          img.alt = 'render';
+          img.src = artifact.url;
+          result.prepend(img);
+          status.textContent = 'ok · remote artifact';
+        } else {
+          const pre = document.createElement('pre');
+          pre.textContent = text;
+          result.prepend(pre);
+          status.textContent = 'ok';
+        }
+      } else {
+        const pre = document.createElement('pre');
+        pre.textContent = text;
+        result.prepend(pre);
+        status.textContent = 'ok · HTTP ' + response.status;
+      }
+      log.textContent = 'POST ' + endpoint + ' → HTTP ' + response.status + '\n' + text.slice(0, 2000);
+    } catch (error) {
+      const div = document.createElement('div');
+      div.className = 'error';
+      div.textContent = error && error.message ? error.message : String(error);
+      result.prepend(div);
+      status.textContent = 'error';
+      log.textContent = '';
+    } finally {
+      render.disabled = false;
+    }
+  });
+})();
+</script></body></html>
