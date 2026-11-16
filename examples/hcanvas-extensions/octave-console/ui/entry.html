@@ -1,0 +1,69 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html, body { margin:0; height:100%; background:#faf8f3; color:#1f2430; font:13px/1.5 Inter,system-ui,sans-serif; }
+  #app { height:100%; display:flex; flex-direction:column; min-height:0; }
+  header { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid #e3ded3; background:#fff; }
+  header strong { font-size:12px; margin-right:8px; }
+  button { font:12px Inter,sans-serif; padding:5px 10px; border:1px solid #d9d3c7; border-radius:7px; background:#fff; color:#1f2430; cursor:pointer; }
+  button.primary { background:#6657D9; border-color:#6657D9; color:#fff; }
+  .status { color:#8a8276; font-size:11px; }
+  main { flex:1; min-height:0; display:grid; grid-template-columns:minmax(280px,1fr) minmax(280px,1.1fr); }
+  textarea { width:100%; height:100%; box-sizing:border-box; border:0; border-right:1px solid #e3ded3; resize:none; padding:14px; font:12.5px/1.55 ui-monospace,Consolas,monospace; background:#171923; color:#e2e8f0; outline:none; }
+  #output { overflow:auto; padding:14px; font:12px/1.55 ui-monospace,Consolas,monospace; }
+  #output img { max-width:100%; background:#fff; border:1px solid #e3ded3; border-radius:8px; margin-top:8px; }
+  .err { color:#b42318; } .ok { color:#047857; }
+</style></head>
+<body><div id="app">
+  <header><strong>GNU Octave</strong><button id="run" class="primary">Run snippet</button><span class="status" id="status">idle</span><span id="hint" class="status">Uses octave on this machine through the octave-runner sidecar</span></header>
+  <main>
+    <textarea id="code" spellcheck="false">% GNU Octave example
+x = 1:5;
+y = x .^ 2;
+disp("hello from Octave");
+disp(y);
+plot(x, y);
+print("-dpng", "snippet-plot.png");</textarea>
+    <div id="output"><div class="status">Run to execute this snippet.</div></div>
+  </main>
+</div>
+<script>
+(async () => {
+  const hc = await HcanvasView.acquire();
+  const run = document.getElementById('run');
+  const output = document.getElementById('output');
+  const status = document.getElementById('status');
+  function append(text, cls) {
+    const pre = document.createElement('pre');
+    pre.className = cls || '';
+    pre.style.margin = '0 0 8px';
+    pre.textContent = text;
+    output.appendChild(pre);
+    output.scrollTop = output.scrollHeight;
+  }
+  run.addEventListener('click', async () => {
+    run.disabled = true; status.textContent = 'running…'; output.innerHTML = '';
+    try {
+      const job = hc.sidecars.request('octave-runner', 'run', { code: document.getElementById('code').value });
+      job.onOutput(chunk => append(String(chunk), ''));
+      const result = await job.done;
+      if (result && result.ok === false) {
+        status.textContent = 'failed · ' + (result.stage || 'error');
+        append(result.error || (result.stderr || 'Octave failed.'), 'err');
+        return;
+      }
+      status.textContent = 'done · exit ' + (result && result.exitCode);
+      if (result && result.stdout) append(result.stdout, 'ok');
+      if (result && result.stderr) append(result.stderr, 'err');
+      for (const artifact of (result && result.artifacts) || []) {
+        if (!artifact || !artifact.dataBase64) continue;
+        const img = document.createElement('img');
+        img.alt = artifact.name || 'octave plot';
+        img.src = 'data:' + (artifact.mime || 'image/png') + ';base64,' + artifact.dataBase64;
+        output.appendChild(img);
+      }
+    } catch (error) { status.textContent = 'error'; append(error && error.message ? error.message : String(error), 'err'); }
+    finally { run.disabled = false; }
+  });
+})();
+</script></body></html>

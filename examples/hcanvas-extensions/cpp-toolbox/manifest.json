@@ -1,0 +1,77 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.hadamard.examples.cpp",
+  "name": "C++ Toolbox",
+  "version": "0.1.0",
+  "description": "Compile and run C++ code with the system toolchain through a sidecar.",
+  "engines": {
+    "hcanvas": ">=0.3.0"
+  },
+  "capabilities": {
+    "document": {
+      "read": true
+    },
+    "process": {
+      "sidecars": [
+        "cpp-runner"
+      ],
+      "tools": []
+    }
+  },
+  "contributes": {
+    "viewers": [
+      {
+        "id": "cpp.viewer",
+        "label": "C++ Toolbox",
+        "type": "iframe",
+        "entry": "ui/entry.html",
+        "surfaces": [
+          "tab"
+        ]
+      }
+    ],
+    "views": [
+      {
+        "id": "cpp.toolbox",
+        "title": "C++ Toolbox",
+        "slot": "workspace-tab",
+        "viewer": "cpp.viewer"
+      }
+    ],
+    "commands": [
+      {
+        "id": "cpp.open",
+        "title": "C++: Open toolbox",
+        "category": "C++",
+        "exec": {
+          "kind": "view",
+          "viewId": "cpp.toolbox"
+        }
+      }
+    ],
+    "sidecars": [
+      {
+        "id": "cpp-runner",
+        "label": "C++ runner",
+        "command": [
+          "node",
+          "sidecar/cpp_runner.mjs"
+        ],
+        "cwd": "extension",
+        "role": "service",
+        "protocol": "jsonrpc-stdio",
+        "requests": [
+          {
+            "method": "run",
+            "timeoutMs": 120000
+          }
+        ],
+        "outputChannel": "C++",
+        "limits": {
+          "maxStdoutBytes": 4194304,
+          "maxStderrBytes": 1048576
+        }
+      }
+    ]
+  }
+}

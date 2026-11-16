@@ -175,8 +175,35 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
         }
         case 'ui.capture':
           throw viewError('not_supported', 'Capture is not available yet.');
-        case 'sidecars.request':
+        case 'sidecars.request': {
+          const sidecarId = String(record.sidecarId || '');
+          const methodName = String(record.method || '');
+          if (!sidecarId || !methodName) throw viewError('invalid_params', 'sidecars.request requires sidecarId and method.');
+          const requestId = 'sc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+          const push = (event: string, payload: Record<string, unknown>): void => {
+            setTimeout(() => {
+              if (instance.disposed) return;
+              try { instance.sendEvent('sidecar.event', { requestId, event, ...payload }); } catch { /* viewer may be gone */ }
+            }, 20);
+          };
+          try {
+            await options.request('/api/sidecars/' + encodeURIComponent(sidecarId) + '/start', { method: 'POST', body: '{}' }).catch(() => undefined);
+            const outcome = await options.request<{ requestId?: string | number; result?: unknown; stdout?: string; stderr?: string; artifacts?: unknown; durationMs?: number }>(
+              '/api/sidecars/' + encodeURIComponent(sidecarId) + '/request',
+              { method: 'POST', body: JSON.stringify({ method: methodName, params: record.params, ...(typeof record.timeoutMs === 'number' ? { timeoutMs: record.timeoutMs } : {}) }) },
+            );
+            if (outcome.stdout) push('output', { stream: 'stdout', chunk: String(outcome.stdout) });
+            if (outcome.stderr) push('output', { stream: 'stderr', chunk: String(outcome.stderr) });
+            push('progress', { progress: { kind: 'end', percentage: 100 } });
+            push('result', { result: outcome.result ?? outcome });
+          } catch (error) {
+            const payload = error as Error & { code?: string };
+            push('error', { error: { code: payload.code || 'sidecar_failed', message: error instanceof Error ? error.message : String(error) } });
+          }
+          return { requestId };
+        }
         case 'sidecars.cancel':
+          return { ok: false };
         case 'kernels.list':
         case 'kernels.ensure':
         case 'kernels.execute':
@@ -188,7 +215,7 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
           throw viewError('not_supported', 'Unsupported viewer method: ' + method);
       }
     },
-  });
+  }, { requestTimeoutMs: 180_000 });
 
   function mountViewer(extension: ExtensionCatalogEntry, viewerId: string, label: string, context: ExtensionViewContext, host: HTMLElement): MountedView {
     let disposed = false;
