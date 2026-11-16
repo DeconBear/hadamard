@@ -8,8 +8,10 @@ function block(type: string, patch: Partial<HcBlock> = {}): HcBlock {
 
 describe('hcanvas builtin block definitions', () => {
   it('registers all built-in block types', () => {
-    expect(listBuiltinBlockDefinitions().map(definition => definition.type).sort()).toEqual(['arc', 'arrow', 'code', 'curve', 'freehand', 'html', 'image', 'markdown', 'math', 'shape', 'text']);
+    expect(listBuiltinBlockDefinitions().map(definition => definition.type).sort()).toEqual(['arc', 'arrow', 'code', 'curve', 'exec', 'freehand', 'html', 'image', 'markdown', 'math', 'shape', 'text']);
     expect(builtinBlockDefinition('text')?.label).toBe('Text');
+    expect(builtinBlockDefinition('exec')?.label).toBe('Code cell');
+    expect(blockAgentSummary(block('exec', { code: 'print(1)', data: { outputs: [] } }))).toContain('cell');
   });
 
   it('renders text and markdown bodies in export and present modes', () => {
