@@ -33,6 +33,8 @@ import { createKernelManager, type KernelDescriptor, type KernelManager } from '
 import { installExecCells, mountExecCell, runAllExecCells } from './execCell.js';
 import { extensionContributions } from './extensionCatalog.js';
 import { commandRegistry } from './commandRegistry.js';
+import { registerBuiltinViewer } from './builtinViewers.js';
+import { createNotebookViewer } from './notebookViewer.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
 import { insertAssetIntoPage } from './assetInsert.js';
@@ -845,6 +847,12 @@ function bindStaticActions(): void {
     openEditor: (pageId, blockId) => openSourceEditor({ pageId, blockId }),
     toast,
   });
+  registerBuiltinViewer('hcanvas.notebook', createNotebookViewer({
+    request: api,
+    getKernelManager: () => kernelManager,
+    getKernels: () => extensionContributions<KernelDescriptor>('kernels').map(item => item.contribution),
+    toast,
+  }));
   commandRegistry.register({ id: 'cell.insert', title: 'Cell: Insert code cell', category: 'Cell', handler: () => { void addBlock('exec', { code: 'print("hello")', language: 'python', w: 560, h: 360 }, viewportWorldCenter()); } });
   commandRegistry.register({ id: 'cell.runAll', title: 'Cell: Run all code cells', category: 'Cell', handler: () => { const page = activePage(); if (page) void runAllExecCells(page); } });
   historyPanel = installHistoryPanel({

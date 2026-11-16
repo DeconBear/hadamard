@@ -1,0 +1,62 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "hcanvas.notebook",
+  "name": "Hadamard Notebook",
+  "version": "0.1.0",
+  "description": "Markdown-first notebook with executable code cells and rich outputs.",
+  "engines": {
+    "hcanvas": ">=0.2.0"
+  },
+  "builtin": true,
+  "capabilities": {
+    "document": {
+      "read": true,
+      "write": true
+    },
+    "workspace": {
+      "read": [
+        "."
+      ],
+      "write": [
+        "."
+      ]
+    }
+  },
+  "contributes": {
+    "formats": [
+      {
+        "id": "hadamard-notebook",
+        "label": "Notebook",
+        "extensions": [
+          ".hnb.md"
+        ],
+        "viewer": "hcanvas.notebook",
+        "surfaces": [
+          "file"
+        ]
+      }
+    ],
+    "viewers": [
+      {
+        "id": "hcanvas.notebook",
+        "label": "Notebook",
+        "type": "builtin",
+        "surfaces": [
+          "file"
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "id": "notebook.open",
+        "title": "Notebook: Open .hnb.md file",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.runAll",
+        "title": "Notebook: Run all cells",
+        "category": "Notebook"
+      }
+    ]
+  }
+}

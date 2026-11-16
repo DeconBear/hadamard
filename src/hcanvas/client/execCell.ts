@@ -98,7 +98,7 @@ function pickMime(data: Record<string, unknown>): HcStoredOutput | null {
   return null;
 }
 
-function storedOutputsFromEvents(events: KernelOutputEvent[]): HcStoredOutput[] {
+export function eventsToStoredOutputs(events: KernelOutputEvent[]): HcStoredOutput[] {
   const result: HcStoredOutput[] = [];
   let total = 0;
   let images = 0;
@@ -134,7 +134,7 @@ function storedOutputsFromEvents(events: KernelOutputEvent[]): HcStoredOutput[] 
   return result;
 }
 
-function renderRuntimeOutput(host: HTMLElement, event: KernelOutputEvent): void {
+export function renderRuntimeEvent(host: HTMLElement, event: KernelOutputEvent): void {
   if (event.kind === 'stream') {
     const last = host.lastElementChild as HTMLElement | null;
     if (last && last.classList.contains('exec-out-stream') && last.dataset.stream === event.stream) {
@@ -170,7 +170,7 @@ function renderStored(host: HTMLElement, block: HcBlock): void {
   const state = states.get(block.id);
   if (state && state.outputs.length) {
     host.innerHTML = '';
-    for (const event of state.outputs) renderRuntimeOutput(host, event);
+    for (const event of state.outputs) renderRuntimeEvent(host, event);
     return;
   }
   const stored = execData(block.data).outputs;
@@ -282,12 +282,12 @@ export async function runExecBlock(block: HcBlock, page: HcPage): Promise<void> 
     refreshStatus(block);
     handle.onOutput(event => {
       state.outputs.push(event);
-      if (state.outputHost) renderRuntimeOutput(state.outputHost, event);
+      if (state.outputHost) renderRuntimeEvent(state.outputHost, event);
     });
     const result = await handle.done;
     state.handle = null;
     state.status = result.status === 'ok' ? 'ok' : result.status === 'error' ? 'error' : 'aborted';
-    const stored = storedOutputsFromEvents(result.outputs);
+    const stored = eventsToStoredOutputs(result.outputs);
     await deps.patchData(page.id, block.id, {
       ...(block.data || {}),
       execution: { ...(execData(block.data).execution || {}), kernelId: kernel.id },
@@ -295,7 +295,7 @@ export async function runExecBlock(block: HcBlock, page: HcPage): Promise<void> 
       lastRun: { status: result.status, startedAt: new Date().toISOString(), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) },
     });
     refreshStatus(block);
-    if (state.outputHost) { state.outputHost.innerHTML = ''; for (const event of result.outputs) renderRuntimeOutput(state.outputHost, event); }
+    if (state.outputHost) { state.outputHost.innerHTML = ''; for (const event of result.outputs) renderRuntimeEvent(state.outputHost, event); }
     if (result.status === 'error') deps.toast('Code cell failed; see traceback in the block.', 'error');
   } catch (error) {
     state.status = 'error';

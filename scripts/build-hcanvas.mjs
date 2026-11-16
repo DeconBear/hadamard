@@ -38,4 +38,6 @@ await copyFile(path.join(root, 'assets', 'hcanvas-icon.svg'), path.join(outDir, 
 await cp(path.join(root, 'src', 'hcanvas', 'client', 'fonts'), path.join(outDir, 'assets', 'fonts'), { recursive: true });
 await mkdir(path.join(root, 'dist', 'src', 'hcanvas'), { recursive: true });
 await copyFile(path.join(root, 'src', 'hcanvas', 'preload.cjs'), path.join(root, 'dist', 'src', 'hcanvas', 'preload.cjs'));
+// Bundled extension manifests are discovered relative to the compiled server.
+await cp(path.join(root, 'src', 'hcanvas', 'builtinExtensions'), path.join(root, 'dist', 'src', 'hcanvas', 'builtinExtensions'), { recursive: true });
 console.log('hcanvas bundle: dist/hcanvas');

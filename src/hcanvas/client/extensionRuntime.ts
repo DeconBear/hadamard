@@ -1,6 +1,7 @@
 import { commandRegistry } from './commandRegistry.js';
 import { findExtension, getExtensionCatalog, type ExtensionCatalogEntry, type ExtensionFormatContribution, type ExtensionViewerContribution } from './extensionCatalog.js';
 import { ExtensionViewHost, type ExtensionViewContext, type ViewInstance } from './viewerHost.js';
+import { builtinViewer } from './builtinViewers.js';
 
 export interface CustomViewerInput {
   rootId: string;
@@ -43,16 +44,19 @@ function normalizeExt(ext: string): string {
   return value.startsWith('.') ? value : value ? '.' + value : '';
 }
 
-function findFileViewer(ext: string): FileViewerMatch | null {
-  const wanted = normalizeExt(ext);
-  if (!wanted) return null;
+function findFileViewer(input: CustomViewerInput): FileViewerMatch | null {
+  const wanted = normalizeExt(input.ext);
+  const lowerPath = input.path.toLowerCase();
   for (const extension of getExtensionCatalog().extensions) {
     if (!extension.enabled) continue;
     for (const format of extension.contributes.formats) {
-      const matches = (format.extensions || []).some(item => normalizeExt(item) === wanted);
+      const matches = (format.extensions || []).some(item => {
+        const normalized = normalizeExt(item);
+        return normalized && (normalized === wanted || lowerPath.endsWith(normalized));
+      });
       if (!matches) continue;
       const viewer = extension.contributes.viewers.find(item => item.id === format.viewer);
-      if (!viewer || viewer.type === 'builtin') continue;
+      if (!viewer) continue;
       return { extension, format, viewer };
     }
   }
@@ -65,7 +69,7 @@ function findShellView(viewId: string): ShellViewMatch | null {
     const view = extension.contributes.views.find(item => item.id === viewId);
     if (!view) continue;
     const viewer = extension.contributes.viewers.find(item => item.id === view.viewer);
-    if (!viewer || viewer.type === 'builtin') continue;
+    if (!viewer) continue;
     return { extension, view, viewer };
   }
   return null;
@@ -207,13 +211,36 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
     };
   }
 
+  function mountBuiltin(extension: ExtensionCatalogEntry, viewer: ExtensionViewerContribution, label: string, context: ExtensionViewContext, host: HTMLElement): MountedView {
+    const builtin = builtinViewer(viewer.builtinId || viewer.id);
+    if (!builtin) {
+      host.innerHTML = '<div class="extension-viewer-error"><strong>Builtin viewer is not registered</strong><small>' + escapeHtml(viewer.builtinId || viewer.id) + '</small></div>';
+      return {};
+    }
+    host.innerHTML = '';
+    try {
+      const mounted = builtin.mount(host, {
+        extensionId: extension.id,
+        viewId: viewer.id,
+        surface: context.surface,
+        ...(typeof context.format === 'string' ? { format: context.format } : {}),
+        ...(context.file && typeof context.file === 'object' ? { file: context.file } : {}),
+      });
+      return { dispose: () => mounted?.dispose?.() };
+    } catch (error) {
+      host.innerHTML = '<div class="extension-viewer-error"><strong>Viewer failed</strong><small>' + escapeHtml(error instanceof Error ? error.message : String(error)) + '</small></div>';
+      return {};
+    }
+  }
+
   function mountFileViewer(input: CustomViewerInput, match: FileViewerMatch, host: HTMLElement): MountedView {
     const context: ExtensionViewContext = { surface: 'file', format: match.format.id, file: { rootId: input.rootId, path: input.path, readOnly: true } };
+    if (match.viewer.type === 'builtin') return mountBuiltin(match.extension, match.viewer, match.format.label || match.viewer.label || 'viewer', context, host);
     return mountViewer(match.extension, match.viewer.id, match.format.label || match.viewer.label || 'viewer', context, host);
   }
 
   const resolveCustomViewer = (input: CustomViewerInput): boolean => {
-    const match = findFileViewer(input.ext);
+    const match = findFileViewer(input);
     if (!match) return false;
     options.openViewTab({
       id: 'ext-file:' + input.rootId + ':' + input.path,
@@ -231,7 +258,12 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
       id: 'ext-view:' + match.extension.id + ':' + match.view.id,
       title: match.view.title,
       icon: match.view.icon || (match.view.title ? match.view.title.slice(0, 2) : 'EXT'),
-      mount: host => mountViewer(match.extension, match.viewer.id, match.view.title, { surface: 'tab' }, host),
+      mount: host => {
+        const context: ExtensionViewContext = { surface: 'tab' };
+        return match.viewer.type === 'builtin'
+          ? mountBuiltin(match.extension, match.viewer, match.view.title, context, host)
+          : mountViewer(match.extension, match.viewer.id, match.view.title, context, host);
+      },
     });
     return true;
   };
