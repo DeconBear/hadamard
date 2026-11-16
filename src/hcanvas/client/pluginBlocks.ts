@@ -30,15 +30,24 @@ function fieldMarkup(field: HcPluginField, value: unknown): string {
 
 export function pluginInspectorMarkup(block: HcBlock): string {
   const plugin = blockPlugin(block.type);
-  if (!plugin || !plugin.fields?.length) return '';
+  if (!plugin || (!plugin.fields?.length && !plugin.actions?.length)) return '';
   const data = block.data || {};
+  const actions = plugin.actions?.length
+    ? '<div class="plugin-actions">' + plugin.actions.map(action => '<button type="button" class="btn tiny" data-plugin-action="' + escapeHtml(action.id) + '" title="' + escapeHtml(action.hint || action.label) + '">' + escapeHtml(action.label) + '</button>').join('') + '</div>'
+    : '';
   return '<section class="inspector-section"><div class="inspector-title">Plugin · ' + escapeHtml(plugin.label) + '</div>' +
-    plugin.fields.map(field => fieldMarkup(field, data[field.key])).join('') +
+    (plugin.fields || []).map(field => fieldMarkup(field, data[field.key])).join('') +
+    actions +
     '<p class="inspector-note">' + escapeHtml(plugin.hint || 'Plugin-defined block.') + '</p></section>';
 }
 
-export function bindPluginInspector(root: HTMLElement, block: HcBlock, onUpdate: (data: Record<string, unknown>) => void): void {
-  const fields = blockPlugin(block.type)?.fields || [];
+export function bindPluginInspector(root: HTMLElement, block: HcBlock, onUpdate: (data: Record<string, unknown>) => void, onAction?: (action: import('../pluginManifest.js').HcPluginAction) => void): void {
+  const plugin = blockPlugin(block.type);
+  const fields = plugin?.fields || [];
+  root.querySelectorAll<HTMLButtonElement>('[data-plugin-action]').forEach(button => button.addEventListener('click', () => {
+    const action = plugin?.actions?.find(item => item.id === button.dataset.pluginAction);
+    if (action && onAction) onAction(action);
+  }));
   root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('[data-plugin-field]').forEach(control => {
     control.addEventListener('change', () => {
       const key = control.dataset.pluginField;
@@ -169,6 +178,7 @@ export function registerDeclarativePlugins(entries: Array<{ manifest: HcPluginMa
         defaultSize: block.defaultSize,
         defaultData: () => ({ ...(block.defaultData || {}) }),
         fields: block.fields as HcPluginField[] | undefined,
+        actions: block.actions,
         renderHtml: current => renderDeclarativeTemplate(block.render, current.data || {}),
         pluginId: manifest.id,
         pluginName: manifest.name,

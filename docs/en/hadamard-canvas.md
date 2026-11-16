@@ -546,6 +546,36 @@ Project plugins take precedence; duplicate block types are skipped and reported.
 
 Open **Manage** next to the Plugin blocks section to enable/disable installed plugins and use **Create block sample** / **Create page sample** to generate a valid manifest under `.hcanvas/plugins/`. **Gallery** installs the bundled samples (Sticky Notes, Starter Pages); **Import JSON** accepts a pasted or selected manifest and installs it into the project. Project plugins can be removed from the manager with **Remove** (user-level plugins are never removed from a project). Toggle state is persisted in `.hcanvas/plugin-settings.json`; disabled plugins are not registered, so their blocks show the safe unknown-block fallback. A working sample lives at [examples/hcanvas-plugins/sticky-notes/manifest.json](https://github.com/DeconBear/hadamard/blob/main/examples/hcanvas-plugins/sticky-notes/manifest.json). Plugin blocks are stored in the document as normal blocks with a `data` payload, so they survive save/reload, undo/redo, copy/paste and Present. Declarative templates are local, trusted UI content; only install manifests you understand.
 
+### Plugin Studio
+
+Open **Plugins → Manage → New plugin**, or click **Edit** on any installed plugin, to open **Plugin Studio** inside the app. The Studio is a JSON manifest editor with validation and a live preview:
+
+- Edit the block label, fields, default values, HTML template and page presets.
+- **Validate** checks the manifest through the same server-side validator used on install.
+- **Preview** renders the first block with its default field values.
+- **Save & Reload** writes the manifest to `<project>/.hcanvas/plugins/<id>/manifest.json` and reloads the runtime immediately.
+- **Duplicate** creates a new id you can customize; user-level plugins are read-only, but can be duplicated into the project.
+- **Export** downloads the manifest; project plugins can be removed from the Studio or the manager.
+
+### Plugin actions
+
+A plugin block can expose editable buttons that run safe, declarative canvas operations. Add an `actions` array to a block:
+
+```json
+{
+  "type": "my-card",
+  "label": "My card",
+  "render": "<div>{{title}}</div>",
+  "actions": [
+    { "id": "reset", "label": "Reset", "kind": "set-data", "data": { "title": "Hello" } },
+    { "id": "accent", "label": "Accent", "kind": "apply-style", "style": { "color": "#0f766e" } },
+    { "id": "insert", "label": "Insert another", "kind": "insert-block", "blockType": "my-card", "text": "More" }
+  ]
+}
+```
+
+Supported action kinds are `set-data` (merge block data), `apply-style` (merge block style), `insert-block` (add a block on the current page) and `add-page-preset` (add a page from the plugin's page templates). Actions still use the normal canvas operation path, so they are undoable and revision-checked. They do not execute arbitrary JavaScript, iframes, event handlers or `javascript:` URLs.
+
 ### Components and plugin blocks
 
 A **plugin block** is a declarative HTML template with manifest-defined fields; it can render custom cards and be edited through its fields, but it does not execute JavaScript. **Components** are plugins marked `component: true`; they appear in the Inspector’s Components section instead of the normal block picker. The built-in **Slider** component is interactive on canvas: drag the track or click a position to change its value; the value is stored in `block.data.value` and is reflected in the Inspector and exports. Other plugin blocks and components are declarative/static unless they add their own interaction in the future.

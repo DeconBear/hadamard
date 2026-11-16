@@ -40,6 +40,24 @@ export interface HcPluginPagePreset {
   blocks?: HcPluginPagePresetBlock[];
 }
 
+export type HcPluginActionKind = 'insert-block' | 'set-data' | 'apply-style' | 'add-page-preset';
+
+export interface HcPluginAction {
+  id: string;
+  label: string;
+  hint?: string;
+  kind: HcPluginActionKind;
+  blockType?: string;
+  data?: Record<string, unknown>;
+  style?: Record<string, unknown>;
+  text?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  presetId?: string;
+}
+
 export interface HcDeclarativeBlock {
   type: string;
   label: string;
@@ -48,6 +66,7 @@ export interface HcDeclarativeBlock {
   defaultData?: Record<string, unknown>;
   fields?: HcPluginField[];
   render: string;
+  actions?: HcPluginAction[];
 }
 
 export interface HcPluginManifest {
@@ -147,6 +166,46 @@ function validatePagePreset(input: unknown, index: number): HcPluginPagePreset {
   };
 }
 
+function validateAction(input: unknown, index: number): HcPluginAction {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) fail('actions[' + index + '] must be an object');
+  const raw = input as Record<string, unknown>;
+  const kind = raw.kind;
+  if (kind !== 'insert-block' && kind !== 'set-data' && kind !== 'apply-style' && kind !== 'add-page-preset') fail('actions[' + index + '].kind is not supported');
+  const action: HcPluginAction = {
+    id: str(raw.id, 'actions[' + index + '].id', 64),
+    label: str(raw.label, 'actions[' + index + '].label', 120),
+    kind,
+  };
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(action.id)) fail('actions[' + index + '].id has invalid characters');
+  if (raw.hint !== undefined) action.hint = str(raw.hint, 'actions[' + index + '].hint', 240);
+  if (raw.blockType !== undefined) {
+    action.blockType = str(raw.blockType, 'actions[' + index + '].blockType', 64);
+    if (!/^[a-z][a-z0-9-]*$/.test(action.blockType)) fail('actions[' + index + '].blockType has invalid characters');
+  }
+  if (raw.data !== undefined) {
+    if (!raw.data || typeof raw.data !== 'object' || Array.isArray(raw.data)) fail('actions[' + index + '].data must be an object');
+    action.data = raw.data as Record<string, unknown>;
+  }
+  if (raw.style !== undefined) {
+    if (!raw.style || typeof raw.style !== 'object' || Array.isArray(raw.style)) fail('actions[' + index + '].style must be an object');
+    action.style = raw.style as Record<string, unknown>;
+  }
+  if (raw.text !== undefined) action.text = str(raw.text, 'actions[' + index + '].text', 5000);
+  for (const key of ['x', 'y', 'w', 'h'] as const) {
+    if (raw[key] !== undefined) {
+      const value = Number(raw[key]);
+      if (!Number.isFinite(value)) fail('actions[' + index + '].' + key + ' must be a number');
+      action[key] = value;
+    }
+  }
+  if (raw.presetId !== undefined) action.presetId = str(raw.presetId, 'actions[' + index + '].presetId', 64);
+  if (kind === 'insert-block' && !action.blockType) fail('actions[' + index + '].blockType is required for insert-block');
+  if (kind === 'set-data' && !action.data) fail('actions[' + index + '].data is required for set-data');
+  if (kind === 'apply-style' && !action.style) fail('actions[' + index + '].style is required for apply-style');
+  if (kind === 'add-page-preset' && !action.presetId) fail('actions[' + index + '].presetId is required for add-page-preset');
+  return action;
+}
+
 export function validatePluginManifest(input: unknown): HcPluginManifest {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('manifest must be an object');
   const raw = input as Record<string, unknown>;
@@ -179,6 +238,7 @@ export function validatePluginManifest(input: unknown): HcPluginManifest {
       defaultData: defaultData ? defaultData as Record<string, unknown> : {},
       fields: Array.isArray(item.fields) ? item.fields.map(validateField) : [],
       render,
+      actions: Array.isArray(item.actions) ? item.actions.slice(0, 20).map(validateAction) : undefined,
     } satisfies HcDeclarativeBlock;
   });
   return {

@@ -64,7 +64,7 @@ Desktop installers from [GitHub Releases](https://github.com/DeconBear/hadamard/
 - Markdown rich editing, formula editing and source mode.
 - Live inline color picker with saturation/hue controls and screen eyedropper.
 - Bundled **Inter**, **Source Serif 4** and **JetBrains Mono**, plus system font choices.
-- Built-in **Slider** component and declarative plugin blocks; page-template plugins.
+- Built-in **Slider** component, declarative plugin blocks and an in-app **Plugin Studio** for editing and validating manifests; page-template plugins.
 - Trackpad navigation: two-finger pan, pinch zoom and Shift+wheel horizontal pan.
 - Inline KaTeX in HTML text and SVG diagram labels, with click-to-edit LaTeX source.
 

@@ -17,10 +17,11 @@ import {
 import type { HcBlock, HcDocument, HcOp, HcPage, HcPagePreset } from './types.js';
 import { resolveLlmConfig, runAgentChat, type AgentChatMessage } from './agentChat.js';
 import { workspaceInfo } from './workspace.js';
-import { discoverPlugins, setPluginEnabled } from './pluginLoader.js';
+import { discoverPlugins, readPluginSource, setPluginEnabled } from './pluginLoader.js';
 import { installPluginManifest, listGallerySamples, uninstallProjectPlugin } from './pluginGallery.js';
 import { blockAgentSummary } from './builtinBlocks.js';
 import { createPluginScaffold } from './pluginScaffold.js';
+import { validatePluginManifest } from './pluginManifest.js';
 import { listProjects } from './projectRegistry.js';
 import { HcFileService } from './fileWorkspace.js';
 import { HcAssetService } from './assets.js';
@@ -715,6 +716,19 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       if (pathname === '/api/plugins' && req.method === 'GET') {
         const discovery = await discoverPlugins(options.workspace);
         json(res, 200, { ok: true, plugins: discovery.plugins, errors: discovery.errors });
+        return;
+      }
+      if (pathname === '/api/plugins/source' && req.method === 'GET') {
+        const id = url.searchParams.get('id') || '';
+        if (!id) throw new HcValidationError('id is required');
+        const source = await readPluginSource(options.workspace, id);
+        json(res, 200, { ok: true, source });
+        return;
+      }
+      if (pathname === '/api/plugins/validate' && req.method === 'POST') {
+        const body = await readBody(req);
+        const manifest = validatePluginManifest(body.manifest);
+        json(res, 200, { ok: true, manifest });
         return;
       }
       if (pathname === '/api/plugins/gallery' && req.method === 'GET') {

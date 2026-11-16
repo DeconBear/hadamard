@@ -45,8 +45,10 @@ import type { HcBlockPlugin } from '../blockPlugins.js';
 import { createShapePicker, type ShapePicker } from './shapePicker.js';
 import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
 import { bindComponentPicker, bindPluginInspector, bindPluginPicker, componentPickerMarkup, getPluginCatalog, loadExternalPlugins, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
+import { runPluginAction } from './pluginActions.js';
 import { renderCanvasBlockContent } from './blockRenderers.js';
 import { openPluginManager } from './pluginManager.js';
+import { openPluginStudio } from './pluginStudio.js';
 import { openPluginGallery } from './pluginGallery.js';
 import { installImageInsert } from './imageInsert.js';
 import { bindPluginPagePicker, pluginPagePickerMarkup } from './pluginPages.js';
@@ -2756,6 +2758,16 @@ function bindPageInspector(page: HcPage): void {
     openModal: html => openModal(html),
     toast,
   });
+  const openStudio = (pluginId?: string): void => openPluginStudio({
+    catalog: getPluginCatalog(),
+    request: api,
+    reload: () => loadExternalPlugins(api),
+    openManager,
+    openModal: html => openModal(html),
+    closeModal: () => closeModal(),
+    confirm: message => confirmDialog(message),
+    toast,
+  }, pluginId);
   const openManager = (): void => openPluginManager({
     catalog: getPluginCatalog(),
     request: api,
@@ -2763,6 +2775,7 @@ function bindPageInspector(page: HcPage): void {
     onChanged: renderInspector,
     open: openManager,
     openGallery,
+    openStudio,
     confirm: message => confirmDialog(message),
     close: () => closeModal(),
     openModal: html => openModal(html),
@@ -2782,7 +2795,6 @@ function bindPageInspector(page: HcPage): void {
     renderInspector();
   }, () => openManager());
 }
-
 function renderBlockInspector(): void {
   const block = activeBlock();
   const page = activePage();
@@ -2826,7 +2838,6 @@ function renderBlockInspector(): void {
   root.innerHTML = html;
   bindBlockInspector(block);
 }
-
 function bindBlockInspector(block: HcBlock): void {
   const page = activePage();
   if (!page) return;
@@ -2834,7 +2845,7 @@ function bindBlockInspector(block: HcBlock): void {
     await applyOps([{ op: 'update_block', pageId: page.id, blockId: block.id, patch } as HcOp], { refreshArtboard: refresh });
     renderInspector();
   };
-  bindPluginInspector(el('inspectorPanel'), block, data => { void update({ data }); });
+  bindPluginInspector(el('inspectorPanel'), block, data => { void update({ data }); }, action => { void runPluginAction(block, action, { page, applyOps, createId: genId, select: setBlockSelection, toast }); });
   el<HTMLInputElement>('blockName').addEventListener('change', event => { void update({ name: (event.target as HTMLInputElement).value }, false); });
   el<HTMLInputElement>('blockX').addEventListener('change', event => { void update({ x: Number((event.target as HTMLInputElement).value) || 0 }); });
   el<HTMLInputElement>('blockY').addEventListener('change', event => { void update({ y: Number((event.target as HTMLInputElement).value) || 0 }); });
@@ -2875,11 +2886,9 @@ function bindBlockInspector(block: HcBlock): void {
   if (vectorWidth) vectorWidth.addEventListener('change', () => { void update({ style: { ...(block.style || {}), strokeWidth: Math.max(1, Math.min(40, Number(vectorWidth.value) || 2)) } }); });
   if (block.type === 'arrow') bindArrowInspector(block, el('inspectorPanel'), patch => { void update(patch); });
 }
-
 function initials(value: string): string {
   return value.split(/[\s_-]+/).filter(Boolean).slice(0, 2).map(part => part[0]!.toUpperCase()).join('') || 'A';
 }
-
 function renderPresence(): void {
   const bar = el('presenceBar');
   if (!bar) return;
@@ -2902,7 +2911,6 @@ function renderPresence(): void {
     bar.appendChild(more);
   }
 }
-
 async function refreshPresence(): Promise<void> {
   try {
     const snapshot = await api<{ presence?: PresenceEntry[]; docs?: DocSummary[] }>('/api/state');
@@ -2913,7 +2921,6 @@ async function refreshPresence(): Promise<void> {
 
   } catch { /* presence is best effort */ }
 }
-
 function renderProposalBadge(): void {
   const proposals = state.doc?.proposals || [];
   const pending = proposals.filter(proposal => proposal.status === 'pending');
@@ -2921,7 +2928,6 @@ function renderProposalBadge(): void {
   badge.textContent = String(pending.length);
   badge.classList.toggle('hidden', pending.length === 0);
 }
-
 function renderProposals(): void {
   const root = el('proposalsPanel');
   if (!state.doc) return;
@@ -2939,7 +2945,6 @@ function renderProposals(): void {
   root.querySelectorAll<HTMLButtonElement>('[data-accept]').forEach(button => button.addEventListener('click', () => { void resolveProposal(button.dataset.accept || '', true); }));
   root.querySelectorAll<HTMLButtonElement>('[data-reject]').forEach(button => button.addEventListener('click', () => { void resolveProposal(button.dataset.reject || '', false); }));
 }
-
 async function resolveProposal(proposalId: string, accept: boolean): Promise<void> {
   if (!state.doc) return;
   try {
@@ -2950,7 +2955,6 @@ async function resolveProposal(proposalId: string, accept: boolean): Promise<voi
     toast(result.conflict ? 'Proposal conflicted: ' + result.conflict : accept ? 'Proposal accepted' : 'Proposal rejected', result.conflict ? 'error' : 'success');
   } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
 }
-
 function connectEvents(): void {
   try {
     const source = new EventSource('/api/events?token=' + encodeURIComponent(boot.token));
@@ -2986,24 +2990,20 @@ function connectEvents(): void {
     });
   } catch { /* SSE optional */ }
 }
-
 async function deletePage(pageId: string): Promise<void> {
   await deletePages([pageId]);
 }
-
 async function deleteActiveBlock(): Promise<void> {
   const page = activePage();
   if (!page || !state.activeBlockId) return;
   await deleteBlock(page.id, state.activeBlockId);
 }
-
 async function deleteBlock(pageId: string, blockId: string): Promise<void> {
   state.activeBlockId = null;
   state.selectedBlockIds = [];
   await applyOps([{ op: 'delete_block', pageId, blockId }], { refreshArtboard: true });
   renderInspector();
 }
-
 function openShapePicker(): void {
   shapePicker?.open();
 }

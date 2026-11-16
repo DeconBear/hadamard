@@ -109,3 +109,28 @@ export async function setPluginEnabled(workspace: string, id: string, enabled: b
   await writeSettings(workspace, { disabled: [...disabled] });
   return discoverPlugins(workspace);
 }
+export interface HcPluginSource {
+  id: string;
+  name: string;
+  source: 'project' | 'user';
+  path: string;
+  editable: boolean;
+  manifest: HcPluginManifest;
+  sourceText: string;
+}
+
+export async function readPluginSource(workspace: string, id: string): Promise<HcPluginSource> {
+  const discovery = await discoverPlugins(workspace);
+  const plugin = discovery.plugins.find(item => item.manifest.id === id);
+  if (!plugin) throw new Error('Unknown plugin id: ' + id);
+  const sourceText = await readFile(plugin.path, 'utf8');
+  return {
+    id: plugin.manifest.id,
+    name: plugin.manifest.name,
+    source: plugin.source,
+    path: plugin.path,
+    editable: plugin.source === 'project',
+    manifest: plugin.manifest,
+    sourceText,
+  };
+}

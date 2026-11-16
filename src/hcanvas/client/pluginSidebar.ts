@@ -1,6 +1,7 @@
 import { getPluginCatalog } from './pluginBlocks.js';
 import { openPluginManager } from './pluginManager.js';
 import { openPluginGallery } from './pluginGallery.js';
+import { openPluginStudio } from './pluginStudio.js';
 
 export interface PluginSidebarOptions {
   request(path: string, init?: RequestInit): Promise<unknown>;
@@ -35,11 +36,22 @@ export function installPluginSidebar(options: PluginSidebarOptions): void {
     onChanged: options.onChanged,
     open: openManager,
     openGallery,
+    openStudio,
     confirm: options.confirm,
     close: options.closeModal,
     openModal: options.openModal,
     toast: options.toast,
   });
+  const openStudio = (pluginId?: string): void => openPluginStudio({
+    catalog: getPluginCatalog(),
+    request: options.request,
+    reload,
+    openManager,
+    openModal: options.openModal,
+    closeModal: options.closeModal,
+    confirm: options.confirm,
+    toast: options.toast,
+  }, pluginId);
   const openGallery = (): void => openPluginGallery({
     request: options.request,
     reload,

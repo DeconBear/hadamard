@@ -1,5 +1,6 @@
 import type { HcBlock } from './types.js';
 import { calloutPlugin } from './plugins/callout.js';
+import type { HcPluginAction } from './pluginManifest.js';
 import { sliderPlugin } from './plugins/slider.js';
 
 export type HcPluginFieldKind = 'text' | 'textarea' | 'color' | 'select' | 'number';
@@ -19,6 +20,7 @@ export interface HcBlockPlugin {
   defaultData(): Record<string, unknown>;
   renderHtml(block: HcBlock): string;
   fields?: HcPluginField[];
+  actions?: HcPluginAction[];
   pluginId?: string;
   pluginName?: string;
   version?: string;

@@ -462,6 +462,36 @@ hcanvas 可以加载声明式 block 插件，不需要执行 JavaScript bundle�
 
 点击 **Plugin blocks** 旁边的 **Manage** 可以启用/禁用已安装插件，也可以用 **Create block sample** / **Create page sample** 在 `.hcanvas/plugins/` 下生成合法 manifest；**Gallery** 可一键安装内置示例（Sticky Notes、Starter Pages），**Import JSON** 可粘贴或选择 manifest 安装到当前项目；项目插件可在管理器中点 **Remove** 卸载（不会删除用户级插件）；状态保存在 `.hcanvas/plugin-settings.json`，禁用后插件 block 会显示安全的 unknown-block fallback。完整示例见 `examples/hcanvas-plugins/sticky-notes/manifest.json`。插件 block 以普通 block + `data` 保存，因此支持保存/重载、撤销/重做、复制粘贴和 Present。声明式模板是本地可信 UI 内容，只安装你理解的 manifest。
 
+### 插件 Studio
+
+打开 **Plugins → Manage → New plugin**，或点击已安装插件旁的 **Edit**，即可在应用内打开 **Plugin Studio**。它本质上是一个带校验和实时预览的 manifest 编辑器：
+
+- 编辑 block 标签、字段、默认值、HTML 模板和页面模板。
+- **Validate** 使用与安装时相同的服务端校验器检查 manifest。
+- **Preview** 用默认字段值渲染第一个 block。
+- **Save & Reload** 把 manifest 写入 `<project>/.hcanvas/plugins/<id>/manifest.json`，并立即重新加载。
+- **Duplicate** 生成一个新 id 供你继续改；用户级插件只读，但可以复制到项目。
+- **Export** 下载 manifest；项目插件可以在 Studio 或管理器中删除。
+
+### 插件动作
+
+插件 block 可以暴露按钮，执行安全的声明式画布操作。给 block 增加 `actions` 数组：
+
+```json
+{
+  "type": "my-card",
+  "label": "My card",
+  "render": "<div>{{title}}</div>",
+  "actions": [
+    { "id": "reset", "label": "Reset", "kind": "set-data", "data": { "title": "Hello" } },
+    { "id": "accent", "label": "Accent", "kind": "apply-style", "style": { "color": "#0f766e" } },
+    { "id": "insert", "label": "Insert another", "kind": "insert-block", "blockType": "my-card", "text": "More" }
+  ]
+}
+```
+
+支持的动作类型：`set-data`（合并 block data）、`apply-style`（合并 block style）、`insert-block`（在当前页面插入 block）和 `add-page-preset`（使用插件页面模板添加页面）。动作仍然走正常画布操作路径，因此可撤销、受 revision 校验；不会执行任意 JavaScript、iframe、事件属性或 `javascript:` URL。
+
 ### 组件与插件块
 
 **插件块**是带 manifest 字段的声明式 HTML 模板，可渲染自定义卡片并通过字段编辑，但不会执行 JavaScript。**组件**是标记了 `component: true` 的插件，会出现在 Inspector 的 Components 区域而不是普通块选择器。内置的 **Slider** 组件在画布上可交互：拖动滑轨或点击位置即可改变数值；数值保存在 `block.data.value` 中，并同步到 Inspector 和导出结果。其他插件块/组件目前仍是声明式静态内容，暂无自定义交互。
