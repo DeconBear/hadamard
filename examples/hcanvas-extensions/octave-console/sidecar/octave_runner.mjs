@@ -1,7 +1,7 @@
 // GNU Octave sidecar runner for the Hcanvas Octave Console example.
 // JSON-RPC 2.0 over stdio with LSP Content-Length framing.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -20,9 +20,33 @@ function truncate(text, limit) {
   return value.length > limit ? value.slice(0, limit) + '\n… truncated' : value;
 }
 
+function registryOctaveCandidates() {
+  if (process.platform !== 'win32') return [];
+  const candidates = [];
+  for (const hive of ['HKLM', 'HKCU']) {
+    const probe = spawnSync('reg.exe', ['query', hive + '\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', 'Octave', '/d'], {
+      encoding: 'utf8', timeout: 15000, windowsHide: true,
+    });
+    for (const line of String(probe.stdout || '').split(/\r?\n/)) {
+      const match = /InstallLocation\s+REG_\w+\s+(.+)$/i.exec(line);
+      if (!match) continue;
+      const location = match[1].trim().replace(/\\+$/, '');
+      if (!location) continue;
+      candidates.push(path.join(location, 'mingw64', 'bin', 'octave.exe'));
+      candidates.push(path.join(location, 'bin', 'octave.exe'));
+      candidates.push(path.join(location, 'octave.exe'));
+    }
+  }
+  return candidates;
+}
+
 function octaveCommand() {
-  const override = process.env.HCANVAS_OCTAVE_BIN;
-  return override && override.trim() ? override.trim() : 'octave';
+  const override = (process.env.OCTAVE_BIN || process.env.HCANVAS_OCTAVE_BIN || '').trim();
+  if (override) return override;
+  for (const candidate of registryOctaveCandidates()) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return 'octave';
 }
 
 function runRequest(params) {
@@ -36,7 +60,7 @@ function runRequest(params) {
   try {
     const probe = spawnSync(command, ['--version'], { encoding: 'utf8', timeout: 15000, windowsHide: true });
     if (probe.error || (probe.status !== 0 && !probe.stdout && !probe.stderr)) {
-      return { ok: false, stage: 'toolchain', error: 'GNU Octave was not found on PATH. Install Octave and retry (or set HCANVAS_OCTAVE_BIN).' };
+      return { ok: false, stage: 'toolchain', error: 'GNU Octave was not found. Install GNU Octave (Windows registry discovery covers the standard installer), put octave on PATH, or set OCTAVE_BIN in the sidecar env.' };
     }
     const result = spawnSync(command, ['--no-gui', '--quiet', script], { cwd: dir, encoding: 'utf8', timeout: 120000, windowsHide: true });
     const artifacts = [];
