@@ -39,6 +39,21 @@ describe('Hcanvas plugin studio', () => {
     expect(parsed.blocks[0]!.actions?.[0]?.label).toBe('Reset');
   });
 
+  it('validates sandbox runtime and script actions', () => {
+    const sandbox = {
+      ...manifest,
+      runtime: 'sandbox',
+      script: "self.hcanvas.register({ actions: { bump() { return [{ kind: 'set-data', data: { count: 1 } }]; } } });",
+      blocks: [{ ...manifest.blocks[0], actions: [{ id: 'bump', label: 'Bump', kind: 'script' }] }],
+    };
+    const parsed = validatePluginManifest(sandbox);
+    expect(parsed.runtime).toBe('sandbox');
+    expect(parsed.script).toContain('set-data');
+    expect(parsed.blocks[0]!.actions?.[0]?.kind).toBe('script');
+    expect(() => validatePluginManifest({ ...sandbox, runtime: undefined })).toThrow(/runtime/);
+    expect(() => validatePluginManifest({ ...sandbox, script: undefined })).toThrow(/script/);
+  });
+
   it('rejects unsupported or incomplete actions', () => {
     expect(() => validatePluginManifest({ ...manifest, blocks: [{ ...manifest.blocks[0], actions: [{ id: 'x', label: 'X', kind: 'run-js' }] }] })).toThrow(/kind/);
     expect(() => validatePluginManifest({ ...manifest, blocks: [{ ...manifest.blocks[0], actions: [{ id: 'x', label: 'X', kind: 'insert-block' }] }] })).toThrow(/blockType/);

@@ -1,6 +1,7 @@
 import type { HcBlock, HcPage } from '../types.js';
 import { blockPlugin, clearExternalBlockPlugins, listBlockPlugins, listComponentPlugins, registerBlockPlugin, type HcBlockPlugin, type HcPluginField } from '../blockPlugins.js';
 import { renderDeclarativeTemplate, type HcPluginManifest, type HcPluginPagePreset } from '../pluginManifest.js';
+import { clearPluginSandboxes } from './pluginSandbox.js';
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -179,6 +180,7 @@ export function registerDeclarativePlugins(entries: Array<{ manifest: HcPluginMa
         defaultData: () => ({ ...(block.defaultData || {}) }),
         fields: block.fields as HcPluginField[] | undefined,
         actions: block.actions,
+        script: manifest.script,
         renderHtml: current => renderDeclarativeTemplate(block.render, current.data || {}),
         pluginId: manifest.id,
         pluginName: manifest.name,
@@ -192,6 +194,7 @@ export function registerDeclarativePlugins(entries: Array<{ manifest: HcPluginMa
 }
 
 export async function loadExternalPlugins(fetcher: (path: string) => Promise<unknown>): Promise<ExternalPluginLoad> {
+  clearPluginSandboxes();
   clearExternalBlockPlugins();
   try {
     const payload = await fetcher('/api/plugins') as { plugins?: Array<{ manifest: HcPluginManifest; source?: 'project' | 'user'; path?: string; enabled?: boolean }>; errors?: string[] };

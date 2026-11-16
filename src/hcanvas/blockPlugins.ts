@@ -21,6 +21,7 @@ export interface HcBlockPlugin {
   renderHtml(block: HcBlock): string;
   fields?: HcPluginField[];
   actions?: HcPluginAction[];
+  script?: string;
   pluginId?: string;
   pluginName?: string;
   version?: string;

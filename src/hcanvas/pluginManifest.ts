@@ -40,7 +40,7 @@ export interface HcPluginPagePreset {
   blocks?: HcPluginPagePresetBlock[];
 }
 
-export type HcPluginActionKind = 'insert-block' | 'set-data' | 'apply-style' | 'add-page-preset';
+export type HcPluginActionKind = 'insert-block' | 'set-data' | 'apply-style' | 'add-page-preset' | 'script';
 
 export interface HcPluginAction {
   id: string;
@@ -56,6 +56,7 @@ export interface HcPluginAction {
   w?: number;
   h?: number;
   presetId?: string;
+  handler?: string;
 }
 
 export interface HcDeclarativeBlock {
@@ -75,6 +76,8 @@ export interface HcPluginManifest {
   name: string;
   version: string;
   apiVersion: string;
+  runtime?: 'sandbox';
+  script?: string;
   blocks: HcDeclarativeBlock[];
   pagePresets: HcPluginPagePreset[];
 }
@@ -170,7 +173,7 @@ function validateAction(input: unknown, index: number): HcPluginAction {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('actions[' + index + '] must be an object');
   const raw = input as Record<string, unknown>;
   const kind = raw.kind;
-  if (kind !== 'insert-block' && kind !== 'set-data' && kind !== 'apply-style' && kind !== 'add-page-preset') fail('actions[' + index + '].kind is not supported');
+  if (kind !== 'insert-block' && kind !== 'set-data' && kind !== 'apply-style' && kind !== 'add-page-preset' && kind !== 'script') fail('actions[' + index + '].kind is not supported');
   const action: HcPluginAction = {
     id: str(raw.id, 'actions[' + index + '].id', 64),
     label: str(raw.label, 'actions[' + index + '].label', 120),
@@ -203,6 +206,7 @@ function validateAction(input: unknown, index: number): HcPluginAction {
   if (kind === 'set-data' && !action.data) fail('actions[' + index + '].data is required for set-data');
   if (kind === 'apply-style' && !action.style) fail('actions[' + index + '].style is required for apply-style');
   if (kind === 'add-page-preset' && !action.presetId) fail('actions[' + index + '].presetId is required for add-page-preset');
+  if (kind === 'script' && raw.handler !== undefined) action.handler = str(raw.handler, 'actions[' + index + '].handler', 64);
   return action;
 }
 
@@ -211,6 +215,10 @@ export function validatePluginManifest(input: unknown): HcPluginManifest {
   const raw = input as Record<string, unknown>;
   if (raw.schema !== undefined && raw.schema !== HC_PLUGIN_SCHEMA) fail('unsupported schema: ' + String(raw.schema));
   if (raw.apiVersion !== undefined && raw.apiVersion !== HC_PLUGIN_SCHEMA) fail('unsupported apiVersion: ' + String(raw.apiVersion));
+  const script = raw.script === undefined ? undefined : str(raw.script, 'script', 200000);
+  if (script && raw.runtime !== 'sandbox') fail('script requires runtime: "sandbox"');
+  if (raw.runtime !== undefined && raw.runtime !== 'sandbox') fail('runtime must be "sandbox"');
+  if (raw.runtime === 'sandbox' && !script) fail('runtime sandbox requires script');
   const id = str(raw.id, 'id', 64);
   if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) fail('id must be lowercase letters, numbers and dashes');
   if (raw.blocks !== undefined && !Array.isArray(raw.blocks)) fail('blocks must be an array');
@@ -247,6 +255,7 @@ export function validatePluginManifest(input: unknown): HcPluginManifest {
     name: raw.name === undefined ? id : str(raw.name, 'name', 120),
     version: raw.version === undefined ? '0.0.0' : str(raw.version, 'version', 40),
     apiVersion: HC_PLUGIN_SCHEMA,
+    ...(script ? { runtime: 'sandbox' as const, script } : {}),
     blocks,
     pagePresets: Array.isArray(raw.pagePresets) ? raw.pagePresets.slice(0, 30).map(validatePagePreset) : [],
   };

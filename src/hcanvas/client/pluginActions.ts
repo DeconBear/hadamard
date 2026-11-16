@@ -1,5 +1,7 @@
 import type { HcBlock, HcOp, HcPage } from '../types.js';
 import type { HcPluginAction } from '../pluginManifest.js';
+import { blockPlugin } from '../blockPlugins.js';
+import { runSandboxAction } from './pluginSandbox.js';
 import { listPluginPagePresets, materializePluginPagePreset } from './pluginBlocks.js';
 
 export interface PluginActionContext {
@@ -12,6 +14,14 @@ export interface PluginActionContext {
 
 export async function runPluginAction(block: HcBlock, action: HcPluginAction, context: PluginActionContext): Promise<void> {
   try {
+    if (action.kind === 'script') {
+      const plugin = blockPlugin(block.type);
+      if (!plugin?.script) { context.toast('This plugin has no sandbox script.', 'error'); return; }
+      const effects = await runSandboxAction(plugin, action, block, context.page);
+      if (!effects.length) { context.toast('Sandbox action returned no effects.', 'info'); return; }
+      for (const effect of effects) await runPluginAction(block, effect, context);
+      return;
+    }
     if (action.kind === 'set-data') {
       await context.applyOps([{ op: 'update_block', pageId: context.page.id, blockId: block.id, patch: { data: { ...(block.data || {}), ...(action.data || {}) } } }], { refreshArtboard: true });
       context.toast('Updated ' + (block.name || 'plugin data'), 'success');

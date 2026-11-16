@@ -576,6 +576,26 @@ A plugin block can expose editable buttons that run safe, declarative canvas ope
 
 Supported action kinds are `set-data` (merge block data), `apply-style` (merge block style), `insert-block` (add a block on the current page) and `add-page-preset` (add a page from the plugin's page templates). Actions still use the normal canvas operation path, so they are undoable and revision-checked. They do not execute arbitrary JavaScript, iframes, event handlers or `javascript:` URLs.
 
+### Sandboxed JavaScript actions
+
+For logic beyond declarative actions, a plugin can opt into a Worker sandbox:
+
+```json
+{
+  "runtime": "sandbox",
+  "script": "self.hcanvas.register({ actions: { bump(ctx) { const n = Number(ctx.block.data.count || 0) + 1; return [{ kind: 'set-data', data: { count: n } }]; } } });",
+  "blocks": [{
+    "type": "counter-card",
+    "label": "Counter",
+    "render": "<div>{{count}}</div>",
+    "defaultData": { "count": 0 },
+    "actions": [{ "id": "bump", "label": "Bump", "kind": "script" }]
+  }]
+}
+```
+
+The script runs in a Web Worker, not in the canvas DOM. It receives `ctx.action`, `ctx.block` and `ctx.page`, and returns an array of allowed effects: `set-data`, `apply-style`, `insert-block` or `add-page-preset`. The host validates every effect, applies it through normal canvas operations and enforces a five-second timeout. A Plugins Studio **Sandbox template** button adds a starter script and a script action. The Worker is a crash and DOM-isolation boundary, not a hard security boundary: only install sandbox plugins you trust.
+
 ### Components and plugin blocks
 
 A **plugin block** is a declarative HTML template with manifest-defined fields; it can render custom cards and be edited through its fields, but it does not execute JavaScript. **Components** are plugins marked `component: true`; they appear in the Inspector’s Components section instead of the normal block picker. The built-in **Slider** component is interactive on canvas: drag the track or click a position to change its value; the value is stored in `block.data.value` and is reflected in the Inspector and exports. Other plugin blocks and components are declarative/static unless they add their own interaction in the future.

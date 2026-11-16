@@ -492,6 +492,26 @@ hcanvas 可以加载声明式 block 插件，不需要执行 JavaScript bundle�
 
 支持的动作类型：`set-data`（合并 block data）、`apply-style`（合并 block style）、`insert-block`（在当前页面插入 block）和 `add-page-preset`（使用插件页面模板添加页面）。动作仍然走正常画布操作路径，因此可撤销、受 revision 校验；不会执行任意 JavaScript、iframe、事件属性或 `javascript:` URL。
 
+### 沙箱 JavaScript 动作
+
+需要更复杂逻辑时，插件可以显式启用 Worker 沙箱：
+
+```json
+{
+  "runtime": "sandbox",
+  "script": "self.hcanvas.register({ actions: { bump(ctx) { const n = Number(ctx.block.data.count || 0) + 1; return [{ kind: 'set-data', data: { count: n } }]; } } });",
+  "blocks": [{
+    "type": "counter-card",
+    "label": "Counter",
+    "render": "<div>{{count}}</div>",
+    "defaultData": { "count": 0 },
+    "actions": [{ "id": "bump", "label": "Bump", "kind": "script" }]
+  }]
+}
+```
+
+脚本运行在 Web Worker 中，不在画布 DOM 里。它接收 `ctx.action`、`ctx.block` 和 `ctx.page`，返回允许的效果数组：`set-data`、`apply-style`、`insert-block` 或 `add-page-preset`。宿主会校验每个效果、通过正常画布操作执行，并强制 5 秒超时。Plugin Studio 的 **Sandbox template** 按钮可以插入起始脚本和脚本动作。Worker 是崩溃隔离和 DOM 隔离边界，不是强安全边界；只安装你信任的沙箱插件。
+
 ### 组件与插件块
 
 **插件块**是带 manifest 字段的声明式 HTML 模板，可渲染自定义卡片并通过字段编辑，但不会执行 JavaScript。**组件**是标记了 `component: true` 的插件，会出现在 Inspector 的 Components 区域而不是普通块选择器。内置的 **Slider** 组件在画布上可交互：拖动滑轨或点击位置即可改变数值；数值保存在 `block.data.value` 中，并同步到 Inspector 和导出结果。其他插件块/组件目前仍是声明式静态内容，暂无自定义交互。

@@ -63,7 +63,7 @@ export function openPluginStudio(ctx: PluginStudioContext, initialPluginId?: str
 
   const html = '<div class="modal plugin-studio-modal"><div class="modal-head"><div><strong>Plugin Studio</strong><small>Edit a project manifest, validate it, then save and reload without leaving the canvas.</small></div><button class="icon-btn" data-close>×</button></div>' +
     '<div class="modal-body plugin-studio-body"><aside class="plugin-studio-list"><div class="plugin-studio-list-head"><strong>Installed</strong><button type="button" class="btn tiny" id="pluginStudioNew">New</button></div><div id="pluginStudioItems">' + (plugins.map(pluginRow).join('') || '<p class="empty-state">No plugins installed.</p>') + '</div></aside>' +
-    '<section class="plugin-studio-editor"><div class="plugin-studio-toolbar"><span id="pluginStudioMode">New plugin</span><span id="pluginStudioPath" class="plugin-studio-path"></span><span class="plugin-studio-spacer"></span><button type="button" class="btn tiny" id="pluginStudioValidate">Validate</button><button type="button" class="btn tiny" id="pluginStudioPreview">Preview</button><button type="button" class="btn tiny" id="pluginStudioExport">Export</button><button type="button" class="btn tiny" id="pluginStudioDuplicate">Duplicate</button><button type="button" class="btn tiny danger" id="pluginStudioDelete">Delete</button></div>' +
+    '<section class="plugin-studio-editor"><div class="plugin-studio-toolbar"><span id="pluginStudioMode">New plugin</span><span id="pluginStudioPath" class="plugin-studio-path"></span><span class="plugin-studio-spacer"></span><button type="button" class="btn tiny" id="pluginStudioSandbox">Sandbox template</button><button type="button" class="btn tiny" id="pluginStudioValidate">Validate</button><button type="button" class="btn tiny" id="pluginStudioPreview">Preview</button><button type="button" class="btn tiny" id="pluginStudioExport">Export</button><button type="button" class="btn tiny" id="pluginStudioDuplicate">Duplicate</button><button type="button" class="btn tiny danger" id="pluginStudioDelete">Delete</button></div>' +
     '<div class="plugin-studio-code-row"><textarea id="pluginStudioText" spellcheck="false" aria-label="Plugin manifest JSON"></textarea><div class="plugin-studio-side"><div class="plugin-studio-side-head">Preview</div><div id="pluginStudioPreviewBody" class="plugin-studio-preview"><p class="empty-state">Click Preview to render the first block.</p></div><div class="plugin-studio-diagnostics" id="pluginStudioStatus"></div></div></div>' +
     '<div class="plugin-studio-foot"><span class="plugin-studio-hint">Project plugins are editable. User plugins are read-only; duplicate one to customize it.</span><span class="plugin-studio-spacer"></span><button type="button" class="btn tiny" data-plugin-gallery>Gallery</button><button type="button" class="btn primary tiny" id="pluginStudioSave">Save &amp; Reload</button></div></section></div></div>';
   ctx.openModal(html);
@@ -180,6 +180,19 @@ export function openPluginStudio(ctx: PluginStudioContext, initialPluginId?: str
   root.querySelector('#pluginStudioNew')?.addEventListener('click', () => {
     setEditor(pretty({ ...NEW_MANIFEST, id: 'my-plugin-' + Date.now().toString(36), name: 'My plugin' }), null, null);
     setStatus('New manifest. Change id, type and render, then Save.', 'muted');
+  });
+  root.querySelector('#pluginStudioSandbox')?.addEventListener('click', () => {
+    const manifest = parseEditor();
+    if (!manifest) return;
+    manifest.runtime = 'sandbox';
+    manifest.script = manifest.script || 'self.hcanvas.register({\n  actions: {\n    run(ctx) {\n      return [{ kind: \'set-data\', data: { ...ctx.block.data, note: \'from sandbox\' } }];\n    },\n  },\n});';
+    const block = manifest.blocks?.[0];
+    if (block) {
+      block.actions = block.actions || [];
+      if (!block.actions.some(action => action.id === 'sandbox-run')) block.actions.push({ id: 'sandbox-run', label: 'Run sandbox', kind: 'script' });
+    }
+    text.value = pretty(manifest);
+    setStatus('Sandbox runtime enabled. Edit manifest.script and the script action, then Validate.', 'muted');
   });
   root.querySelector('#pluginStudioValidate')?.addEventListener('click', () => { void validate(); });
   root.querySelector('#pluginStudioPreview')?.addEventListener('click', () => { void previewBlock(); });
