@@ -19,7 +19,14 @@ import { openFormulaEditing } from './formulaEditing.js';
 import { closeHtmlFormulaEditor } from './htmlFormulaEditor.js';
 import { renderLatexInElement } from './formulaText.js';
 import { bindSidebarSections } from './sidebarCollapse.js';
+import { initSidebarLayout } from './sidebarLayout.js';
 import { installPluginSidebar } from './pluginSidebar.js';
+import { createProjectHub, type ProjectHubDesktopBridge } from './projectHub.js';
+import { createModalHost } from './modalHost.js';
+import { createExportActions } from './exportActions.js';
+import { createPresentSession } from './presentSession.js';
+import { installCoreCommands } from './coreCommands.js';
+import { loadExtensionCatalog } from './extensionCatalog.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
 import { insertAssetIntoPage } from './assetInsert.js';
@@ -367,6 +374,8 @@ async function initialize(): Promise<void> {
   installPluginIframeBridge(() => activePage());
   const pluginLoad = await loadExternalPlugins(api);
   if (pluginLoad.errors.length) console.warn('hcanvas plugins:', pluginLoad.errors);
+  const extensionCatalog = await loadExtensionCatalog(api);
+  if (extensionCatalog.errors.length) console.warn('hcanvas extensions:', extensionCatalog.errors);
   try {
     const context = await api<Record<string, unknown> & { active?: { docId?: string; pageId?: string }; docs?: DocSummary[]; presence?: PresenceEntry[] }>('/api/state');
     state.context = context;
@@ -727,79 +736,6 @@ function beginMarquee(event: PointerEvent): void {
   viewport.addEventListener('pointerup', up);
 }
 
-interface SidebarPrefs {
-  leftWidth: number;
-  rightWidth: number;
-  leftCollapsed: boolean;
-  rightCollapsed: boolean;
-}
-function initSidebarLayout(): void {
-  const app = el('app');
-  const defaults: SidebarPrefs = { leftWidth: 244, rightWidth: 326, leftCollapsed: false, rightCollapsed: false };
-  let prefs = defaults;
-  try {
-    const saved = JSON.parse(localStorage.getItem('hcanvas.sidebar.v1') || 'null') as Partial<SidebarPrefs> | null;
-    if (saved) prefs = { ...defaults, ...saved };
-  } catch { /* ignore */ }
-  const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, Math.round(value)));
-  const apply = (): void => {
-    prefs.leftWidth = clamp(prefs.leftWidth, 180, 420);
-    prefs.rightWidth = clamp(prefs.rightWidth, 260, 520);
-    app.style.gridTemplateColumns = (prefs.leftCollapsed ? '0px' : prefs.leftWidth + 'px') + ' minmax(0, 1fr) ' + (prefs.rightCollapsed ? '0px' : prefs.rightWidth + 'px');
-    app.classList.toggle('left-collapsed', prefs.leftCollapsed);
-    app.classList.toggle('right-collapsed', prefs.rightCollapsed);
-    const leftToggle = qs<HTMLButtonElement>('#toggleLeftSidebarBtn');
-    const rightToggle = qs<HTMLButtonElement>('#toggleRightSidebarBtn');
-    if (leftToggle) { leftToggle.classList.toggle('active', prefs.leftCollapsed); leftToggle.title = prefs.leftCollapsed ? 'Show left sidebar' : 'Collapse left sidebar'; }
-    if (rightToggle) { rightToggle.classList.toggle('active', prefs.rightCollapsed); rightToggle.title = prefs.rightCollapsed ? 'Show right sidebar' : 'Collapse right sidebar'; }
-  };
-  const save = (): void => { try { localStorage.setItem('hcanvas.sidebar.v1', JSON.stringify(prefs)); } catch { /* ignore */ } };
-  const bindResize = (resizerId: string, side: 'left' | 'right'): void => {
-    const resizer = qs<HTMLElement>('#' + resizerId);
-    if (!resizer) return;
-    resizer.addEventListener('pointerdown', event => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      const startX = event.clientX;
-      const startWidth = side === 'left' ? prefs.leftWidth : prefs.rightWidth;
-      resizer.setPointerCapture(event.pointerId);
-      document.body.classList.add('sidebar-resizing');
-      const move = (moveEvent: PointerEvent): void => {
-        const delta = moveEvent.clientX - startX;
-        if (side === 'left') prefs.leftWidth = clamp(startWidth + delta, 180, 420);
-        else prefs.rightWidth = clamp(startWidth - delta, 260, 520);
-        apply();
-      };
-      const up = (): void => {
-        resizer.removeEventListener('pointermove', move);
-        resizer.removeEventListener('pointerup', up);
-        document.body.classList.remove('sidebar-resizing');
-        save();
-      };
-      resizer.addEventListener('pointermove', move);
-      resizer.addEventListener('pointerup', up);
-    });
-    resizer.addEventListener('dblclick', () => {
-      if (side === 'left') prefs.leftCollapsed = !prefs.leftCollapsed;
-      else prefs.rightCollapsed = !prefs.rightCollapsed;
-      apply();
-      save();
-    });
-  };
-  qs<HTMLButtonElement>('#toggleLeftSidebarBtn')?.addEventListener('click', () => { prefs.leftCollapsed = !prefs.leftCollapsed; apply(); save(); });
-  qs<HTMLButtonElement>('#toggleRightSidebarBtn')?.addEventListener('click', () => { prefs.rightCollapsed = !prefs.rightCollapsed; apply(); save(); });
-  window.addEventListener('keydown', event => {
-    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'b') return;
-    if ((event.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable="true"], .cm-content')) return;
-    event.preventDefault();
-    prefs.leftCollapsed = !prefs.leftCollapsed;
-    apply();
-    save();
-  });
-  bindResize('leftbarResizer', 'left');
-  bindResize('rightbarResizer', 'right');
-  apply();
-}
 function bindStaticActions(): void {
   initSidebarLayout();
   shapePicker = createShapePicker({ onChoose: shape => { state.pendingShape = shape; requestInsert('shape'); } });
@@ -860,6 +796,14 @@ function bindStaticActions(): void {
     menuActions: ids => ids.length === 1 ? canvasAgentIdMenuActions(ids[0], (text, message) => { void copyText(text, message); }) : [],
   });
   installPluginSidebar({ request: api, openModal: html => openModal(html), closeModal: () => closeModal(), confirm: message => confirmDialog(message), toast, reload: () => loadExternalPlugins(api), onChanged: () => renderInspector() });
+  installCoreCommands({
+    openAddPageModal: () => openAddPageModal(),
+    openProjectHub: () => openProjectHub(),
+    openPresent: () => openPresent(),
+    openWorkspaceModal: () => openWorkspaceModal(),
+    exportCurrent: (format, options) => exportCurrent(format, options),
+    reloadPlugins: async () => { await loadExternalPlugins(api); renderInspector(); },
+  });
   fileBrowser = installFileBrowser({
     mount: el('filesPanel'), tabs: el('workspaceTabs'), viewport: el('viewport'),
     request: api, toast, chooseDirectory: () => window.hcanvasDesktop?.chooseDirectory?.() ?? null,
@@ -3077,128 +3021,6 @@ function openImageModal(block?: HcBlock): void {
   });
 }
 
-function closeProjectHub(): void {
-  el('projectHub').classList.add('hidden');
-}
-
-async function openProjectHub(): Promise<void> {
-  el('projectHub').classList.remove('hidden');
-  await renderProjectHub();
-}
-
-async function revealProjectFolder(projectPath?: string, kind: 'project' | 'workspace' | 'documents' = 'project'): Promise<void> {
-  try {
-    const result = await api<{ ok: boolean; path: string }>('/api/projects/reveal', { method: 'POST', body: JSON.stringify({ projectPath: projectPath || '', kind }) });
-    toast('Opened folder: ' + result.path, 'success');
-  } catch (error) {
-    toast(error instanceof Error ? error.message : String(error), 'error');
-  }
-}
-
-async function changeAppLanguage(language: 'en' | 'zh'): Promise<void> {
-  try {
-    await api('/api/settings/language', { method: 'POST', body: JSON.stringify({ language }) });
-    setLanguage(language);
-    renderAll();
-    await renderProjectHub();
-    toast(language === 'zh' ? '语言已切换为中文' : 'Language set to English', 'success');
-  } catch (error) {
-    toast(error instanceof Error ? error.message : String(error), 'error');
-  }
-}
-
-async function changeHubDataRoot(): Promise<void> {
-  const bridge = window.hcanvasDesktop;
-  if (!bridge?.chooseDataRoot) { toast('Data location can be changed in the desktop app.', 'info'); return; }
-  try {
-    const result = await bridge.chooseDataRoot();
-    if (!result) return;
-    await renderProjectHub();
-    const copied = result.migrated ? 'Existing data was copied to the new location. ' : result.existingData ? 'Existing Hcanvas data was found there. ' : '';
-    const restart = result.restartRequired ? 'Restart Hadamard Canvas to use the new location for this window.' : '';
-    const html = '<div class="modal small"><div class="modal-head"><div><strong>Data location changed</strong><small>Stored in the app profile, outside the install directory.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>New data location</span><input readonly value="' + esc(result.dataRoot) + '"></div><p class="hint-card">' + esc(copied + restart) + '</p><p class="history-restore-note">The previous location is left untouched as a safety copy.</p></div><div class="modal-foot"><button class="btn" data-close>Later</button><button id="restartForDataRootBtn" class="btn primary">Restart now</button></div></div>';
-    openModal(html);
-    qs<HTMLButtonElement>('#restartForDataRootBtn')?.addEventListener('click', () => { void bridge.restartApp(); });
-    toast('Data location updated.', 'success');
-  } catch (error) {
-    toast(error instanceof Error ? error.message : String(error), 'error');
-  }
-}
-
-async function renderProjectHub(): Promise<void> {
-  const grid = el('hubProjectGrid');
-  const languageSelect = qs<HTMLSelectElement>('#hubLanguageSelect');
-  if (languageSelect) languageSelect.value = getLanguage();
-  const dataRootRow = document.querySelector<HTMLElement>('.hub-data-root');
-  const dataRootCode = qs<HTMLElement>('#hubDataRoot');
-  if (window.hcanvasDesktop?.getDataRoot) {
-    try {
-      const info = await window.hcanvasDesktop.getDataRoot();
-      if (dataRootCode) dataRootCode.textContent = info.dataRoot;
-      if (dataRootRow) { dataRootRow.classList.remove('hidden'); dataRootRow.title = 'Default workspace and project registry. Settings: ' + info.settingsPath; }
-    } catch { dataRootRow?.classList.add('hidden'); }
-  } else dataRootRow?.classList.add('hidden');
-  const current = await api<{ current: { workspace: string; project?: string | null }; projects: Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }> }>('/api/projects').catch(() => null);
-  if (!current) { grid.innerHTML = '<p class="empty-state">Could not read the project registry.</p>'; return; }
-  let projects = current.projects;
-  if (window.hcanvasDesktop) {
-    try {
-      const nativeProjects = await window.hcanvasDesktop.listProjects();
-      if (nativeProjects.length) projects = nativeProjects.map(project => ({ ...project, workspaceExists: project.workspaceExists, runningUrl: project.runningUrl }));
-    } catch { /* use server registry */ }
-  }
-  el('hubCurrentWorkspace').textContent = translatePhrase('Current workspace:') + ' ' + current.current.workspace;
-  if (!projects.length) {
-    grid.innerHTML = '<div class="hub-empty"><h2>No projects yet</h2><p>Create a project from a folder. hcanvas will initialize <code>.hcanvas/</code> inside it and keep all data there.</p><button id="hubEmptyNewBtn" class="btn primary">Choose a project folder…</button></div>';
-    qs<HTMLButtonElement>('#hubEmptyNewBtn')?.addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject(); else toast('Browser mode: run hcanvas app --project <folder>.', 'info'); });
-    return;
-  }
-  grid.innerHTML = projects.map(project => {
-    const active = current.current.project === project.projectPath;
-    const running = Boolean(project.runningUrl);
-    const action = active ? 'Return to this canvas →' : window.hcanvasDesktop ? 'Open in new window ↗' : running ? 'Open in new tab ↗' : 'Not running';
-    return '<article class="hub-card' + (active ? ' current' : '') + '" role="button" tabindex="0" data-hub-project="' + esc(project.projectPath) + '">' +
-      '<div class="hub-card-top"><strong>' + esc(project.name) + '</strong><span class="hub-badge ' + (active ? 'current' : running ? 'running' : 'idle') + '">' + (active ? 'current' : running ? 'running' : 'closed') + '</span></div>' +
-      '<small class="hub-card-path">' + esc(project.projectPath) + '</small>' +
-      '<small class="hub-card-workspace">' + esc(project.workspacePath) + '</small>' +
-      '<div class="hub-card-actions"><span class="hub-card-action">' + action + '</span><button type="button" class="hub-folder-btn" data-hub-folder="' + esc(project.projectPath) + '" title="Open project folder">📁 Open folder</button></div></article>';
-  }).join('');
-  grid.querySelectorAll<HTMLElement>('[data-hub-project]').forEach(card => {
-    const openProject = (): void => {
-      const projectPath = card.dataset.hubProject!;
-      if (current.current.project === projectPath) { closeProjectHub(); return; }
-      if (window.hcanvasDesktop) { void window.hcanvasDesktop.openProject(projectPath); return; }
-      const record = projects.find(project => project.projectPath === projectPath);
-      if (record?.runningUrl) window.open(record.runningUrl, '_blank', 'noopener');
-      else toast('Project is not running. Start it with: hcanvas app --project ' + projectPath, 'info');
-    };
-    card.addEventListener('click', openProject);
-    card.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openProject(); } });
-  });
-  grid.querySelectorAll<HTMLButtonElement>('[data-hub-folder]').forEach(button => button.addEventListener('click', event => {
-    event.stopPropagation();
-    void revealProjectFolder(button.dataset.hubFolder!);
-  }));
-}
-
-async function openWorkspaceModal(): Promise<void> {
-  try {
-    const info = await api<{ workspace: string; project?: string | null; guidePath: string; guide: string }>('/api/workspace');
-    const canOpen = Boolean(window.hcanvasDesktop);
-    const html = '<div class="modal"><div class="modal-head"><div><strong>Workspace</strong><small>All hcanvas content lives in this directory.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body">' +
-      '<div class="field"><span>Workspace</span><input readonly value="' + esc(info.workspace) + '"></div>' +
-      (info.project ? '<div class="field"><span>Project</span><input readonly value="' + esc(info.project) + '"></div>' : '') +
-      '<div class="field"><span>CLI guide</span><input readonly value="' + esc(info.guidePath) + '"></div>' +
-      '<div class="hint-card">Start another app on a project folder:<br><br><code>hcanvas app --project /path/to/project</code><br><br>The project gets a <code>.hcanvas/</code> directory with docs, state, masters, exports and CLI.md.</div>' +
-      '<div class="workspace-guide">' + esc(info.guide) + '</div>' +
-      '</div><div class="modal-foot"><button id="revealWorkspaceFolderBtn" class="btn">Open project folder</button>' + (canOpen ? '<button id="workspaceOpenProjectBtn" class="btn">Open Project…</button>' : '') + '<button id="copyWorkspaceGuideBtn" class="btn">Copy CLI guide</button><button class="btn" data-close>Close</button></div></div>';
-    openModal(html);
-    qs<HTMLButtonElement>('#copyWorkspaceGuideBtn')?.addEventListener('click', () => { void copyText(info.guide); });
-    qs<HTMLButtonElement>('#revealWorkspaceFolderBtn')?.addEventListener('click', () => { void revealProjectFolder(info.project || undefined); });
-    qs<HTMLButtonElement>('#workspaceOpenProjectBtn')?.addEventListener('click', () => { if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject(); });
-  } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
-}
-
 function openSaveMasterModal(page: HcPage): void {
   const html = '<div class="modal small"><div class="modal-head"><div><strong>Save page as master</strong><small>Reuse this layout across documents in this workspace.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>Master name</span><input id="masterNameInput" value="' + esc(page.name) + '" placeholder="e.g. Title slide"></div></div><div class="modal-foot"><button class="btn" data-close>Cancel</button><button id="saveMasterBtn" class="btn primary">Save master</button></div></div>';
   openModal(html);
@@ -3380,120 +3202,60 @@ function openCodeModal(options: SourceModalOptions): void {
   });
 }
 
-function openModal(html: string): void {
-  closeModal();
-  const root = el('modalRoot');
-  const backdrop = document.createElement('div');
-  backdrop.className = 'modal-backdrop';
-  backdrop.innerHTML = html;
-  backdrop.addEventListener('click', event => { if (event.target === backdrop) closeModal(); });
-  root.appendChild(backdrop);
-  document.body.classList.add('modal-open');
-  backdrop.querySelectorAll<HTMLElement>('[data-close]').forEach(button => button.addEventListener('click', () => closeModal()));
-}
-
-function closeModal(): void {
-  if (state.sourceModalOpen) {
-    const custom = (window as unknown as { __hcCloseModal?: () => void }).__hcCloseModal;
-    if (custom) { custom(); return; }
-  }
-  el('modalRoot').textContent = '';
-  document.body.classList.remove('modal-open');
-}
-
-function confirmDialog(message: string): Promise<boolean> {
-  return new Promise(resolve => {
-    const html = '<div class="modal small"><div class="modal-head"><div><strong>Confirm</strong><small>' + esc(translatePhrase(message)) + '</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-foot"><button class="btn" id="confirmCancel">Cancel</button><button class="btn primary" id="confirmOk">Confirm</button></div></div>';
-    openModal(html);
-    let settled = false;
-    const finish = (value: boolean): void => { if (settled) return; settled = true; closeModal(); resolve(value); };
-    qs<HTMLButtonElement>('#confirmCancel')?.addEventListener('click', () => finish(false));
-    qs<HTMLButtonElement>('#confirmOk')?.addEventListener('click', () => finish(true));
-    document.querySelectorAll<HTMLElement>('[data-close]').forEach(button => button.addEventListener('click', () => finish(false)));
-  });
-}
-
-function toggleExportMenu(force?: boolean): void {
-  const menu = el('exportMenu');
-  const show = force === undefined ? menu.classList.contains('hidden') : force;
-  menu.classList.toggle('hidden', !show);
-  el('exportBtn').setAttribute('aria-expanded', String(show));
-}
-
-async function exportCurrent(format: string, options: { bleedMm?: number; cropMarks?: boolean } = {}): Promise<void> {
-  if (!state.doc) return;
-  const page = activePage();
-  if (format === 'scene') {
-    if (!page) { toast('Open a page first.', 'error'); return; }
-    if (page.mode === 'infinite') {
-      const scene = nativeBlocksToExcalidrawScene(page);
-      const blob = new Blob([JSON.stringify(scene, null, 2)], { type: 'application/vnd.excalidraw+json' });
-      const anchor = document.createElement('a');
-      anchor.href = URL.createObjectURL(blob);
-      anchor.download = (page.name || 'infinite').replace(/[^a-z0-9_-]+/gi, '-') + '.excalidraw';
-      document.body.appendChild(anchor); anchor.click(); anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(anchor.href), 2000);
-      return;
-    }
-    toast('Scene export is available for Canvas and Infinite pages.', 'error');
-    return;
-  }
-  try {
-    toast('Rendering ' + format.toUpperCase() + '…', 'info');
-    const result = await api<{ downloadUrl?: string; path?: string; format: string }>('/api/export', { method: 'POST', body: JSON.stringify({ docId: state.doc.id, format, pageId: format === 'pptx' || format === 'pptx-editable' ? undefined : page?.id, bleedMm: options.bleedMm || undefined, cropMarks: options.cropMarks || undefined }) });
-    if (result.downloadUrl) {
-      const anchor = document.createElement('a');
-      anchor.href = result.downloadUrl + (result.downloadUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(boot.token);
-      anchor.download = '';
-      anchor.style.display = 'none';
-      document.body.appendChild(anchor); anchor.click();
-      setTimeout(() => anchor.remove(), 5000);
-      toast('Export ready: ' + (result.path || format), 'success');
-    } else toast('Export failed', 'error');
-  } catch (error) { toast(error instanceof Error ? error.message : String(error), 'error'); }
-}
-
-function openPresent(): void {
-  if (!state.doc) return;
-  state.presenting = true;
-  state.presentIndex = Math.max(0, state.doc.pages.findIndex(page => page.id === state.activePageId));
-  presentInteractions?.reset();
-  renderPresent();
-}
-function closePresent(): void {
-  state.presenting = false;
-  presentInteractions?.reset();
-  const root = el('presentRoot');
-  root.classList.add('hidden');
-  root.textContent = '';
-  renderToolbarState();
-}
-function togglePresentNotes(): void {
-  const notes = el('presentNotes');
-  const page = state.doc?.pages[state.presentIndex];
-  notes.classList.toggle('hidden');
-  notes.textContent = page?.notes || 'No speaker notes for this page.';
-  fitPresentPage();
-}
-function nextPresent(delta: number): void {
-  if (!state.doc) return;
-  state.presentIndex = Math.max(0, Math.min(state.doc.pages.length - 1, state.presentIndex + delta));
-  renderPresent();
-}
-function renderPresent(): void {
-  renderPresentView({
-    root: el('presentRoot'), doc: state.doc, index: state.presentIndex,
-    normalizePage: page => page,
-    next: nextPresent, close: closePresent, toggleNotes: togglePresentNotes,
-  });
-}
-
-function fitPresentPage(): void {
-  fitPresentView(el('presentRoot'));
-}
 async function copyText(text: string, successMessage = 'Copied to clipboard'): Promise<void> {
   try { await navigator.clipboard.writeText(text); toast(translatePhrase(successMessage), 'success'); }
   catch { toast('Clipboard unavailable', 'error'); }
 }
+
+
+const modalHost = createModalHost({ isSourceModalOpen: () => state.sourceModalOpen });
+function openModal(html: string): void { modalHost.openModal(html); }
+function closeModal(): void { modalHost.closeModal(); }
+function confirmDialog(message: string): Promise<boolean> { return modalHost.confirmDialog(message); }
+
+const exportActions = createExportActions({
+  getDoc: () => state.doc,
+  getPage: () => activePage(),
+  request: api,
+  token: () => boot.token,
+  toast,
+});
+function toggleExportMenu(force?: boolean): void { exportActions.toggleExportMenu(force); }
+function exportCurrent(format: string, options?: { bleedMm?: number; cropMarks?: boolean }): Promise<void> { return exportActions.exportCurrent(format, options); }
+
+const presentSession = createPresentSession({
+  getDoc: () => state.doc,
+  getActivePageId: () => state.activePageId,
+  getIndex: () => state.presentIndex,
+  setIndex: index => { state.presentIndex = index; },
+  setPresenting: active => { state.presenting = active; },
+  resetInteractions: () => { presentInteractions?.reset(); },
+  renderToolbarState: () => renderToolbarState(),
+  root: () => el('presentRoot'),
+});
+function openPresent(): void { presentSession.openPresent(); }
+function closePresent(): void { presentSession.closePresent(); }
+function togglePresentNotes(): void { presentSession.togglePresentNotes(); }
+function nextPresent(delta: number): void { presentSession.nextPresent(delta); }
+function renderPresent(): void { presentSession.renderPresent(); }
+function fitPresentPage(): void { presentSession.fitPresentPage(); }
+
+const projectHub = createProjectHub({
+  request: api,
+  toast,
+  openModal: html => openModal(html),
+  closeModal: () => closeModal(),
+  copyText: (text, message) => copyText(text, message),
+  renderAll: () => renderAll(),
+  desktop: () => window.hcanvasDesktop as unknown as ProjectHubDesktopBridge | undefined,
+});
+
+function closeProjectHub(): void { projectHub.closeProjectHub(); }
+function openProjectHub(): Promise<void> { return projectHub.openProjectHub(); }
+function renderProjectHub(): Promise<void> { return projectHub.renderProjectHub(); }
+function revealProjectFolder(projectPath?: string, kind?: 'project' | 'workspace' | 'documents'): Promise<void> { return projectHub.revealProjectFolder(projectPath, kind); }
+function changeAppLanguage(language: 'en' | 'zh'): Promise<void> { return projectHub.changeAppLanguage(language); }
+function changeHubDataRoot(): Promise<void> { return projectHub.changeHubDataRoot(); }
+function openWorkspaceModal(): Promise<void> { return projectHub.openWorkspaceModal(); }
 
 void initialize();

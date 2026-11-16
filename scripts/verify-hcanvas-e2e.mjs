@@ -163,7 +163,7 @@ async function main() {
   await page.locator('[data-preset="canvas-16-9"]').click();
   await page.waitForTimeout(600);
   await page.locator('[data-block="shape"]').click();
-  assert('Shape library opens with all categories', await page.locator('.shape-popover').isVisible() && await page.locator('[data-shape-category]').count() === 6);
+  assert('Shape library opens with all categories', await page.locator('.shape-popover').isVisible() && await page.locator('[data-shape-category]').count() === 7);
   assert('Shape library uses proportional neutral previews', await page.locator('.shape-choice-preview svg[preserveAspectRatio="xMidYMid meet"]').count() === await page.locator('[data-shape-choice]').count());
   assert('Clicking the shape tool pins the library and focuses search', await page.locator('[data-shape-search]').evaluate(node => document.activeElement === node));
   await page.mouse.move(900, 700);
@@ -196,7 +196,7 @@ async function main() {
   assert('Shape tool reflects expanded library state', (await page.locator('[data-block="shape"]').getAttribute('aria-expanded')) === 'true');
   assert('Reopening the shape library resets the previous search', (await page.locator('[data-shape-search]').inputValue()) === '');
   await page.locator('[data-shape-search]').fill('heart');
-  assert('Category tabs stay tabbable while searching', await page.locator('[data-shape-category][tabindex="0"]').count() === 6);
+  assert('Category tabs stay tabbable while searching', await page.locator('[data-shape-category][tabindex="0"]').count() === 7);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(200);
   assert('Closing the shape library clears expanded state', (await page.locator('[data-block="shape"]').getAttribute('aria-expanded')) === 'false');

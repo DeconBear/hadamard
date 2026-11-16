@@ -1006,6 +1006,15 @@ body.html-page-mode #toolRail, body.html-page-mode #selectionToolbar, body.html-
 body.file-browser-mode #toolRail, body.file-browser-mode #selectionToolbar, body.file-browser-mode #zoomControls, body.file-browser-mode #stage { display:none !important; }
 body.file-browser-mode #viewport { background:#f4f2ec; }
 .file-surface { position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; background:#fff; }
+.extension-row { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); }
+.extension-copy { display:flex; flex-direction:column; gap:3px; min-width:0; flex:1; }
+.extension-copy small { color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
+.extension-diagnostics { margin:4px 0 0 14px; padding:0; color:#b42318; font-size:10px; }
+.extension-toggle { padding-top:2px; }
+body.workspace-view-mode #toolRail, body.workspace-view-mode #selectionToolbar, body.workspace-view-mode #zoomControls, body.workspace-view-mode #stage { display:none !important; }
+body.workspace-view-mode #viewport { background:#f4f2ec; }
+.workspace-view-surface { position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; background:#fff; overflow:hidden; }
+.workspace-view-surface iframe { width:100%; height:100%; border:0; background:#fff; display:block; }
 .file-surface-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
 .file-surface-title { display:flex; align-items:center; gap:9px; min-width:0; }
 .file-type { display:grid; place-items:center; width:26px; height:26px; border-radius:6px; background:var(--accent-soft); color:var(--accent); font:700 10px/1 Inter,sans-serif; }

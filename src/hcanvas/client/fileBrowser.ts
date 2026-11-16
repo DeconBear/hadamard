@@ -50,6 +50,13 @@ interface FileTab {
   editor?: EditorView;
 }
 
+export interface WorkspaceViewTab {
+  id: string;
+  title: string;
+  icon?: string;
+  mount(host: HTMLElement): void | { dispose?(): void };
+}
+
 export interface FileBrowserOptions {
   mount: HTMLElement;
   tabs: HTMLElement;
@@ -65,6 +72,8 @@ export interface FileBrowserOptions {
 
 export interface FileBrowserController {
   syncCanvasTab(docId: string, pageId: string, label: string): void;
+  openViewTab(tab: WorkspaceViewTab): void;
+  closeViewTab(id: string): void;
 }
 
 const KEYWORDS: Record<string, string[]> = {
@@ -146,6 +155,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   let roots: FileRoot[] = [];
   let tabs: FileTab[] = [];
   let canvasTabs: CanvasTab[] = [];
+  const viewTabs = new Map<string, WorkspaceViewTab>();
+  const viewDisposers = new Map<string, () => void>();
   const closedCanvasTabs = new Set<string>();
   let activeId = '';
   let canvasLabel = options.canvasLabel();
@@ -199,6 +210,84 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       bindTabClose(wrapper, wrapper.querySelector<HTMLButtonElement>('.tab-close')!, () => { void closeTab(tab.id); });
       tabRoot.appendChild(wrapper);
     }
+    for (const tab of viewTabs.values()) {
+      const viewId = 'view:' + tab.id;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'workspace-tab view-tab' + (activeId === viewId ? ' active' : '');
+      wrapper.dataset.tabId = viewId;
+      wrapper.innerHTML = '<button type="button" class="tab-open"><span class="tab-view-icon">' + escapeHtml(tab.icon || '▢') + '</span><span class="tab-name"></span></button><button type="button" class="tab-close" title="Close tab · middle-click" aria-label="Close ' + escapeHtml(tab.title) + '">×</button>';
+      wrapper.querySelector('.tab-name')!.textContent = tab.title;
+      wrapper.addEventListener('click', event => {
+        if ((event.target as HTMLElement).closest('.tab-close')) return;
+        activateViewTab(tab);
+      });
+      bindTabClose(wrapper, wrapper.querySelector<HTMLButtonElement>('.tab-close')!, () => closeViewTab(tab.id));
+      tabRoot.appendChild(wrapper);
+    }
+  }
+
+  function teardownActiveView(): void {
+    if (!activeId.startsWith('view:')) return;
+    const id = activeId.slice('view:'.length);
+    const dispose = viewDisposers.get(id);
+    if (dispose) {
+      try { dispose(); } catch { /* view cleanup is best-effort */ }
+      viewDisposers.delete(id);
+    }
+    document.body.classList.remove('workspace-view-mode');
+  }
+
+  function activateViewTab(tab: WorkspaceViewTab): void {
+    flushActiveSave();
+    teardownActiveView();
+    activeId = 'view:' + tab.id;
+    surface?.remove();
+    surface = null;
+    document.body.classList.remove('file-browser-mode');
+    document.body.classList.add('workspace-view-mode');
+    renderTabs();
+    const host = document.createElement('div');
+    host.className = 'workspace-view-surface';
+    options.viewport.appendChild(host);
+    surface = host;
+    try {
+      const mounted = tab.mount(host);
+      if (mounted && typeof mounted === 'object' && typeof mounted.dispose === 'function') {
+        viewDisposers.set(tab.id, () => mounted.dispose?.());
+      }
+    } catch (error) {
+      host.innerHTML = '<p class="files-empty">' + escapeHtml(error instanceof Error ? error.message : String(error)) + '</p>';
+    }
+  }
+
+  function closeViewTab(id: string): void {
+    const tab = viewTabs.get(id);
+    if (!tab) return;
+    const dispose = viewDisposers.get(id);
+    if (dispose) { try { dispose(); } catch { /* ignore */ } viewDisposers.delete(id); }
+    viewTabs.delete(id);
+    if (activeId !== 'view:' + id) { renderTabs(); return; }
+    surface?.remove();
+    surface = null;
+    document.body.classList.remove('workspace-view-mode');
+    activeId = '';
+    if (canvasTabs[0]) { activateCanvasTab(canvasTabs[0]); return; }
+    if (tabs[0]) { void activateFile(tabs[0].id); return; }
+    const nextView = [...viewTabs.values()][0];
+    if (nextView) { activateViewTab(nextView); return; }
+    renderTabs();
+    options.onShowCanvas();
+  }
+
+  function openViewTab(tab: WorkspaceViewTab): void {
+    const existing = viewTabs.get(tab.id);
+    viewTabs.set(tab.id, tab);
+    if (existing && activeId === 'view:' + tab.id) {
+      teardownActiveView();
+      activateViewTab(tab);
+      return;
+    }
+    activateViewTab(tab);
   }
 
   function syncCanvasTab(docId: string, pageId: string, label: string, reopen = false): void {
@@ -216,6 +305,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
 
   function activateCanvasTab(tab: CanvasTab): void {
     flushActiveSave();
+    teardownActiveView();
     closedCanvasTabs.delete(tab.id);
     activeId = tab.id;
     surface?.remove();
@@ -234,6 +324,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const nextCanvas = canvasTabs[Math.min(index, canvasTabs.length - 1)];
     if (nextCanvas) { activateCanvasTab(nextCanvas); return; }
     if (tabs[0]) { void activateFile(tabs[0].id); return; }
+    const nextView = [...viewTabs.values()][0];
+    if (nextView) { activateViewTab(nextView); return; }
     activeId = '';
     surface?.remove();
     surface = null;
@@ -246,6 +338,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const tab = tabs.find(item => item.id === id);
     if (!tab) return;
     flushActiveSave(id);
+    teardownActiveView();
     activeId = id;
     document.body.classList.add('file-browser-mode');
     renderTabs();
@@ -264,7 +357,12 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     tabs = tabs.filter(item => item.id !== id);
     if (activeId !== id) { renderTabs(); return; }
     activeId = tabs[0]?.id || canvasTabs[0]?.id || '';
-    if (!activeId) { renderTabs(); return; }
+    if (!activeId) {
+      const nextView = [...viewTabs.values()][0];
+      if (nextView) { activateViewTab(nextView); return; }
+      renderTabs();
+      return;
+    }
     if (activeId.startsWith('canvas:')) {
       const canvas = canvasTabs.find(item => item.id === activeId);
       if (canvas) activateCanvasTab(canvas);
@@ -769,6 +867,12 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   return {
     syncCanvasTab(docId: string, pageId: string, label: string): void {
       syncCanvasTab(docId, pageId, label);
+    },
+    openViewTab(tab: WorkspaceViewTab): void {
+      openViewTab(tab);
+    },
+    closeViewTab(id: string): void {
+      closeViewTab(id);
     },
   };
 }

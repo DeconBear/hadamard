@@ -2,6 +2,7 @@ import { getPluginCatalog } from './pluginBlocks.js';
 import { openPluginManager } from './pluginManager.js';
 import { openPluginGallery } from './pluginGallery.js';
 import { openPluginStudio } from './pluginStudio.js';
+import { openExtensionManager } from './extensionManagerV2.js';
 
 export interface PluginSidebarOptions {
   request(path: string, init?: RequestInit): Promise<unknown>;
@@ -65,4 +66,17 @@ export function installPluginSidebar(options: PluginSidebarOptions): void {
   for (const id of ['managePluginsBtn', 'pluginManagePanelBtn']) document.getElementById(id)?.addEventListener('click', event => { event.stopPropagation(); openManager(); });
   for (const id of ['pluginGalleryBtn', 'pluginGalleryPanelBtn']) document.getElementById(id)?.addEventListener('click', event => { event.stopPropagation(); openGallery(); });
   updateCount();
+  const actions = document.querySelector('.plugin-sidebar-actions');
+  if (actions && !document.getElementById('extensionManagerBtn')) {
+    const button = document.createElement('button');
+    button.id = 'extensionManagerBtn';
+    button.type = 'button';
+    button.className = 'btn tiny';
+    button.textContent = 'Extensions';
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      void openExtensionManager({ request: options.request, openModal: options.openModal, closeModal: options.closeModal, confirm: options.confirm, toast: options.toast });
+    });
+    actions.appendChild(button);
+  }
 }
