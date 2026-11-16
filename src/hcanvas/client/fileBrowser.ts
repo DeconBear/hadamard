@@ -68,6 +68,8 @@ export interface FileBrowserOptions {
   canvasLabel(): string;
   openCanvas(docId: string, pageId: string): void;
   onShowCanvas(): void;
+  /** Return true when an extension viewer took over opening this file. */
+  resolveCustomViewer?(input: { rootId: string; path: string; name: string; ext: string }): boolean;
 }
 
 export interface FileBrowserController {
@@ -579,6 +581,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     try {
       const result = await options.request<{ file: FileContent }>('/api/files/read?root=' + encodeURIComponent(rootId) + '&path=' + encodeURIComponent(relative));
       const file = result.file;
+      if (options.resolveCustomViewer?.({ rootId, path: relative, name: file.name, ext: file.ext })) return;
       const viewOnly = file.preview !== 'text' || ['.html', '.htm'].includes(file.ext);
       const tab: FileTab = { id: 'file_' + rootId + '_' + relative, rootId, path: relative, name: file.name, language: file.language, content: file.content, binary: file.binary, ext: file.ext, preview: file.preview, mode: viewOnly ? 'view' : 'edit', dirty: false, fontSize: 13 };
       tabs.push(tab);

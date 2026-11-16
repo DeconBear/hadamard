@@ -110,7 +110,7 @@ describe('notebook format', () => {
 
   it('serializes edited cells and keeps unknown frontmatter lines', () => {
     const parsed = parseNotebook(source(['---', 'custom: kept', 'kernel: python', '---', '', F + 'python exec', 'old', F, '']));
-    parsed.cells[0] = { kind: 'code', language: 'python', exec: true, source: 'new code' };
+    parsed.cells[0] = { kind: 'code', info: 'python exec', language: 'python', exec: true, source: 'new code' };
     const reparsed = parseNotebook(serializeNotebook(parsed));
     expect(reparsed.frontmatter.raw).toContain('custom: kept');
     expect(reparsed.cells[0]).toMatchObject({ source: 'new code' });

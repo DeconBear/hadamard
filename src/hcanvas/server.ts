@@ -28,6 +28,11 @@ import { HcAssetService } from './assets.js';
 import { readHcanvasLanguageSync, writeHcanvasLanguage } from './dataRoot.js';
 import { buildLayoutRead, buildLintReport } from './agentLayout.js';
 import { compactApplyResult } from './agentApply.js';
+import { handleExtensionRoute } from './extensions/routes.js';
+import { discoverExtensions } from './extensions/loader.js';
+import { HcExtensionRegistry } from './extensions/registry.js';
+import { ExtensionViewService } from './extensions/viewInstances.js';
+import { handleExtensionViewRoute } from './extensions/viewRoutes.js';
 
 export interface HcServerOptions {
   workspace: string;
@@ -171,6 +176,48 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
   await files.init();
   const assets = new HcAssetService(options.workspace);
   await assets.init();
+  let extensionRegistry: HcExtensionRegistry | null = null;
+  let extensionRegistryLoading: Promise<HcExtensionRegistry> | null = null;
+  const loadExtensionRegistry = async (): Promise<HcExtensionRegistry> => {
+    if (extensionRegistry) return extensionRegistry;
+    if (!extensionRegistryLoading) {
+      extensionRegistryLoading = discoverExtensions(options.workspace).then(discovery => new HcExtensionRegistry(discovery));
+    }
+    extensionRegistry = await extensionRegistryLoading;
+    return extensionRegistry;
+  };
+  const extensionViews = new ExtensionViewService({
+    workspace: options.workspace,
+    sdkPath: '/assets/hc-extension-api.js',
+    resolveViewer: (extensionId: string, viewId: string) => {
+      const registry = extensionRegistry;
+      if (!registry) return null;
+      const viewerRef = registry.viewers.get(viewId);
+      if (!viewerRef || viewerRef.extensionId !== extensionId) return null;
+      const viewer = viewerRef.contribution;
+      if (viewer.type !== 'iframe' || !viewer.entry) return null;
+      const catalogEntry = registry.catalogEntries.find(entry => entry.id === extensionId);
+      if (!catalogEntry) return null;
+      const extensionRoot = path.resolve(catalogEntry.root);
+      const entryPath = path.resolve(extensionRoot, viewer.entry);
+      if (entryPath !== extensionRoot && !entryPath.startsWith(extensionRoot + path.sep)) return null;
+      const resourceRoots = viewer.resources && viewer.resources.length
+        ? viewer.resources
+          .map(relative => path.resolve(extensionRoot, relative))
+          .filter(root => root === extensionRoot || root.startsWith(extensionRoot + path.sep))
+        : [path.dirname(entryPath)];
+      if (!resourceRoots.length) resourceRoots.push(path.dirname(entryPath));
+      return {
+        extensionId,
+        viewId,
+        entryPath,
+        resourceRoots,
+        surface: viewer.surfaces[0],
+        extensionRoot,
+        capabilities: catalogEntry.capabilities as unknown as Record<string, unknown>,
+      };
+    },
+  });
   const idempotency = new Map<string, { fingerprint: string; doc: HcDocument; ops: HcOp[]; dryRun: boolean; changed: boolean; summary?: string }>();
   const host = options.host || '127.0.0.1';
   const token = options.token || randomBytes(18).toString('hex');
@@ -194,7 +241,8 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         const cookieToken = cookie.split(';').map(part => part.trim()).find(part => part.startsWith('hc_files_token='))?.slice('hc_files_token='.length);
         const rawPathToken = pathname.match(/^\/api\/files\/raw\/root_[A-Za-z0-9]+\/([^/]+)\//)?.[1];
         const rawAssetPathToken = pathname.match(/^\/api\/assets\/raw\/([^/]+)\//)?.[1];
-        if (provided !== token && rawPathToken !== token && rawAssetPathToken !== assets.urlToken && !(pathname.startsWith('/api/files/raw/') && cookieToken === token) && !(pathname.startsWith('/api/assets/raw/') && cookieToken === assets.urlToken)) {
+        const isViewerInstancePath = /^\/api\/extension-views\/[^/]+\/(entry|assets)(?:\/|$)/.test(pathname);
+        if (provided !== token && rawPathToken !== token && rawAssetPathToken !== assets.urlToken && !(pathname.startsWith('/api/files/raw/') && cookieToken === token) && !(pathname.startsWith('/api/assets/raw/') && cookieToken === assets.urlToken) && !isViewerInstancePath) {
           json(res, 401, { error: 'Unauthorized' });
           return;
         }
@@ -802,6 +850,15 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         });
         const timer = setInterval(() => res.write(': ping\n\n'), 25000);
         req.on('close', () => { clearInterval(timer); unsubscribe(); });
+        return;
+      }
+      if (pathname.startsWith('/api/extension-views')) {
+        try { await loadExtensionRegistry(); } catch { /* route reports unknown viewer */ }
+        const origin = 'http://' + (req.headers.host || (host + ':' + boundPort));
+        if (await handleExtensionViewRoute(req, res, url, { service: extensionViews, json, readBody, baseUrl: origin, sdkPath: '/assets/hc-extension-api.js', tokenAuthAlreadyChecked: true })) return;
+      }
+      if (await handleExtensionRoute(req, res, url, { workspace: options.workspace, json, readBody })) {
+        if (pathname.startsWith('/api/extensions')) { extensionRegistry = null; extensionRegistryLoading = null; }
         return;
       }
       json(res, 404, { error: 'Not found: ' + pathname });

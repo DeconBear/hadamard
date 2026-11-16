@@ -1,0 +1,27 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; color: #1f2430; font: 12px/1.6 ui-monospace, Consolas, monospace; }
+  pre { margin: 0; padding: 18px 20px; white-space: pre-wrap; word-break: break-word; }
+  .error { color: #b42318; font-family: Inter, sans-serif; }
+  .meta { color: #8a8276; font: 10px/1.4 Inter, sans-serif; padding: 0 20px 14px; }
+</style></head>
+<body><pre id="out">Loading…</pre><div class="meta" id="meta"></div>
+<script>
+(async () => {
+  const out = document.getElementById('out');
+  const meta = document.getElementById('meta');
+  try {
+    const hc = await HcanvasView.acquire();
+    const file = hc.context.file;
+    if (!file) throw new Error('JSON viewer needs a file context.');
+    const result = await hc.files.read(file.rootId, file.path);
+    const value = JSON.parse(result.content);
+    out.textContent = JSON.stringify(value, null, 2);
+    meta.textContent = file.path + ' · ' + result.size + ' B · read-only';
+  } catch (error) {
+    out.className = 'error';
+    out.textContent = error && error.message ? error.message : String(error);
+  }
+})();
+</script></body></html>

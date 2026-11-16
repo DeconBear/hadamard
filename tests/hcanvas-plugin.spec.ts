@@ -73,7 +73,7 @@ describe('hcanvas declarative plugin manifests', () => {
 
   it('rejects invalid plugin ids and empty block lists', () => {
     expect(() => validatePluginManifest({ ...base, id: 'Bad Id' })).toThrow(/lowercase/);
-    expect(() => validatePluginManifest({ ...base, blocks: [] })).toThrow(/blocks or pagePresets/);
+    expect(() => validatePluginManifest({ ...base, blocks: [] })).toThrow(/blocks, shapes, renderers or pagePresets/);
   });
 });
 describe('hcanvas plugin page presets', () => {

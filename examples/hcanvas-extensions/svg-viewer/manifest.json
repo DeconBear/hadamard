@@ -1,0 +1,39 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.hadamard.examples.svg",
+  "name": "SVG Viewer",
+  "version": "0.1.0",
+  "description": "Render SVG files and SVG blocks with a sandboxed viewer.",
+  "engines": {
+    "hcanvas": ">=0.2.0"
+  },
+  "capabilities": {},
+  "contributes": {
+    "formats": [
+      {
+        "id": "svg",
+        "label": "SVG",
+        "extensions": [
+          ".svg"
+        ],
+        "viewer": "svg.viewer",
+        "surfaces": [
+          "file",
+          "block"
+        ]
+      }
+    ],
+    "viewers": [
+      {
+        "id": "svg.viewer",
+        "label": "SVG Viewer",
+        "type": "iframe",
+        "entry": "ui/entry.html",
+        "surfaces": [
+          "file",
+          "block"
+        ]
+      }
+    ]
+  }
+}

@@ -27,6 +27,7 @@ import { createExportActions } from './exportActions.js';
 import { createPresentSession } from './presentSession.js';
 import { installCoreCommands } from './coreCommands.js';
 import { loadExtensionCatalog } from './extensionCatalog.js';
+import { installExtensionRuntime, type ExtensionRuntime } from './extensionRuntime.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
 import { insertAssetIntoPage } from './assetInsert.js';
@@ -167,6 +168,7 @@ let presenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 let pagesRenderTimer: ReturnType<typeof setTimeout> | undefined;
 let shapePicker: ShapePicker | null = null;
 let fileBrowser: FileBrowserController | null = null;
+let extensionRuntime: ExtensionRuntime | null = null;
 let presentInteractions: PresentInteractions | null = null;
 let sliceTool: SliceTool | null = null;
 let historyPanel: { render(): void } | null = null;
@@ -811,6 +813,13 @@ function bindStaticActions(): void {
     canvasLabel: () => activePage()?.name || state.doc?.title || 'Canvas',
     onShowCanvas: () => { renderArtboard(); },
     openCanvas: (docId, pageId) => { void openDoc(docId, pageId); },
+    resolveCustomViewer: input => extensionRuntime?.resolveCustomViewer(input) ?? false,
+  });
+  extensionRuntime = installExtensionRuntime({
+    request: api,
+    toast,
+    openViewTab: tab => { fileBrowser?.openViewTab(tab); },
+    getLanguage: () => boot.language === 'zh' ? 'zh' : 'en',
   });
   historyPanel = installHistoryPanel({
     mount: el('historyPanel'),

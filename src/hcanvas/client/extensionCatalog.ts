@@ -118,7 +118,9 @@ const EMPTY_CONTRIBUTES: ExtensionContributesSummary = {
 let catalog: ExtensionCatalog = { extensions: [], errors: [], trust: 'trusted' };
 
 function normalizeEntry(raw: Record<string, unknown>): ExtensionCatalogEntry {
-  const contributes = raw.contributes && typeof raw.contributes === 'object' ? raw.contributes as Record<string, unknown> : {};
+  const manifest = raw.manifest && typeof raw.manifest === 'object' ? raw.manifest as Record<string, unknown> : {};
+  const rawContributes = raw.contributes && typeof raw.contributes === 'object' ? raw.contributes as Record<string, unknown> : {};
+  const contributes = manifest.contributes && typeof manifest.contributes === 'object' ? manifest.contributes as Record<string, unknown> : rawContributes;
   const list = <T>(key: string): T[] => Array.isArray(contributes[key]) ? contributes[key] as T[] : [];
   const canvas = contributes.canvas && typeof contributes.canvas === 'object' ? contributes.canvas as Record<string, unknown> : {};
   const canvasList = (key: string): string[] => Array.isArray(canvas[key])
@@ -132,7 +134,9 @@ function normalizeEntry(raw: Record<string, unknown>): ExtensionCatalogEntry {
     enabled: raw.enabled !== false,
     trusted: raw.trusted === true,
     legacy: raw.legacy === true || raw.layout === 'legacy',
-    capabilities: raw.capabilities && typeof raw.capabilities === 'object' ? raw.capabilities as Record<string, unknown> : {},
+    capabilities: manifest.capabilities && typeof manifest.capabilities === 'object'
+      ? manifest.capabilities as Record<string, unknown>
+      : raw.capabilities && typeof raw.capabilities === 'object' ? raw.capabilities as Record<string, unknown> : {},
     contributes: {
       formats: list('formats'), viewers: list('viewers'), views: list('views'), commands: list('commands'),
       sidecars: list('sidecars'), kernels: list('kernels'), tools: list('tools'), terminals: list('terminals'),
@@ -144,11 +148,12 @@ function normalizeEntry(raw: Record<string, unknown>): ExtensionCatalogEntry {
 
 export async function loadExtensionCatalog(request: CatalogRequest): Promise<ExtensionCatalog> {
   try {
-    const payload = await request<{ extensions?: unknown[]; errors?: unknown[]; trust?: string }>('/api/extensions');
+    const payload = await request<{ extensions?: unknown[]; errors?: unknown[]; conflicts?: unknown[]; warnings?: unknown[]; trust?: string; workspaceTrust?: string }>('/api/extensions');
+    const errors = [...(Array.isArray(payload.errors) ? payload.errors.map(String) : []), ...(Array.isArray(payload.conflicts) ? payload.conflicts.map(String) : [])];
     catalog = {
       extensions: Array.isArray(payload.extensions) ? payload.extensions.map(item => normalizeEntry(item as Record<string, unknown>)) : [],
-      errors: Array.isArray(payload.errors) ? payload.errors.map(String) : [],
-      trust: typeof payload.trust === 'string' ? payload.trust : 'trusted',
+      errors,
+      trust: typeof payload.workspaceTrust === 'string' ? payload.workspaceTrust : typeof payload.trust === 'string' ? payload.trust : 'trusted',
     };
   } catch (error) {
     catalog = { extensions: [], errors: [error instanceof Error ? error.message : String(error)], trust: 'trusted' };
