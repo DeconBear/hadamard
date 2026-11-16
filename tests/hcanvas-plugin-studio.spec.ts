@@ -7,6 +7,7 @@ import { installPluginManifest } from '../src/hcanvas/pluginGallery.js';
 import { readPluginSource } from '../src/hcanvas/pluginLoader.js';
 import { runPluginAction } from '../src/hcanvas/client/pluginActions.js';
 import { clearCustomShapes, listHcShapes, registerCustomShape, shapeSvgMarkup } from '../src/hcanvas/shapes.js';
+import { HcanvasPluginHost } from '../src/hcanvas/client/pluginHost.js';
 import type { HcBlock, HcOp, HcPage } from '../src/hcanvas/types.js';
 
 const manifest = {
@@ -71,6 +72,43 @@ describe('Hcanvas plugin studio', () => {
     const rendered = shapeSvgMarkup({ shape: 'plugin-blob', style: { fill: '#fff', stroke: '#000', strokeWidth: 1 } });
     expect(rendered).toContain('M50,2 C90,2 98,40 50,98 C2,40 10,2 50,2 Z');
     clearCustomShapes();
+  });
+
+  it('indexes plugin contributions in the plugin host', () => {
+    const host = new HcanvasPluginHost();
+    host.reset([
+      { manifest: { ...validatePluginManifest(manifest), script: 'self.hcanvas.register({});', runtime: 'sandbox' }, source: 'project', enabled: true },
+      { manifest: { ...validatePluginManifest({ ...manifest, id: 'shape-only', blocks: [], shapes: [{ id: 'blob', label: 'Blob', paths: ['M0,0 L100,0 L100,100 Z'] }] }), script: '<script>1</script>' }, source: 'user', enabled: true },
+    ]);
+    const summary = host.summary();
+    expect(summary.plugins).toBe(2);
+    expect(summary.shapes).toBe(1);
+    expect(summary.capabilities).toEqual(expect.arrayContaining(['sandbox', 'blocks', 'shapes']));
+    expect(host.list()[1]?.source).toBe('user');
+  });
+
+  it('allows active content only for trusted iframe blocks', () => {
+    const base = { ...manifest, blocks: [{ ...manifest.blocks[0], runtime: 'iframe', render: '<div id="app"></div><script>document.title = "map";</script>' }] };
+    const parsed = validatePluginManifest(base);
+    expect(parsed.blocks[0]!.runtime).toBe('iframe');
+    expect(() => validatePluginManifest({ ...base, blocks: [{ ...base.blocks[0], runtime: undefined }] })).toThrow(/active content/);
+  });
+
+  it('validates renderer contributions and exposes them through the host', () => {
+    const rendererManifest = {
+      ...manifest,
+      blocks: [],
+      pagePresets: [],
+      shapes: [],
+      renderers: [{ id: 'manim', label: 'Manim service', kind: 'http', endpoint: 'http://127.0.0.1:8765/render' }],
+    };
+    const parsed = validatePluginManifest(rendererManifest);
+    expect(parsed.renderers[0]!.endpoint).toBe('http://127.0.0.1:8765/render');
+    expect(() => validatePluginManifest({ ...rendererManifest, renderers: [{ ...rendererManifest.renderers[0], endpoint: 'file:///tmp/out' }] })).toThrow(/http/);
+    const host = new HcanvasPluginHost();
+    host.reset([{ manifest: parsed, source: 'project', enabled: true }]);
+    expect(host.summary().renderers).toBe(1);
+    expect(host.summary().capabilities).toContain('renderers');
   });
 
   it('rejects unsupported or incomplete actions', () => {

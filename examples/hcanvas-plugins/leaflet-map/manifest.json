@@ -1,0 +1,50 @@
+{
+  "schema": "hcanvas-plugin/1",
+  "id": "leaflet-map",
+  "name": "Leaflet Map",
+  "version": "1.0.0",
+  "apiVersion": "hcanvas-plugin/1",
+  "blocks": [
+    {
+      "type": "leaflet-map",
+      "label": "Leaflet map",
+      "hint": "Interactive OpenStreetMap inside a sandboxed iframe. Double-click the block to interact.",
+      "defaultSize": {
+        "w": 640,
+        "h": 420
+      },
+      "runtime": "iframe",
+      "defaultData": {
+        "lat": 31.2304,
+        "lng": 121.4737,
+        "zoom": 12,
+        "marker": "Shanghai"
+      },
+      "fields": [
+        {
+          "key": "lat",
+          "label": "Latitude",
+          "kind": "number"
+        },
+        {
+          "key": "lng",
+          "label": "Longitude",
+          "kind": "number"
+        },
+        {
+          "key": "zoom",
+          "label": "Zoom",
+          "kind": "number"
+        },
+        {
+          "key": "marker",
+          "label": "Marker label",
+          "kind": "text"
+        }
+      ],
+      "render": "<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\"><div id=\"map\" style=\"position:absolute;inset:0;background:#0b1220\"></div><script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"></script><script>(function(){var data=window.hcPluginData||{};var lat=Number(data.lat)||31.2304;var lng=Number(data.lng)||121.4737;var zoom=Number(data.zoom)||12;var map=L.map(\"map\",{zoomControl:true,attributionControl:true,worldCopyJump:true}).setView([lat,lng],zoom);L.tileLayer(\"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png\",{maxZoom:19,attribution:\"&copy; OpenStreetMap contributors\"}).addTo(map);var marker=String(data.marker||\"\");if(marker){L.marker([lat,lng]).addTo(map).bindPopup(marker).openPopup();}})();</script>"
+    }
+  ],
+  "pagePresets": [],
+  "shapes": []
+}

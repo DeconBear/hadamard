@@ -1,6 +1,6 @@
 import type { HcBlock } from './types.js';
 import { calloutPlugin } from './plugins/callout.js';
-import type { HcPluginAction } from './pluginManifest.js';
+import type { HcPluginAction, HcPluginRendererDefinition } from './pluginManifest.js';
 import { sliderPlugin } from './plugins/slider.js';
 
 export type HcPluginFieldKind = 'text' | 'textarea' | 'color' | 'select' | 'number';
@@ -21,7 +21,9 @@ export interface HcBlockPlugin {
   renderHtml(block: HcBlock): string;
   fields?: HcPluginField[];
   actions?: HcPluginAction[];
+  runtime?: 'iframe';
   script?: string;
+  renderers?: HcPluginRendererDefinition[];
   pluginId?: string;
   pluginName?: string;
   version?: string;

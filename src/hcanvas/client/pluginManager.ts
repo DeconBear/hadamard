@@ -1,4 +1,5 @@
 import type { PluginCatalog } from './pluginBlocks.js';
+import { hcanvasPluginHost } from './pluginHost.js';
 
 export interface PluginManagerContext {
   catalog: PluginCatalog;
@@ -36,7 +37,8 @@ export function openPluginManager(ctx: PluginManagerContext): void {
   const errors = ctx.catalog.errors.length
     ? '<div class="plugin-manager-errors"><strong>Load diagnostics</strong><ul>' + ctx.catalog.errors.map(error => '<li>' + escapeHtml(error) + '</li>').join('') + '</ul></div>'
     : '';
-  const html = '<div class="modal plugin-manager-modal"><div class="modal-head"><div><strong>Plugins</strong><small>Enable/disable declarative block plugins. Changes are saved in .hcanvas/plugin-settings.json.</small></div><button class="icon-btn" data-close>×</button></div>' +
+  const hostSummary = hcanvasPluginHost.summary();
+  const html = '<div class="modal plugin-manager-modal"><div class="modal-head"><div><strong>Plugins</strong><small>' + hostSummary.plugins + ' host plugin' + (hostSummary.plugins === 1 ? '' : 's') + ' · ' + hostSummary.blocks + ' blocks · ' + hostSummary.shapes + ' shapes · ' + hostSummary.capabilities.length + ' capabilities. Toggles are saved in .hcanvas/plugin-settings.json.</small></div><button class="icon-btn" data-close>×</button></div>' +
     '<div class="modal-body"><div class="plugin-manager-list">' + (rows || '<p class="empty-state">No external plugins found.</p>') + '</div>' + errors +
     '<p class="inspector-note">Project plugins: <code>.hcanvas/plugins/</code> · user plugins: <code>~/.hadamard/hcanvas/plugins/</code>. Reload after adding or editing a manifest.</p>' +
     '</div><div class="modal-foot"><button class="btn tiny" data-plugin-gallery>Gallery</button><button class="btn tiny" data-plugin-new>New plugin</button><button class="btn tiny" data-plugin-scaffold="block">Create block sample</button><button class="btn tiny" data-plugin-scaffold="page">Create page sample</button><button class="btn tiny" data-plugin-manager-reload>Reload</button><button class="btn primary tiny" data-close>Done</button></div></div>';

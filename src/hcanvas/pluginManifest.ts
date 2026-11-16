@@ -68,6 +68,14 @@ export interface HcPluginShapeDefinition {
   pluginId?: string;
 }
 
+export interface HcPluginRendererDefinition {
+  id: string;
+  label: string;
+  hint?: string;
+  kind: 'http';
+  endpoint: string;
+}
+
 export interface HcDeclarativeBlock {
   type: string;
   label: string;
@@ -75,6 +83,7 @@ export interface HcDeclarativeBlock {
   defaultSize?: { w: number; h: number };
   defaultData?: Record<string, unknown>;
   fields?: HcPluginField[];
+  runtime?: 'iframe';
   render: string;
   actions?: HcPluginAction[];
 }
@@ -90,6 +99,7 @@ export interface HcPluginManifest {
   blocks: HcDeclarativeBlock[];
   pagePresets: HcPluginPagePreset[];
   shapes: HcPluginShapeDefinition[];
+  renderers: HcPluginRendererDefinition[];
 }
 
 
@@ -244,6 +254,25 @@ function validateAction(input: unknown, index: number): HcPluginAction {
   return action;
 }
 
+export function validateRenderer(input: unknown, index: number): HcPluginRendererDefinition {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) fail('renderers[' + index + '] must be an object');
+  const raw = input as Record<string, unknown>;
+  const id = str(raw.id, 'renderers[' + index + '].id', 64);
+  if (!/^[a-z][a-z0-9-]*$/.test(id)) fail('renderers[' + index + '].id has invalid characters');
+  if (raw.kind !== 'http') fail('renderers[' + index + '].kind must be "http"');
+  const endpoint = str(raw.endpoint, 'renderers[' + index + '].endpoint', 500);
+  let parsed: URL;
+  try { parsed = new URL(endpoint); } catch { fail('renderers[' + index + '].endpoint must be a URL'); }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') fail('renderers[' + index + '].endpoint must use http or https');
+  return {
+    id,
+    label: str(raw.label, 'renderers[' + index + '].label', 120),
+    hint: raw.hint === undefined ? undefined : str(raw.hint, 'renderers[' + index + '].hint', 240),
+    kind: 'http',
+    endpoint,
+  };
+}
+
 export function validatePluginManifest(input: unknown): HcPluginManifest {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('manifest must be an object');
   const raw = input as Record<string, unknown>;
@@ -259,15 +288,19 @@ export function validatePluginManifest(input: unknown): HcPluginManifest {
   if (Array.isArray(raw.blocks) && raw.blocks.length > 20) fail('too many blocks');
   const hasPages = Array.isArray(raw.pagePresets) && raw.pagePresets.length > 0;
   const hasShapes = Array.isArray(raw.shapes) && raw.shapes.length > 0;
-  if (!hasPages && !hasShapes && (!Array.isArray(raw.blocks) || raw.blocks.length === 0)) fail('manifest needs blocks, shapes or pagePresets');
+  const hasRenderers = Array.isArray(raw.renderers) && raw.renderers.length > 0;
+  if (!hasPages && !hasShapes && !hasRenderers && (!Array.isArray(raw.blocks) || raw.blocks.length === 0)) fail('manifest needs blocks, shapes, renderers or pagePresets');
   const shapes = Array.isArray(raw.shapes) ? raw.shapes.slice(0, 50).map(validateShape) : [];
+  const renderers = Array.isArray(raw.renderers) ? raw.renderers.slice(0, 20).map(validateRenderer) : [];
   const blocks = (Array.isArray(raw.blocks) ? raw.blocks : []).map((block, index) => {
     if (!block || typeof block !== 'object') fail('blocks[' + index + '] must be an object');
     const item = block as Record<string, unknown>;
     const type = str(item.type, 'blocks[' + index + '].type', 64);
     if (!/^[a-z][a-z0-9-]*$/.test(type)) fail('blocks[' + index + '].type must be lowercase letters, numbers and dashes');
-    const render = str(item.render, 'blocks[' + index + '].render', 20000);
-    if (/<script\b/i.test(render) || /<iframe\b/i.test(render) || /\son[a-z]+\s*=/i.test(render) || /javascript\s*:/i.test(render)) {
+    const runtime = item.runtime === undefined ? undefined : item.runtime === 'iframe' ? 'iframe' as const : null;
+    if (runtime === null) fail('blocks[' + index + '].runtime must be "iframe"');
+    const render = str(item.render, 'blocks[' + index + '].render', runtime === 'iframe' ? 200000 : 20000);
+    if (runtime !== 'iframe' && (/<script\b/i.test(render) || /<iframe\b/i.test(render) || /\son[a-z]+\s*=/i.test(render) || /javascript\s*:/i.test(render))) {
       fail('blocks[' + index + '].render contains disallowed active content');
     }
     const defaultData = item.defaultData;
@@ -281,6 +314,7 @@ export function validatePluginManifest(input: unknown): HcPluginManifest {
       defaultSize,
       defaultData: defaultData ? defaultData as Record<string, unknown> : {},
       fields: Array.isArray(item.fields) ? item.fields.map(validateField) : [],
+      runtime,
       render,
       actions: Array.isArray(item.actions) ? item.actions.slice(0, 20).map(validateAction) : undefined,
     } satisfies HcDeclarativeBlock;
@@ -295,6 +329,7 @@ export function validatePluginManifest(input: unknown): HcPluginManifest {
     blocks,
     pagePresets: Array.isArray(raw.pagePresets) ? raw.pagePresets.slice(0, 30).map(validatePagePreset) : [],
     shapes,
+    renderers,
   };
 }
 

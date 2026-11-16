@@ -616,6 +616,40 @@ A plugin can contribute native shapes to the shape picker. Add a `shapes` array 
 ```
 
 Paths use a `0 0 100 100` viewBox. Hcanvas validates them against an SVG-path character whitelist, registers them under the **Custom** category, and renders them with the block's normal fill, stroke, opacity and gradient settings. Plugin shapes work in Canvas blocks, HTML/PNG/PDF export paths that render the canvas, Present and the shape picker. A plugin can contribute blocks, shapes and page presets together.
+### Trusted iframe blocks
+
+A block can opt into an isolated iframe when it needs DOM, WebGL or a third-party UI library:
+
+```json
+{
+  "type": "leaflet-map",
+  "label": "Leaflet map",
+  "runtime": "iframe",
+  "render": "<div id=\"map\"></div><script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"></script><script>/* map code */</script>"
+}
+```
+
+Iframe blocks are rendered in a `sandbox="allow-scripts"` frame; they cannot read the Hcanvas DOM. Template values are available as `window.hcPluginData`. Double-click the block to enter interaction mode; press Escape to return to canvas editing. This is the supported path for interactive maps, charts and other trusted DOM plugins. See [the Leaflet map example](https://github.com/DeconBear/hadamard/blob/main/examples/hcanvas-plugins/leaflet-map/manifest.json).
+
+### Plugin host
+
+Every loaded manifest is indexed by the client plugin host. The host tracks contributed block types, shapes, page presets, runtime capabilities (`declarative`, `sandbox`, `iframe`) and enabled state; the Plugins manager shows the current host summary. This host is the foundation for future panel, renderer and importer contribution points.
+### External renderers
+
+Iframe plugins can call a trusted local render service without giving the sandbox host process access. Declare renderer endpoints in the manifest:
+
+```json
+{
+  "renderers": [{
+    "id": "manim",
+    "label": "Manim renderer",
+    "kind": "http",
+    "endpoint": "http://127.0.0.1:8765/render"
+  }]
+}
+```
+
+Inside an iframe block, call `window.hcRequestRenderer("manim", { scene: source })`. Hcanvas posts a scoped request to the host, calls the endpoint as JSON with a 60-second timeout, and returns the JSON/text result to the same iframe. The renderer service is responsible for its own process isolation, allowlists and output assets. The endpoint must accept browser CORS if it is cross-origin. This is the safe bridge for tools such as Manim: Hcanvas never executes Python directly; the trusted renderer service does.
 ### Components and plugin blocks
 
 A **plugin block** is a declarative HTML template with manifest-defined fields; it can render custom cards and be edited through its fields, but it does not execute JavaScript. **Components** are plugins marked `component: true`; they appear in the Inspector’s Components section instead of the normal block picker. The built-in **Slider** component is interactive on canvas: drag the track or click a position to change its value; the value is stored in `block.data.value` and is reflected in the Inspector and exports. Other plugin blocks and components are declarative/static unless they add their own interaction in the future.

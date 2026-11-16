@@ -3,7 +3,7 @@ import { curveSvgMarkup } from '../curves.js';
 import { arcSvgMarkup } from '../arcs.js';
 import { shapeSvgMarkup, shapeTextMarkup } from '../shapes.js';
 import { vectorSvgMarkup } from '../vector.js';
-import { pluginBlockMarkup, pluginFallbackMarkup } from './pluginBlocks.js';
+import { pluginBlockMarkup, pluginFallbackMarkup, pluginIframeDocument } from './pluginBlocks.js';
 import { esc } from './utils.js';
 import type { HcBlock, HcPage } from '../types.js';
 
@@ -126,6 +126,16 @@ function renderArc(block: HcBlock): HTMLElement {
 function renderPlugin(block: HcBlock): HTMLElement {
   const host = document.createElement('div');
   host.className = 'block-plugin';
+  const iframeDoc = pluginIframeDocument(block);
+  if (iframeDoc !== null) {
+    const iframe = document.createElement('iframe');
+    iframe.className = 'block-plugin-iframe';
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.setAttribute('title', block.name || block.type);
+    iframe.srcdoc = iframeDoc;
+    host.appendChild(iframe);
+    return host;
+  }
   const markup = pluginBlockMarkup(block);
   host.innerHTML = markup !== null ? markup : pluginFallbackMarkup(block);
   return host;

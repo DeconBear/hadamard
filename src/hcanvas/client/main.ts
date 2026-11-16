@@ -46,6 +46,7 @@ import { createShapePicker, type ShapePicker } from './shapePicker.js';
 import { createHtmlInsertFlyout } from './htmlInsertFlyout.js';
 import { bindComponentPicker, bindPluginInspector, bindPluginPicker, componentPickerMarkup, getPluginCatalog, loadExternalPlugins, pluginInspectorMarkup, pluginPickerMarkup } from './pluginBlocks.js';
 import { runPluginAction } from './pluginActions.js';
+import { installPluginIframeBridge } from './pluginIframeBridge.js';
 import { renderCanvasBlockContent } from './blockRenderers.js';
 import { openPluginManager } from './pluginManager.js';
 import { openPluginStudio } from './pluginStudio.js';
@@ -363,6 +364,7 @@ async function openDoc(docId: string, pageId?: string, reopenTab = true): Promis
 async function initialize(): Promise<void> {
   installColorPickers();
   bindStaticActions();
+  installPluginIframeBridge(() => activePage());
   const pluginLoad = await loadExternalPlugins(api);
   if (pluginLoad.errors.length) console.warn('hcanvas plugins:', pluginLoad.errors);
   try {
@@ -1296,6 +1298,8 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     if (typing) { target.blur(); return; }
     if (state.editing) { exitHtmlEdit(); return; }
+    const interactivePlugin = document.querySelector<HTMLElement>('.block-wrap.plugin-interactive');
+    if (interactivePlugin) { interactivePlugin.classList.remove('plugin-interactive'); return; }
     if (state.pendingInsert) { cancelInsert(); return; }
     if (state.selectedBlockIds.length) { setBlockSelection([]); return; }
     if (state.tool !== 'select') { state.tool = 'select'; renderToolbarState(); }
@@ -2138,6 +2142,7 @@ function bindBlockEvents(wrap: HTMLDivElement, block: HcBlock): void {
   if (block.type === 'arrow') wrap.querySelector('svg')?.addEventListener('pointerdown', onPointerDown);
   hit.addEventListener('dblclick', event => {
     event.stopPropagation();
+    if (wrap.querySelector('.block-plugin-iframe')) { wrap.classList.toggle('plugin-interactive'); return; }
     if (block.type === 'html') enterHtmlEdit(activePage()!.id, block.id);
     else if (block.type === 'shape') startShapeTextEdit(block, wrap, { getDoc: () => state.doc, commit: (target, patch, historyBase) => { void persistBlock(target, patch, historyBase || undefined); } });
     else if (block.type === 'text') {
@@ -3007,7 +3012,6 @@ async function deleteBlock(pageId: string, blockId: string): Promise<void> {
 function openShapePicker(): void {
   shapePicker?.open();
 }
-
 function requestInsert(type: HcBlock['type']): void {
   if (type === 'image') { openImageModal(); return; }
   const page = activePage();
@@ -3018,14 +3022,12 @@ function requestInsert(type: HcBlock['type']): void {
   setBlockSelection([]);
   toast(type === 'shape' ? 'Click for a default shape or drag to draw it. Esc cancels.' : 'Click the canvas to place ' + type + '. Esc cancels.', 'info');
 }
-
 function cancelInsert(): void {
   if (!state.pendingInsert) return;
   state.pendingInsert = null;
   state.pendingShape = null;
   renderToolbarState();
 }
-
 async function dissolveFrame(block: HcBlock): Promise<void> {
   const page = activePage();
   if (!page || block.shape !== 'frame') return;
@@ -3037,7 +3039,6 @@ async function dissolveFrame(block: HcBlock): Promise<void> {
   setBlockSelection(children.map(child => child.id));
   toast('Frame dissolved; ' + children.length + ' child block(s) kept', 'success');
 }
-
 async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}, position?: { x: number; y: number }): Promise<void> {
   const page = activePage();
   if (!page) return;
@@ -3062,7 +3063,6 @@ async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}, pos
   const result = await applyOps([{ op: 'add_block', pageId: page.id, block }], { refreshArtboard: true });
   if (result) setBlockSelection([block.id], block.id);
 }
-
 function openImageModal(block?: HcBlock): void {
   const page = activePage();
   if (!page) return;

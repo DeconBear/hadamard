@@ -3,6 +3,7 @@ import { blockPlugin, clearExternalBlockPlugins, listBlockPlugins, listComponent
 import { renderDeclarativeTemplate, type HcPluginManifest, type HcPluginPagePreset } from '../pluginManifest.js';
 import { clearCustomShapes, registerCustomShape } from '../shapes.js';
 import { clearPluginSandboxes } from './pluginSandbox.js';
+import { hcanvasPluginHost } from './pluginHost.js';
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -10,6 +11,15 @@ function escapeHtml(value: unknown): string {
 
 export function pluginBlockMarkup(block: HcBlock): string | null {
   return blockPlugin(block.type)?.renderHtml(block) || null;
+}
+
+export function pluginIframeDocument(block: HcBlock): string | null {
+  const plugin = blockPlugin(block.type);
+  if (!plugin || plugin.runtime !== 'iframe') return null;
+  const data = JSON.stringify(block.data || {}).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+  const html = plugin.renderHtml(block);
+  const bridge = 'window.hcRequestRenderer=function(rendererId,payload){return new Promise(function(resolve,reject){var id="r"+Math.random().toString(36).slice(2);var timer=setTimeout(function(){window.removeEventListener("message",onMessage);reject(new Error("Renderer request timed out."));},60000);function onMessage(event){var message=event.data||{};if(message.type!=="hc-renderer-response"||message.requestId!==id)return;clearTimeout(timer);window.removeEventListener("message",onMessage);if(message.ok)resolve(message.result);else reject(new Error(message.error||"Renderer failed."));}window.addEventListener("message",onMessage);parent.postMessage({type:"hc-renderer-request",requestId:id,rendererId:rendererId,payload:payload||{}},"*");});};';
+  return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}</style></head><body><script>window.hcPluginData=' + data + ';' + bridge + '</script>' + html + '</body></html>';
 }
 
 export function pluginFallbackMarkup(block: HcBlock): string {
@@ -181,7 +191,9 @@ export function registerDeclarativePlugins(entries: Array<{ manifest: HcPluginMa
         defaultData: () => ({ ...(block.defaultData || {}) }),
         fields: block.fields as HcPluginField[] | undefined,
         actions: block.actions,
+        runtime: block.runtime,
         script: manifest.script,
+        renderers: manifest.renderers,
         renderHtml: current => renderDeclarativeTemplate(block.render, current.data || {}),
         pluginId: manifest.id,
         pluginName: manifest.name,
@@ -206,11 +218,13 @@ export async function loadExternalPlugins(fetcher: (path: string) => Promise<unk
   try {
     const payload = await fetcher('/api/plugins') as { plugins?: Array<{ manifest: HcPluginManifest; source?: 'project' | 'user'; path?: string; enabled?: boolean }>; errors?: string[] };
     const entries = (Array.isArray(payload.plugins) ? payload.plugins : []).map(item => ({ ...item, enabled: item.enabled !== false }));
+    hcanvasPluginHost.reset(entries);
     lastCatalog = { plugins: entries, errors: payload.errors || [] };
     const result = registerDeclarativePlugins(entries);
     lastExternalLoad = { ...result, errors: [...(payload.errors || []), ...result.errors] };
     return lastExternalLoad;
   } catch (error) {
+    hcanvasPluginHost.reset([]);
     lastCatalog = { plugins: [], errors: [error instanceof Error ? error.message : String(error)] };
     lastExternalLoad = { loaded: 0, plugins: 0, errors: lastCatalog.errors };
     return lastExternalLoad;

@@ -532,6 +532,40 @@ hcanvas 可以加载声明式 block 插件，不需要执行 JavaScript bundle�
 ```
 
 路径使用 `0 0 100 100` viewBox。Hcanvas 会用 SVG path 字符白名单校验，注册到 **Custom** 分类，并用 block 正常的 fill、stroke、opacity 和渐变设置渲染。插件形状可用于 Canvas block、走 Canvas 渲染的 HTML/PNG/PDF 导出路径、Present 和形状选择器。一个插件可以同时贡献 block、形状和页面模板。
+### 可信 iframe block
+
+需要 DOM、WebGL 或第三方 UI 库时，block 可以显式启用隔离 iframe：
+
+```json
+{
+  "type": "leaflet-map",
+  "label": "Leaflet map",
+  "runtime": "iframe",
+  "render": "<div id=\"map\"></div><script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"></script><script>/* map code */</script>"
+}
+```
+
+iframe block 使用 `sandbox="allow-scripts"` 渲染，不能读取 Hcanvas 主 DOM。模板数据通过 `window.hcPluginData` 提供。双击 block 进入交互模式，按 Escape 回到画布编辑。这是交互地图、图表和其他可信 DOM 插件的支持路径。示例见 [Leaflet map 示例](https://github.com/DeconBear/hadamard/blob/main/examples/hcanvas-plugins/leaflet-map/manifest.json)。
+
+### 插件宿主
+
+每个已加载的 manifest 都会进入客户端插件宿主索引。宿主记录 block 类型、形状、页面模板、运行时能力（`declarative`、`sandbox`、`iframe`）和启用状态；Plugins 管理器会显示宿主摘要。这个宿主是后续 panel、renderer 和 importer 扩展点的基础。
+### 外部渲染器
+
+iframe 插件可以调用受信任的本地渲染服务，而不把宿主进程能力暴露给沙箱。在 manifest 中声明 renderer：
+
+```json
+{
+  "renderers": [{
+    "id": "manim",
+    "label": "Manim renderer",
+    "kind": "http",
+    "endpoint": "http://127.0.0.1:8765/render"
+  }]
+}
+```
+
+在 iframe block 内调用 `window.hcRequestRenderer("manim", { scene: source })`。Hcanvas 会把请求转发给宿主，以 JSON POST 方式调用 endpoint，60 秒超时，并把 JSON/文本结果返回给同一个 iframe。渲染服务自己负责进程隔离、白名单和产物文件。跨域 endpoint 需要支持浏览器 CORS。这就是 Manim 这类工具的安全桥接方式：Hcanvas 不直接执行 Python，由受信任的渲染服务执行。
 ### 组件与插件块
 
 **插件块**是带 manifest 字段的声明式 HTML 模板，可渲染自定义卡片并通过字段编辑，但不会执行 JavaScript。**组件**是标记了 `component: true` 的插件，会出现在 Inspector 的 Components 区域而不是普通块选择器。内置的 **Slider** 组件在画布上可交互：拖动滑轨或点击位置即可改变数值；数值保存在 `block.data.value` 中，并同步到 Inspector 和导出结果。其他插件块/组件目前仍是声明式静态内容，暂无自定义交互。
