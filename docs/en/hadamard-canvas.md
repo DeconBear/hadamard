@@ -596,6 +596,26 @@ For logic beyond declarative actions, a plugin can opt into a Worker sandbox:
 
 The script runs in a Web Worker, not in the canvas DOM. It receives `ctx.action`, `ctx.block` and `ctx.page`, and returns an array of allowed effects: `set-data`, `apply-style`, `insert-block` or `add-page-preset`. The host validates every effect, applies it through normal canvas operations and enforces a five-second timeout. A Plugins Studio **Sandbox template** button adds a starter script and a script action. The Worker is a crash and DOM-isolation boundary, not a hard security boundary: only install sandbox plugins you trust.
 
+### Plugin shapes
+
+A plugin can contribute native shapes to the shape picker. Add a `shapes` array to the manifest:
+
+```json
+{
+  "shapes": [{
+    "id": "blob-badge",
+    "label": "Blob badge",
+    "hint": "A soft badge for status labels",
+    "category": "Custom",
+    "paths": [
+      "M50,3 C88,3 98,42 50,97 C2,42 12,3 50,3 Z",
+      "M50,20 C68,20 78,46 50,80 C22,46 32,20 50,20 Z"
+    ]
+  }]
+}
+```
+
+Paths use a `0 0 100 100` viewBox. Hcanvas validates them against an SVG-path character whitelist, registers them under the **Custom** category, and renders them with the block's normal fill, stroke, opacity and gradient settings. Plugin shapes work in Canvas blocks, HTML/PNG/PDF export paths that render the canvas, Present and the shape picker. A plugin can contribute blocks, shapes and page presets together.
 ### Components and plugin blocks
 
 A **plugin block** is a declarative HTML template with manifest-defined fields; it can render custom cards and be edited through its fields, but it does not execute JavaScript. **Components** are plugins marked `component: true`; they appear in the Inspector’s Components section instead of the normal block picker. The built-in **Slider** component is interactive on canvas: drag the track or click a position to change its value; the value is stored in `block.data.value` and is reflected in the Inspector and exports. Other plugin blocks and components are declarative/static unless they add their own interaction in the future.

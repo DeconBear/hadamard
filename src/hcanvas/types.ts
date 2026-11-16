@@ -71,7 +71,8 @@ export type HcShape =
   | 'buttonHome'
   | 'buttonInfo'
   | 'buttonHelp'
-  | 'polygon';
+  | 'polygon'
+  | (string & {});
 
 export interface HcPoint {
   x: number;

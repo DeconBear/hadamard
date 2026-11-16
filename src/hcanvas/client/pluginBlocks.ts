@@ -1,6 +1,7 @@
 import type { HcBlock, HcPage } from '../types.js';
 import { blockPlugin, clearExternalBlockPlugins, listBlockPlugins, listComponentPlugins, registerBlockPlugin, type HcBlockPlugin, type HcPluginField } from '../blockPlugins.js';
 import { renderDeclarativeTemplate, type HcPluginManifest, type HcPluginPagePreset } from '../pluginManifest.js';
+import { clearCustomShapes, registerCustomShape } from '../shapes.js';
 import { clearPluginSandboxes } from './pluginSandbox.js';
 
 function escapeHtml(value: unknown): string {
@@ -189,12 +190,18 @@ export function registerDeclarativePlugins(entries: Array<{ manifest: HcPluginMa
       };
       if (registerBlockPlugin(plugin)) loaded += 1;
     }
+    for (const shape of manifest.shapes || []) {
+      if (!registerCustomShape({ ...shape, hint: shape.hint || '', category: shape.category || 'Custom', pluginId: manifest.id, source: entry.source || 'project' })) {
+        errors.push(manifest.id + ': shape id "' + shape.id + '" is already registered');
+      }
+    }
   }
   return { loaded, plugins: entries.length, errors };
 }
 
 export async function loadExternalPlugins(fetcher: (path: string) => Promise<unknown>): Promise<ExternalPluginLoad> {
   clearPluginSandboxes();
+  clearCustomShapes();
   clearExternalBlockPlugins();
   try {
     const payload = await fetcher('/api/plugins') as { plugins?: Array<{ manifest: HcPluginManifest; source?: 'project' | 'user'; path?: string; enabled?: boolean }>; errors?: string[] };

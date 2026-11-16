@@ -8,7 +8,7 @@ import { boundArrowGeometry, findBindingTarget } from '../bindings.js';
 import { augmentFrameLayoutOps, augmentTextAutoHeightOps } from '../canvasLayout.js';
 import { runCanvasAction, type CanvasActionContext } from './canvasActions.js';
 import { arrowInspectorMarkup, bindArrowInspector } from './arrowInspector.js';
-import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, isHcShape, shapeSvgMarkup } from '../shapes.js';
+import { isHcShape, listHcShapeCategories, listHcShapes, shapeSvgMarkup } from '../shapes.js';
 import { insertHtmlPreset, installHtmlHoverHighlight, installHtmlKeyboardShortcuts, type HtmlEditingContext } from './htmlEditing.js';
 import { renderHtmlInspectorPanel } from './htmlInspector.js';
 import { installFileBrowser, type FileBrowserController } from './fileBrowser.js';
@@ -544,7 +544,7 @@ function beginShapeDraw(startEvent: PointerEvent): void {
       shape,
       ...bounds,
       z: Math.max(0, ...(page.blocks || []).map(item => item.z)) + 1,
-      name: HCANVAS_SHAPES.find(item => item.id === shape)?.label || 'Shape', layerId: activeLayerId(page),
+      name: listHcShapes().find(item => item.id === shape)?.label || 'Shape', layerId: activeLayerId(page),
       style: { fill: '#f3e8ff', stroke: '#a855f7', strokeWidth: 1, radius: 16 },
     };
     void applyOps([{ op: 'add_block', pageId: page.id, block }], { refreshArtboard: true }).then(result => {
@@ -2817,7 +2817,7 @@ function renderBlockInspector(): void {
   html += '<div class="field"><span>Rotation</span><input id="blockRotation" type="number" step="1" value="' + (Number(block.rotation) || 0) + '"></div>';
   if (block.type === 'math') html += '<div class="field"><span>LaTeX</span><textarea id="blockMathTex" rows="3">' + esc(String(block.data?.tex || '')) + '</textarea></div>';
   if (block.type === 'shape') {
-    const shapeOptions = HCANVAS_SHAPE_CATEGORIES.map(category => '<optgroup label="' + esc(category) + '">' + HCANVAS_SHAPES.filter(shape => !shape.hidden && shape.category === category).map(shape => '<option value="' + shape.id + '"' + (block.shape === shape.id ? ' selected' : '') + '>' + esc(shape.label) + '</option>').join('') + '</optgroup>').join('');
+    const shapeOptions = listHcShapeCategories().map(category => '<optgroup label="' + esc(category) + '">' + listHcShapes().filter(shape => !shape.hidden && shape.category === category).map(shape => '<option value="' + shape.id + '"' + (block.shape === shape.id ? ' selected' : '') + '>' + esc(shape.label) + '</option>').join('') + '</optgroup>').join('');
     html += '<div class="field"><span>Shape</span><select id="blockShape">' + shapeOptions + (block.shape === 'polygon' ? '<optgroup label="Cut"><option value="polygon" selected>Polygon</option></optgroup>' : '') + '</select></div>';
     html += '<div class="field"><span>Shape text</span><textarea id="blockShapeText" rows="2">' + esc(block.text || '') + '</textarea></div>';
   }

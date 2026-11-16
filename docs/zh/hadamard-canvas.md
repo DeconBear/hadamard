@@ -512,6 +512,26 @@ hcanvas 可以加载声明式 block 插件，不需要执行 JavaScript bundle�
 
 脚本运行在 Web Worker 中，不在画布 DOM 里。它接收 `ctx.action`、`ctx.block` 和 `ctx.page`，返回允许的效果数组：`set-data`、`apply-style`、`insert-block` 或 `add-page-preset`。宿主会校验每个效果、通过正常画布操作执行，并强制 5 秒超时。Plugin Studio 的 **Sandbox template** 按钮可以插入起始脚本和脚本动作。Worker 是崩溃隔离和 DOM 隔离边界，不是强安全边界；只安装你信任的沙箱插件。
 
+### 插件形状
+
+插件可以向形状选择器贡献原生形状。在 manifest 里增加 `shapes` 数组：
+
+```json
+{
+  "shapes": [{
+    "id": "blob-badge",
+    "label": "Blob badge",
+    "hint": "用于状态标签的柔和徽章",
+    "category": "Custom",
+    "paths": [
+      "M50,3 C88,3 98,42 50,97 C2,42 12,3 50,3 Z",
+      "M50,20 C68,20 78,46 50,80 C22,46 32,20 50,20 Z"
+    ]
+  }]
+}
+```
+
+路径使用 `0 0 100 100` viewBox。Hcanvas 会用 SVG path 字符白名单校验，注册到 **Custom** 分类，并用 block 正常的 fill、stroke、opacity 和渐变设置渲染。插件形状可用于 Canvas block、走 Canvas 渲染的 HTML/PNG/PDF 导出路径、Present 和形状选择器。一个插件可以同时贡献 block、形状和页面模板。
 ### 组件与插件块
 
 **插件块**是带 manifest 字段的声明式 HTML 模板，可渲染自定义卡片并通过字段编辑，但不会执行 JavaScript。**组件**是标记了 `component: true` 的插件，会出现在 Inspector 的 Components 区域而不是普通块选择器。内置的 **Slider** 组件在画布上可交互：拖动滑轨或点击位置即可改变数值；数值保存在 `block.data.value` 中，并同步到 Inspector 和导出结果。其他插件块/组件目前仍是声明式静态内容，暂无自定义交互。

@@ -1,9 +1,44 @@
 import type { HcBlock, HcShape } from './types.js';
 import { blockFill, gradientSvgDefs, normalizeGradient } from './fill.js';
 
-export type HcShapeCategory = 'Basic' | 'Lines' | 'Flowchart' | 'Stars & Banners' | 'Callouts' | 'Action Buttons';
+export type HcShapeCategory = 'Basic' | 'Lines' | 'Flowchart' | 'Stars & Banners' | 'Callouts' | 'Action Buttons' | 'Custom';
 
-export const HCANVAS_SHAPE_CATEGORIES: HcShapeCategory[] = ['Basic', 'Lines', 'Flowchart', 'Stars & Banners', 'Callouts', 'Action Buttons'];
+export const HCANVAS_SHAPE_CATEGORIES: HcShapeCategory[] = ['Basic', 'Lines', 'Flowchart', 'Stars & Banners', 'Callouts', 'Action Buttons', 'Custom'];
+
+export interface HcCustomShapeDefinition extends HcShapeDefinition {
+  paths: string[];
+  pluginId?: string;
+  source?: 'project' | 'user';
+}
+
+const customShapeRegistry = new Map<string, HcCustomShapeDefinition>();
+
+export function registerCustomShape(shape: HcCustomShapeDefinition): boolean {
+  if (!shape.id || !/^[a-z][a-z0-9-]*$/.test(shape.id)) return false;
+  if (HCANVAS_SHAPES.some(item => item.id === shape.id) || customShapeRegistry.has(shape.id)) return false;
+  if (!Array.isArray(shape.paths) || !shape.paths.length) return false;
+  customShapeRegistry.set(shape.id, { ...shape, category: (shape.category || 'Custom') as HcShapeCategory });
+  return true;
+}
+
+export function clearCustomShapes(pluginId?: string): void {
+  if (!pluginId) { customShapeRegistry.clear(); return; }
+  for (const [id, shape] of customShapeRegistry) if (shape.pluginId === pluginId) customShapeRegistry.delete(id);
+}
+
+export function listHcShapes(): HcShapeDefinition[] {
+  return [...HCANVAS_SHAPES, ...customShapeRegistry.values()];
+}
+
+export function listHcShapeCategories(): HcShapeCategory[] {
+  const categories = new Set<HcShapeCategory>(HCANVAS_SHAPE_CATEGORIES);
+  for (const shape of customShapeRegistry.values()) categories.add(shape.category);
+  return [...categories];
+}
+
+export function hcShapeDefinition(shape: string): HcShapeDefinition | null {
+  return listHcShapes().find(item => item.id === shape) || null;
+}
 
 export interface HcShapeDefinition {
   id: HcShape;
@@ -85,7 +120,7 @@ export const HCANVAS_SHAPES: HcShapeDefinition[] = [
 ];
 
 export function isHcShape(value: string | undefined): value is HcShape {
-  return Boolean(value && HCANVAS_SHAPES.some(shape => shape.id === value));
+  return Boolean(value && (HCANVAS_SHAPES.some(shape => shape.id === value) || customShapeRegistry.has(value)));
 }
 
 function escapeAttribute(value: string): string {
@@ -223,7 +258,10 @@ export function shapeSvgMarkup(block: ShapeGeometryBlock): string {
   const common = paint.common;
   let geometry = '';
 
-  switch (shape) {
+  const customShape = customShapeRegistry.get(shape);
+  if (customShape) {
+    geometry = customShape.paths.map(path => '<path d="' + escapeAttribute(path) + '"' + common + '/>').join('');
+  } else switch (shape) {
     case 'ellipse':
       geometry = '<ellipse cx="50" cy="50" rx="49" ry="49"' + common + '/>';
       break;

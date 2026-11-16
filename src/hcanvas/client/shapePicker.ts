@@ -1,5 +1,5 @@
 import type { HcShape } from '../types.js';
-import { HCANVAS_SHAPES, HCANVAS_SHAPE_CATEGORIES, shapeSvgMarkup, type HcShapeCategory } from '../shapes.js';
+import { listHcShapeCategories, listHcShapes, shapeSvgMarkup, type HcShapeCategory } from '../shapes.js';
 
 export interface ShapePickerOptions {
   onChoose(shape: HcShape): void;
@@ -10,7 +10,7 @@ export interface ShapePicker {
   hide(): void;
 }
 
-const VISIBLE_SHAPES = HCANVAS_SHAPES.filter(shape => !shape.hidden);
+function visibleShapes() { return listHcShapes().filter(shape => !shape.hidden); }
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -109,7 +109,7 @@ export function createShapePicker(options: ShapePickerOptions): ShapePicker {
     const head = node.querySelector<HTMLElement>('.shape-popover-head strong');
     const total = node.querySelector<HTMLElement>('.shape-popover-head span');
     if (head) head.textContent = translatePhrase('Shapes');
-    if (total) total.textContent = countLabel(VISIBLE_SHAPES.length);
+    if (total) total.textContent = countLabel(visibleShapes().length);
     const close = node.querySelector<HTMLButtonElement>('.shape-popover-close');
     if (close) { close.setAttribute('aria-label', translatePhrase('Close shape library')); close.title = translatePhrase('Close (Esc)'); }
     const search = node.querySelector<HTMLInputElement>('[data-shape-search]');
@@ -135,7 +135,7 @@ export function createShapePicker(options: ShapePickerOptions): ShapePicker {
     const clear = popover.querySelector<HTMLButtonElement>('[data-shape-search-clear]');
     if (!search || !grid || !heading || !count || !clear) return;
     const query = search.value.trim().toLocaleLowerCase();
-    const shapes = VISIBLE_SHAPES.filter(shape => {
+    const shapes = visibleShapes().filter(shape => {
       if (!query) return shape.category === activeCategory;
       return (shape.label + ' ' + shape.hint + ' ' + shape.category + ' ' + categoryLabel(shape.category) + ' ' + shapeLabel(shape.label)).toLocaleLowerCase().includes(query);
     });
@@ -178,14 +178,14 @@ export function createShapePicker(options: ShapePickerOptions): ShapePicker {
     popover.setAttribute('role', 'dialog');
     popover.setAttribute('aria-label', 'Shape library');
     popover.setAttribute('aria-hidden', 'true');
-    popover.innerHTML = '<div class="shape-popover-head"><div><strong>' + translatePhrase('Shapes') + '</strong><span>' + countLabel(VISIBLE_SHAPES.length) + '</span></div>' +
+    popover.innerHTML = '<div class="shape-popover-head"><div><strong>' + translatePhrase('Shapes') + '</strong><span>' + countLabel(visibleShapes().length) + '</span></div>' +
       '<button type="button" class="shape-popover-close" aria-label="' + translatePhrase('Close shape library') + '" title="' + translatePhrase('Close (Esc)') + '">×</button></div>' +
       '<div class="shape-search"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.25"/><path d="m12.5 12.5 4 4"/></svg>' +
       '<input type="search" data-shape-search placeholder="' + translatePhrase('Find a shape…') + '" aria-label="' + translatePhrase('Search shapes') + '" autocomplete="off" spellcheck="false" />' +
       '<button type="button" class="shape-search-clear hidden" data-shape-search-clear aria-label="' + translatePhrase('Clear shape search') + '" title="' + translatePhrase('Clear search') + '">×</button></div>' +
       '<div class="shape-popover-body"><div class="shape-category-tabs" role="tablist" aria-label="' + translatePhrase('Shape categories') + '" aria-orientation="vertical">' +
-      HCANVAS_SHAPE_CATEGORIES.map((category, index) => {
-        const total = VISIBLE_SHAPES.filter(shape => shape.category === category).length;
+      listHcShapeCategories().map((category, index) => {
+        const total = visibleShapes().filter(shape => shape.category === category).length;
         return '<button type="button" id="shape-category-' + index + '" role="tab" class="shape-category-tab" data-shape-category="' + escapeHtml(category) + '" aria-selected="false" aria-controls="shape-picker-grid" tabindex="-1"><span>' + escapeHtml(categoryLabel(category)) + '</span><small>' + total + '</small></button>';
       }).join('') + '</div>' +
       '<div class="shape-library"><div class="shape-library-meta"><span data-shape-grid-title></span><small><span data-shape-result-count></span> shapes</small></div>' +

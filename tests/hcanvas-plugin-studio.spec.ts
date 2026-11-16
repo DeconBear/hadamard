@@ -6,6 +6,7 @@ import { validatePluginManifest } from '../src/hcanvas/pluginManifest.js';
 import { installPluginManifest } from '../src/hcanvas/pluginGallery.js';
 import { readPluginSource } from '../src/hcanvas/pluginLoader.js';
 import { runPluginAction } from '../src/hcanvas/client/pluginActions.js';
+import { clearCustomShapes, listHcShapes, registerCustomShape, shapeSvgMarkup } from '../src/hcanvas/shapes.js';
 import type { HcBlock, HcOp, HcPage } from '../src/hcanvas/types.js';
 
 const manifest = {
@@ -52,6 +53,24 @@ describe('Hcanvas plugin studio', () => {
     expect(parsed.blocks[0]!.actions?.[0]?.kind).toBe('script');
     expect(() => validatePluginManifest({ ...sandbox, runtime: undefined })).toThrow(/runtime/);
     expect(() => validatePluginManifest({ ...sandbox, script: undefined })).toThrow(/script/);
+  });
+
+  it('validates custom plugin shapes and renders them as SVG paths', () => {
+    const shapeManifest = {
+      ...manifest,
+      blocks: [],
+      shapes: [{ id: 'plugin-blob', label: 'Plugin blob', category: 'Custom', paths: ['M50,2 C90,2 98,40 50,98 C2,40 10,2 50,2 Z'] }],
+    };
+    const parsed = validatePluginManifest(shapeManifest);
+    expect(parsed.shapes[0]!.id).toBe('plugin-blob');
+    expect(parsed.shapes[0]!.category).toBe('Custom');
+    expect(() => validatePluginManifest({ ...shapeManifest, shapes: [{ ...shapeManifest.shapes[0], paths: ['<script>'] }] })).toThrow(/invalid/);
+    clearCustomShapes();
+    expect(registerCustomShape({ ...parsed.shapes[0]!, hint: '', category: 'Custom', pluginId: 'test' })).toBe(true);
+    expect(listHcShapes().some(shape => shape.id === 'plugin-blob')).toBe(true);
+    const rendered = shapeSvgMarkup({ shape: 'plugin-blob', style: { fill: '#fff', stroke: '#000', strokeWidth: 1 } });
+    expect(rendered).toContain('M50,2 C90,2 98,40 50,98 C2,40 10,2 50,2 Z');
+    clearCustomShapes();
   });
 
   it('rejects unsupported or incomplete actions', () => {

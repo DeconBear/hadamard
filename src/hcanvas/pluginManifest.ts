@@ -59,6 +59,15 @@ export interface HcPluginAction {
   handler?: string;
 }
 
+export interface HcPluginShapeDefinition {
+  id: string;
+  label: string;
+  hint?: string;
+  category?: 'Basic' | 'Lines' | 'Flowchart' | 'Stars & Banners' | 'Callouts' | 'Action Buttons' | 'Custom';
+  paths: string[];
+  pluginId?: string;
+}
+
 export interface HcDeclarativeBlock {
   type: string;
   label: string;
@@ -80,6 +89,7 @@ export interface HcPluginManifest {
   script?: string;
   blocks: HcDeclarativeBlock[];
   pagePresets: HcPluginPagePreset[];
+  shapes: HcPluginShapeDefinition[];
 }
 
 
@@ -169,6 +179,30 @@ function validatePagePreset(input: unknown, index: number): HcPluginPagePreset {
   };
 }
 
+function validateShape(input: unknown, index: number): HcPluginShapeDefinition {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) fail('shapes[' + index + '] must be an object');
+  const raw = input as Record<string, unknown>;
+  const id = str(raw.id, 'shapes[' + index + '].id', 64);
+  if (!/^[a-z][a-z0-9-]*$/.test(id)) fail('shapes[' + index + '].id has invalid characters');
+  const paths = Array.isArray(raw.paths) ? raw.paths.slice(0, 12).map((path, pathIndex) => {
+    if (typeof path !== 'string' || !path.trim()) fail('shapes[' + index + '].paths[' + pathIndex + '] must be a non-empty string');
+    const value = path.trim();
+    if (value.length > 5000) fail('shapes[' + index + '].paths[' + pathIndex + '] is too long');
+    if (!/^[MmLlHhVvCcSsQqTtAaZz0-9eE+.,\-\s]+$/.test(value)) fail('shapes[' + index + '].paths[' + pathIndex + '] contains invalid SVG path characters');
+    return value;
+  }) : [];
+  if (!paths.length) fail('shapes[' + index + '].paths is required');
+  const category = raw.category === undefined ? 'Custom' : raw.category;
+  if (category !== 'Basic' && category !== 'Lines' && category !== 'Flowchart' && category !== 'Stars & Banners' && category !== 'Callouts' && category !== 'Action Buttons' && category !== 'Custom') fail('shapes[' + index + '].category is not supported');
+  return {
+    id,
+    label: str(raw.label, 'shapes[' + index + '].label', 120),
+    hint: raw.hint === undefined ? undefined : str(raw.hint, 'shapes[' + index + '].hint', 240),
+    category,
+    paths,
+  };
+}
+
 function validateAction(input: unknown, index: number): HcPluginAction {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('actions[' + index + '] must be an object');
   const raw = input as Record<string, unknown>;
@@ -224,7 +258,9 @@ export function validatePluginManifest(input: unknown): HcPluginManifest {
   if (raw.blocks !== undefined && !Array.isArray(raw.blocks)) fail('blocks must be an array');
   if (Array.isArray(raw.blocks) && raw.blocks.length > 20) fail('too many blocks');
   const hasPages = Array.isArray(raw.pagePresets) && raw.pagePresets.length > 0;
-  if (!hasPages && (!Array.isArray(raw.blocks) || raw.blocks.length === 0)) fail('manifest needs blocks or pagePresets');
+  const hasShapes = Array.isArray(raw.shapes) && raw.shapes.length > 0;
+  if (!hasPages && !hasShapes && (!Array.isArray(raw.blocks) || raw.blocks.length === 0)) fail('manifest needs blocks, shapes or pagePresets');
+  const shapes = Array.isArray(raw.shapes) ? raw.shapes.slice(0, 50).map(validateShape) : [];
   const blocks = (Array.isArray(raw.blocks) ? raw.blocks : []).map((block, index) => {
     if (!block || typeof block !== 'object') fail('blocks[' + index + '] must be an object');
     const item = block as Record<string, unknown>;
@@ -258,6 +294,7 @@ export function validatePluginManifest(input: unknown): HcPluginManifest {
     ...(script ? { runtime: 'sandbox' as const, script } : {}),
     blocks,
     pagePresets: Array.isArray(raw.pagePresets) ? raw.pagePresets.slice(0, 30).map(validatePagePreset) : [],
+    shapes,
   };
 }
 
