@@ -29,6 +29,10 @@ import { installCoreCommands } from './coreCommands.js';
 import { loadExtensionCatalog } from './extensionCatalog.js';
 import { installExtensionRuntime, type ExtensionRuntime } from './extensionRuntime.js';
 import { installCommandPalette } from './commandPalette.js';
+import { createKernelManager, type KernelDescriptor, type KernelManager } from './kernelManager.js';
+import { installExecCells, mountExecCell, runAllExecCells } from './execCell.js';
+import { extensionContributions } from './extensionCatalog.js';
+import { commandRegistry } from './commandRegistry.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
 import { insertAssetIntoPage } from './assetInsert.js';
@@ -170,6 +174,7 @@ let pagesRenderTimer: ReturnType<typeof setTimeout> | undefined;
 let shapePicker: ShapePicker | null = null;
 let fileBrowser: FileBrowserController | null = null;
 let extensionRuntime: ExtensionRuntime | null = null;
+let kernelManager: KernelManager | null = null;
 let presentInteractions: PresentInteractions | null = null;
 let sliceTool: SliceTool | null = null;
 let historyPanel: { render(): void } | null = null;
@@ -423,7 +428,7 @@ async function initialize(): Promise<void> {
     state.spaceHeld = false;
     if (state.tool !== 'hand') el('viewport').classList.remove('tool-hand');
   });
-  window.addEventListener('beforeunload', () => { if (state.doc) void syncActive(); });
+  window.addEventListener('beforeunload', () => { kernelManager?.dispose(); if (state.doc) void syncActive(); });
 }
 const DEFAULT_VECTOR_STROKE = '#1f2430';
 const DEFAULT_VECTOR_STROKE_WIDTH = 2;
@@ -828,6 +833,20 @@ function bindStaticActions(): void {
     toast,
     openExtensionView: viewId => extensionRuntime?.openView(viewId) ?? false,
   });
+  kernelManager = createKernelManager({ request: api, token: () => boot.token });
+  installExecCells({
+    kernelManager,
+    getKernels: () => extensionContributions<KernelDescriptor>('kernels').map(item => item.contribution),
+    getDocId: () => state.doc?.id || '',
+    patchData: async (pageId, blockId, data) => {
+      const result = await applyOps([{ op: 'update_block', pageId, blockId, patch: { data } } as HcOp], { refreshArtboard: true });
+      return Boolean(result);
+    },
+    openEditor: (pageId, blockId) => openSourceEditor({ pageId, blockId }),
+    toast,
+  });
+  commandRegistry.register({ id: 'cell.insert', title: 'Cell: Insert code cell', category: 'Cell', handler: () => { void addBlock('exec', { code: 'print("hello")', language: 'python', w: 560, h: 360 }, viewportWorldCenter()); } });
+  commandRegistry.register({ id: 'cell.runAll', title: 'Cell: Run all code cells', category: 'Cell', handler: () => { const page = activePage(); if (page) void runAllExecCells(page); } });
   historyPanel = installHistoryPanel({
     mount: el('historyPanel'),
     request: api,
@@ -1092,7 +1111,7 @@ function editActiveBlock(): void {
     const wrap = qs<HTMLDivElement>('.block-wrap[data-block-id="' + block.id + '"]');
     if (wrap) startShapeTextEdit(block, wrap, { getDoc: () => state.doc, commit: (target, patch, historyBase) => { void persistBlock(target, patch, historyBase || undefined); } });
   }
-  else if (block.type === 'markdown' || block.type === 'code' || block.type === 'text') openSourceEditor({ pageId: page.id, blockId: block.id });
+  else if (block.type === 'markdown' || block.type === 'code' || block.type === 'text' || block.type === 'exec') openSourceEditor({ pageId: page.id, blockId: block.id });
   else if (block.type === 'math') openFormulaModal(block);
   else if (block.type === 'image') openImageModal(block);
   else renderInspector();
@@ -1965,7 +1984,7 @@ function renderCanvasPage(container: HTMLElement, page: HcPage): void {
     const editing = state.editing?.pageId === page.id && state.editing?.blockId === block.id;
     const content = document.createElement('div');
     content.className = 'block-content';
-    content.appendChild(renderCanvasBlockContent(block, page, { editing, wrapHtml: wrapBlockHtml, setupHtmlEditing }));
+    content.appendChild(renderCanvasBlockContent(block, page, { editing, wrapHtml: wrapBlockHtml, setupHtmlEditing, execCell: (host, bloc, pg) => mountExecCell(host, bloc, pg) }));
     wrap.appendChild(content);
     if (!editing) {
       const hit = document.createElement('div');
@@ -1985,7 +2004,7 @@ function previewBlockStyle(blockId: string, stylePatch: Record<string, unknown>)
   const content = wrap?.querySelector<HTMLElement>('.block-content');
   if (!block || !content) return;
   const preview = { ...block, style: { ...(block.style || {}), ...stylePatch } };
-  content.replaceChildren(renderCanvasBlockContent(preview, page, { editing: false, wrapHtml: wrapBlockHtml, setupHtmlEditing }));
+  content.replaceChildren(renderCanvasBlockContent(preview, page, { editing: false, wrapHtml: wrapBlockHtml, setupHtmlEditing, execCell: (host, bloc, pg) => mountExecCell(host, bloc, pg) }));
 }
 function previewPageBackground(color: string): void {
   const page = activePage();

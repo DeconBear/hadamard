@@ -1007,6 +1007,28 @@ body.file-browser-mode #toolRail, body.file-browser-mode #selectionToolbar, body
 body.file-browser-mode #viewport { background:#f4f2ec; }
 .file-surface { position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; background:#fff; }
 .extension-row { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); }
+.exec-cell { display:flex; flex-direction:column; height:100%; min-height:0; background:#171923; color:#e2e8f0; border-radius:12px; overflow:hidden; }
+.block-wrap.type-exec .exec-head { position:relative; z-index:6; }
+.block-wrap.type-exec .exec-head .btn, .block-wrap.type-exec .exec-kernel { pointer-events:auto; }
+.exec-head { flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:6px 10px; background:rgba(255,255,255,.06); border-bottom:1px solid rgba(255,255,255,.1); }
+.exec-kernel { font:11px Inter,sans-serif; background:#262a36; color:#e2e8f0; border:1px solid #3a4150; border-radius:6px; padding:2px 6px; max-width:160px; }
+.exec-status { font:10px Inter,sans-serif; color:#9aa4b2; }
+.exec-status.status-running, .exec-status.status-queued { color:#f6c76b; }
+.exec-status.status-ok { color:#7ee2a8; }
+.exec-status.status-error, .exec-status.status-aborted { color:#ff9b9b; }
+.exec-actions { margin-left:auto; display:flex; gap:4px; }
+.exec-actions .btn { background:#2f3543; color:#e2e8f0; border-color:#444c5e; }
+.exec-actions .btn.primary { background:#6657D9; border-color:#6657D9; color:#fff; }
+.exec-code { margin:0; padding:10px 12px; overflow:auto; white-space:pre-wrap; word-break:break-word; font:12px/1.55 ui-monospace,Consolas,monospace; flex:1; min-height:36px; }
+.exec-outputs { flex:1; min-height:36px; overflow:auto; background:#fff; color:#1f2430; padding:8px 10px; border-top:1px solid rgba(255,255,255,.12); font:12px/1.5 ui-monospace,Consolas,monospace; }
+.exec-out-stream, .exec-out-text { margin:0 0 6px; white-space:pre-wrap; word-break:break-word; font:12px/1.5 ui-monospace,Consolas,monospace; }
+.exec-out-stream.stderr { color:#b42318; }
+.exec-out-image { display:block; max-width:100%; max-height:320px; margin:4px 0; background:#fff; border:1px solid #e3ded3; border-radius:6px; }
+.exec-out-html { display:block; width:100%; min-height:180px; border:1px solid #e3ded3; border-radius:6px; margin:4px 0; }
+.exec-out-error { margin:4px 0; padding:8px 10px; border:1px solid #f1b5b0; border-radius:8px; background:#fff5f4; color:#b42318; white-space:pre-wrap; font:12px/1.5 ui-monospace,Consolas,monospace; }
+.exec-out-error pre { margin:6px 0 0; white-space:pre-wrap; }
+.exec-out-notice { color:#8a8276; font-size:11px; }
+.exec-out-empty { color:#8a8276; font-size:11px; }
 .command-palette { max-width: 640px; }
 .palette-search { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); }
 .palette-search input { flex:1; border:0; outline:0; font:15px Inter,sans-serif; background:transparent; color:var(--text); }

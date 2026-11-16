@@ -4,6 +4,7 @@ import { arcSvgMarkup } from './arcs.js';
 import { shapeSvgMarkup, shapeTextMarkup } from './shapes.js';
 import { vectorSvgMarkup } from './vector.js';
 import { blockPlugin } from './blockPlugins.js';
+import { renderStoredOutputsHtml, storedOutputs } from './execOutputs.js';
 import type { HcBlock } from './types.js';
 
 export type HcBlockRenderMode = 'export' | 'present';
@@ -74,11 +75,20 @@ function pluginSummary(block: HcBlock): string {
   return [plugin.label, ...(values || [])].filter(Boolean).join(' · ');
 }
 
+function execBody(block: HcBlock): string {
+  const outputs = storedOutputs(block.data);
+  return '<div class="exec-cell" style="height:100%;display:flex;flex-direction:column;overflow:hidden;background:#171923;color:#e2e8f0;border-radius:14px">' +
+    '<pre style="margin:0;padding:14px 16px;overflow:auto;white-space:pre-wrap;font:12px/1.6 ui-monospace,Consolas,monospace;color:#e2e8f0">' + escapeHtml(block.code || '') + '</pre>' +
+    '<div style="border-top:1px solid rgba(255,255,255,.12);padding:10px 14px;overflow:auto;background:#fff;color:#1f2430;flex:1;min-height:0">' + renderStoredOutputsHtml(outputs) + '</div>' +
+    '</div>';
+}
+
 const definitions: HcBuiltinBlockDefinition[] = [
   { type: 'html', label: 'HTML', hint: 'Editable HTML block', renderBody: block => block.html || '', summary: block => stripMarkup(block.html || '').slice(0, 100) },
   { type: 'text', label: 'Text', hint: 'Native text block', renderBody: textBody, summary: block => (block.text || '').replace(/\s+/g, ' ').slice(0, 100) },
   { type: 'markdown', label: 'Markdown', hint: 'Markdown block', renderBody: markdownBody, summary: block => stripMarkup(block.markdown || '').slice(0, 100) },
   { type: 'code', label: 'Code', hint: 'Code block', renderBody: codeBody, summary: block => (block.code || '').split('\n')[0]?.slice(0, 100) || 'code' },
+  { type: 'exec', label: 'Code cell', hint: 'Executable code cell (kernel)', renderBody: execBody, summary: block => 'cell · ' + ((block.code || '').split('\n')[0]?.slice(0, 80) || 'empty') + ' · ' + storedOutputs(block.data).length + ' output(s)' },
   { type: 'image', label: 'Image', hint: 'Image block', renderBody: imageBody, summary: block => block.alt || block.name || 'image' },
   { type: 'math', label: 'Formula', hint: 'LaTeX formula block', renderBody: block => renderMathHtml(String(block.data?.tex || ''), true), summary: block => 'formula · ' + String(block.data?.tex || '').slice(0, 80) },
   { type: 'curve', label: 'Curve', hint: 'Native cubic Bezier curve', renderBody: block => curveSvgMarkup(block), summary: block => 'curve' },

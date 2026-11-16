@@ -16,13 +16,14 @@ export function openSourceEditorFor(options: SourceEditorOptions): void {
   }
   if (block) {
     const kind = block.type;
-    const value = kind === 'markdown' ? (block.markdown || '') : kind === 'code' ? (block.code || '') : kind === 'text' ? (block.text || '') : (block.html || '');
+    const isExec = kind === 'exec';
+    const value = kind === 'markdown' ? (block.markdown || '') : (kind === 'code' || isExec) ? (block.code || '') : kind === 'text' ? (block.text || '') : (block.html || '');
     options.openCodeModal({
       title: block.name || kind + ' block', kind, value,
-      language: kind === 'markdown' ? 'markdown' : kind === 'code' ? 'code' : kind === 'text' ? 'text' : 'html',
+      language: isExec ? (block.language || 'python') : kind === 'markdown' ? 'markdown' : kind === 'code' ? 'code' : kind === 'text' ? 'text' : 'html',
       save: async next => {
         const op: HcOp = kind === 'markdown' ? { op: 'set_block_markdown', pageId: page.id, blockId: block.id, markdown: next }
-          : kind === 'code' ? { op: 'set_block_code', pageId: page.id, blockId: block.id, code: next }
+          : (kind === 'code' || isExec) ? { op: 'set_block_code', pageId: page.id, blockId: block.id, code: next }
           : kind === 'text' ? { op: 'set_block_text', pageId: page.id, blockId: block.id, text: next }
           : { op: 'set_block_html', pageId: page.id, blockId: block.id, html: next };
         const result = await options.applyOps([op], { refreshArtboard: true });

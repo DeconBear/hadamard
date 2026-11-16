@@ -4,6 +4,7 @@ import { arcSvgMarkup } from '../arcs.js';
 import { shapeSvgMarkup, shapeTextMarkup } from '../shapes.js';
 import { vectorSvgMarkup } from '../vector.js';
 import { pluginBlockMarkup, pluginFallbackMarkup, pluginIframeDocument } from './pluginBlocks.js';
+import { renderStoredOutputsHtml } from '../execOutputs.js';
 import { esc } from './utils.js';
 import type { HcBlock, HcPage } from '../types.js';
 
@@ -11,6 +12,7 @@ export interface ClientBlockRenderContext {
   editing: boolean;
   wrapHtml(html: string, pageId?: string, blockId?: string): string;
   setupHtmlEditing(iframe: HTMLIFrameElement, pageId: string, blockId?: string): void;
+  execCell?(host: HTMLElement, block: HcBlock, page: HcPage): void;
 }
 
 export interface ClientBlockDefinition {
@@ -123,6 +125,17 @@ function renderArc(block: HcBlock): HTMLElement {
   return host;
 }
 
+function renderExec(block: HcBlock, page: HcPage, context: ClientBlockRenderContext): HTMLElement {
+  const host = document.createElement('div');
+  host.className = 'exec-cell';
+  if (context.execCell) {
+    context.execCell(host, block, page);
+    return host;
+  }
+  host.innerHTML = '<pre class="exec-code">' + esc(block.code || '') + '</pre><div class="exec-outputs">' + renderStoredOutputsHtml(block.data?.outputs as never) + '</div>';
+  return host;
+}
+
 function renderPlugin(block: HcBlock): HTMLElement {
   const host = document.createElement('div');
   host.className = 'block-plugin';
@@ -146,6 +159,7 @@ const definitions: ClientBlockDefinition[] = [
   { type: 'text', render: block => renderText(block) },
   { type: 'markdown', render: block => renderMarkdown(block) },
   { type: 'code', render: block => renderCode(block) },
+  { type: 'exec', render: renderExec },
   { type: 'image', render: block => renderImage(block) },
   { type: 'math', render: block => renderMath(block) },
   { type: 'curve', render: block => renderCurve(block) },
