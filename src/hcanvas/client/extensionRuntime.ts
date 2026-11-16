@@ -2,6 +2,7 @@ import { commandRegistry } from './commandRegistry.js';
 import { findExtension, getExtensionCatalog, type ExtensionCatalogEntry, type ExtensionFormatContribution, type ExtensionViewerContribution } from './extensionCatalog.js';
 import { ExtensionViewHost, type ExtensionViewContext, type ViewInstance } from './viewerHost.js';
 import { builtinViewer } from './builtinViewers.js';
+import type { HcPage } from '../types.js';
 
 export interface CustomViewerInput {
   rootId: string;
@@ -19,12 +20,16 @@ export interface ExtensionRuntimeOptions {
   toast(message: string, kind?: 'info' | 'success' | 'error'): void;
   openViewTab(tab: { id: string; title: string; icon?: string; mount(host: HTMLElement): MountedView | void }): void;
   getLanguage?(): string;
+  /** Persist extension-page data through the host document op pipeline. */
+  applyPageData?(pageId: string, data: unknown): Promise<boolean>;
 }
 
 export interface ExtensionRuntime {
   resolveCustomViewer(input: CustomViewerInput): boolean;
   /** Open a contributed shell view (workspace tab) by view id. */
   openView(viewId: string): boolean;
+  /** Mount an extension page format inside a host element (P6). */
+  mountPage(page: HcPage, host: HTMLElement): MountedView | null;
 }
 
 interface FileViewerMatch {
@@ -98,8 +103,34 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
     resolveMethod: async (method, params, instance) => {
       const record = (params && typeof params === 'object' ? params : {}) as Record<string, unknown>;
       switch (method) {
-        case 'document.read':
+        case 'document.read': {
+          const pageContext = instance.context.page as { pageId?: string; format?: string; data?: unknown } | undefined;
+          if (pageContext || instance.surface === 'page') {
+            return {
+              docId: null,
+              pageId: pageContext?.pageId ?? null,
+              format: pageContext?.format ?? instance.format,
+              data: pageContext?.data ?? {},
+              readOnly: false,
+            };
+          }
           return { docId: null, pageId: null, format: instance.format, data: {}, readOnly: true };
+        }
+        case 'document.apply': {
+          const pageContext = instance.context.page as { pageId?: string; data?: unknown } | undefined;
+          if (!pageContext?.pageId || !options.applyPageData) throw viewError('capability_denied', 'This viewer cannot modify the document.');
+          const ops = Array.isArray(record.ops) ? record.ops as Array<Record<string, unknown>> : [];
+          let changed = false;
+          for (const op of ops) {
+            if (op.op !== 'update_page') continue;
+            const patch = op.patch && typeof op.patch === 'object' ? op.patch as Record<string, unknown> : {};
+            const extension = patch.extension && typeof patch.extension === 'object' ? patch.extension as Record<string, unknown> : undefined;
+            if (!extension || !('data' in extension)) continue;
+            changed = await options.applyPageData(pageContext.pageId, extension.data) || changed;
+          }
+          if (!changed) throw viewError('invalid_params', 'No supported page update in ops.');
+          return { revision: 0 };
+        }
         case 'file.read': {
           const rootId = String(record.rootId || '');
           const filePath = String(record.path || '');
@@ -252,6 +283,7 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
         surface: context.surface,
         ...(typeof context.format === 'string' ? { format: context.format } : {}),
         ...(context.file && typeof context.file === 'object' ? { file: context.file } : {}),
+        ...(context.page && typeof context.page === 'object' ? { page: context.page } : {}),
       });
       return { dispose: () => mounted?.dispose?.() };
     } catch (error) {
@@ -295,7 +327,29 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
     return true;
   };
 
-  return { resolveCustomViewer, openView };
+  const mountPage = (page: HcPage, host: HTMLElement): MountedView | null => {
+    const extensionContent = page.extension;
+    if (!extensionContent || typeof extensionContent.format !== 'string') return null;
+    for (const extension of getExtensionCatalog().extensions) {
+      if (!extension.enabled) continue;
+      const format = extension.contributes.formats.find(item => item.id === extensionContent.format);
+      if (!format) continue;
+      const viewer = extension.contributes.viewers.find(item => item.id === format.viewer);
+      if (!viewer) continue;
+      const pageSurface = (viewer.surfaces || []).includes('page') || (format.surfaces || []).includes('page');
+      if (!pageSurface) continue;
+      const context: ExtensionViewContext = {
+        surface: 'page',
+        format: format.id,
+        page: { pageId: page.id, format: format.id, data: extensionContent.data },
+      };
+      if (viewer.type === 'builtin') return mountBuiltin(extension, viewer, format.label || viewer.label || 'page', context, host);
+      return mountViewer(extension, viewer.id, format.label || viewer.label || 'page', context, host);
+    }
+    return null;
+  };
+
+  return { resolveCustomViewer, openView, mountPage };
 }
 
 function escapeHtml(value: string): string {

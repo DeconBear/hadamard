@@ -544,6 +544,10 @@ export async function exportFile(
   outDir: string,
   options: { pageId?: string; outPath?: string; bleedMm?: number; cropMarks?: boolean } = {},
 ): Promise<HcExportResult> {
+  const candidatePages = options.pageId ? [firstPage(doc, options.pageId)] : doc.pages;
+  if (candidatePages.some(page => page.mode === 'extension')) {
+    throw new Error('Extension pages cannot be exported yet. Use the extension viewer to capture its content.');
+  }
   await mkdir(outDir, { recursive: true });
   if (format === 'docx') return exportDocx(doc, outDir, options);
   if (format === 'pptx') return exportPptx(doc, outDir, options);

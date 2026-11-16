@@ -1,0 +1,60 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html, body { margin:0; height:100%; background:#f3f1ec; color:#1f2430; font:13px/1.5 Inter,system-ui,sans-serif; }
+  #app { height:100%; display:flex; flex-direction:column; min-height:0; }
+  header { display:flex; align-items:baseline; gap:10px; padding:18px 24px 10px; }
+  header h1 { margin:0; font:500 22px/1.2 Georgia,serif; }
+  header small { color:#8a8276; font-size:11px; }
+  main { flex:1; min-height:0; display:flex; gap:14px; padding:8px 24px 24px; overflow:auto; }
+  .column { flex:0 0 240px; background:#fff; border:1px solid #e3ded3; border-radius:12px; padding:10px; display:flex; flex-direction:column; gap:8px; }
+  .column h2 { margin:0 0 2px; font:600 11px/1.4 Inter,sans-serif; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; display:flex; justify-content:space-between; }
+  .card { background:#faf8f3; border:1px solid #eee7db; border-radius:9px; padding:9px 10px; font-size:12px; }
+  .card small { display:block; color:#8a8276; font-size:10px; margin-top:4px; }
+  .empty { padding:8px; color:#8a8276; font-size:11px; }
+  footer { padding:0 24px 14px; color:#8a8276; font-size:11px; }
+</style></head>
+<body><div id="app">
+  <header><h1 id="title">Board</h1><small id="source"></small></header>
+  <main id="columns"></main>
+  <footer>Rendered by the Board Page extension · page data read through <code>hc.document.read()</code>.</footer>
+</div>
+<script>
+const DEFAULT_BOARD = {
+  title: 'Extension page demo',
+  columns: [
+    { name: 'Backlog', cards: [{ title: 'Define page format contract', meta: 'P6' }, { title: 'Thumbnail + Present fallback', meta: 'P6' }] },
+    { name: 'In progress', cards: [{ title: 'page.mode = extension', meta: 'data model' }] },
+    { name: 'Done', cards: [{ title: 'Extension registry + viewer runtime', meta: 'P0/P1' }] }
+  ]
+};
+(async () => {
+  const columns = document.getElementById('columns');
+  try {
+    const hc = await HcanvasView.acquire();
+    let board = DEFAULT_BOARD;
+    let source = 'default sample';
+    if (hc.context.page) {
+      const data = hc.context.page.data;
+      if (data && Array.isArray(data.columns)) { board = data; source = 'page data'; }
+      else if (data) { board = Object.assign({}, DEFAULT_BOARD, data); source = 'page data'; }
+    } else if (hc.context.file) {
+      const result = await hc.files.read(hc.context.file.rootId, hc.context.file.path);
+      board = JSON.parse(result.content);
+      source = hc.context.file.path;
+    }
+    document.getElementById('title').textContent = board.title || 'Board';
+    document.getElementById('source').textContent = source;
+    if (!Array.isArray(board.columns) || !board.columns.length) throw new Error('Board data needs a non-empty columns array.');
+    columns.innerHTML = board.columns.map(column =>
+      '<section class="column"><h2><span>' + escapeHtml(column.name || 'Column') + '</span><span>' + (Array.isArray(column.cards) ? column.cards.length : 0) + '</span></h2>' +
+      ((Array.isArray(column.cards) ? column.cards : []).map(card =>
+        '<article class="card">' + escapeHtml(card.title || 'Card') + (card.meta ? '<small>' + escapeHtml(card.meta) + '</small>' : '') + '</article>'
+      ).join('') || '<div class="empty">No cards</div>') + '</section>'
+    ).join('');
+  } catch (error) {
+    columns.innerHTML = '<div class="empty" style="color:#b42318">' + escapeHtml(error && error.message ? error.message : String(error)) + '</div>';
+  }
+  function escapeHtml(value) { return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+})();
+</script></body></html>

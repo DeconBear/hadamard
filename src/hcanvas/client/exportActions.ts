@@ -29,6 +29,10 @@ export function createExportActions(deps: ExportActionsDeps): ExportActionsContr
     const doc = deps.getDoc();
     if (!doc) return;
     const page = deps.getPage();
+    if (page && page.mode === 'extension') {
+      deps.toast('Extension pages cannot be exported yet. Use the extension viewer instead.', 'error');
+      return;
+    }
     if (format === 'scene') {
       if (!page) { deps.toast('Open a page first.', 'error'); return; }
       if (page.mode === 'infinite') {

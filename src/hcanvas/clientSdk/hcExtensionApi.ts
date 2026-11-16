@@ -1,13 +1,5 @@
-/**
- * Hcanvas extension viewer SDK (viewer / extension side). Built standalone by
- * `scripts/build-hcanvas.mjs` into `dist/hcanvas/assets/hc-extension-api.js`
- * as a browser IIFE (global `HcanvasView`), served at
- * `/api/extension-sdk/hc-extension-api.js?v=1`.
- *
- * Protocol: plan/HCANVAS_EXTENSION_PLATFORM_SPEC_16Nov2026.md §5.5/§5.6/§5.7/§6.
- * Self-contained by contract: no imports, no bundler runtime, ES2020 output.
- * Usage: `const hc = await HcanvasView.acquire();`
- */
+/** Hcanvas viewer SDK: standalone browser IIFE (global `HcanvasView`), no imports.
+ *  Protocol: plan/HCANVAS_EXTENSION_PLATFORM_SPEC_16Nov2026.md §5.5/§5.6/§5.7/§6. */
 
 /** Viewer SDK version advertised to the host in the `host.ready` handshake. */
 export const HC_VIEW_SDK_VERSION = '1.0.0';
@@ -17,10 +9,6 @@ export const HC_PROTOCOL_VERSION = 1 as const;
 export const HC_REQUEST_TIMEOUT_MS = 30_000;
 /** Handshake timeout (host must answer `host.ready` with `host.context`). */
 export const HC_HANDSHAKE_TIMEOUT_MS = 10_000;
-
-/* ------------------------------------------------------------------ */
-/* Public types                                                        */
-/* ------------------------------------------------------------------ */
 
 /** Context resolved by `HcanvasView.acquire()` (injected + handshake summary). */
 export interface HcViewContext {
@@ -35,6 +23,8 @@ export interface HcViewContext {
   sdkUrl: string;
   /** Surface-specific context (file viewers receive the opened file). */
   file?: { rootId: string; path: string; readOnly?: boolean };
+  /** Extension-page contexts receive their page data. */
+  page?: { pageId?: string; format?: string; data?: unknown };
 }
 
 /** Wire error payload; host responses carry it in `error`. */
@@ -416,6 +406,13 @@ function buildViewContext(result: Record<string, unknown>): HcViewContext {
   const file = isRecord(supplied.file) && typeof supplied.file.rootId === 'string' && typeof supplied.file.path === 'string'
     ? { rootId: supplied.file.rootId, path: supplied.file.path, readOnly: supplied.file.readOnly === true }
     : undefined;
+  const page = isRecord(supplied.page)
+    ? {
+        ...(typeof supplied.page.pageId === 'string' ? { pageId: supplied.page.pageId } : {}),
+        ...(typeof supplied.page.format === 'string' ? { format: supplied.page.format } : {}),
+        ...('data' in supplied.page ? { data: supplied.page.data } : {}),
+      }
+    : undefined;
   return {
     instanceId: injected.instanceId,
     extensionId: injected.extensionId,
@@ -427,6 +424,7 @@ function buildViewContext(result: Record<string, unknown>): HcViewContext {
     capabilities,
     sdkUrl: injected.sdkUrl,
     ...(file ? { file } : {}),
+    ...(page ? { page } : {}),
   };
 }
 

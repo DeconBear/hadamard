@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 export const HCANVAS_SCHEMA = 'hadamard-canvas/1';
 
-export type HcPageMode = 'canvas' | 'html' | 'infinite';
+export type HcPageMode = 'canvas' | 'html' | 'infinite' | 'extension';
 export type HcBlockType = 'html' | 'text' | 'markdown' | 'code' | 'image' | 'shape' | 'freehand' | 'arrow' | 'curve' | (string & {});
 export type HcShape =
   | 'rect'
@@ -164,6 +164,12 @@ export interface HcLayer {
   color?: string;
 }
 
+/** Content for a page rendered by an extension viewer (SPEC-12.3). */
+export interface HcExtensionPageContent {
+  format: string;
+  data: unknown;
+}
+
 export interface HcPage {
   id: string;
   name: string;
@@ -177,6 +183,8 @@ export interface HcPage {
   markdown?: string;
   /** blocks when mode === 'canvas' or 'infinite' */
   blocks?: HcBlock[];
+  /** extension-owned page content when mode === 'extension' */
+  extension?: HcExtensionPageContent;
   /** user layers ordered bottom → top; omitted means one implicit default layer */
   layers?: HcLayer[];
   notes?: string;
@@ -248,7 +256,7 @@ export interface HcHtmlPatch {
 
 export type HcOp =
   | { op: 'add_page'; page: HcPage; index?: number }
-  | { op: 'update_page'; pageId: string; patch: Partial<Pick<HcPage, 'name' | 'mode' | 'width' | 'height' | 'background' | 'html' | 'notes' | 'hidden'>> }
+  | { op: 'update_page'; pageId: string; patch: Partial<Pick<HcPage, 'name' | 'mode' | 'width' | 'height' | 'background' | 'html' | 'notes' | 'hidden' | 'extension'>> }
   | { op: 'delete_page'; pageId: string }
   | { op: 'add_block'; pageId: string; block: HcBlock; index?: number }
   | { op: 'update_block'; pageId: string; blockId: string; patch: Partial<Omit<HcBlock, 'id' | 'type'>> }

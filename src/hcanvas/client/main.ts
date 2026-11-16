@@ -31,10 +31,11 @@ import { installExtensionRuntime, type ExtensionRuntime } from './extensionRunti
 import { installCommandPalette } from './commandPalette.js';
 import { createKernelManager, type KernelDescriptor, type KernelManager } from './kernelManager.js';
 import { installExecCells, mountExecCell, runAllExecCells } from './execCell.js';
-import { extensionContributions } from './extensionCatalog.js';
+import { extensionContributions, getExtensionCatalog } from './extensionCatalog.js';
 import { commandRegistry } from './commandRegistry.js';
 import { registerBuiltinViewer } from './builtinViewers.js';
 import { createNotebookViewer } from './notebookViewer.js';
+import { disposeExtensionPage, installExtensionPage, renderExtensionPage } from './extensionPage.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
 import { insertAssetIntoPage } from './assetInsert.js';
@@ -847,12 +848,14 @@ function bindStaticActions(): void {
     openEditor: (pageId, blockId) => openSourceEditor({ pageId, blockId }),
     toast,
   });
+  installExtensionPage({ viewport: () => el('viewport'), runtime: () => extensionRuntime });
   registerBuiltinViewer('hcanvas.notebook', createNotebookViewer({
     request: api,
     getKernelManager: () => kernelManager,
     getKernels: () => extensionContributions<KernelDescriptor>('kernels').map(item => item.contribution),
     toast,
   }));
+  commandRegistry.register({ id: 'page.addExtension', title: 'Page: Add extension page', category: 'Page', handler: () => openAddExtensionPageModal() });
   commandRegistry.register({ id: 'cell.insert', title: 'Cell: Insert code cell', category: 'Cell', handler: () => { void addBlock('exec', { code: 'print("hello")', language: 'python', w: 560, h: 360 }, viewportWorldCenter()); } });
   commandRegistry.register({ id: 'cell.runAll', title: 'Cell: Run all code cells', category: 'Cell', handler: () => { const page = activePage(); if (page) void runAllExecCells(page); } });
   historyPanel = installHistoryPanel({
@@ -1465,8 +1468,18 @@ function renderDocs(): void {
     root.appendChild(button);
   }
 }
+function extensionPageFormatLabel(formatId: string): string {
+  if (!formatId) return 'Extension';
+  for (const extension of getExtensionCatalog().extensions) {
+    for (const format of extension.contributes.formats) if (format.id === formatId) return format.label || formatId;
+  }
+  return formatId;
+}
 function pageThumbHtml(page: HcPage): string {
   const ratio = Math.min(46 / page.width, 30 / page.height);
+  if (page.mode === 'extension') {
+    return '<div class="page-thumb-placeholder">' + esc(extensionPageFormatLabel(page.extension?.format || '')) + '</div>';
+  }
   if (page.mode === 'html' && page.html) {
     return '<iframe sandbox srcdoc="' + esc(page.html) + '" style="width:' + page.width + 'px;height:' + page.height + 'px;transform:scale(' + ratio + ');transform-origin:top left" tabindex="-1"></iframe>';
   }
@@ -1554,6 +1567,7 @@ function hashString(value: string): string {
 }
 function pageFingerprint(page: HcPage): string {
   const base = page.name + '|' + page.mode + '|' + page.width + '|' + page.height + '|' + page.background;
+  if (page.mode === 'extension') return base + '|' + hashString(JSON.stringify(page.extension || {}));
   if (page.mode === 'html') return base + '|' + hashString(page.html || '');
   return base + '|' + hashString(JSON.stringify(page.blocks || []));
 }
@@ -1789,6 +1803,16 @@ function renderArtboard(): void {
   const page = activePage();
   artboard.textContent = '';
   if (!page) return;
+  if (page.mode === 'extension') {
+    artboard.style.display = 'none';
+    document.body.classList.remove('html-page-mode');
+    viewport.classList.remove('html-page-mode', 'infinite-surface');
+    viewport.querySelectorAll('.html-page-surface, .html-reader-badge').forEach(node => node.remove());
+    renderExtensionPage(page);
+    renderToolbarState();
+    return;
+  }
+  disposeExtensionPage();
   document.body.classList.toggle('html-page-mode', page.mode === 'html');
   viewport.classList.toggle('html-page-mode', page.mode === 'html');
   const markdownPage = page.mode === 'html' && page.markdown !== undefined;
@@ -2702,7 +2726,7 @@ function renderPageInspector(): void {
   if (page.mode === 'infinite') html += field('pageSurface', 'Surface', '<input id="pageSurface" readonly value="Infinite · no page bounds">');
   else html += '<div class="field-row">' + field('pageWidth', 'Width', '<input id="pageWidth" type="number" value="' + page.width + '">') + field('pageHeight', 'Height', '<input id="pageHeight" type="number" value="' + page.height + '">') + '</div>';
   html += '<div class="field"><span>Background</span><div class="swatch-row"><input id="pageBgPicker" type="color" value="' + esc(toHex(page.background)) + '"><input id="pageBg" value="' + esc(page.background) + '"></div></div>';
-  html += '<div class="field"><span>Mode</span><input readonly value="' + esc(page.markdown !== undefined ? 'markdown document' : page.mode === 'infinite' ? 'infinite canvas' : page.mode) + '"></div>';
+  html += '<div class="field"><span>Mode</span><input readonly value="' + esc(page.mode === 'extension' ? 'extension page · ' + extensionPageFormatLabel(page.extension?.format || '') : page.markdown !== undefined ? 'markdown document' : page.mode === 'infinite' ? 'infinite canvas' : page.mode) + '"></div>';
   html += '<div class="field"><span>Notes for agent</span><textarea id="pageNotes" rows="2">' + esc(page.notes || '') + '</textarea></div>';
   html += '<div class="actions-row">';
   if (page.mode === 'html') html += '<button id="pageSourceBtn" class="btn tiny">Edit HTML source</button>';
@@ -2711,7 +2735,7 @@ function renderPageInspector(): void {
   html += '<button id="pageOpenFolderBtn" class="btn tiny">Open page files</button>';
   html += '<button id="pageSaveMasterBtn" class="btn tiny">Save as master</button>';
   html += '<button id="pageDeleteBtn" class="btn tiny danger">Delete page</button></div></section>';
-  html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
+  html += '<section class="inspector-section"><div class="inspector-title">Page structure</div><p class="muted">' + (page.mode === 'extension' ? 'Extension page · ' + esc(extensionPageFormatLabel(page.extension?.format || '')) : page.mode === 'html' ? 'HTML page · direct edit enabled' : page.mode === 'infinite' ? 'Infinite canvas · ' + blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · no page bounds' : blocks.length + ' block' + (blocks.length === 1 ? '' : 's') + ' · double-click a block to edit') + '</p>';
   if (page.mode === 'html') html += '<div class="hint-card">Double-click anywhere in the page to enter HTML edit mode. Double-click text or SVG labels to edit them; Esc exits. The Agent tab exposes the CLI protocol.</div>';
   if (page.mode === 'infinite') html += '<div class="hint-card">Two-finger scroll to pan, pinch or Ctrl/Cmd+wheel to zoom, Shift+wheel to pan horizontally. Hold Space or middle-drag for temporary panning. Drag shapes to size them; exports crop to content.</div>';
   if (page.mode === 'canvas') html += '<div class="hint-card">Two-finger scroll to pan, pinch or Ctrl/Cmd+wheel to zoom. Hold Space or middle-drag for temporary panning.</div>';
@@ -2996,6 +3020,59 @@ async function deleteBlock(pageId: string, blockId: string): Promise<void> {
   await applyOps([{ op: 'delete_block', pageId, blockId }], { refreshArtboard: true });
   renderInspector();
 }
+interface ExtensionPageFormatOption {
+  extensionId: string;
+  formatId: string;
+  label: string;
+}
+
+function extensionPageFormats(): ExtensionPageFormatOption[] {
+  const result: ExtensionPageFormatOption[] = [];
+  for (const extension of getExtensionCatalog().extensions) {
+    if (!extension.enabled) continue;
+    for (const format of extension.contributes.formats) {
+      const viewer = extension.contributes.viewers.find(item => item.id === format.viewer);
+      if (!viewer) continue;
+      const pageCapable = (format.surfaces || []).includes('page') || (viewer.surfaces || []).includes('page');
+      if (pageCapable) result.push({ extensionId: extension.id, formatId: format.id, label: format.label || format.id });
+    }
+  }
+  return result;
+}
+
+function openAddExtensionPageModal(): void {
+  const formats = extensionPageFormats();
+  if (!formats.length) {
+    toast('No extension page formats are installed. Enable an extension with a page viewer.', 'info');
+    return;
+  }
+  const rows = formats.map((format, index) => '<button type="button" class="btn" data-ext-page-format="' + index + '" style="display:block;width:100%;text-align:left;margin:0 0 8px">' + esc(format.label) + '<small style="display:block;color:#8a8276;font-size:10px;margin-top:2px">' + esc(format.extensionId) + ' · ' + esc(format.formatId) + '</small></button>').join('');
+  openModal('<div class="modal small"><div class="modal-head"><div><strong>Add extension page</strong><small>Choose a page format contributed by an enabled extension.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body">' + rows + '</div><div class="modal-foot"><button class="btn" data-close>Cancel</button></div></div>');
+  document.querySelectorAll<HTMLButtonElement>('[data-ext-page-format]').forEach(button => {
+    button.addEventListener('click', () => {
+      const format = formats[Number(button.dataset.extPageFormat)];
+      if (format) void createExtensionPage(format);
+    });
+  });
+}
+
+async function createExtensionPage(option: ExtensionPageFormatOption): Promise<void> {
+  closeModal();
+  const page: HcPage = {
+    id: genId('page'),
+    name: option.label,
+    mode: 'extension',
+    width: 1280,
+    height: 800,
+    background: '#ffffff',
+    extension: { format: option.formatId, data: {} },
+  };
+  const result = await applyOps([{ op: 'add_page', page } as HcOp], { refreshArtboard: false });
+  if (!result) return;
+  selectPage(page.id);
+  toast('Added extension page: ' + option.label, 'success');
+}
+
 function openShapePicker(): void {
   shapePicker?.open();
 }
@@ -3003,7 +3080,7 @@ function requestInsert(type: HcBlock['type']): void {
   if (type === 'image') { openImageModal(); return; }
   const page = activePage();
   if (!page) return;
-  if (page.mode === 'html') { toast('Switch to a Canvas or Infinite page to add blocks.', 'info'); return; }
+  if (page.mode === 'html' || page.mode === 'extension') { toast('Switch to a Canvas or Infinite page to add blocks.', 'info'); return; }
   state.pendingInsert = type;
   state.tool = 'select';
   setBlockSelection([]);
@@ -3029,7 +3106,7 @@ async function dissolveFrame(block: HcBlock): Promise<void> {
 async function addBlock(type: HcBlock['type'], extra: Partial<HcBlock> = {}, position?: { x: number; y: number }): Promise<void> {
   const page = activePage();
   if (!page) return;
-  if (page.mode === 'html') { toast('Add blocks on a canvas or infinite page, not an HTML page.', 'error'); return; }
+  if (page.mode === 'html' || page.mode === 'extension') { toast('Add blocks on a canvas or infinite page, not an HTML or extension page.', 'error'); return; }
   const z = Math.max(0, ...(page.blocks || []).map(block => block.z)) + 1;
   const center = position || (page.mode === 'infinite' ? viewportWorldCenter() : { x: page.width / 2, y: page.height / 2 });
   const blockW = Number(extra.w) || 420;
@@ -3276,7 +3353,11 @@ const presentSession = createPresentSession({
   renderToolbarState: () => renderToolbarState(),
   root: () => el('presentRoot'),
 });
-function openPresent(): void { presentSession.openPresent(); }
+function openPresent(): void {
+  const page = activePage();
+  if (page?.mode === 'extension') { toast('Extension pages are not supported in Present yet.', 'info'); return; }
+  presentSession.openPresent();
+}
 function closePresent(): void { presentSession.closePresent(); }
 function togglePresentNotes(): void { presentSession.togglePresentNotes(); }
 function nextPresent(delta: number): void { presentSession.nextPresent(delta); }

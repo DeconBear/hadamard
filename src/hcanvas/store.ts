@@ -129,18 +129,32 @@ function ensurePage(input: HcPage): HcPage {
   let page = migrateLegacyWhiteboardPage(input);
   if (!page.id) page.id = hcId('page');
   if (!page.name) page.name = 'Page';
-  if (page.mode !== 'canvas' && page.mode !== 'html' && page.mode !== 'infinite') page.mode = 'canvas';
+  if (page.mode !== 'canvas' && page.mode !== 'html' && page.mode !== 'infinite' && page.mode !== 'extension') page.mode = 'canvas';
   if (!Number.isFinite(page.width) || page.width <= 0) page.width = 1280;
   if (!Number.isFinite(page.height) || page.height <= 0) page.height = 720;
   if (!page.background) page.background = '#ffffff';
-  if (page.mode === 'html') {
+  if (page.mode === 'extension') {
+    delete page.html;
+    delete page.markdown;
     delete page.blocks;
+    clearLegacyScene(page);
+    page.blocks = [];
+    const extension = page.extension;
+    if (!extension || typeof extension !== 'object' || typeof (extension as { format?: unknown }).format !== 'string' || !(extension as { format?: string }).format) {
+      page.mode = 'canvas';
+      page.blocks = [];
+      delete page.extension;
+    }
+  } else if (page.mode === 'html') {
+    delete page.blocks;
+    delete page.extension;
     clearLegacyScene(page);
     if (typeof page.markdown === 'string') page.html = normalizeHtml(markdownPageHtml(page.markdown, page));
     else { delete page.markdown; page.html = normalizeHtml(page.html || '<div style="padding:48px;font-family:Inter,sans-serif"><h1>Untitled page</h1><p>Double-click to edit.</p></div>'); }
   } else {
     delete page.html;
     delete page.markdown;
+    delete page.extension;
     clearLegacyScene(page);
     page.blocks = (page.blocks || []).map(block => ensureBlock(block));
     if (page.mode === 'infinite') {
@@ -349,7 +363,7 @@ export function applyOpsToDocument(doc: HcDocument, ops: HcOp[]): HcDocument {
       }
       case 'add_block': {
         const page = pageOrThrow(next, op.pageId);
-        if (page.mode === 'html') throw new HcValidationError('Blocks require a canvas or infinite page');
+        if (page.mode === 'html' || page.mode === 'extension') throw new HcValidationError('Blocks require a canvas or infinite page');
         const block = ensureBlock(clone(op.block));
         if (block.id && (page.blocks || []).some(item => item.id === block.id)) throw new HcValidationError('Duplicate block id: ' + block.id);
         page.blocks = page.blocks || [];
@@ -375,6 +389,7 @@ export function applyOpsToDocument(doc: HcDocument, ops: HcOp[]): HcDocument {
         page.html = normalizeHtml(op.html);
         delete page.markdown;
         delete page.blocks;
+        delete page.extension;
         clearLegacyScene(page);
         break;
       }
@@ -384,6 +399,7 @@ export function applyOpsToDocument(doc: HcDocument, ops: HcOp[]): HcDocument {
         page.markdown = op.markdown;
         page.html = normalizeHtml(markdownPageHtml(op.markdown, page));
         delete page.blocks;
+        delete page.extension;
         clearLegacyScene(page);
         break;
       }

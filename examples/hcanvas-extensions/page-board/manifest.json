@@ -1,0 +1,44 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.hadamard.examples.board",
+  "name": "Board Page",
+  "version": "0.1.0",
+  "description": "Custom Kanban-style page format rendered by an extension viewer.",
+  "engines": {
+    "hcanvas": ">=0.2.0"
+  },
+  "capabilities": {
+    "document": {
+      "read": true,
+      "write": true
+    }
+  },
+  "contributes": {
+    "formats": [
+      {
+        "id": "board-page",
+        "label": "Board page",
+        "extensions": [
+          ".board.json"
+        ],
+        "viewer": "board.viewer",
+        "surfaces": [
+          "file",
+          "page"
+        ]
+      }
+    ],
+    "viewers": [
+      {
+        "id": "board.viewer",
+        "label": "Board",
+        "type": "iframe",
+        "entry": "ui/entry.html",
+        "surfaces": [
+          "file",
+          "page"
+        ]
+      }
+    ]
+  }
+}
