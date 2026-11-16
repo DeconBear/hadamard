@@ -110,6 +110,7 @@ async function main() {
       ops: [
         { op: 'add_page', page: { id: 'page_e2eexec', name: 'Exec page', mode: 'canvas', width: 1280, height: 720, background: '#ffffff', blocks: [] } },
         { op: 'add_block', pageId: 'page_e2eexec', block: { id: 'block_e2eexec', type: 'exec', x: 80, y: 80, w: 560, h: 320, z: 1, code: 'print("e2e-exec")', language: 'python', data: { execution: { kernelId: 'python' } } } },
+        { op: 'add_block', pageId: 'page_e2eexec', block: { id: 'block_e2eimage', type: 'exec', x: 680, y: 80, w: 560, h: 320, z: 2, code: 'import matplotlib.pyplot as plt\nplt.plot([1, 2, 3])', language: 'python', data: { execution: { kernelId: 'python' } } } },
         { op: 'add_page', page: { id: 'page_e2eboard', name: 'Board page', mode: 'extension', width: 1280, height: 800, background: '#ffffff', extension: { format: 'board-page', data: {} } } },
       ],
     }),
@@ -169,7 +170,7 @@ async function main() {
   await page.waitForTimeout(1000);
   assert('notebook viewer opens .hnb.md', (await page.locator('.notebook-view').count()) === 1);
   assert('notebook renders markdown and code cells', (await page.locator('.nb-markdown').count()) === 1 && (await page.locator('.nb-code').count()) === 1);
-  await page.locator('[data-nb-run]').first().click();
+  await page.locator('.nb-code-input').first().press('Shift+Enter');
   const notebookOutput = await (async () => {
     const start = Date.now();
     while (Date.now() - start < 30_000) {
@@ -204,6 +205,29 @@ async function main() {
   })();
   assert('canvas exec cell streams Python output', execOutput);
 
+  const chartCell = page.locator('.block-wrap[data-block-id="block_e2eimage"]');
+  await chartCell.locator('.exec-actions button.primary').click();
+  const chartRendered = await (async () => {
+    const start = Date.now();
+    while (Date.now() - start < 45_000) {
+      if (await chartCell.locator('img.exec-out-image').count()) return true;
+      await page.waitForTimeout(400);
+    }
+    return false;
+  })();
+  assert('canvas exec cell renders a chart', chartRendered);
+  let persistedAsset = null;
+  for (let attempt = 0; attempt < 40 && !persistedAsset; attempt += 1) {
+    const fresh = await api('/api/docs/' + doc.id);
+    const pageData = (fresh.body.doc?.pages || []).find(item => item.id === 'page_e2eexec');
+    const block = (pageData?.blocks || []).find(item => item.id === 'block_e2eimage');
+    const outputs = (block?.data && Array.isArray(block.data.outputs)) ? block.data.outputs : [];
+    const image = outputs.find(output => output && output.kind === 'image');
+    if (image && typeof image.url === 'string' && image.url.includes('/api/assets/raw/') && image.assetId) persistedAsset = image;
+    if (!persistedAsset) await page.waitForTimeout(400);
+  }
+  assert('chart output persists as a workspace asset', Boolean(persistedAsset), persistedAsset ? persistedAsset.url : 'no asset url');
+
   await page.locator('[data-sidebar-target="pages"]').click();
   await page.waitForTimeout(500);
   await page.locator('.page-item', { hasText: 'Board page' }).click();
@@ -213,6 +237,15 @@ async function main() {
   assert('extension page receives page data', frame ? (await frame.locator('.column').count()) === 3 : false);
   const exported = await api('/api/export', { method: 'POST', body: JSON.stringify({ docId: doc.id, format: 'pdf', pageId: 'page_e2eboard' }) });
   assert('extensions page export fails with a readable error', exported.status >= 400 && String(JSON.stringify(exported.body)).includes('Extension pages cannot be exported'), String(exported.status));
+
+  await page.locator('#presentBtn').click();
+  await page.waitForSelector('#presentRoot:not(.hidden)');
+  const presentFrame = await page.locator('#presentRoot iframe').first().contentFrame();
+  await page.waitForTimeout(900);
+  assert('Present renders an extension page', Boolean(presentFrame) && (await presentFrame.locator('.column').count()) === 3);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+  assert('Present exits after presenting an extension page', await page.locator('#presentRoot').evaluate(element => element.classList.contains('hidden')));
 
   // Workspace trust / Restricted Mode and the extension gallery.
   const restricted = await api('/api/workspace/trust', { method: 'POST', body: JSON.stringify({ trust: 'restricted' }) });
@@ -246,8 +279,17 @@ async function main() {
 
   await browser.close();
   browser = null;
+  const exited = new Promise(resolve => {
+    if (server.exitCode !== null) { resolve(); return; }
+    server.once('exit', () => resolve());
+    setTimeout(resolve, 2500);
+  });
   server.kill();
-  await rm(workspace, { recursive: true, force: true });
+  await exited;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try { await rm(workspace, { recursive: true, force: true }); break; }
+    catch (error) { if (attempt === 9) throw error; await new Promise(resolve => setTimeout(resolve, 350)); }
+  }
 }
 
 try {

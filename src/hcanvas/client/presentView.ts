@@ -10,6 +10,15 @@ export interface PresentViewOptions {
   next(delta: number): void;
   close(): void;
   toggleNotes(): void;
+  mountExtensionPage?(page: HcPage, host: HTMLElement): { dispose?(): void } | null;
+}
+
+let presentExtensionDispose: (() => void) | null = null;
+
+export function disposePresentExtensionPage(): void {
+  const dispose = presentExtensionDispose;
+  presentExtensionDispose = null;
+  try { dispose?.(); } catch { /* best effort */ }
 }
 
 function fitInfiniteContent(page: HcPage): HcPage {
@@ -33,13 +42,15 @@ export function renderPresentView(options: PresentViewOptions): void {
   let page = doc?.pages[options.index];
   if (!doc || !page) return;
   page = options.normalizePage(page);
+  disposePresentExtensionPage();
   const documentPage = page.mode === 'html';
+  const extensionPage = page.mode === 'extension';
   const markdown = documentPage && page.markdown !== undefined;
   const mode = markdown ? 'markdown' : documentPage ? 'html' : page.mode;
-  const modeLabel = markdown ? 'Markdown · reading view' : documentPage ? 'HTML · interactive view' : page.mode === 'infinite' ? 'Infinite canvas · fit content' : 'Canvas · fit page';
+  const modeLabel = markdown ? 'Markdown · reading view' : documentPage ? 'HTML · interactive view' : extensionPage ? 'Extension page · ' + (page.extension?.format || 'custom') : page.mode === 'infinite' ? 'Infinite canvas · fit content' : 'Canvas · fit page';
   const root = options.root;
   root.classList.remove('hidden');
-  root.classList.toggle('present-document-mode', documentPage);
+  root.classList.toggle('present-document-mode', documentPage || extensionPage);
   root.dataset.presentMode = mode;
   root.innerHTML = '<div class="present-stage' + (documentPage ? ' document-stage' : '') + '"><div id="presentFit" class="present-fit' + (documentPage ? ' document-fit' : '') + '"><div id="presentPage" class="present-page' + (documentPage ? ' document-page present-' + mode : '') + '"></div></div></div><div id="presentNotes" class="present-notes hidden"></div><div class="present-bar"><span class="present-document-title"><strong>' + esc(doc.title) + '</strong><span>' + esc(page.name) + '</span></span><span class="present-view-label">' + modeLabel + ' · ' + (options.index + 1) + ' / ' + doc.pages.length + '</span><span class="present-controls"><button id="presentNotesBtn" class="btn">Notes</button><button id="presentPrev" class="btn"' + (options.index <= 0 ? ' disabled' : '') + '>← Previous</button><button id="presentNext" class="btn"' + (options.index >= doc.pages.length - 1 ? ' disabled' : '') + '>Next →</button><button id="presentClose" class="btn">Exit</button></span></div>';
   root.querySelector<HTMLButtonElement>('#presentPrev')?.addEventListener('click', () => options.next(-1));
@@ -51,10 +62,14 @@ export function renderPresentView(options: PresentViewOptions): void {
   const presentPage = page.mode === 'infinite' ? fitInfiniteContent(page) : page;
   const host = root.querySelector<HTMLElement>('#presentPage');
   if (!host) return;
-  host.style.width = documentPage ? '100%' : presentPage.width + 'px';
-  host.style.height = documentPage ? '100%' : presentPage.height + 'px';
+  host.style.width = documentPage || extensionPage ? '100%' : presentPage.width + 'px';
+  host.style.height = documentPage || extensionPage ? '100%' : presentPage.height + 'px';
   host.style.transformOrigin = 'top left';
-  if (documentPage) {
+  if (extensionPage) {
+    const mounted = options.mountExtensionPage?.(page, host) || null;
+    presentExtensionDispose = mounted?.dispose ? mounted.dispose.bind(mounted) : null;
+    if (!mounted) host.innerHTML = '<div class="extension-page-error"><strong>No viewer for this extension page</strong><small>' + esc(page.extension?.format || '') + '</small></div>';
+  } else if (documentPage) {
     const iframe = document.createElement('iframe');
     iframe.setAttribute('sandbox', 'allow-scripts');
     iframe.setAttribute('title', page.name + ' presentation');

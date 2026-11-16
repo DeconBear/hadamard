@@ -12,7 +12,7 @@ import { handleExtensionRoute } from './extensions/routes.js';
 import { ExtensionViewService } from './extensions/viewInstances.js';
 import { handleExtensionViewRoute } from './extensions/viewRoutes.js';
 import { handleExtensionNetworkRoute } from './extensions/networkProxy.js';
-import { createRuntimeServices, handleHcRuntimeRoute, type HcRuntimeServices } from './sidecar/routes.js';
+import { createRuntimeServices, handleHcRuntimeRoute, type HcKernelOutputPort, type HcRuntimeServices } from './sidecar/routes.js';
 import type { HcKernelCatalogEntry, HcSidecarCatalogEntry } from './sidecar/protocol.js';
 
 export interface ExtensionHostOptions {
@@ -20,6 +20,8 @@ export interface ExtensionHostOptions {
   version?: string;
   json: (res: ServerResponse, status: number, payload: unknown) => void;
   readBody: (req: IncomingMessage, limit?: number) => Promise<Record<string, unknown>>;
+  /** Persist kernel display outputs as workspace assets (server owns the asset service). */
+  saveKernelOutput?: HcKernelOutputPort['save'];
 }
 
 export interface ExtensionHost {
@@ -157,6 +159,7 @@ export function createExtensionHost(options: ExtensionHostOptions): ExtensionHos
           }));
         },
       },
+      ...(options.saveKernelOutput ? { kernelOutputs: { save: options.saveKernelOutput } } : {}),
       resolveTerminalProfile: async (profileId: string) => {
         const registry = await loadExtensionRegistry();
         const ref = registry.terminals.get(profileId);
@@ -190,7 +193,7 @@ export function createExtensionHost(options: ExtensionHostOptions): ExtensionHos
         tokenAuthAlreadyChecked: true,
       })) return true;
     }
-    if (pathname.startsWith('/api/runtime') || pathname.startsWith('/api/sidecars') || pathname.startsWith('/api/kernels') || pathname.startsWith('/api/terminal')) {
+    if (pathname.startsWith('/api/runtime') || pathname.startsWith('/api/sidecars') || pathname.startsWith('/api/kernels') || pathname === '/api/kernel-outputs' || pathname.startsWith('/api/terminal')) {
       const runtime = getRuntimeServices();
       if (await handleHcRuntimeRoute(runtime, { req, res, url, pathname, method })) return true;
     }

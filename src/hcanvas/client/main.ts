@@ -25,6 +25,7 @@ import { createProjectHub, type ProjectHubDesktopBridge } from './projectHub.js'
 import { createModalHost } from './modalHost.js';
 import { createExportActions } from './exportActions.js';
 import { createPresentSession } from './presentSession.js';
+import { disposePresentExtensionPage } from './presentView.js';
 import { installCoreCommands } from './coreCommands.js';
 import { loadExtensionCatalog } from './extensionCatalog.js';
 import { installExtensionRuntime, type ExtensionRuntime } from './extensionRuntime.js';
@@ -841,6 +842,7 @@ function bindStaticActions(): void {
     kernelManager,
     getKernels: () => extensionContributions<KernelDescriptor>('kernels').map(item => item.contribution),
     getDocId: () => state.doc?.id || '',
+    request: api,
     patchData: async (pageId, blockId, data) => {
       const result = await applyOps([{ op: 'update_block', pageId, blockId, patch: { data } } as HcOp], { refreshArtboard: true });
       return Boolean(result);
@@ -3352,13 +3354,12 @@ const presentSession = createPresentSession({
   resetInteractions: () => { presentInteractions?.reset(); },
   renderToolbarState: () => renderToolbarState(),
   root: () => el('presentRoot'),
+  mountExtensionPage: (page, host) => extensionRuntime ? extensionRuntime.mountPage(page, host) : null,
 });
 function openPresent(): void {
-  const page = activePage();
-  if (page?.mode === 'extension') { toast('Extension pages are not supported in Present yet.', 'info'); return; }
   presentSession.openPresent();
 }
-function closePresent(): void { presentSession.closePresent(); }
+function closePresent(): void { disposePresentExtensionPage(); presentSession.closePresent(); }
 function togglePresentNotes(): void { presentSession.togglePresentNotes(); }
 function nextPresent(delta: number): void { presentSession.nextPresent(delta); }
 function renderPresent(): void { presentSession.renderPresent(); }

@@ -7,7 +7,7 @@ export type HcStoredOutput =
   | { id: string; kind: 'stream'; name: 'stdout' | 'stderr'; text: string }
   | { id: string; kind: 'text'; text: string }
   | { id: string; kind: 'markdown'; text: string }
-  | { id: string; kind: 'image'; mime: 'image/png' | 'image/jpeg' | 'image/svg+xml'; url: string; alt?: string; width?: number; height?: number }
+  | { id: string; kind: 'image'; mime: 'image/png' | 'image/jpeg' | 'image/svg+xml'; url: string; assetId?: string; size?: number; alt?: string; width?: number; height?: number }
   | { id: string; kind: 'html'; html: string }
   | { id: string; kind: 'json'; value: unknown }
   | { id: string; kind: 'error'; ename: string; evalue: string; traceback: string[] }

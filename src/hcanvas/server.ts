@@ -177,6 +177,10 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
     version: '0.1.0',
     json,
     readBody,
+    saveKernelOutput: async input => {
+      const asset = await assets.save({ name: input.name, mime: input.mime, data: input.data });
+      return { id: asset.id, url: '/api/assets/raw/' + assets.urlToken + '/' + asset.id, mime: asset.mime, size: asset.size };
+    },
   });
 
   const idempotency = new Map<string, { fingerprint: string; doc: HcDocument; ops: HcOp[]; dryRun: boolean; changed: boolean; summary?: string }>();

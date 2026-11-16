@@ -2,6 +2,7 @@ import { notebookCellKey, parseNotebook, serializeNotebook, type NotebookCell, t
 import { renderMarkdownHtml } from '../markdown.js';
 import { renderStoredOutputsHtml, type HcStoredOutput } from '../execOutputs.js';
 import { eventsToStoredOutputs, renderRuntimeEvent } from './execCell.js';
+import { persistKernelOutputAssets } from './kernelOutputAssets.js';
 import type { KernelDescriptor, KernelManager, KernelOutputEvent } from './kernelManager.js';
 import { esc } from './utils.js';
 import type { BuiltinViewer, BuiltinViewerContext } from './builtinViewers.js';
@@ -184,9 +185,10 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
       });
       const result = await handle.done;
       const outputs = eventsToStoredOutputs(result.outputs);
-      setOutputs(cell, index, outputs);
+      const persisted = await persistKernelOutputAssets(outputs, { sessionId: handle.sessionId, executionId: handle.executionId }, { request: deps.request });
+      setOutputs(cell, index, persisted);
       if (outputEl) {
-        outputEl.innerHTML = renderStoredOutputsHtml(outputs);
+        outputEl.innerHTML = renderStoredOutputsHtml(persisted);
       }
       if (statusEl) {
         statusEl.textContent = result.status === 'ok' ? 'ok' : result.status;
@@ -271,6 +273,11 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
         const outputEl = textarea.parentElement?.querySelector<HTMLElement>('[data-nb-output]');
         if (outputEl) outputEl.innerHTML = '';
       });
+      textarea.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' || !(event.shiftKey || event.ctrlKey || event.metaKey)) return;
+        event.preventDefault();
+        void runCell(cell, index);
+      });
     });
     host.querySelectorAll<HTMLButtonElement>('[data-nb-run]').forEach(button => {
       button.addEventListener('click', () => {
@@ -302,6 +309,13 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
     });
     host.querySelectorAll<HTMLElement>('[data-nb-markdown-view]').forEach(view => {
       view.addEventListener('dblclick', () => toggleMarkdownEdit(Number(view.dataset.nbMarkdownView), true));
+    });
+    host.querySelectorAll<HTMLTextAreaElement>('[data-nb-markdown-input]').forEach(input => {
+      const index = Number(input.dataset.nbMarkdownInput);
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); commitMarkdown(index); }
+        if (event.key === 'Escape') { event.preventDefault(); toggleMarkdownEdit(index, false); }
+      });
     });
   };
 
@@ -393,7 +407,7 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
       '<button type="button" class="btn tiny" data-nb-export>Export HTML</button>' +
       '</div></header>' +
       '<main class="nb-cells">' + parsed.cells.map((cell, index) => cell.kind === 'code' ? renderCodeCell(cell, index) : renderMarkdownCell(cell, index)).join('') + '</main>' +
-      '<footer class="nb-footer"><span>Markdown + executable cells · outputs cached locally</span>' +
+      '<footer class="nb-footer"><span>Shift+Enter / Ctrl+Enter run a cell · outputs cached locally</span>' +
       '<button type="button" class="btn tiny" data-nb-add-code>+ Code cell</button>' +
       '<button type="button" class="btn tiny" data-nb-add-md>+ Markdown cell</button></footer>' +
       '</div>';

@@ -2,12 +2,14 @@ import type { HcBlock, HcPage } from '../types.js';
 import { execData, renderStoredOutputsHtml, truncateText, type HcStoredOutput } from '../execOutputs.js';
 import type { KernelDescriptor, KernelExecutionHandle, KernelManager, KernelOutputEvent } from './kernelManager.js';
 import { esc } from './utils.js';
+import { persistKernelOutputAssets } from './kernelOutputAssets.js';
 
 export interface ExecCellDeps {
   kernelManager: KernelManager;
   getKernels(): KernelDescriptor[];
   getDocId(): string;
   patchData(pageId: string, blockId: string, data: Record<string, unknown>): Promise<boolean>;
+  request<T = Record<string, unknown>>(pathname: string, init?: RequestInit): Promise<T>;
   openEditor(pageId: string, blockId: string): void;
   toast(message: string, kind?: 'info' | 'success' | 'error'): void;
 }
@@ -288,14 +290,15 @@ export async function runExecBlock(block: HcBlock, page: HcPage): Promise<void> 
     state.handle = null;
     state.status = result.status === 'ok' ? 'ok' : result.status === 'error' ? 'error' : 'aborted';
     const stored = eventsToStoredOutputs(result.outputs);
+    const persisted = await persistKernelOutputAssets(stored, { sessionId: handle.sessionId, executionId: handle.executionId }, deps);
     await deps.patchData(page.id, block.id, {
       ...(block.data || {}),
       execution: { ...(execData(block.data).execution || {}), kernelId: kernel.id },
-      outputs: stored,
+      outputs: persisted,
       lastRun: { status: result.status, startedAt: new Date().toISOString(), ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}) },
     });
     refreshStatus(block);
-    if (state.outputHost) { state.outputHost.innerHTML = ''; for (const event of result.outputs) renderRuntimeEvent(state.outputHost, event); }
+    if (state.outputHost) state.outputHost.innerHTML = renderStoredOutputsHtml(persisted);
     if (result.status === 'error') deps.toast('Code cell failed; see traceback in the block.', 'error');
   } catch (error) {
     state.status = 'error';

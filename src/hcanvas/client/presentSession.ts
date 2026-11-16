@@ -10,6 +10,7 @@ export interface PresentSessionDeps {
   resetInteractions(): void;
   renderToolbarState(): void;
   root(): HTMLElement;
+  mountExtensionPage?(page: HcDocument['pages'][number], host: HTMLElement): { dispose?(): void } | null;
 }
 
 export interface PresentSessionController {
@@ -28,6 +29,7 @@ export function createPresentSession(deps: PresentSessionDeps): PresentSessionCo
       root: deps.root(), doc: deps.getDoc(), index: deps.getIndex(),
       normalizePage: page => page,
       next: nextPresent, close: closePresent, toggleNotes: togglePresentNotes,
+      ...(deps.mountExtensionPage ? { mountExtensionPage: deps.mountExtensionPage } : {}),
     });
   };
 
