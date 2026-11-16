@@ -1,0 +1,242 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html, body { margin:0; height:100%; background:#f2efe7; color:#1f2430; font:12px Inter,system-ui,sans-serif; overflow:hidden; }
+  #app { position:relative; height:100%; }
+  canvas { display:block; width:100%; height:100%; cursor:grab; }
+  canvas.dragging { cursor:grabbing; }
+  #hud { position:absolute; left:12px; top:10px; display:flex; gap:10px; align-items:center; background:rgba(255,255,255,.92); border:1px solid #d9d3c7; border-radius:8px; padding:6px 10px; box-shadow:0 2px 10px rgba(0,0,0,.06); }
+  #hud strong { font-size:11px; }
+  #hud small { color:#8a8276; }
+  #hud button { font:11px Inter,sans-serif; padding:3px 8px; border:1px solid #d9d3c7; border-radius:6px; background:#fff; cursor:pointer; }
+  #selection { position:absolute; left:12px; bottom:12px; max-width:380px; background:rgba(255,255,255,.94); border:1px solid #d9d3c7; border-radius:8px; padding:8px 12px; display:none; box-shadow:0 2px 10px rgba(0,0,0,.06); }
+  #selection.show { display:block; }
+  #selection strong { display:block; font-size:12px; margin-bottom:3px; }
+  #selection small { color:#6b7280; font:11px/1.5 ui-monospace,Consolas,monospace; }
+  #error { position:absolute; inset:0; display:none; place-items:center; padding:24px; text-align:center; color:#b42318; font:13px/1.6 Inter,sans-serif; }
+  #error.show { display:grid; }
+</style></head>
+<body><div id="app">
+  <canvas id="map"></canvas>
+  <div id="hud"><strong id="title">GeoJSON</strong><small id="meta"></small><button id="reset">Reset view</button></div>
+  <div id="selection"><strong id="selTitle"></strong><small id="selBody"></small></div>
+  <div id="error"></div>
+</div>
+<script>
+(async () => {
+  const canvas = document.getElementById('map');
+  const errorBox = document.getElementById('error');
+  const selection = document.getElementById('selection');
+  function fail(message) { errorBox.textContent = message; errorBox.classList.add('show'); }
+  try {
+    const hc = await HcanvasView.acquire();
+    const file = hc.context.file;
+    if (!file) throw new Error('This viewer needs a .geojson file context.');
+    document.getElementById('title').textContent = file.path.split('/').pop();
+    const result = await hc.files.read(file.rootId, file.path);
+    const data = JSON.parse(result.content);
+    const features = collectFeatures(data);
+    if (!features.length) throw new Error('No supported GeoJSON geometries found.');
+    document.getElementById('meta').textContent = features.length + ' feature' + (features.length === 1 ? '' : 's');
+    drawMap(features);
+  } catch (error) {
+    fail(error && error.message ? error.message : String(error));
+  }
+
+  function collectFeatures(data) {
+    const list = [];
+    if (data.type === 'FeatureCollection' && Array.isArray(data.features)) {
+      for (const feature of data.features) addFeature(list, feature);
+    } else if (data.type === 'Feature') addFeature(list, data);
+    else if (data.type === 'GeometryCollection' && Array.isArray(data.geometries)) {
+      for (const geometry of data.geometries) list.push({ name: geometry.type, geometry });
+    } else if (data.type) list.push({ name: data.type, geometry: data });
+    return list;
+  }
+  function addFeature(list, feature) {
+    if (!feature || !feature.geometry) return;
+    const props = feature.properties || {};
+    list.push({ name: props.name || props.title || props.NAME || feature.geometry.type, properties: props, geometry: feature.geometry });
+  }
+  function eachCoordinate(geometry, visit) {
+    if (!geometry || !geometry.coordinates) return;
+    const walk = coords => {
+      if (typeof coords[0] === 'number' && typeof coords[1] === 'number') visit(coords[0], coords[1]);
+      else if (Array.isArray(coords)) for (const item of coords) walk(item);
+    };
+    walk(geometry.coordinates);
+  }
+
+  function drawMap(features) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { fail('Canvas 2D is not available.'); return; }
+    let bounds = { minLon: Infinity, minLat: Infinity, maxLon: -Infinity, maxLat: -Infinity };
+    for (const feature of features) eachCoordinate(feature.geometry, (lon, lat) => {
+      bounds.minLon = Math.min(bounds.minLon, lon); bounds.maxLon = Math.max(bounds.maxLon, lon);
+      bounds.minLat = Math.min(bounds.minLat, lat); bounds.maxLat = Math.max(bounds.maxLat, lat);
+    });
+    if (!Number.isFinite(bounds.minLon)) throw new Error('GeoJSON has no coordinates.');
+    const midLat = (bounds.minLat + bounds.maxLat) / 2;
+    const lonScale = Math.cos(midLat * Math.PI / 180);
+    const world = (lon, lat) => ({ x: (lon - (bounds.minLon + bounds.maxLon) / 2) * lonScale, y: -(lat - midLat) });
+    const corners = [world(bounds.minLon, bounds.minLat), world(bounds.maxLon, bounds.maxLat)];
+    const baseW = Math.max(0.0001, Math.abs(corners[1].x - corners[0].x));
+    const baseH = Math.max(0.0001, Math.abs(corners[1].y - corners[0].y));
+    let scale = 0, offsetX = 0, offsetY = 0;
+    let selected = -1;
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(canvas.clientWidth * dpr);
+      canvas.height = Math.floor(canvas.clientHeight * dpr);
+      fit();
+      draw();
+    }
+    function fit() {
+      const pad = 60;
+      scale = Math.min((canvas.width - pad * 2) / baseW, (canvas.height - pad * 2) / baseH);
+      offsetX = canvas.width / 2;
+      offsetY = canvas.height / 2;
+    }
+    function project(lon, lat) {
+      const point = world(lon, lat);
+      return { x: offsetX + point.x * scale, y: offsetY + point.y * scale };
+    }
+    function drawGeometry(geometry, color, fill) {
+      if (!geometry) return;
+      const type = geometry.type;
+      const drawCoords = (coords, close) => {
+        if (!Array.isArray(coords) || !coords.length) return;
+        if (typeof coords[0] === 'number') {
+          const p = project(coords[0], coords[1]);
+          if (close) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+          return;
+        }
+        for (const item of coords) drawCoords(item, close);
+      };
+      if (type === 'Polygon') {
+        ctx.beginPath();
+        for (const ring of geometry.coordinates) {
+          if (!ring.length) continue;
+          const start = project(ring[0][0], ring[0][1]);
+          ctx.moveTo(start.x, start.y);
+          for (let i = 1; i < ring.length; i += 1) { const p = project(ring[i][0], ring[i][1]); ctx.lineTo(p.x, p.y); }
+          ctx.closePath();
+        }
+        if (fill) { ctx.fillStyle = color + '55'; ctx.fill(); }
+        ctx.strokeStyle = color; ctx.lineWidth = 1.4 * (window.devicePixelRatio || 1); ctx.stroke();
+      } else if (type === 'MultiPolygon') {
+        for (const polygon of geometry.coordinates) drawGeometry({ type: 'Polygon', coordinates: polygon }, color, fill);
+      } else if (type === 'LineString' || type === 'MultiLineString') {
+        ctx.beginPath();
+        drawCoords(geometry.coordinates, false);
+        ctx.strokeStyle = color; ctx.lineWidth = 1.6 * (window.devicePixelRatio || 1); ctx.stroke();
+      } else if (type === 'Point' || type === 'MultiPoint') {
+        const drawPoint = (lon, lat) => {
+          const p = project(lon, lat);
+          ctx.beginPath(); ctx.arc(p.x, p.y, 4 * (window.devicePixelRatio || 1), 0, Math.PI * 2);
+          ctx.fillStyle = color; ctx.fill();
+        };
+        if (type === 'Point') drawPoint(geometry.coordinates[0], geometry.coordinates[1]);
+        else for (const point of geometry.coordinates) drawPoint(point[0], point[1]);
+      }
+    }
+
+    function draw() {
+      const dpr = window.devicePixelRatio || 1;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#f2efe7';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Graticule
+      ctx.strokeStyle = 'rgba(31,36,48,.08)';
+      ctx.lineWidth = dpr;
+      const step = 10;
+      for (let lon = Math.floor(bounds.minLon / step) * step; lon <= bounds.maxLon; lon += step) {
+        const p = project(lon, midLat);
+        ctx.beginPath(); ctx.moveTo(p.x, 0); ctx.lineTo(p.x, canvas.height); ctx.stroke();
+      }
+      for (let lat = Math.floor(bounds.minLat / step) * step; lat <= bounds.maxLat; lat += step) {
+        const p = project(midLat * 0 + (bounds.minLon + bounds.maxLon) / 2, lat);
+        ctx.beginPath(); ctx.moveTo(0, p.y); ctx.lineTo(canvas.width, p.y); ctx.stroke();
+      }
+      const palette = ['#6657D9', '#0f766e', '#b45309', '#b42318', '#2563eb', '#7c3aed'];
+      features.forEach((feature, index) => {
+        drawGeometry(feature.geometry, palette[index % palette.length], selected !== index);
+      });
+      if (selected >= 0) {
+        const feature = features[selected];
+        drawGeometry(feature.geometry, '#11141c', false);
+        document.getElementById('selTitle').textContent = feature.name;
+        const entries = Object.entries(feature.properties || {}).slice(0, 8);
+        document.getElementById('selBody').textContent = entries.length ? entries.map(([key, value]) => key + ': ' + JSON.stringify(value)).join('\\n') : feature.geometry.type;
+        selection.classList.add('show');
+      } else {
+        selection.classList.remove('show');
+      }
+    }
+
+    function hitTest(x, y) {
+      for (let index = features.length - 1; index >= 0; index -= 1) {
+        const feature = features[index];
+        const type = feature.geometry.type;
+        let hit = false;
+        eachCoordinate(feature.geometry, (lon, lat) => {
+          const p = project(lon, lat);
+          if (Math.hypot(p.x - x, p.y - y) < 8 * (window.devicePixelRatio || 1)) hit = true;
+        });
+        if (hit) return index;
+        if (type === 'Polygon' || type === 'MultiPolygon') {
+          const polygons = type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+          for (const polygon of polygons) {
+            for (const ring of polygon) {
+              let inside = false;
+              for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+                const a = project(ring[i][0], ring[i][1]);
+                const b = project(ring[j][0], ring[j][1]);
+                if (((a.y > y) !== (b.y > y)) && (x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x)) inside = !inside;
+              }
+              if (inside) return index;
+            }
+          }
+        }
+      }
+      return -1;
+    }
+
+    let dragging = false, lastX = 0, lastY = 0, moved = false;
+    canvas.addEventListener('pointerdown', event => { dragging = true; moved = false; lastX = event.clientX; lastY = event.clientY; canvas.classList.add('dragging'); canvas.setPointerCapture(event.pointerId); });
+    canvas.addEventListener('pointermove', event => {
+      if (!dragging) return;
+      const dx = (event.clientX - lastX) * (window.devicePixelRatio || 1);
+      const dy = (event.clientY - lastY) * (window.devicePixelRatio || 1);
+      if (Math.abs(dx) + Math.abs(dy) > 1) moved = true;
+      offsetX += dx; offsetY += dy;
+      lastX = event.clientX; lastY = event.clientY;
+      draw();
+    });
+    canvas.addEventListener('pointerup', event => {
+      dragging = false; canvas.classList.remove('dragging');
+      if (moved) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * (window.devicePixelRatio || 1);
+      const y = (event.clientY - rect.top) * (window.devicePixelRatio || 1);
+      selected = hitTest(x, y);
+      draw();
+    });
+    canvas.addEventListener('wheel', event => {
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * (window.devicePixelRatio || 1);
+      const y = (event.clientY - rect.top) * (window.devicePixelRatio || 1);
+      const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+      offsetX = x + (offsetX - x) * factor;
+      offsetY = y + (offsetY - y) * factor;
+      scale *= factor;
+      draw();
+    }, { passive: false });
+    document.getElementById('reset').addEventListener('click', () => { fit(); draw(); selection.classList.remove('show'); selected = -1; });
+    window.addEventListener('resize', resize);
+    resize();
+  }
+})();
+</script></body></html>

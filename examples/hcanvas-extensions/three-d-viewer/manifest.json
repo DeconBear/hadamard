@@ -1,0 +1,44 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.hadamard.examples.three-d",
+  "name": "3D Viewer",
+  "version": "0.1.0",
+  "description": "Inspect Wavefront OBJ meshes with a sandboxed WebGL viewer.",
+  "engines": {
+    "hcanvas": ">=0.2.0"
+  },
+  "capabilities": {},
+  "contributes": {
+    "formats": [
+      {
+        "id": "obj-mesh",
+        "label": "3D mesh",
+        "extensions": [
+          ".obj"
+        ],
+        "viewer": "three-d.viewer",
+        "surfaces": [
+          "file"
+        ]
+      }
+    ],
+    "viewers": [
+      {
+        "id": "three-d.viewer",
+        "label": "3D mesh viewer",
+        "type": "iframe",
+        "entry": "ui/entry.html",
+        "surfaces": [
+          "file"
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "id": "three-d.open",
+        "title": "3D: Open .obj viewer",
+        "category": "3D"
+      }
+    ]
+  }
+}

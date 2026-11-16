@@ -1,0 +1,37 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.hadamard.examples.map",
+  "name": "GeoJSON Map Viewer",
+  "version": "0.1.0",
+  "description": "Offline GeoJSON map with pan, zoom and feature selection.",
+  "engines": {
+    "hcanvas": ">=0.2.0"
+  },
+  "capabilities": {},
+  "contributes": {
+    "formats": [
+      {
+        "id": "geojson",
+        "label": "GeoJSON map",
+        "extensions": [
+          ".geojson"
+        ],
+        "viewer": "map.viewer",
+        "surfaces": [
+          "file"
+        ]
+      }
+    ],
+    "viewers": [
+      {
+        "id": "map.viewer",
+        "label": "GeoJSON map",
+        "type": "iframe",
+        "entry": "ui/entry.html",
+        "surfaces": [
+          "file"
+        ]
+      }
+    ]
+  }
+}

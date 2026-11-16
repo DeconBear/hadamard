@@ -1,0 +1,135 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "North region",
+        "code": "N"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -10,
+              10
+            ],
+            [
+              10,
+              10
+            ],
+            [
+              12,
+              30
+            ],
+            [
+              -8,
+              28
+            ],
+            [
+              -10,
+              10
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "South region",
+        "code": "S"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -8,
+              -25
+            ],
+            [
+              14,
+              -22
+            ],
+            [
+              10,
+              -2
+            ],
+            [
+              -6,
+              -2
+            ],
+            [
+              -8,
+              -25
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Island",
+        "code": "I"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              20,
+              5
+            ],
+            [
+              30,
+              8
+            ],
+            [
+              28,
+              18
+            ],
+            [
+              18,
+              15
+            ],
+            [
+              20,
+              5
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Route",
+        "code": "R"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -15,
+            0
+          ],
+          [
+            0,
+            5
+          ],
+          [
+            15,
+            0
+          ],
+          [
+            30,
+            -5
+          ]
+        ]
+      }
+    }
+  ]
+}
