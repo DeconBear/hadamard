@@ -9,6 +9,36 @@ export interface ExtensionManagerContext {
   toast(message: string, kind?: 'info' | 'success' | 'error'): void;
 }
 
+interface CapabilityShape {
+  document?: { read?: boolean; write?: boolean };
+  workspace?: { read?: unknown; write?: unknown };
+  network?: { allow?: unknown };
+  process?: { sidecars?: unknown; tools?: unknown; terminals?: unknown };
+}
+
+interface GalleryEntry {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  path: string;
+  installed?: boolean;
+  requiresProcess?: boolean;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(item => String(item)) : [];
+}
+
+function capabilitiesOf(entry: ExtensionCatalogEntry): CapabilityShape {
+  return (entry.capabilities || {}) as CapabilityShape;
+}
+
+function requiresProcess(entry: ExtensionCatalogEntry): boolean {
+  const process = capabilitiesOf(entry).process;
+  return Boolean(process && (stringList(process.sidecars).length || stringList(process.tools).length || stringList(process.terminals).length)) || entry.contributes.kernels.length > 0;
+}
+
 function contributionSummary(entry: ExtensionCatalogEntry): string {
   const parts: string[] = [];
   if (entry.contributes.formats.length) parts.push(entry.contributes.formats.length + ' formats');
@@ -25,6 +55,48 @@ function contributionSummary(entry: ExtensionCatalogEntry): string {
   return parts.join(' · ') || 'No contributions';
 }
 
+function capabilityBadges(entry: ExtensionCatalogEntry): string {
+  const capabilities = capabilitiesOf(entry);
+  const badges: string[] = [];
+  const badge = (label: string, risk = false): string => '<span class="ext-cap' + (risk ? ' ext-cap-risk' : '') + '">' + esc(label) + '</span>';
+  if (capabilities.document?.write) badges.push(badge('document write', true));
+  else if (capabilities.document?.read) badges.push(badge('document read'));
+  if (stringList(capabilities.workspace?.write).length) badges.push(badge('workspace write', true));
+  else if (stringList(capabilities.workspace?.read).length) badges.push(badge('workspace read'));
+  if (stringList(capabilities.network?.allow).length) badges.push(badge('network', true));
+  if (requiresProcess(entry)) badges.push(badge('process', true));
+  if (entry.contributes.kernels.length) badges.push(badge('kernel', true));
+  return badges.join('');
+}
+
+function capabilityDetails(entry: ExtensionCatalogEntry): string[] {
+  const capabilities = capabilitiesOf(entry);
+  const lines: string[] = [];
+  if (capabilities.document?.write) lines.push('document: read + write');
+  else if (capabilities.document?.read) lines.push('document: read');
+  const workspaceRead = stringList(capabilities.workspace?.read);
+  const workspaceWrite = stringList(capabilities.workspace?.write);
+  if (workspaceRead.length) lines.push('workspace read: ' + workspaceRead.join(', '));
+  if (workspaceWrite.length) lines.push('workspace write: ' + workspaceWrite.join(', '));
+  const network = stringList(capabilities.network?.allow);
+  if (network.length) lines.push('network allowlist: ' + network.join(', '));
+  for (const sidecar of entry.contributes.sidecars) {
+    lines.push('sidecar "' + sidecar.id + '": ' + (sidecar.command || []).join(' '));
+  }
+  for (const tool of entry.contributes.tools) lines.push('tool "' + tool.id + '": ' + (tool.command || []).join(' '));
+  for (const terminal of entry.contributes.terminals) lines.push('terminal "' + terminal.id + '": ' + (terminal.command || []).join(' '));
+  for (const kernel of entry.contributes.kernels) lines.push('kernel "' + kernel.id + '": ' + kernel.language + ' via sidecar ' + kernel.sidecar);
+  if (!lines.length) lines.push('No process, network or document capabilities declared (declarative UI contributions only).');
+  return lines;
+}
+
+function trustMessage(entry: ExtensionCatalogEntry, workspaceRestricted: boolean): string {
+  const details = capabilityDetails(entry).slice(0, 12).map(line => '• ' + line).join('\n');
+  return 'Trust extension "' + entry.name + '" (' + entry.id + ')?\n\nIt declares:\n' + details +
+    '\n\nTrusted extensions are allowed to use the declared surfaces and may start the listed local processes. Only trust extensions whose source you trust.' +
+    (workspaceRestricted ? '\n\nThis workspace is in Restricted Mode; process extensions stay blocked until the workspace itself is trusted.' : '');
+}
+
 function renderRows(catalog: ExtensionCatalog): string {
   return catalog.extensions.map(entry => {
     const diagnostics = entry.diagnostics.length
@@ -35,11 +107,20 @@ function renderRows(catalog: ExtensionCatalog): string {
     return '<div class="extension-row" data-extension-id="' + esc(entry.id) + '">' +
       '<label class="extension-toggle"><input type="checkbox" data-extension-toggle="' + esc(entry.id) + '"' + (entry.enabled ? ' checked' : '') + '></label>' +
       '<span class="extension-copy"><strong>' + esc(entry.name) + ' <small>v' + esc(entry.version) + '</small></strong>' +
-      '<small>' + esc(entry.id) + ' · ' + esc(sourceLabel) + ' · ' + esc(trustLabel) + '</small>' +
-      '<small class="extension-contrib">' + esc(contributionSummary(entry)) + '</small>' + diagnostics + '</span>' +
+      '<small>' + esc(entry.id) + ' · ' + esc(sourceLabel) + ' · ' + esc(trustLabel) + (entry.trusted && requiresProcess(entry) ? ' · process allowed' : '') + '</small>' +
+      '<small class="extension-contrib">' + esc(contributionSummary(entry)) + '</small>' +
+      '<span class="extension-capabilities">' + capabilityBadges(entry) + '</span>' +
+      (requiresProcess(entry) || stringList(capabilitiesOf(entry).network?.allow).length ? '<ul class="extension-cap-list">' + capabilityDetails(entry).slice(0, 3).map(line => '<li>' + esc(line) + '</li>').join('') + '</ul>' : '') +
+      diagnostics + '</span>' +
       '<button type="button" class="btn tiny" data-extension-trust="' + esc(entry.id) + '">' + (entry.trusted ? 'Revoke trust' : 'Trust') + '</button>' +
       '</div>';
   }).join('');
+}
+
+function renderWorkspaceTrustButton(trust: string): string {
+  return trust === 'trusted'
+    ? '<button type="button" class="btn tiny" data-workspace-trust="restricted">Restrict workspace</button>'
+    : '<button type="button" class="btn tiny primary" data-workspace-trust="trusted">Trust workspace</button>';
 }
 
 export async function openExtensionManager(ctx: ExtensionManagerContext): Promise<void> {
@@ -50,14 +131,18 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
     ctx.toast(error instanceof Error ? error.message : String(error), 'error');
     return;
   }
+  const restricted = catalog.trust !== 'trusted';
   const errors = catalog.errors.length
     ? '<div class="plugin-manager-errors"><strong>Load diagnostics</strong><ul>' + catalog.errors.map(error => '<li>' + esc(error) + '</li>').join('') + '</ul></div>'
     : '';
+  const warning = restricted
+    ? '<div class="plugin-manager-warning"><strong>Restricted Mode</strong><span>Sidecar, kernel and other process-backed extensions are blocked until this workspace is trusted. Viewers and declarative blocks still work.</span></div>'
+    : '';
   const html = '<div class="modal plugin-manager-modal"><div class="modal-head"><div><strong>Extensions</strong><small>' +
     catalog.extensions.length + ' extension' + (catalog.extensions.length === 1 ? '' : 's') + ' · workspace trust: ' + esc(catalog.trust) + ' · v2 manifest + legacy plugins</small></div><button class="icon-btn" data-close>×</button></div>' +
-    '<div class="modal-body"><div class="plugin-manager-list">' + (catalog.extensions.length ? renderRows(catalog) : '<p class="empty-state">No extensions installed. Add a folder under .hcanvas/extensions/ and reload.</p>') + '</div>' + errors +
+    '<div class="modal-body">' + warning + '<div class="plugin-manager-list">' + (catalog.extensions.length ? renderRows(catalog) : '<p class="empty-state">No extensions installed. Add a folder under .hcanvas/extensions/ and reload, or install an example from the Gallery.</p>') + '</div>' + errors +
     '<p class="inspector-note">Project extensions: <code>.hcanvas/extensions/</code> · user extensions: <code>~/.hadamard/hcanvas/extensions/</code>. v1 plugins in <code>.hcanvas/plugins/</code> remain supported.</p>' +
-    '</div><div class="modal-foot"><button class="btn tiny" data-extensions-reload>Reload</button><button class="btn primary tiny" data-close>Done</button></div></div>';
+    '</div><div class="modal-foot">' + renderWorkspaceTrustButton(catalog.trust) + '<button class="btn tiny" data-extensions-gallery>Gallery</button><button class="btn tiny" data-extensions-reload>Reload</button><button class="btn primary tiny" data-close>Done</button></div></div>';
   ctx.openModal(html);
   const root = document.querySelector('.plugin-manager-modal');
   const refresh = async (): Promise<void> => {
@@ -86,8 +171,26 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
       const id = button.dataset.extensionTrust;
       if (!id) return;
       const entry = catalog.extensions.find(item => item.id === id);
-      const next = !entry?.trusted;
-      if (next && !(await ctx.confirm('Trust extension "' + id + '"? Trusted extensions may run local processes declared in their manifest.'))) return;
+      if (!entry) return;
+      const next = !entry.trusted;
+      if (next) {
+        if (requiresProcess(entry) && catalog.trust !== 'trusted') {
+          if (!(await ctx.confirm('This workspace is in Restricted Mode. Trust the workspace first to allow local sidecars, kernels and tools?\n\nOnly trust workspaces whose files you trust.'))) return;
+          button.disabled = true;
+          try {
+            await ctx.request('/api/workspace/trust', { method: 'POST', body: JSON.stringify({ trust: 'trusted' }) });
+            catalog.trust = 'trusted';
+            ctx.toast('Workspace trusted; process extensions can run now.', 'success');
+          } catch (error) {
+            button.disabled = false;
+            ctx.toast(error instanceof Error ? error.message : String(error), 'error');
+            return;
+          }
+        }
+        if (!(await ctx.confirm(trustMessage(entry, false)))) return;
+      } else if (!(await ctx.confirm('Revoke trust for "' + entry.name + '"? Its sidecars, kernels and process-backed features will be blocked until trusted again.'))) {
+        return;
+      }
       button.disabled = true;
       try {
         await ctx.request('/api/extensions/trust', { method: 'POST', body: JSON.stringify({ id, trusted: next }) });
@@ -99,6 +202,28 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
       }
     });
   });
+  root?.querySelector<HTMLButtonElement>('[data-workspace-trust]')?.addEventListener('click', async event => {
+    const button = event.currentTarget as HTMLButtonElement;
+    const target = button.dataset.workspaceTrust;
+    if (target !== 'trusted' && target !== 'restricted') return;
+    const question = target === 'trusted'
+      ? 'Trust this workspace? Process-backed extensions (sidecars, kernels, terminals, user tools) may run local commands declared in their manifests.'
+      : 'Enable Restricted Mode? All sidecar, kernel, terminal and process-backed extensions will be blocked until the workspace is trusted again.';
+    if (!(await ctx.confirm(question))) return;
+    button.disabled = true;
+    try {
+      await ctx.request('/api/workspace/trust', { method: 'POST', body: JSON.stringify({ trust: target }) });
+      ctx.toast(target === 'trusted' ? 'Workspace trusted' : 'Restricted Mode enabled', 'success');
+      await refresh();
+    } catch (error) {
+      button.disabled = false;
+      ctx.toast(error instanceof Error ? error.message : String(error), 'error');
+    }
+  });
+  root?.querySelector<HTMLButtonElement>('[data-extensions-gallery]')?.addEventListener('click', async () => {
+    ctx.closeModal();
+    await openExtensionGallery(ctx);
+  });
   root?.querySelector<HTMLButtonElement>('[data-extensions-reload]')?.addEventListener('click', async () => {
     try {
       await ctx.request('/api/extensions/reload', { method: 'POST', body: JSON.stringify({}) });
@@ -107,5 +232,52 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
     } catch (error) {
       ctx.toast(error instanceof Error ? error.message : String(error), 'error');
     }
+  });
+}
+
+export async function openExtensionGallery(ctx: ExtensionManagerContext): Promise<void> {
+  let entries: GalleryEntry[] = [];
+  try {
+    const result = await ctx.request<{ entries?: GalleryEntry[] }>('/api/extensions/gallery');
+    entries = Array.isArray(result.entries) ? result.entries : [];
+  } catch (error) {
+    ctx.toast(error instanceof Error ? error.message : String(error), 'error');
+    return;
+  }
+  const rows = entries.map((entry, index) =>
+    '<div class="extension-row gallery-row" data-gallery-id="' + esc(entry.id) + '">' +
+    '<span class="extension-copy"><strong>' + esc(entry.name) + ' <small>v' + esc(entry.version) + '</small></strong>' +
+    '<small>' + esc(entry.id) + (entry.requiresProcess ? ' · runs local processes (trust required)' : ' · declarative viewer') + '</small>' +
+    (entry.description ? '<small class="extension-contrib">' + esc(entry.description) + '</small>' : '') +
+    '</span>' +
+    (entry.installed
+      ? '<span class="ext-cap">installed</span>'
+      : '<button type="button" class="btn tiny primary" data-gallery-install="' + index + '">Install</button>') +
+    '</div>'
+  ).join('');
+  ctx.openModal('<div class="modal plugin-manager-modal"><div class="modal-head"><div><strong>Extension Gallery</strong><small>First-party examples from this checkout · installing copies the folder into the workspace extensions directory</small></div><button class="icon-btn" data-close>×</button></div>' +
+    '<div class="modal-body"><div class="plugin-manager-list">' + (rows || '<p class="empty-state">No gallery examples are available in this build. Install a folder manually under .hcanvas/extensions/.</p>') + '</div>' +
+    '<p class="inspector-note">Process-backed examples ask for workspace trust before their sidecars can start. Installed extensions stay in your workspace and can be removed from disk.</p></div>' +
+    '<div class="modal-foot"><button class="btn tiny" data-gallery-back>Back</button><button class="btn primary tiny" data-close>Done</button></div></div>');
+  const root = document.querySelector('.plugin-manager-modal');
+  root?.querySelector<HTMLButtonElement>('[data-gallery-back]')?.addEventListener('click', async () => {
+    ctx.closeModal();
+    await openExtensionManager(ctx);
+  });
+  root?.querySelectorAll<HTMLButtonElement>('[data-gallery-install]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const entry = entries[Number(button.dataset.galleryInstall)];
+      if (!entry) return;
+      button.disabled = true;
+      try {
+        await ctx.request('/api/extensions/install', { method: 'POST', body: JSON.stringify({ source: 'folder', path: entry.path }) });
+        ctx.toast('Installed ' + entry.id, 'success');
+        ctx.closeModal();
+        await openExtensionManager(ctx);
+      } catch (error) {
+        button.disabled = false;
+        ctx.toast(error instanceof Error ? error.message : String(error), 'error');
+      }
+    });
   });
 }

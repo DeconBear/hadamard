@@ -618,7 +618,7 @@ Hcanvas 除旧版声明式插件块外，还提供沙箱化扩展平台（manife
 - `process`：启动声明的 sidecar/终端、使用用户工具。
 - `commands`、`menus`、`keybindings`、`configuration`：UI 贡献。
 
-信任确认框会先列出扩展声明的能力。**受限模式（Restricted Mode）** 会在工作区级别阻止 sidecar、kernel 与进程型命令，不受单个扩展信任状态影响。扩展代码不会进入 Node/Electron 主进程：
+信任确认框会先列出扩展声明的能力、sidecar 命令、kernel 与网络白名单。扩展管理器还提供工作区 **受限模式（Restricted Mode）** 开关，以及在源码仓库运行时可见的一等示例 **Gallery**。受限模式会在工作区级别阻止 sidecar、kernel 与进程型命令，不受单个扩展信任状态影响。扩展代码不会进入 Node/Electron 主进程：
 
 - iframe viewer 运行在不透明源沙箱（`sandbox="allow-scripts"`，无 `allow-same-origin`），CSP 只允许宿主提供的资源。
 - sidecar 是独立进程，使用 argv 数组启动（`shell: false`）、环境变量过滤、受监督的生命周期。

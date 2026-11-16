@@ -1007,6 +1007,15 @@ body.file-browser-mode #toolRail, body.file-browser-mode #selectionToolbar, body
 body.file-browser-mode #viewport { background:#f4f2ec; }
 .file-surface { position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; background:#fff; }
 .extension-row { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); }
+.extension-capabilities { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.ext-cap { display:inline-block; font:9px Inter,sans-serif; line-height:1.4; padding:1px 6px; border-radius:999px; background:#efece4; color:#5b6472; border:1px solid #e3ded3; white-space:nowrap; }
+.ext-cap-risk { background:#fff4e5; border-color:#f0c98a; color:#9a5b00; }
+.extension-cap-list { margin:5px 0 0; padding-left:16px; color:#6b7280; font:10px/1.5 ui-monospace,Consolas,monospace; }
+.extension-cap-list li { margin:0 0 1px; }
+.plugin-manager-warning { display:flex; flex-direction:column; gap:2px; margin:0 0 10px; padding:9px 12px; border:1px solid #f0c98a; border-radius:9px; background:#fff8ea; color:#7a4b00; font-size:11px; }
+.plugin-manager-warning strong { font-size:11px; }
+.gallery-row { align-items:center; }
+.gallery-row .ext-cap { margin-left:auto; }
 .notebook-host { height:100%; overflow:auto; background:#faf8f3; }
 body.extension-page-mode #toolRail, body.extension-page-mode #selectionToolbar, body.extension-page-mode #zoomControls { display:none !important; }
 .extension-page-surface { position:absolute; inset:0; z-index:20; background:#fff; overflow:hidden; display:flex; flex-direction:column; }

@@ -214,6 +214,29 @@ async function main() {
   const exported = await api('/api/export', { method: 'POST', body: JSON.stringify({ docId: doc.id, format: 'pdf', pageId: 'page_e2eboard' }) });
   assert('extensions page export fails with a readable error', exported.status >= 400 && String(JSON.stringify(exported.body)).includes('Extension pages cannot be exported'), String(exported.status));
 
+  // Workspace trust / Restricted Mode and the extension gallery.
+  const restricted = await api('/api/workspace/trust', { method: 'POST', body: JSON.stringify({ trust: 'restricted' }) });
+  assert('API can put the workspace in Restricted Mode', restricted.status === 200);
+  await page.evaluate(() => document.getElementById('extensionManagerBtn')?.click());
+  await page.waitForSelector('.plugin-manager-modal');
+  assert('extension manager shows Restricted Mode', (await page.locator('.plugin-manager-warning').count()) === 1);
+  const managerRowsBefore = await page.locator('.plugin-manager-modal .extension-row').count();
+  await page.locator('[data-workspace-trust="trusted"]').click();
+  await page.waitForSelector('#confirmOk');
+  await page.locator('#confirmOk').click();
+  await page.waitForSelector('.plugin-manager-modal');
+  assert('trusting the workspace leaves Restricted Mode', !(await page.locator('.plugin-manager-modal .modal-head small').first().innerText()).includes('restricted'));
+  await page.locator('[data-extensions-gallery]').click();
+  await page.waitForSelector('.plugin-manager-modal');
+  assert('gallery lists first-party examples', (await page.locator('.gallery-row').count()) > 0);
+  const installButtons = page.locator('[data-gallery-install]');
+  assert('gallery has installable examples', (await installButtons.count()) > 0);
+  await installButtons.first().click();
+  await page.waitForSelector('.plugin-manager-modal');
+  assert('gallery install adds a workspace extension', (await page.locator('.plugin-manager-modal .extension-row').count()) > managerRowsBefore);
+  await page.locator('.modal [data-close], .modal .icon-btn[data-close]').first().click();
+  await page.waitForTimeout(300);
+
   assert('no browser page errors', pageErrors.length === 0, pageErrors.join('; '));
 
   const failed = results.filter(item => !item.passed);

@@ -1,4 +1,6 @@
+import { readdir, readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import path from 'node:path';
 
 import {
   HcExtensionError,
@@ -275,6 +277,43 @@ async function handleWorkspaceTrust(req: IncomingMessage, res: ServerResponse, c
   return true;
 }
 
+async function handleGallery(req: IncomingMessage, res: ServerResponse, context: HcExtensionRouteContext): Promise<boolean> {
+  if (req.method !== 'GET') {
+    methodNotAllowed(res, context, ['GET']);
+    return true;
+  }
+  const roots = [{ kind: 'example', dir: path.resolve(process.cwd(), 'examples', 'hcanvas-extensions') }];
+  const discovery = await loadDiscovery(context);
+  const installed = new Map(discovery.extensions.map(extension => [extension.id, extension.source]));
+  const entries: Array<Record<string, unknown>> = [];
+  for (const root of roots) {
+    let children;
+    try { children = await readdir(root.dir, { withFileTypes: true }); } catch { continue; }
+    for (const child of children) {
+      if (!child.isDirectory()) continue;
+      let raw: unknown;
+      try { raw = JSON.parse(await readFile(path.join(root.dir, child.name, 'manifest.json'), 'utf8')); } catch { continue; }
+      const checked = checkExtensionManifest(raw);
+      if (!checked.ok || !checked.manifest) continue;
+      const manifest = checked.manifest;
+      const processCapability = manifest.capabilities.process && Object.keys(manifest.capabilities.process).length > 0;
+      entries.push({
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        ...(manifest.description ? { description: manifest.description } : {}),
+        path: path.join(root.dir, child.name),
+        kind: root.kind,
+        requiresProcess: Boolean(processCapability),
+        installed: installed.has(manifest.id),
+      });
+    }
+  }
+  entries.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  context.json(res, 200, { ok: true, entries });
+  return true;
+}
+
 async function dispatch(req: IncomingMessage, res: ServerResponse, pathname: string, context: HcExtensionRouteContext): Promise<boolean> {
   const method = req.method || 'GET';
   if (pathname === '/api/workspace/trust') return handleWorkspaceTrust(req, res, context);
@@ -287,6 +326,7 @@ async function dispatch(req: IncomingMessage, res: ServerResponse, pathname: str
     context.json(res, 200, catalogPayload(discovery));
     return true;
   }
+  if (pathname === '/api/extensions/gallery') return handleGallery(req, res, context);
   if (pathname === '/api/extensions/validate') {
     if (method !== 'POST') {
       methodNotAllowed(res, context, ['POST']);

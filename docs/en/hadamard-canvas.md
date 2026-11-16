@@ -702,7 +702,7 @@ An extension declares what it needs in `capabilities` and can only use granted s
 - `process` — start declared sidecars and terminals, and use user tools.
 - `commands`, `menus`, `keybindings`, `configuration` — UI contributions.
 
-The trust dialog shows the declared capabilities before anything is started. **Restricted Mode** blocks sidecars, kernels and process-backed commands for the workspace regardless of individual extension trust. Extension code never runs in the Node/Electron process:
+The trust dialog lists the declared capabilities, sidecar commands, kernels and network allowlists before anything is started. The extension manager also exposes a workspace **Restricted Mode** toggle and a **Gallery** of first-party examples when running from a source checkout. **Restricted Mode** blocks sidecars, kernels and process-backed commands for the workspace regardless of individual extension trust. Extension code never runs in the Node/Electron process:
 
 - iframe viewers run in an opaque-origin sandbox (`sandbox="allow-scripts"`, no `allow-same-origin`) with a CSP that only permits host-served assets.
 - sidecars are separate processes started with argv arrays (`shell: false`), a filtered environment, and supervised lifecycle.
