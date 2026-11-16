@@ -60,7 +60,7 @@ async function main() {
   const extensionsDir = path.join(workspace, 'extensions');
   await mkdir(extensionsDir, { recursive: true });
   const exampleRoot = path.join(root, 'examples', 'hcanvas-extensions');
-  for (const name of ['svg-viewer', 'json-viewer', 'map-viewer', 'page-board', 'python-kernel']) {
+  for (const name of ['svg-viewer', 'json-viewer', 'map-viewer', 'page-board', 'python-kernel', 'cpp-toolbox']) {
     await cp(path.join(exampleRoot, name), path.join(extensionsDir, name), { recursive: true });
   }
   await writeFile(path.join(workspace, 'sample.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" rx="10" fill="#6657D9"/><circle cx="46" cy="45" r="20" fill="#faf8f3"/><text x="78" y="52" fill="#fff" font-family="sans-serif" font-size="15">SVG</text></svg>\n', 'utf8');
@@ -90,7 +90,7 @@ async function main() {
     return { status: response.status, body };
   };
 
-  for (const id of ['com.hadamard.examples.python-kernel']) {
+  for (const id of ['com.hadamard.examples.python-kernel', 'com.hadamard.examples.cpp']) {
     const trusted = await api('/api/extensions/trust', { method: 'POST', body: JSON.stringify({ id, trusted: true }) });
     assert('trust ' + id, trusted.status === 200, String(trusted.status));
   }
@@ -268,6 +268,79 @@ async function main() {
   await page.waitForSelector('.plugin-manager-modal');
   assert('gallery install adds a workspace extension', (await page.locator('.plugin-manager-modal .extension-row').count()) > managerRowsBefore);
   await page.locator('.modal [data-close], .modal .icon-btn[data-close]').first().click();
+  await page.waitForTimeout(300);
+
+  // Terminal dock over a real PTY session (P3 client shell surface).
+  await page.keyboard.press('Control+Shift+P');
+  await page.waitForTimeout(300);
+  await page.locator('#paletteInput').fill('terminal');
+  await page.waitForTimeout(300);
+  await page.locator('.palette-item').first().click();
+  await page.waitForTimeout(1800);
+  assert('terminal dock opens with xterm', (await page.locator('#terminalDock:not(.hidden)').count()) === 1 && (await page.locator('.xterm').count()) === 1);
+  const terminalTextarea = page.locator('.xterm-helper-textarea');
+  await terminalTextarea.focus();
+  await terminalTextarea.pressSequentially('echo terminal-e2e');
+  await terminalTextarea.press('Enter');
+  await page.waitForTimeout(1600);
+  const sessions = await api('/api/terminal/sessions');
+  const sessionId = sessions.body.sessions?.[0]?.sessionId;
+  assert('terminal dock creates a PTY session', Boolean(sessionId));
+  let terminalBuffer = '';
+  if (sessionId) {
+    const buffer = await api('/api/terminal/sessions/' + encodeURIComponent(sessionId) + '/buffer');
+    terminalBuffer = buffer.body.buffer?.base64 ? Buffer.from(buffer.body.buffer.base64, 'base64').toString('utf8') : '';
+  }
+  assert('terminal PTY echoes typed input', terminalBuffer.includes('terminal-e2e'));
+  await page.locator('[data-terminal-tab="output"]').click();
+  assert('terminal dock Output tab is available', !(await page.locator('[data-terminal-output]').getAttribute('class')).includes('hidden'));
+  await page.locator('[data-terminal-close]').click();
+  await page.waitForTimeout(300);
+  assert('terminal dock closes', (await page.locator('#terminalDock').getAttribute('class')).includes('hidden'));
+
+  // Contributed user tools: run the C++ version tool and surface output in the dock.
+  await page.keyboard.press('Control+Shift+P');
+  await page.waitForTimeout(300);
+  await page.locator('#paletteInput').fill('Tools:');
+  await page.waitForTimeout(300);
+  await page.locator('.palette-item').first().click();
+  await page.waitForTimeout(500);
+  const toolButtons = page.locator('[data-tool-index]');
+  assert('tool runner lists contributed tools', (await toolButtons.count()) > 0);
+  await toolButtons.first().click();
+  const toolOutput = await (async () => {
+    const start = Date.now();
+    while (Date.now() - start < 20_000) {
+      const text = await page.locator('[data-terminal-output]').innerText().catch(() => '');
+      if (text.includes('g++')) return true;
+      await page.waitForTimeout(300);
+    }
+    return false;
+  })();
+  assert('tool runner streams command output', toolOutput);
+
+  await page.keyboard.press('Control+Shift+P');
+  await page.waitForTimeout(300);
+  await page.locator('#paletteInput').fill('Tools:');
+  await page.waitForTimeout(300);
+  await page.locator('.palette-item').first().click();
+  await page.waitForTimeout(500);
+  const syntaxTool = page.locator('[data-tool-index]', { hasText: 'syntax' }).first();
+  assert('tool runner exposes a syntax-check tool', (await syntaxTool.count()) === 1);
+  await syntaxTool.click();
+  const problemReported = await (async () => {
+    const start = Date.now();
+    while (Date.now() - start < 20_000) {
+      const text = await page.locator('[data-terminal-problems]').innerText().catch(() => '');
+      if (text.includes('missing_symbol')) return true;
+      await page.waitForTimeout(300);
+    }
+    return false;
+  })();
+  assert('tool stderr is parsed into Problems', problemReported);
+  await page.locator('[data-terminal-tab="problems"]').click();
+  assert('Problems tab lists an error', (await page.locator('.terminal-problem.error').count()) > 0);
+  await page.locator('[data-terminal-close]').click();
   await page.waitForTimeout(300);
 
   assert('no browser page errors', pageErrors.length === 0, pageErrors.join('; '));

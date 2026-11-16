@@ -33,6 +33,7 @@ await build({
   logLevel: 'warning',
 });
 await copyFile(path.join(root, 'src', 'hcanvas', 'client', 'styles.css'), path.join(outDir, 'assets', 'app.css'));
+await copyFile(path.join(root, 'node_modules', '@xterm', 'xterm', 'css', 'xterm.css'), path.join(outDir, 'assets', 'xterm.css'));
 await copyFile(path.join(root, 'src', 'hcanvas', 'client', 'index.html'), path.join(outDir, 'index.html'));
 await copyFile(path.join(root, 'assets', 'hcanvas-icon.svg'), path.join(outDir, 'assets', 'hcanvas-icon.svg'));
 await cp(path.join(root, 'src', 'hcanvas', 'client', 'fonts'), path.join(outDir, 'assets', 'fonts'), { recursive: true });

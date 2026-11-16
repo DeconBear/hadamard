@@ -3,6 +3,7 @@
  * instances, network proxy and sidecar/kernel/terminal runtime, and dispatches
  * their HTTP routes. Keeps src/hcanvas/server.ts focused on the document app.
  */
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -14,6 +15,7 @@ import { handleExtensionViewRoute } from './extensions/viewRoutes.js';
 import { handleExtensionNetworkRoute } from './extensions/networkProxy.js';
 import { createRuntimeServices, handleHcRuntimeRoute, type HcKernelOutputPort, type HcRuntimeServices } from './sidecar/routes.js';
 import type { HcKernelCatalogEntry, HcSidecarCatalogEntry } from './sidecar/protocol.js';
+import { buildSandboxEnv } from './sidecar/spawn.js';
 
 export interface ExtensionHostOptions {
   workspace: string;
@@ -181,6 +183,71 @@ export function createExtensionHost(options: ExtensionHostOptions): ExtensionHos
     return runtimeServices;
   };
 
+  interface ToolRunResult { exitCode: number | null; stdout: string; stderr: string; durationMs: number; timedOut: boolean }
+
+  const runToolCommand = (command: string[], cwd: string): Promise<ToolRunResult> => new Promise(resolve => {
+    const started = Date.now();
+    const cap = 1024 * 1024;
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const child = spawn(command[0]!, command.slice(1), { cwd, env: buildSandboxEnv(), shell: false, windowsHide: true });
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, 120_000);
+    child.stdout.on('data', chunk => { if (stdout.length < cap) stdout += String(chunk); });
+    child.stderr.on('data', chunk => { if (stderr.length < cap) stderr += String(chunk); });
+    child.once('error', error => {
+      clearTimeout(timer);
+      resolve({ exitCode: null, stdout, stderr: stderr + (stderr ? '\n' : '') + String(error.message || error), durationMs: Date.now() - started, timedOut });
+    });
+    child.once('exit', code => {
+      clearTimeout(timer);
+      resolve({ exitCode: code, stdout: stdout.slice(0, cap), stderr: stderr.slice(0, cap), durationMs: Date.now() - started, timedOut });
+    });
+  });
+
+  const handleToolRoutes = async (req: IncomingMessage, res: ServerResponse, pathname: string, method: string): Promise<boolean> => {
+    if (pathname !== '/api/tools' && pathname !== '/api/tools/run') return false;
+    try {
+      const registry = await loadExtensionRegistry();
+      const workspaceTrusted = registry.discovery.workspaceTrust === 'trusted';
+      const entries = [...registry.tools.values()].map(ref => {
+        const catalogEntry = registry.catalogEntries.find(entry => entry.id === ref.extensionId);
+        return {
+          id: ref.contribution.id,
+          label: ref.contribution.label || ref.contribution.id,
+          extensionId: ref.extensionId,
+          extensionName: catalogEntry?.name || ref.extensionId,
+          enabled: catalogEntry?.enabled !== false,
+          trusted: catalogEntry?.trusted === true,
+          command: ref.contribution.command,
+        };
+      });
+      if (pathname === '/api/tools') {
+        if (method !== 'GET') { options.json(res, 405, { ok: false, error: 'Method not allowed' }); return true; }
+        options.json(res, 200, { ok: true, tools: entries, workspaceTrusted });
+        return true;
+      }
+      if (method !== 'POST') { options.json(res, 405, { ok: false, error: 'Method not allowed' }); return true; }
+      const body = await options.readBody(req);
+      const id = typeof body.id === 'string' ? body.id : '';
+      const ref = registry.tools.get(id);
+      const entry = entries.find(item => item.id === id);
+      if (!ref || !entry) { options.json(res, 404, { ok: false, error: 'Unknown tool: ' + id }); return true; }
+      if (!entry.enabled) { options.json(res, 403, { ok: false, error: 'Tool extension is disabled.' }); return true; }
+      if (!workspaceTrusted) { options.json(res, 403, { ok: false, error: 'Workspace is in Restricted Mode; trust the workspace to run tools.' }); return true; }
+      if (!entry.trusted) { options.json(res, 403, { ok: false, error: 'Trust the tool extension before running it.' }); return true; }
+      const catalogEntry = registry.catalogEntries.find(item => item.id === ref.extensionId);
+      const cwd = ref.contribution.cwd === 'workspace' ? options.workspace : (catalogEntry?.root || options.workspace);
+      const extraArgs = Array.isArray(body.args) ? body.args.filter((item): item is string => typeof item === 'string').slice(0, 20) : [];
+      const result = await runToolCommand([...ref.contribution.command, ...extraArgs], cwd);
+      options.json(res, 200, { ok: true, tool: id, ...result });
+      return true;
+    } catch (error) {
+      options.json(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      return true;
+    }
+  };
+
   const handle = async (req: IncomingMessage, res: ServerResponse, url: URL, pathname: string, method: string, origin: string): Promise<boolean> => {
     if (pathname.startsWith('/api/extension-views')) {
       try { await loadExtensionRegistry(); } catch { /* route reports unknown viewer */ }
@@ -197,6 +264,7 @@ export function createExtensionHost(options: ExtensionHostOptions): ExtensionHos
       const runtime = getRuntimeServices();
       if (await handleHcRuntimeRoute(runtime, { req, res, url, pathname, method })) return true;
     }
+    if (await handleToolRoutes(req, res, pathname, method)) return true;
     if (pathname === '/api/extension-network') {
       try { await loadExtensionRegistry(); } catch { /* route denies unknown extensions */ }
       if (await handleExtensionNetworkRoute(req, res, url, {

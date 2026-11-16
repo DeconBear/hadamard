@@ -690,7 +690,7 @@ Hcanvas also has a sandboxed extension platform (manifest schema `hcanvas-extens
 | Bundled | shipped first-party extensions (for example the notebook viewer) |
 | Legacy v1 plugins | `<workspace>/plugins`, `~/.hadamard/hcanvas/plugins` |
 
-For a project workspace the data directory is `.hcanvas`, so workspace extensions live in `.hcanvas/extensions/`. Use **Plugins → Extensions** to connect a folder, enable/disable, trust, and inspect diagnostics. Discovered extensions are untrusted by default when they declare process capabilities; a trusted workspace remembers the decision in `extensions.json`.
+For a project workspace the data directory is `.hcanvas`, so workspace extensions live in `.hcanvas/extensions/`. Use **Plugins → Extensions** to enable/disable, trust, inspect diagnostics, install a folder, or open the Gallery of first-party examples. Discovered extensions are untrusted by default when they declare process capabilities; a trusted workspace remembers the decision in `extensions.json`.
 
 ### Trust and capabilities
 
@@ -748,6 +748,25 @@ The SDK exposes `hc.context` (`surface`, `file`, `page`), `hc.files` (read/stat/
 ### Commands and workspace views
 
 A contributed `view` mounts its viewer as a workspace tab. A `command` adds an entry to the command palette; `exec.kind` can be `view` (open a tab), `command` (run another host command) or `script` where supported. The examples below use this path to open a C++ toolbox or an Octave console without touching the app shell.
+
+### Terminal, Output and Problems
+
+The command palette includes **Terminal: Toggle terminal panel**, a bottom dock backed by a real PTY session rendered with xterm.js. A profile selector lists manifest-contributed terminals (or the platform default shell); typing is forwarded to the PTY, resizing is synced, and **Restart** creates a fresh session. The adjacent **Output** tab collects sidecar stderr/log records from the runtime event stream, and the **Problems** tab lists diagnostics parsed from user-tool output (`file:line:col: error|warning: message`). Terminal and tool execution require a trusted workspace; when node-pty is unavailable the dock reports it instead of failing silently.
+
+### User tools
+
+A manifest can declare small argv-only tools under `contributes.tools`:
+
+```json
+{
+  "capabilities": { "process": { "tools": ["cpp.version"] } },
+  "contributes": {
+    "tools": [{ "id": "cpp.version", "label": "C++ compiler version", "command": ["g++", "--version"], "cwd": "extension", "output": "terminal" }]
+  }
+}
+```
+
+Run them with **Tools: Run a contributed tool**. Commands are spawned with `shell: false`, a filtered environment, the extension folder (or workspace) as cwd and an output cap; both the workspace and the extension must be trusted. stdout/stderr are shown in the bottom Output panel, and compiler-style diagnostics are collected in Problems. The C++ toolbox example contributes a version tool and a deliberately failing syntax-check tool for this flow.
 
 ### Sidecars
 

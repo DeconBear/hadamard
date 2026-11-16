@@ -606,7 +606,7 @@ Hcanvas 除旧版声明式插件块外，还提供沙箱化扩展平台（manife
 | 内置 | 随应用发布的一等扩展（如 notebook viewer） |
 | 旧版 v1 插件 | `<workspace>/plugins`、`~/.hadamard/hcanvas/plugins` |
 
-项目工作区的数据目录是 `.hcanvas`，工作区扩展位于 `.hcanvas/extensions/`。在 **插件 → 扩展** 中连接目录、启用/禁用、信任并查看诊断。声明了进程能力的扩展默认未信任；信任决定记录在工作区 `extensions.json`。
+项目工作区的数据目录是 `.hcanvas`，工作区扩展位于 `.hcanvas/extensions/`。在 **插件 → 扩展** 中启用/禁用、信任、查看诊断，或安装文件夹、打开一等示例 Gallery。声明了进程能力的扩展默认未信任；信任决定记录在工作区 `extensions.json`。
 
 ### 信任与能力
 
@@ -664,6 +664,25 @@ SDK 提供 `hc.context`（`surface`/`file`/`page`）、`hc.files`（授权范围
 ### 命令与工作区视图
 
 贡献的 `view` 以工作区标签页挂载 viewer；`command` 会出现在命令面板，`exec.kind` 支持 `view`（打开标签页）、`command`（调用宿主命令）等。示例中的 C++ 工具箱、Octave 控制台都通过这一路径打开，无需改应用外壳。
+
+### 终端、Output 与 Problems
+
+命令面板提供 **Terminal: Toggle terminal panel**：底部 dock 使用 xterm.js 渲染真实 PTY session，profile 选择器列出 manifest 贡献的终端（或平台默认 shell），输入转发到 PTY、尺寸同步、**Restart** 重建 session。相邻的 **Output** tab 收集 runtime 事件流中的 sidecar stderr/log，**Problems** tab 展示从 user tool 输出解析的诊断（`file:line:col: error|warning: message`）。终端与工具执行要求工作区已信任；node-pty 不可用时 dock 会明确提示。
+
+### 用户工具
+
+manifest 通过 `contributes.tools` 声明 argv-only 小工具：
+
+```json
+{
+  "capabilities": { "process": { "tools": ["cpp.version"] } },
+  "contributes": {
+    "tools": [{ "id": "cpp.version", "label": "C++ compiler version", "command": ["g++", "--version"], "cwd": "extension", "output": "terminal" }]
+  }
+}
+```
+
+用 **Tools: Run a contributed tool** 运行：命令以 `shell: false` 启动、使用过滤后的环境变量、以扩展目录（或 workspace）为 cwd，并有输出上限；工作区与扩展都必须已信任。stdout/stderr 出现在底部 Output 面板，编译器风格诊断进入 Problems。C++ toolbox 示例贡献了版本工具和一个故意失败的语法检查工具用于演示该流程。
 
 ### Sidecar
 

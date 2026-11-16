@@ -31,6 +31,7 @@ import { loadExtensionCatalog } from './extensionCatalog.js';
 import { installExtensionRuntime, type ExtensionRuntime } from './extensionRuntime.js';
 import { installCommandPalette } from './commandPalette.js';
 import { createKernelManager, type KernelDescriptor, type KernelManager } from './kernelManager.js';
+import { createTerminalDock, type TerminalDockController } from './terminalDock.js';
 import { installExecCells, mountExecCell, runAllExecCells } from './execCell.js';
 import { extensionContributions, getExtensionCatalog } from './extensionCatalog.js';
 import { commandRegistry } from './commandRegistry.js';
@@ -179,6 +180,7 @@ let shapePicker: ShapePicker | null = null;
 let fileBrowser: FileBrowserController | null = null;
 let extensionRuntime: ExtensionRuntime | null = null;
 let kernelManager: KernelManager | null = null;
+let terminalDock: TerminalDockController | null = null;
 let presentInteractions: PresentInteractions | null = null;
 let sliceTool: SliceTool | null = null;
 let historyPanel: { render(): void } | null = null;
@@ -432,7 +434,7 @@ async function initialize(): Promise<void> {
     state.spaceHeld = false;
     if (state.tool !== 'hand') el('viewport').classList.remove('tool-hand');
   });
-  window.addEventListener('beforeunload', () => { kernelManager?.dispose(); if (state.doc) void syncActive(); });
+  window.addEventListener('beforeunload', () => { kernelManager?.dispose(); terminalDock?.dispose(); if (state.doc) void syncActive(); });
 }
 const DEFAULT_VECTOR_STROKE = '#1f2430';
 const DEFAULT_VECTOR_STROKE_WIDTH = 2;
@@ -838,6 +840,7 @@ function bindStaticActions(): void {
     openExtensionView: viewId => extensionRuntime?.openView(viewId) ?? false,
   });
   kernelManager = createKernelManager({ request: api, token: () => boot.token });
+  terminalDock = createTerminalDock({ request: api, token: () => boot.token, toast });
   installExecCells({
     kernelManager,
     getKernels: () => extensionContributions<KernelDescriptor>('kernels').map(item => item.contribution),
@@ -858,6 +861,8 @@ function bindStaticActions(): void {
     toast,
   }));
   commandRegistry.register({ id: 'page.addExtension', title: 'Page: Add extension page', category: 'Page', handler: () => openAddExtensionPageModal() });
+  commandRegistry.register({ id: 'terminal.toggle', title: 'Terminal: Toggle terminal panel', category: 'Terminal', handler: () => terminalDock?.toggle() });
+  commandRegistry.register({ id: 'tools.run', title: 'Tools: Run a contributed tool', category: 'Tools', handler: () => { void openToolRunner(); } });
   commandRegistry.register({ id: 'cell.insert', title: 'Cell: Insert code cell', category: 'Cell', handler: () => { void addBlock('exec', { code: 'print("hello")', language: 'python', w: 560, h: 360 }, viewportWorldCenter()); } });
   commandRegistry.register({ id: 'cell.runAll', title: 'Cell: Run all code cells', category: 'Cell', handler: () => { const page = activePage(); if (page) void runAllExecCells(page); } });
   historyPanel = installHistoryPanel({
@@ -3073,6 +3078,69 @@ async function createExtensionPage(option: ExtensionPageFormatOption): Promise<v
   if (!result) return;
   selectPage(page.id);
   toast('Added extension page: ' + option.label, 'success');
+}
+
+interface ToolListEntry {
+  id: string;
+  label: string;
+  extensionId: string;
+  extensionName: string;
+  enabled: boolean;
+  trusted: boolean;
+  command: string[];
+}
+
+async function openToolRunner(): Promise<void> {
+  let tools: ToolListEntry[] = [];
+  try {
+    const result = await api<{ tools?: ToolListEntry[] }>('/api/tools');
+    tools = Array.isArray(result.tools) ? result.tools : [];
+  } catch (error) {
+    toast(error instanceof Error ? error.message : String(error), 'error');
+    return;
+  }
+  if (!tools.length) {
+    toast('No user tools are contributed by installed extensions.', 'info');
+    return;
+  }
+  const rows = tools.map((tool, index) => {
+    const state = !tool.enabled ? 'disabled' : !tool.trusted ? 'needs trust' : 'ready';
+    return '<button type="button" class="btn" data-tool-index="' + index + '" style="display:block;width:100%;text-align:left;margin:0 0 8px"' + (tool.enabled && tool.trusted ? '' : ' disabled') + '>' +
+      esc(tool.label) + '<small style="display:block;color:#8a8276;font-size:10px;margin-top:2px">' + esc(tool.extensionName) + ' · ' + esc(tool.command.join(' ')) + ' · ' + state + '</small></button>';
+  }).join('');
+  openModal('<div class="modal small"><div class="modal-head"><div><strong>Run a contributed tool</strong><small>Tools run argv-only commands declared by trusted extensions. Output appears in the bottom Output panel.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body">' + rows + '</div><div class="modal-foot"><button class="btn" data-close>Cancel</button></div></div>');
+  document.querySelectorAll<HTMLButtonElement>('[data-tool-index]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const tool = tools[Number(button.dataset.toolIndex)];
+      if (!tool) return;
+      closeModal();
+      terminalDock?.showOutput();
+      terminalDock?.appendOutput('$ ' + tool.command.join(' '));
+      try {
+        const result = await api<{ exitCode?: number | null; stdout?: string; stderr?: string; timedOut?: boolean; error?: string }>('/api/tools/run', { method: 'POST', body: JSON.stringify({ id: tool.id }) });
+        if (result.stdout) for (const line of String(result.stdout).split(/\r?\n/)) if (line) terminalDock?.appendOutput(line);
+        if (result.stderr) for (const line of String(result.stderr).split(/\r?\n/)) if (line) terminalDock?.appendOutput('[stderr] ' + line);
+        const diagnostic = /^(.*?):(\d+):(?:(\d+):)?\s*(error|warning):\s*(.*)$/i;
+        for (const line of (String(result.stdout || '') + '\n' + String(result.stderr || '')).split(/\r?\n/)) {
+          const match = diagnostic.exec(line);
+          if (!match) continue;
+          terminalDock?.appendProblem({
+            file: match[1],
+            line: Number(match[2]),
+            ...(match[3] ? { column: Number(match[3]) } : {}),
+            severity: match[4]!.toLowerCase() === 'warning' ? 'warning' : 'error',
+            message: match[5] || '',
+          });
+        }
+        if (result.timedOut) terminalDock?.appendOutput('[tool timed out]');
+        else terminalDock?.appendOutput('[exit ' + String(result.exitCode ?? '?') + ']');
+        toast(tool.label + ' finished' + (result.exitCode === 0 ? '' : ' with errors'), result.exitCode === 0 ? 'success' : 'error');
+      } catch (error) {
+        terminalDock?.appendOutput('[tool error] ' + (error instanceof Error ? error.message : String(error)));
+        toast(error instanceof Error ? error.message : String(error), 'error');
+      }
+    });
+  });
 }
 
 function openShapePicker(): void {

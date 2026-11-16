@@ -15,7 +15,10 @@
       "sidecars": [
         "cpp-runner"
       ],
-      "tools": []
+      "tools": [
+        "cpp.version",
+        "cpp.syntax"
+      ]
     },
     "ui": [
       "view:tab"
@@ -74,6 +77,29 @@
           "maxStdoutBytes": 4194304,
           "maxStderrBytes": 1048576
         }
+      }
+    ],
+    "tools": [
+      {
+        "id": "cpp.version",
+        "label": "C++ compiler version",
+        "command": [
+          "g++",
+          "--version"
+        ],
+        "cwd": "extension",
+        "output": "terminal"
+      },
+      {
+        "id": "cpp.syntax",
+        "label": "C++ syntax check (sample errors)",
+        "command": [
+          "g++",
+          "-fsyntax-only",
+          "fixtures/broken.cpp"
+        ],
+        "cwd": "extension",
+        "output": "terminal"
       }
     ]
   }

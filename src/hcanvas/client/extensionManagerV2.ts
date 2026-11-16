@@ -142,7 +142,7 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
     catalog.extensions.length + ' extension' + (catalog.extensions.length === 1 ? '' : 's') + ' · workspace trust: ' + esc(catalog.trust) + ' · v2 manifest + legacy plugins</small></div><button class="icon-btn" data-close>×</button></div>' +
     '<div class="modal-body">' + warning + '<div class="plugin-manager-list">' + (catalog.extensions.length ? renderRows(catalog) : '<p class="empty-state">No extensions installed. Add a folder under .hcanvas/extensions/ and reload, or install an example from the Gallery.</p>') + '</div>' + errors +
     '<p class="inspector-note">Project extensions: <code>.hcanvas/extensions/</code> · user extensions: <code>~/.hadamard/hcanvas/extensions/</code>. v1 plugins in <code>.hcanvas/plugins/</code> remain supported.</p>' +
-    '</div><div class="modal-foot">' + renderWorkspaceTrustButton(catalog.trust) + '<button class="btn tiny" data-extensions-gallery>Gallery</button><button class="btn tiny" data-extensions-reload>Reload</button><button class="btn primary tiny" data-close>Done</button></div></div>';
+    '</div><div class="modal-foot">' + renderWorkspaceTrustButton(catalog.trust) + '<button class="btn tiny" data-extensions-gallery>Gallery</button><button class="btn tiny" data-extensions-install-folder>Install folder…</button><button class="btn tiny" data-extensions-reload>Reload</button><button class="btn primary tiny" data-close>Done</button></div></div>';
   ctx.openModal(html);
   const root = document.querySelector('.plugin-manager-modal');
   const refresh = async (): Promise<void> => {
@@ -224,6 +224,9 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
     ctx.closeModal();
     await openExtensionGallery(ctx);
   });
+  root?.querySelector<HTMLButtonElement>('[data-extensions-install-folder]')?.addEventListener('click', () => {
+    openInstallFolderModal(ctx);
+  });
   root?.querySelector<HTMLButtonElement>('[data-extensions-reload]')?.addEventListener('click', async () => {
     try {
       await ctx.request('/api/extensions/reload', { method: 'POST', body: JSON.stringify({}) });
@@ -233,6 +236,32 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
       ctx.toast(error instanceof Error ? error.message : String(error), 'error');
     }
   });
+}
+
+export function openInstallFolderModal(ctx: ExtensionManagerContext): void {
+  ctx.openModal('<div class="modal small"><div class="modal-head"><div><strong>Install extension from folder</strong><small>The folder must contain a valid <code>manifest.json</code> (hcanvas-extension/1). It is copied into this workspace extensions directory.</small></div><button class="icon-btn" data-close>×</button></div>' +
+    '<div class="modal-body"><label class="field"><span>Extension folder path</span><input id="installFolderPath" placeholder="C:\\path\\to\\my-extension" autocomplete="off"></label>' +
+    '<p class="inspector-note">Process extensions still require workspace trust and an explicit Trust decision before their sidecars can run.</p></div>' +
+    '<div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="installFolderOk">Install</button></div></div>');
+  const input = document.getElementById('installFolderPath') as HTMLInputElement | null;
+  input?.focus();
+  const install = async (): Promise<void> => {
+    const folderPath = input?.value.trim() || '';
+    if (!folderPath) { ctx.toast('Enter an extension folder path.', 'info'); return; }
+    const button = document.getElementById('installFolderOk') as HTMLButtonElement | null;
+    if (button) button.disabled = true;
+    try {
+      await ctx.request('/api/extensions/install', { method: 'POST', body: JSON.stringify({ source: 'folder', path: folderPath }) });
+      ctx.toast('Extension installed', 'success');
+      ctx.closeModal();
+      await openExtensionManager(ctx);
+    } catch (error) {
+      if (button) button.disabled = false;
+      ctx.toast(error instanceof Error ? error.message : String(error), 'error');
+    }
+  };
+  document.getElementById('installFolderOk')?.addEventListener('click', () => { void install(); });
+  input?.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); void install(); } });
 }
 
 export async function openExtensionGallery(ctx: ExtensionManagerContext): Promise<void> {
