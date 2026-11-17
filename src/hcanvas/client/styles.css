@@ -1122,6 +1122,7 @@ body.terminal-dock-open #viewport { padding-bottom:36vh; }
 body.workspace-view-mode #toolRail, body.workspace-view-mode #selectionToolbar, body.workspace-view-mode #zoomControls, body.workspace-view-mode #stage { display:none !important; }
 body.workspace-view-mode #viewport { background:#f4f2ec; }
 .workspace-view-surface { position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; background:#fff; overflow:hidden; }
+.workspace-view-surface.notebook-host { overflow:auto; overscroll-behavior:contain; }
 .workspace-view-surface iframe { width:100%; height:100%; border:0; background:#fff; display:block; }
 .file-surface-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
 .file-surface-title { display:flex; align-items:center; gap:9px; min-width:0; }

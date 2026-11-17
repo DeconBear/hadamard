@@ -1059,7 +1059,7 @@ function bindStaticActions(): void {
     mode: activePage()?.mode || '',
     pan: (deltaX, deltaY) => { state.panX += deltaX; state.panY += deltaY; scheduleStageTransform(); },
     zoomAt: (factor, clientX, clientY) => setZoomAt(factor, clientX, clientY),
-  }), '.extension-page-surface, .tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle');
+  }), '.extension-page-surface, .workspace-view-surface, .tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle');
   viewport.addEventListener('pointerdown', event => {
     if (event.button !== 0 || state.tool !== 'eraser') return;
     if (activePage()?.mode !== 'infinite' || state.editing) return;
