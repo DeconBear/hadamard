@@ -252,18 +252,21 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
   };
 
   const renderMarkdownCell = (cell: NotebookMarkdownCell, index: number): string => {
+    const preview = (cell.source || '').trim()
+      ? renderMarkdownHtml(cell.source || '')
+      : '<p class="nb-md-placeholder">Double-click to write markdown</p>';
     return '<section class="nb-cell nb-markdown" data-nb-cell="' + index + '">' +
-      '<div class="nb-markdown-body" data-nb-markdown-view="' + index + '">' + renderMarkdownHtml(cell.source || '*Empty markdown cell*') + '</div>' +
-      '<div class="nb-markdown-edit hidden" data-nb-markdown-edit="' + index + '">' +
-      '<textarea class="nb-markdown-input" data-nb-markdown-input="' + index + '" spellcheck="false" rows="' + Math.min(16, Math.max(3, (cell.source || '').split('\n').length + 1)) + '">' + esc(cell.source) + '</textarea>' +
-      '<div class="nb-markdown-actions"><button type="button" class="btn tiny" data-nb-markdown-cancel="' + index + '">Cancel</button><button type="button" class="btn tiny primary" data-nb-markdown-save="' + index + '">Done</button></div>' +
+      '<div class="nb-markdown-body" data-nb-markdown-view="' + index + '">' + preview + '</div>' +
+      '<div class="nb-markdown-hover-actions">' +
+      '<button type="button" class="nb-icon-btn" title="Edit markdown" data-nb-edit-markdown="' + index + '">Edit</button>' +
+      '<button type="button" class="nb-icon-btn" title="Move up" data-nb-up="' + index + '">↑</button>' +
+      '<button type="button" class="nb-icon-btn" title="Move down" data-nb-down="' + index + '">↓</button>' +
+      '<button type="button" class="nb-icon-btn danger" title="Delete cell" data-nb-delete="' + index + '">×</button>' +
       '</div>' +
-      '<div class="nb-cell-head nb-cell-head-inline"><span class="nb-cell-kind">Markdown</span><span class="nb-cell-actions">' +
-      '<button type="button" class="btn tiny" data-nb-edit-markdown="' + index + '">Edit</button>' +
-      '<button type="button" class="btn tiny" data-nb-up="' + index + '">↑</button>' +
-      '<button type="button" class="btn tiny" data-nb-down="' + index + '">↓</button>' +
-      '<button type="button" class="btn tiny danger" data-nb-delete="' + index + '">×</button>' +
-      '</span></div></section>';
+      '<div class="nb-markdown-edit hidden" data-nb-markdown-edit="' + index + '">' +
+      '<textarea class="nb-markdown-input" data-nb-markdown-input="' + index + '" spellcheck="false" rows="' + Math.min(16, Math.max(3, cell.source.split('\n').length + 1)) + '">' + esc(cell.source) + '</textarea>' +
+      '<div class="nb-markdown-actions"><span class="nb-md-hint">Ctrl+Enter 保存 · Esc 取消</span><button type="button" class="btn tiny" data-nb-markdown-cancel="' + index + '">Cancel</button><button type="button" class="btn tiny primary" data-nb-markdown-save="' + index + '">Done</button></div>' +
+      '</div></section>';
   };
 
   const bindCells = (): void => {

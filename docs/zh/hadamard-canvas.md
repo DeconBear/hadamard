@@ -715,7 +715,7 @@ kernel 贡献描述语言与实现 Hcanvas kernel 协议（HKP）的 sidecar 命
 - Python kernel 示例是真正的持久 kernel，支持全局变量、`hc_display(...)`、matplotlib 图形和结构化 traceback：[python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel)。
 - C++ kernel 示例用 g++/clang++ 编译每个 cell 并流式返回编译/运行输出；没有 `int main` 的代码会被包进 main()；C++ cell 之间不保留变量：[cpp-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-kernel)。
 - GNU Octave kernel 示例保持一个交互式 Octave 进程存活，变量可跨 canvas cell 与 notebook cell 持久；文本流式输出，新建图形自动捕获为 PNG：[octave-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-kernel)。Interrupt/restart 会重置 Octave 状态。
-- **Notebook 页面**从 **页面 → 添加页面 → Notebook** 创建。每个 code cell 可独立选择内核（Python、GNU Octave、C++ 等）；源码、所选内核和输出都保存在 `page.extension.data`，即 workspace docs 目录中的文档 JSON（项目工作区为 `.hcanvas/docs/`），不是单独文件。内置 **Hadamard Notebook** viewer 仍兼容打开 `.hnb.md` 文件（Markdown + fenced 可执行 cell、Run/Run all/Restart、自动保存、输出缓存、HTML 导出）。
+- **Notebook 页面**从 **页面 → 添加页面 → Notebook** 创建。每个 code cell 可独立选择内核（Python、GNU Octave、C++ 等）；Markdown cell 以内联方式渲染（不带单元格边框），支持 GFM（标题、列表、表格、任务列表、代码块、链接/图片）、KaTeX 数学公式与 Markdown 编辑快捷键。源码、所选内核和输出都保存在 `page.extension.data`，即 workspace docs 目录中的文档 JSON（项目工作区为 `.hcanvas/docs/`），不是单独文件。内置 **Hadamard Notebook** viewer 仍兼容打开 `.hnb.md` 文件（Markdown + fenced 可执行 cell、Run/Run all/Restart、自动保存、输出缓存、HTML 导出）。
 - kernel session 有作用域且可回收；中断会从协作取消升级到重启。
 
 ### 自定义页面格式
