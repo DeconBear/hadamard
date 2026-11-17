@@ -37,6 +37,7 @@ import { extensionContributions, getExtensionCatalog } from './extensionCatalog.
 import { commandRegistry } from './commandRegistry.js';
 import { registerBuiltinViewer } from './builtinViewers.js';
 import { createNotebookViewer } from './notebookViewer.js';
+import { createNotebookPageDefinition, notebookPageMarkup } from './notebookPage.js';
 import { disposeExtensionPage, installExtensionPage, renderExtensionPage } from './extensionPage.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
@@ -858,6 +859,12 @@ function bindStaticActions(): void {
     request: api,
     getKernelManager: () => kernelManager,
     getKernels: () => extensionContributions<KernelDescriptor>('kernels').map(item => item.contribution),
+    savePageData: async (pageId, data) => {
+      const page = state.doc?.pages.find(item => item.id === pageId);
+      const format = page?.extension?.format || 'hadamard-notebook';
+      const result = await applyOps([{ op: 'update_page', pageId, patch: { extension: { format, data } } } as HcOp], { refreshArtboard: false });
+      return Boolean(result);
+    },
     toast,
   }));
   commandRegistry.register({ id: 'page.addExtension', title: 'Page: Add extension page', category: 'Page', handler: () => openAddExtensionPageModal() });
@@ -3247,6 +3254,7 @@ async function openAddPageModal(): Promise<void> {
   let html = '<div class="modal"><div class="modal-head"><div><strong>Add a page</strong><small>HTML pages are directly editable; canvas pages accept blocks.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="preset-grid">';
   for (const preset of CANVAS_PAGE_PRESETS) html += '<button type="button" class="preset-btn" data-preset="' + esc(preset.id) + '"><strong>' + esc(preset.title) + '</strong><small>' + esc(preset.hint) + '</small></button>';
   html += '</div>';
+  html += notebookPageMarkup();
   html += pluginPagePickerMarkup(pageThumbHtml);
   if (state.masters.length) {
     html += '<div class="masters-head"><strong>My page masters</strong><small>Reusable layouts saved from this workspace</small></div><div class="masters-grid">';
@@ -3275,6 +3283,17 @@ async function openAddPageModal(): Promise<void> {
     });
   });
   bindPluginPagePicker(document, page => { closeModal(); void addPluginPage(page); });
+  document.querySelectorAll<HTMLButtonElement>('[data-notebook-page]').forEach(button => {
+    button.addEventListener('click', async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      closeModal();
+      const kernels = extensionContributions<KernelDescriptor>('kernels').map(item => item.contribution);
+      const count = state.doc?.pages.filter(page => page.extension?.format === 'hadamard-notebook').length || 0;
+      await addPluginPage(createNotebookPageDefinition(kernels, 'Notebook ' + (count + 1)));
+      toast('Notebook page created', 'success');
+    });
+  });
   document.querySelectorAll<HTMLButtonElement>('[data-master]').forEach(button => {
     button.addEventListener('click', async () => {
       const masterId = button.dataset.master;

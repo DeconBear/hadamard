@@ -17,7 +17,7 @@ export interface BuiltinViewerContext {
   surface: string;
   format?: string;
   file?: BuiltinViewerFileContext;
-  page?: { pageId?: string; format?: string; data?: unknown };
+  page?: { pageId?: string; format?: string; name?: string; data?: unknown };
   [key: string]: unknown;
 }
 

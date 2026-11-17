@@ -278,18 +278,24 @@ async function main() {
   await page.locator('.palette-item').first().click();
   await page.waitForTimeout(1800);
   assert('terminal dock opens with xterm', (await page.locator('#terminalDock:not(.hidden)').count()) === 1 && (await page.locator('.xterm').count()) === 1);
+  let sessionId = '';
+  for (let attempt = 0; attempt < 50 && !sessionId; attempt += 1) {
+    const sessions = await api('/api/terminal/sessions');
+    sessionId = sessions.body.sessions?.[0]?.sessionId || '';
+    if (!sessionId) await page.waitForTimeout(300);
+  }
+  assert('terminal dock creates a PTY session', Boolean(sessionId));
   const terminalTextarea = page.locator('.xterm-helper-textarea');
   await terminalTextarea.focus();
   await terminalTextarea.pressSequentially('echo terminal-e2e');
   await terminalTextarea.press('Enter');
-  await page.waitForTimeout(1600);
-  const sessions = await api('/api/terminal/sessions');
-  const sessionId = sessions.body.sessions?.[0]?.sessionId;
-  assert('terminal dock creates a PTY session', Boolean(sessionId));
   let terminalBuffer = '';
-  if (sessionId) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (!sessionId) break;
     const buffer = await api('/api/terminal/sessions/' + encodeURIComponent(sessionId) + '/buffer');
     terminalBuffer = buffer.body.buffer?.base64 ? Buffer.from(buffer.body.buffer.base64, 'base64').toString('utf8') : '';
+    if (terminalBuffer.includes('terminal-e2e')) break;
+    await page.waitForTimeout(300);
   }
   assert('terminal PTY echoes typed input', terminalBuffer.includes('terminal-e2e'));
   await page.locator('[data-terminal-tab="output"]').click();

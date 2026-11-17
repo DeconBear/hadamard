@@ -341,7 +341,7 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
       const context: ExtensionViewContext = {
         surface: 'page',
         format: format.id,
-        page: { pageId: page.id, format: format.id, data: extensionContent.data },
+        page: { pageId: page.id, format: format.id, name: page.name, data: extensionContent.data },
       };
       if (viewer.type === 'builtin') return mountBuiltin(extension, viewer, format.label || viewer.label || 'page', context, host);
       return mountViewer(extension, viewer.id, format.label || viewer.label || 'page', context, host);

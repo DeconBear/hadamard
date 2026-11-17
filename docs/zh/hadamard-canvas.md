@@ -708,13 +708,14 @@ Sidecar 是受监督的常驻服务，用于工具链、语言服务器与渲染
 
 ### Kernel 与可执行代码块
 
-kernel 贡献描述语言与实现 Hcanvas kernel 协议（HKP）的 sidecar 命令：在同一 stdio 帧协议上处理 `initialize`、`execute`、`interrupt`、`shutdown`。画布 `exec` block 与 notebook viewer 按作用域（文档或文件）共享 kernel session，流式输出 stdout/stderr/display MIME，并把最近一次输出持久化到文档或 notebook 缓存。
+kernel 贡献描述语言与实现 Hcanvas kernel 协议（HKP）的 sidecar 命令：在同一 stdio 帧协议上处理 `initialize`、`execute`、`interrupt`、`shutdown`。画布 `exec` block 与文件/页面 notebook 按作用域（文档、文件或页面）共享 kernel session，流式输出 stdout/stderr/display MIME，并把最近一次输出持久化到文档或 notebook 缓存。
 
 - **Cell: Insert code cell**：在画布页面插入可执行单元格。
 - **Cell: Run all code cells**：按顺序运行页面上的所有单元格。
 - Python kernel 示例是真正的持久 kernel，支持全局变量、`hc_display(...)`、matplotlib 图形和结构化 traceback：[python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel)。
+- C++ kernel 示例用 g++/clang++ 编译每个 cell 并流式返回编译/运行输出；没有 `int main` 的代码会被包进 main()；C++ cell 之间不保留变量：[cpp-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-kernel)。
 - GNU Octave kernel 示例保持一个交互式 Octave 进程存活，变量可跨 canvas cell 与 notebook cell 持久；文本流式输出，新建图形自动捕获为 PNG：[octave-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-kernel)。Interrupt/restart 会重置 Octave 状态。
-- 内置 **Hadamard Notebook** viewer 打开 `.hnb.md`：Markdown + fenced 可执行 cell，支持 Run / Run all / Restart、自动保存、输出缓存与 HTML 导出。
+- **Notebook 页面**从 **页面 → 添加页面 → Notebook** 创建。每个 code cell 可独立选择内核（Python、GNU Octave、C++ 等）；源码、所选内核和输出都保存在 `page.extension.data`，即 workspace docs 目录中的文档 JSON（项目工作区为 `.hcanvas/docs/`），不是单独文件。内置 **Hadamard Notebook** viewer 仍兼容打开 `.hnb.md` 文件（Markdown + fenced 可执行 cell、Run/Run all/Restart、自动保存、输出缓存、HTML 导出）。
 - kernel session 有作用域且可回收；中断会从协作取消升级到重启。
 
 ### 自定义页面格式
@@ -728,7 +729,7 @@ kernel 贡献描述语言与实现 Hcanvas kernel 协议（HKP）的 sidecar 命
 }
 ```
 
-扩展页会进入正常页面列表，支持撤销/重做与修订历史，但不能添加 block。Present 和导出暂不支持扩展页，应用会明确提示而不是产出损坏文件。示例：[page-board](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/page-board)。
+扩展页会进入正常页面列表，支持撤销/重做与修订历史，但不能添加 block。内置 Notebook 页面使用该机制（format `hadamard-notebook`），cell 和输出保存在页面数据中。Present 会挂载扩展页 viewer；导出暂不支持扩展页，会给出可读提示而不是产出损坏文件。示例：[page-board](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/page-board)。
 
 ### 内置与示例扩展
 
@@ -739,6 +740,7 @@ kernel 贡献描述语言与实现 Hcanvas kernel 协议（HKP）的 sidecar 命
 | [manim-http](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/manim-http) | viewer + 宿主 renderer 桥（Manim） |
 | [python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel) | HKP kernel、图表、输出 |
 | [cpp-toolbox](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-toolbox) | sidecar 编译/运行界面 |
+| [cpp-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-kernel) | cell/notebook 的 C++ 编译运行 kernel |
 | [octave-console](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-console) | GNU Octave sidecar REPL |
 | [octave-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-kernel) | Canvas cell 与 notebook 的持久 Octave kernel |
 | [map-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/map-viewer) | 离线 GeoJSON 地图 viewer |

@@ -6,11 +6,13 @@ import { persistKernelOutputAssets } from './kernelOutputAssets.js';
 import type { KernelDescriptor, KernelManager, KernelOutputEvent } from './kernelManager.js';
 import { esc } from './utils.js';
 import type { BuiltinViewer, BuiltinViewerContext } from './builtinViewers.js';
+import { mountNotebookPage, type NotebookPageContext } from './notebookPage.js';
 
 export interface NotebookViewerDeps {
   request<T = Record<string, unknown>>(pathname: string, init?: RequestInit): Promise<T>;
   getKernelManager(): KernelManager | null;
   getKernels(): KernelDescriptor[];
+  savePageData(pageId: string, data: unknown): Promise<boolean>;
   toast(message: string, kind?: 'info' | 'success' | 'error'): void;
 }
 
@@ -72,9 +74,13 @@ function cellTitle(cell: NotebookCell, index: number): string {
 export function createNotebookViewer(deps: NotebookViewerDeps): BuiltinViewer {
   return {
     mount(host: HTMLElement, context: BuiltinViewerContext) {
+      const pageContext = context.page as NotebookPageContext | undefined;
+      if (pageContext?.pageId) {
+        return mountNotebookPage(host, deps, pageContext) || {};
+      }
       const file = context.file as NotebookFileContext | undefined;
       if (!file?.rootId || !file.path) {
-        host.innerHTML = '<div class="extension-viewer-error"><strong>Notebook needs a file</strong><small>Open a .hnb.md file from the Files panel.</small></div>';
+        host.innerHTML = '<div class="extension-viewer-error"><strong>Notebook needs a file or page</strong><small>Open a .hnb.md file or create a Notebook page from Pages → Add a page.</small></div>';
         return {};
       }
       return mountNotebook(host, deps, file);

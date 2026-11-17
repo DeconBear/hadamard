@@ -22,7 +22,8 @@
       ]
     },
     "ui": [
-      "view:tab"
+      "view:tab",
+      "page:format"
     ]
   },
   "contributes": {
@@ -35,7 +36,8 @@
         ],
         "viewer": "hcanvas.notebook",
         "surfaces": [
-          "file"
+          "file",
+          "page"
         ]
       }
     ],
@@ -45,7 +47,8 @@
         "label": "Notebook",
         "type": "builtin",
         "surfaces": [
-          "file"
+          "file",
+          "page"
         ]
       }
     ],

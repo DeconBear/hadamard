@@ -17,11 +17,9 @@ export function installExtensionPage(next: ExtensionPageDeps): void {
 }
 
 function pageKey(page: HcPage): string {
-  try {
-    return page.id + '|' + (page.extension ? page.extension.format : '') + '|' + JSON.stringify(page.extension?.data ?? {});
-  } catch {
-    return page.id + '|' + (page.extension ? page.extension.format : '') + '|unserializable';
-  }
+  // Do not key on page data: page viewers (notebooks) save their own data and
+  // must not be remounted by the resulting document update.
+  return page.id + '|' + (page.extension ? page.extension.format : '');
 }
 
 export function disposeExtensionPage(): void {

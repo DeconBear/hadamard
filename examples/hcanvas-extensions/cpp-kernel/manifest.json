@@ -1,0 +1,63 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.hadamard.examples.cpp-kernel",
+  "name": "C++ Kernel",
+  "version": "0.1.0",
+  "description": "Compile-and-run C++ kernel for canvas code cells and notebooks.",
+  "engines": {
+    "hcanvas": ">=0.3.0"
+  },
+  "capabilities": {
+    "process": {
+      "sidecars": [
+        "cpp-kernel"
+      ]
+    }
+  },
+  "contributes": {
+    "sidecars": [
+      {
+        "id": "cpp-kernel",
+        "label": "C++ kernel",
+        "command": [
+          "node",
+          "sidecar/cpp_kernel.mjs"
+        ],
+        "cwd": "extension",
+        "role": "kernel",
+        "protocol": "jsonrpc-stdio",
+        "requests": [
+          {
+            "method": "kernel/execute",
+            "progress": true
+          },
+          {
+            "method": "kernel/interrupt"
+          },
+          {
+            "method": "kernel/shutdown"
+          }
+        ],
+        "idleTimeoutMs": 600000,
+        "outputChannel": "C++ Kernel"
+      }
+    ],
+    "kernels": [
+      {
+        "id": "cpp",
+        "label": "C++ (g++)",
+        "language": "cpp",
+        "sidecar": "cpp-kernel",
+        "features": [
+          "execute",
+          "interrupt"
+        ],
+        "defaultFor": [
+          "cpp",
+          "c++",
+          "cpp17"
+        ]
+      }
+    ]
+  }
+}

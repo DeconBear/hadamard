@@ -792,13 +792,14 @@ Examples: [C++ Toolbox](https://github.com/DeconBear/hadamard/tree/main/examples
 
 ### Kernels and executable cells
 
-A kernel contribution describes a language and a sidecar command implementing the Hcanvas kernel protocol (HKP): `initialize`, `execute`, `interrupt`, `shutdown` over the same framed stdio transport. Canvas `exec` blocks and the notebook viewer share one kernel session per scope (document or file), stream stdout/stderr/display MIME values, and persist the last outputs in the document or notebook cache.
+A kernel contribution describes a language and a sidecar command implementing the Hcanvas kernel protocol (HKP): `initialize`, `execute`, `interrupt`, `shutdown` over the same framed stdio transport. Canvas `exec` blocks and both file and page notebooks share one kernel session per scope (document, file or page), stream stdout/stderr/display MIME values, and persist the last outputs in the document or notebook cache.
 
 - **Cell: Insert code cell** adds an executable cell to a canvas page.
 - **Cell: Run all code cells** runs every cell on the page in order.
 - The Python kernel example is a real persistent kernel with globals, `hc_display(...)`, matplotlib figures and structured tracebacks: [python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel).
+- The C++ kernel example compiles each cell with g++/clang++ and streams compiler/runtime output; code without `int main` is wrapped in a main(), and C++ cells do not keep variables between cells: [cpp-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-kernel).
 - The GNU Octave kernel example keeps one interactive Octave process alive so variables persist across canvas cells and notebook cells, streams text output, and captures newly created figures as PNG: [octave-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-kernel). Interrupt/restart resets Octave state.
-- The bundled **Hadamard Notebook** viewer renders `.hnb.md` files: Markdown + fenced executable cells, Run / Run all / Restart, autosave, output caching and HTML export.
+- **Notebook pages** are created from **Pages → Add a page → Notebook**. Every code cell picks its own kernel (Python, GNU Octave, C++, ...); sources, selected kernels and outputs are stored in `page.extension.data`, i.e. inside the document JSON in the workspace's docs folder (`.hcanvas/docs/` for project workspaces), not as a separate file. The bundled **Hadamard Notebook** viewer still opens `.hnb.md` files for compatibility: Markdown + fenced executable cells, Run / Run all / Restart, autosave, output caching and HTML export.
 - Kernel sessions are scoped and disposable; interrupts escalate from cooperative cancel to restart.
 
 ### Custom page formats
@@ -812,7 +813,7 @@ An extension viewer can render a whole page instead of a file. A page created fo
 }
 ```
 
-Extension pages participate in the normal page list, undo/redo and revision history, but blocks cannot be added to them. Presenting and exporting extension pages is not supported yet; the app reports this instead of producing a broken file. Example: [page-board](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/page-board).
+Extension pages participate in the normal page list, undo/redo and revision history, but blocks cannot be added to them. The built-in Notebook page uses this mechanism (format `hadamard-notebook`) and stores its cells and outputs in the page data. Presenting extension pages mounts the page viewer; exporting them is not supported yet and reports a readable message instead of producing a broken file. Example: [page-board](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/page-board).
 
 ### Bundled and example extensions
 
@@ -823,6 +824,7 @@ Extension pages participate in the normal page list, undo/redo and revision hist
 | [manim-http](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/manim-http) | Viewer + host renderer bridge for Manim |
 | [python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel) | HKP kernel, charts, outputs |
 | [cpp-toolbox](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-toolbox) | Sidecar compilation/run UI |
+| [cpp-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-kernel) | Compile-and-run C++ kernel for cells and notebooks |
 | [octave-console](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-console) | Sidecar REPL UI for GNU Octave |
 | [octave-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-kernel) | Persistent Octave kernel for canvas cells and notebooks |
 | [map-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/map-viewer) | Offline GeoJSON map viewer |
