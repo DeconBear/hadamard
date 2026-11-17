@@ -78,6 +78,14 @@ function pickDefaultKernel(kernels: KernelDescriptor[]): string {
   return kernels[0]?.id || '';
 }
 
+function fitCodeTextarea(textarea: HTMLTextAreaElement): void {
+  const maxHeight = 520;
+  textarea.style.height = 'auto';
+  const next = Math.min(Math.max(textarea.scrollHeight, 34), maxHeight);
+  textarea.style.height = next + 'px';
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+
 function starterCode(kernelId: string): string {
   const kernel = kernelId;
   if (kernel === 'octave') return 'disp("Hello from Octave");';
@@ -232,13 +240,13 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
       '<select class="nb-cell-kernel" data-nb-cell-kernel="' + index + '" aria-label="Cell kernel">' + kernelOptionsHtml(kernel?.id) + '</select>' +
       '<span class="nb-cell-status" data-nb-cell-status data-tone="idle"></span>' +
       '<span class="nb-cell-actions">' +
-      '<button type="button" class="btn tiny primary" data-nb-run="' + index + '">Run</button>' +
-      '<button type="button" class="btn tiny" data-nb-up="' + index + '">↑</button>' +
-      '<button type="button" class="btn tiny" data-nb-down="' + index + '">↓</button>' +
-      '<button type="button" class="btn tiny" data-nb-insert="' + index + '">＋</button>' +
-      '<button type="button" class="btn tiny danger" data-nb-delete="' + index + '">×</button>' +
+      '<button type="button" class="btn tiny primary nb-run-btn" title="Run cell (Shift+Enter)" data-nb-run="' + index + '">Run</button>' +
+      '<button type="button" class="btn tiny nb-icon-action" title="Move up" data-nb-up="' + index + '">↑</button>' +
+      '<button type="button" class="btn tiny nb-icon-action" title="Move down" data-nb-down="' + index + '">↓</button>' +
+      '<button type="button" class="btn tiny nb-icon-action" title="Insert code cell below" data-nb-insert="' + index + '">＋</button>' +
+      '<button type="button" class="btn tiny nb-icon-action danger" title="Delete cell" data-nb-delete="' + index + '">×</button>' +
       '</span></header>' +
-      '<textarea class="nb-code-input" data-nb-code="' + index + '" spellcheck="false" rows="' + Math.min(18, Math.max(3, cell.source.split('\n').length)) + '">' + esc(cell.source) + '</textarea>' +
+      '<textarea class="nb-code-input" data-nb-code="' + index + '" spellcheck="false" wrap="soft" rows="1">' + esc(cell.source) + '</textarea>' +
       '<div class="nb-output" data-nb-output>' + (outputs.length ? renderStoredOutputsHtml(outputs) : '') + '</div>' +
       '</section>';
   };
@@ -335,6 +343,7 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
       textarea.addEventListener('input', () => {
         cell.source = textarea.value;
         markDirty();
+        fitCodeTextarea(textarea);
         const outputEl = textarea.parentElement?.querySelector<HTMLElement>('[data-nb-output]');
         if (outputEl) outputEl.innerHTML = '';
       });
@@ -344,6 +353,7 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
         void runCell(cell, index);
       });
     });
+    host.querySelectorAll<HTMLTextAreaElement>('[data-nb-code]').forEach(fitCodeTextarea);
     host.querySelectorAll<HTMLSelectElement>('[data-nb-cell-kernel]').forEach(select => {
       const index = Number(select.dataset.nbCellKernel);
       const cell = data.cells[index];
@@ -414,6 +424,17 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
     setStatus(dirty ? 'Unsaved' : 'Saved', dirty ? 'dirty' : 'saved');
   };
 
+  const fitAllCodeTextareas = (): void => { host.querySelectorAll<HTMLTextAreaElement>('[data-nb-code]').forEach(fitCodeTextarea); };
+  let fitQueued = false;
+  const codeResizeObserver = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => {
+        if (fitQueued) return;
+        fitQueued = true;
+        requestAnimationFrame(() => { fitQueued = false; fitAllCodeTextareas(); });
+      })
+    : null;
+  codeResizeObserver?.observe(host);
+
   const commitVisibleMarkdownOnOutsideClick = (event: PointerEvent): void => {
     const editor = host.querySelector<HTMLElement>('.nb-markdown-edit:not(.hidden)');
     if (!editor) return;
@@ -426,6 +447,7 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
   return {
     dispose() {
       document.removeEventListener('pointerdown', commitVisibleMarkdownOnOutsideClick, true);
+      codeResizeObserver?.disconnect();
       disposed = true;
       if (saveTimer) clearTimeout(saveTimer);
       if (dirty) void save();

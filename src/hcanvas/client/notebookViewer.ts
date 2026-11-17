@@ -21,6 +21,14 @@ interface NotebookFileContext {
   path: string;
 }
 
+function fitCodeTextarea(textarea: HTMLTextAreaElement): void {
+  const maxHeight = 520;
+  textarea.style.height = 'auto';
+  const next = Math.min(Math.max(textarea.scrollHeight, 34), maxHeight);
+  textarea.style.height = next + 'px';
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+
 const CACHE_VERSION = 1;
 
 interface OutputCache {
@@ -240,13 +248,13 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
       '<header class="nb-cell-head"><span class="nb-cell-kind">' + esc(cellTitle(cell, index)) + '</span>' +
       '<span class="nb-cell-status" data-nb-cell-status data-tone="idle"></span>' +
       '<span class="nb-cell-actions">' +
-      '<button type="button" class="btn tiny primary" data-nb-run="' + index + '">Run</button>' +
-      '<button type="button" class="btn tiny" data-nb-up="' + index + '">↑</button>' +
-      '<button type="button" class="btn tiny" data-nb-down="' + index + '">↓</button>' +
-      '<button type="button" class="btn tiny" data-nb-insert="' + index + '">＋</button>' +
-      '<button type="button" class="btn tiny danger" data-nb-delete="' + index + '">×</button>' +
+      '<button type="button" class="btn tiny primary nb-run-btn" title="Run cell (Shift+Enter)" data-nb-run="' + index + '">Run</button>' +
+      '<button type="button" class="btn tiny nb-icon-action" title="Move up" data-nb-up="' + index + '">↑</button>' +
+      '<button type="button" class="btn tiny nb-icon-action" title="Move down" data-nb-down="' + index + '">↓</button>' +
+      '<button type="button" class="btn tiny nb-icon-action" title="Insert code cell below" data-nb-insert="' + index + '">＋</button>' +
+      '<button type="button" class="btn tiny nb-icon-action danger" title="Delete cell" data-nb-delete="' + index + '">×</button>' +
       '</span></header>' +
-      '<textarea class="nb-code-input" data-nb-code="' + index + '" spellcheck="false" rows="' + Math.min(18, Math.max(3, cell.source.split('\n').length)) + '">' + esc(cell.source) + '</textarea>' +
+      '<textarea class="nb-code-input" data-nb-code="' + index + '" spellcheck="false" wrap="soft" rows="1">' + esc(cell.source) + '</textarea>' +
       '<div class="nb-output" data-nb-output>' + (outputs.length ? renderStoredOutputsHtml(outputs) : '') + '</div>' +
       '</section>';
   };
@@ -277,6 +285,7 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
       textarea.addEventListener('input', () => {
         cell.source = textarea.value;
         markDirty();
+        fitCodeTextarea(textarea);
         // The output cache key changes with the source; clear the stale output.
         const outputEl = textarea.parentElement?.querySelector<HTMLElement>('[data-nb-output]');
         if (outputEl) outputEl.innerHTML = '';
@@ -287,6 +296,7 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
         void runCell(cell, index);
       });
     });
+    host.querySelectorAll<HTMLTextAreaElement>('[data-nb-code]').forEach(fitCodeTextarea);
     host.querySelectorAll<HTMLButtonElement>('[data-nb-run]').forEach(button => {
       button.addEventListener('click', () => {
         const index = Number(button.dataset.nbRun);
@@ -460,6 +470,17 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
     }
   };
 
+  const fitAllCodeTextareas = (): void => { host.querySelectorAll<HTMLTextAreaElement>('[data-nb-code]').forEach(fitCodeTextarea); };
+  let fitQueued = false;
+  const codeResizeObserver = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => {
+        if (fitQueued) return;
+        fitQueued = true;
+        requestAnimationFrame(() => { fitQueued = false; fitAllCodeTextareas(); });
+      })
+    : null;
+  codeResizeObserver?.observe(host);
+
   const commitVisibleMarkdownOnOutsideClick = (event: PointerEvent): void => {
     const editor = host.querySelector<HTMLElement>('.nb-markdown-edit:not(.hidden)');
     if (!editor) return;
@@ -473,6 +494,7 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
   return {
     dispose() {
       document.removeEventListener('pointerdown', commitVisibleMarkdownOnOutsideClick, true);
+      codeResizeObserver?.disconnect();
       disposed = true;
       if (saveTimer) clearTimeout(saveTimer);
       if (dirty) void save();
