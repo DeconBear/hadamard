@@ -797,6 +797,7 @@ A kernel contribution describes a language and a sidecar command implementing th
 - **Cell: Insert code cell** adds an executable cell to a canvas page.
 - **Cell: Run all code cells** runs every cell on the page in order.
 - The Python kernel example is a real persistent kernel with globals, `hc_display(...)`, matplotlib figures and structured tracebacks: [python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel).
+- The GNU Octave kernel example keeps one interactive Octave process alive so variables persist across canvas cells and notebook cells, streams text output, and captures newly created figures as PNG: [octave-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-kernel). Interrupt/restart resets Octave state.
 - The bundled **Hadamard Notebook** viewer renders `.hnb.md` files: Markdown + fenced executable cells, Run / Run all / Restart, autosave, output caching and HTML export.
 - Kernel sessions are scoped and disposable; interrupts escalate from cooperative cancel to restart.
 
@@ -823,6 +824,7 @@ Extension pages participate in the normal page list, undo/redo and revision hist
 | [python-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/python-kernel) | HKP kernel, charts, outputs |
 | [cpp-toolbox](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/cpp-toolbox) | Sidecar compilation/run UI |
 | [octave-console](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-console) | Sidecar REPL UI for GNU Octave |
+| [octave-kernel](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/octave-kernel) | Persistent Octave kernel for canvas cells and notebooks |
 | [map-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/map-viewer) | Offline GeoJSON map viewer |
 | [three-d-viewer](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/three-d-viewer) | WebGL OBJ viewer |
 | [page-board](https://github.com/DeconBear/hadamard/tree/main/examples/hcanvas-extensions/page-board) | Custom extension page format |
