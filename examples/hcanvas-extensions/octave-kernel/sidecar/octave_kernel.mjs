@@ -24,6 +24,7 @@ let versionCache = '';
 let stopping = false;
 let outLine = '';
 let errLine = '';
+let suppressGnuplotNotice = false;
 
 function send(message) {
   const body = Buffer.from(JSON.stringify(message), 'utf8');
@@ -154,6 +155,17 @@ function handleStdoutLine(line) {
 
 function handleStderrLine(line) {
   if (line.endsWith('\r')) line = line.slice(0, -1);
+  // The gnuplot toolkit prints a long host-level notice on first figure print.
+  // Qt is not available in this installation, so suppress the noise block.
+  if (suppressGnuplotNotice) {
+    if (line.includes('The qt toolkit is recommended instead')) suppressGnuplotNotice = false;
+    return;
+  }
+  if (line.startsWith('warning: using the gnuplot graphics toolkit is discouraged')) {
+    suppressGnuplotNotice = true;
+    return;
+  }
+  if (line.startsWith('DEBUG: FC_')) return;
   const execution = current;
   if (line.startsWith('__HCANVAS_ERROR__:')) {
     if (execution) {
@@ -204,11 +216,13 @@ function attachProcess(proc, generation) {
   proc.once('error', error => {
     if (generation !== childGeneration) return;
     child = null;
+    suppressGnuplotNotice = false;
     if (current) finishCurrent('error', { ename: 'OctaveProcessError', evalue: error instanceof Error ? error.message : String(error), traceback: [] });
   });
   proc.once('exit', (code, signal) => {
     if (generation !== childGeneration) return;
     child = null;
+    suppressGnuplotNotice = false;
     if (current) {
       finishCurrent('error', { ename: 'OctaveProcessExited', evalue: 'Octave process exited unexpectedly (code ' + String(code) + ', signal ' + String(signal) + ').', traceback: [] });
     }
@@ -228,6 +242,7 @@ function ensureProcess() {
   child = proc;
   outLine = '';
   errLine = '';
+  suppressGnuplotNotice = false;
   attachProcess(proc, generation);
   return proc;
 }
@@ -298,6 +313,7 @@ function startExecution(id, params) {
 }
 
 function interruptExecution() {
+  suppressGnuplotNotice = false;
   if (!current) return;
   const execution = current;
   current = null;
