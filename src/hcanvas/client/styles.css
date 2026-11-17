@@ -1055,7 +1055,7 @@ body.extension-page-mode #toolRail, body.extension-page-mode #selectionToolbar, 
 .nb-output { padding:13px 18px; border-top:1px solid #eee7db; background:#fff; font:12.5px/1.55 ui-monospace,Consolas,monospace; overflow:auto; max-height:480px; }
 .nb-output:empty { display:none; }
 .nb-markdown { position:relative; padding:10px 4px; margin:2px 0; }
-.nb-markdown-body { padding:2px 0; font-size:15px; line-height:1.72; color:#2b303a; }
+.nb-markdown-body { padding:2px 0; font-size:15px; line-height:1.72; color:#2b303a; cursor:text; border-radius:10px; }
 .nb-markdown-body > :first-child { margin-top:0; }
 .nb-markdown-body > :last-child { margin-bottom:0; }
 .nb-markdown-body h1, .nb-markdown-body h2, .nb-markdown-body h3, .nb-markdown-body h4 { font-family:Georgia,"Times New Roman",serif; font-weight:500; letter-spacing:-.03em; line-height:1.2; color:#1d232e; margin:24px 0 10px; }

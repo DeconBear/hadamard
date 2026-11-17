@@ -254,16 +254,15 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
   const renderMarkdownCell = (cell: NotebookMarkdownCell, index: number): string => {
     const preview = (cell.source || '').trim()
       ? renderMarkdownHtml(cell.source || '')
-      : '<p class="nb-md-placeholder">Double-click to write markdown</p>';
+      : '<p class="nb-md-placeholder">Click to write markdown</p>';
     return '<section class="nb-cell nb-markdown" data-nb-cell="' + index + '">' +
       '<div class="nb-markdown-body" data-nb-markdown-view="' + index + '">' + preview + '</div>' +
       '<div class="nb-markdown-hover-actions">' +
-      '<button type="button" class="nb-icon-btn" title="Edit markdown" data-nb-edit-markdown="' + index + '">Edit</button>' +
       '<button type="button" class="nb-icon-btn" title="Move up" data-nb-up="' + index + '">↑</button>' +
       '<button type="button" class="nb-icon-btn" title="Move down" data-nb-down="' + index + '">↓</button>' +
       '<button type="button" class="nb-icon-btn danger" title="Delete cell" data-nb-delete="' + index + '">×</button>' +
       '</div>' +
-      '<div class="nb-markdown-edit hidden" data-nb-markdown-edit="' + index + '">' +
+      '<div class="nb-markdown-edit hidden" data-nb-markdown-edit="' + index + '" data-nb-markdown-index="' + index + '">' +
       '<textarea class="nb-markdown-input" data-nb-markdown-input="' + index + '" spellcheck="false" rows="' + Math.min(16, Math.max(3, cell.source.split('\n').length + 1)) + '">' + esc(cell.source) + '</textarea>' +
       '<div class="nb-markdown-actions"><span class="nb-md-hint">Ctrl+Enter 保存 · Esc 取消</span><button type="button" class="btn tiny" data-nb-markdown-cancel="' + index + '">Cancel</button><button type="button" class="btn tiny primary" data-nb-markdown-save="' + index + '">Done</button></div>' +
       '</div></section>';
@@ -307,9 +306,6 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
     host.querySelectorAll<HTMLButtonElement>('[data-nb-down]').forEach(button => {
       button.addEventListener('click', () => moveCell(Number(button.dataset.nbDown), 1));
     });
-    host.querySelectorAll<HTMLButtonElement>('[data-nb-edit-markdown]').forEach(button => {
-      button.addEventListener('click', () => toggleMarkdownEdit(Number(button.dataset.nbEditMarkdown), true));
-    });
     host.querySelectorAll<HTMLButtonElement>('[data-nb-markdown-cancel]').forEach(button => {
       button.addEventListener('click', () => toggleMarkdownEdit(Number(button.dataset.nbMarkdownCancel), false));
     });
@@ -317,10 +313,17 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
       button.addEventListener('click', () => commitMarkdown(Number(button.dataset.nbMarkdownSave)));
     });
     host.querySelectorAll<HTMLElement>('[data-nb-markdown-view]').forEach(view => {
-      view.addEventListener('dblclick', () => toggleMarkdownEdit(Number(view.dataset.nbMarkdownView), true));
+      view.addEventListener('click', event => {
+        const target = event.target as Element | null;
+        if (target?.closest('a')) return;
+        if (window.getSelection()?.toString()) return;
+        event.preventDefault();
+        toggleMarkdownEdit(Number(view.dataset.nbMarkdownView), true);
+      });
     });
     host.querySelectorAll<HTMLTextAreaElement>('[data-nb-markdown-input]').forEach(input => {
       const index = Number(input.dataset.nbMarkdownInput);
+      const editor = input.closest<HTMLElement>('.nb-markdown-edit');
       input.addEventListener('keydown', event => {
         if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); commitMarkdown(index); }
         if (event.key === 'Escape') { event.preventDefault(); toggleMarkdownEdit(index, false); }
@@ -334,7 +337,11 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
     if (!edit || !view) return;
     edit.classList.toggle('hidden', !editing);
     view.classList.toggle('hidden', editing);
-    if (editing) host.querySelector<HTMLTextAreaElement>('[data-nb-markdown-input="' + index + '"]')?.focus();
+    if (editing) {
+      const input = host.querySelector<HTMLTextAreaElement>('[data-nb-markdown-input="' + index + '"]');
+      input?.focus();
+      input?.setSelectionRange(input.value.length, input.value.length);
+    }
   };
 
   const commitMarkdown = (index: number): void => {
@@ -416,7 +423,7 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
       '<button type="button" class="btn tiny" data-nb-export>Export HTML</button>' +
       '</div></header>' +
       '<main class="nb-cells">' + parsed.cells.map((cell, index) => cell.kind === 'code' ? renderCodeCell(cell, index) : renderMarkdownCell(cell, index)).join('') + '</main>' +
-      '<footer class="nb-footer"><span>Shift+Enter / Ctrl+Enter run a cell · outputs cached locally</span>' +
+      '<footer class="nb-footer"><span>Shift+Enter / Ctrl+Enter run a cell · Click Markdown to edit directly · outputs cached locally</span>' +
       '<button type="button" class="btn tiny" data-nb-add-code>+ Code cell</button>' +
       '<button type="button" class="btn tiny" data-nb-add-md>+ Markdown cell</button></footer>' +
       '</div>';
@@ -453,10 +460,19 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
     }
   };
 
+  const commitVisibleMarkdownOnOutsideClick = (event: PointerEvent): void => {
+    const editor = host.querySelector<HTMLElement>('.nb-markdown-edit:not(.hidden)');
+    if (!editor) return;
+    if (editor.contains(event.target as Node)) return;
+    const index = Number(editor.dataset.nbMarkdownIndex);
+    if (Number.isInteger(index)) commitMarkdown(index);
+  };
+  document.addEventListener('pointerdown', commitVisibleMarkdownOnOutsideClick, true);
   void boot();
 
   return {
     dispose() {
+      document.removeEventListener('pointerdown', commitVisibleMarkdownOnOutsideClick, true);
       disposed = true;
       if (saveTimer) clearTimeout(saveTimer);
       if (dirty) void save();
