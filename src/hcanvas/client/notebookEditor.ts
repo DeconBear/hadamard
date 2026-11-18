@@ -17,6 +17,7 @@ import { eventsToStoredOutputs, renderRuntimeEvent } from './execCell.js';
 import { persistKernelOutputAssets } from './kernelOutputAssets.js';
 import type { KernelDescriptor, KernelExecutionHandle, KernelManager, KernelOutputEvent, KernelScope } from './kernelManager.js';
 import { htmlToMarkdown } from './markdownEditing.js';
+import { sanitizeMarkdownHtml } from './markdownSanitize.js';
 import { mountNotebookCodeEditor } from './notebookCodeEditor.js';
 import { installNotebookRichEditing, prepareNotebookMarkdown } from './notebookRichText.js';
 import { esc, genId } from './utils.js';
@@ -137,8 +138,16 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     const element = host.querySelector<HTMLElement>('[data-nb-status]');
     if (element && !disposed) { element.textContent = text; element.dataset.tone = tone; }
   };
+  const syncMarkdownSources = (): void => {
+    host.querySelectorAll<HTMLElement>('[data-nb-markdown-view]').forEach(view => {
+      const cell = data.cells.find(item => item.id === view.dataset.nbMarkdownView && item.kind === 'markdown');
+      if (!cell) return;
+      cell.source = view.querySelector('.nb-md-placeholder') ? '' : htmlToMarkdown(view).trim();
+    });
+  };
   const flush = (): Promise<void> => {
     if (editVersion === savedVersion) return saveChain;
+    syncMarkdownSources();
     const targetVersion = editVersion;
     const snapshot = copy(data);
     status('Saving…', 'saving');
@@ -252,6 +261,8 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       cell.outputs = [{ id: 'runtime_' + Date.now().toString(36), kind: 'error', ename: 'NotebookRuntimeError', evalue: message, traceback: [] }];
       setCellStatus(cell.id, 'Failed', 'error');
       refreshOutput(cell);
+      markDirty();
+      options.persistOutputs?.(data);
       options.toast(message, 'error');
     } finally {
       running.delete(cell.id);
@@ -295,7 +306,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     const id = view.dataset.nbMarkdownView || '';
     const cell = data.cells.find(item => item.id === id && item.kind === 'markdown');
     if (!cell) return;
-    const source = htmlToMarkdown(view).trim();
+    const source = view.querySelector('.nb-md-placeholder') ? '' : htmlToMarkdown(view).trim();
     if (source === cell.source) return;
     cell.source = source;
     markDirty();
@@ -335,8 +346,9 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     renderCells();
   };
   const exportHtml = (): void => {
+    syncMarkdownSources();
     const body = data.cells.map(cell => {
-      if (cell.kind === 'markdown') return '<section class="md">' + renderMarkdownHtml(cell.source) + '</section>';
+      if (cell.kind === 'markdown') return '<section class="md">' + sanitizeMarkdownHtml(renderMarkdownHtml(cell.source)) + '</section>';
       const kernel = cellKernel(data, kernels, cell);
       return '<section class="code"><div class="cell-kernel">' + esc(kernel?.label || cell.language || 'code') + '</div><pre>' + esc(cell.source) + '</pre><div class="out">' + (cell.outputs?.length ? renderStoredOutputsHtml(cell.outputs) : '') + '</div></section>';
     }).join('\n');
@@ -365,7 +377,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   }
 
   function renderMarkdownCell(cell: NotebookEditorCell, index: number): string {
-    const preview = cell.source.trim() ? renderMarkdownHtml(cell.source) : '<p class="nb-md-placeholder">Write Markdown, $E=mc^2$, or paste an image URL…</p>';
+    const preview = cell.source.trim() ? sanitizeMarkdownHtml(renderMarkdownHtml(cell.source)) : '<p class="nb-md-placeholder">Write Markdown, $E=mc^2$, or paste an image URL…</p>';
     return '<section class="nb-cell nb-markdown" data-nb-cell="' + esc(cell.id) + '"><div class="nb-markdown-rail"><span>MD</span></div>' +
       '<div class="nb-markdown-body" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Markdown cell" data-nb-markdown-view="' + esc(cell.id) + '">' + preview + '</div>' +
       '<div class="nb-markdown-hover-actions"><button type="button" class="nb-icon-btn" title="Add code below" data-nb-insert-code="' + esc(cell.id) + '">+</button><button type="button" class="nb-icon-btn" title="Move up" data-nb-up="' + esc(cell.id) + '"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" class="nb-icon-btn" title="Move down" data-nb-down="' + esc(cell.id) + '"' + (index === data.cells.length - 1 ? ' disabled' : '') + '>↓</button><button type="button" class="nb-icon-btn danger" title="Delete cell" data-nb-delete="' + esc(cell.id) + '">×</button></div></section>';
@@ -378,6 +390,12 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     view.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(input => { input.disabled = false; });
     view.addEventListener('focus', () => { if (view.querySelector('.nb-md-placeholder')) view.innerHTML = ''; }, { signal });
     view.addEventListener('input', () => markDirty(), { signal });
+    view.addEventListener('paste', event => {
+      const html = event.clipboardData?.getData('text/html');
+      if (!html) return;
+      event.preventDefault();
+      document.execCommand('insertHTML', false, sanitizeMarkdownHtml(html));
+    }, { signal });
     view.addEventListener('blur', () => {
       commitMarkdown(view);
       if (!cell.source.trim()) view.innerHTML = '<p class="nb-md-placeholder">Write Markdown, $E=mc^2$, or paste an image URL…</p>';

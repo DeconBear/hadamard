@@ -11,7 +11,7 @@ export type HcExtensionViewerSurface = 'file' | 'tab' | 'page';
 export type HcExtensionCapabilities = {
   document?: { read?: boolean; write?: boolean };
   workspace?: { read?: string[]; write?: string[] };
-  network?: { allow?: string[] };
+  network?: string[];
   process?: { sidecars?: string[]; tools?: string[]; terminals?: string[] };
   ui?: string[];
   commands?: string[];

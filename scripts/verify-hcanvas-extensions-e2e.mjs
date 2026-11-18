@@ -74,6 +74,8 @@ async function main() {
   }, null, 2) + '\n', 'utf8');
   const fence = String.fromCharCode(96).repeat(3);
   await writeFile(path.join(workspace, 'sample.hnb.md'), ['---', 'hcanvas: notebook', 'version: 1', 'title: E2E notebook', 'kernel: python', '---', '', '# E2E notebook', '', 'Energy: $E=mc^2$', '', fence + 'python exec', 'print("e2e-notebook")', fence, ''].join('\n'), 'utf8');
+  await writeFile(path.join(workspace, 'plain.hnb.md'), ['# Plain notebook', '', 'Body.', ''].join('\n'), 'utf8');
+  await writeFile(path.join(workspace, 'evil.hnb.md'), '<img src=x onerror="window.__nbXss=123">\n\nSafe text.\n', 'utf8');
 
   const started = await startServer(workspace);
   server = started.child;
@@ -171,6 +173,12 @@ async function main() {
   assert('notebook viewer opens .hnb.md', (await page.locator('.notebook-view').count()) === 1, await page.locator('.workspace-view-surface').innerText().catch(() => 'missing workspace view surface'));
   assert('notebook renders markdown and code cells', (await page.locator('.nb-markdown').count()) === 1 && (await page.locator('.nb-code').count()) === 1);
   assert('notebook uses native CodeMirror code cells', (await page.locator('.nb-code-input .cm-editor').count()) === 1);
+  await page.locator('.nb-markdown-body').first().click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(' AUTOSAVE-MARKER');
+  await page.waitForTimeout(1100);
+  const autosavedMarkdown = (await api('/api/files/read?root=root_default&path=sample.hnb.md')).body.file?.content || '';
+  assert('notebook markdown autosaves while focused', autosavedMarkdown.includes('AUTOSAVE-MARKER'), autosavedMarkdown.slice(0, 180));
   await page.locator('.nb-code-input .cm-content').first().press('Shift+Enter');
   const notebookOutput = await (async () => {
     const start = Date.now();
@@ -214,6 +222,8 @@ async function main() {
   assert('kernel variable snapshot returns to the panel', await page.locator('[data-nb-variable-row="total"] [data-nb-variable-value]').inputValue() === '24');
   await page.locator('[data-nb-variables]').click();
   await page.locator('.nb-markdown-body').fill('# E2E notebook\n\nClosing autosave marker');
+  await page.locator('[data-nb-add-md]').click();
+  await page.waitForTimeout(250);
   await page.locator('.workspace-tab.view-tab.active .tab-close').click();
   let savedAfterClose = '';
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -223,6 +233,30 @@ async function main() {
     await page.waitForTimeout(150);
   }
   assert('closing a notebook flushes the latest markdown and variables', savedAfterClose.includes('Closing autosave marker') && savedAfterClose.includes('"total":24'), savedAfterClose.slice(0, 180));
+  assert('empty markdown placeholder is not persisted', !savedAfterClose.includes('Write Markdown'), savedAfterClose.slice(0, 220));
+
+  await openFile('evil.hnb.md');
+  await page.waitForTimeout(900);
+  const xssFlag = await page.evaluate(() => window.__nbXss ?? null);
+  assert('notebook sanitizes raw markdown HTML', xssFlag === null, String(xssFlag));
+  await page.locator('.workspace-tab.view-tab.active .tab-close').click();
+  await page.waitForTimeout(300);
+
+  await openFile('plain.hnb.md');
+  await page.waitForTimeout(1000);
+  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-new-name]').fill('distance');
+  await page.locator('[data-nb-new-value]').fill('12');
+  await page.locator('[data-nb-variable-add]').click();
+  await page.waitForTimeout(250);
+  await page.locator('.workspace-tab.view-tab.active .tab-close').click();
+  let plainSaved = '';
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    plainSaved = (await api('/api/files/read?root=root_default&path=plain.hnb.md')).body.file?.content || '';
+    if (plainSaved.startsWith('---') && plainSaved.includes('variables:')) break;
+    await page.waitForTimeout(150);
+  }
+  assert('frontmatter-less notebook persists variables on close', plainSaved.startsWith('---') && plainSaved.includes('variables:') && plainSaved.includes('distance'), plainSaved.slice(0, 220));
 
   // File viewers live in workspace view tabs; close them so the canvas is active again.
   while (await page.locator('.workspace-tab.view-tab .tab-close').count()) {

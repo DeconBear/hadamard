@@ -162,7 +162,12 @@ class Parser {
 }
 
 function render(node: Expression, language: ComputationLanguage): string {
-  if (node.kind === 'number') return node.value;
+  if (node.kind === 'number') {
+    // C++ evaluates integer literals with integer division: (1 / 2) is 0.
+    // Emit double literals so fractions, roots and division match Python/Octave.
+    if (language === 'cpp' && !/[.eE]/u.test(node.value)) return node.value + '.0';
+    return node.value;
+  }
   if (node.kind === 'name') {
     if (node.value !== 'pi') return node.value;
     return language === 'python' ? 'math.pi' : language === 'octave' ? 'pi' : '3.14159265358979323846';

@@ -78,6 +78,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
   const orphanFinishes = new Map<string, Record<string, unknown>>();
   let source: EventSource | null = null;
   let sseOpen = false;
+  let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   const openWaiters = new Set<(open: boolean) => void>();
 
@@ -93,7 +94,10 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
       source?.close();
       source = new EventSource('/api/runtime/events?token=' + encodeURIComponent(deps.token()));
     } catch { return; }
-    source.addEventListener('hello', () => notifyOpen(true));
+    source.addEventListener('hello', () => {
+      if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = undefined; }
+      notifyOpen(true);
+    });
     source.addEventListener('runtime', event => {
       let record: Record<string, unknown>;
       try { record = JSON.parse((event as MessageEvent).data) as Record<string, unknown>; } catch { return; }
@@ -129,7 +133,21 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
         else orphanFinishes.set(executionId, { status: 'cancelled' });
       }
     });
-    source.addEventListener('error', () => notifyOpen(false));
+    source.addEventListener('error', () => {
+      notifyOpen(false);
+      if (!pending.size) return;
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+      disconnectTimer = setTimeout(() => {
+        disconnectTimer = undefined;
+        if (sseOpen) return;
+        for (const entry of [...pending.values()]) {
+          if (!entry.settled) settle(entry, {
+            status: 'aborted',
+            error: { ename: 'KernelStreamDisconnected', evalue: 'The kernel event stream disconnected. Rerun the cell after restarting the kernel if needed.', traceback: [] },
+          });
+        }
+      }, 3000);
+    });
   };
 
   const waitForSse = (timeoutMs: number): Promise<boolean> => {
@@ -294,6 +312,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
 
   const dispose = (): void => {
     disposed = true;
+    if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = undefined; }
     try { source?.close(); } catch { /* ignore */ }
     source = null;
     notifyOpen(false);

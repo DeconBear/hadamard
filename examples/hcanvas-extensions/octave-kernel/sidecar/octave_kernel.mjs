@@ -93,7 +93,7 @@ function ensureTmpDir() {
   if (!existsSync(setter)) writeFileSync(setter, [
     'function hc_set(name, value)',
     '  global HCANVAS_SHARED_VARIABLES;',
-    '  if ~ischar(name) || ~isvarname(name)',
+    '  if ~ischar(name) || ~isvarname(name) || any(strcmp(name, {\'hc_get\', \'hc_set\', \'hc_vars\', \'hc_display\', \'main\'}))',
     "    error('hc_set:invalidName', 'Use a portable variable name.');",
     '  end',
     '  if ~isstruct(HCANVAS_SHARED_VARIABLES), HCANVAS_SHARED_VARIABLES = struct(); end',
@@ -335,7 +335,7 @@ function startExecution(id, params) {
     '  __hc_shared_names__ = fieldnames(__hc_import__);',
     '  for __hc_shared_index__ = 1:numel(__hc_shared_names__)',
     '    __hc_name__ = __hc_shared_names__{__hc_shared_index__};',
-    '    if isvarname(__hc_name__)',
+    '    if isvarname(__hc_name__) && ~any(strcmp(__hc_name__, {\'hc_get\', \'hc_set\', \'hc_vars\', \'hc_display\', \'main\'}))',
     '      HCANVAS_SHARED_VARIABLES.(__hc_name__) = __hc_import__.(__hc_name__);',
     "      eval([__hc_name__ ' = __hc_import__.(__hc_name__);']);",
     '    end',

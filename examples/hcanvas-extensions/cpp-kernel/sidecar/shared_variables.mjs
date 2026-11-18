@@ -111,7 +111,7 @@ template <typename T, typename std::enable_if<std::is_arithmetic<T>::value && !s
 inline void hc_set(const std::string& name, T value) { hcanvas::define(name, static_cast<double>(value)); }
 `;
 
-const CPP_KEYWORDS = new Set('auto bool break case catch char class const constexpr continue default delete do double else enum explicit export extern false float for friend goto if inline int long namespace new noexcept nullptr operator private protected public register return short signed sizeof static struct switch template this throw true try typedef typename union unsigned using virtual void volatile wchar_t while'.split(' '));
+const CPP_KEYWORDS = new Set('alignas alignof and and_eq asm auto bitand bitor bool break case catch char char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq main hc_get hc_set hc_vars hc_display'.split(' '));
 
 function validName(name) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name) && !name.startsWith('__') && !CPP_KEYWORDS.has(name);

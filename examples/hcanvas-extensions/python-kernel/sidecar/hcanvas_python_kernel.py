@@ -248,8 +248,11 @@ def handle_message(body):
         respond_error(request_id, -32601, "Method not found: " + str(method))
 
 
+HELPER_NAMES = {"hc_get", "hc_set", "hc_vars", "hc_display"}
+
+
 def valid_variable_name(name):
-    return isinstance(name, str) and name.isidentifier() and not keyword.iskeyword(name) and not name.startswith("__")
+    return isinstance(name, str) and name.isidentifier() and not keyword.iskeyword(name) and not name.startswith("__") and name not in HELPER_NAMES
 
 
 def json_value(value):

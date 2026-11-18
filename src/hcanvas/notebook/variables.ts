@@ -3,9 +3,11 @@ export type NotebookVariables = Record<string, NotebookVariableValue>;
 
 export const NOTEBOOK_VARIABLES_MIME = 'application/vnd.hcanvas.variables+json';
 export const NOTEBOOK_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const RESERVED_NAMES = new Set(('False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield ' +
-  'auto bool case catch char const constexpr default delete do double else enum explicit export extern float friend inline int long namespace new operator private protected public register short signed sizeof static struct switch template this throw typedef union unsigned using virtual void volatile wchar_t ' +
-  'function end persistent').split(' '));
+const PYTHON_KEYWORDS = 'False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield match case';
+const CPP_KEYWORDS = 'alignas alignof and and_eq asm auto bitand bitor bool break case catch char char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq';
+const OCTAVE_KEYWORDS = 'break case catch classdef continue do else elseif end end_try_catch end_unwind_protect endclassdef endenumeration endevents endfor endfunction endif endmethods endparfor endproperties endspmd endswitch endwhile enumeration events for function global if methods otherwise parfor persistent properties return spmd switch try until unwind_protect unwind_protect_cleanup while';
+const HELPER_NAMES = 'hc_get hc_set hc_vars hc_display main';
+const RESERVED_NAMES = new Set((PYTHON_KEYWORDS + ' ' + CPP_KEYWORDS + ' ' + OCTAVE_KEYWORDS + ' ' + HELPER_NAMES).split(' ').filter(Boolean));
 
 export function isNotebookVariableName(name: string): boolean {
   return NOTEBOOK_VARIABLE_NAME.test(name) && !name.startsWith('__') && !RESERVED_NAMES.has(name);
@@ -81,7 +83,8 @@ export function visibleKernelEvents<T extends VariableEvent>(events: T[]): T[] {
 }
 
 export function variableValueText(value: NotebookVariableValue): string {
-  return typeof value === 'string' ? value : JSON.stringify(value);
+  // JSON quote strings too: editing a value must not turn "42" into the number 42.
+  return JSON.stringify(value);
 }
 
 export function variableValueKind(value: NotebookVariableValue): string {

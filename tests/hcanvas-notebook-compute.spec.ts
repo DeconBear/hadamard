@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { latexToComputation } from '../src/hcanvas/notebook/latexCompute.js';
-import { normalizeNotebookVariables, NOTEBOOK_VARIABLES_MIME, parseNotebookVariable, variablesFromEvents, visibleKernelEvents } from '../src/hcanvas/notebook/variables.js';
+import { isNotebookVariableName, normalizeNotebookVariables, NOTEBOOK_VARIABLES_MIME, parseNotebookVariable, variableValueText, variablesFromEvents, visibleKernelEvents } from '../src/hcanvas/notebook/variables.js';
 import { parseFrontmatter, parseNotebook } from '../src/hcanvas/notebook/format.js';
 
 describe('notebook shared variables', () => {
@@ -16,6 +16,20 @@ describe('notebook shared variables', () => {
   it('normalizes nested JSON but rejects non-finite numbers', () => {
     expect(normalizeNotebookVariables({ total: 42, route: ['A', 'B'], options: { scenic: true } })).toEqual({ total: 42, route: ['A', 'B'], options: { scenic: true } });
     expect(normalizeNotebookVariables({ bad: Number.POSITIVE_INFINITY, class: 1, valid: 2 })).toEqual({ valid: 2 });
+  });
+
+  it('rejects kernel helper names and language keywords', () => {
+    for (const name of ['hc_get', 'hc_set', 'hc_vars', 'hc_display', 'main', 'true', 'false', 'nullptr', 'concept', 'match', 'endfunction']) {
+      expect(isNotebookVariableName(name), name).toBe(false);
+    }
+    expect(isNotebookVariableName('distance')).toBe(true);
+  });
+
+  it('preserves a string value when the variable panel displays and reparses it', () => {
+    const original = parseNotebookVariable('label', '"42"');
+    const displayed = variableValueText(original);
+    expect(displayed).toBe('"42"');
+    expect(parseNotebookVariable('label', displayed)).toBe('42');
   });
 
   it('reads variable snapshots without exposing protocol events as outputs', () => {
@@ -52,6 +66,12 @@ describe('LaTeX to notebook code', () => {
     expect(result.code).toContain('distance');
     expect(result.code).toContain('sqrt(9)');
     expect(result.code).toContain('hc_set("formula_result", formula_result)');
+  });
+
+  it('emits C++ double literals for fractions and roots', () => {
+    const fraction = latexToComputation('\\frac{1}{2} + \\sqrt[3]{x}', 'cpp');
+    expect(fraction.code).toContain('1.0 / 2.0');
+    expect(fraction.code).toContain('1.0 / 3.0');
   });
 
   it('creates inspectable C++ with shared-variable reads', () => {

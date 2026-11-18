@@ -57,11 +57,18 @@ function variablesFromFrontmatter(parsed: ParsedNotebook): NotebookVariables {
 
 function withFrontmatterValues(parsed: ParsedNotebook, data: NotebookEditorData, kernels: KernelDescriptor[]): void {
   const kernel = kernels.find(item => item.id === data.defaultKernelId);
+  const variables = Object.keys(data.variables || {}).length ? JSON.stringify(data.variables) : '';
   const lines = parsed.frontmatter.raw.split(/\r?\n/u).filter(line => !/^\s*(?:kernel|variables)\s*:/iu.test(line));
   if (kernel) lines.push('kernel: ' + kernel.id);
-  if (Object.keys(data.variables || {}).length) lines.push('variables: ' + JSON.stringify(data.variables));
-  parsed.frontmatter.raw = lines.join('\n');
+  if (variables) lines.push('variables: ' + variables);
+  parsed.frontmatter.raw = lines.join('\n').trim();
+  // A .hnb.md file may start without frontmatter. Adding kernel/variables means
+  // serializeNotebook() must emit a frontmatter block, so mark it present.
+  if (kernel || variables) parsed.frontmatter.present = true;
   if (kernel) parsed.frontmatter.values.kernel = kernel.id;
+  else delete parsed.frontmatter.values.kernel;
+  if (variables) parsed.frontmatter.values.variables = variables;
+  else delete parsed.frontmatter.values.variables;
 }
 
 function toEditorData(parsed: ParsedNotebook, kernels: KernelDescriptor[], cache: OutputCache): NotebookEditorData {
