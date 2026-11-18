@@ -1050,7 +1050,7 @@ function bindStaticActions(): void {
   viewport.addEventListener('pointerdown', event => {
     if (event.button !== 0 || state.tool !== 'select' || state.spaceHeld || state.editing) return;
     const target = event.target as Element;
-    if (target.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle, .block-wrap')) return;
+    if (target.closest('.tool-rail, .selection-toolbar, .zoom-controls, .editing-banner, .infinite-badge, .block-toolbar, .agent-cursor, .hc-node-handle, .hc-rotate-handle, .block-wrap, .extension-page-surface, .workspace-view-surface')) return;
     event.preventDefault();
     beginMarquee(event);
   });

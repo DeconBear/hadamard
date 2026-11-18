@@ -1064,7 +1064,10 @@ body.extension-page-mode #toolRail, body.extension-page-mode #selectionToolbar, 
 .nb-output:empty { display:none; }
 .nb-output:not(:empty)::before { content:'OUTPUT'; display:block; margin-bottom:5px; color:#a39a8a; font:9px/1 Inter,sans-serif; letter-spacing:.12em; }
 .nb-markdown { position:relative; padding:10px 4px; margin:2px 0; }
-.nb-markdown-body { padding:2px 0; font-size:15px; line-height:1.72; color:#2b303a; cursor:text; border-radius:10px; }
+.nb-markdown-body { padding:2px 0; font-size:15px; line-height:1.72; color:#2b303a; cursor:text; border-radius:10px; outline:none; min-height:24px; caret-color:#5b4bc4; }
+.nb-markdown-body:focus { outline:none; }
+.nb-markdown-body .nb-md-placeholder { pointer-events:none; }
+.nb-markdown-body a { cursor:pointer; }
 .nb-markdown-body > :first-child { margin-top:0; }
 .nb-markdown-body > :last-child { margin-bottom:0; }
 .nb-markdown-body h1, .nb-markdown-body h2, .nb-markdown-body h3, .nb-markdown-body h4 { font-family:Georgia,"Times New Roman",serif; font-weight:500; letter-spacing:-.03em; line-height:1.2; color:#1d232e; margin:24px 0 10px; }
@@ -1099,10 +1102,6 @@ body.extension-page-mode #toolRail, body.extension-page-mode #selectionToolbar, 
 .nb-icon-btn { border:0; background:transparent; color:#6b7280; font:11px Inter,sans-serif; padding:3px 7px; border-radius:5px; cursor:pointer; }
 .nb-icon-btn:hover { background:#efece4; color:#1d232e; }
 .nb-icon-btn.danger:hover { background:#fdecea; color:#b42318; }
-.nb-markdown-edit { margin:8px 0 4px; border:1px solid #d9d3c7; border-radius:12px; background:#fff; overflow:hidden; box-shadow:0 8px 24px rgba(31,36,48,.06); }
-.nb-markdown-input { display:block; width:100%; box-sizing:border-box; border:0; resize:vertical; padding:14px 16px; font:12.5px/1.65 "JetBrains Mono",ui-monospace,Consolas,monospace; color:#1f2430; outline:none; min-height:90px; }
-.nb-markdown-actions { display:flex; align-items:center; gap:8px; justify-content:flex-end; padding:8px 10px; border-top:1px solid #eee7db; background:#fcfbf7; }
-.nb-md-hint { margin-right:auto; color:#8a8276; font-size:10px; }
 .nb-md-placeholder { margin:0; padding:6px 0; color:#a39a8a; font-style:italic; }
 .nb-footer { display:flex; align-items:center; gap:8px; margin-top:30px; padding:14px 2px 0; border-top:1px dashed #ddd4c4; color:#8a8276; font:11px Inter,sans-serif; }
 .nb-footer span { margin-right:auto; }

@@ -12,6 +12,7 @@ import { eventsToStoredOutputs, renderRuntimeEvent } from './execCell.js';
 import { persistKernelOutputAssets } from './kernelOutputAssets.js';
 import type { KernelDescriptor, KernelManager, KernelOutputEvent } from './kernelManager.js';
 import { esc, genId } from './utils.js';
+import { htmlToMarkdown } from './markdownEditing.js';
 
 export interface NotebookPageDeps {
   request<T = Record<string, unknown>>(pathname: string, init?: RequestInit): Promise<T>;
@@ -144,8 +145,16 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { void save(); }, 600);
   };
+  const syncMarkdownSources = (): void => {
+    host.querySelectorAll<HTMLElement>('[data-nb-markdown-view]').forEach(view => {
+      const index = Number(view.dataset.nbMarkdownView);
+      const cell = data.cells[index];
+      if (cell?.kind === 'markdown') cell.source = htmlToMarkdown(view).trim();
+    });
+  };
   const save = async (): Promise<void> => {
     if (!dirty || saving || disposed) return;
+    syncMarkdownSources();
     saving = true;
     setStatus('Saving…', 'saving');
     try {
@@ -256,38 +265,12 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
       ? renderMarkdownHtml(cell.source)
       : '<p class="nb-md-placeholder">Click to write markdown</p>';
     return '<section class="nb-cell nb-markdown" data-nb-cell="' + index + '">' +
-      '<div class="nb-markdown-body" data-nb-markdown-view="' + index + '">' + preview + '</div>' +
+      '<div class="nb-markdown-body" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" data-nb-markdown-view="' + index + '">' + preview + '</div>' +
       '<div class="nb-markdown-hover-actions">' +
       '<button type="button" class="nb-icon-btn" title="Move up" data-nb-up="' + index + '">↑</button>' +
       '<button type="button" class="nb-icon-btn" title="Move down" data-nb-down="' + index + '">↓</button>' +
       '<button type="button" class="nb-icon-btn danger" title="Delete cell" data-nb-delete="' + index + '">×</button>' +
-      '</div>' +
-      '<div class="nb-markdown-edit hidden" data-nb-markdown-edit="' + index + '" data-nb-markdown-index="' + index + '">' +
-      '<textarea class="nb-markdown-input" data-nb-markdown-input="' + index + '" spellcheck="false" rows="' + Math.min(16, Math.max(3, cell.source.split('\n').length + 1)) + '">' + esc(cell.source) + '</textarea>' +
-      '<div class="nb-markdown-actions"><span class="nb-md-hint">Ctrl+Enter 保存 · Esc 取消</span><button type="button" class="btn tiny" data-nb-markdown-cancel="' + index + '">Cancel</button><button type="button" class="btn tiny primary" data-nb-markdown-save="' + index + '">Done</button></div>' +
       '</div></section>';
-  };
-
-  const toggleMarkdownEdit = (index: number, editing: boolean): void => {
-    const edit = host.querySelector<HTMLElement>('[data-nb-markdown-edit="' + index + '"]');
-    const view = host.querySelector<HTMLElement>('[data-nb-markdown-view="' + index + '"]');
-    if (!edit || !view) return;
-    edit.classList.toggle('hidden', !editing);
-    view.classList.toggle('hidden', editing);
-    if (editing) {
-      const input = host.querySelector<HTMLTextAreaElement>('[data-nb-markdown-input="' + index + '"]');
-      input?.focus();
-      input?.setSelectionRange(input.value.length, input.value.length);
-    }
-  };
-
-  const commitMarkdown = (index: number): void => {
-    const cell = data.cells[index];
-    const input = host.querySelector<HTMLTextAreaElement>('[data-nb-markdown-input="' + index + '"]');
-    if (!cell || cell.kind !== 'markdown' || !input) return;
-    cell.source = input.value;
-    markDirty();
-    renderAll();
   };
 
   const insertCell = (afterIndex: number): void => {
@@ -371,23 +354,32 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
     host.querySelectorAll<HTMLButtonElement>('[data-nb-delete]').forEach(button => button.addEventListener('click', () => deleteCell(Number(button.dataset.nbDelete))));
     host.querySelectorAll<HTMLButtonElement>('[data-nb-up]').forEach(button => button.addEventListener('click', () => moveCell(Number(button.dataset.nbUp), -1)));
     host.querySelectorAll<HTMLButtonElement>('[data-nb-down]').forEach(button => button.addEventListener('click', () => moveCell(Number(button.dataset.nbDown), 1)));
-    host.querySelectorAll<HTMLButtonElement>('[data-nb-markdown-cancel]').forEach(button => button.addEventListener('click', () => toggleMarkdownEdit(Number(button.dataset.nbMarkdownCancel), false)));
-    host.querySelectorAll<HTMLButtonElement>('[data-nb-markdown-save]').forEach(button => button.addEventListener('click', () => commitMarkdown(Number(button.dataset.nbMarkdownSave))));
     host.querySelectorAll<HTMLElement>('[data-nb-markdown-view]').forEach(view => {
-      view.addEventListener('click', event => {
-        const target = event.target as Element | null;
-        if (target?.closest('a')) return;
-        if (window.getSelection()?.toString()) return;
-        event.preventDefault();
-        toggleMarkdownEdit(Number(view.dataset.nbMarkdownView), true);
+      const index = Number(view.dataset.nbMarkdownView);
+      const cell = data.cells[index];
+      if (!cell || cell.kind !== 'markdown') return;
+      const commit = (): void => {
+        const source = htmlToMarkdown(view).trim();
+        if (!source) view.innerHTML = '<p class="nb-md-placeholder">Click to write markdown</p>';
+        if (source === cell.source) return;
+        cell.source = source;
+        markDirty();
+      };
+      view.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(input => {
+        input.disabled = false;
+        input.addEventListener('change', () => markDirty());
       });
-    });
-    host.querySelectorAll<HTMLTextAreaElement>('[data-nb-markdown-input]').forEach(input => {
-      const index = Number(input.dataset.nbMarkdownInput);
-      const editor = input.closest<HTMLElement>('.nb-markdown-edit');
-      input.addEventListener('keydown', event => {
-        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); commitMarkdown(index); }
-        if (event.key === 'Escape') { event.preventDefault(); toggleMarkdownEdit(index, false); }
+      view.addEventListener('focus', () => {
+        if (view.querySelector('.nb-md-placeholder')) view.innerHTML = '';
+      });
+      view.addEventListener('input', () => markDirty());
+      view.addEventListener('blur', commit);
+      view.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); view.blur(); }
+      });
+      view.addEventListener('click', event => {
+        const anchor = (event.target as Element | null)?.closest('a');
+        if (anchor && !event.ctrlKey && !event.metaKey) event.preventDefault();
       });
     });
   };
@@ -406,7 +398,7 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
       '<button type="button" class="btn tiny" data-nb-export>Export HTML</button>' +
       '</div></header>' +
       '<main class="nb-cells">' + data.cells.map((cell, index) => cell.kind === 'code' ? renderCodeCell(cell, index) : renderMarkdownCell(cell, index)).join('') + '</main>' +
-      '<footer class="nb-footer"><span>Shift+Enter / Ctrl+Enter · Run all executes each cell with its own kernel · Click Markdown to edit directly · saved in document data</span>' +
+      '<footer class="nb-footer"><span>Markdown edits inline · Ctrl+B/I/U format · Shift+Enter / Ctrl+Enter run a cell · Run all uses each cell\'s own kernel</span>' +
       '<button type="button" class="btn tiny" data-nb-add-code>+ Code cell</button>' +
       '<button type="button" class="btn tiny" data-nb-add-md>+ Markdown cell</button></footer>' +
       '</div>';
@@ -435,18 +427,9 @@ export function mountNotebookPage(host: HTMLElement, deps: NotebookPageDeps, con
     : null;
   codeResizeObserver?.observe(host);
 
-  const commitVisibleMarkdownOnOutsideClick = (event: PointerEvent): void => {
-    const editor = host.querySelector<HTMLElement>('.nb-markdown-edit:not(.hidden)');
-    if (!editor) return;
-    if (editor.contains(event.target as Node)) return;
-    const index = Number(editor.dataset.nbMarkdownIndex);
-    if (Number.isInteger(index)) commitMarkdown(index);
-  };
-  document.addEventListener('pointerdown', commitVisibleMarkdownOnOutsideClick, true);
   renderAll();
   return {
     dispose() {
-      document.removeEventListener('pointerdown', commitVisibleMarkdownOnOutsideClick, true);
       codeResizeObserver?.disconnect();
       disposed = true;
       if (saveTimer) clearTimeout(saveTimer);

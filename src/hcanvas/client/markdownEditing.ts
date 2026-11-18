@@ -23,6 +23,8 @@ function inline(node: Node): string {
   if (tag === 'br') return '  \n';
   if (tag === 'strong' || tag === 'b') return '**' + Array.from(element.childNodes).map(inline).join('') + '**';
   if (tag === 'em' || tag === 'i') return '*' + Array.from(element.childNodes).map(inline).join('') + '*';
+  if (tag === 'del' || tag === 's') return '~~' + Array.from(element.childNodes).map(inline).join('') + '~~';
+  if (tag === 'u') return '<u>' + Array.from(element.childNodes).map(inline).join('') + '</u>';
   if (tag === 'code') return TICK + (element.textContent || '').split(TICK).join('\\' + TICK) + TICK;
   if (tag === 'a') {
     const text = Array.from(element.childNodes).map(inline).join('') || element.textContent || '';
@@ -45,11 +47,38 @@ function listMarkdown(element: HTMLElement, ordered: boolean): string {
   const items = Array.from(element.children).filter(child => child.tagName.toLowerCase() === 'li');
   return items.map((item, index) => {
     const prefix = ordered ? (index + 1) + '. ' : '- ';
-    const checkbox = item.querySelector<HTMLInputElement>(':scope > input[type="checkbox"]');
+    const checkbox = item.querySelector<HTMLInputElement>('input[type="checkbox"]');
     const task = checkbox ? '[' + (checkbox.checked ? 'x' : ' ') + '] ' : '';
-    const text = blockText(item as HTMLElement).replace(/\n/g, '\n  ');
-    return prefix + task + text;
+    const nestedLists = Array.from(item.children).filter(child => /^(ul|ol)$/i.test(child.tagName));
+    const ownNodes = Array.from(item.childNodes).filter(node => !(node.nodeType === Node.ELEMENT_NODE && /^(ul|ol)$/i.test((node as Element).tagName)));
+    const ownText = ownNodes.map(inline).join('').replace(/[ \t]+\n/g, '\n').trim();
+    let line = prefix + task + ownText;
+    for (const nested of nestedLists) {
+      const nestedMarkdown = listMarkdown(nested as HTMLElement, nested.tagName.toLowerCase() === 'ol');
+      line += '\n' + nestedMarkdown.split('\n').map(part => '  ' + part).join('\n');
+    }
+    return line;
   }).join('\n');
+}
+
+function tableMarkdown(element: HTMLElement): string {
+  const rows = Array.from(element.querySelectorAll('tr'));
+  if (!rows.length) return element.outerHTML;
+  const grid = rows.map(row =>
+    Array.from(row.querySelectorAll('th, td')).map(cell =>
+      blockText(cell as HTMLElement).replace(/\|/g, '\\|').replace(/\n/g, ' '),
+    ),
+  );
+  if (!grid.length) return element.outerHTML;
+  const width = Math.max(...grid.map(row => row.length));
+  const normalized = grid.map(row => [...row, ...Array(Math.max(0, width - row.length)).fill('')]);
+  const header = normalized[0]!;
+  const body = normalized.slice(1);
+  return [
+    '| ' + header.join(' | ') + ' |',
+    '| ' + header.map(() => '---').join(' | ') + ' |',
+    ...body.map(row => '| ' + row.join(' | ') + ' |'),
+  ].join('\n');
 }
 
 function blockMarkdown(node: Node): string {
@@ -79,7 +108,7 @@ function blockMarkdown(node: Node): string {
     const image = element.querySelector('img');
     return image ? inline(image) : '';
   }
-  if (tag === 'table') return element.outerHTML;
+  if (tag === 'table') return tableMarkdown(element);
   if (tag === 'br') return '';
   return Array.from(element.childNodes).map(blockMarkdown).filter(Boolean).join('\n\n');
 }
