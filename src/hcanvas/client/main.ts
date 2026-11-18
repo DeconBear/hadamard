@@ -833,6 +833,13 @@ function bindStaticActions(): void {
     toast,
     openViewTab: tab => { fileBrowser?.openViewTab(tab); },
     getLanguage: () => boot.language === 'zh' ? 'zh' : 'en',
+    applyPageData: async (pageId, data) => {
+      const page = state.doc?.pages.find(item => item.id === pageId);
+      const format = page?.extension?.format || '';
+      if (!format) return false;
+      const result = await applyOps([{ op: 'update_page', pageId, patch: { extension: { format, data } } } as HcOp], { refreshArtboard: false });
+      return result?.revision ?? false;
+    },
   });
   installCommandPalette({
     openModal: html => openModal(html),

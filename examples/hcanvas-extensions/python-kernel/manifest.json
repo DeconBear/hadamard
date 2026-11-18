@@ -51,7 +51,8 @@
         "sidecar": "python-kernel",
         "features": [
           "execute",
-          "interrupt"
+          "interrupt",
+          "variables"
         ],
         "defaultFor": [
           "python"

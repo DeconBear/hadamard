@@ -7,9 +7,11 @@ kernel itself: when the user's code imports matplotlib.pyplot, figures created
 by that execution are captured afterwards as image/png display_data.
 """
 
+import ast
 import base64
 import io
 import json
+import keyword
 import os
 import queue
 import sys
@@ -222,7 +224,7 @@ def handle_message(body):
             "language": "python",
             "languageVersion": sys.version.split()[0],
             "displayName": "Python " + sys.version.split()[0],
-            "features": {"execute": True, "interrupt": True, "complete": False, "inspect": False},
+            "features": {"execute": True, "interrupt": True, "complete": False, "inspect": False, "variables": True},
             "mimeTypes": ["text/plain", "text/html", "image/png", "application/json", "text/markdown"],
         })
         return
@@ -246,10 +248,76 @@ def handle_message(body):
         respond_error(request_id, -32601, "Method not found: " + str(method))
 
 
+def valid_variable_name(name):
+    return isinstance(name, str) and name.isidentifier() and not keyword.iskeyword(name) and not name.startswith("__")
+
+
+def json_value(value):
+    if hasattr(value, "tolist") and callable(value.tolist):
+        value = value.tolist()
+    encoded = json.dumps(value, ensure_ascii=False, allow_nan=False)
+    if len(encoded.encode("utf-8")) > 256 * 1024:
+        raise ValueError("Shared variable exceeds the 256 KiB limit")
+    return json.loads(encoded)
+
+
 def build_globals():
     namespace = {"__name__": "__main__", "__builtins__": __builtins__}
     namespace["hc_display"] = hc_display
+    shared = {}
+    namespace["hc_vars"] = shared
+
+    def hc_get(name, default=None):
+        if not valid_variable_name(name):
+            raise ValueError("Invalid shared variable name")
+        return namespace.get(name, shared.get(name, default))
+
+    def hc_set(name, value):
+        if not valid_variable_name(name):
+            raise ValueError("Use a portable identifier that is not a language keyword")
+        shared[name] = json_value(value)
+        namespace[name] = value
+
+    namespace["hc_get"] = hc_get
+    namespace["hc_set"] = hc_set
     return namespace
+
+
+def publish_variables(namespace):
+    shared = namespace["hc_vars"]
+    for name, original in list(shared.items()):
+        if not valid_variable_name(name):
+            continue
+        try:
+            shared[name] = json_value(namespace.get(name, original))
+        except Exception as error:
+            notify("kernel/stream", {
+                "executionId": CURRENT.get("executionId", ""),
+                "name": "stderr",
+                "text": "Shared variable " + name + " was not updated: " + str(error) + "\n",
+            })
+    if shared:
+        notify("kernel/display_data", {
+            "executionId": CURRENT.get("executionId", ""),
+            "data": {"application/vnd.hcanvas.variables+json": shared},
+        })
+
+
+def execute_user_code(code, namespace):
+    tree = ast.parse(code or "", filename="<hcanvas-cell>", mode="exec")
+    if not tree.body or not isinstance(tree.body[-1], ast.Expr):
+        exec(compile(tree, "<hcanvas-cell>", "exec"), namespace, namespace)
+        return
+    last = tree.body.pop()
+    exec(compile(tree, "<hcanvas-cell>", "exec"), namespace, namespace)
+    expression = ast.Expression(last.value)
+    ast.fix_missing_locations(expression)
+    value = eval(compile(expression, "<hcanvas-cell>", "eval"), namespace, namespace)
+    if value is not None:
+        notify("kernel/execute_result", {
+            "executionId": CURRENT.get("executionId", ""),
+            "data": {"text/plain": repr(value)},
+        })
 
 
 def run_execution(request_id, params, namespace):
@@ -258,6 +326,21 @@ def run_execution(request_id, params, namespace):
     cell_id = params.get("cellId")
     CURRENT["executionId"] = execution_id
     started = time.time()
+    variables = params.get("variables")
+    if isinstance(variables, dict):
+        for name in list(namespace["hc_vars"]):
+            if name not in variables:
+                namespace["hc_vars"].pop(name, None)
+                namespace.pop(name, None)
+        for name, value in variables.items():
+            if not valid_variable_name(name):
+                continue
+            try:
+                normalized = json_value(value)
+                namespace["hc_vars"][name] = normalized
+                namespace[name] = normalized
+            except Exception:
+                continue
     notify("kernel/execution_started", {"executionId": execution_id, **({"cellId": cell_id} if cell_id else {})})
     notify("kernel/status", {"state": "busy"})
     status = "ok"
@@ -272,7 +355,7 @@ def run_execution(request_id, params, namespace):
         sys.stdin = io.StringIO("")
         sys.settrace(trace_function)
         try:
-            exec(compile(code, "<hcanvas-cell>", "exec"), namespace, namespace)
+            execute_user_code(code, namespace)
         except KeyboardInterrupt:
             status = "aborted"
         except BaseException as error:
@@ -295,6 +378,7 @@ def run_execution(request_id, params, namespace):
         sys.stdout = old_stdout
         sys.stderr = old_stderr
         sys.stdin = old_stdin
+        publish_variables(namespace)
         flush_figures(execution_id, before)
         notify("kernel/execution_finished", {"executionId": execution_id, "status": status})
         notify("kernel/status", {"state": "idle"})

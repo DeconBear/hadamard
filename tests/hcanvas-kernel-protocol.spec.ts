@@ -327,6 +327,14 @@ describe('HKP kernel manager', () => {
     await waitFor(() => harness.manager.snapshot(session.sessionId).state !== 'busy', 'session idle');
   }, 15_000);
 
+  it('forwards shared variables through the HKP execute parameters', async () => {
+    const harness = await createHarness();
+    const session = await harness.manager.ensure('fake', { kind: 'page', key: 'page_variables' });
+    const result = await harness.manager.execute(session.sessionId, 'shared-variables', { variables: { distance: 120.5, scenic: true } });
+    const display = result.outputs.events.find((item): item is Extract<HcKernelOutputItem, { type: 'display_data' }> => item.type === 'display_data');
+    expect(display?.data['application/vnd.hcanvas.variables+json']).toEqual({ distance: 120.5, scenic: true });
+  });
+
   it('disposes sessions and kills their processes', async () => {
     const harness = await createHarness();
     const session = await harness.manager.ensure('fake', { kind: 'document', key: 'doc_dispose' });

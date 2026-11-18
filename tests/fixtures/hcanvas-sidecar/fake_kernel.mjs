@@ -95,6 +95,14 @@ function handle(message) {
     }, 250);
     return;
   }
+  if (code.includes('shared-variables')) {
+    notify('kernel/display_data', {
+      executionId: params.executionId,
+      data: { 'application/vnd.hcanvas.variables+json': params.variables ?? {} },
+    });
+    finish('ok');
+    return;
+  }
   if (code.toLowerCase().includes('error')) {
     notify('kernel/stream', { executionId: params.executionId, name: 'stderr', text: 'traceback line\n' });
     notify('kernel/error', {

@@ -306,6 +306,7 @@ export interface HcSidecarOutputChunk {
 
 export interface SidecarRequestOptions {
   timeoutMs?: number;
+  requestId?: JsonRpcId;
   onProgress?: (progress: HcSidecarProgress) => void;
 }
 
@@ -545,6 +546,7 @@ export interface HkpFeatures {
   interrupt?: boolean;
   complete?: boolean;
   inspect?: boolean;
+  variables?: boolean;
 }
 
 export interface HkpInitializeResult {
@@ -611,6 +613,7 @@ export function normalizeHkpInitializeResult(raw: unknown): HkpInitializeResult 
     interrupt: featuresRaw.interrupt === true,
     complete: featuresRaw.complete === true,
     inspect: featuresRaw.inspect === true,
+    variables: featuresRaw.variables === true,
   };
   const mimeTypes = Array.isArray(value.mimeTypes)
     ? value.mimeTypes.filter((item): item is string => typeof item === 'string')
@@ -632,6 +635,8 @@ export interface HkpExecuteParams {
   code: string;
   cellId?: string;
   silent?: boolean;
+  /** Explicit JSON values shared between notebook kernels. */
+  variables?: HkpMimeBundle;
 }
 
 export interface HkpExecuteResult {

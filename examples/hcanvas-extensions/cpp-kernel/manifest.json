@@ -50,7 +50,8 @@
         "sidecar": "cpp-kernel",
         "features": [
           "execute",
-          "interrupt"
+          "interrupt",
+          "variables"
         ],
         "defaultFor": [
           "cpp",

@@ -141,6 +141,7 @@ export interface HcRuntimeServices {
   guard?: HcRuntimeGuard;
   resolveTerminalProfile?: HcTerminalProfileResolver;
   kernelOutputs?: HcKernelOutputPort;
+  sidecarCatalog?: HcSidecarCatalogPort;
   close(): Promise<void>;
 }
 
@@ -213,6 +214,7 @@ export function createRuntimeServices(setup: HcRuntimeSetup): HcRuntimeServices 
     ...(setup.guard ? { guard: setup.guard } : {}),
     ...(setup.resolveTerminalProfile ? { resolveTerminalProfile: setup.resolveTerminalProfile } : {}),
     ...(setup.kernelOutputs ? { kernelOutputs: setup.kernelOutputs } : {}),
+    ...(setup.sidecarCatalog ? { sidecarCatalog: setup.sidecarCatalog } : {}),
     async close(): Promise<void> {
       await kernels.disposeAll().catch(() => undefined);
       await broker.stopAll('server shutdown').catch(() => undefined);
@@ -293,6 +295,14 @@ async function assertAllowed(services: HcRuntimeServices, action: HcRuntimeActio
   throw new HcRuntimeError(code, result.message ?? 'Action denied by workspace trust settings', { ...(result.status ? { status: result.status } : {}) });
 }
 
+async function assertSidecarOwnership(services: HcRuntimeServices, sidecarId: string, extensionId?: string): Promise<void> {
+  if (!extensionId) return;
+  const entry = await services.sidecarCatalog?.resolveSidecar(sidecarId);
+  if (!entry || entry.extensionId !== extensionId) {
+    throw new HcRuntimeError('capability_denied', 'Extension ' + extensionId + ' cannot access sidecar ' + sidecarId);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Runtime routes
 // ---------------------------------------------------------------------------
@@ -331,7 +341,13 @@ export async function handleRuntimeRoute(services: HcRuntimeServices, ctx: HcRun
       const executionId = asString(body.executionId);
       let cancelled = false;
       if (typeof requestId === 'string' || typeof requestId === 'number') {
-        cancelled = services.broker.cancel(requestId, 'api cancel');
+        const sidecarId = asString(body.sidecarId);
+        const extensionId = asString(body.extensionId);
+        if (sidecarId) {
+          await assertSidecarOwnership(services, sidecarId, extensionId);
+          await assertAllowed(services, 'sidecar');
+          cancelled = services.broker.cancelFor(sidecarId, requestId, 'api cancel');
+        } else cancelled = services.broker.cancel(requestId, 'api cancel');
       } else if (executionId) {
         cancelled = services.kernels.cancelByExecutionId(executionId);
       } else {
@@ -403,6 +419,9 @@ export async function handleSidecarRoute(services: HcRuntimeServices, ctx: HcRun
       json(ctx.res, 405, { ok: false, code: 'invalid_params', error: 'Method not allowed' });
       return true;
     }
+    const body = await readBody(ctx.req);
+    const extensionId = asString(body.extensionId);
+    await assertSidecarOwnership(services, sidecarId, extensionId);
     await assertAllowed(services, 'sidecar');
     if (action === 'start') {
       const snapshot = await services.broker.start(sidecarId);
@@ -414,11 +433,12 @@ export async function handleSidecarRoute(services: HcRuntimeServices, ctx: HcRun
       json(ctx.res, 200, { ok: true, stopped: true });
       return true;
     }
-    const body = await readBody(ctx.req);
     const method = asString(body.method);
     if (!method) throw new HcRuntimeError('invalid_params', 'method is required');
     const timeoutMs = typeof body.timeoutMs === 'number' && Number.isFinite(body.timeoutMs) ? body.timeoutMs : undefined;
-    const options: SidecarRequestOptions = timeoutMs === undefined ? {} : { timeoutMs };
+    const requestId = asString(body.clientRequestId);
+    if (requestId && !/^sc_[A-Za-z0-9_-]{8,80}$/u.test(requestId)) throw new HcRuntimeError('invalid_params', 'clientRequestId has an invalid format');
+    const options: SidecarRequestOptions = { ...(timeoutMs === undefined ? {} : { timeoutMs }), ...(requestId ? { requestId } : {}) };
     const outcome = await services.broker.request(sidecarId, method, body.params, options);
     json(ctx.res, 200, {
       ok: true,
@@ -481,9 +501,13 @@ export async function handleKernelRoute(services: HcRuntimeServices, ctx: HcRunt
       if (typeof body.code !== 'string') throw new HcRuntimeError('invalid_params', 'code is required');
       const cellId = asString(body.cellId);
       const silent = body.silent === true;
+      const variables = body.variables && typeof body.variables === 'object' && !Array.isArray(body.variables)
+        ? body.variables as Record<string, unknown>
+        : undefined;
       if (body.wait === true) {
         const result = await services.kernels.execute(sessionId, body.code, {
           ...(cellId ? { cellId } : {}),
+          ...(variables ? { variables } : {}),
           silent,
         });
         json(ctx.res, 200, { ok: true, execution: result });
@@ -491,6 +515,7 @@ export async function handleKernelRoute(services: HcRuntimeServices, ctx: HcRunt
       }
       const started = services.kernels.startExecution(sessionId, body.code, {
         ...(cellId ? { cellId } : {}),
+        ...(variables ? { variables } : {}),
         silent,
       });
       json(ctx.res, 202, {

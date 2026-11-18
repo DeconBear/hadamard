@@ -42,7 +42,7 @@ async function createHarness(options: { guard?: Parameters<typeof createRuntimeS
       label: 'Fake sidecar',
       command: [process.execPath, SIDECAR_FIXTURE],
       cwd: 'extension',
-      requests: ['echo', 'render', 'shutdown'].map(method => ({ method })),
+      requests: ['echo', 'render', 'slow-cancelable', 'shutdown'].map(method => ({ method })),
     },
   };
   const kernelEntry: HcKernelCatalogEntry = {
@@ -133,6 +133,31 @@ describe('hcanvas runtime routes', () => {
     const stopped = await api<{ ok: boolean }>(harness, '/api/sidecars/fake/stop', { method: 'POST' });
     expect(stopped.status).toBe(200);
     expect(harness.services.broker.snapshot('fake')).toBeNull();
+  });
+
+  it('enforces extension ownership and cancels a running sidecar request', async () => {
+    const harness = await createHarness();
+    const denied = await api<{ code: string }>(harness, '/api/sidecars/fake/start', { method: 'POST', body: JSON.stringify({ extensionId: 'ext.other' }) });
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe('capability_denied');
+    const started = await api<{ ok: boolean }>(harness, '/api/sidecars/fake/start', { method: 'POST', body: JSON.stringify({ extensionId: 'ext.fake' }) });
+    expect(started.status).toBe(200);
+    const pending = api<{ code?: string }>(harness, '/api/sidecars/fake/request', {
+      method: 'POST', body: JSON.stringify({ extensionId: 'ext.fake', clientRequestId: 'sc_route_cancel_1', method: 'slow-cancelable' }),
+    });
+    await new Promise(resolve => setTimeout(resolve, 80));
+    const wrongCancel = await api<{ code: string }>(harness, '/api/runtime/cancel', {
+      method: 'POST', body: JSON.stringify({ requestId: 'sc_route_cancel_1', sidecarId: 'fake', extensionId: 'ext.other' }),
+    });
+    expect(wrongCancel.status).toBe(403);
+    const cancelled = await api<{ cancelled: boolean }>(harness, '/api/runtime/cancel', {
+      method: 'POST', body: JSON.stringify({ requestId: 'sc_route_cancel_1', sidecarId: 'fake', extensionId: 'ext.fake' }),
+    });
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.cancelled).toBe(true);
+    const result = await pending;
+    expect(result.status).toBe(409);
+    expect(result.body.code).toBe('execution_cancelled');
   });
 
   it('maps sidecar errors onto SPEC-14 codes', async () => {

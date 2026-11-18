@@ -440,7 +440,7 @@ function normalizeKernels(raw: unknown): HcExtensionKernelContribution[] {
     seen.add(id);
     const features = box.features === undefined ? [] : stringList(box.features, path + '.features', 10, 32);
     for (const [featureIndex, feature] of features.entries()) {
-      if (!['execute', 'interrupt', 'complete', 'inspect'].includes(feature)) fail(path + '.features[' + featureIndex + ']', 'is not a supported kernel feature');
+      if (!['execute', 'interrupt', 'complete', 'inspect', 'variables'].includes(feature)) fail(path + '.features[' + featureIndex + ']', 'is not a supported kernel feature');
     }
     return {
       id,

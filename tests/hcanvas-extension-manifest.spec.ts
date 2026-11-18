@@ -117,7 +117,7 @@ describe('hcanvas extension manifest v2', () => {
           role: 'service', protocol: 'jsonrpc-stdio', requests: [{ method: 'render', timeoutMs: 300000, progress: true }],
           idleTimeoutMs: 600000, outputChannel: 'Renderer', limits: { maxStdoutBytes: 4194304 },
         }],
-        kernels: [{ id: 'python', language: 'python', sidecar: 'renderer', features: ['execute', 'interrupt'], defaultFor: ['python'] }],
+        kernels: [{ id: 'python', language: 'python', sidecar: 'renderer', features: ['execute', 'interrupt', 'variables'], defaultFor: ['python'] }],
         tools: [{ id: 'build', label: 'Build', command: ['g++', '-o', 'a.exe'], cwd: 'workspace', output: 'output', problemMatcher: { regex: '^(.+):([0-9]+): error: (.+)$', file: 1, line: 2, message: 3 } }],
         terminals: [{ id: 'repl', label: 'REPL', command: ['node'], cwd: 'workspace' }],
         configuration: { 'three.quality': { type: 'select', default: 'medium', enum: ['low', 'medium', 'high'], scope: 'workspace' } },
@@ -125,7 +125,7 @@ describe('hcanvas extension manifest v2', () => {
       activation: ['onView:three.scene', 'onCommand:three.render', 'onSidecar:renderer', 'onKernel:python', 'onTrust'],
     });
     expect(manifest.contributes.sidecars[0]?.command).toEqual(['node', 'sidecar/renderer.mjs']);
-    expect(manifest.contributes.kernels[0]?.features).toEqual(['execute', 'interrupt']);
+    expect(manifest.contributes.kernels[0]?.features).toEqual(['execute', 'interrupt', 'variables']);
     expect(manifest.capabilities.process?.sidecars).toEqual(['renderer']);
     expect(manifest.activation).toHaveLength(5);
     expect(manifestRequiresProcess(manifest)).toBe(true);

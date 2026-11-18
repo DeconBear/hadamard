@@ -17,6 +17,11 @@ are supported.
 3. Canvas: **Cell: Insert code cell** → Run. Notebook: open a `.hnb.md` file
    with an executable `python exec` fence and press Shift+Enter / Run.
 
+Notebook shared variables are injected by name before each run. Use
+`hc_get("name", default)` to read explicitly and `hc_set("name", value)` to
+publish a JSON-compatible value to other kernels. The last expression in a cell
+is also shown as an execution result, as in a conventional notebook.
+
 ## Files
 
 - `manifest.json` — kernel + sidecar declarations.

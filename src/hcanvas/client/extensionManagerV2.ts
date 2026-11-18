@@ -12,7 +12,7 @@ export interface ExtensionManagerContext {
 interface CapabilityShape {
   document?: { read?: boolean; write?: boolean };
   workspace?: { read?: unknown; write?: unknown };
-  network?: { allow?: unknown };
+  network?: unknown;
   process?: { sidecars?: unknown; tools?: unknown; terminals?: unknown };
 }
 
@@ -32,6 +32,12 @@ function stringList(value: unknown): string[] {
 
 function capabilitiesOf(entry: ExtensionCatalogEntry): CapabilityShape {
   return (entry.capabilities || {}) as CapabilityShape;
+}
+
+function networkDomains(capabilities: CapabilityShape): string[] {
+  if (Array.isArray(capabilities.network)) return stringList(capabilities.network);
+  const legacy = capabilities.network && typeof capabilities.network === 'object' ? capabilities.network as { allow?: unknown } : {};
+  return stringList(legacy.allow);
 }
 
 function requiresProcess(entry: ExtensionCatalogEntry): boolean {
@@ -63,7 +69,7 @@ function capabilityBadges(entry: ExtensionCatalogEntry): string {
   else if (capabilities.document?.read) badges.push(badge('document read'));
   if (stringList(capabilities.workspace?.write).length) badges.push(badge('workspace write', true));
   else if (stringList(capabilities.workspace?.read).length) badges.push(badge('workspace read'));
-  if (stringList(capabilities.network?.allow).length) badges.push(badge('network', true));
+  if (networkDomains(capabilities).length) badges.push(badge('network', true));
   if (requiresProcess(entry)) badges.push(badge('process', true));
   if (entry.contributes.kernels.length) badges.push(badge('kernel', true));
   return badges.join('');
@@ -78,7 +84,7 @@ function capabilityDetails(entry: ExtensionCatalogEntry): string[] {
   const workspaceWrite = stringList(capabilities.workspace?.write);
   if (workspaceRead.length) lines.push('workspace read: ' + workspaceRead.join(', '));
   if (workspaceWrite.length) lines.push('workspace write: ' + workspaceWrite.join(', '));
-  const network = stringList(capabilities.network?.allow);
+  const network = networkDomains(capabilities);
   if (network.length) lines.push('network allowlist: ' + network.join(', '));
   for (const sidecar of entry.contributes.sidecars) {
     lines.push('sidecar "' + sidecar.id + '": ' + (sidecar.command || []).join(' '));
@@ -110,7 +116,7 @@ function renderRows(catalog: ExtensionCatalog): string {
       '<small>' + esc(entry.id) + ' · ' + esc(sourceLabel) + ' · ' + esc(trustLabel) + (entry.trusted && requiresProcess(entry) ? ' · process allowed' : '') + '</small>' +
       '<small class="extension-contrib">' + esc(contributionSummary(entry)) + '</small>' +
       '<span class="extension-capabilities">' + capabilityBadges(entry) + '</span>' +
-      (requiresProcess(entry) || stringList(capabilitiesOf(entry).network?.allow).length ? '<ul class="extension-cap-list">' + capabilityDetails(entry).slice(0, 3).map(line => '<li>' + esc(line) + '</li>').join('') + '</ul>' : '') +
+      (requiresProcess(entry) || networkDomains(capabilitiesOf(entry)).length ? '<ul class="extension-cap-list">' + capabilityDetails(entry).slice(0, 3).map(line => '<li>' + esc(line) + '</li>').join('') + '</ul>' : '') +
       diagnostics + '</span>' +
       '<button type="button" class="btn tiny" data-extension-trust="' + esc(entry.id) + '">' + (entry.trusted ? 'Revoke trust' : 'Trust') + '</button>' +
       '</div>';

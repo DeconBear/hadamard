@@ -33,8 +33,11 @@ function inline(node: Node): string {
   }
   if (tag === 'img') {
     const src = element.getAttribute('src') || '';
-    const alt = element.getAttribute('alt') || '';
-    return src ? '![' + alt.replace(/\]/g, '\\]') + '](' + src + ')' : '';
+    const alt = (element.getAttribute('alt') || '').replace(/"/g, '&quot;');
+    if (!src) return '';
+    const width = Number(element.getAttribute('width'));
+    if (Number.isFinite(width) && width > 0) return '<img src="' + src.replace(/"/g, '&quot;') + '" alt="' + alt + '" width="' + Math.round(width) + '">';
+    return '![' + alt.replace(/\]/g, '\\]') + '](' + src + ')';
   }
   return Array.from(element.childNodes).map(inline).join('');
 }

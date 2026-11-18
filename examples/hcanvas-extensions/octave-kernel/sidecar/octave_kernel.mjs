@@ -78,6 +78,34 @@ function octaveVersion() {
 
 function ensureTmpDir() {
   if (!tmpDir || !existsSync(tmpDir)) tmpDir = mkdtempSync(path.join(os.tmpdir(), 'hcanvas-octave-kernel-'));
+  const getter = path.join(tmpDir, 'hc_get.m');
+  const setter = path.join(tmpDir, 'hc_set.m');
+  if (!existsSync(getter)) writeFileSync(getter, [
+    'function value = hc_get(name, default)',
+    '  global HCANVAS_SHARED_VARIABLES;',
+    '  value = default;',
+    '  if isstruct(HCANVAS_SHARED_VARIABLES) && isfield(HCANVAS_SHARED_VARIABLES, name)',
+    '    value = HCANVAS_SHARED_VARIABLES.(name);',
+    '  end',
+    'end',
+    '',
+  ].join('\n'), 'utf8');
+  if (!existsSync(setter)) writeFileSync(setter, [
+    'function hc_set(name, value)',
+    '  global HCANVAS_SHARED_VARIABLES;',
+    '  if ~ischar(name) || ~isvarname(name)',
+    "    error('hc_set:invalidName', 'Use a portable variable name.');",
+    '  end',
+    '  if ~isstruct(HCANVAS_SHARED_VARIABLES), HCANVAS_SHARED_VARIABLES = struct(); end',
+    '  try',
+    '    HCANVAS_SHARED_VARIABLES.(name) = jsondecode(jsonencode(value));',
+    '  catch err',
+    "    error('hc_set:invalidValue', 'Shared values must be JSON-compatible: %s', err.message);",
+    '  end',
+    "  assignin('base', name, value);",
+    'end',
+    '',
+  ].join('\n'), 'utf8');
   return tmpDir;
 }
 
@@ -101,6 +129,7 @@ function emitStream(stream, text) {
 function cleanupCurrentFiles(execution) {
   if (!execution) return;
   if (execution.cellFile) removePath(execution.cellFile);
+  if (execution.variableFile) removePath(execution.variableFile);
   for (const image of execution.images) removePath(image);
 }
 
@@ -147,6 +176,17 @@ function handleStdoutLine(line) {
   }
   if (line.startsWith('__HCANVAS_IMAGE__:')) {
     if (execution) execution.images.push(line.slice('__HCANVAS_IMAGE__:'.length));
+    return;
+  }
+  if (line.startsWith('__HCANVAS_VARIABLES__:')) {
+    if (execution) {
+      try {
+        const variables = JSON.parse(line.slice('__HCANVAS_VARIABLES__:'.length));
+        if (variables && typeof variables === 'object' && !Array.isArray(variables)) {
+          notify('kernel/display_data', { executionId: execution.executionId, data: { 'application/vnd.hcanvas.variables+json': variables } });
+        }
+      } catch { /* malformed helper output must not break the kernel */ }
+    }
     return;
   }
   if (!execution) return;
@@ -261,34 +301,65 @@ function startExecution(id, params) {
   const executionId = typeof params.executionId === 'string' && params.executionId ? params.executionId : 'octave_' + Date.now().toString(36);
   ensureTmpDir();
   const cellFile = path.join(tmpDir, 'cell-' + executionId.replace(/[^A-Za-z0-9_-]+/g, '-') + '.m');
+  const variableFile = path.join(tmpDir, 'variables-' + executionId.replace(/[^A-Za-z0-9_-]+/g, '-') + '.json');
   try {
     writeFileSync(cellFile, code, 'utf8');
+    writeFileSync(variableFile, JSON.stringify(params.variables && typeof params.variables === 'object' ? params.variables : {}), 'utf8');
   } catch (error) {
     respond(id, { executionId, status: 'error', durationMs: 0 });
     notify('kernel/error', { executionId, ename: 'IOError', evalue: error instanceof Error ? error.message : String(error), traceback: [] });
     return;
   }
-  current = {
-    requestId: id,
-    executionId,
-    started: Date.now(),
-    cellFile,
-    images: [],
-    error: null,
-  };
+  current = { requestId: id, executionId, started: Date.now(), cellFile, variableFile, images: [], error: null };
   notify('kernel/execution_started', { executionId, ...(typeof params.cellId === 'string' && params.cellId ? { cellId: params.cellId } : {}) });
   notify('kernel/status', { state: 'busy' });
   const proc = ensureProcess();
   const escapedFile = octavePath(cellFile);
+  const escapedVariables = octavePath(variableFile);
   const escapedDir = octavePath(tmpDir);
   const script = [
-    "__hc_status__ = 'ok';",
+    "addpath('" + escapedDir + "');",
+    'global HCANVAS_SHARED_VARIABLES;',
+    'if ~isstruct(HCANVAS_SHARED_VARIABLES), HCANVAS_SHARED_VARIABLES = struct(); end',
+    '__hc_status__ = \'ok\';',
     'try',
+    "  __hc_import__ = jsondecode(fileread('" + escapedVariables + "'));",
+    '  __hc_old_names__ = fieldnames(HCANVAS_SHARED_VARIABLES);',
+    '  for __hc_old_index__ = 1:numel(__hc_old_names__)',
+    '    __hc_name__ = __hc_old_names__{__hc_old_index__};',
+    '    if ~isfield(__hc_import__, __hc_name__)',
+    '      HCANVAS_SHARED_VARIABLES = rmfield(HCANVAS_SHARED_VARIABLES, __hc_name__);',
+    '      clear(__hc_name__);',
+    '    end',
+    '  end',
+    '  __hc_shared_names__ = fieldnames(__hc_import__);',
+    '  for __hc_shared_index__ = 1:numel(__hc_shared_names__)',
+    '    __hc_name__ = __hc_shared_names__{__hc_shared_index__};',
+    '    if isvarname(__hc_name__)',
+    '      HCANVAS_SHARED_VARIABLES.(__hc_name__) = __hc_import__.(__hc_name__);',
+    "      eval([__hc_name__ ' = __hc_import__.(__hc_name__);']);",
+    '    end',
+    '  end',
     "  source('" + escapedFile + "');",
     'catch __hc_err__',
     "  __hc_status__ = 'error';",
     "  fprintf(2, '__HCANVAS_ERROR__:%s\\n', jsonencode(struct('ename', __hc_err__.identifier, 'evalue', __hc_err__.message)));",
     'end',
+    '__hc_export__ = HCANVAS_SHARED_VARIABLES;',
+    '__hc_export_names__ = fieldnames(__hc_export__);',
+    'for __hc_export_index__ = 1:numel(__hc_export_names__)',
+    '  __hc_name__ = __hc_export_names__{__hc_export_index__};',
+    "  if exist(__hc_name__, 'var')",
+    '    try',
+    "      eval(['__hc_value__ = ' __hc_name__ ';']);",
+    '      __hc_export__.(__hc_name__) = jsondecode(jsonencode(__hc_value__));',
+    '    catch __hc_variable_error__',
+    "      fprintf(2, 'Shared variable %s was not updated: %s\\n', __hc_name__, __hc_variable_error__.message);",
+    '    end',
+    '  end',
+    'end',
+    'HCANVAS_SHARED_VARIABLES = __hc_export__;',
+    "fprintf('__HCANVAS_VARIABLES__:%s\\n', jsonencode(__hc_export__));",
     "if ~exist('__hc_known_figs__', 'var'), __hc_known_figs__ = []; end",
     "__hc_figs__ = get(0, 'children');",
     '__hc_new__ = setdiff(__hc_figs__, __hc_known_figs__);',
@@ -335,7 +406,7 @@ function handleMessage(message) {
       language: 'octave',
       languageVersion: octaveVersion(),
       displayName: 'GNU Octave ' + octaveVersion(),
-      features: { execute: true, interrupt: true, complete: false, inspect: false },
+      features: { execute: true, interrupt: true, complete: false, inspect: false, variables: true },
       mimeTypes: ['text/plain', 'image/png'],
     });
     return;

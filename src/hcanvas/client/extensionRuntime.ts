@@ -21,7 +21,7 @@ export interface ExtensionRuntimeOptions {
   openViewTab(tab: { id: string; title: string; icon?: string; mount(host: HTMLElement): MountedView | void }): void;
   getLanguage?(): string;
   /** Persist extension-page data through the host document op pipeline. */
-  applyPageData?(pageId: string, data: unknown): Promise<boolean>;
+  applyPageData?(pageId: string, data: unknown): Promise<boolean | number>;
 }
 
 export interface ExtensionRuntime {
@@ -87,6 +87,20 @@ function viewError(code: string, message: string): Error {
 }
 
 export function installExtensionRuntime(options: ExtensionRuntimeOptions): ExtensionRuntime {
+  const activeSidecarJobs = new Map<string, { extensionId: string; sidecarId: string }>();
+  const workspaceAllowed = (instance: ViewInstance, mode: 'read' | 'write', rootId: string, filePath: string): boolean => {
+    const current = instance.context.file;
+    if (mode === 'read' && current?.rootId === rootId && current.path === filePath) return true;
+    const workspace = findExtension(instance.extensionId)?.capabilities.workspace as { read?: unknown; write?: unknown } | undefined;
+    return Array.isArray(workspace?.[mode]) && workspace[mode].length > 0;
+  };
+  const requireWorkspace = (instance: ViewInstance, mode: 'read' | 'write', rootId: string, filePath: string): void => {
+    if (!workspaceAllowed(instance, mode, rootId, filePath)) throw viewError('capability_denied', 'Extension requires workspace.' + mode + ' permission for this file.');
+  };
+  const documentWriteAllowed = (instance: ViewInstance): boolean => {
+    const document = findExtension(instance.extensionId)?.capabilities.document as { write?: boolean } | undefined;
+    return document?.write === true;
+  };
   const viewHost = new ExtensionViewHost({
     createInstance: async input => {
       const created = await options.request<{ instanceId: string; entryUrl: string; token: string; sdkUrl: string; expiresAt: string }>('/api/extension-views', {
@@ -119,34 +133,48 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
         case 'document.apply': {
           const pageContext = instance.context.page as { pageId?: string; data?: unknown } | undefined;
           if (!pageContext?.pageId || !options.applyPageData) throw viewError('capability_denied', 'This viewer cannot modify the document.');
+          if (!documentWriteAllowed(instance)) throw viewError('capability_denied', 'Extension requires document.write permission.');
           const ops = Array.isArray(record.ops) ? record.ops as Array<Record<string, unknown>> : [];
           let changed = false;
+          let revision = 0;
           for (const op of ops) {
             if (op.op !== 'update_page') continue;
             const patch = op.patch && typeof op.patch === 'object' ? op.patch as Record<string, unknown> : {};
             const extension = patch.extension && typeof patch.extension === 'object' ? patch.extension as Record<string, unknown> : undefined;
             if (!extension || !('data' in extension)) continue;
-            changed = await options.applyPageData(pageContext.pageId, extension.data) || changed;
+            const applied = await options.applyPageData(pageContext.pageId, extension.data);
+            if (typeof applied === 'number') revision = applied;
+            changed = Boolean(applied) || changed;
           }
           if (!changed) throw viewError('invalid_params', 'No supported page update in ops.');
-          return { revision: 0 };
+          return { revision };
         }
         case 'file.read': {
           const rootId = String(record.rootId || '');
           const filePath = String(record.path || '');
+          requireWorkspace(instance, 'read', rootId, filePath);
           const result = await options.request<{ file: { content: string; size: number; mtime?: number; hash?: string; ext?: string; language?: string } }>('/api/files/read?root=' + encodeURIComponent(rootId) + '&path=' + encodeURIComponent(filePath));
           return { content: result.file.content, size: result.file.size, mtime: result.file.mtime, hash: result.file.hash };
         }
         case 'file.stat': {
           const rootId = String(record.rootId || '');
           const filePath = String(record.path || '');
+          requireWorkspace(instance, 'read', rootId, filePath);
           const result = await options.request<{ file: { size: number; mtime?: number; hash?: string } }>('/api/files/read?root=' + encodeURIComponent(rootId) + '&path=' + encodeURIComponent(filePath));
           return { size: result.file.size, mtime: result.file.mtime, hash: result.file.hash, isFile: true };
         }
-        case 'file.write':
-          throw viewError('capability_denied', 'This viewer is read-only in P1.');
-        case 'assets.import':
-          throw viewError('not_supported', 'Asset import is not available yet.');
+        case 'file.write': {
+          const rootId = String(record.rootId || '');
+          const filePath = String(record.path || '');
+          requireWorkspace(instance, 'write', rootId, filePath);
+          return options.request('/api/files/write', { method: 'POST', body: JSON.stringify({ root: rootId, path: filePath, content: String(record.content || '') }) });
+        }
+        case 'assets.import': {
+          if (!documentWriteAllowed(instance)) throw viewError('capability_denied', 'Extension requires document.write permission to import assets.');
+          const base64 = String(record.base64 || '');
+          if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(base64) || base64.length > 32 * 1024 * 1024) throw viewError('invalid_params', 'Asset payload must be valid base64 within the import size limit.');
+          return options.request('/api/assets', { method: 'POST', body: JSON.stringify({ name: String(record.name || 'asset'), mime: String(record.mime || 'application/octet-stream'), data: base64 }) });
+        }
         case 'commands.list':
           return { commands: commandRegistry.list() };
         case 'commands.execute': {
@@ -166,11 +194,20 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
           writeConfigValue(instance.extensionId, key, record.value);
           return { ok: true };
         }
-        case 'ui.toast':
-          options.toast(String(record.message || ''), 'info');
+        case 'ui.toast': {
+          const kind = record.kind === 'error' || record.kind === 'success' ? record.kind : 'info';
+          options.toast(String(record.message || ''), kind);
           return { ok: true };
+        }
         case 'ui.setTitle':
-        case 'ui.openView':
+          throw viewError('not_supported', 'Viewer titles are managed by the host tab controller.');
+        case 'ui.openView': {
+          const viewId = String(record.viewId || '');
+          const owned = findExtension(instance.extensionId)?.contributes.views.some(view => view.id === viewId);
+          if (!owned) throw viewError('capability_denied', 'An extension can only open its own contributed views.');
+          if (!openView(viewId)) throw viewError('not_found', 'Unknown or disabled extension view: ' + viewId);
+          return { ok: true };
+        }
         case 'events.subscribe':
           return { ok: true };
         case 'ui.openExternal': {
@@ -210,31 +247,45 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
           const sidecarId = String(record.sidecarId || '');
           const methodName = String(record.method || '');
           if (!sidecarId || !methodName) throw viewError('invalid_params', 'sidecars.request requires sidecarId and method.');
-          const requestId = 'sc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+          const owned = findExtension(instance.extensionId)?.contributes.sidecars.some(sidecar => sidecar.id === sidecarId);
+          if (!owned) throw viewError('capability_denied', 'Extension cannot access sidecar ' + sidecarId + '.');
+          const requestId = 'sc_' + crypto.randomUUID();
           const push = (event: string, payload: Record<string, unknown>): void => {
             setTimeout(() => {
               if (instance.disposed) return;
               try { instance.sendEvent('sidecar.event', { requestId, event, ...payload }); } catch { /* viewer may be gone */ }
             }, 20);
           };
-          try {
-            await options.request('/api/sidecars/' + encodeURIComponent(sidecarId) + '/start', { method: 'POST', body: '{}' }).catch(() => undefined);
-            const outcome = await options.request<{ requestId?: string | number; result?: unknown; stdout?: string; stderr?: string; artifacts?: unknown; durationMs?: number }>(
-              '/api/sidecars/' + encodeURIComponent(sidecarId) + '/request',
-              { method: 'POST', body: JSON.stringify({ method: methodName, params: record.params, ...(typeof record.timeoutMs === 'number' ? { timeoutMs: record.timeoutMs } : {}) }) },
-            );
-            if (outcome.stdout) push('output', { stream: 'stdout', chunk: String(outcome.stdout) });
-            if (outcome.stderr) push('output', { stream: 'stderr', chunk: String(outcome.stderr) });
-            push('progress', { progress: { kind: 'end', percentage: 100 } });
-            push('result', { result: outcome.result ?? outcome });
-          } catch (error) {
-            const payload = error as Error & { code?: string };
-            push('error', { error: { code: payload.code || 'sidecar_failed', message: error instanceof Error ? error.message : String(error) } });
-          }
+          activeSidecarJobs.set(requestId, { extensionId: instance.extensionId, sidecarId });
+          void (async (): Promise<void> => {
+            try {
+              await options.request('/api/sidecars/' + encodeURIComponent(sidecarId) + '/start', { method: 'POST', body: JSON.stringify({ extensionId: instance.extensionId }) });
+              const outcome = await options.request<{ requestId?: string | number; result?: unknown; stdout?: string; stderr?: string; artifacts?: unknown; durationMs?: number }>(
+                '/api/sidecars/' + encodeURIComponent(sidecarId) + '/request',
+                { method: 'POST', body: JSON.stringify({ extensionId: instance.extensionId, clientRequestId: requestId, method: methodName, params: record.params, ...(typeof record.timeoutMs === 'number' ? { timeoutMs: record.timeoutMs } : {}) }) },
+              );
+              if (outcome.stdout) push('output', { stream: 'stdout', chunk: String(outcome.stdout) });
+              if (outcome.stderr) push('output', { stream: 'stderr', chunk: String(outcome.stderr) });
+              push('progress', { progress: { kind: 'end', percentage: 100 } });
+              push('result', { result: outcome.result ?? outcome });
+            } catch (error) {
+              const payload = error as Error & { code?: string };
+              push('error', { error: { code: payload.code || 'sidecar_failed', message: error instanceof Error ? error.message : String(error) } });
+            } finally {
+              activeSidecarJobs.delete(requestId);
+            }
+          })();
           return { requestId };
         }
-        case 'sidecars.cancel':
-          return { ok: false };
+        case 'sidecars.cancel': {
+          const requestId = String(record.requestId || '');
+          const job = activeSidecarJobs.get(requestId);
+          if (!job || job.extensionId !== instance.extensionId) return { ok: true, cancelled: false };
+          const result = await options.request<{ cancelled?: boolean }>('/api/runtime/cancel', {
+            method: 'POST', body: JSON.stringify({ requestId, sidecarId: job.sidecarId, extensionId: instance.extensionId }),
+          });
+          return { ok: true, cancelled: result.cancelled === true };
+        }
         case 'kernels.list':
         case 'kernels.ensure':
         case 'kernels.execute':

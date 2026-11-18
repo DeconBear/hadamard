@@ -125,6 +125,7 @@ function handle(message) {
       process.exit(1);
       return;
     case 'slow':
+    case 'slow-cancelable':
       pendingSlow.set(String(message.id), true);
       return;
     case 'render': {

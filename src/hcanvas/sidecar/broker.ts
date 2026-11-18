@@ -224,6 +224,10 @@ export class SidecarBroker {
     return found;
   }
 
+  cancelFor(handleId: string, requestId: string | number, reason = 'cancelled'): boolean {
+    return this.instances.get(handleId)?.cancel(requestId, reason) ?? false;
+  }
+
   cancelInstanceRequests(handleId: string, reason = 'cancelled'): number {
     return this.instances.get(handleId)?.cancelAllRequests(reason) ?? 0;
   }

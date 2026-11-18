@@ -73,7 +73,7 @@ async function main() {
     ],
   }, null, 2) + '\n', 'utf8');
   const fence = String.fromCharCode(96).repeat(3);
-  await writeFile(path.join(workspace, 'sample.hnb.md'), ['---', 'hcanvas: notebook', 'version: 1', 'title: E2E notebook', 'kernel: python', '---', '', '# E2E notebook', '', fence + 'python exec', 'print("e2e-notebook")', fence, ''].join('\n'), 'utf8');
+  await writeFile(path.join(workspace, 'sample.hnb.md'), ['---', 'hcanvas: notebook', 'version: 1', 'title: E2E notebook', 'kernel: python', '---', '', '# E2E notebook', '', 'Energy: $E=mc^2$', '', fence + 'python exec', 'print("e2e-notebook")', fence, ''].join('\n'), 'utf8');
 
   const started = await startServer(workspace);
   server = started.child;
@@ -168,19 +168,61 @@ async function main() {
 
   await openFile('sample.hnb.md');
   await page.waitForTimeout(1000);
-  assert('notebook viewer opens .hnb.md', (await page.locator('.notebook-view').count()) === 1);
+  assert('notebook viewer opens .hnb.md', (await page.locator('.notebook-view').count()) === 1, await page.locator('.workspace-view-surface').innerText().catch(() => 'missing workspace view surface'));
   assert('notebook renders markdown and code cells', (await page.locator('.nb-markdown').count()) === 1 && (await page.locator('.nb-code').count()) === 1);
-  await page.locator('.nb-code-input').first().press('Shift+Enter');
+  assert('notebook uses native CodeMirror code cells', (await page.locator('.nb-code-input .cm-editor').count()) === 1);
+  await page.locator('.nb-code-input .cm-content').first().press('Shift+Enter');
   const notebookOutput = await (async () => {
     const start = Date.now();
     while (Date.now() - start < 30_000) {
       const text = await page.locator('.nb-output').first().innerText().catch(() => '');
       if (text.includes('e2e-notebook')) return true;
+      if ((await page.locator('[data-nb-cell-status]').first().innerText().catch(() => '')) === 'Failed') return false;
       await page.waitForTimeout(300);
     }
     return false;
   })();
-  assert('notebook executes a Python cell', notebookOutput);
+  assert('notebook executes a Python cell', notebookOutput, JSON.stringify({
+    status: await page.locator('[data-nb-cell-status]').first().innerText().catch(() => ''),
+    output: await page.locator('.nb-output').first().innerText().catch(() => ''),
+    toasts: await page.locator('#toastRoot').innerText().catch(() => ''),
+    kernels: (await api('/api/runtime')).body.kernels,
+    pageErrors,
+  }));
+
+  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-new-name]').fill('distance');
+  await page.locator('[data-nb-new-value]').fill('12');
+  await page.locator('[data-nb-variable-add]').click();
+  await page.waitForTimeout(250);
+  assert('variable panel adds a shared numeric value', (await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').count()) === 1 && await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').inputValue() === '12', JSON.stringify({ panel: await page.locator('[data-nb-variable-panel]').innerText(), toasts: await page.locator('#toastRoot').innerText(), pageErrors }));
+  await page.locator('[data-nb-variables]').click();
+  await page.locator('.nb-markdown-body .hc-math').click();
+  await page.waitForSelector('.nb-formula-popover');
+  assert('formula opens an inline LaTeX editor', await page.locator('.nb-formula-popover textarea').inputValue() === 'E=mc^2');
+  await page.locator('.nb-formula-popover textarea').fill('total = distance * 2');
+  await page.locator('[data-formula-calculate]').click();
+  assert('formula calculation inserts an adjacent code cell', (await page.locator('.nb-code').count()) === 2 && (await page.locator('.nb-code').first().innerText()).includes('distance * 2'), JSON.stringify({ cells: await page.locator('.nb-code').allInnerTexts(), formulaMessage: await page.locator('.nb-formula-message').innerText().catch(() => 'closed'), toasts: await page.locator('#toastRoot').innerText() }));
+  await page.locator('.nb-code-input .cm-content').first().press('Shift+Enter');
+  let calculated = false;
+  for (let attempt = 0; attempt < 100 && !calculated; attempt += 1) {
+    calculated = (await page.locator('.nb-output').first().innerText().catch(() => '')).includes('24');
+    if (!calculated) await page.waitForTimeout(300);
+  }
+  assert('generated formula code executes against shared variables', calculated);
+  await page.locator('[data-nb-variables]').click();
+  assert('kernel variable snapshot returns to the panel', await page.locator('[data-nb-variable-row="total"] [data-nb-variable-value]').inputValue() === '24');
+  await page.locator('[data-nb-variables]').click();
+  await page.locator('.nb-markdown-body').fill('# E2E notebook\n\nClosing autosave marker');
+  await page.locator('.workspace-tab.view-tab.active .tab-close').click();
+  let savedAfterClose = '';
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const saved = await api('/api/files/read?root=root_default&path=sample.hnb.md');
+    savedAfterClose = saved.body.file?.content || '';
+    if (savedAfterClose.includes('Closing autosave marker') && savedAfterClose.includes('"total":24')) break;
+    await page.waitForTimeout(150);
+  }
+  assert('closing a notebook flushes the latest markdown and variables', savedAfterClose.includes('Closing autosave marker') && savedAfterClose.includes('"total":24'), savedAfterClose.slice(0, 180));
 
   // File viewers live in workspace view tabs; close them so the canvas is active again.
   while (await page.locator('.workspace-tab.view-tab .tab-close').count()) {
@@ -235,6 +277,20 @@ async function main() {
   assert('extension page mounts a page viewer', (await page.locator('.extension-page-surface iframe').count()) === 1);
   frame = activeFrame();
   assert('extension page receives page data', frame ? (await frame.locator('.column').count()) === 3 : false);
+  const viewerWrite = await frame.evaluate(async () => {
+    const hc = await HcanvasView.acquire();
+    const applied = await hc.document.apply([{ op: 'update_page', patch: { extension: { data: {
+      title: 'E2E saved board',
+      columns: [{ name: 'Backlog', cards: [] }, { name: 'In progress', cards: [] }, { name: 'Done', cards: [{ title: 'Saved through extension RPC' }] }],
+    } } } }]);
+    const imported = await hc.assets.import({ name: 'board-pixel.png', mime: 'image/png', base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' });
+    return { applied, imported };
+  });
+  assert('extension viewer document.apply returns the real revision', viewerWrite.applied?.revision > 0, JSON.stringify(viewerWrite));
+  assert('extension viewer imports an asset', Boolean(viewerWrite.imported?.asset?.url), JSON.stringify(viewerWrite.imported));
+  const savedBoard = await api('/api/docs/' + doc.id);
+  const savedBoardPage = savedBoard.body.doc?.pages?.find(item => item.id === 'page_e2eboard');
+  assert('extension viewer changes persist in the host document', savedBoardPage?.extension?.data?.title === 'E2E saved board');
   const exported = await api('/api/export', { method: 'POST', body: JSON.stringify({ docId: doc.id, format: 'pdf', pageId: 'page_e2eboard' }) });
   assert('extensions page export fails with a readable error', exported.status >= 400 && String(JSON.stringify(exported.body)).includes('Extension pages cannot be exported'), String(exported.status));
 

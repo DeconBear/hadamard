@@ -53,6 +53,7 @@ export interface HcKernelManagerOptions {
 export interface HcKernelExecuteOptions {
   cellId?: string;
   silent?: boolean;
+  variables?: Record<string, unknown>;
 }
 
 export interface HcKernelStartedExecution {
@@ -69,6 +70,7 @@ interface KernelExecutionRecord {
   code: string;
   cellId?: string;
   silent?: boolean;
+  variables?: HkpMimeBundle;
   startedAt: number;
   settled: boolean;
   events: HcKernelOutputItem[];
@@ -82,7 +84,6 @@ interface KernelExecutionRecord {
   timers: NodeJS.Timeout[];
   requestSettled: boolean;
   kernelResponse?: HkpExecuteResult;
-  sawFinished: boolean;
   /** One automatic restart retry when the sidecar disappeared under us. */
   retried?: boolean;
 }
@@ -437,6 +438,7 @@ export class HcKernelManager {
       code,
       ...(options.cellId ? { cellId: options.cellId } : {}),
       ...(options.silent === true ? { silent: true } : {}),
+      ...(options.variables ? { variables: options.variables as HkpMimeBundle } : {}),
       startedAt: this.now().getTime(),
       settled: false,
       events: [],
@@ -447,7 +449,6 @@ export class HcKernelManager {
       resolve: resolveCompletion,
       timers: [],
       requestSettled: false,
-      sawFinished: false,
       completion,
     };
     this.executionIndex.set(id, session.sessionId);
@@ -622,7 +623,6 @@ export class HcKernelManager {
         });
         return;
       case 'execution_finished':
-        execution.sawFinished = true;
         this.settleExecution(session, execution, normalized.status, {});
         return;
       default:
@@ -705,6 +705,7 @@ export class HcKernelManager {
       code: next.code,
       ...(next.cellId ? { cellId: next.cellId } : {}),
       ...(next.silent === true ? { silent: true } : {}),
+      ...(next.variables ? { variables: next.variables } : {}),
     };
     const timeoutMs = this.limits.executionTimeoutMs > 0 ? this.limits.executionTimeoutMs : 0;
     void this.broker

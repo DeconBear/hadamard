@@ -335,9 +335,13 @@ export class SidecarIpcSession {
     }
     const declaredTimeout = this.options.declaration.requests?.find(item => item.method === method)?.timeoutMs;
     const timeoutMs = options.timeoutMs ?? declaredTimeout ?? this.options.limits.requestTimeoutMs;
-    const id = this.nextRequestId;
-    this.nextRequestId += 1;
+    const id = options.requestId ?? this.nextRequestId;
+    if (options.requestId === undefined) this.nextRequestId += 1;
     const key = String(id);
+    if (this.pending.has(key)) {
+      this.releaseSlot();
+      throw new HcRuntimeError('invalid_params', 'Duplicate sidecar request id ' + key);
+    }
     return new Promise<SidecarRequestOutcome>((resolve, reject) => {
       const record: PendingRequest = {
         id,

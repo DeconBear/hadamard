@@ -1,5 +1,5 @@
 import type { HcBlock, HcPage } from '../types.js';
-import { execData, renderStoredOutputsHtml, truncateText, type HcStoredOutput } from '../execOutputs.js';
+import { EXEC_OUTPUT_LIMITS, execData, renderStoredOutputsHtml, truncateText, type HcStoredOutput } from '../execOutputs.js';
 import type { KernelDescriptor, KernelExecutionHandle, KernelManager, KernelOutputEvent } from './kernelManager.js';
 import { esc } from './utils.js';
 import { persistKernelOutputAssets } from './kernelOutputAssets.js';
@@ -85,13 +85,14 @@ function mimeOutput(mime: string, value: unknown): HcStoredOutput | null {
   }
   if (mime === 'text/html') return { id, kind: 'html', html: truncateText(value, 256 * 1024) };
   if (mime === 'text/markdown') return { id, kind: 'markdown', text: truncateText(value) };
+  if (mime === 'text/latex' || mime === 'application/x-latex') return { id, kind: 'math', tex: truncateText(value), display: true };
   if (mime === 'text/plain') return { id, kind: 'text', text: truncateText(value) };
   if (mime === 'application/json') return { id, kind: 'json', value };
   return null;
 }
 
 function pickMime(data: Record<string, unknown>): HcStoredOutput | null {
-  const order = ['image/png', 'image/svg+xml', 'image/jpeg', 'text/html', 'application/json', 'text/markdown', 'text/plain'];
+  const order = ['image/png', 'image/svg+xml', 'image/jpeg', 'text/html', 'application/json', 'text/latex', 'application/x-latex', 'text/markdown', 'text/plain'];
   for (const mime of order) {
     if (!(mime in data)) continue;
     const output = mimeOutput(mime, data[mime]);
@@ -114,7 +115,11 @@ export function eventsToStoredOutputs(events: KernelOutputEvent[]): HcStoredOutp
   for (const event of events) {
     if (event.kind === 'stream') {
       const text = truncateText(event.text);
-      push({ id: '', kind: 'stream', name: event.stream, text }, text.length);
+      const previous = result.at(-1);
+      if (previous?.kind === 'stream' && previous.name === event.stream && previous.text.length + text.length <= EXEC_OUTPUT_LIMITS.text && total + text.length <= EXEC_OUTPUT_LIMITS.total) {
+        previous.text += text;
+        total += text.length;
+      } else push({ id: '', kind: 'stream', name: event.stream, text }, text.length);
       continue;
     }
     if (event.kind === 'error') {

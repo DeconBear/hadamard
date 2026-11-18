@@ -1,22 +1,17 @@
 #!/usr/bin/env node
-/**
- * Hcanvas C++ kernel sidecar (HKP 1.0, JSON-RPC over stdio).
- *
- * C++ has no REPL, so each cell is compiled and executed independently. Code
- * without an explicit `int main(...)` is wrapped in a main() with standard
- * headers; code with a main is compiled as a complete program. Compilation and
- * process output are streamed back as text. State does not persist across cells.
- */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { CPP_SHARED_HEADER, cppSharedDefinitions, CPP_VARIABLES_MIME, splitCppVariableOutput } from './shared_variables.mjs';
 
 const OUT = process.stdout;
+const OUTPUT_LIMIT = 1024 * 1024;
 let buffer = Buffer.alloc(0);
 let current = null;
 let child = null;
 let tmpRoot = '';
+let compilerCache;
 let stopping = false;
 
 function send(message) {
@@ -28,14 +23,16 @@ function respondError(id, code, message) { if (id !== undefined && id !== null) 
 function notify(method, params) { send({ jsonrpc: '2.0', method, params }); }
 
 function compilerCommand() {
+  if (compilerCache !== undefined) return compilerCache;
   for (const candidate of ['g++', 'clang++']) {
     const probe = spawnSync(candidate, ['--version'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
-    if (probe.status === 0 || probe.stdout || probe.stderr) return candidate;
+    if (probe.status === 0 || probe.stdout || probe.stderr) { compilerCache = candidate; return candidate; }
   }
+  compilerCache = null;
   return null;
 }
 
-function truncate(text, limit = 1024 * 1024) {
+function truncate(text, limit = OUTPUT_LIMIT) {
   const value = String(text || '');
   return value.length > limit ? value.slice(0, limit) + '\n… truncated' : value;
 }
@@ -51,9 +48,15 @@ function cleanup(execution) {
 }
 
 function stream(streamName, text) {
-  if (!current || !text) return;
-  for (let index = 0; index < text.length; index += 60000) {
-    notify('kernel/stream', { executionId: current.executionId, name: streamName, text: text.slice(index, index + 60000) });
+  const execution = current;
+  if (!execution || !text) return;
+  const remaining = OUTPUT_LIMIT - execution.outputBytes;
+  if (remaining <= 0) return;
+  const value = String(text).slice(0, remaining);
+  execution.outputBytes += value.length;
+  const suffix = String(text).length > value.length || execution.outputBytes >= OUTPUT_LIMIT ? '\n… output truncated' : '';
+  for (const chunk of (value + suffix).match(/[\s\S]{1,60000}/g) || []) {
+    notify('kernel/stream', { executionId: execution.executionId, name: streamName, text: chunk });
   }
 }
 
@@ -76,16 +79,16 @@ function finish(status, error) {
 }
 
 function killCurrent() {
-  if (child) {
-    const proc = child;
-    child = null;
-    try { proc.kill(); } catch { /* best effort */ }
-  }
+  if (!child) return;
+  const proc = child;
+  child = null;
+  try { proc.kill(); } catch { /* best effort */ }
 }
 
-function buildSource(code) {
+function buildSource(code, variables) {
+  const prologue = '#include "hcanvas_shared.hpp"\n' + cppSharedDefinitions(variables) + '\n';
   const hasMain = /(^|[^A-Za-z0-9_])int\s+main\s*\(/u.test(code);
-  if (hasMain) return code;
+  if (hasMain) return prologue + code;
   const lines = code.split(/\r?\n/);
   const includes = [];
   const body = [];
@@ -93,8 +96,6 @@ function buildSource(code) {
     if (/^\s*#\s*include\b/u.test(line)) includes.push(line);
     else body.push(line);
   }
-  // Do not use <bits/stdc++.h> here: MinGW GCC 8.1's bundled <filesystem>
-  // fails to compile under -std=c++17, which breaks otherwise trivial cells.
   const standardHeaders = [
     '#include <iostream>', '#include <string>', '#include <vector>', '#include <algorithm>',
     '#include <cmath>', '#include <cstdio>', '#include <cstdlib>', '#include <sstream>',
@@ -103,7 +104,7 @@ function buildSource(code) {
     '#include <functional>', '#include <bitset>', '#include <cstring>', '#include <climits>',
   ];
   const header = [...standardHeaders, ...includes.filter(line => !/bits\/stdc\+\+\.h/u.test(line)), 'using namespace std;'].join('\n');
-  return header + '\nint main() {\n' + body.join('\n') + '\n  return 0;\n}\n';
+  return prologue + header + '\nint main() {\n' + body.join('\n') + '\n  return 0;\n}\n';
 }
 
 function startExecution(id, params) {
@@ -112,8 +113,7 @@ function startExecution(id, params) {
   const executionId = typeof params.executionId === 'string' && params.executionId ? params.executionId : 'cpp_' + Date.now().toString(36);
   const compiler = compilerCommand();
   if (!compiler) {
-    const execution = { requestId: id, executionId, started: Date.now(), dir: '' };
-    current = execution;
+    current = { requestId: id, executionId, started: Date.now(), dir: '', outputBytes: 0 };
     notify('kernel/execution_started', { executionId });
     notify('kernel/status', { state: 'busy' });
     finish('error', { ename: 'ToolchainError', evalue: 'No C++ compiler found on PATH (install g++ or clang++).', traceback: [] });
@@ -123,63 +123,72 @@ function startExecution(id, params) {
   const dir = mkdtempSync(path.join(tmpRoot, 'cell-'));
   const sourcePath = path.join(dir, 'main.cpp');
   const binaryPath = path.join(dir, process.platform === 'win32' ? 'main.exe' : 'main');
-  writeFileSync(sourcePath, buildSource(code), 'utf8');
-  const execution = { requestId: id, executionId, started: Date.now(), dir };
-  current = execution;
+  writeFileSync(path.join(dir, 'hcanvas_shared.hpp'), CPP_SHARED_HEADER, 'utf8');
+  writeFileSync(sourcePath, buildSource(code, params.variables), 'utf8');
+  current = { requestId: id, executionId, started: Date.now(), dir, outputBytes: 0 };
   notify('kernel/execution_started', { executionId, ...(typeof params.cellId === 'string' && params.cellId ? { cellId: params.cellId } : {}) });
   notify('kernel/status', { state: 'busy' });
-  const compileArgs = ['-std=c++17', '-O2', '-o', binaryPath, sourcePath];
-  const compileStarted = Date.now();
-  const compile = spawn(compiler, compileArgs, { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const compile = spawn(compiler, ['-std=c++17', '-O2', '-o', binaryPath, sourcePath], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   child = compile;
   let compileOut = '';
   let compileErr = '';
-  compile.stdout.on('data', chunk => { compileOut += String(chunk); });
-  compile.stderr.on('data', chunk => { compileErr += String(chunk); });
+  compile.stdout.on('data', chunk => { compileOut = truncate(compileOut + String(chunk)); });
+  compile.stderr.on('data', chunk => { compileErr = truncate(compileErr + String(chunk)); });
   compile.once('error', error => {
     child = null;
-    if (current !== execution) return;
+    if (current?.executionId !== executionId) return;
     stream('stderr', 'compiler error: ' + (error instanceof Error ? error.message : String(error)) + '\n');
     finish('error', { ename: 'CompilerError', evalue: error instanceof Error ? error.message : String(error), traceback: [] });
   });
   compile.once('exit', codeValue => {
     child = null;
-    if (current !== execution) return;
-    const compileOutput = truncate(compileOut + compileErr, 1024 * 1024);
-    execution.compileMs = Date.now() - compileStarted;
+    if (current?.executionId !== executionId) return;
+    const compileOutput = truncate(compileOut + compileErr);
     if (codeValue !== 0) {
-      const lines = compileOutput.split(/\r?\n/).slice(0, 30);
       finish('error', {
         ename: 'CompilationError',
         evalue: 'C++ compilation failed with exit code ' + String(codeValue) + '.',
-        traceback: lines,
+        traceback: compileOutput.split(/\r?\n/).slice(0, 60),
       });
       return;
     }
     const run = spawn(binaryPath, [], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     child = run;
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => { try { run.kill(); } catch { /* best effort */ } }, 60000);
-    run.stdout.on('data', chunk => { stdout += String(chunk); });
-    run.stderr.on('data', chunk => { stderr += String(chunk); });
+    let stdoutLine = '';
+    const timer = setTimeout(() => {
+      stream('stderr', '\nExecution exceeded 60 seconds and was stopped.\n');
+      try { run.kill(); } catch { /* best effort */ }
+    }, 60000);
+    const stdoutContent = line => {
+      const parsed = splitCppVariableOutput(line);
+      if (Object.keys(parsed.variables).length) notify('kernel/display_data', { executionId, data: { [CPP_VARIABLES_MIME]: parsed.variables } });
+      if (parsed.stdout) stream('stdout', parsed.stdout + '\n');
+    };
+    run.stdout.on('data', chunk => {
+      stdoutLine += String(chunk);
+      for (;;) {
+        const index = stdoutLine.indexOf('\n');
+        if (index < 0) break;
+        const line = stdoutLine.slice(0, index + 1);
+        stdoutLine = stdoutLine.slice(index + 1);
+        stdoutContent(line.replace(/\r?\n$/u, ''));
+      }
+      if (stdoutLine.length > OUTPUT_LIMIT) { stream('stdout', stdoutLine); stdoutLine = ''; }
+    });
+    run.stderr.on('data', chunk => stream('stderr', String(chunk)));
     run.once('error', error => {
       clearTimeout(timer);
       child = null;
-      if (current !== execution) return;
-      stream('stderr', String(error instanceof Error ? error.message : error) + '\n');
+      if (current?.executionId !== executionId) return;
       finish('error', { ename: 'RunError', evalue: error instanceof Error ? error.message : String(error), traceback: [] });
     });
     run.once('exit', (runCode, signal) => {
       clearTimeout(timer);
       child = null;
-      if (current !== execution) return;
-      const output = truncate(stdout);
-      const errOutput = truncate(stderr);
-      if (output) stream('stdout', output);
-      if (errOutput) stream('stderr', errOutput);
+      if (current?.executionId !== executionId) return;
+      if (stdoutLine) stdoutContent(stdoutLine);
       if (runCode === 0) finish('ok');
-      else finish('error');
+      else finish('error', { ename: 'RunError', evalue: 'C++ program exited with code ' + String(runCode) + (signal ? ' (' + signal + ')' : '') + '.', traceback: [] });
     });
   });
 }
@@ -203,12 +212,8 @@ function handleMessage(message) {
   if (method === 'initialize') {
     const compiler = compilerCommand();
     respond(id, {
-      protocolVersion: '1.0',
-      language: 'cpp',
-      languageVersion: compiler || 'none',
-      displayName: 'C++' + (compiler ? ' (' + compiler + ')' : ''),
-      features: { execute: true, interrupt: true, complete: false, inspect: false },
-      mimeTypes: ['text/plain'],
+      protocolVersion: '1.0', language: 'cpp', languageVersion: compiler || 'none', displayName: 'C++' + (compiler ? ' (' + compiler + ')' : ''),
+      features: { execute: true, interrupt: true, complete: false, inspect: false, variables: true }, mimeTypes: ['text/plain'],
     });
     return;
   }

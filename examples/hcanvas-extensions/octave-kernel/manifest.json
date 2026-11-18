@@ -50,7 +50,8 @@
         "sidecar": "octave-kernel",
         "features": [
           "execute",
-          "interrupt"
+          "interrupt",
+          "variables"
         ],
         "defaultFor": [
           "octave"

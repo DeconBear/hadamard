@@ -31,4 +31,7 @@ for canvas **Code cells** and **Hadamard Notebook** cells.
   into an existing figure does not re-emit that figure; call `figure`/create a
   new figure to get a new image.
 - Interrupt/restart resets Octave state.
+- Notebook shared variables are injected before each run and restored after a
+  restart. Use `hc_get("name", default)` and `hc_set("name", value)` for
+  explicit JSON-compatible exchange with Python and C++ cells.
 - Requires GNU Octave (no GUI needed) and Node.js for the sidecar.
