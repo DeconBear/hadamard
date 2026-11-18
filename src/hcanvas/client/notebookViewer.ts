@@ -248,7 +248,7 @@ function mountNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: Notebo
       '<header class="nb-cell-head"><span class="nb-cell-kind">' + esc(cellTitle(cell, index)) + '</span>' +
       '<span class="nb-cell-status" data-nb-cell-status data-tone="idle"></span>' +
       '<span class="nb-cell-actions">' +
-      '<button type="button" class="btn tiny primary nb-run-btn" title="Run cell (Shift+Enter)" data-nb-run="' + index + '">Run</button>' +
+      '<button type="button" class="btn tiny primary nb-run-btn" title="Run cell (Shift+Enter)" aria-label="Run cell" data-nb-run="' + index + '"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.2 1.8v8.4L10 6z"/></svg></button>' +
       '<button type="button" class="btn tiny nb-icon-action" title="Move up" data-nb-up="' + index + '">↑</button>' +
       '<button type="button" class="btn tiny nb-icon-action" title="Move down" data-nb-down="' + index + '">↓</button>' +
       '<button type="button" class="btn tiny nb-icon-action" title="Insert code cell below" data-nb-insert="' + index + '">＋</button>' +

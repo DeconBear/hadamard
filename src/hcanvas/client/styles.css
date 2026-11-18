@@ -1052,7 +1052,9 @@ body.extension-page-mode #toolRail, body.extension-page-mode #selectionToolbar, 
 .nb-cell-status[data-tone="error"] { color:#b42318; }
 .nb-cell-actions { margin-left:auto; display:flex; gap:2px; }
 .nb-cell-actions .btn { height:24px; min-width:24px; padding:0 6px; border-radius:6px; font-size:11px; }
-.nb-cell-actions .nb-run-btn { padding:0 12px; margin-right:3px; }
+.nb-cell-actions .nb-run-btn { display:inline-flex; align-items:center; justify-content:center; width:30px; padding:0; margin-right:3px; }
+.nb-cell-actions .nb-run-btn svg { width:12px; height:12px; display:block; fill:currentColor; }
+
 .nb-cell-actions .nb-icon-action { color:#7a7468; background:transparent; border-color:transparent; }
 .nb-cell-actions .nb-icon-action:hover { background:#efece4; border-color:#e4ddcf; color:#1d232e; }
 .nb-cell-actions .nb-icon-action.danger:hover { background:#fdecea; border-color:#f3c4bf; color:#b42318; }
