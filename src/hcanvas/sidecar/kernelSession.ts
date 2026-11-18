@@ -83,6 +83,8 @@ interface KernelExecutionRecord {
   requestSettled: boolean;
   kernelResponse?: HkpExecuteResult;
   sawFinished: boolean;
+  /** One automatic restart retry when the sidecar disappeared under us. */
+  retried?: boolean;
 }
 
 interface KernelSessionRecord {
@@ -98,6 +100,10 @@ interface KernelSessionRecord {
   lastActivityAt?: string;
   initialize?: HkpInitializeResult;
   unsubscribeNotifications?: () => void;
+  /** True when the current process exit is already being handled as a crash. */
+  sawCrash?: boolean;
+  /** Incremented on every process launch; stale exit timers are ignored. */
+  generation: number;
 }
 
 function callSafely<T>(callback: ((value: T) => void) | undefined, value: T): void {
@@ -237,6 +243,7 @@ export class HcKernelManager {
       active: null,
       queued: [],
       crashes: 0,
+      generation: 0,
       createdAt: this.nowIso(),
       lastActivityAt: this.nowIso(),
     };
@@ -455,6 +462,7 @@ export class HcKernelManager {
   }
 
   private async launchKernel(session: KernelSessionRecord): Promise<void> {
+    session.generation += 1;
     session.state = 'starting';
     this.emitState(session);
     const sidecar = session.entry.sidecar;
@@ -481,6 +489,7 @@ export class HcKernelManager {
     session.unsubscribeNotifications = this.broker.subscribeNotifications(session.sessionId, (method, params) => {
       this.handleKernelNotification(session, method, params);
     });
+    session.sawCrash = false;
     session.state = 'ready';
     session.lastActivityAt = this.nowIso();
     this.emitState(session);
@@ -493,6 +502,30 @@ export class HcKernelManager {
     if (!session) return;
     if (event.event === 'crash') {
       void this.handleKernelCrash(session);
+      return;
+    }
+    if (event.event === 'exit') {
+      // Expected exits happen while restarting/disposing; ignore those. An
+      // unexpected exit is followed by a crash event from the broker, so defer
+      // the "dead kernel" decision briefly and let crash handling win.
+      if (session.state === 'restarting' || session.state === 'dead') return;
+      const code = typeof event.payload.code === 'number' ? event.payload.code : null;
+      const exitGeneration = session.generation;
+      const timer = setTimeout(() => {
+        if (session.state === 'restarting' || session.state === 'dead' || session.sawCrash) return;
+        if (session.generation !== exitGeneration) return;
+        const active = session.active;
+        const message = 'Kernel sidecar exited' + (code === null ? '' : ' with code ' + code) + '; rerun the cell to start a fresh kernel';
+        if (active && !active.settled) {
+          this.settleExecution(session, active, 'aborted', {
+            error: { ename: 'KernelExited', evalue: message, traceback: [] },
+          });
+        }
+        session.state = 'dead';
+        this.emitState(session);
+        this.failQueued(session, message);
+      }, 120);
+      timer.unref?.();
       return;
     }
     if (event.event === 'diagnostic') {
@@ -513,6 +546,7 @@ export class HcKernelManager {
 
   private async handleKernelCrash(session: KernelSessionRecord): Promise<void> {
     if (session.state === 'dead') return;
+    session.sawCrash = true;
     const active = session.active;
     session.crashes += 1;
     const crashMessage = 'Kernel ' + session.kernelId + ' crashed (crash #' + session.crashes + ')';
@@ -709,6 +743,27 @@ export class HcKernelManager {
     if (execution.settled) return;
     const message = error instanceof Error ? error.message : String(error);
     this.diagnose(session, 'execute_failed', 'kernel/execute failed: ' + message);
+    // A service sidecar can disappear while the kernel session still believes it
+    // is ready (sleep/idle/process cleanup). Restart the kernel and retry once
+    // instead of leaving the client waiting or forcing a manual rerun.
+    if (!execution.retried && /(?:Unknown sidecar|sidecar_not_found|Unknown handle|not running)/i.test(message)) {
+      execution.retried = true;
+      execution.requestSettled = false;
+      if (session.active === execution) session.active = null;
+      session.queued.unshift(execution);
+      session.state = 'restarting';
+      this.emitState(session);
+      void this.restart(session.sessionId).catch(restartError => {
+        const queuedIndex = session.queued.indexOf(execution);
+        if (queuedIndex >= 0) session.queued.splice(queuedIndex, 1);
+        if (!execution.settled) {
+          this.settleExecution(session, execution, 'aborted', {
+            error: { ename: 'KernelError', evalue: restartError instanceof Error ? restartError.message : String(restartError), traceback: [] },
+          });
+        }
+      });
+      return;
+    }
     this.settleExecution(session, execution, 'aborted', {
       error: { ename: 'KernelError', evalue: message, traceback: [] },
     });

@@ -59,6 +59,7 @@ interface PendingExecution {
   resolve: (result: KernelExecutionResult) => void;
   reject: (error: Error) => void;
   settled: boolean;
+  watchdog?: ReturnType<typeof setTimeout>;
 }
 
 export interface KernelManager {
@@ -90,7 +91,12 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
   };
 
   const waitForSse = (timeoutMs: number): Promise<boolean> => {
-    if (sseOpen) return Promise.resolve(true);
+    if (sseOpen && source && source.readyState === EventSource.OPEN) return Promise.resolve(true);
+    if (!source || source.readyState === EventSource.CLOSED) {
+      source?.close();
+      source = null;
+      connect();
+    }
     return new Promise(resolve => {
       let settled = false;
       const timer = setTimeout(() => { if (!settled) { settled = true; resolve(false); } }, timeoutMs);
@@ -106,6 +112,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
   const connect = (): void => {
     if (disposed || typeof EventSource === 'undefined') return;
     try {
+      source?.close();
       source = new EventSource('/api/runtime/events?token=' + encodeURIComponent(deps.token()));
     } catch {
       return;
@@ -141,7 +148,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
         if (entry) settle(entry, { status: 'cancelled' });
       }
     });
-    source.addEventListener('error', () => { sseOpen = false; });
+    source.addEventListener('error', () => { sseOpen = false; notifyOpen(false); });
   };
 
   const outputForEvent = (name: string, payload: Record<string, unknown>): KernelOutputEvent | null => {
@@ -171,6 +178,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
   const settle = (entry: PendingExecution, payload: Record<string, unknown>): void => {
     if (entry.settled) return;
     entry.settled = true;
+    if (entry.watchdog) { clearTimeout(entry.watchdog); entry.watchdog = undefined; }
     const rawStatus = String(payload.status || 'ok');
     const status = rawStatus === 'error' ? 'error' : rawStatus === 'aborted' ? 'aborted' : rawStatus === 'cancelled' ? 'cancelled' : 'ok';
     const errorPayload = payload.error && typeof payload.error === 'object' ? payload.error as Record<string, unknown> : undefined;
@@ -235,6 +243,14 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
     const entry: PendingExecution = {
       sessionId, kernelId, outputs: [], outputListeners: new Set(), statusListeners: new Set(), resolve: resolveDone, reject: rejectDone, settled: false,
     };
+    entry.watchdog = setTimeout(() => {
+      if (entry.settled) return;
+      settle(entry, {
+        status: 'aborted',
+        error: { ename: 'KernelStreamTimeout', evalue: 'No kernel completion event arrived after 5 minutes. The kernel may have stopped; restart the kernel and rerun the cell.', traceback: [] },
+      });
+      void deps.request('/api/kernels/' + encodeURIComponent(sessionId) + '/interrupt', { method: 'POST', body: JSON.stringify({ executionId }) }).catch(() => undefined);
+    }, 5 * 60 * 1000);
     pending.set(executionId, entry);
     const orphaned = orphanOutputs.get(executionId);
     if (orphaned?.length) {
@@ -252,6 +268,13 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
           await deps.request('/api/kernels/' + encodeURIComponent(sessionId) + '/interrupt', { method: 'POST', body: JSON.stringify({ executionId }) });
         } catch {
           await deps.request('/api/runtime/cancel', { method: 'POST', body: JSON.stringify({ executionId }) }).catch(() => undefined);
+        } finally {
+          if (!entry.settled) {
+            settle(entry, {
+              status: 'aborted',
+              error: { ename: 'ExecutionCancelled', evalue: 'Execution cancelled.', traceback: [] },
+            });
+          }
         }
       },
     };

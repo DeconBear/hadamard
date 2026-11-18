@@ -332,7 +332,11 @@ export class SidecarBroker {
       onEvent: event => this.emit(event),
       onAudit: event => this.recordAudit(event),
       onIdleTimeout: () => {
-        if (created) void this.stopProcess(created, 'idle timeout').catch(() => undefined);
+        // Kernel sidecars are owned by HcKernelManager; idle-stopping them would
+        // leave the kernel session pointing at a dead process. Service sidecars
+        // still use the normal idle timeout.
+        if (!created || created.role === 'kernel') return;
+        void this.stopProcess(created, 'idle timeout').catch(() => undefined);
       },
     };
     created = new SidecarProcess(
