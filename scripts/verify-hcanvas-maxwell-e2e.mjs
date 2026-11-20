@@ -73,6 +73,8 @@ async function main() {
     const statuses = await page.locator('[data-nb-cell-status]').allInnerTexts();
     assert('all kernels complete', !statuses.some(status => /error|failed|aborted/iu.test(status)), statuses.join(', '));
     assert('three figures rendered', await page.locator('.nb-output img.exec-out-image').count() === 3);
+    const documentFlow = await page.locator('.nb-code').first().evaluate(element => ({ border: getComputedStyle(element).borderTopWidth, caption: getComputedStyle(element.querySelector('.nb-output-caption > span')).display }));
+    assert('code and outputs use continuous document presentation', documentFlow.border === '0px' && documentFlow.caption === 'none', JSON.stringify(documentFlow));
     assert('no cell errors', (await page.locator('.exec-out-error').count()) === 0);
     await page.locator('[data-nb-variables]').click();
     const variables = await page.locator('[data-nb-variable-row]').evaluateAll(rows => rows.map(row => row.dataset.nbVariableRow || ''));

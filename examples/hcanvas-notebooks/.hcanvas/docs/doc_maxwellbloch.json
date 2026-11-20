@@ -2,9 +2,9 @@
   "schema": "hadamard-canvas/1",
   "id": "doc_maxwellbloch",
   "title": "Maxwell–Bloch",
-  "revision": 6,
+  "revision": 16,
   "createdAt": "2026-11-20T08:53:57.285Z",
-  "updatedAt": "2026-11-20T10:28:03.790Z",
+  "updatedAt": "2026-11-20T16:46:09.552Z",
   "pages": [
     {
       "id": "page_maxwellbloch",
@@ -36,14 +36,14 @@
               "language": "python",
               "outputs": [
                 {
-                  "id": "out_0_v1msv",
+                  "id": "out_0_rb5to",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "Sample: Two-level medium A\nRabi period = 3.141592653589793\nGaussian pulse area = 20.053026197048002\nPulse center = 12.0 ; width = 4.0 ; dt = 0.01\nNext: C++ reads rabi_period and pulse_area, then Octave reads the C++ result.\n"
                 }
               ],
-              "stale": true,
-              "executionCount": 3
+              "executionCount": 4,
+              "stale": true
             },
             {
               "id": "nbcell_maxwell_02",
@@ -53,22 +53,22 @@
               "language": "python",
               "outputs": [
                 {
-                  "id": "out_0_a51qv",
+                  "id": "out_0_cwo64",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "Rabi period from shared parameters: 3.141593\npeak inversion: 0.4608\nfinal inversion: -0.9942\n"
                 },
                 {
-                  "id": "out_1_5jun6",
+                  "id": "out_1_l81kn",
                   "kind": "image",
                   "mime": "image/png",
-                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_6f259bd7791d4b74",
-                  "assetId": "asset_6f259bd7791d4b74",
+                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_924ca2f7871e45d9",
+                  "assetId": "asset_924ca2f7871e45d9",
                   "size": 75514
                 }
               ],
-              "stale": true,
-              "executionCount": 3
+              "executionCount": 5,
+              "stale": false
             },
             {
               "id": "nbcell_maxwell_03",
@@ -78,22 +78,22 @@
               "language": "python",
               "outputs": [
                 {
-                  "id": "out_0_z2ny9",
+                  "id": "out_0_b5ast",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "minimum post-pulse inversion: -0.9437\nmaximum post-pulse inversion: -0.5423\n"
                 },
                 {
-                  "id": "out_1_se6qy",
+                  "id": "out_1_svwc5",
                   "kind": "image",
                   "mime": "image/png",
-                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_08ac56e83f024117",
-                  "assetId": "asset_08ac56e83f024117",
+                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_515af077198f497e",
+                  "assetId": "asset_515af077198f497e",
                   "size": 36894
                 }
               ],
-              "stale": true,
-              "executionCount": 3
+              "executionCount": 4,
+              "stale": true
             },
             {
               "id": "nbcell_maxwell_04",
@@ -108,22 +108,22 @@
               "language": "python",
               "outputs": [
                 {
-                  "id": "out_0_wqa5p",
+                  "id": "out_0_ioths",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "Courant number: 0.2\npeak field: 2.3083\nfinal inversion range: -0.8841 to -0.047\n"
                 },
                 {
-                  "id": "out_1_nw0e0",
+                  "id": "out_1_wsr0k",
                   "kind": "image",
                   "mime": "image/png",
-                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_23d48689a7b6443f",
-                  "assetId": "asset_23d48689a7b6443f",
+                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_906d1bf263c54e6b",
+                  "assetId": "asset_906d1bf263c54e6b",
                   "size": 152075
                 }
               ],
-              "stale": false,
-              "executionCount": 3
+              "executionCount": 4,
+              "stale": true
             },
             {
               "id": "nbcell_maxwell_06",
@@ -136,9 +136,16 @@
               "source": "const double omega0_cpp = hc_get(\"omega0\", 2.0);\nconst double shared_period = hc_get(\"rabi_period\", 0.0);\nconst double shared_area = hc_get(\"pulse_area\", 0.0);\nconst std::string sample_label = hc_get(\"sample_label\", std::string(\"Two-level medium A\"));\nif (shared_period <= 0.0 || shared_area <= 0.0) {\n    throw std::runtime_error(\"Run the shared parameter cell before this C++ cell\");\n}\nconst double t1_cpp = hc_get(\"T1\", 8.0);\nconst double pi_cpp = std::acos(-1.0);\nconst double rabi_period_cpp = 2.0 * pi_cpp / omega0_cpp;\nconst double rabi_period_error_cpp = std::fabs(rabi_period_cpp - shared_period);\nhc_set(\"rabi_period_cpp\", rabi_period_cpp);\nhc_set(\"rabi_period_error_cpp\", rabi_period_error_cpp);\nstd::cout << \"Sample: \" << sample_label << std::endl;\nstd::cout << \"C++ Rabi period = \" << rabi_period_cpp\n          << \", Python period = \" << shared_period\n          << \", absolute error = \" << rabi_period_error_cpp << std::endl;\nstd::cout << \"Shared pulse area = \" << shared_area\n          << \", T1 = \" << t1_cpp << std::endl;",
               "kernelId": "cpp",
               "language": "cpp",
-              "outputs": [],
-              "stale": false,
-              "executionCount": 2
+              "outputs": [
+                {
+                  "id": "out_0_z429l",
+                  "kind": "stream",
+                  "name": "stdout",
+                  "text": "Sample: Two-level medium A\nC++ Rabi period = 3.14159, Python period = 3.14159, absolute error = 0\nShared pulse area = 20.053, T1 = 8\n"
+                }
+              ],
+              "executionCount": 3,
+              "stale": true
             },
             {
               "id": "nbcell_maxwell_08",
@@ -148,14 +155,14 @@
               "language": "octave",
               "outputs": [
                 {
-                  "id": "out_0_8psh7",
+                  "id": "out_0_1fsrb",
                   "kind": "stream",
                   "name": "stdout",
-                  "text": "Sample: Two-level medium A\nOctave Rabi period = 6.283185307180, C++ period = 6.283185307180\nMaximum cross-language period error = 3.55e-15, T1 = 8.0000\n"
+                  "text": "Sample: Two-level medium A\nOctave Rabi period = 3.141592653590, C++ period = 3.141592653590\nMaximum cross-language period error = 3.11e-15, T1 = 8.0000\n"
                 }
               ],
-              "stale": true,
-              "executionCount": 2
+              "executionCount": 3,
+              "stale": true
             },
             {
               "id": "nbcell_maxwell_09",
@@ -175,18 +182,18 @@
             "pulse_center": 12,
             "pulse_width": 4,
             "time_step": 0.01,
-            "rabi_period": 3.141592653589793,
-            "pulse_area": 20.053026197048002,
+            "rabi_period": 3.14159265358979,
+            "pulse_area": 20.053026197048,
             "peak_inversion": 0.4607613527251543,
             "final_inversion": -0.9941818071980845,
-            "scan_min_inversion": -0.9437036288497168,
-            "scan_max_inversion": -0.5422786067391835,
-            "propagation_peak_field": 2.308309923222794,
-            "propagation_final_inversion": -0.04698286637638267,
-            "rabi_period_cpp": 6.28318530717959,
+            "scan_min_inversion": -0.943703628849717,
+            "scan_max_inversion": -0.542278606739183,
+            "propagation_peak_field": 2.30830992322279,
+            "propagation_final_inversion": -0.0469828663763827,
+            "rabi_period_cpp": 3.14159265358979,
             "rabi_period_error_cpp": 0,
-            "rabi_period_octave": 6.283185307179586,
-            "period_max_error": 3.552713678800501e-15
+            "rabi_period_octave": 3.141592653589793,
+            "period_max_error": 3.1086244689504387e-15
           },
           "initialVariables": {
             "omega0": 2,
@@ -248,6 +255,76 @@
       "actor": "human",
       "summary": "Update page · Maxwell–Bloch",
       "createdAt": "2026-11-20T10:28:03.790Z",
+      "opCount": 1
+    },
+    {
+      "revision": 7,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:43:22.139Z",
+      "opCount": 1
+    },
+    {
+      "revision": 8,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:43:23.033Z",
+      "opCount": 1
+    },
+    {
+      "revision": 9,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:43:28.085Z",
+      "opCount": 1
+    },
+    {
+      "revision": 10,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:43:30.145Z",
+      "opCount": 1
+    },
+    {
+      "revision": 11,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:43:31.564Z",
+      "opCount": 1
+    },
+    {
+      "revision": 12,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:43:32.639Z",
+      "opCount": 1
+    },
+    {
+      "revision": 13,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:43:39.330Z",
+      "opCount": 1
+    },
+    {
+      "revision": 14,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:43:48.865Z",
+      "opCount": 1
+    },
+    {
+      "revision": 15,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:46:08.665Z",
+      "opCount": 1
+    },
+    {
+      "revision": 16,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T16:46:09.552Z",
       "opCount": 1
     }
   ]

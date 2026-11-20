@@ -3,6 +3,8 @@ import { renderStoredOutputsHtml } from '../execOutputs.js';
 import { renderMarkdownHtml } from '../markdown.js';
 import type { ComputationLanguage } from '../notebook/latexCompute.js';
 import { affectedCellIds } from '../notebook/cellDependencies.js';
+import { moveCodeCellToMarkdown } from '../notebook/cellMove.js';
+import { installNotebookCellDragAndDrop } from './notebookCellDragAndDrop.js';
 import { renderNotebookCodeCell, renderNotebookMarkdownCell } from './notebookCellMarkup.js';
 import { exportNotebookHtml, exportNotebookIpynb } from './notebookExport.js';
 import { renderNotebookTaskPanel } from './notebookTaskPanel.js';
@@ -91,7 +93,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   let activeCellId = data.cells[0]?.id || '';
   let commandMode = false;
   let changeCellId = '';
-  let draggedCellId = '';
   let deleteChord = false;
   const running = new Map<string, NotebookExecutionTask>();
   const subscriptions = new Map<string, () => void>();
@@ -135,7 +136,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     '<section class="nb-variable-panel hidden" data-nb-variable-panel aria-label="Shared variables"></section>' +
     '<section class="nb-task-panel hidden" data-nb-task-panel aria-label="Notebook executions"></section>' +
     '<main class="nb-cells" data-nb-cells></main>' +
-    '<footer class="nb-footer"><span>Shift+Enter run · Alt+Enter add code below · click a formula or image to edit</span><button type="button" data-nb-add-code>+ Code</button><button type="button" data-nb-add-md>+ Markdown</button></footer>' +
+    '<footer class="nb-footer"><span>Shift+Enter run · Alt+Enter add code · Ctrl+↑↓ move cell · click a formula or image to edit</span><button type="button" data-nb-add-code>+ Code</button><button type="button" data-nb-add-md>+ Markdown</button></footer>' +
     '</div>';
   const cellsHost = host.querySelector<HTMLElement>('[data-nb-cells]')!;
   const variablePanel = host.querySelector<HTMLElement>('[data-nb-variable-panel]')!;
@@ -487,6 +488,17 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     renderCells();
     cellElement(id)?.scrollIntoView({ block: 'nearest' });
   };
+  const moveCodeToMarkdown = (codeId: string, markdownId: string, blockIndex: number, renderedCount: number): void => {
+    if (!data.cells.some(cell => cell.id === codeId && cell.kind === 'code') || !data.cells.some(cell => cell.id === markdownId && cell.kind === 'markdown')) return;
+    pushUndo();
+    const result = moveCodeCellToMarkdown(data, codeId, markdownId, blockIndex, renderedCount, () => genId('nbcell'));
+    if (!result.moved) return;
+    if (result.markdownChanged) markdownRevisions.set(markdownId, 0);
+    activeCellId = codeId; selectedCellIds.clear(); selectedCellIds.add(codeId); commandMode = true; changeCellId = '';
+    markAffected(data.cells.filter(cell => cell.kind === 'code').map(cell => cell.id));
+    markDirty(); renderCells(); focusCell(codeId);
+    if (result.fallback) options.toast('This Markdown block could not be split safely. The code was placed next to the whole block.', 'info');
+  };
   const deleteCells = (ids: string[]): void => {
     const removed = new Set(ids.filter(id => data.cells.some(cell => cell.id === id)));
     if (!removed.size) return;
@@ -617,7 +629,11 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
           const count = section.querySelector<HTMLElement>('[data-nb-execution-count]');
           if (count) count.textContent = '[' + (cell.executionCount || ' ') + ']';
           const toggle = section.querySelector<HTMLElement>('[data-nb-toggle-code]');
-          if (toggle) toggle.textContent = cell.hideCode ? '›' : '⌄';
+          if (toggle) {
+            toggle.textContent = cell.hideCode ? '›' : '⌄';
+            toggle.setAttribute('aria-expanded', String(!cell.hideCode));
+            toggle.setAttribute('aria-label', cell.hideCode ? 'Expand code' : 'Collapse code');
+          }
         } else if (section.dataset.nbRenderedSource !== cell.source) {
           const view = section.querySelector<HTMLElement>('[data-nb-markdown-view]');
           if (view) {
@@ -731,24 +747,13 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     if (!section) return;
     selectCell(section.dataset.nbCell || '', event.ctrlKey || event.metaKey ? 'additive' : event.shiftKey ? 'range' : 'single');
   });
-  cellsHost.addEventListener('dragstart', event => {
-    const handle = (event.target as Element | null)?.closest<HTMLElement>('[data-nb-drag]');
-    if (!handle) return;
-    draggedCellId = handle.dataset.nbDrag || '';
-    event.dataTransfer?.setData('text/plain', draggedCellId);
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  const disposeCellDragAndDrop = installNotebookCellDragAndDrop(cellsHost, {
+    cell: id => data.cells.find(cell => cell.id === id),
+    cellIndex: id => data.cells.findIndex(cell => cell.id === id),
+    syncMarkdown: () => { syncMarkdownSources(); },
+    moveCellTo,
+    moveCodeToMarkdown,
   });
-  cellsHost.addEventListener('dragover', event => {
-    if (draggedCellId && (event.target as Element | null)?.closest('[data-nb-cell]')) event.preventDefault();
-  });
-  cellsHost.addEventListener('drop', event => {
-    const section = (event.target as Element | null)?.closest<HTMLElement>('[data-nb-cell]');
-    if (!section || !draggedCellId) return;
-    event.preventDefault();
-    moveCellTo(draggedCellId, data.cells.findIndex(cell => cell.id === section.dataset.nbCell));
-    draggedCellId = '';
-  });
-  cellsHost.addEventListener('dragend', () => { draggedCellId = ''; });
   cellsHost.addEventListener('keydown', event => {
     const section = (event.target as Element | null)?.closest<HTMLElement>('[data-nb-cell]');
     const commandFocus = commandMode || (section && document.activeElement === section);
@@ -763,8 +768,12 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     const key = event.key.toLowerCase();
     if (key === 'arrowdown' || key === 'arrowup') {
       event.preventDefault();
-      const next = data.cells[index + (key === 'arrowdown' ? 1 : -1)];
-      if (next) focusCell(next.id);
+      const direction = key === 'arrowdown' ? 1 : -1;
+      if (event.ctrlKey || event.metaKey) moveCell(activeCellId, direction);
+      else {
+        const next = data.cells[index + direction];
+        if (next) focusCell(next.id);
+      }
     } else if (key === 'enter') {
       event.preventDefault();
       focusCell(activeCellId, true);
@@ -967,6 +976,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       disposed = true;
       cellsAbort?.abort();
       disposeRichEditing();
+      disposeCellDragAndDrop();
       window.removeEventListener('message', onWindowMessage);
       document.removeEventListener('keydown', onDocumentKeydown);
       for (const editor of editors.values()) editor.destroy();

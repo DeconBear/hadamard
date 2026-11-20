@@ -23,6 +23,8 @@ async function main() {
     const fence = String.fromCharCode(96).repeat(3);
     const source = ['---', 'hcanvas: notebook', 'kernel: python', '---', '', '# Interaction notebook', '', 'Energy: $E=mc^2$', '', fence + 'python exec', 'a = 1\nprint(a)', fence, '', fence + 'python exec', 'b = 2\nprint(b)', fence, ''].join('\n');
     await writeFile(path.join(workspace, 'interaction.hnb.md'), source, 'utf8');
+    const layoutSource = ['# Layout', '', 'First **bold** paragraph.', '', 'Second paragraph.', '', 'Third paragraph.', '', fence + 'python exec', 'print("layout")', fence, ''].join('\n');
+    await writeFile(path.join(workspace, 'layout.hnb.md'), layoutSource, 'utf8');
     const native = {
       nbformat: 4, nbformat_minor: 5,
       metadata: { kernelspec: { name: 'python3', language: 'python', display_name: 'Python 3' }, language_info: { name: 'python' }, hcanvas: { defaultKernelId: 'python', variables: {} } },
@@ -122,10 +124,11 @@ async function main() {
 
     const firstCode = page.locator('.nb-code').first();
     await firstCode.locator('[data-nb-toggle-code]').click();
-    assert('code collapse toggles', (await firstCode.getAttribute('class')).includes('nb-code-hidden'));
+    assert('code collapse toggles', (await firstCode.getAttribute('class')).includes('nb-code-hidden') && await firstCode.locator('[data-nb-toggle-code]').getAttribute('aria-expanded') === 'false');
     await firstCode.locator('[data-nb-toggle-output]').click();
     assert('output collapse toggles', (await firstCode.getAttribute('class')).includes('nb-output-hidden'));
     await firstCode.locator('[data-nb-toggle-code]').click();
+    assert('every code block exposes an always-visible collapse control', await page.locator('.nb-code [data-nb-toggle-code]').count() === await page.locator('.nb-code').count() && await page.locator('.nb-code [data-nb-toggle-code]').evaluateAll(buttons => buttons.every(button => getComputedStyle(button).display !== 'none' && getComputedStyle(button).visibility !== 'hidden')));
 
     const beforeDrag = await page.locator('.nb-code').evaluateAll(cells => cells.map(cell => cell.dataset.nbCell));
     await page.locator('.nb-code').first().locator('[data-nb-drag]').dragTo(page.locator('.nb-code').nth(1));
@@ -250,6 +253,31 @@ async function main() {
       () => [...document.querySelectorAll('.nb-output')].some(element => element.textContent?.includes('background')),
     );
     assert('background task replays after reopening', true);
+
+    await page.locator('.file-tree-node', { hasText: 'layout.hnb.md' }).first().click();
+    await page.locator('.nb-title strong', { hasText: 'layout.hnb.md' }).waitFor();
+    const layoutCode = page.locator('.nb-code');
+    const layoutView = page.locator('[data-nb-markdown-view]');
+    await layoutView.click();
+    await page.keyboard.press('Escape');
+    assert('selected Markdown has no visible cell chrome in continuous document mode', await page.locator('.nb-markdown').evaluate(element => getComputedStyle(element).outlineStyle === 'none' && getComputedStyle(element.querySelector('.nb-markdown-rail')).display === 'none' && getComputedStyle(element.querySelector('.nb-markdown-hover-actions')).display === 'none'));
+    const layoutCodeId = await layoutCode.getAttribute('data-nb-cell');
+    const originalLayoutSource = await page.locator('.nb-markdown').getAttribute('data-nb-rendered-source');
+    await page.locator('.nb-code-input').evaluate(element => { element.dataset.layoutKeep = 'preserved'; });
+    await layoutCode.locator('[data-nb-drag]').dragTo(layoutView.locator('p').nth(1), { targetPosition: { x: 40, y: 1 } });
+    await page.waitForFunction(() => document.querySelectorAll('.nb-markdown').length === 2);
+    const layoutOrder = await page.locator('.nb-cell').evaluateAll(cells => cells.map(cell => cell.dataset.nbCell));
+    assert('code drop splits Markdown at a paragraph boundary', layoutOrder.length === 3 && layoutOrder[1] === layoutCodeId, JSON.stringify(layoutOrder));
+    const splitMarkdownText = await page.locator('.nb-markdown-body').allInnerTexts();
+    assert('Markdown halves retain their paragraph content', splitMarkdownText[0].includes('First bold paragraph') && !splitMarkdownText[0].includes('Second paragraph') && splitMarkdownText[1].includes('Second paragraph') && splitMarkdownText[1].includes('Third paragraph'), JSON.stringify(splitMarkdownText));
+    assert('code identity and editor instance survive Markdown splitting', await layoutCode.getAttribute('data-nb-cell') === layoutCodeId && await page.locator('.nb-code-input').evaluate(element => element.dataset.layoutKeep) === 'preserved');
+    assert('code uses continuous document styling instead of a card', await layoutCode.evaluate(element => getComputedStyle(element).borderTopWidth === '0px' && getComputedStyle(element).outlineStyle === 'none' && !element.querySelector('.nb-cell-rail')));
+    await page.waitForTimeout(1000);
+    const savedLayout = (await api('/api/files/read?root=root_default&path=layout.hnb.md')).body.file?.content || '';
+    assert('split layout persists code between Markdown paragraphs', savedLayout.indexOf('First **bold** paragraph.') < savedLayout.indexOf('```python') && savedLayout.indexOf('```python') < savedLayout.indexOf('Second paragraph.'), savedLayout);
+    await page.keyboard.press('z');
+    await page.waitForFunction(() => document.querySelectorAll('.nb-markdown').length === 1);
+    assert('one undo restores the original Markdown and code order', await page.locator('.nb-markdown').getAttribute('data-nb-rendered-source') === originalLayoutSource && await page.locator('.nb-code-input').evaluate(element => element.dataset.layoutKeep) === 'preserved');
 
     await page.locator('.file-tree-node', { hasText: 'native.ipynb' }).first().click();
     await page.locator('.nb-title strong', { hasText: 'native.ipynb' }).waitFor();
