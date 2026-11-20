@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latexToComputation } from '../src/hcanvas/notebook/latexCompute.js';
+import { latexToComputation, latexToSymbolicComputation } from '../src/hcanvas/notebook/latexCompute.js';
 import { isNotebookVariableName, normalizeNotebookVariables, NOTEBOOK_VARIABLES_MIME, parseNotebookVariable, variableValueText, variablesFromEvents, visibleKernelEvents } from '../src/hcanvas/notebook/variables.js';
 import { parseFrontmatter, parseNotebook } from '../src/hcanvas/notebook/format.js';
 
@@ -86,6 +86,14 @@ describe('LaTeX to notebook code', () => {
     expect(latexToComputation('\\sqrt[3]{x}', 'python').code).toContain('(1 / 3)');
     expect(latexToComputation('2^{-1}', 'octave').code).toContain('(-1)');
     expect(latexToComputation('\\ln(x) + \\sin(x)', 'python').code).toContain('math.log');
+  });
+
+  it('generates optional SymPy code without evaluating it in the UI', () => {
+    const result = latexToSymbolicComputation('E = mc^2', { m: 2, c: 3 });
+    expect(latexToSymbolicComputation('E = mc^2').code).toContain('m, c = sp.symbols');
+    expect(result.code).toContain('sp.Float');
+    expect(result.code).toContain('hc_set("E", str(E))');
+    expect(result.code).toContain('print(E)');
   });
 
   it('rejects unsupported or non-assignment LaTeX instead of executing it', () => {

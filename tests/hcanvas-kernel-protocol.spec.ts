@@ -218,6 +218,7 @@ describe('HKP kernel manager', () => {
     const firstPid = session.pid;
     const started = harness.manager.startExecution(session.sessionId, 'hang forever');
     await waitFor(() => eventsFor(harness.events, started.executionId).some(event => event.event === 'execution_started'), 'hang execution_started');
+    const queued = harness.manager.startExecution(session.sessionId, 'print("queued after restart")');
     expect(await harness.manager.interrupt(session.sessionId)).toBe(true);
     const result = await started.completion;
     expect(result.status).toBe('aborted');
@@ -231,8 +232,11 @@ describe('HKP kernel manager', () => {
     expect(diagnostics).toContain('interrupt_kill');
     const after = harness.manager.snapshot(session.sessionId);
     expect(after.sessionId).toBe(session.sessionId);
-    const outcome = await harness.manager.execute(session.sessionId, 'print("after restart")');
+    const outcome = await queued.completion;
     expect(outcome.status).toBe('ok');
+    expect(JSON.stringify(outcome.outputs.events)).toContain('hello');
+    const next = await harness.manager.execute(session.sessionId, 'print("after restart")');
+    expect(next.status).toBe('ok');
   }, 15_000);
 
   it('manual restart keeps the session id and replaces the process', async () => {

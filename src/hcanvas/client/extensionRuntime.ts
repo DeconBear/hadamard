@@ -2,6 +2,7 @@ import { commandRegistry } from './commandRegistry.js';
 import { findExtension, getExtensionCatalog, type ExtensionCatalogEntry, type ExtensionFormatContribution, type ExtensionViewerContribution } from './extensionCatalog.js';
 import { ExtensionViewHost, type ExtensionViewContext, type ViewInstance } from './viewerHost.js';
 import { builtinViewer } from './builtinViewers.js';
+import { workspaceFileAllowed } from './extensionPermissions.js';
 import type { HcPage } from '../types.js';
 
 export interface CustomViewerInput {
@@ -20,6 +21,7 @@ export interface ExtensionRuntimeOptions {
   toast(message: string, kind?: 'info' | 'success' | 'error'): void;
   openViewTab(tab: { id: string; title: string; icon?: string; mount(host: HTMLElement): MountedView | void }): void;
   getLanguage?(): string;
+  getWorkspaceRootId?(): string;
   /** Persist extension-page data through the host document op pipeline. */
   applyPageData?(pageId: string, data: unknown): Promise<boolean | number>;
 }
@@ -88,32 +90,14 @@ function viewError(code: string, message: string): Error {
 
 export function installExtensionRuntime(options: ExtensionRuntimeOptions): ExtensionRuntime {
   const activeSidecarJobs = new Map<string, { extensionId: string; sidecarId: string }>();
-  const normalizeCapabilityPath = (value: string): string | null => {
-    const parts: string[] = [];
-    for (const part of value.replace(/\\/gu, '/').replace(/^\/+|\/+$/gu, '').split('/')) {
-      if (!part || part === '.') continue;
-      if (part === '..') return null;
-      parts.push(part);
-    }
-    return parts.join('/');
-  };
-  const pathAllowed = (filePath: string, entries: unknown): boolean => {
-    if (!Array.isArray(entries) || !entries.length) return false;
-    const file = normalizeCapabilityPath(filePath);
-    if (file === null) return false;
-    return entries.some(entry => {
-      if (typeof entry !== 'string') return false;
-      const allowed = normalizeCapabilityPath(entry);
-      if (allowed === null) return false;
-      // A "." grant is the workspace root; any other grant is a file or directory prefix.
-      return allowed === '' || file === allowed || file.startsWith(allowed + '/');
-    });
-  };
   const workspaceAllowed = (instance: ViewInstance, mode: 'read' | 'write', rootId: string, filePath: string): boolean => {
-    const current = instance.context.file;
-    if (mode === 'read' && current?.rootId === rootId && current.path === filePath) return true;
     const workspace = findExtension(instance.extensionId)?.capabilities.workspace as { read?: unknown; write?: unknown } | undefined;
-    return pathAllowed(filePath, workspace?.[mode]);
+    return workspaceFileAllowed({
+      rootId, filePath, mode,
+      workspaceRootId: options.getWorkspaceRootId?.() || 'root_default',
+      currentFile: instance.context.file,
+      workspace,
+    });
   };
   const requireWorkspace = (instance: ViewInstance, mode: 'read' | 'write', rootId: string, filePath: string): void => {
     if (!workspaceAllowed(instance, mode, rootId, filePath)) throw viewError('capability_denied', 'Extension requires workspace.' + mode + ' permission for this file.');

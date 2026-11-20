@@ -1,4 +1,5 @@
 import { renderMathHtml } from './markdown.js';
+import { renderNotebookTableHtml } from './notebook/table.js';
 
 export type HcStoredOutput =
   | { id: string; kind: 'stream'; name: 'stdout' | 'stderr'; text: string }
@@ -56,7 +57,10 @@ export function renderStoredOutputsHtml(outputs: HcStoredOutput[] | undefined): 
       const doc = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; connect-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:;"></head><body style="margin:0;font:13px/1.5 Inter,sans-serif;color:#1f2430">' + output.html + resize + '</body></html>';
       return '<iframe class="exec-out-html" sandbox="allow-scripts" loading="lazy" title="HTML output" srcdoc="' + escapeAttr(doc) + '"></iframe>';
     }
-    if (output.kind === 'json') return '<pre class="exec-out-text exec-out-json">' + escapeHtml(JSON.stringify(output.value, null, 2)) + '</pre>';
+    if (output.kind === 'json') {
+      const table = renderNotebookTableHtml(output.value);
+      return table || '<pre class="exec-out-text exec-out-json">' + escapeHtml(JSON.stringify(output.value, null, 2)) + '</pre>';
+    }
     if (output.kind === 'error') return '<div class="exec-out-error"><strong>' + escapeHtml(output.ename + ': ' + output.evalue) + '</strong><pre>' + escapeHtml(output.traceback.join('\n')) + '</pre></div>';
     return '<div class="exec-out-notice">' + escapeHtml(output.text) + '</div>';
   }).join('');

@@ -368,6 +368,7 @@ function startExecution(id, params) {
     '    figure(__hc_new__(__hc_i__));',
     "    __hc_file__ = sprintf('" + escapedDir + "/fig-%d.png', __hc_new__(__hc_i__));",
     "    print('-dpng', __hc_file__);",
+    '    close(__hc_new__(__hc_i__));',
     "    fprintf('__HCANVAS_IMAGE__:%s\\n', __hc_file__);",
     '  catch',
     '  end',
@@ -395,6 +396,14 @@ function interruptExecution() {
   cleanupCurrentFiles(execution);
 }
 
+function completeCode(code, cursorPos, variables) {
+  const prefix = /[A-Za-z_][A-Za-z0-9_]*$/u.exec(String(code).slice(0, cursorPos))?.[0] || '';
+  const keywords = ['break', 'case', 'catch', 'classdef', 'continue', 'else', 'elseif', 'end', 'for', 'function', 'global', 'if', 'otherwise', 'persistent', 'return', 'switch', 'try', 'until', 'while', 'sin', 'cos', 'tan', 'sqrt', 'exp', 'log', 'log10', 'abs', 'sum', 'mean', 'zeros', 'ones', 'linspace', 'length', 'size', 'disp', 'fprintf', 'plot', 'figure', 'hc_get', 'hc_set'];
+  const names = new Set([...keywords, ...Object.keys(variables && typeof variables === 'object' ? variables : {}), ...(String(code).match(/[A-Za-z_][A-Za-z0-9_]*/gu) || [])]);
+  const matches = [...names].filter(name => name.startsWith(prefix)).sort().slice(0, 60);
+  return { matches, cursorStart: cursorPos - prefix.length, cursorEnd: cursorPos };
+}
+
 function handleMessage(message) {
   if (!message || typeof message !== 'object') return;
   const method = message.method;
@@ -406,12 +415,13 @@ function handleMessage(message) {
       language: 'octave',
       languageVersion: octaveVersion(),
       displayName: 'GNU Octave ' + octaveVersion(),
-      features: { execute: true, interrupt: true, complete: false, inspect: false, variables: true },
+      features: { execute: true, interrupt: true, complete: true, inspect: false, variables: true },
       mimeTypes: ['text/plain', 'image/png'],
     });
     return;
   }
   if (method === 'initialized') return;
+  if (method === 'kernel/complete') { respond(id, completeCode(params.code || '', Number(params.cursorPos || 0), params.variables)); return; }
   if (method === 'kernel/execute') { startExecution(id, params); return; }
   if (method === 'kernel/interrupt') {
     interruptExecution();

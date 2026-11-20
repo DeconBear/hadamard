@@ -481,7 +481,12 @@ export async function handleKernelRoute(services: HcRuntimeServices, ctx: HcRunt
       await handleKernelOutput(services, body, ctx.res);
       return true;
     }
-    const match = /^\/api\/kernels\/([^/]+)(?:\/(execute|interrupt|restart))?$/u.exec(ctx.pathname);
+    const executionMatch = /^\/api\/kernels\/executions\/([^/]+)$/u.exec(ctx.pathname);
+    if (executionMatch && ctx.method === 'GET') {
+      json(ctx.res, 200, { ok: true, ...services.kernels.execution(decodeURIComponent(executionMatch[1]!)) });
+      return true;
+    }
+    const match = /^\/api\/kernels\/([^/]+)(?:\/(execute|interrupt|restart|complete|inspect))?$/u.exec(ctx.pathname);
     if (!match) return false;
     const sessionId = decodeURIComponent(match[1]!);
     const action = match[2];
@@ -496,6 +501,16 @@ export async function handleKernelRoute(services: HcRuntimeServices, ctx: HcRunt
       return true;
     }
     await assertAllowed(services, 'kernel');
+    if (action === 'complete' || action === 'inspect') {
+      const body = await readBody(ctx.req);
+      if (typeof body.code !== 'string') throw new HcRuntimeError('invalid_params', 'code is required');
+      const cursorPos = typeof body.cursorPos === 'number' && Number.isFinite(body.cursorPos) ? Math.max(0, Math.floor(body.cursorPos)) : body.code.length;
+      const result = action === 'complete'
+        ? await services.kernels.complete(sessionId, body.code, cursorPos)
+        : await services.kernels.inspect(sessionId, body.code, cursorPos);
+      json(ctx.res, 200, { ok: true, result });
+      return true;
+    }
     if (action === 'execute') {
       const body = await readBody(ctx.req);
       if (typeof body.code !== 'string') throw new HcRuntimeError('invalid_params', 'code is required');

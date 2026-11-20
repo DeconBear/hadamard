@@ -1,0 +1,272 @@
+import { spawn } from 'node:child_process';
+import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { chromium } from 'playwright';
+
+const root = process.cwd();
+const port = Number(process.env.HCANVAS_NOTEBOOK_E2E_PORT || 46770);
+const timeout = 30_000;
+let browser;
+let server;
+
+function assert(name, condition, detail = '') {
+  if (!condition) throw new Error(name + (detail ? ': ' + detail : ''));
+  console.log('PASS ' + name);
+}
+
+async function main() {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'hcanvas-notebook-interactions-'));
+  try {
+    await mkdir(path.join(workspace, 'extensions'), { recursive: true });
+    await cp(path.join(root, 'examples/hcanvas-extensions/python-kernel'), path.join(workspace, 'extensions/python-kernel'), { recursive: true });
+    const fence = String.fromCharCode(96).repeat(3);
+    const source = ['---', 'hcanvas: notebook', 'kernel: python', '---', '', '# Interaction notebook', '', 'Energy: $E=mc^2$', '', fence + 'python exec', 'a = 1\nprint(a)', fence, '', fence + 'python exec', 'b = 2\nprint(b)', fence, ''].join('\n');
+    await writeFile(path.join(workspace, 'interaction.hnb.md'), source, 'utf8');
+    const native = {
+      nbformat: 4, nbformat_minor: 5,
+      metadata: { kernelspec: { name: 'python3', language: 'python', display_name: 'Python 3' }, language_info: { name: 'python' }, hcanvas: { defaultKernelId: 'python', variables: {} } },
+      cells: [
+        { cell_type: 'markdown', id: 'native-md', source: ['# Native Jupyter\n'], metadata: {} },
+        { cell_type: 'code', id: 'native-code', source: ['x = 1\n', 'print(x)'], metadata: {}, execution_count: 1, outputs: [{ output_type: 'stream', name: 'stdout', text: '1\n' }] },
+      ],
+    };
+    await writeFile(path.join(workspace, 'native.ipynb'), JSON.stringify(native, null, 2), 'utf8');
+    server = spawn(process.execPath, ['bin/hcanvas.js', 'serve', '--workspace', workspace, '--port', String(port)], {
+      cwd: root, env: { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config') }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+    });
+    let output = '';
+    const info = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Server startup timed out')), 20_000);
+      server.stdout.on('data', chunk => {
+        output += String(chunk);
+        for (const line of output.split(/\r?\n/)) {
+          try {
+            const value = JSON.parse(line);
+            if (value.url && value.token) { clearTimeout(timer); resolve(value); return; }
+          } catch { /* wait for startup JSON */ }
+        }
+      });
+      server.once('error', reject);
+      server.once('exit', code => { clearTimeout(timer); reject(new Error('Server exited ' + code)); });
+    });
+    const base = info.url.replace(/\/$/, '');
+    const api = async (pathname, init = {}) => {
+      const response = await fetch(base + pathname, { ...init, headers: { 'x-hcanvas-token': info.token, ...(init.body ? { 'content-type': 'application/json' } : {}) } });
+      return { status: response.status, body: await response.json() };
+    };
+    assert('workspace trust', (await api('/api/workspace/trust', { method: 'POST', body: JSON.stringify({ trust: 'trusted' }) })).status === 200);
+    assert('kernel trust', (await api('/api/extensions/trust', { method: 'POST', body: JSON.stringify({ id: 'com.hadamard.examples.python-kernel', trusted: true }) })).status === 200);
+
+    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    page.setDefaultTimeout(timeout);
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    if (process.env.HCANVAS_E2E_DEBUG) {
+      page.on('response', async response => {
+        if (!response.url().includes('/api/kernels/')) return;
+        console.log('KERNEL HTTP', response.request().method(), response.url(), response.status(), await response.text().catch(() => ''));
+      });
+      page.on('console', message => { if (message.type() === 'error') console.log('BROWSER', message.text()); });
+    }
+    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1000);
+    await page.locator('[data-sidebar-target="files"]').click();
+    await page.locator('#refreshFilesBtn').click();
+    await page.locator('.file-tree-root-name').first().click();
+    await page.locator('.file-tree-node', { hasText: 'interaction.hnb.md' }).first().click();
+    await page.waitForSelector('.nb-code');
+    assert('two native code cells', await page.locator('.nb-code').count() === 2);
+
+    const firstEditor = page.locator('.nb-code-input').first();
+    await firstEditor.evaluate(element => { element.dataset.nbKeep = 'preserved'; });
+    await page.locator('[data-nb-add-code]').click();
+    assert('insert preserves existing editor DOM', await firstEditor.evaluate(element => element.dataset.nbKeep) === 'preserved');
+    assert('insert adds a cell', await page.locator('.nb-code').count() === 3);
+
+    const ids = await page.locator('.nb-code').evaluateAll(cells => cells.map(cell => cell.dataset.nbCell));
+    await page.locator('.nb-code-input .cm-content').first().press('Shift+Enter');
+    await page.waitForFunction(expected => document.querySelector('.nb-cell-active')?.dataset.nbCell === expected && document.querySelector('.nb-output')?.textContent?.includes('1'), ids[1]);
+    assert('Shift+Enter runs and advances', true);
+    await page.locator('.nb-code').nth(1).locator('.cm-content').press('Control+Enter');
+    await page.waitForFunction(expected => document.querySelector('.nb-cell-active')?.dataset.nbCell === expected && document.querySelectorAll('.nb-output')[1]?.textContent?.includes('2'), ids[1]);
+    assert('Ctrl+Enter runs in place', true);
+    await page.locator('.nb-code').nth(1).locator('.cm-content').press('Alt+Enter');
+    await page.waitForFunction(() => document.querySelectorAll('.nb-code').length === 4);
+    assert('Alt+Enter runs and inserts', true);
+
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('a');
+    assert('A inserts above', await page.locator('.nb-code').count() === 5);
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('b');
+    const countAfterB = await page.locator('.nb-code').count();
+    assert('B inserts below', countAfterB === 6, 'count=' + countAfterB + ' activeText=' + await page.locator('.nb-cell-active').innerText());
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('d');
+    await page.keyboard.press('d');
+    assert('DD deletes the selected cell', await page.locator('.nb-code').count() === 5);
+    await page.keyboard.press('z');
+    const countAfterUndo = await page.locator('.nb-code').count();
+    assert('Z restores the deleted cell', countAfterUndo === 6, 'count=' + countAfterUndo + ' active=' + await page.locator('.nb-cell-active').getAttribute('data-nb-cell'));
+
+    const heads = page.locator('.nb-code .nb-cell-head');
+    await heads.nth(0).click();
+    await heads.nth(1).click({ modifiers: ['Control'] });
+    assert('Ctrl click selects multiple cells', await page.locator('.nb-cell-selected').count() === 2);
+    await page.locator('[data-nb-run-selected]').click();
+    await page.waitForTimeout(500);
+    await page.waitForFunction(() => !document.querySelector('[data-nb-cell-status][data-tone="running"], [data-nb-cell-status][data-tone="queued"]'));
+    assert('Run selected executes selected cells', true);
+
+    const firstCode = page.locator('.nb-code').first();
+    await firstCode.locator('[data-nb-toggle-code]').click();
+    assert('code collapse toggles', (await firstCode.getAttribute('class')).includes('nb-code-hidden'));
+    await firstCode.locator('[data-nb-toggle-output]').click();
+    assert('output collapse toggles', (await firstCode.getAttribute('class')).includes('nb-output-hidden'));
+    await firstCode.locator('[data-nb-toggle-code]').click();
+
+    const beforeDrag = await page.locator('.nb-code').evaluateAll(cells => cells.map(cell => cell.dataset.nbCell));
+    await page.locator('.nb-code').first().locator('[data-nb-drag]').dragTo(page.locator('.nb-code').nth(1));
+    const afterDrag = await page.locator('.nb-code').evaluateAll(cells => cells.map(cell => cell.dataset.nbCell));
+    assert('drag reorders cells', beforeDrag[0] === afterDrag[1]);
+    assert('drag preserves editor instances', await page.locator('[data-nb-keep="preserved"]').count() === 1);
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('z');
+    const afterUndo = await page.locator('.nb-code').evaluateAll(cells => cells.map(cell => cell.dataset.nbCell));
+    assert('undo restores drag order', JSON.stringify(afterUndo) === JSON.stringify(beforeDrag), JSON.stringify({ beforeDrag, afterUndo }));
+
+    await page.locator('.nb-markdown-body .hc-math').click();
+    await page.locator('[data-formula-symbolic]').click();
+    const symbolicCell = page.locator('.nb-code', { hasText: 'import sympy as sp' }).first();
+    assert('symbolic formula generates real SymPy code', await symbolicCell.count() === 1);
+    await symbolicCell.locator('.cm-content').press('Control+Enter');
+    await page.waitForFunction(() => [...document.querySelectorAll('.nb-output')].some(element => /(?:c\*\*2(?:\.0)?\*m|m\*c\*\*2)/u.test(element.textContent || '')));
+    const symbolicText = await symbolicCell.locator('.nb-output').innerText();
+    const symbolicSource = await symbolicCell.locator('.cm-content').innerText();
+    assert('symbolic code executes in Python', /(?:c\*\*2(?:\.0)?\*m|m\*c\*\*2)/u.test(symbolicText), symbolicText + '\nSOURCE:\n' + symbolicSource);
+
+    await page.locator('[data-nb-add-code]').click();
+    const parameterCell = page.locator('.nb-code').last();
+    await parameterCell.locator('.cm-content').fill('distance = hc_get("distance", 2)\ndoubled = distance * 2\nhc_set("distance", distance)\nhc_set("doubled", doubled)\nprint(doubled)');
+    await parameterCell.locator('.cm-content').press('Control+Enter');
+    await page.waitForFunction(() => [...document.querySelectorAll('.nb-output')].some(element => element.textContent?.includes('2')));
+    await page.locator('[data-nb-variables]').click();
+    const range = page.locator('[data-nb-variable-range="distance"]');
+    const sliderBounds = await range.boundingBox();
+    if (!sliderBounds) throw new Error('Variable slider is not visible');
+    await range.click({ position: { x: sliderBounds.width - 1, y: sliderBounds.height / 2 } });
+    const sliderValue = await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').inputValue();
+    const sliderState = await range.evaluate(element => ({ value: element.value, min: element.min, max: element.max, disabled: element.disabled, html: element.outerHTML }));
+    assert('numeric slider updates variable input', sliderValue === '4', 'actual=' + sliderValue + ' state=' + JSON.stringify(sliderState));
+    await page.locator('[data-nb-run-affected]').click();
+    await page.waitForFunction(() => document.querySelector('[data-nb-variable-row="doubled"] [data-nb-variable-value]')?.value === '8');
+    assert('Run affected recomputes dependencies', true);
+    const variableFile = page.locator('[data-nb-variable-file]');
+    const variableChooser = page.waitForEvent('filechooser');
+    await page.locator('[data-nb-variable-import]').click();
+    await (await variableChooser).setFiles({ name: 'places.json', mimeType: 'application/json', buffer: Buffer.from('{"place":"Yangjiang","days":3}') });
+    await page.waitForFunction(() => document.querySelector('[data-nb-variable-row="place"] [data-nb-variable-value]')?.value === '"Yangjiang"');
+    assert('JSON variables import through the panel', await page.locator('[data-nb-variable-row="days"] [data-nb-variable-value]').inputValue() === '3');
+    await variableFile.setInputFiles({ name: 'travel.csv', mimeType: 'text/csv', buffer: Buffer.from('name,value\nscenic,true\ncost,680.5') });
+    await page.waitForFunction(() => document.querySelector('[data-nb-variable-row="scenic"] [data-nb-variable-value]')?.value === 'true');
+    assert('CSV variables import through the panel', await page.locator('[data-nb-variable-row="cost"] [data-nb-variable-value]').inputValue() === '680.5');
+    const variablesDownload = page.waitForEvent('download');
+    await page.locator('[data-nb-variable-export]').click();
+    assert('variables export downloads JSON', (await variablesDownload).suggestedFilename().endsWith('-variables.json'));
+    await page.locator('.nb-markdown-body .hc-math').click();
+    await page.locator('.nb-formula-popover textarea').fill('distance * 2');
+    await page.locator('[data-nb-formula-symbol="distance"]').click();
+    assert('formula variable opens its panel row', await page.locator('[data-nb-variables]').getAttribute('aria-expanded') === 'true' && await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').inputValue() === '4');
+    await page.locator('[data-formula-cancel]').click();
+    await page.locator('[data-nb-variables]').click();
+
+    await page.locator('[data-nb-add-code]').click();
+    const tableCell = page.locator('.nb-code').last();
+    await tableCell.locator('.cm-content').fill('hc_display({"application/json": [{"name": "A", "value": 1}, {"name": "B", "value": 2}]})');
+    await tableCell.locator('.cm-content').press('Control+Enter');
+    await tableCell.locator('.hc-data-table').waitFor();
+    assert('JSON array renders native table', await tableCell.locator('.hc-data-table tbody tr').count() === 2);
+    const csvDownload = page.waitForEvent('download');
+    await tableCell.locator('[data-hc-table-download]').click();
+    const csv = await csvDownload;
+    assert('table downloads CSV', csv.suggestedFilename().endsWith('.csv'));
+
+    await page.locator('[data-nb-add-code]').click();
+    const completionCell = page.locator('.nb-code').last();
+    await completionCell.locator('.cm-content').fill('pri');
+    await completionCell.locator('.cm-content').press('Control+Space');
+    await page.waitForSelector('.cm-tooltip-autocomplete');
+    assert('kernel completion appears in editor', (await page.locator('.cm-tooltip-autocomplete').innerText()).includes('print'));
+    await page.keyboard.press('Escape');
+    await completionCell.locator('.cm-content').fill('print');
+    await completionCell.locator('.cm-line').hover({ position: { x: 55, y: 10 } });
+    await page.locator('.cm-notebook-doc').waitFor();
+    assert('kernel documentation appears on hover', (await page.locator('.cm-notebook-doc').innerText()).includes('print'));
+    await page.keyboard.press('Escape');
+
+    await page.locator('[data-nb-add-code]').click();
+    const stoppedCell = page.locator('.nb-code').last();
+    await stoppedCell.locator('.cm-content').fill('import time\ntime.sleep(30)\nprint("should not finish")');
+    await stoppedCell.locator('.cm-content').press('Control+Enter');
+    await stoppedCell.locator('[data-nb-cell-status][data-tone="running"]').waitFor();
+    await page.locator('[data-nb-tasks]').click();
+    await page.locator('[data-nb-task-stop]').first().click();
+    await stoppedCell.locator('[data-nb-cell-status]').filter({ hasText: /cancelled|aborted/iu }).waitFor();
+    assert('execution center stops a real kernel task', true);
+    await page.locator('[data-nb-clear-tasks]').click();
+    assert('completed tasks can be cleared', await page.locator('[data-nb-task-id]').count() === 0);
+    await page.locator('[data-nb-tasks]').click();
+
+    await page.locator('[data-nb-add-code]').click();
+    const backgroundCell = page.locator('.nb-code').last();
+    await backgroundCell.locator('.cm-content').fill('import time\ntime.sleep(1)\nprint("background")');
+    await backgroundCell.locator('.cm-content').press('Control+Enter');
+    await page.locator('.workspace-tab.view-tab.active .tab-close').click();
+    await page.waitForTimeout(1700);
+    await page.locator('.file-tree-node', { hasText: 'interaction.hnb.md' }).first().click();
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('.nb-output')].some(element => element.textContent?.includes('background')),
+    );
+    assert('background task replays after reopening', true);
+
+    await page.locator('.file-tree-node', { hasText: 'native.ipynb' }).first().click();
+    await page.locator('.nb-title strong', { hasText: 'native.ipynb' }).waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('.nb-code').length === 1);
+    assert('native ipynb opens', await page.locator('.nb-code').count() === 1);
+    const nativeEditor = page.locator('.nb-code-input .cm-content').first();
+    await nativeEditor.press('Control+A');
+    await nativeEditor.pressSequentially('x = 2\nprint(x)');
+    await nativeEditor.press('Control+Enter');
+    await page.waitForFunction(() => document.querySelector('.nb-output')?.textContent?.includes('2'));
+    await page.waitForTimeout(900);
+    const nativeSaved = await api('/api/files/read?root=root_default&path=native.ipynb');
+    const nativeJson = JSON.parse(nativeSaved.body.file?.content || '{}');
+    assert('native ipynb saves source and execution count', nativeJson.cells[1].execution_count >= 2 && nativeJson.cells[1].source.join('').includes('x = 2'));
+    assert('native ipynb saves outputs', JSON.stringify(nativeJson.cells[1].outputs).includes('2'));
+    await page.locator('[data-nb-run-scope]').selectOption('restart');
+    await page.waitForFunction(count => document.querySelector('[data-nb-execution-count]')?.textContent === '[' + (count + 1) + ']', nativeJson.cells[1].execution_count);
+    assert('Restart and Run All executes the native notebook', true);
+    const htmlDownload = page.waitForEvent('download');
+    await page.locator('[data-nb-export]').click();
+    assert('standalone HTML export downloads', (await htmlDownload).suggestedFilename().endsWith('.html'));
+    const ipynbDownload = page.waitForEvent('download');
+    await page.locator('[data-nb-export-ipynb]').click();
+    const exportedNotebook = await ipynbDownload;
+    assert('ipynb export downloads notebook', exportedNotebook.suggestedFilename().endsWith('.ipynb'));
+    assert('no browser errors', errors.length === 0, errors.join('; '));
+    console.log('Notebook interaction E2E passed');
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    if (server) server.kill();
+    await rm(workspace, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+try { await main(); } catch (error) {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+  if (browser) await browser.close().catch(() => {});
+  if (server) server.kill();
+}

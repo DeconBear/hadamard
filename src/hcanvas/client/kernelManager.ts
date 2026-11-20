@@ -53,12 +53,27 @@ interface PendingExecution {
   resolve: (result: KernelExecutionResult) => void;
   settled: boolean;
   finalStatus?: string;
+  disconnected?: boolean;
   watchdog?: ReturnType<typeof setTimeout>;
+}
+
+export interface KernelCompletion {
+  matches: string[];
+  cursorStart: number;
+  cursorEnd: number;
+}
+
+export interface KernelInspection {
+  name?: string;
+  signature?: string;
+  documentation?: string;
 }
 
 export interface KernelManager {
   ensure(kernelId: string, scope: KernelScope): Promise<string>;
   execute(kernelId: string, code: string, options: { scope: KernelScope; cellId?: string; variables?: NotebookVariables }): Promise<KernelExecutionHandle>;
+  complete(kernelId: string, scope: KernelScope, code: string, cursorPos: number): Promise<KernelCompletion>;
+  inspect(kernelId: string, scope: KernelScope, code: string, cursorPos: number): Promise<KernelInspection>;
   interrupt(handle: KernelExecutionHandle): Promise<void>;
   restart(kernelId: string, scope: KernelScope): Promise<void>;
   stopAll(): Promise<void>;
@@ -80,6 +95,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
   let sseOpen = false;
   let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
+  let lastSeq = 0;
   const openWaiters = new Set<(open: boolean) => void>();
 
   const notifyOpen = (open: boolean): void => {
@@ -87,20 +103,30 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
     for (const waiter of [...openWaiters]) waiter(open);
     openWaiters.clear();
   };
+  const notifyStatus = (entry: PendingExecution, status: string): void => {
+    for (const listener of [...entry.statusListeners]) { try { listener(status); } catch { /* isolate */ } }
+  };
 
   const connect = (): void => {
     if (disposed || typeof EventSource === 'undefined') return;
     try {
       source?.close();
-      source = new EventSource('/api/runtime/events?token=' + encodeURIComponent(deps.token()));
+      source = new EventSource('/api/runtime/events?token=' + encodeURIComponent(deps.token()) + '&after=' + lastSeq);
     } catch { return; }
     source.addEventListener('hello', () => {
       if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = undefined; }
+      for (const entry of pending.values()) {
+        entry.disconnected = false;
+        if (!entry.settled) notifyStatus(entry, 'running');
+      }
       notifyOpen(true);
+      void reconcilePending();
     });
     source.addEventListener('runtime', event => {
       let record: Record<string, unknown>;
       try { record = JSON.parse((event as MessageEvent).data) as Record<string, unknown>; } catch { return; }
+      const seq = Number(record.seq);
+      if (Number.isFinite(seq)) lastSeq = Math.max(lastSeq, Math.floor(seq));
       if (record.kind !== 'kernel') return;
       const executionId = typeof record.executionId === 'string' ? record.executionId : '';
       const name = typeof record.event === 'string' ? record.event : '';
@@ -120,6 +146,11 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
         }
         return;
       }
+      if (name === 'execution_queued' || name === 'execution_started') {
+        const entry = pending.get(executionId);
+        if (entry && !entry.settled) notifyStatus(entry, name === 'execution_queued' ? 'queued' : 'running');
+        return;
+      }
       if (name === 'execution_finished') {
         const entry = pending.get(executionId);
         if (entry) settle(entry, payload);
@@ -134,18 +165,16 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
       }
     });
     source.addEventListener('error', () => {
+      for (const entry of pending.values()) {
+        entry.disconnected = true;
+        if (!entry.settled) notifyStatus(entry, 'disconnected');
+      }
       notifyOpen(false);
       if (!pending.size) return;
       if (disconnectTimer) clearTimeout(disconnectTimer);
       disconnectTimer = setTimeout(() => {
         disconnectTimer = undefined;
-        if (sseOpen) return;
-        for (const entry of [...pending.values()]) {
-          if (!entry.settled) settle(entry, {
-            status: 'aborted',
-            error: { ename: 'KernelStreamDisconnected', evalue: 'The kernel event stream disconnected. Rerun the cell after restarting the kernel if needed.', traceback: [] },
-          });
-        }
+        void reconcilePending();
       }, 3000);
     });
   };
@@ -211,6 +240,28 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
     return null;
   };
 
+  const reconcilePending = async (): Promise<void> => {
+    if (disposed || !pending.size) return;
+    const entries = [...pending.values()];
+    await Promise.all(entries.map(async entry => {
+      const executionId = [...pending.entries()].find(([, item]) => item === entry)?.[0];
+      if (!executionId || entry.settled) return;
+      try {
+        const response = await deps.request<{ state?: string; result?: { status?: string; durationMs?: number; outputs?: { events?: Array<Record<string, unknown>> }; error?: Record<string, unknown> } }>('/api/kernels/executions/' + encodeURIComponent(executionId));
+        if (entry.settled) return;
+        if (response.state === 'completed' && response.result) {
+          const stored = response.result.outputs?.events;
+          if (stored) entry.outputs = stored.map(item => outputForStored(item)).filter((item): item is KernelOutputEvent => Boolean(item));
+          settle(entry, {
+            status: response.result.status || 'ok',
+            ...(typeof response.result.durationMs === 'number' ? { durationMs: response.result.durationMs } : {}),
+            ...(response.result.error ? { error: response.result.error } : {}),
+          });
+        } else if (response.state === 'queued' || response.state === 'running') notifyStatus(entry, response.state);
+      } catch { /* The normal event stream and watchdog remain available. */ }
+    }));
+  };
+
   const ensure = async (kernelId: string, scope: KernelScope): Promise<string> => {
     const key = kernelId + '|' + scopeKey(scope);
     const existing = sessions.get(key);
@@ -234,6 +285,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
     const sessionId = await ensure(kernelId, options.scope);
     const payload = { code, ...(options.cellId ? { cellId: options.cellId } : {}), ...(options.variables ? { variables: options.variables } : {}) };
     const open = await waitForSse(1500);
+    if (disposed) throw new Error('Kernel manager has been disposed.');
     if (!open) {
       const result = await deps.request<{ execution?: { executionId?: string; status?: string; durationMs?: number; outputs?: { events?: Array<Record<string, unknown>> } } }>('/api/kernels/' + encodeURIComponent(sessionId) + '/execute', {
         method: 'POST', body: JSON.stringify({ ...payload, wait: true }),
@@ -283,6 +335,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
       onStatus: cb => {
         entry.statusListeners.add(cb);
         if (entry.finalStatus) cb(entry.finalStatus);
+        else if (entry.disconnected) cb('disconnected');
         return () => entry.statusListeners.delete(cb);
       },
       done,
@@ -296,6 +349,27 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
         }
       },
     };
+  };
+
+  const complete = async (kernelId: string, scope: KernelScope, code: string, cursorPos: number): Promise<KernelCompletion> => {
+    const sessionId = await ensure(kernelId, scope);
+    const response = await deps.request<{ result?: { matches?: unknown; cursorStart?: unknown; cursorEnd?: unknown } }>('/api/kernels/' + encodeURIComponent(sessionId) + '/complete', {
+      method: 'POST', body: JSON.stringify({ code, cursorPos }),
+    });
+    const result = response.result || {};
+    return {
+      matches: Array.isArray(result.matches) ? result.matches.map(String) : [],
+      cursorStart: typeof result.cursorStart === 'number' ? result.cursorStart : cursorPos,
+      cursorEnd: typeof result.cursorEnd === 'number' ? result.cursorEnd : cursorPos,
+    };
+  };
+
+  const inspect = async (kernelId: string, scope: KernelScope, code: string, cursorPos: number): Promise<KernelInspection> => {
+    const sessionId = await ensure(kernelId, scope);
+    const response = await deps.request<{ result?: { name?: string; signature?: string; documentation?: string } }>('/api/kernels/' + encodeURIComponent(sessionId) + '/inspect', {
+      method: 'POST', body: JSON.stringify({ code, cursorPos }),
+    });
+    return response.result || {};
   };
 
   const restart = async (kernelId: string, scope: KernelScope): Promise<void> => {
@@ -322,5 +396,5 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
   };
 
   connect();
-  return { ensure, execute, interrupt: handle => handle.cancel(), restart, stopAll, dispose, sessionOf: (kernelId, scope) => sessions.get(kernelId + '|' + scopeKey(scope)) || null };
+  return { ensure, execute, complete, inspect, interrupt: handle => handle.cancel(), restart, stopAll, dispose, sessionOf: (kernelId, scope) => sessions.get(kernelId + '|' + scopeKey(scope)) || null };
 }

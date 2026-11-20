@@ -22,6 +22,11 @@ Notebook shared variables are injected by name before each run. Use
 publish a JSON-compatible value to other kernels. The last expression in a cell
 is also shown as an execution result, as in a conventional notebook.
 
+The kernel implements `kernel/complete` and `kernel/inspect`, providing real
+completion and documentation tooltips. Captured figures are closed after their
+PNG is emitted. Formula popovers can also generate optional SymPy code; SymPy
+is required only when those generated cells are run.
+
 ## Files
 
 - `manifest.json` — kernel + sidecar declarations.

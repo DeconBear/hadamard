@@ -222,3 +222,55 @@ export function latexToComputation(tex: string, language: ComputationLanguage, v
   const declarations = symbols.map(symbol => 'const double ' + symbol + ' = hc_get(' + JSON.stringify(symbol) + ', 0.0);').join('\n');
   return { language, target, symbols, code: (declarations ? declarations + '\n' : '') + 'const double ' + target + ' = ' + rendered + ';\nhc_set(' + JSON.stringify(target) + ', ' + target + ');\nstd::cout << ' + target + ' << std::endl;' };
 }
+
+export interface LatexSymbolicComputation {
+  target: string;
+  symbols: string[];
+  code: string;
+}
+
+function renderSymbolic(node: Expression, variables: NotebookVariables): string {
+  if (node.kind === 'number') return 'sp.Float(' + JSON.stringify(node.value) + ')';
+  if (node.kind === 'name') {
+    if (node.value === 'pi') return 'sp.pi';
+    const value = variables[node.value];
+    return typeof value === 'number' && Number.isFinite(value) ? 'sp.Float(' + JSON.stringify(value) + ')' : 'sp.Symbol(' + JSON.stringify(node.value) + ')';
+  }
+  if (node.kind === 'unary') return '(-' + renderSymbolic(node.argument, variables) + ')';
+  if (node.kind === 'call') {
+    const argument = renderSymbolic(node.argument, variables);
+    const functions: Record<string, string> = {
+      sqrt: 'sp.sqrt', abs: 'sp.Abs', sin: 'sp.sin', cos: 'sp.cos', tan: 'sp.tan', asin: 'sp.asin', acos: 'sp.acos', atan: 'sp.atan', exp: 'sp.exp', ln: 'sp.log',
+    };
+    if (node.name === 'log') return 'sp.log(' + argument + ', 10)';
+    const name = functions[node.name];
+    if (!name) throw new Error('Unsupported symbolic function: ' + node.name);
+    return name + '(' + argument + ')';
+  }
+  const left = renderSymbolic(node.left, variables);
+  const right = renderSymbolic(node.right, variables);
+  return '(' + left + ' ' + (node.operator === '^' ? '**' : node.operator) + ' ' + right + ')';
+}
+
+export function latexToSymbolicComputation(tex: string, variables: NotebookVariables = {}): LatexSymbolicComputation {
+  const source = tex.trim().replace(/^\\(?:displaystyle|textstyle)\s*/u, '');
+  const assignment = source.indexOf('=');
+  let target = 'formula_result';
+  let expressionSource = source;
+  if (assignment >= 0) {
+    const candidate = source.slice(0, assignment).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(candidate)) throw new Error('Symbolic calculation supports assignment to a simple variable.');
+    if (source.indexOf('=', assignment + 1) >= 0) throw new Error('Equations with multiple equals signs are not symbolic assignments.');
+    target = candidate;
+    expressionSource = source.slice(assignment + 1);
+  }
+  if (!expressionSource.trim()) throw new Error('Enter a symbolic expression to simplify.');
+  const known = Object.keys(variables).sort((left, right) => right.length - left.length);
+  const parser = new Parser(expressionSource, known);
+  const expression = parser.parse();
+  const symbols = [...parser.symbols].filter(symbol => symbol !== 'pi' && symbol !== target);
+  const unknown = symbols.filter(symbol => typeof variables[symbol] !== 'number');
+  const declarations = unknown.length ? [unknown.join(', ') + ' = sp.symbols(' + JSON.stringify(unknown.join(' ')) + ')'] : [];
+  const code = ['import sympy as sp', ...declarations, target + ' = ' + renderSymbolic(expression, variables), 'hc_set(' + JSON.stringify(target) + ', str(' + target + '))', 'print(' + target + ')'].join('\n');
+  return { target, symbols, code };
+}

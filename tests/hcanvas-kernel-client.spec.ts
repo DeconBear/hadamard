@@ -9,7 +9,7 @@ class FakeEventSource {
   readonly CLOSED = 2;
   readyState = 0;
   private readonly listeners = new Map<string, Set<(event: Event) => void>>();
-  constructor(_url: string) {
+  constructor(readonly url: string) {
     FakeEventSource.instances.push(this);
     queueMicrotask(() => this.emit('hello', {}));
   }
@@ -64,5 +64,40 @@ describe('kernel client event ordering', () => {
     const result = await first.done;
     expect(result.status).toBe('ok');
     expect(result.outputs).toEqual([{ kind: 'stream', stream: 'stdout', text: 'done\n' }]);
+  });
+
+  it('reconciles execution results after reconnect without premature abort', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const manager = createKernelManager({
+      token: () => 'test',
+      request: async <T = Record<string, unknown>>(pathname: string): Promise<T> => {
+        if (pathname === '/api/kernels/ensure') return { session: { sessionId: 'ks_reconnect' } } as T;
+        if (pathname.endsWith('/execute')) return { executionId: 'exec_reconnect', sessionId: 'ks_reconnect' } as T;
+        if (pathname.startsWith('/api/kernels/executions/')) {
+          return { state: 'completed', result: { status: 'ok', durationMs: 5, outputs: { events: [{ type: 'stream', name: 'stdout', text: 'recovered\n' }] } } } as T;
+        }
+        throw new Error('Unexpected request: ' + pathname);
+      },
+    });
+    managers.push(manager);
+    const scope = { kind: 'page' as const, key: 'p2' };
+    const handle = await manager.execute('python', 'while True: pass', { scope });
+    const statuses: string[] = [];
+    handle.onStatus(status => statuses.push(status));
+    let settled = false;
+    void handle.done.then(() => { settled = true; });
+    const source = FakeEventSource.instances.at(-1)!;
+    source.emit('runtime', { seq: 41, kind: 'kernel', executionId: 'other', event: 'state', payload: {} });
+    source.emit('error', {});
+    expect(statuses).toContain('disconnected');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+    source.emit('hello', {});
+    const result = await handle.done;
+    expect(result.status).toBe('ok');
+    expect(result.outputs).toEqual([{ kind: 'stream', stream: 'stdout', text: 'recovered\n' }]);
+    source.close();
+    await manager.execute('python', 'print(1)', { scope });
+    expect(FakeEventSource.instances.at(-1)!.url).toContain('after=41');
   });
 });

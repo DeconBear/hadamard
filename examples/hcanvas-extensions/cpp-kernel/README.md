@@ -15,6 +15,9 @@ program output are streamed as text.
   `hc_get("name", fallback)` and `hc_set("name", value)` for numbers, strings,
   booleans and numeric vectors.
 - Interrupt kills the running compiler/program.
+- Compiler errors are mapped back to the original cell line numbers, and basic
+  `kernel/complete` suggestions cover keywords, shared variables and source
+  identifiers.
 
 ## Requirements
 

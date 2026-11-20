@@ -35,6 +35,9 @@
             "method": "kernel/interrupt"
           },
           {
+            "method": "kernel/complete"
+          },
+          {
             "method": "kernel/shutdown"
           }
         ],
@@ -51,6 +54,7 @@
         "features": [
           "execute",
           "interrupt",
+          "complete",
           "variables"
         ],
         "defaultFor": [

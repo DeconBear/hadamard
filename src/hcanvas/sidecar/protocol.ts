@@ -824,6 +824,12 @@ export interface HcKernelExecutionResult {
   error?: HcKernelErrorOutput;
 }
 
+export interface HcKernelExecutionLookup {
+  state: 'queued' | 'running' | 'completed' | 'unknown';
+  sessionId?: string;
+  result?: HcKernelExecutionResult;
+}
+
 export type HcKernelRuntimeEventName =
   | 'state'
   | 'execution_queued'

@@ -38,7 +38,7 @@ function handle(message) {
       language: 'fake',
       languageVersion: '1.0.0',
       displayName: 'Fake Kernel',
-      features: { execute: true, interrupt: true, complete: false, inspect: false },
+      features: { execute: true, interrupt: true, complete: true, inspect: true },
       mimeTypes: ['text/plain', 'text/html', 'image/png'],
     });
     return;
@@ -59,6 +59,14 @@ function handle(message) {
         if (executing === current) finish('aborted');
       }, 10);
     }
+    return;
+  }
+  if (message.method === 'kernel/complete') {
+    respond(message.id, { matches: ['print', 'printf'], cursorStart: 0, cursorEnd: message.params?.cursorPos ?? 0 });
+    return;
+  }
+  if (message.method === 'kernel/inspect') {
+    respond(message.id, { name: 'print', signature: 'print(...)', documentation: 'Print values to the output stream.' });
     return;
   }
   if (message.method !== 'kernel/execute' || message.id === undefined) {

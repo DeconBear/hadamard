@@ -83,6 +83,7 @@ import { cloneBlocksForPlacement, parseBlocksFromClipboard, serializeBlocksForCl
 import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawing.js';
 import { applyOpLocally, invertOps as invertDocumentOps } from './documentHistory.js';
 import { SHORTCUTS_MODAL_HTML } from './shortcuts.js';
+import { installNotebookTableActions } from './notebookTableActions.js';
 import { esc, genId, toHex } from './utils.js';
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; language?: 'en' | 'zh'; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
@@ -819,6 +820,7 @@ function bindStaticActions(): void {
     exportCurrent: (format, options) => exportCurrent(format, options),
     reloadPlugins: async () => { await loadExternalPlugins(api); renderInspector(); },
   });
+  installNotebookTableActions(toast);
   fileBrowser = installFileBrowser({
     mount: el('filesPanel'), tabs: el('workspaceTabs'), viewport: el('viewport'),
     request: api, toast, chooseDirectory: () => window.hcanvasDesktop?.chooseDirectory?.() ?? null,
@@ -833,6 +835,7 @@ function bindStaticActions(): void {
     toast,
     openViewTab: tab => { fileBrowser?.openViewTab(tab); },
     getLanguage: () => boot.language === 'zh' ? 'zh' : 'en',
+    getWorkspaceRootId: () => 'root_default',
     applyPageData: async (pageId, data) => {
       const page = state.doc?.pages.find(item => item.id === pageId);
       const format = page?.extension?.format || '';

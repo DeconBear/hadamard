@@ -27,9 +27,11 @@ for canvas **Code cells** and **Hadamard Notebook** cells.
 
 - User code is executed from a temp `.m` script via `source`, so function
   definitions are supported.
-- Figures are captured when their handles are new in the execution. Re-plotting
-  into an existing figure does not re-emit that figure; call `figure`/create a
-  new figure to get a new image.
+- Figures are captured when their handles are new in the execution and closed
+  after their PNG is emitted. Re-plotting into an existing figure does not
+  re-emit that figure; call `figure`/create a new figure to get a new image.
+- Basic `kernel/complete` suggestions cover language keywords, shared variables
+  and identifiers in the current source.
 - Interrupt/restart resets Octave state.
 - Notebook shared variables are injected before each run and restored after a
   restart. Use `hc_get("name", default)` and `hc_set("name", value)` for

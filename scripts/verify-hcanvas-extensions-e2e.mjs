@@ -76,6 +76,7 @@ async function main() {
   await writeFile(path.join(workspace, 'sample.hnb.md'), ['---', 'hcanvas: notebook', 'version: 1', 'title: E2E notebook', 'kernel: python', '---', '', '# E2E notebook', '', 'Energy: $E=mc^2$', '', fence + 'python exec', 'print("e2e-notebook")', fence, ''].join('\n'), 'utf8');
   await writeFile(path.join(workspace, 'plain.hnb.md'), ['# Plain notebook', '', 'Body.', ''].join('\n'), 'utf8');
   await writeFile(path.join(workspace, 'evil.hnb.md'), '<img src=x onerror="window.__nbXss=123">\n\nSafe text.\n', 'utf8');
+  await writeFile(path.join(workspace, 'raw.hnb.md'), '<details><summary>More</summary><p>Keep this structure.</p></details>\n\n<p class="nb-md-placeholder">Keep this class.</p>\n', 'utf8');
 
   const started = await startServer(workspace);
   server = started.child;
@@ -205,12 +206,13 @@ async function main() {
   await page.waitForTimeout(250);
   assert('variable panel adds a shared numeric value', (await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').count()) === 1 && await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').inputValue() === '12', JSON.stringify({ panel: await page.locator('[data-nb-variable-panel]').innerText(), toasts: await page.locator('#toastRoot').innerText(), pageErrors }));
   await page.locator('[data-nb-variables]').click();
+  const cellCountBeforeFormula = await page.locator('.nb-code').count();
   await page.locator('.nb-markdown-body .hc-math').click();
   await page.waitForSelector('.nb-formula-popover');
   assert('formula opens an inline LaTeX editor', await page.locator('.nb-formula-popover textarea').inputValue() === 'E=mc^2');
   await page.locator('.nb-formula-popover textarea').fill('total = distance * 2');
   await page.locator('[data-formula-calculate]').click();
-  assert('formula calculation inserts an adjacent code cell', (await page.locator('.nb-code').count()) === 2 && (await page.locator('.nb-code').first().innerText()).includes('distance * 2'), JSON.stringify({ cells: await page.locator('.nb-code').allInnerTexts(), formulaMessage: await page.locator('.nb-formula-message').innerText().catch(() => 'closed'), toasts: await page.locator('#toastRoot').innerText() }));
+  assert('formula calculation inserts an adjacent code cell', (await page.locator('.nb-code').count()) === cellCountBeforeFormula + 1 && (await page.locator('.nb-code').first().innerText()).includes('distance * 2'), JSON.stringify({ cells: await page.locator('.nb-code').allInnerTexts(), formulaMessage: await page.locator('.nb-formula-message').innerText().catch(() => 'closed'), toasts: await page.locator('#toastRoot').innerText() }));
   await page.locator('.nb-code-input .cm-content').first().press('Shift+Enter');
   let calculated = false;
   for (let attempt = 0; attempt < 100 && !calculated; attempt += 1) {
@@ -241,6 +243,23 @@ async function main() {
   assert('notebook sanitizes raw markdown HTML', xssFlag === null, String(xssFlag));
   await page.locator('.workspace-tab.view-tab.active .tab-close').click();
   await page.waitForTimeout(300);
+
+  await openFile('raw.hnb.md');
+  await page.waitForSelector('.nb-markdown-body details');
+  await page.locator('.nb-markdown-body').click();
+  await page.keyboard.press('Tab');
+  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-new-name]').fill('alpha');
+  await page.locator('[data-nb-new-value]').fill('1');
+  await page.locator('[data-nb-variable-add]').click();
+  await page.locator('.workspace-tab.view-tab.active .tab-close').click();
+  let rawSaved = '';
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    rawSaved = (await api('/api/files/read?root=root_default&path=raw.hnb.md')).body.file?.content || '';
+    if (rawSaved.includes('"alpha":1')) break;
+    await page.waitForTimeout(150);
+  }
+  assert('untouched raw HTML survives autosave', rawSaved.includes('<details><summary>More</summary><p>Keep this structure.</p></details>') && rawSaved.includes('Keep this class.'), rawSaved.slice(0, 260));
 
   await openFile('plain.hnb.md');
   await page.waitForTimeout(1000);

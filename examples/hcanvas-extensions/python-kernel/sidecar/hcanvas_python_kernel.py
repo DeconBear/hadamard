@@ -9,11 +9,14 @@ by that execution are captured afterwards as image/png display_data.
 
 import ast
 import base64
+import inspect
 import io
 import json
 import keyword
 import os
 import queue
+import re
+import rlcompleter
 import sys
 import threading
 import time
@@ -26,6 +29,7 @@ STOP = threading.Event()
 INTERRUPT = threading.Event()
 EXEC_QUEUE = queue.Queue()
 CURRENT = {"executionId": ""}
+NAMESPACE = {}
 
 
 def send(message):
@@ -121,6 +125,11 @@ def flush_figures(execution_id, before):
                 })
             except Exception:
                 continue
+            finally:
+                try:
+                    pyplot.close(figure)
+                except Exception:
+                    pass
     except Exception:
         return
 
@@ -210,6 +219,44 @@ def read_frames():
     STOP.set()
 
 
+def completion_prefix(code, cursor_pos):
+    cursor_pos = max(0, min(len(code), int(cursor_pos)))
+    match = re.search(r"[A-Za-z_][A-Za-z0-9_.]*$", code[:cursor_pos])
+    return match.group(0) if match else "", cursor_pos
+
+
+def complete_code(code, cursor_pos):
+    prefix, cursor_pos = completion_prefix(code, cursor_pos)
+    if not prefix:
+        return {"matches": [], "cursorStart": cursor_pos, "cursorEnd": cursor_pos}
+    matches = []
+    try:
+        completer = rlcompleter.Completer(NAMESPACE)
+        for state in range(100):
+            value = completer.complete(prefix, state)
+            if value is None:
+                break
+            matches.append(value)
+    except Exception:
+        return {"matches": [], "cursorStart": cursor_pos - len(prefix), "cursorEnd": cursor_pos}
+    return {"matches": sorted(set(matches))[:60], "cursorStart": cursor_pos - len(prefix), "cursorEnd": cursor_pos}
+
+
+def inspect_code(code, cursor_pos):
+    prefix, _ = completion_prefix(code, cursor_pos)
+    if not prefix:
+        return {}
+    try:
+        value = eval(prefix, NAMESPACE, NAMESPACE)
+        try:
+            signature = str(inspect.signature(value)) if callable(value) else repr(value)[:200]
+        except (TypeError, ValueError):
+            signature = repr(value)[:200]
+        return {"name": prefix, "signature": signature, "documentation": inspect.getdoc(value) or ""}
+    except Exception:
+        return {}
+
+
 def handle_message(body):
     try:
         message = json.loads(body.decode("utf-8"))
@@ -224,7 +271,7 @@ def handle_message(body):
             "language": "python",
             "languageVersion": sys.version.split()[0],
             "displayName": "Python " + sys.version.split()[0],
-            "features": {"execute": True, "interrupt": True, "complete": False, "inspect": False, "variables": True},
+            "features": {"execute": True, "interrupt": True, "complete": True, "inspect": True, "variables": True},
             "mimeTypes": ["text/plain", "text/html", "image/png", "application/json", "text/markdown"],
         })
         return
@@ -240,6 +287,12 @@ def handle_message(body):
             respond(request_id, {"ok": True})
         STOP.set()
         threading.Timer(0.05, lambda: os._exit(0)).start()
+        return
+    if method == "kernel/complete":
+        respond(request_id, complete_code(params.get("code", ""), params.get("cursorPos", 0)))
+        return
+    if method == "kernel/inspect":
+        respond(request_id, inspect_code(params.get("code", ""), params.get("cursorPos", 0)))
         return
     if method == "kernel/execute":
         EXEC_QUEUE.put((request_id, params))
@@ -391,7 +444,9 @@ def run_execution(request_id, params, namespace):
 
 
 def main():
-    namespace = build_globals()
+    global NAMESPACE
+    NAMESPACE = build_globals()
+    namespace = NAMESPACE
     reader = threading.Thread(target=read_frames, daemon=True)
     reader.start()
     while not STOP.is_set():

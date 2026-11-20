@@ -1717,3 +1717,47 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
   .nb-end-add { width:calc(100% - 34px); margin-left:34px; }
 }
 @media (prefers-reduced-motion:reduce) { .nb-cell-running .nb-run-btn svg { animation:none; } }
+.nb-cell { outline:1px solid transparent; outline-offset:3px; }
+.nb-cell-selected { outline-color:rgba(128,105,196,.24); }
+.nb-cell-active { outline-color:rgba(112,86,194,.58); }
+.nb-cell:focus { outline-color:rgba(112,86,194,.72); }
+.nb-cell-drag { display:inline-flex; align-items:center; justify-content:center; width:22px; min-height:20px; color:#b3aa9b; font:12px/1 ui-monospace,monospace; letter-spacing:-3px; cursor:grab; user-select:none; touch-action:none; }
+.nb-cell-drag:active { cursor:grabbing; }
+.nb-cell-drag:hover { color:#7560bb; }
+.nb-code-hidden .nb-code-input, .nb-output-hidden .nb-output { display:none; }
+.nb-code-hidden .nb-cell-head, .nb-output-hidden .nb-cell-head { border-bottom:0; }
+.nb-cell-actions { flex-wrap:nowrap; }
+.nb-cell-actions .nb-icon-btn { min-width:21px; padding:3px 5px; }
+.nb-markdown-rail .nb-cell-drag { margin-bottom:4px; }
+.nb-cell[aria-selected="true"] .nb-cell-rail, .nb-cell[aria-selected="true"] .nb-markdown-rail { background:#f5f1fb; }
+.nb-variable-range { grid-column:1 / -1; width:100%; height:16px; margin:0 0 7px; accent-color:#7660c5; cursor:pointer; }
+.nb-variable-range::-webkit-slider-runnable-track { height:3px; border-radius:3px; background:#ddd4ed; }
+.nb-variable-range::-webkit-slider-thumb { margin-top:-5px; }
+.hc-data-table { margin:6px 0 10px; border:1px solid #e5ded2; border-radius:8px; overflow:hidden; background:#fff; font:11px/1.45 Inter,sans-serif; }
+.hc-data-table-actions { display:flex; align-items:center; gap:6px; padding:6px 8px; border-bottom:1px solid #eee7dc; color:#998f7f; }
+.hc-data-table-actions span { margin-right:auto; }
+.hc-data-table-actions button { border:0; border-radius:5px; padding:4px 7px; background:#f1ece4; color:#665b4d; font:10px Inter,sans-serif; cursor:pointer; }
+.hc-data-table-actions button:hover { background:#e7def3; color:#5e4a9e; }
+.hc-data-table-scroll { max-height:320px; overflow:auto; }
+.hc-data-table table { width:max-content; min-width:100%; border-collapse:collapse; }
+.hc-data-table th, .hc-data-table td { max-width:280px; padding:6px 9px; border-right:1px solid #eee8de; border-bottom:1px solid #f0eae1; text-align:left; vertical-align:top; white-space:pre-wrap; word-break:break-word; }
+.hc-data-table th { position:sticky; top:0; z-index:1; background:#f7f3eb; color:#665e52; font-weight:600; }
+.nb-formula-symbols { display:flex; align-items:center; flex-wrap:wrap; gap:4px; color:#9a8da8; font-size:9px; }
+.nb-formula-symbols:empty { display:none; }
+.nb-formula-symbols button { border:0; border-radius:5px; padding:3px 6px; background:#eee8f7; color:#6c55a5; font:10px ui-monospace,monospace; cursor:pointer; }
+.nb-formula-symbols button:hover { background:#dfd3f1; }
+.nb-variable-io { display:flex; gap:7px; margin-top:10px; padding-top:9px; border-top:1px solid #ece6f3; }
+.nb-task-panel { max-height:340px; overflow:auto; margin:0 0 20px; border:1px solid #e1d9ee; border-radius:12px; background:#fbf9ff; }
+.nb-task-panel.hidden { display:none; }
+.nb-task-head { display:flex; align-items:center; gap:8px; padding:11px 13px; border-bottom:1px solid #ece5f3; }
+.nb-task-head strong { font-size:12px; color:#3d3650; }
+.nb-task-head small { flex:1; color:#93879f; font-size:10px; }
+.nb-task-row { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid #f0eaf5; }
+.nb-task-row:last-child { border-bottom:0; }
+.nb-task-status { width:7px; height:7px; flex:0 0 7px; border-radius:50%; background:#86a890; }
+.nb-task-status[data-tone="running"], .nb-task-status[data-tone="queued"] { background:#a77fd0; }
+.nb-task-status[data-tone="disconnected"] { background:#d59c51; }
+.nb-task-status[data-tone="error"], .nb-task-status[data-tone="failed"], .nb-task-status[data-tone="aborted"], .nb-task-status[data-tone="cancelled"] { background:#c86860; }
+.nb-task-copy { display:flex; flex:1; min-width:0; flex-direction:column; gap:2px; }
+.nb-task-copy strong { overflow:hidden; text-overflow:ellipsis; color:#4a4059; font-size:11px; white-space:nowrap; }
+.nb-task-copy small { color:#998ba5; font-size:9px; }

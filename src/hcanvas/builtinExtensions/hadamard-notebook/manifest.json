@@ -32,7 +32,8 @@
         "id": "hadamard-notebook",
         "label": "Notebook",
         "extensions": [
-          ".hnb.md"
+          ".hnb.md",
+          ".ipynb"
         ],
         "viewer": "hcanvas.notebook",
         "surfaces": [

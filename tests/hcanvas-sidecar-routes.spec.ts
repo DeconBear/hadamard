@@ -55,7 +55,7 @@ async function createHarness(options: { guard?: Parameters<typeof createRuntimeS
         command: [process.execPath, KERNEL_FIXTURE],
         cwd: 'extension',
         role: 'kernel',
-        requests: [{ method: 'kernel/execute' }, { method: 'kernel/interrupt' }, { method: 'kernel/shutdown' }],
+        requests: [{ method: 'kernel/execute' }, { method: 'kernel/interrupt' }, { method: 'kernel/shutdown' }, { method: 'kernel/complete' }, { method: 'kernel/inspect' }],
       },
     },
   };
@@ -176,13 +176,32 @@ describe('hcanvas runtime routes', () => {
     expect(ensured.status).toBe(200);
     const sessionId = ensured.body.session.sessionId;
     expect(ensured.body.session.state).toBe('ready');
-    const executed = await api<{ ok: boolean; execution: { status: string; outputs: { events: unknown[] } } }>(harness, '/api/kernels/' + sessionId + '/execute', {
+    const completion = await api<{ result: { matches: string[]; cursorEnd: number } }>(harness, '/api/kernels/' + sessionId + '/complete', {
+      method: 'POST', body: JSON.stringify({ code: 'pri', cursorPos: 3 }),
+    });
+    expect(completion.status).toBe(200);
+    expect(completion.body.result.matches).toContain('print');
+    expect(completion.body.result.cursorEnd).toBe(3);
+    const inspection = await api<{ result: { name: string; documentation: string } }>(harness, '/api/kernels/' + sessionId + '/inspect', {
+      method: 'POST', body: JSON.stringify({ code: 'print', cursorPos: 5 }),
+    });
+    expect(inspection.status).toBe(200);
+    expect(inspection.body.result.name).toBe('print');
+    expect(inspection.body.result.documentation).toContain('Print');
+    const executed = await api<{ ok: boolean; execution: { executionId: string; status: string; outputs: { events: unknown[] } } }>(harness, '/api/kernels/' + sessionId + '/execute', {
       method: 'POST',
       body: JSON.stringify({ code: 'print("hi")', wait: true }),
     });
     expect(executed.status).toBe(200);
     expect(executed.body.execution.status).toBe('ok');
     expect(executed.body.execution.outputs.events.length).toBeGreaterThan(0);
+    const completed = await api<{ state: string; result: { status: string; outputs: { events: unknown[] } } }>(harness, '/api/kernels/executions/' + executed.body.execution.executionId);
+    expect(completed.status).toBe(200);
+    expect(completed.body.state).toBe('completed');
+    expect(completed.body.result.status).toBe('ok');
+    expect(completed.body.result.outputs.events.length).toBeGreaterThan(0);
+    const unknownExecution = await api<{ state: string }>(harness, '/api/kernels/executions/exec_missing');
+    expect(unknownExecution.body.state).toBe('unknown');
     const queued = await api<{ ok: boolean; executionId: string; queuePosition: number }>(harness, '/api/kernels/' + sessionId + '/execute', {
       method: 'POST',
       body: JSON.stringify({ code: 'print("async")' }),

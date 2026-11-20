@@ -92,3 +92,10 @@ export function variableValueKind(value: NotebookVariableValue): string {
   if (value === null) return 'null';
   return typeof value;
 }
+
+export function numericSliderRange(value: number): { min: number; max: number; step: number } {
+  if (value >= 0 && value <= 1) return { min: 0, max: 1, step: 0.01 };
+  const magnitude = Math.max(1, Math.abs(value) * 2);
+  const step = magnitude >= 100 ? 1 : magnitude >= 10 ? 0.1 : 0.01;
+  return { min: value < 0 ? -magnitude : 0, max: magnitude, step };
+}

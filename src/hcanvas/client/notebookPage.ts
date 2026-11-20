@@ -57,6 +57,9 @@ export function normalizeNotebookPageData(raw: unknown, kernels: KernelDescripto
         ...(Array.isArray(cell.outputs) ? { outputs: cell.outputs as HcStoredOutput[] } : {}),
         ...(typeof cell.executionCount === 'number' && Number.isFinite(cell.executionCount) ? { executionCount: Math.max(0, Math.floor(cell.executionCount)) } : {}),
         ...(cell.stale === true ? { stale: true } : {}),
+        ...(cell.hideCode === true ? { hideCode: true } : {}),
+        ...(cell.hideOutput === true ? { hideOutput: true } : {}),
+        ...(cell.metadata && typeof cell.metadata === 'object' && !Array.isArray(cell.metadata) ? { metadata: cell.metadata as Record<string, unknown> } : {}),
       });
     }
   }
@@ -70,6 +73,7 @@ export function normalizeNotebookPageData(raw: unknown, kernels: KernelDescripto
     cells,
     ...(defaultKernelId ? { defaultKernelId } : {}),
     ...(source.variables && typeof source.variables === 'object' ? { variables: source.variables as NotebookPageData['variables'] } : {}),
+    ...(source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata) ? { metadata: source.metadata as Record<string, unknown> } : {}),
   };
 }
 

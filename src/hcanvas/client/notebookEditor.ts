@@ -1,10 +1,18 @@
 import type { EditorView } from 'codemirror';
-import type { HcStoredOutput } from '../execOutputs.js';
 import { renderStoredOutputsHtml } from '../execOutputs.js';
 import { renderMarkdownHtml } from '../markdown.js';
 import type { ComputationLanguage } from '../notebook/latexCompute.js';
+import { affectedCellIds } from '../notebook/cellDependencies.js';
+import { renderNotebookCodeCell, renderNotebookMarkdownCell } from './notebookCellMarkup.js';
+import { exportNotebookHtml, exportNotebookIpynb } from './notebookExport.js';
+import { renderNotebookTaskPanel } from './notebookTaskPanel.js';
+import { parseVariablesCsv, parseVariablesJson, serializeVariablesJson } from '../notebook/variablesImport.js';
+import { NotebookUndoHistory } from '../notebook/undo.js';
+import type { NotebookRunMode } from './notebookCodeEditor.js';
+import type { NotebookEditorCell, NotebookEditorData } from '../notebook/types.js';
 import {
   normalizeNotebookVariables,
+  numericSliderRange,
   parseNotebookVariable,
   variableValueKind,
   variableValueText,
@@ -13,32 +21,16 @@ import {
   type NotebookVariables,
   type NotebookVariableValue,
 } from '../notebook/variables.js';
-import { eventsToStoredOutputs, renderRuntimeEvent } from './execCell.js';
-import { persistKernelOutputAssets } from './kernelOutputAssets.js';
-import type { KernelDescriptor, KernelExecutionHandle, KernelManager, KernelOutputEvent, KernelScope } from './kernelManager.js';
+import { renderRuntimeEvent } from './execCell.js';
+import { notebookExecutionCenter, type NotebookExecutionTask } from './notebookExecutionCenter.js';
+import type { KernelDescriptor, KernelManager, KernelOutputEvent, KernelScope } from './kernelManager.js';
 import { htmlToMarkdown } from './markdownEditing.js';
 import { sanitizeMarkdownHtml } from './markdownSanitize.js';
 import { mountNotebookCodeEditor } from './notebookCodeEditor.js';
 import { installNotebookRichEditing, prepareNotebookMarkdown } from './notebookRichText.js';
 import { esc, genId } from './utils.js';
 
-export interface NotebookEditorCell {
-  id: string;
-  kind: 'code' | 'markdown';
-  source: string;
-  kernelId?: string;
-  language?: string;
-  executable?: boolean;
-  outputs?: HcStoredOutput[];
-  executionCount?: number;
-  stale?: boolean;
-}
-
-export interface NotebookEditorData {
-  cells: NotebookEditorCell[];
-  defaultKernelId?: string;
-  variables?: NotebookVariables;
-}
+export type { NotebookEditorCell, NotebookEditorData } from '../notebook/types.js';
 
 export interface NotebookEditorOptions {
   host: HTMLElement;
@@ -90,12 +82,24 @@ function computationLanguage(kernel: KernelDescriptor | null): ComputationLangua
   return language === 'octave' || language === 'matlab' ? 'octave' : language === 'cpp' || language === 'c++' ? 'cpp' : 'python';
 }
 
+const numericSlider = numericSliderRange;
+
 export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEditorHandle {
   const { host, data } = options;
   const kernels = options.kernels;
   const editors = new Map<string, EditorView>();
-  const editVersions = new Map<string, number>();
-  const running = new Map<string, { handle: KernelExecutionHandle | null; cancelRequested: boolean }>();
+  const markdownRevisions = new Map<string, number>();
+  const undoHistory = new NotebookUndoHistory(20);
+  const selectedCellIds = new Set<string>();
+  let activeCellId = data.cells[0]?.id || '';
+  let commandMode = false;
+  let changeCellId = '';
+  let draggedCellId = '';
+  let deleteChord = false;
+  const running = new Map<string, NotebookExecutionTask>();
+  const subscriptions = new Map<string, () => void>();
+  const taskWaits = new Map<string, { resolve: () => void; task: NotebookExecutionTask; promise: Promise<void> }>();
+  let taskPanelOpen = false;
   let cellsAbort: AbortController | null = null;
   let disposed = false;
   let runAllActive = false;
@@ -111,7 +115,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   data.cells.forEach(cell => {
     if (!cell.id) cell.id = genId('nbcell');
     if (cell.kind === 'code') cell.outputs = Array.isArray(cell.outputs) ? cell.outputs : [];
-    editVersions.set(cell.id, 0);
   });
   const selectedDefault = defaultKernel(kernels, data.defaultKernelId);
   if (selectedDefault) data.defaultKernelId = selectedDefault.id;
@@ -121,33 +124,49 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     '<div class="nb-actions">' +
     '<select class="nb-kernel" data-nb-default-kernel aria-label="Default kernel for new cells" title="Default kernel for new cells">' + kernelOptions(kernels, data.defaultKernelId) + '</select>' +
     '<button type="button" class="btn tiny primary nb-run-all" data-nb-runall>' + PLAY + '<span>Run all</span></button>' +
+    '<button type="button" class="btn tiny" data-nb-run-selected>Run selected</button>' +
+    '<button type="button" class="btn tiny" data-nb-run-affected title="Run cells affected by source or variable changes" disabled>Run affected</button>' +
+    '<select class="nb-kernel nb-run-scope" data-nb-run-scope aria-label="Run range" title="Run range"><option value="">More run…</option><option value="above">Run above</option><option value="below">Run below</option><option value="changed">Run changed</option><option value="restart">Restart &amp; Run all</option></select>' +
     '<button type="button" class="btn tiny nb-tool-icon" data-nb-stop title="Stop all executions" aria-label="Stop all executions">' + STOP + '</button>' +
     '<button type="button" class="btn tiny" data-nb-restart title="Restart kernels; shared variables are preserved">Restart</button>' +
     '<button type="button" class="btn tiny nb-variables-toggle" data-nb-variables aria-expanded="false">Variables <span data-nb-variable-count></span></button>' +
+    '<button type="button" class="btn tiny nb-variables-toggle" data-nb-tasks aria-expanded="false">Tasks <span data-nb-task-count></span></button>' +
     '<span class="nb-save-status" data-nb-status data-tone="saved" title="Changes save automatically">Auto-save</span>' +
     '<button type="button" class="btn tiny nb-tool-icon" data-nb-export title="Export HTML" aria-label="Export HTML"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v9m-3-3 3 3 3-3M3 10v4h10v-4"/></svg></button>' +
+    '<button type="button" class="btn tiny" data-nb-export-ipynb title="Export Jupyter notebook" aria-label="Export Jupyter notebook">ipynb</button>' +
     '</div></header>' +
     '<section class="nb-variable-panel hidden" data-nb-variable-panel aria-label="Shared variables"></section>' +
+    '<section class="nb-task-panel hidden" data-nb-task-panel aria-label="Notebook executions"></section>' +
     '<main class="nb-cells" data-nb-cells></main>' +
     '<footer class="nb-footer"><span>Shift+Enter run · Alt+Enter add code below · click a formula or image to edit</span><button type="button" data-nb-add-code>+ Code</button><button type="button" data-nb-add-md>+ Markdown</button></footer>' +
     '</div>';
   const cellsHost = host.querySelector<HTMLElement>('[data-nb-cells]')!;
   const variablePanel = host.querySelector<HTMLElement>('[data-nb-variable-panel]')!;
+  const taskPanel = host.querySelector<HTMLElement>('[data-nb-task-panel]')!;
 
   const status = (text: string, tone = 'idle'): void => {
     const element = host.querySelector<HTMLElement>('[data-nb-status]');
     if (element && !disposed) { element.textContent = text; element.dataset.tone = tone; }
   };
-  const syncMarkdownSources = (): void => {
+  const touchMarkdown = (id: string): void => {
+    markdownRevisions.set(id, (markdownRevisions.get(id) || 0) + 1);
+  };
+  const syncMarkdownSources = (): Map<string, number> => {
+    const saved = new Map<string, number>();
     host.querySelectorAll<HTMLElement>('[data-nb-markdown-view]').forEach(view => {
-      const cell = data.cells.find(item => item.id === view.dataset.nbMarkdownView && item.kind === 'markdown');
+      const id = view.dataset.nbMarkdownView || '';
+      const revision = markdownRevisions.get(id) || 0;
+      if (!revision) return;
+      const cell = data.cells.find(item => item.id === id && item.kind === 'markdown');
       if (!cell) return;
-      cell.source = view.querySelector('.nb-md-placeholder') ? '' : htmlToMarkdown(view).trim();
+      cell.source = view.querySelector('[data-nb-generated-placeholder]') ? '' : htmlToMarkdown(view).trim();
+      saved.set(id, revision);
     });
+    return saved;
   };
   const flush = (): Promise<void> => {
     if (editVersion === savedVersion) return saveChain;
-    syncMarkdownSources();
+    const markdownSaved = syncMarkdownSources();
     const targetVersion = editVersion;
     const snapshot = copy(data);
     status('Saving…', 'saving');
@@ -156,6 +175,9 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       try {
         await options.persist(snapshot);
         savedVersion = targetVersion;
+        for (const [id, revision] of markdownSaved) {
+          if (markdownRevisions.get(id) === revision) markdownRevisions.set(id, 0);
+        }
         status(savedVersion === editVersion ? 'Auto-save' : 'Saving…', savedVersion === editVersion ? 'saved' : 'saving');
       } catch (error) {
         status('Save failed · edit to retry', 'error');
@@ -178,21 +200,87 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     updateVariableCount();
     if (!variablePanelOpen) return;
     const variables = data.variables || {};
-    const rows = Object.entries(variables).map(([name, value]) => '<div class="nb-variable-row" data-nb-variable-row="' + esc(name) + '">' +
-      '<input class="nb-variable-name" data-nb-variable-name value="' + esc(name) + '" aria-label="Variable name">' +
-      '<input class="nb-variable-value" data-nb-variable-value value="' + esc(variableValueText(value)) + '" aria-label="Value of ' + esc(name) + '" spellcheck="false">' +
-      '<span class="nb-variable-kind">' + esc(variableValueKind(value)) + '</span>' +
-      '<button type="button" class="nb-icon-btn danger" data-nb-variable-delete="' + esc(name) + '" title="Remove shared variable" aria-label="Remove ' + esc(name) + '">×</button></div>').join('');
+    const rows = Object.entries(variables).map(([name, value]) => {
+      let row = '<div class="nb-variable-row" data-nb-variable-row="' + esc(name) + '">' +
+        '<input class="nb-variable-name" data-nb-variable-name value="' + esc(name) + '" aria-label="Variable name">' +
+        '<input class="nb-variable-value" data-nb-variable-value value="' + esc(variableValueText(value)) + '" aria-label="Value of ' + esc(name) + '" spellcheck="false">' +
+        '<span class="nb-variable-kind">' + esc(variableValueKind(value)) + '</span>' +
+        '<button type="button" class="nb-icon-btn danger" data-nb-variable-delete="' + esc(name) + '" title="Remove shared variable" aria-label="Remove ' + esc(name) + '">×</button></div>';
+      if (typeof value === 'number') {
+        const slider = numericSlider(value);
+        row += '<input class="nb-variable-range" type="range" data-nb-variable-range="' + esc(name) + '" min="' + slider.min + '" max="' + slider.max + '" step="' + slider.step + '" value="' + value + '" aria-label="Adjust ' + esc(name) + '">';
+      }
+      return row;
+    }).join('');
     variablePanel.innerHTML = '<div class="nb-variable-intro"><div><strong>Shared variables</strong><small>Explicit JSON values available to Python, Octave and C++. Use names directly and publish changes with <code>hc_set("name", value)</code>.</small></div><span>Kernel restarts preserve these values</span></div>' +
       '<div class="nb-variable-head"><span>Name</span><span>Value / JSON</span><span>Type</span><span></span></div>' +
       (rows || '<p class="nb-variable-empty">No shared variables yet. Add one below, or call <code>hc_set("answer", 42)</code> in a code cell.</p>') +
-      '<div class="nb-variable-add"><input data-nb-new-name placeholder="distance" aria-label="New variable name" spellcheck="false"><input data-nb-new-value placeholder="120.5" aria-label="New variable value" spellcheck="false"><button type="button" class="btn tiny" data-nb-variable-add>Add variable</button></div>';
+      '<div class="nb-variable-add"><input data-nb-new-name placeholder="distance" aria-label="New variable name" spellcheck="false"><input data-nb-new-value placeholder="120.5" aria-label="New variable value" spellcheck="false"><button type="button" class="btn tiny" data-nb-variable-add>Add variable</button></div>' +
+      '<div class="nb-variable-io"><button type="button" class="btn tiny" data-nb-variable-import>Import JSON / CSV</button><button type="button" class="btn tiny" data-nb-variable-export>Export JSON</button><input type="file" data-nb-variable-file accept=".json,.csv,application/json,text/csv" hidden></div>';
   };
   const cellElement = (id: string): HTMLElement | null => cellsHost.querySelector<HTMLElement>('[data-nb-cell="' + CSS.escape(id) + '"]');
+  const pushUndo = (): void => { undoHistory.capture(data.cells, data.variables || {}); };
+  const syncSelection = (): void => {
+    cellsHost.querySelectorAll<HTMLElement>('[data-nb-cell]').forEach(section => {
+      const selected = selectedCellIds.has(section.dataset.nbCell || '');
+      section.classList.toggle('nb-cell-selected', selected);
+      section.classList.toggle('nb-cell-active', (section.dataset.nbCell || '') === activeCellId);
+      section.setAttribute('aria-selected', String(selected));
+    });
+  };
+  const selectCell = (id: string, mode: 'single' | 'additive' | 'range' = 'single'): void => {
+    if (!data.cells.some(cell => cell.id === id)) return;
+    if (mode === 'additive') {
+      if (selectedCellIds.has(id)) selectedCellIds.delete(id); else selectedCellIds.add(id);
+    } else if (mode === 'range' && activeCellId) {
+      const from = data.cells.findIndex(cell => cell.id === activeCellId);
+      const to = data.cells.findIndex(cell => cell.id === id);
+      selectedCellIds.clear();
+      for (const cell of data.cells.slice(Math.min(from, to), Math.max(from, to) + 1)) selectedCellIds.add(cell.id);
+    } else {
+      selectedCellIds.clear();
+      selectedCellIds.add(id);
+    }
+    activeCellId = id;
+    commandMode = true;
+    syncSelection();
+  };
+  const focusCell = (id: string, edit = false): void => {
+    if (!data.cells.some(cell => cell.id === id)) return;
+    if (!edit) selectCell(id);
+    activeCellId = id;
+    commandMode = !edit;
+    cellElement(id)?.scrollIntoView({ block: 'nearest' });
+    syncSelection();
+    if (edit) {
+      const cell = data.cells.find(item => item.id === id);
+      if (cell?.kind === 'code') editors.get(id)?.focus();
+      else cellElement(id)?.querySelector<HTMLElement>('[data-nb-markdown-view]')?.focus();
+    } else cellElement(id)?.focus({ preventScroll: true });
+  };
+  const beginCellChange = (id: string): void => {
+    if (changeCellId === id) return;
+    pushUndo();
+    changeCellId = id;
+  };
+  const undo = (): void => {
+    const snapshot = undoHistory.restore();
+    if (!snapshot) { options.toast('No notebook changes to undo.', 'info'); return; }
+    data.cells = snapshot.cells;
+    data.variables = snapshot.variables;
+    activeCellId = data.cells[0]?.id || '';
+    selectedCellIds.clear();
+    if (activeCellId) selectedCellIds.add(activeCellId);
+    changeCellId = '';
+    markDirty();
+    renderCells();
+    syncSelection();
+  };
   const setCellStatus = (id: string, text: string, tone = 'idle'): void => {
     const element = cellElement(id)?.querySelector<HTMLElement>('[data-nb-cell-status]');
     if (element) { element.textContent = text; element.dataset.tone = tone; }
     cellElement(id)?.classList.toggle('nb-cell-running', tone === 'running' || tone === 'queued');
+    renderTaskPanel();
   };
   const refreshOutput = (cell: NotebookEditorCell): void => {
     const output = cellElement(cell.id)?.querySelector<HTMLElement>('[data-nb-output]');
@@ -202,6 +290,19 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     output.classList.toggle('nb-output-stale', cell.stale === true);
   };
 
+  const markAffected = (changedCells: Iterable<string> = [], changedVariables: Iterable<string> = []): void => {
+    const affected = affectedCellIds(data.cells, changedCells, changedVariables, data.variables || {});
+    for (const cell of data.cells) {
+      if (!affected.has(cell.id)) continue;
+      cell.stale = true;
+      cellElement(cell.id)?.classList.add('nb-code-stale');
+      const caption = cellElement(cell.id)?.querySelector<HTMLElement>('.nb-output-caption > span');
+      if (caption) caption.textContent = 'Dependencies changed · run affected cells to refresh';
+    }
+    const button = host.querySelector<HTMLButtonElement>('[data-nb-run-affected]');
+    if (button) button.disabled = !affected.size;
+  };
+
   const updateVariables = (events: KernelOutputEvent[]): boolean => {
     const next = variablesFromEvents(events);
     if (!Object.keys(next).length) return false;
@@ -209,72 +310,111 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     if (JSON.stringify(merged) === JSON.stringify(data.variables)) return false;
     data.variables = merged;
     renderVariables();
+    markAffected([], Object.keys(next));
     markDirty();
     return true;
   };
 
-  const runCell = async (cell: NotebookEditorCell): Promise<void> => {
+  const renderTaskPanel = (): void => {
+    renderNotebookTaskPanel(host, taskPanel, options.scope, taskPanelOpen);
+  };
+
+  const attachTask = (cell: NotebookEditorCell, task: NotebookExecutionTask, mode: NotebookRunMode = 'stay'): Promise<void> => {
+    const existing = taskWaits.get(cell.id);
+    if (subscriptions.has(cell.id) && existing) return existing.promise;
+    let resolveWait: () => void = () => undefined;
+    const promise = new Promise<void>(resolve => { resolveWait = resolve; });
+    taskWaits.set(cell.id, { resolve: resolveWait, task, promise });
+    running.set(cell.id, task);
+    const replayed = Boolean(task.outputs);
+    subscriptions.set(cell.id, () => undefined);
+    setCellStatus(cell.id, task.status === 'disconnected' ? 'Reconnecting…' : task.status, task.status === 'ok' ? 'ok' : task.status === 'failed' || task.status === 'error' ? 'error' : 'running');
+    if (task.outputs) {
+      cell.outputs = task.outputs;
+      refreshOutput(cell);
+    } else {
+      const output = cellElement(cell.id)?.querySelector<HTMLElement>('[data-nb-output]');
+      if (output) {
+        output.innerHTML = '<div class="nb-output-content"></div>';
+        const content = output.querySelector<HTMLElement>('[data-nb-output-content]');
+        if (content) for (const event of visibleKernelEvents(task.events)) renderRuntimeEvent(content, event);
+      }
+    }
+    const unsubscribe = notebookExecutionCenter.subscribe(task.id, (current, event) => {
+      if (event) {
+        if (event.kind === 'display' || event.kind === 'result') updateVariables([event]);
+        const output = cellElement(cell.id)?.querySelector<HTMLElement>('[data-nb-output-content]');
+        const visible = visibleKernelEvents([event]);
+        if (output && visible.length) renderRuntimeEvent(output, visible[0]!);
+      }
+      if (current.outputs) {
+        cell.outputs = current.outputs;
+        cell.stale = cell.source !== current.source;
+        cell.executionCount = replayed ? Math.max(cell.executionCount || 0, 1) : (cell.executionCount || 0) + 1;
+        const count = cellElement(cell.id)?.querySelector<HTMLElement>('[data-nb-execution-count]');
+        if (count) count.textContent = '[' + cell.executionCount + ']';
+        updateVariables(current.events);
+        refreshOutput(cell);
+        options.persistOutputs?.(data);
+        markDirty();
+        setCellStatus(cell.id, current.status === 'ok' ? (current.durationMs !== undefined ? (current.durationMs / 1000).toFixed(1) + 's' : 'Done') : current.status, current.status === 'ok' ? 'ok' : 'error');
+        if (current.status === 'error' || current.status === 'failed') options.toast(current.error || 'Cell failed. See the output below the cell.', 'error');
+        subscriptions.get(cell.id)?.();
+        subscriptions.delete(cell.id);
+        running.delete(cell.id);
+        const pending = taskWaits.get(cell.id);
+        taskWaits.delete(cell.id);
+        pending?.resolve();
+        if (!disposed && mode !== 'stay') {
+          const index = data.cells.findIndex(item => item.id === cell.id);
+          if (mode === 'insert') insertCell(index + 1, 'code');
+          else if (data.cells[index + 1]) focusCell(data.cells[index + 1]!.id, true);
+          else insertCell(index + 1, 'code');
+        }
+        return;
+      }
+      setCellStatus(cell.id, current.status === 'disconnected' ? 'Reconnecting…' : current.status, current.status === 'ok' ? 'ok' : current.status === 'failed' || current.status === 'error' ? 'error' : 'running');
+    });
+    if (subscriptions.has(cell.id)) subscriptions.set(cell.id, unsubscribe);
+    else unsubscribe();
+    return promise;
+  };
+
+  const runCell = async (cell: NotebookEditorCell, mode: NotebookRunMode = 'stay'): Promise<void> => {
     if (disposed || cell.kind !== 'code' || cell.executable === false || running.has(cell.id)) return;
+    const existing = notebookExecutionCenter.getForCell(options.scope, cell.id);
+    if (existing && ['queued', 'running', 'disconnected'].includes(existing.status)) {
+      await attachTask(cell, existing, mode);
+      return;
+    }
     const manager = options.getKernelManager();
     if (!manager) { options.toast('Kernel runtime is not available.', 'error'); return; }
     const kernel = cellKernel(data, kernels, cell);
     if (!kernel) { options.toast('Install and enable a Python, Octave or C++ kernel extension first.', 'info'); return; }
     if (cell.kernelId !== kernel.id) { cell.kernelId = kernel.id; markDirty(); }
-    const source = cell.source;
-    const version = editVersions.get(cell.id) || 0;
-    const state = { handle: null as KernelExecutionHandle | null, cancelRequested: false };
-    running.set(cell.id, state);
     cell.outputs = [];
     cell.stale = false;
     refreshOutput(cell);
-    const liveOutput = cellElement(cell.id)?.querySelector<HTMLElement>('[data-nb-output]');
-    if (liveOutput) liveOutput.innerHTML = '<div class="nb-output-content"></div>';
-    setCellStatus(cell.id, 'Starting…', 'queued');
-    try {
-      const handle = await manager.execute(kernel.id, source, { scope: options.scope, cellId: cell.id, variables: data.variables });
-      state.handle = handle;
-      if (state.cancelRequested) void handle.cancel();
-      setCellStatus(cell.id, 'Running', 'running');
-      handle.onOutput(event => {
-        if (event.kind === 'display' || event.kind === 'result') updateVariables([event]);
-        if (disposed) return;
-        const output = cellElement(cell.id)?.querySelector<HTMLElement>('[data-nb-output-content]');
-        const visible = visibleKernelEvents([event]);
-        if (output && visible.length) renderRuntimeEvent(output, visible[0]!);
-      });
-      const result = await handle.done;
-      updateVariables(result.outputs);
-      const visible = visibleKernelEvents(result.outputs);
-      const stored = eventsToStoredOutputs(visible);
-      cell.outputs = await persistKernelOutputAssets(stored, { sessionId: handle.sessionId, executionId: handle.executionId }, options);
-      cell.stale = (editVersions.get(cell.id) || 0) !== version;
-      cell.executionCount = (cell.executionCount || 0) + 1;
-      const count = cellElement(cell.id)?.querySelector<HTMLElement>('[data-nb-execution-count]');
-      if (count) count.textContent = '[' + cell.executionCount + ']';
-      setCellStatus(cell.id, result.status === 'ok' ? (result.durationMs !== undefined ? (result.durationMs / 1000).toFixed(1) + 's' : 'Done') : result.status, result.status === 'ok' ? 'ok' : 'error');
-      refreshOutput(cell);
-      options.persistOutputs?.(data);
-      markDirty();
-      if (result.status === 'error') options.toast('Cell failed. See the error output below the cell.', 'error');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      cell.outputs = [{ id: 'runtime_' + Date.now().toString(36), kind: 'error', ename: 'NotebookRuntimeError', evalue: message, traceback: [] }];
-      setCellStatus(cell.id, 'Failed', 'error');
-      refreshOutput(cell);
-      markDirty();
-      options.persistOutputs?.(data);
-      options.toast(message, 'error');
-    } finally {
-      running.delete(cell.id);
-    }
+    const task = notebookExecutionCenter.start({
+      cellId: cell.id,
+      notebookTitle: options.title,
+      scope: options.scope,
+      kernel,
+      source: cell.source,
+      variables: data.variables || {},
+      manager,
+      request: options.request,
+    });
+    await attachTask(cell, task, mode);
   };
 
+  const stopCell = async (id: string): Promise<void> => {
+    const task = running.get(id) || notebookExecutionCenter.getForCell(options.scope, id);
+    if (task) await notebookExecutionCenter.cancel(task.id);
+  };
   const stopAll = async (): Promise<void> => {
     executionGeneration += 1;
-    for (const state of running.values()) {
-      state.cancelRequested = true;
-      if (state.handle) await state.handle.cancel().catch(() => undefined);
-    }
+    for (const task of running.values()) await notebookExecutionCenter.cancel(task.id);
   };
   const runAll = async (): Promise<void> => {
     if (runAllActive || disposed) return;
@@ -304,11 +444,13 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
 
   const commitMarkdown = (view: HTMLElement): void => {
     const id = view.dataset.nbMarkdownView || '';
+    if (!markdownRevisions.get(id)) return;
     const cell = data.cells.find(item => item.id === id && item.kind === 'markdown');
     if (!cell) return;
-    const source = view.querySelector('.nb-md-placeholder') ? '' : htmlToMarkdown(view).trim();
+    const source = view.querySelector('[data-nb-generated-placeholder]') ? '' : htmlToMarkdown(view).trim();
     if (source === cell.source) return;
     cell.source = source;
+    touchMarkdown(id);
     markDirty();
   };
   const insertCell = (index: number, kind: 'code' | 'markdown', source = '', language?: ComputationLanguage): void => {
@@ -317,8 +459,12 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       id: genId('nbcell'), kind, source,
       ...(kind === 'code' ? { executable: true, outputs: [], ...(kernel ? { kernelId: kernel.id, language: kernel.language } : {}) } : {}),
     };
+    pushUndo();
     data.cells.splice(Math.max(0, Math.min(data.cells.length, index)), 0, cell);
-    editVersions.set(cell.id, 0);
+    activeCellId = cell.id;
+    selectedCellIds.clear();
+    selectedCellIds.add(cell.id);
+    commandMode = false;
     markDirty();
     renderCells();
     requestAnimationFrame(() => {
@@ -330,78 +476,104 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     const index = data.cells.findIndex(cell => cell.id === id);
     const target = index + delta;
     if (index < 0 || target < 0 || target >= data.cells.length) return;
+    pushUndo();
     const [cell] = data.cells.splice(index, 1);
     if (cell) data.cells.splice(target, 0, cell);
+    activeCellId = id;
     markDirty();
     renderCells();
     cellElement(id)?.scrollIntoView({ block: 'nearest' });
   };
-  const deleteCell = (id: string): void => {
+  const moveCellTo = (id: string, target: number): void => {
     const index = data.cells.findIndex(cell => cell.id === id);
-    if (index < 0) return;
-    const state = running.get(id);
-    if (state) { state.cancelRequested = true; void state.handle?.cancel(); }
-    data.cells.splice(index, 1);
+    if (index < 0 || index === target || target < 0 || target >= data.cells.length) return;
+    pushUndo();
+    const [cell] = data.cells.splice(index, 1);
+    if (cell) data.cells.splice(target, 0, cell);
+    activeCellId = id;
     markDirty();
     renderCells();
+    cellElement(id)?.scrollIntoView({ block: 'nearest' });
+  };
+  const deleteCells = (ids: string[]): void => {
+    const removed = new Set(ids.filter(id => data.cells.some(cell => cell.id === id)));
+    if (!removed.size) return;
+    pushUndo();
+    for (const id of removed) {
+      if (running.has(id)) void stopCell(id);
+      subscriptions.get(id)?.();
+      subscriptions.delete(id);
+      running.delete(id);
+      const pending = taskWaits.get(id);
+      taskWaits.delete(id);
+      pending?.resolve();
+    }
+    const firstIndex = data.cells.findIndex(cell => removed.has(cell.id));
+    data.cells = data.cells.filter(cell => !removed.has(cell.id));
+    for (const id of removed) selectedCellIds.delete(id);
+    if (removed.has(activeCellId)) activeCellId = data.cells[Math.min(Math.max(0, firstIndex), data.cells.length - 1)]?.id || '';
+    if (!selectedCellIds.size && activeCellId) selectedCellIds.add(activeCellId);
+    commandMode = true;
+    markDirty();
+    renderCells();
+    syncSelection();
+    if (activeCellId) cellElement(activeCellId)?.focus({ preventScroll: true });
+  };
+  const deleteCell = (id: string): void => { deleteCells([id]); };
+  const runSelected = async (): Promise<void> => {
+    const selected = data.cells.filter(cell => selectedCellIds.has(cell.id) && cell.kind === 'code' && cell.executable !== false);
+    for (const cell of selected) await runCell(cell);
+  };
+  const runAffected = async (): Promise<void> => {
+    const affected = data.cells.filter(cell => cell.kind === 'code' && cell.stale && cell.executable !== false);
+    for (const cell of affected) await runCell(cell);
+    const button = host.querySelector<HTMLButtonElement>('[data-nb-run-affected]');
+    if (button) button.disabled = true;
   };
   const exportHtml = (): void => {
     syncMarkdownSources();
-    const body = data.cells.map(cell => {
-      if (cell.kind === 'markdown') return '<section class="md">' + sanitizeMarkdownHtml(renderMarkdownHtml(cell.source)) + '</section>';
-      const kernel = cellKernel(data, kernels, cell);
-      return '<section class="code"><div class="cell-kernel">' + esc(kernel?.label || cell.language || 'code') + '</div><pre>' + esc(cell.source) + '</pre><div class="out">' + (cell.outputs?.length ? renderStoredOutputsHtml(cell.outputs) : '') + '</div></section>';
-    }).join('\n');
-    const variables = Object.keys(data.variables || {}).length ? '<details><summary>Shared variables</summary><pre>' + esc(JSON.stringify(data.variables, null, 2)) + '</pre></details>' : '';
-    const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(options.title) + '</title><style>' +
-      'body{font:15px/1.65 Inter,system-ui,sans-serif;color:#252b36;max-width:900px;margin:40px auto;padding:0 24px;background:#faf8f3}.md h1,.md h2{font-family:Georgia,serif}.code{margin:20px 0}.cell-kernel{font:10px Inter,sans-serif;color:#8a8276;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}.code>pre{background:#181b23;color:#e6e9f0;padding:16px;border-radius:12px;overflow:auto;font:12.5px/1.6 ui-monospace,Consolas,monospace}.out img,section img{max-width:100%;height:auto}.out pre{white-space:pre-wrap;background:#fff;border:1px solid #e3ded3;border-radius:8px;padding:10px}.out iframe{width:100%;min-height:180px;border:1px solid #e3ded3;border-radius:8px}.exec-out-error{color:#b42318}details{margin:28px 0}details pre{white-space:pre-wrap}</style></head><body>' + body + variables + '</body></html>';
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = options.title.replace(/\.hnb\.md$/iu, '').replace(/[\\/:*?"<>|]+/g, '-') + '.html';
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    exportNotebookHtml(options.title, data, kernels);
+  };
+  const exportIpynb = (): void => {
+    syncMarkdownSources();
+    exportNotebookIpynb(options.title, data);
   };
 
-  function renderCodeCell(cell: NotebookEditorCell, index: number): string {
-    const kernel = cellKernel(data, kernels, cell);
-    const executable = cell.executable !== false;
-    return '<section class="nb-cell nb-code' + (cell.stale ? ' nb-code-stale' : '') + '" data-nb-cell="' + esc(cell.id) + '">' +
-      '<div class="nb-cell-rail"><button type="button" class="nb-run-btn" title="Run cell (Shift+Enter)" aria-label="Run cell" data-nb-run="' + esc(cell.id) + '"' + (!executable ? ' disabled' : '') + '>' + PLAY + '</button><span class="nb-execution-count" data-nb-execution-count>[' + (cell.executionCount || ' ') + ']</span></div>' +
-      '<div class="nb-cell-content"><header class="nb-cell-head"><select class="nb-cell-kernel" data-nb-cell-kernel="' + esc(cell.id) + '" aria-label="Cell kernel">' + kernelOptions(kernels, kernel?.id) + '</select>' +
-      '<span class="nb-cell-status" data-nb-cell-status data-tone="idle">' + (executable ? '' : 'Read-only code fence') + '</span>' +
-      '<span class="nb-cell-actions"><button type="button" class="nb-icon-btn" title="Add code below" data-nb-insert-code="' + esc(cell.id) + '">+</button><button type="button" class="nb-icon-btn" title="Move up" data-nb-up="' + esc(cell.id) + '"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" class="nb-icon-btn" title="Move down" data-nb-down="' + esc(cell.id) + '"' + (index === data.cells.length - 1 ? ' disabled' : '') + '>↓</button><button type="button" class="nb-icon-btn danger" title="Delete cell" data-nb-delete="' + esc(cell.id) + '">×</button></span></header>' +
-      '<div class="nb-code-input" data-nb-code="' + esc(cell.id) + '"></div><div class="nb-output' + (cell.stale ? ' nb-output-stale' : '') + '" data-nb-output></div></div></section>';
-  }
-
-  function renderMarkdownCell(cell: NotebookEditorCell, index: number): string {
-    const preview = cell.source.trim() ? sanitizeMarkdownHtml(renderMarkdownHtml(cell.source)) : '<p class="nb-md-placeholder">Write Markdown, $E=mc^2$, or paste an image URL…</p>';
-    return '<section class="nb-cell nb-markdown" data-nb-cell="' + esc(cell.id) + '"><div class="nb-markdown-rail"><span>MD</span></div>' +
-      '<div class="nb-markdown-body" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Markdown cell" data-nb-markdown-view="' + esc(cell.id) + '">' + preview + '</div>' +
-      '<div class="nb-markdown-hover-actions"><button type="button" class="nb-icon-btn" title="Add code below" data-nb-insert-code="' + esc(cell.id) + '">+</button><button type="button" class="nb-icon-btn" title="Move up" data-nb-up="' + esc(cell.id) + '"' + (index === 0 ? ' disabled' : '') + '>↑</button><button type="button" class="nb-icon-btn" title="Move down" data-nb-down="' + esc(cell.id) + '"' + (index === data.cells.length - 1 ? ' disabled' : '') + '>↓</button><button type="button" class="nb-icon-btn danger" title="Delete cell" data-nb-delete="' + esc(cell.id) + '">×</button></div></section>';
-  }
+  const renderCodeCell = (cell: NotebookEditorCell, index: number): string => renderNotebookCodeCell(data, kernels, cell, index);
+  const renderMarkdownCell = (cell: NotebookEditorCell, index: number): string => renderNotebookMarkdownCell(cell, index, data.cells.length);
 
   function bindMarkdown(view: HTMLElement, signal: AbortSignal): void {
     prepareNotebookMarkdown(view);
     const cell = data.cells.find(item => item.id === view.dataset.nbMarkdownView && item.kind === 'markdown');
     if (!cell) return;
     view.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(input => { input.disabled = false; });
-    view.addEventListener('focus', () => { if (view.querySelector('.nb-md-placeholder')) view.innerHTML = ''; }, { signal });
-    view.addEventListener('input', () => markDirty(), { signal });
+    view.addEventListener('focus', () => {
+      activeCellId = cell.id;
+      selectedCellIds.clear();
+      selectedCellIds.add(cell.id);
+      if (changeCellId !== cell.id) changeCellId = '';
+      syncSelection();
+      if (view.querySelector('[data-nb-generated-placeholder]')) view.innerHTML = '';
+    }, { signal });
+    view.addEventListener('input', () => { beginCellChange(cell.id); touchMarkdown(cell.id); markDirty(); }, { signal });
     view.addEventListener('paste', event => {
       const html = event.clipboardData?.getData('text/html');
       if (!html) return;
       event.preventDefault();
+      touchMarkdown(cell.id);
+      markDirty();
       document.execCommand('insertHTML', false, sanitizeMarkdownHtml(html));
     }, { signal });
+    view.addEventListener('change', event => {
+      if ((event.target as Element | null)?.matches('input[type="checkbox"]')) { touchMarkdown(cell.id); markDirty(); }
+    }, { signal });
     view.addEventListener('blur', () => {
+      changeCellId = '';
       commitMarkdown(view);
-      if (!cell.source.trim()) view.innerHTML = '<p class="nb-md-placeholder">Write Markdown, $E=mc^2$, or paste an image URL…</p>';
+      if (!cell.source.trim()) view.innerHTML = '<p class="nb-md-placeholder" data-nb-generated-placeholder="true">Write Markdown, $E=mc^2$, or paste an image URL…</p>';
     }, { signal });
     view.addEventListener('keydown', event => {
-      if (event.key === 'Escape') { event.preventDefault(); view.blur(); }
+      if (event.key === 'Escape') { event.preventDefault(); view.blur(); focusCell(cell.id); }
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); view.blur(); }
     }, { signal });
     view.addEventListener('click', event => {
@@ -412,42 +584,108 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
 
   function renderCells(): void {
     if (disposed) return;
-    cellsAbort?.abort();
-    cellsAbort = new AbortController();
+    if (!cellsAbort) cellsAbort = new AbortController();
     const signal = cellsAbort.signal;
-    for (const editor of editors.values()) editor.destroy();
-    editors.clear();
-    cellsHost.innerHTML = data.cells.map((cell, index) => cell.kind === 'code' ? renderCodeCell(cell, index) : renderMarkdownCell(cell, index)).join('') +
-      '<button type="button" class="nb-end-add" data-nb-end-add>+ Add a cell</button>';
-    for (const cell of data.cells) {
-      if (cell.kind !== 'code') {
-        const view = cellsHost.querySelector<HTMLElement>('[data-nb-markdown-view="' + CSS.escape(cell.id) + '"]');
-        if (view) bindMarkdown(view, signal);
-        continue;
+    const desired = new Set(data.cells.map(cell => cell.id));
+    const existing = new Map<string, HTMLElement>();
+    for (const child of Array.from(cellsHost.children)) {
+      if (!(child instanceof HTMLElement) || !child.dataset.nbCell) continue;
+      const id = child.dataset.nbCell;
+      existing.set(id, child);
+      if (!desired.has(id)) {
+        editors.get(id)?.destroy();
+        editors.delete(id);
+        child.remove();
       }
-      const container = cellsHost.querySelector<HTMLElement>('[data-nb-code="' + CSS.escape(cell.id) + '"]');
-      if (!container) continue;
-      const kernel = cellKernel(data, kernels, cell);
-      const editor = mountNotebookCodeEditor({
-        parent: container, source: cell.source, language: kernel?.language || cell.language || 'text', readOnly: cell.executable === false,
-        onChange: source => {
-          cell.source = source;
-          editVersions.set(cell.id, (editVersions.get(cell.id) || 0) + 1);
-          if (cell.outputs?.length) { cell.stale = true; cellElement(cell.id)?.classList.add('nb-code-stale'); }
-          const caption = cellElement(cell.id)?.querySelector<HTMLElement>('.nb-output-caption > span');
-          if (caption && cell.stale) caption.textContent = 'Output from an earlier source · run again to refresh';
-          markDirty();
-        },
-        onRun: () => { void runCell(cell); },
-        onInsert: () => insertCell(data.cells.findIndex(item => item.id === cell.id) + 1, 'code'),
-        onFocus: () => {
-          cellsHost.querySelectorAll('.nb-cell-active').forEach(element => element.classList.remove('nb-cell-active'));
-          cellElement(cell.id)?.classList.add('nb-cell-active');
-        },
-      });
-      editors.set(cell.id, editor);
-      refreshOutput(cell);
     }
+    let endAdd = cellsHost.querySelector<HTMLButtonElement>('[data-nb-end-add]');
+    if (!endAdd) {
+      endAdd = document.createElement('button');
+      endAdd.type = 'button';
+      endAdd.className = 'nb-end-add';
+      endAdd.dataset.nbEndAdd = '';
+      endAdd.textContent = '+ Add a cell';
+      cellsHost.appendChild(endAdd);
+    }
+    data.cells.forEach((cell, index) => {
+      let section = existing.get(cell.id);
+      if (!section) {
+        const template = document.createElement('template');
+        template.innerHTML = (cell.kind === 'code' ? renderCodeCell(cell, index) : renderMarkdownCell(cell, index)).trim();
+        section = template.content.firstElementChild as HTMLElement;
+      } else {
+        section.className = cell.kind === 'code'
+          ? 'nb-cell nb-code' + (cell.stale ? ' nb-code-stale' : '') + (cell.hideCode ? ' nb-code-hidden' : '') + (cell.hideOutput ? ' nb-output-hidden' : '') + (running.has(cell.id) ? ' nb-cell-running' : '')
+          : 'nb-cell nb-markdown';
+        section.querySelectorAll<HTMLButtonElement>('[data-nb-up]').forEach(button => { button.disabled = index === 0; });
+        section.querySelectorAll<HTMLButtonElement>('[data-nb-down]').forEach(button => { button.disabled = index === data.cells.length - 1; });
+        if (cell.kind === 'code') {
+          const select = section.querySelector<HTMLSelectElement>('[data-nb-cell-kernel]');
+          if (select) select.value = cellKernel(data, kernels, cell)?.id || '';
+          const count = section.querySelector<HTMLElement>('[data-nb-execution-count]');
+          if (count) count.textContent = '[' + (cell.executionCount || ' ') + ']';
+          const toggle = section.querySelector<HTMLElement>('[data-nb-toggle-code]');
+          if (toggle) toggle.textContent = cell.hideCode ? '›' : '⌄';
+        } else if (section.dataset.nbRenderedSource !== cell.source) {
+          const view = section.querySelector<HTMLElement>('[data-nb-markdown-view]');
+          if (view) {
+            view.innerHTML = cell.source.trim() ? sanitizeMarkdownHtml(renderMarkdownHtml(cell.source)) : '<p class="nb-md-placeholder" data-nb-generated-placeholder="true">Write Markdown, $E=mc^2$, or paste an image URL…</p>';
+            prepareNotebookMarkdown(view);
+          }
+          section.dataset.nbRenderedSource = cell.source;
+        }
+      }
+      const reference = cellsHost.children[index] || endAdd;
+      if (reference !== section) cellsHost.insertBefore(section, reference);
+      if (cell.kind === 'markdown') {
+        if (!section.querySelector('[data-nb-markdown-view]')?.hasAttribute('data-nb-bound')) {
+          const view = section.querySelector<HTMLElement>('[data-nb-markdown-view]');
+          if (view) { view.dataset.nbBound = 'true'; bindMarkdown(view, signal); }
+        }
+        return;
+      }
+      let editor = editors.get(cell.id);
+      if (!editor) {
+        const container = section.querySelector<HTMLElement>('[data-nb-code]');
+        if (!container) return;
+        const kernel = cellKernel(data, kernels, cell);
+        editor = mountNotebookCodeEditor({
+          parent: container, source: cell.source, language: kernel?.language || cell.language || 'text', readOnly: cell.executable === false,
+          onChange: source => {
+            beginCellChange(cell.id);
+            cell.source = source;
+            markAffected([cell.id]);
+            markDirty();
+          },
+          onRun: mode => { void runCell(cell, mode); },
+          onEscape: () => focusCell(cell.id),
+          onFocus: () => {
+            activeCellId = cell.id;
+            selectedCellIds.clear();
+            selectedCellIds.add(cell.id);
+            if (changeCellId !== cell.id) changeCellId = '';
+            syncSelection();
+          },
+          onBlur: () => { changeCellId = ''; },
+          complete: async (source, position) => {
+            const manager = options.getKernelManager();
+            if (!manager || !kernel?.features?.includes('complete')) return null;
+            try { return await manager.complete(kernel.id, options.scope, source, position); } catch { return null; }
+          },
+          inspect: async (source, position) => {
+            const manager = options.getKernelManager();
+            if (!manager || !kernel?.features?.includes('inspect')) return null;
+            try { return await manager.inspect(kernel.id, options.scope, source, position); } catch { return null; }
+          },
+        });
+        editors.set(cell.id, editor);
+      }
+      refreshOutput(cell);
+      const existingTask = notebookExecutionCenter.getForCell(options.scope, cell.id);
+      if (existingTask && (existingTask.outputs || ['queued', 'running', 'disconnected'].includes(existingTask.status))) void attachTask(cell, existingTask);
+    });
+    if (!selectedCellIds.size && activeCellId) selectedCellIds.add(activeCellId);
+    syncSelection();
   }
 
   cellsHost.addEventListener('click', event => {
@@ -460,6 +698,17 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     else if (button.dataset.nbUp) moveCell(button.dataset.nbUp, -1);
     else if (button.dataset.nbDown) moveCell(button.dataset.nbDown, 1);
     else if (button.dataset.nbInsertCode) insertCell(data.cells.findIndex(cell => cell.id === button.dataset.nbInsertCode) + 1, 'code');
+    else if (button.dataset.nbToggleCode || button.dataset.nbToggleOutput) {
+      const id = button.dataset.nbToggleCode || button.dataset.nbToggleOutput || '';
+      const cell = data.cells.find(item => item.id === id);
+      if (cell) {
+        pushUndo();
+        if (button.dataset.nbToggleCode) cell.hideCode = !cell.hideCode;
+        else cell.hideOutput = !cell.hideOutput;
+        markDirty();
+        renderCells();
+      }
+    }
     else if (button.dataset.nbClear) {
       const cell = data.cells.find(item => item.id === button.dataset.nbClear);
       if (cell) { cell.outputs = []; cell.stale = false; refreshOutput(cell); markDirty(); options.persistOutputs?.(data); }
@@ -471,22 +720,135 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     const cell = data.cells.find(item => item.id === select.dataset.nbCellKernel);
     const kernel = kernels.find(item => item.id === select.value);
     if (!cell || !kernel) return;
+    pushUndo();
     cell.kernelId = kernel.id;
     cell.language = kernel.language;
     if (cell.outputs?.length) cell.stale = true;
+    editors.get(cell.id)?.destroy();
+    editors.delete(cell.id);
     markDirty();
     renderCells();
     requestAnimationFrame(() => editors.get(cell.id)?.focus());
   });
+  cellsHost.addEventListener('pointerdown', event => {
+    if ((event.target as Element | null)?.closest('.cm-content, .nb-markdown-body, [contenteditable="true"]')) commandMode = false;
+  });
+  cellsHost.addEventListener('click', event => {
+    if ((event.target as Element | null)?.closest('button, select, input, textarea, a, .cm-content, .nb-markdown-body, [contenteditable="true"]')) return;
+    const section = (event.target as Element | null)?.closest<HTMLElement>('[data-nb-cell]');
+    if (!section) return;
+    selectCell(section.dataset.nbCell || '', event.ctrlKey || event.metaKey ? 'additive' : event.shiftKey ? 'range' : 'single');
+  });
+  cellsHost.addEventListener('dragstart', event => {
+    const handle = (event.target as Element | null)?.closest<HTMLElement>('[data-nb-drag]');
+    if (!handle) return;
+    draggedCellId = handle.dataset.nbDrag || '';
+    event.dataTransfer?.setData('text/plain', draggedCellId);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  });
+  cellsHost.addEventListener('dragover', event => {
+    if (draggedCellId && (event.target as Element | null)?.closest('[data-nb-cell]')) event.preventDefault();
+  });
+  cellsHost.addEventListener('drop', event => {
+    const section = (event.target as Element | null)?.closest<HTMLElement>('[data-nb-cell]');
+    if (!section || !draggedCellId) return;
+    event.preventDefault();
+    moveCellTo(draggedCellId, data.cells.findIndex(cell => cell.id === section.dataset.nbCell));
+    draggedCellId = '';
+  });
+  cellsHost.addEventListener('dragend', () => { draggedCellId = ''; });
+  cellsHost.addEventListener('keydown', event => {
+    const section = (event.target as Element | null)?.closest<HTMLElement>('[data-nb-cell]');
+    const commandFocus = commandMode || (section && document.activeElement === section);
+    if (!commandFocus) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        focusCell(activeCellId || section?.dataset.nbCell || '');
+      }
+      return;
+    }
+    const index = data.cells.findIndex(cell => cell.id === activeCellId);
+    const key = event.key.toLowerCase();
+    if (key === 'arrowdown' || key === 'arrowup') {
+      event.preventDefault();
+      const next = data.cells[index + (key === 'arrowdown' ? 1 : -1)];
+      if (next) focusCell(next.id);
+    } else if (key === 'enter') {
+      event.preventDefault();
+      focusCell(activeCellId, true);
+    } else if (key === 'a' || key === 'b') {
+      event.preventDefault();
+      insertCell(index + (key === 'a' ? 0 : 1), 'code');
+    } else if (key === 'z') {
+      event.preventDefault();
+      undo();
+    } else if (key === 'delete' || key === 'backspace') {
+      event.preventDefault();
+      deleteCells([...selectedCellIds]);
+    } else if (key === 'd') {
+      event.preventDefault();
+      if (deleteChord) {
+        deleteChord = false;
+        deleteCells([...selectedCellIds]);
+      } else {
+        deleteChord = true;
+        setTimeout(() => { deleteChord = false; }, 700);
+      }
+    }
+  });
   host.querySelector('[data-nb-runall]')?.addEventListener('click', () => { void runAll(); });
+  host.querySelector('[data-nb-run-selected]')?.addEventListener('click', () => { void runSelected(); });
+  host.querySelector('[data-nb-run-affected]')?.addEventListener('click', () => { void runAffected(); });
+  host.querySelector<HTMLSelectElement>('[data-nb-run-scope]')?.addEventListener('change', event => {
+    const select = event.target as HTMLSelectElement;
+    const index = Math.max(0, data.cells.findIndex(cell => cell.id === activeCellId));
+    const action = select.value;
+    select.value = '';
+    if (action === 'changed') { void runAffected(); return; }
+    if (action === 'restart') { void restartKernels().then(runAll); return; }
+    if (action !== 'above' && action !== 'below') return;
+    const cells = action === 'above' ? data.cells.slice(0, index + 1) : data.cells.slice(index);
+    void (async () => { for (const cell of cells) if (cell.kind === 'code') await runCell(cell); })();
+  });
   host.querySelector('[data-nb-stop]')?.addEventListener('click', () => { void stopAll(); });
   host.querySelector('[data-nb-restart]')?.addEventListener('click', () => { void restartKernels(); });
   host.querySelector('[data-nb-export]')?.addEventListener('click', exportHtml);
+  host.querySelector('[data-nb-export-ipynb]')?.addEventListener('click', exportIpynb);
   host.querySelector('[data-nb-add-code]')?.addEventListener('click', () => insertCell(data.cells.length, 'code'));
   host.querySelector('[data-nb-add-md]')?.addEventListener('click', () => insertCell(data.cells.length, 'markdown'));
   host.querySelector<HTMLSelectElement>('[data-nb-default-kernel]')?.addEventListener('change', event => {
     data.defaultKernelId = (event.target as HTMLSelectElement).value;
     markDirty();
+  });
+  const exportVariables = (): void => {
+    const url = URL.createObjectURL(new Blob([serializeVariablesJson(data.variables || {})], { type: 'application/json' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = options.title.replace(/\.(?:hnb\.md|ipynb)$/iu, '').replace(/[\\/:*?"<>|]+/g, '-') + '-variables.json';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  variablePanel.addEventListener('change', async event => {
+    const input = event.target as HTMLInputElement;
+    if (!input.matches('[data-nb-variable-file]')) return;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const imported = file.name.toLowerCase().endsWith('.csv') ? parseVariablesCsv(text) : parseVariablesJson(text);
+      pushUndo();
+      data.variables = { ...(data.variables || {}), ...imported };
+      markAffected([], Object.keys(imported));
+      markDirty();
+      renderVariables();
+      options.toast('Imported ' + Object.keys(imported).length + ' variables.', 'success');
+    } catch (error) {
+      options.toast(error instanceof Error ? error.message : String(error), 'error');
+    } finally {
+      input.value = '';
+    }
   });
   host.querySelector('[data-nb-variables]')?.addEventListener('click', () => {
     variablePanelOpen = !variablePanelOpen;
@@ -494,23 +856,55 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     host.querySelector('[data-nb-variables]')?.setAttribute('aria-expanded', String(variablePanelOpen));
     renderVariables();
   });
+  host.querySelector('[data-nb-tasks]')?.addEventListener('click', () => {
+    taskPanelOpen = !taskPanelOpen;
+    taskPanel.classList.toggle('hidden', !taskPanelOpen);
+    host.querySelector('[data-nb-tasks]')?.setAttribute('aria-expanded', String(taskPanelOpen));
+    renderTaskPanel();
+  });
+  taskPanel.addEventListener('click', event => {
+    const button = (event.target as Element | null)?.closest<HTMLButtonElement>('button');
+    if (!button) return;
+    if (button.dataset.nbTaskStop) void notebookExecutionCenter.cancel(button.dataset.nbTaskStop).then(renderTaskPanel);
+    else if (button.dataset.nbTaskCell) focusCell(button.dataset.nbTaskCell, true);
+    else if (button.hasAttribute('data-nb-clear-tasks')) { notebookExecutionCenter.clearCompleted(); renderTaskPanel(); }
+  });
+  const taskRefreshTimer = setInterval(() => { if (taskPanelOpen) renderTaskPanel(); }, 1000);
   variablePanel.addEventListener('click', event => {
     const button = (event.target as Element | null)?.closest<HTMLButtonElement>('button');
     if (!button || !data.variables) return;
-    if (button.dataset.nbVariableDelete) {
-      delete data.variables[button.dataset.nbVariableDelete];
+    if (button.hasAttribute('data-nb-variable-import')) variablePanel.querySelector<HTMLInputElement>('[data-nb-variable-file]')?.click();
+    else if (button.hasAttribute('data-nb-variable-export')) exportVariables();
+    else if (button.dataset.nbVariableDelete) {
+      const name = button.dataset.nbVariableDelete;
+      pushUndo();
+      delete data.variables[name];
+      markAffected([], [name]);
       markDirty();
       renderVariables();
     } else if (button.hasAttribute('data-nb-variable-add')) {
       const name = variablePanel.querySelector<HTMLInputElement>('[data-nb-new-name]')!;
       const value = variablePanel.querySelector<HTMLInputElement>('[data-nb-new-value]')!;
       try {
-        data.variables[name.value.trim()] = parseNotebookVariable(name.value, value.value);
+        const variableName = name.value.trim();
+        pushUndo();
+        data.variables[variableName] = parseNotebookVariable(name.value, value.value);
+        markAffected([], [variableName]);
         markDirty();
         renderVariables();
         variablePanel.querySelector<HTMLInputElement>('[data-nb-new-name]')?.focus();
       } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
     }
+  });
+  variablePanel.addEventListener('input', event => {
+    const range = (event.target as Element | null)?.closest<HTMLInputElement>('[data-nb-variable-range]');
+    if (!range || !data.variables) return;
+    const name = range.dataset.nbVariableRange || '';
+    data.variables[name] = Number(range.value);
+    const valueInput = variablePanel.querySelector<HTMLElement>('[data-nb-variable-row="' + CSS.escape(name) + '"]')?.querySelector<HTMLInputElement>('[data-nb-variable-value]');
+    if (valueInput) valueInput.value = range.value;
+    markAffected([], [name]);
+    markDirty();
   });
   variablePanel.addEventListener('change', event => {
     const input = event.target as HTMLInputElement;
@@ -522,8 +916,10 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     try {
       const next: NotebookVariableValue = parseNotebookVariable(nameInput.value, valueInput.value);
       const name = nameInput.value.trim();
+      pushUndo();
       if (name !== oldName) delete data.variables[oldName];
       data.variables[name] = next;
+      markAffected([], [oldName, name]);
       markDirty();
       renderVariables();
     } catch (error) {
@@ -539,7 +935,21 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       const index = data.cells.findIndex(cell => cell.id === markdownId);
       insertCell(index < 0 ? data.cells.length : index + 1, 'code', source, computationLanguage(defaultKernel(kernels, data.defaultKernelId)));
     },
-    commit: commitMarkdown,
+    commit: view => {
+      touchMarkdown(view.dataset.nbMarkdownView || '');
+      commitMarkdown(view);
+    },
+    openVariable: name => {
+      variablePanelOpen = true;
+      variablePanel.classList.remove('hidden');
+      host.querySelector('[data-nb-variables]')?.setAttribute('aria-expanded', 'true');
+      renderVariables();
+      const row = variablePanel.querySelector<HTMLElement>('[data-nb-variable-row="' + CSS.escape(name) + '"]');
+      row?.scrollIntoView({ block: 'nearest' });
+      const input = row?.querySelector<HTMLInputElement>('[data-nb-variable-value]');
+      input?.focus();
+      input?.select();
+    },
     toast: options.toast,
   });
   const onWindowMessage = (event: MessageEvent): void => {
@@ -549,6 +959,15 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     });
   };
   window.addEventListener('message', onWindowMessage);
+  const onDocumentKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    const target = event.target as Element | null;
+    if (target?.closest('.nb-cells, .nb-inline-popover, #modalRoot .modal')) return;
+    if (document.querySelector('#modalRoot .modal, .nb-inline-popover')) return;
+    focusCell(activeCellId);
+    event.preventDefault();
+  };
+  document.addEventListener('keydown', onDocumentKeydown);
   renderVariables();
   renderCells();
 
@@ -564,9 +983,15 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       cellsAbort?.abort();
       disposeRichEditing();
       window.removeEventListener('message', onWindowMessage);
+      document.removeEventListener('keydown', onDocumentKeydown);
       for (const editor of editors.values()) editor.destroy();
       editors.clear();
-      void stopAll();
+      clearInterval(taskRefreshTimer);
+      for (const unsubscribe of subscriptions.values()) unsubscribe();
+      subscriptions.clear();
+      for (const pending of taskWaits.values()) pending.resolve();
+      taskWaits.clear();
+      running.clear();
       void pendingSave;
     },
   };

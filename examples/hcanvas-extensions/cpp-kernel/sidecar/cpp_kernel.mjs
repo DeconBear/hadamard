@@ -87,14 +87,17 @@ function killCurrent() {
 
 function buildSource(code, variables) {
   const prologue = '#include "hcanvas_shared.hpp"\n' + cppSharedDefinitions(variables) + '\n';
-  const hasMain = /(^|[^A-Za-z0-9_])int\s+main\s*\(/u.test(code);
-  if (hasMain) return prologue + code;
+  const prologueLines = prologue.split('\n').length - 1;
   const lines = code.split(/\r?\n/);
+  const hasMain = /(^|[^A-Za-z0-9_])int\s+main\s*\(/u.test(code);
+  if (hasMain) {
+    return { source: prologue + code, lineMap: [...Array(prologueLines).fill(0), ...lines.map((_, index) => index + 1)] };
+  }
   const includes = [];
   const body = [];
-  for (const line of lines) {
-    if (/^\s*#\s*include\b/u.test(line)) includes.push(line);
-    else body.push(line);
+  for (const [index, line] of lines.entries()) {
+    if (/^\s*#\s*include\b/u.test(line)) includes.push({ text: line, line: index + 1 });
+    else body.push({ text: line, line: index + 1 });
   }
   const standardHeaders = [
     '#include <iostream>', '#include <string>', '#include <vector>', '#include <algorithm>',
@@ -102,9 +105,17 @@ function buildSource(code, variables) {
     '#include <iomanip>', '#include <map>', '#include <unordered_map>', '#include <set>',
     '#include <queue>', '#include <stack>', '#include <array>', '#include <numeric>',
     '#include <functional>', '#include <bitset>', '#include <cstring>', '#include <climits>',
-  ];
-  const header = [...standardHeaders, ...includes.filter(line => !/bits\/stdc\+\+\.h/u.test(line)), 'using namespace std;'].join('\n');
-  return prologue + header + '\nint main() {\n' + body.join('\n') + '\n  return 0;\n}\n';
+  ].map(text => ({ text, line: 0 }));
+  const header = [...standardHeaders, ...includes.filter(item => !/bits\/stdc\+\+\.h/u.test(item.text)), { text: 'using namespace std;', line: 0 }];
+  const generated = [...header, { text: 'int main() {', line: 0 }, ...body, { text: '  return 0;\n}', line: 0 }];
+  return {
+    source: prologue + generated.map(item => item.text).join('\n'),
+    lineMap: [...Array(prologueLines).fill(0), ...generated.map(item => item.line)],
+  };
+}
+
+function mapCompileErrors(text, lineMap) {
+  return String(text || '').replace(/main\.cpp:(\d+):/gu, (_match, line) => 'Cell line ' + (lineMap[Number(line) - 1] || '?') + ':');
 }
 
 function startExecution(id, params) {
@@ -124,8 +135,9 @@ function startExecution(id, params) {
   const sourcePath = path.join(dir, 'main.cpp');
   const binaryPath = path.join(dir, process.platform === 'win32' ? 'main.exe' : 'main');
   writeFileSync(path.join(dir, 'hcanvas_shared.hpp'), CPP_SHARED_HEADER, 'utf8');
-  writeFileSync(sourcePath, buildSource(code, params.variables), 'utf8');
-  current = { requestId: id, executionId, started: Date.now(), dir, outputBytes: 0 };
+  const built = buildSource(code, params.variables);
+  writeFileSync(sourcePath, built.source, 'utf8');
+  current = { requestId: id, executionId, started: Date.now(), dir, outputBytes: 0, lineMap: built.lineMap };
   notify('kernel/execution_started', { executionId, ...(typeof params.cellId === 'string' && params.cellId ? { cellId: params.cellId } : {}) });
   notify('kernel/status', { state: 'busy' });
   const compile = spawn(compiler, ['-std=c++17', '-O2', '-o', binaryPath, sourcePath], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
@@ -143,7 +155,7 @@ function startExecution(id, params) {
   compile.once('exit', codeValue => {
     child = null;
     if (current?.executionId !== executionId) return;
-    const compileOutput = truncate(compileOut + compileErr);
+    const compileOutput = mapCompileErrors(truncate(compileOut + compileErr), current.lineMap);
     if (codeValue !== 0) {
       finish('error', {
         ename: 'CompilationError',
@@ -204,6 +216,14 @@ function interruptExecution() {
   cleanup(execution);
 }
 
+function completeCode(code, cursorPos, variables) {
+  const prefix = /[A-Za-z_][A-Za-z0-9_]*$/u.exec(String(code).slice(0, cursorPos))?.[0] || '';
+  const keywords = ['auto', 'bool', 'break', 'case', 'catch', 'class', 'const', 'constexpr', 'continue', 'default', 'delete', 'double', 'else', 'enum', 'false', 'float', 'for', 'if', 'int', 'long', 'namespace', 'new', 'nullptr', 'private', 'protected', 'public', 'return', 'short', 'signed', 'sizeof', 'static', 'struct', 'switch', 'template', 'this', 'true', 'typedef', 'typename', 'union', 'unsigned', 'using', 'void', 'while', 'std::cout', 'std::endl', 'std::string', 'std::vector', 'std::pow', 'std::sqrt', 'hc_get', 'hc_set'];
+  const names = new Set([...keywords, ...Object.keys(variables && typeof variables === 'object' ? variables : {}), ...(String(code).match(/[A-Za-z_][A-Za-z0-9_:]*/gu) || [])]);
+  const matches = [...names].filter(name => name.startsWith(prefix)).sort().slice(0, 60);
+  return { matches, cursorStart: cursorPos - prefix.length, cursorEnd: cursorPos };
+}
+
 function handleMessage(message) {
   if (!message || typeof message !== 'object') return;
   const method = message.method;
@@ -213,11 +233,12 @@ function handleMessage(message) {
     const compiler = compilerCommand();
     respond(id, {
       protocolVersion: '1.0', language: 'cpp', languageVersion: compiler || 'none', displayName: 'C++' + (compiler ? ' (' + compiler + ')' : ''),
-      features: { execute: true, interrupt: true, complete: false, inspect: false, variables: true }, mimeTypes: ['text/plain'],
+      features: { execute: true, interrupt: true, complete: true, inspect: false, variables: true }, mimeTypes: ['text/plain'],
     });
     return;
   }
   if (method === 'initialized') return;
+  if (method === 'kernel/complete') { respond(id, completeCode(params.code || '', Number(params.cursorPos || 0), params.variables)); return; }
   if (method === 'kernel/execute') { startExecution(id, params); return; }
   if (method === 'kernel/interrupt') { interruptExecution(); respond(id, { ok: true }); return; }
   if (method === 'kernel/shutdown') {

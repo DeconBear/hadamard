@@ -1,5 +1,5 @@
 import { renderMathHtml } from '../markdown.js';
-import { latexToComputation, type ComputationLanguage } from '../notebook/latexCompute.js';
+import { latexToComputation, latexToSymbolicComputation, type ComputationLanguage } from '../notebook/latexCompute.js';
 import type { NotebookVariables } from '../notebook/variables.js';
 import { esc } from './utils.js';
 
@@ -8,6 +8,7 @@ interface RichEditingOptions {
   getVariables(): NotebookVariables;
   getKernelLanguage(): ComputationLanguage;
   insertCalculation(source: string, markdownId: string): void;
+  openVariable(name: string): void;
   commit(view: HTMLElement): void;
   toast(message: string, kind?: 'info' | 'success' | 'error'): void;
 }
@@ -48,13 +49,16 @@ function openFormulaPopover(target: HTMLElement, view: HTMLElement, options: Ric
   popover.innerHTML = '<div class="nb-popover-title"><strong>Formula</strong><small>LaTeX · live preview</small></div>' +
     '<textarea aria-label="LaTeX formula" spellcheck="false" rows="2"></textarea>' +
     '<div class="nb-formula-live" aria-live="polite"></div>' +
+    '<div class="nb-formula-symbols"></div>' +
     '<div class="nb-formula-message" aria-live="polite"></div>' +
-    '<div class="nb-popover-actions"><button type="button" data-formula-calculate>Calculate</button><span></span><button type="button" data-formula-cancel>Cancel</button><button type="button" class="primary" data-formula-save>Done</button></div>';
+    '<div class="nb-popover-actions"><button type="button" data-formula-symbolic>Symbolic</button><button type="button" data-formula-calculate>Calculate</button><span></span><button type="button" data-formula-cancel>Cancel</button><button type="button" class="primary" data-formula-save>Done</button></div>';
   document.body.appendChild(popover);
   positionPopover(popover, target);
+  if (options.getKernelLanguage() !== 'python') popover.querySelector('[data-formula-symbolic]')?.remove();
   const input = popover.querySelector('textarea')!;
   const preview = popover.querySelector<HTMLElement>('.nb-formula-live')!;
   const message = popover.querySelector<HTMLElement>('.nb-formula-message')!;
+  const symbols = popover.querySelector<HTMLElement>('.nb-formula-symbols')!;
   input.value = original;
   let cleaned = false;
   const cleanup = (): void => {
@@ -69,6 +73,10 @@ function openFormulaPopover(target: HTMLElement, view: HTMLElement, options: Ric
     const value = input.value.trim();
     preview.innerHTML = value ? renderMathHtml(value, target.classList.contains('hc-math-block')) : '<span>Enter a LaTeX expression</span>';
     message.textContent = '';
+    try {
+      const result = latexToComputation(value, options.getKernelLanguage(), options.getVariables());
+      symbols.innerHTML = result.symbols.length ? 'Variables: ' + result.symbols.map(name => '<button type="button" data-nb-formula-symbol="' + esc(name) + '">' + esc(name) + '</button>').join('') : '';
+    } catch { symbols.innerHTML = ''; }
   };
   const save = (): void => {
     const value = input.value.trim();
@@ -88,6 +96,10 @@ function openFormulaPopover(target: HTMLElement, view: HTMLElement, options: Ric
     if (!popover.contains(event.target as Node)) save();
   };
   input.addEventListener('input', paint);
+  symbols.addEventListener('click', event => {
+    const button = (event.target as Element | null)?.closest<HTMLButtonElement>('[data-nb-formula-symbol]');
+    if (button?.dataset.nbFormulaSymbol) options.openVariable(button.dataset.nbFormulaSymbol);
+  });
   popover.querySelector('[data-formula-cancel]')?.addEventListener('click', () => { cleanup(); view.focus(); });
   popover.querySelector('[data-formula-save]')?.addEventListener('click', save);
   popover.querySelector('[data-formula-calculate]')?.addEventListener('click', () => {
@@ -97,6 +109,17 @@ function openFormulaPopover(target: HTMLElement, view: HTMLElement, options: Ric
       else cleanup();
       options.insertCalculation(result.code, view.dataset.nbMarkdownView || '');
       options.toast('Calculation code inserted. Review it, then run the cell.', 'success');
+    } catch (error) {
+      message.textContent = error instanceof Error ? error.message : String(error);
+    }
+  });
+  popover.querySelector('[data-formula-symbolic]')?.addEventListener('click', () => {
+    try {
+      const result = latexToSymbolicComputation(input.value, options.getVariables());
+      if (input.value.trim() !== original) save();
+      else cleanup();
+      options.insertCalculation(result.code, view.dataset.nbMarkdownView || '');
+      options.toast('SymPy code inserted. Review and run it; SymPy is required only for this cell.', 'success');
     } catch (error) {
       message.textContent = error instanceof Error ? error.message : String(error);
     }

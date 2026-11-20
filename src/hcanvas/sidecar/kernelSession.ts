@@ -17,6 +17,7 @@ import {
   type HcKernelCatalogEntry,
   type HcKernelCatalogPort,
   type HcKernelErrorOutput,
+  type HcKernelExecutionLookup,
   type HcKernelExecutionResult,
   type HcKernelExecutionStatus,
   type HcKernelOutputItem,
@@ -214,6 +215,7 @@ export class HcKernelManager {
   private readonly onEventCallback: ((event: HcKernelRuntimeEvent) => void) | undefined;
   private readonly sessions = new Map<string, KernelSessionRecord>();
   private readonly executionIndex = new Map<string, string>();
+  private readonly completedExecutions = new Map<string, { sessionId: string; result: HcKernelExecutionResult }>();
   private readonly unsubscribeBroker: () => void;
 
   constructor(options: HcKernelManagerOptions) {
@@ -273,6 +275,17 @@ export class HcKernelManager {
     return this.sessions.has(sessionId);
   }
 
+  execution(executionId: string): HcKernelExecutionLookup {
+    const completed = this.completedExecutions.get(executionId);
+    if (completed) return { state: 'completed', ...completed };
+    const sessionId = this.executionIndex.get(executionId);
+    const session = sessionId ? this.sessions.get(sessionId) : undefined;
+    if (!sessionId || !session) return { state: 'unknown' };
+    if (session.active?.executionId === executionId) return { state: 'running', sessionId };
+    if (session.queued.some(item => item.executionId === executionId)) return { state: 'queued', sessionId };
+    return { state: 'unknown' };
+  }
+
   /** Enqueue an execution; resolves through `completion` when finished/aborted. */
   startExecution(sessionId: string, code: unknown, options: HcKernelExecuteOptions = {}): HcKernelStartedExecution {
     if (typeof code !== 'string') throw new HcRuntimeError('invalid_params', 'code must be a string');
@@ -299,6 +312,18 @@ export class HcKernelManager {
   /** Enqueue and await completion (route convenience helper). */
   execute(sessionId: string, code: unknown, options: HcKernelExecuteOptions = {}): Promise<HcKernelExecutionResult> {
     return this.startExecution(sessionId, code, options).completion;
+  }
+
+  async complete(sessionId: string, code: string, cursorPos: number): Promise<Record<string, unknown>> {
+    const session = this.requireSession(sessionId);
+    const outcome = await this.broker.request(session.sessionId, HKP_METHODS.complete, { code, cursorPos }, { timeoutMs: 5000 });
+    return outcome.result && typeof outcome.result === 'object' ? outcome.result as Record<string, unknown> : {};
+  }
+
+  async inspect(sessionId: string, code: string, cursorPos: number): Promise<Record<string, unknown>> {
+    const session = this.requireSession(sessionId);
+    const outcome = await this.broker.request(session.sessionId, HKP_METHODS.inspect, { code, cursorPos }, { timeoutMs: 5000 });
+    return outcome.result && typeof outcome.result === 'object' ? outcome.result as Record<string, unknown> : {};
   }
 
   /** Interrupt the running execution; escalates when the kernel does not comply. */
@@ -373,10 +398,10 @@ export class HcKernelManager {
   async restart(sessionId: string): Promise<HcKernelSessionSnapshot> {
     const session = this.requireSession(sessionId);
     const active = session.active;
+    session.state = 'restarting';
     if (active && !active.settled) {
       this.settleExecution(session, active, 'aborted', { error: { ename: 'KernelRestarted', evalue: 'Kernel was restarted', traceback: [] } });
     }
-    session.state = 'restarting';
     this.emitState(session);
     session.unsubscribeNotifications?.();
     session.unsubscribeNotifications = undefined;
@@ -548,6 +573,7 @@ export class HcKernelManager {
   private async handleKernelCrash(session: KernelSessionRecord): Promise<void> {
     if (session.state === 'dead') return;
     session.sawCrash = true;
+    session.state = 'restarting';
     const active = session.active;
     session.crashes += 1;
     const crashMessage = 'Kernel ' + session.kernelId + ' crashed (crash #' + session.crashes + ')';
@@ -791,6 +817,8 @@ export class HcKernelManager {
       outputs: { events: [...execution.events], truncated: execution.truncated, totalBytes: execution.totalBytes },
       ...(error ? { error } : {}),
     };
+    this.completedExecutions.set(execution.executionId, { sessionId: session.sessionId, result });
+    if (this.completedExecutions.size > 100) this.completedExecutions.delete(this.completedExecutions.keys().next().value || '');
     this.emit(session, execution.executionId, 'execution_finished', {
       status,
       durationMs,

@@ -6,6 +6,7 @@ import type { BuiltinViewer, BuiltinViewerContext } from './builtinViewers.js';
 import { mountNotebookPage, type NotebookPageContext } from './notebookPage.js';
 import { mountNotebookEditor, type NotebookEditorData, type NotebookEditorHandle } from './notebookEditor.js';
 import type { NotebookVariables } from '../notebook/variables.js';
+import { parseIpynb, serializeIpynb } from '../notebook/ipynb.js';
 
 export interface NotebookViewerDeps {
   request<T = Record<string, unknown>>(pathname: string, init?: RequestInit): Promise<T>;
@@ -122,14 +123,16 @@ function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: No
     try {
       const result = await deps.request<{ file: { content: string } }>('/api/files/read?root=' + encodeURIComponent(file.rootId) + '&path=' + encodeURIComponent(file.path));
       if (disposed) return;
-      const parsed = parseNotebook(result.file.content);
+      const isIpynb = file.path.toLowerCase().endsWith('.ipynb');
+      const parsed = isIpynb ? null : parseNotebook(result.file.content);
       const kernels = deps.getKernels();
       const cache = loadCache(file.rootId, file.path);
-      const data = toEditorData(parsed, kernels, cache);
+      const data = isIpynb ? parseIpynb(result.file.content).data : toEditorData(parsed!, kernels, cache);
+      if (!data.defaultKernelId) data.defaultKernelId = kernels[0]?.id || '';
       editor = mountNotebookEditor({
         host,
         title: scopeName,
-        subtitle: file.path + ' · Markdown saved in the workspace',
+        subtitle: file.path + (isIpynb ? ' · Jupyter notebook saved in the workspace' : ' · Markdown saved in the workspace'),
         kernels,
         scope: { kind: 'file', key: file.rootId + ':' + file.path },
         data,
@@ -137,19 +140,25 @@ function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: No
         getKernelManager: deps.getKernelManager,
         toast: deps.toast,
         persist: async snapshot => {
-          withFrontmatterValues(parsed, snapshot, kernels);
-          const cells: NotebookCell[] = snapshot.cells.map(cell => cell.kind === 'markdown'
-            ? { kind: 'markdown', source: cell.source }
-            : { kind: 'code', id: cell.id, info: '', language: cell.language || 'text', exec: cell.executable !== false, source: cell.source });
-          parsed.cells = cells;
-          parsed.trailingNewline = true;
+          let content: string;
+          if (isIpynb) content = serializeIpynb(snapshot);
+          else {
+            withFrontmatterValues(parsed!, snapshot, kernels);
+            const cells: NotebookCell[] = snapshot.cells.map(cell => cell.kind === 'markdown'
+              ? { kind: 'markdown', source: cell.source }
+              : { kind: 'code', id: cell.id, info: '', language: cell.language || 'text', exec: cell.executable !== false, source: cell.source });
+            parsed!.cells = cells;
+            parsed!.trailingNewline = true;
+            content = serializeNotebook(parsed!);
+          }
           await deps.request('/api/files/write', {
             method: 'POST',
             keepalive: true,
-            body: JSON.stringify({ root: file.rootId, path: file.path, content: serializeNotebook(parsed) }),
+            body: JSON.stringify({ root: file.rootId, path: file.path, content }),
           });
         },
         persistOutputs: snapshot => {
+          if (isIpynb) return;
           persistOutputCache(cache, snapshot);
           saveCache(file.rootId, file.path, cache);
         },

@@ -263,6 +263,8 @@
     "build:desktop:suite": "node scripts/build-hadamard-suite.mjs",
     "test:hcanvas:e2e": "node scripts/verify-hcanvas-e2e.mjs",
     "test:hcanvas:extensions:e2e": "node scripts/verify-hcanvas-extensions-e2e.mjs",
+    "test:hcanvas:notebook:e2e": "node scripts/verify-hcanvas-notebook-interactions-e2e.mjs",
+    "test:hcanvas:maxwell:e2e": "node scripts/verify-hcanvas-maxwell-e2e.mjs",
     "hcanvas:extension:validate": "node scripts/validate-hcanvas-extension.mjs",
     "build:hcanvas:package": "node scripts/build-canvas-package.mjs",
     "build:hcanvas:release": "npm run build:hcanvas:all && npm run build:hcanvas:package",

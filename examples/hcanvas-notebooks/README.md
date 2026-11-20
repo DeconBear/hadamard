@@ -14,3 +14,7 @@ Requirements:
 
 Open the file from the Hcanvas **Files** panel. The same content can also be
 created as a Notebook page; the live demo page includes rendered outputs.
+
+Notebook files support both `.hnb.md` and standard `.ipynb`. Variable sliders,
+Run affected, background execution, native table/CSV output, kernel completion
+and optional SymPy cells are available in the current editor.
