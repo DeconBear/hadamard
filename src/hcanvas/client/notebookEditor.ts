@@ -6,7 +6,8 @@ import { affectedCellIds } from '../notebook/cellDependencies.js';
 import { moveCodeCellToMarkdown } from '../notebook/cellMove.js';
 import { installNotebookCellDragAndDrop } from './notebookCellDragAndDrop.js';
 import { renderNotebookCodeCell, renderNotebookMarkdownCell } from './notebookCellMarkup.js';
-import { exportNotebookHtml, exportNotebookIpynb } from './notebookExport.js';
+import { exportNotebookHtml } from './notebookExport.js';
+import { focusNotebookMarkdownAtEnd, mergeNotebookMarkdownSegments } from './notebookMarkdownSegments.js';
 import { renderNotebookTaskPanel } from './notebookTaskPanel.js';
 import { notebookVariableNames, renderNotebookVariablesPanel } from './notebookVariablesPanel.js';
 import { parseVariablesCsv, parseVariablesJson, serializeVariablesJson } from '../notebook/variablesImport.js';
@@ -110,6 +111,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
 
   host.classList.add('notebook-host');
   normalizeNotebookVariableState(data);
+  activeCellId = mergeNotebookMarkdownSegments(data, activeCellId, selectedCellIds, markdownRevisions);
   data.cells.forEach(cell => {
     if (!cell.id) cell.id = genId('nbcell');
     if (cell.kind === 'code') cell.outputs = Array.isArray(cell.outputs) ? cell.outputs : [];
@@ -131,7 +133,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     '<button type="button" class="btn tiny nb-variables-toggle" data-nb-tasks aria-expanded="false">Tasks <span data-nb-task-count></span></button>' +
     '<span class="nb-save-status" data-nb-status data-tone="saved" title="Changes save automatically">Auto-save</span>' +
     '<button type="button" class="btn tiny nb-tool-icon" data-nb-export title="Export HTML" aria-label="Export HTML"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v9m-3-3 3 3 3-3M3 10v4h10v-4"/></svg></button>' +
-    '<button type="button" class="btn tiny" data-nb-export-ipynb title="Export Jupyter notebook" aria-label="Export Jupyter notebook">ipynb</button>' +
     '</div></header>' +
     '<section class="nb-variable-panel hidden" data-nb-variable-panel aria-label="Shared variables"></section>' +
     '<section class="nb-task-panel hidden" data-nb-task-panel aria-label="Notebook executions"></section>' +
@@ -251,6 +252,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     data.initialVariables = snapshot.initialVariables;
     data.variablesInitialized = snapshot.variablesInitialized;
     activeCellId = data.cells[0]?.id || '';
+    activeCellId = mergeNotebookMarkdownSegments(data, activeCellId, selectedCellIds, markdownRevisions);
     selectedCellIds.clear();
     if (activeCellId) selectedCellIds.add(activeCellId);
     changeCellId = '';
@@ -452,41 +454,47 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       id: genId('nbcell'), kind, source,
       ...(kind === 'code' ? { executable: true, outputs: [], ...(kernel ? { kernelId: kernel.id, language: kernel.language } : {}) } : {}),
     };
+    syncMarkdownSources();
     pushUndo();
     data.cells.splice(Math.max(0, Math.min(data.cells.length, index)), 0, cell);
     activeCellId = cell.id;
     selectedCellIds.clear();
     selectedCellIds.add(cell.id);
+    activeCellId = mergeNotebookMarkdownSegments(data, activeCellId, selectedCellIds, markdownRevisions);
     commandMode = false;
     markDirty();
     renderCells();
     requestAnimationFrame(() => {
       if (kind === 'code') editors.get(cell.id)?.focus();
-      else cellElement(cell.id)?.querySelector<HTMLElement>('[data-nb-markdown-view]')?.focus();
+      else focusNotebookMarkdownAtEnd(cellElement(activeCellId)?.querySelector<HTMLElement>('[data-nb-markdown-view]'));
     });
   };
   const moveCell = (id: string, delta: number): void => {
     const index = data.cells.findIndex(cell => cell.id === id);
     const target = index + delta;
     if (index < 0 || target < 0 || target >= data.cells.length) return;
+    syncMarkdownSources();
     pushUndo();
     const [cell] = data.cells.splice(index, 1);
     if (cell) data.cells.splice(target, 0, cell);
     activeCellId = id;
+    activeCellId = mergeNotebookMarkdownSegments(data, activeCellId, selectedCellIds, markdownRevisions);
     markDirty();
     renderCells();
-    cellElement(id)?.scrollIntoView({ block: 'nearest' });
+    cellElement(activeCellId)?.scrollIntoView({ block: 'nearest' });
   };
   const moveCellTo = (id: string, target: number): void => {
     const index = data.cells.findIndex(cell => cell.id === id);
     if (index < 0 || index === target || target < 0 || target >= data.cells.length) return;
+    syncMarkdownSources();
     pushUndo();
     const [cell] = data.cells.splice(index, 1);
     if (cell) data.cells.splice(target, 0, cell);
     activeCellId = id;
+    activeCellId = mergeNotebookMarkdownSegments(data, activeCellId, selectedCellIds, markdownRevisions);
     markDirty();
     renderCells();
-    cellElement(id)?.scrollIntoView({ block: 'nearest' });
+    cellElement(activeCellId)?.scrollIntoView({ block: 'nearest' });
   };
   const moveCodeToMarkdown = (codeId: string, markdownId: string, blockIndex: number, renderedCount: number): void => {
     if (!data.cells.some(cell => cell.id === codeId && cell.kind === 'code') || !data.cells.some(cell => cell.id === markdownId && cell.kind === 'markdown')) return;
@@ -495,6 +503,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     if (!result.moved) return;
     if (result.markdownChanged) markdownRevisions.set(markdownId, 0);
     activeCellId = codeId; selectedCellIds.clear(); selectedCellIds.add(codeId); commandMode = true; changeCellId = '';
+    activeCellId = mergeNotebookMarkdownSegments(data, activeCellId, selectedCellIds, markdownRevisions);
     markAffected(data.cells.filter(cell => cell.kind === 'code').map(cell => cell.id));
     markDirty(); renderCells(); focusCell(codeId);
     if (result.fallback) options.toast('This Markdown block could not be split safely. The code was placed next to the whole block.', 'info');
@@ -502,6 +511,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   const deleteCells = (ids: string[]): void => {
     const removed = new Set(ids.filter(id => data.cells.some(cell => cell.id === id)));
     if (!removed.size) return;
+    syncMarkdownSources();
     pushUndo();
     for (const id of removed) {
       if (running.has(id)) void stopCell(id);
@@ -516,6 +526,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     data.cells = data.cells.filter(cell => !removed.has(cell.id));
     for (const id of removed) selectedCellIds.delete(id);
     if (removed.has(activeCellId)) activeCellId = data.cells[Math.min(Math.max(0, firstIndex), data.cells.length - 1)]?.id || '';
+    activeCellId = mergeNotebookMarkdownSegments(data, activeCellId, selectedCellIds, markdownRevisions);
     if (!selectedCellIds.size && activeCellId) selectedCellIds.add(activeCellId);
     commandMode = true;
     markDirty();
@@ -537,10 +548,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   const exportHtml = (): void => {
     syncMarkdownSources();
     exportNotebookHtml(options.title, data, kernels);
-  };
-  const exportIpynb = (): void => {
-    syncMarkdownSources();
-    exportNotebookIpynb(options.title, data);
   };
 
   const renderCodeCell = (cell: NotebookEditorCell, index: number): string => renderNotebookCodeCell(data, kernels, cell, index);
@@ -814,7 +821,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   host.querySelector('[data-nb-stop]')?.addEventListener('click', () => { void stopAll(); });
   host.querySelector('[data-nb-restart]')?.addEventListener('click', () => { void restartKernels(); });
   host.querySelector('[data-nb-export]')?.addEventListener('click', exportHtml);
-  host.querySelector('[data-nb-export-ipynb]')?.addEventListener('click', exportIpynb);
   host.querySelector('[data-nb-add-code]')?.addEventListener('click', () => insertCell(data.cells.length, 'code'));
   host.querySelector('[data-nb-add-md]')?.addEventListener('click', () => insertCell(data.cells.length, 'markdown'));
   host.querySelector<HTMLSelectElement>('[data-nb-default-kernel]')?.addEventListener('change', event => {

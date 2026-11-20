@@ -275,9 +275,27 @@ async function main() {
     await page.waitForTimeout(1000);
     const savedLayout = (await api('/api/files/read?root=root_default&path=layout.hnb.md')).body.file?.content || '';
     assert('split layout persists code between Markdown paragraphs', savedLayout.indexOf('First **bold** paragraph.') < savedLayout.indexOf('```python') && savedLayout.indexOf('```python') < savedLayout.indexOf('Second paragraph.'), savedLayout);
+    await page.keyboard.press('Control+ArrowDown');
+    await page.waitForFunction(() => document.querySelectorAll('.nb-markdown').length === 1);
+    const mergedMarkdownText = await page.locator('[data-nb-markdown-view]').innerText();
+    assert('moving code away merges adjacent Markdown into one segment', await page.locator('.nb-code').count() === 1 && mergedMarkdownText.includes('First bold paragraph') && mergedMarkdownText.includes('Second paragraph') && mergedMarkdownText.includes('Third paragraph'));
+    const mergedSelection = await page.locator('[data-nb-markdown-view]').evaluate(view => {
+      const range = document.createRange();
+      range.selectNodeContents(view);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return selection?.toString() || '';
+    });
+    assert('one native selection spans all formerly separated Markdown', mergedSelection.includes('First bold paragraph') && mergedSelection.includes('Second paragraph') && mergedSelection.includes('Third paragraph'));
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('z');
+    await page.waitForFunction(() => document.querySelectorAll('.nb-markdown').length === 2);
+    assert('one undo restores the split around the moved code', await page.locator('.nb-code').getAttribute('data-nb-cell') === layoutCodeId);
+    await page.keyboard.press('Escape');
     await page.keyboard.press('z');
     await page.waitForFunction(() => document.querySelectorAll('.nb-markdown').length === 1);
-    assert('one undo restores the original Markdown and code order', await page.locator('.nb-markdown').getAttribute('data-nb-rendered-source') === originalLayoutSource && await page.locator('.nb-code-input').evaluate(element => element.dataset.layoutKeep) === 'preserved');
+    assert('a second undo restores the original Markdown and code order', await page.locator('.nb-markdown').getAttribute('data-nb-rendered-source') === originalLayoutSource && await page.locator('.nb-code-input').evaluate(element => element.dataset.layoutKeep) === 'preserved');
 
     await page.locator('.file-tree-node', { hasText: 'native.ipynb' }).first().click();
     await page.locator('.nb-title strong', { hasText: 'native.ipynb' }).waitFor();
@@ -299,10 +317,7 @@ async function main() {
     const htmlDownload = page.waitForEvent('download');
     await page.locator('[data-nb-export]').click();
     assert('standalone HTML export downloads', (await htmlDownload).suggestedFilename().endsWith('.html'));
-    const ipynbDownload = page.waitForEvent('download');
-    await page.locator('[data-nb-export-ipynb]').click();
-    const exportedNotebook = await ipynbDownload;
-    assert('ipynb export downloads notebook', exportedNotebook.suggestedFilename().endsWith('.ipynb'));
+    assert('ipynb export control is not offered', await page.locator('[data-nb-export-ipynb]').count() === 0);
     assert('no browser errors', errors.length === 0, errors.join('; '));
     console.log('Notebook interaction E2E passed');
   } finally {

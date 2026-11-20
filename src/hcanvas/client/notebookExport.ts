@@ -1,6 +1,5 @@
 import { renderStoredOutputsHtml } from '../execOutputs.js';
 import { renderMarkdownHtml } from '../markdown.js';
-import { serializeIpynb } from '../notebook/ipynb.js';
 import type { NotebookEditorData } from '../notebook/types.js';
 import type { KernelDescriptor } from './kernelManager.js';
 import { sanitizeMarkdownHtml } from './markdownSanitize.js';
@@ -38,8 +37,4 @@ export function exportNotebookHtml(title: string, data: NotebookEditorData, kern
   const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(title) + '</title><style>' +
     'body{font:15px/1.65 Inter,system-ui,sans-serif;color:#252b36;max-width:900px;margin:40px auto;padding:0 24px;background:#faf8f3}.md h1,.md h2{font-family:Georgia,serif}.code{margin:20px 0}.cell-kernel{font:10px Inter,sans-serif;color:#8a8276;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}.code>pre{background:#181b23;color:#e6e9f0;padding:16px;border-radius:12px;overflow:auto;font:12.5px/1.6 ui-monospace,Consolas,monospace}.out img,section img{max-width:100%;height:auto}.out pre{white-space:pre-wrap;background:#fff;border:1px solid #e3ded3;border-radius:8px;padding:10px}.out iframe{width:100%;min-height:180px;border:1px solid #e3ded3;border-radius:8px}.exec-out-error{color:#b42318}details{margin:28px 0}details pre{white-space:pre-wrap}.export-document .hc-data-table-actions button{display:none}</style></head><body class="export-document">' + body + initial + current + '</body></html>';
   download(URL.createObjectURL(new Blob([html], { type: 'text/html' })), filename(title, '.html'));
-}
-
-export function exportNotebookIpynb(title: string, data: NotebookEditorData): void {
-  download(URL.createObjectURL(new Blob([serializeIpynb(data)], { type: 'application/x-ipynb+json' })), filename(title, '.ipynb'));
 }

@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import type { NotebookEditorCell } from './types.js';
 
 export interface MarkdownBlockRange {
   start: number;
@@ -29,4 +30,27 @@ export function splitMarkdownAtBlock(source: string, index: number): { before: s
   const before = source.slice(0, boundary).trimEnd();
   const after = source.slice(boundary).trim();
   return before && after ? { before, after } : null;
+}
+
+export interface MarkdownMergeResult {
+  cells: NotebookEditorCell[];
+  idMap: Record<string, string>;
+}
+
+export function mergeAdjacentMarkdownCells(cells: NotebookEditorCell[]): MarkdownMergeResult {
+  const merged: NotebookEditorCell[] = [];
+  const idMap: Record<string, string> = {};
+  for (const cell of cells) {
+    const previous = merged[merged.length - 1];
+    if (cell.kind !== 'markdown' || previous?.kind !== 'markdown') {
+      merged.push(cell);
+      continue;
+    }
+    const source = previous.source.trim() && cell.source.trim()
+      ? previous.source.trimEnd() + '\n\n' + cell.source.trimStart()
+      : previous.source || cell.source;
+    merged[merged.length - 1] = { ...previous, source };
+    idMap[cell.id] = previous.id;
+  }
+  return { cells: merged, idMap };
 }
