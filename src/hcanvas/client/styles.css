@@ -1836,3 +1836,23 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .nb-block-insert-menu button { display:block; width:100%; padding:6px 8px; border:0; border-radius:6px; background:transparent; color:#554a62; font:11px Inter,sans-serif; text-align:left; cursor:pointer; }
 .nb-block-insert-menu button:hover, .nb-block-insert-menu button:focus { background:#f0eaf8; color:#5e4694; outline:none; }
 .nb-block-insert-plus.hidden, .nb-block-insert-menu.hidden { display:none; }
+
+.nb-variable-panel { margin-top:2px; margin-bottom:4px; }
+.nb-toolbar { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:10px; padding:9px 0 12px; border-bottom:1px solid #ebe6ee; background:transparent; }
+.nb-toolbar .nb-title { min-width:150px; }
+.nb-toolbar .nb-title strong { font-size:15px; color:#302a3a; }
+.nb-toolbar .nb-title small { color:#998fa3; }
+.nb-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+.nb-run-group, .nb-session-group { display:flex; align-items:center; gap:2px; box-sizing:border-box; padding:3px; border:1px solid #e4ddea; border-radius:9px; background:#f6f3f9; }
+.nb-session-group { gap:3px; border-color:#e8e3eb; background:#faf8fb; }
+.nb-run-group .btn, .nb-session-group .btn { height:26px; border:0; background:transparent; box-shadow:none; color:#6d627a; }
+.nb-run-group .btn:hover, .nb-session-group .btn:hover { background:#ece6f3; color:#514061; }
+.nb-run-group .nb-run-all { padding:0 11px; border-radius:6px; background:#6651b8; color:#fff; }
+.nb-run-group .nb-run-all:hover { background:#58449f; color:#fff; }
+.nb-run-group .btn:disabled { opacity:.42; }
+.nb-run-group .nb-run-scope { width:108px; height:26px; padding:0 6px; border:0; background:transparent; color:#766a84; font-size:10px; }
+.nb-session-group .nb-tool-icon { width:26px; }
+.nb-actions .nb-save-status { margin:0 2px; color:#978da0; font-size:9px; }
+.nb-actions .nb-notebook-export { width:30px; height:30px; border:1px solid #e3dce8; border-radius:8px; background:#fff; color:#756683; }
+.nb-actions .nb-notebook-export:hover { border-color:#cbbbd9; background:#f5f1f9; color:#5e4694; }
+.nb-run-group .btn:focus-visible, .nb-session-group .btn:focus-visible, .nb-notebook-export:focus-visible { outline:2px solid rgba(111,83,177,.22); outline-offset:1px; }

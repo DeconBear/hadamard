@@ -119,16 +119,16 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   host.innerHTML = '<div class="notebook-view">' +
     '<section class="nb-variable-panel collapsed" data-nb-variable-panel aria-label="Shared variables"><div class="nb-variable-bar"><button type="button" class="nb-variable-expand" data-nb-variable-expand aria-label="Expand variables" aria-expanded="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><span class="nb-variable-summary">Inputs &amp; current values <span data-nb-variable-count></span></span><button type="button" class="nb-variable-popout" data-nb-variable-popout title="Pop out variables" aria-label="Pop out variables">↗</button></div><div class="nb-variable-body hidden" data-nb-variable-body></div></section>' +
     '<header class="nb-toolbar"><div class="nb-title"><strong>' + esc(options.title) + '</strong><small>' + esc(options.subtitle) + '</small></div>' +
-    '<div class="nb-actions">' +
+    '<div class="nb-actions"><div class="nb-run-group">' +
     '<button type="button" class="btn tiny primary nb-run-all" data-nb-runall>' + PLAY + '<span>Run all</span></button>' +
     '<button type="button" class="btn tiny" data-nb-run-selected>Run selected</button>' +
     '<button type="button" class="btn tiny" data-nb-run-affected title="Run cells affected by source or variable changes" disabled>Run affected</button>' +
-    '<select class="nb-kernel nb-run-scope" data-nb-run-scope aria-label="Run range" title="Run range"><option value="">More run…</option><option value="above">Run above</option><option value="below">Run below</option><option value="changed">Run changed</option><option value="restart">Restart &amp; Run all</option></select>' +
-    '<button type="button" class="btn tiny nb-tool-icon" data-nb-stop title="Stop all executions" aria-label="Stop all executions">' + STOP + '</button>' +
+    '<select class="nb-kernel nb-run-scope" data-nb-run-scope aria-label="Run range" title="Run range"><option value="">More run…</option><option value="above">Run above</option><option value="below">Run below</option><option value="changed">Run changed</option><option value="restart">Restart &amp; Run all</option></select></div>' +
+    '<div class="nb-session-group"><button type="button" class="btn tiny nb-tool-icon" data-nb-stop title="Stop all executions" aria-label="Stop all executions">' + STOP + '</button>' +
     '<button type="button" class="btn tiny" data-nb-restart title="Restart kernels; shared variables are preserved">Restart</button>' +
-    '<button type="button" class="btn tiny nb-variables-toggle" data-nb-tasks aria-expanded="false">Tasks <span data-nb-task-count></span></button>' +
+    '<button type="button" class="btn tiny nb-variables-toggle" data-nb-tasks aria-expanded="false">Tasks <span data-nb-task-count></span></button></div>' +
     '<span class="nb-save-status" data-nb-status data-tone="saved" title="Changes save automatically">Auto-save</span>' +
-    '<button type="button" class="btn tiny nb-tool-icon" data-nb-export title="Export HTML" aria-label="Export HTML"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v9m-3-3 3 3 3-3M3 10v4h10v-4"/></svg></button>' +
+    '<button type="button" class="btn tiny nb-tool-icon nb-notebook-export" data-nb-export title="Export HTML" aria-label="Export HTML"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v9m-3-3 3 3 3-3M3 10v4h10v-4"/></svg></button>' +
     '</div></header>' +
     '<section class="nb-task-panel hidden" data-nb-task-panel aria-label="Notebook executions"></section>' +
     '<main class="nb-cells" data-nb-cells></main>' +
@@ -611,15 +611,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
         child.remove();
       }
     }
-    let endAdd = cellsHost.querySelector<HTMLButtonElement>('[data-nb-end-add]');
-    if (!endAdd) {
-      endAdd = document.createElement('button');
-      endAdd.type = 'button';
-      endAdd.className = 'nb-end-add';
-      endAdd.dataset.nbEndAdd = '';
-      endAdd.textContent = '+ Add a cell';
-      cellsHost.appendChild(endAdd);
-    }
     data.cells.forEach((cell, index) => {
       let section = existing.get(cell.id);
       if (!section) {
@@ -652,7 +643,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
           section.dataset.nbRenderedSource = cell.source;
         }
       }
-      const reference = cellsHost.children[index] || endAdd;
+      const reference = cellsHost.children[index] || null;
       if (reference !== section) cellsHost.insertBefore(section, reference);
       if (cell.kind === 'markdown') {
         if (!section.querySelector('[data-nb-markdown-view]')?.hasAttribute('data-nb-bound')) {
@@ -729,7 +720,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     else if (button.dataset.nbClear) {
       const cell = data.cells.find(item => item.id === button.dataset.nbClear);
       if (cell) { cell.outputs = []; cell.stale = false; refreshOutput(cell); markDirty(); options.persistOutputs?.(data); }
-    } else if (button.hasAttribute('data-nb-end-add')) insertCell(data.cells.length, 'code');
+    }
   });
   cellsHost.addEventListener('change', event => {
     const select = (event.target as Element | null)?.closest<HTMLSelectElement>('[data-nb-cell-kernel]');

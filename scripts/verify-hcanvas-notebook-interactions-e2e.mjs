@@ -74,6 +74,8 @@ async function main() {
     await page.locator('.file-tree-node', { hasText: 'interaction.hnb.md' }).first().click();
     await page.waitForSelector('.nb-code');
     assert('two native code cells', await page.locator('.nb-code').count() === 2);
+    assert('bottom Add a cell control is removed', await page.locator('[data-nb-end-add], .nb-end-add').count() === 0);
+    assert('Notebook toolbar groups run and session controls', await page.locator('.nb-run-group [data-nb-runall], .nb-run-group [data-nb-run-scope], .nb-session-group [data-nb-restart], .nb-session-group [data-nb-tasks]').count() === 4);
     assert('variable dock starts collapsed without toolbar variable or global kernel controls', await page.locator('[data-nb-variable-body]').evaluate(element => element.classList.contains('hidden')) && await page.locator('[data-nb-variables], [data-nb-default-kernel]').count() === 0);
 
     const firstEditor = page.locator('.nb-code-input').first();
