@@ -76,7 +76,7 @@ async function main() {
     const documentFlow = await page.locator('.nb-code').first().evaluate(element => ({ border: getComputedStyle(element).borderTopWidth, caption: getComputedStyle(element.querySelector('.nb-output-caption > span')).display }));
     assert('code and outputs use continuous document presentation', documentFlow.border === '0px' && documentFlow.caption === 'none', JSON.stringify(documentFlow));
     assert('no cell errors', (await page.locator('.exec-out-error').count()) === 0);
-    await page.locator('[data-nb-variables]').click();
+    await page.locator('[data-nb-variable-expand]').click();
     const variables = await page.locator('[data-nb-variable-row]').evaluateAll(rows => rows.map(row => row.dataset.nbVariableRow || ''));
     const required = ['peak_inversion', 'final_inversion', 'propagation_peak_field', 'rabi_period', 'pulse_area', 'rabi_period_cpp', 'rabi_period_octave', 'rabi_period_error_cpp', 'period_max_error'];
     assert('cross-language variables present', required.every(name => variables.includes(name)), variables.join(', '));
@@ -104,6 +104,7 @@ async function main() {
     const beforeCount = Number((await parameterCell.locator('[data-nb-execution-count]').innerText()).replace(/\D/g, '')) || 0;
     await page.locator('[data-nb-run-affected]').click();
     await page.waitForFunction(({ id, before }) => Number(document.querySelector('[data-nb-cell="' + id + '"] [data-nb-execution-count]')?.textContent?.replace(/\D/g, '')) > before, { id: parameterId, before: beforeCount });
+    await page.waitForFunction(() => !document.querySelector('[data-nb-cell-status][data-tone="running"], [data-nb-cell-status][data-tone="queued"]'));
     assert('Run affected keeps existing current values until initialization', await currentValue('omega0') === '2' && Math.abs(Number(await currentValue('rabi_period')) - Math.PI) < 1e-12);
     await page.locator('[data-nb-variable-initialize]').click();
     assert('Initialize applies the edited initial value', await currentValue('omega0') === '1');

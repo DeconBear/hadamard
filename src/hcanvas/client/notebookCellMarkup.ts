@@ -5,6 +5,7 @@ import { renderMarkdownHtml } from '../markdown.js';
 import { esc } from './utils.js';
 
 const PLAY = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.2 1.8v8.4L10 6z"/></svg>';
+const COLLAPSE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>';
 
 function cellKernel(data: NotebookEditorData, kernels: KernelDescriptor[], cell: NotebookEditorCell): KernelDescriptor | null {
   return kernels.find(kernel => kernel.id === cell.kernelId)
@@ -25,7 +26,7 @@ export function renderNotebookCodeCell(data: NotebookEditorData, kernels: Kernel
   const executable = cell.executable !== false;
   return '<section class="nb-cell nb-code' + (cell.stale ? ' nb-code-stale' : '') + (cell.hideCode ? ' nb-code-hidden' : '') + (cell.hideOutput ? ' nb-output-hidden' : '') + '" data-nb-cell="' + esc(cell.id) + '" tabindex="0" aria-label="Code cell">' +
     '<div class="nb-cell-content"><header class="nb-cell-head"><span class="nb-cell-drag nb-code-drag" draggable="true" data-nb-drag="' + esc(cell.id) + '" title="Drag to reorder or drop between Markdown paragraphs">⋮⋮</span>' +
-    '<button type="button" class="nb-icon-btn nb-code-collapse" data-nb-toggle-code="' + esc(cell.id) + '" title="Collapse or expand code" aria-label="' + (cell.hideCode ? 'Expand code' : 'Collapse code') + '" aria-expanded="' + String(!cell.hideCode) + '">' + (cell.hideCode ? '›' : '⌄') + '</button>' +
+    '<button type="button" class="nb-icon-btn nb-code-collapse' + (cell.hideCode ? ' is-collapsed' : '') + '" data-nb-toggle-code="' + esc(cell.id) + '" title="Collapse or expand code" aria-label="' + (cell.hideCode ? 'Expand code' : 'Collapse code') + '" aria-expanded="' + String(!cell.hideCode) + '">' + COLLAPSE + '</button>' +
     '<select class="nb-cell-kernel" data-nb-cell-kernel="' + esc(cell.id) + '" aria-label="Cell kernel">' + kernelOptions(kernels, kernel?.id) + '</select>' +
     '<span class="nb-execution-count" data-nb-execution-count>[' + (cell.executionCount || ' ') + ']</span><span class="nb-cell-status" data-nb-cell-status data-tone="idle">' + (executable ? '' : 'Read-only code fence') + '</span>' +
     '<button type="button" class="nb-icon-btn nb-run-btn nb-code-run" title="Run cell (Shift+Enter)" aria-label="Run cell" data-nb-run="' + esc(cell.id) + '"' + (!executable ? ' disabled' : '') + '>' + PLAY + '</button>' +

@@ -5,6 +5,9 @@ import type { ComputationLanguage } from '../notebook/latexCompute.js';
 import { affectedCellIds } from '../notebook/cellDependencies.js';
 import { moveCodeCellToMarkdown } from '../notebook/cellMove.js';
 import { installNotebookCellDragAndDrop } from './notebookCellDragAndDrop.js';
+import { installNotebookVariableDock } from './notebookVariableDock.js';
+import { installNotebookBlockInserter } from './notebookBlockInserter.js';
+import { insertNotebookCodeInMarkdown } from './notebookCodeInsertion.js';
 import { renderNotebookCodeCell, renderNotebookMarkdownCell } from './notebookCellMarkup.js';
 import { exportNotebookHtml } from './notebookExport.js';
 import { focusNotebookMarkdownAtEnd, mergeNotebookMarkdownSegments } from './notebookMarkdownSegments.js';
@@ -74,11 +77,6 @@ function cellKernel(data: NotebookEditorData, kernels: KernelDescriptor[], cell:
   return kernels.find(kernel => kernel.id === cell.kernelId) || kernelForLanguage(kernels, cell.language) || defaultKernel(kernels, data.defaultKernelId);
 }
 
-function kernelOptions(kernels: KernelDescriptor[], selected?: string): string {
-  if (!kernels.length) return '<option value="">No kernel installed</option>';
-  return kernels.map(kernel => '<option value="' + esc(kernel.id) + '"' + (kernel.id === selected ? ' selected' : '') + '>' + esc(kernel.label || kernel.language || kernel.id) + '</option>').join('');
-}
-
 function computationLanguage(kernel: KernelDescriptor | null): ComputationLanguage {
   const language = kernel?.language.toLowerCase();
   return language === 'octave' || language === 'matlab' ? 'octave' : language === 'cpp' || language === 'c++' ? 'cpp' : 'python';
@@ -107,7 +105,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   let savedVersion = 0;
   let saveChain: Promise<void> = Promise.resolve();
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
-  let variablePanelOpen = false;
 
   host.classList.add('notebook-host');
   normalizeNotebookVariableState(data);
@@ -120,28 +117,33 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   if (selectedDefault) data.defaultKernelId = selectedDefault.id;
 
   host.innerHTML = '<div class="notebook-view">' +
+    '<section class="nb-variable-panel collapsed" data-nb-variable-panel aria-label="Shared variables"><div class="nb-variable-bar"><button type="button" class="nb-variable-expand" data-nb-variable-expand aria-label="Expand variables" aria-expanded="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><span class="nb-variable-summary">Inputs &amp; current values <span data-nb-variable-count></span></span><button type="button" class="nb-variable-popout" data-nb-variable-popout title="Pop out variables" aria-label="Pop out variables">↗</button></div><div class="nb-variable-body hidden" data-nb-variable-body></div></section>' +
     '<header class="nb-toolbar"><div class="nb-title"><strong>' + esc(options.title) + '</strong><small>' + esc(options.subtitle) + '</small></div>' +
     '<div class="nb-actions">' +
-    '<select class="nb-kernel" data-nb-default-kernel aria-label="Default kernel for new cells" title="Default kernel for new cells">' + kernelOptions(kernels, data.defaultKernelId) + '</select>' +
     '<button type="button" class="btn tiny primary nb-run-all" data-nb-runall>' + PLAY + '<span>Run all</span></button>' +
     '<button type="button" class="btn tiny" data-nb-run-selected>Run selected</button>' +
     '<button type="button" class="btn tiny" data-nb-run-affected title="Run cells affected by source or variable changes" disabled>Run affected</button>' +
     '<select class="nb-kernel nb-run-scope" data-nb-run-scope aria-label="Run range" title="Run range"><option value="">More run…</option><option value="above">Run above</option><option value="below">Run below</option><option value="changed">Run changed</option><option value="restart">Restart &amp; Run all</option></select>' +
     '<button type="button" class="btn tiny nb-tool-icon" data-nb-stop title="Stop all executions" aria-label="Stop all executions">' + STOP + '</button>' +
     '<button type="button" class="btn tiny" data-nb-restart title="Restart kernels; shared variables are preserved">Restart</button>' +
-    '<button type="button" class="btn tiny nb-variables-toggle" data-nb-variables aria-expanded="false">Variables <span data-nb-variable-count></span></button>' +
     '<button type="button" class="btn tiny nb-variables-toggle" data-nb-tasks aria-expanded="false">Tasks <span data-nb-task-count></span></button>' +
     '<span class="nb-save-status" data-nb-status data-tone="saved" title="Changes save automatically">Auto-save</span>' +
     '<button type="button" class="btn tiny nb-tool-icon" data-nb-export title="Export HTML" aria-label="Export HTML"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v9m-3-3 3 3 3-3M3 10v4h10v-4"/></svg></button>' +
     '</div></header>' +
-    '<section class="nb-variable-panel hidden" data-nb-variable-panel aria-label="Shared variables"></section>' +
     '<section class="nb-task-panel hidden" data-nb-task-panel aria-label="Notebook executions"></section>' +
     '<main class="nb-cells" data-nb-cells></main>' +
     '<footer class="nb-footer"><span>Shift+Enter run · Alt+Enter add code · Ctrl+↑↓ move cell · click a formula or image to edit</span><button type="button" data-nb-add-code>+ Code</button><button type="button" data-nb-add-md>+ Markdown</button></footer>' +
     '</div>';
   const cellsHost = host.querySelector<HTMLElement>('[data-nb-cells]')!;
   const variablePanel = host.querySelector<HTMLElement>('[data-nb-variable-panel]')!;
+  const variableBody = host.querySelector<HTMLElement>('[data-nb-variable-body]')!;
   const taskPanel = host.querySelector<HTMLElement>('[data-nb-task-panel]')!;
+  const variableDock = installNotebookVariableDock({
+    panel: variablePanel, body: variableBody,
+    expand: host.querySelector<HTMLButtonElement>('[data-nb-variable-expand]')!,
+    popout: host.querySelector<HTMLButtonElement>('[data-nb-variable-popout]')!,
+    render: () => renderVariables(),
+  });
 
   const status = (text: string, tone = 'idle'): void => {
     const element = host.querySelector<HTMLElement>('[data-nb-status]');
@@ -197,7 +199,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   };
   const renderVariables = (): void => {
     updateVariableCount();
-    if (variablePanelOpen) variablePanel.innerHTML = renderNotebookVariablesPanel(data);
+    if (variableDock.isOpen()) variableBody.innerHTML = renderNotebookVariablesPanel(data);
   };
   const cellElement = (id: string): HTMLElement | null => cellsHost.querySelector<HTMLElement>('[data-nb-cell="' + CSS.escape(id) + '"]');
   const pushUndo = (): void => { undoHistory.capture(data.cells, data.variables || {}, data.initialVariables || {}, data.variablesInitialized === true); };
@@ -637,7 +639,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
           if (count) count.textContent = '[' + (cell.executionCount || ' ') + ']';
           const toggle = section.querySelector<HTMLElement>('[data-nb-toggle-code]');
           if (toggle) {
-            toggle.textContent = cell.hideCode ? '›' : '⌄';
+            toggle.classList.toggle('is-collapsed', cell.hideCode === true);
             toggle.setAttribute('aria-expanded', String(!cell.hideCode));
             toggle.setAttribute('aria-label', cell.hideCode ? 'Expand code' : 'Collapse code');
           }
@@ -761,6 +763,15 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     moveCellTo,
     moveCodeToMarkdown,
   });
+  const disposeBlockInserter = installNotebookBlockInserter(cellsHost, { kernels, insertCode: (markdownId, blockIndex, renderedCount, kernel) => {
+    syncMarkdownSources(); pushUndo();
+    const inserted = insertNotebookCodeInMarkdown(data, markdownId, blockIndex, renderedCount, kernel, () => genId('nbcell'));
+    if (!inserted) return;
+    activeCellId = inserted.codeId; selectedCellIds.clear(); selectedCellIds.add(inserted.codeId); commandMode = true; changeCellId = '';
+    activeCellId = mergeNotebookMarkdownSegments(data, activeCellId, selectedCellIds, markdownRevisions);
+    markAffected(data.cells.filter(cell => cell.kind === 'code').map(cell => cell.id)); markDirty(); renderCells();
+    requestAnimationFrame(() => editors.get(inserted.codeId)?.focus());
+  } });
   cellsHost.addEventListener('keydown', event => {
     const section = (event.target as Element | null)?.closest<HTMLElement>('[data-nb-cell]');
     const commandFocus = commandMode || (section && document.activeElement === section);
@@ -823,10 +834,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   host.querySelector('[data-nb-export]')?.addEventListener('click', exportHtml);
   host.querySelector('[data-nb-add-code]')?.addEventListener('click', () => insertCell(data.cells.length, 'code'));
   host.querySelector('[data-nb-add-md]')?.addEventListener('click', () => insertCell(data.cells.length, 'markdown'));
-  host.querySelector<HTMLSelectElement>('[data-nb-default-kernel]')?.addEventListener('change', event => {
-    data.defaultKernelId = (event.target as HTMLSelectElement).value;
-    markDirty();
-  });
   const exportVariables = (): void => {
     const url = URL.createObjectURL(new Blob([serializeVariablesJson(data.initialVariables || {})], { type: 'application/json' }));
     const anchor = document.createElement('a');
@@ -856,12 +863,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     } finally {
       input.value = '';
     }
-  });
-  host.querySelector('[data-nb-variables]')?.addEventListener('click', () => {
-    variablePanelOpen = !variablePanelOpen;
-    variablePanel.classList.toggle('hidden', !variablePanelOpen);
-    host.querySelector('[data-nb-variables]')?.setAttribute('aria-expanded', String(variablePanelOpen));
-    renderVariables();
   });
   host.querySelector('[data-nb-tasks]')?.addEventListener('click', () => {
     taskPanelOpen = !taskPanelOpen;
@@ -940,10 +941,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       commitMarkdown(view);
     },
     openVariable: name => {
-      variablePanelOpen = true;
-      variablePanel.classList.remove('hidden');
-      host.querySelector('[data-nb-variables]')?.setAttribute('aria-expanded', 'true');
-      renderVariables();
+      variableDock.open();
       const row = variablePanel.querySelector<HTMLElement>('[data-nb-variable-row="' + CSS.escape(name) + '"]');
       row?.scrollIntoView({ block: 'nearest' });
       const input = row?.querySelector<HTMLInputElement>('[data-nb-variable-value]');
@@ -983,6 +981,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       cellsAbort?.abort();
       disposeRichEditing();
       disposeCellDragAndDrop();
+      disposeBlockInserter();
       window.removeEventListener('message', onWindowMessage);
       document.removeEventListener('keydown', onDocumentKeydown);
       for (const editor of editors.values()) editor.destroy();

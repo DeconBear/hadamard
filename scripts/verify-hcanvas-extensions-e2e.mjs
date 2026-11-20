@@ -199,13 +199,13 @@ async function main() {
     pageErrors,
   }));
 
-  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-variable-expand]').click();
   await page.locator('[data-nb-new-name]').fill('distance');
   await page.locator('[data-nb-new-value]').fill('12');
   await page.locator('[data-nb-variable-add]').click();
   await page.waitForTimeout(250);
   assert('variable panel adds a shared numeric value', (await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').count()) === 1 && await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').inputValue() === '12', JSON.stringify({ panel: await page.locator('[data-nb-variable-panel]').innerText(), toasts: await page.locator('#toastRoot').innerText(), pageErrors }));
-  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-variable-expand]').click();
   const cellCountBeforeFormula = await page.locator('.nb-code').count();
   await page.locator('.nb-markdown-body .hc-math').click();
   await page.waitForSelector('.nb-formula-popover');
@@ -213,9 +213,9 @@ async function main() {
   await page.locator('.nb-formula-popover textarea').fill('total = distance * 2');
   await page.locator('[data-formula-calculate]').click();
   assert('formula calculation inserts an adjacent code cell', (await page.locator('.nb-code').count()) === cellCountBeforeFormula + 1 && (await page.locator('.nb-code').first().innerText()).includes('distance * 2'), JSON.stringify({ cells: await page.locator('.nb-code').allInnerTexts(), formulaMessage: await page.locator('.nb-formula-message').innerText().catch(() => 'closed'), toasts: await page.locator('#toastRoot').innerText() }));
-  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-variable-expand]').click();
   await page.locator('[data-nb-variable-initialize]').click();
-  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-variable-expand]').click();
   await page.locator('.nb-code-input .cm-content').first().press('Shift+Enter');
   let calculated = false;
   for (let attempt = 0; attempt < 100 && !calculated; attempt += 1) {
@@ -223,9 +223,9 @@ async function main() {
     if (!calculated) await page.waitForTimeout(300);
   }
   assert('generated formula code executes against shared variables', calculated);
-  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-variable-expand]').click();
   assert('kernel variable snapshot returns to the read-only current value', await page.locator('[data-nb-variable-row="total"] [data-nb-variable-current]').textContent() === '24');
-  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-variable-expand]').click();
   await page.locator('.nb-markdown-body').fill('# E2E notebook\n\nClosing autosave marker');
   await page.locator('[data-nb-add-md]').click();
   await page.waitForTimeout(250);
@@ -251,7 +251,7 @@ async function main() {
   await page.waitForSelector('.nb-markdown-body details');
   await page.locator('.nb-markdown-body').click();
   await page.keyboard.press('Tab');
-  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-variable-expand]').click();
   await page.locator('[data-nb-new-name]').fill('alpha');
   await page.locator('[data-nb-new-value]').fill('1');
   await page.locator('[data-nb-variable-add]').click();
@@ -266,7 +266,7 @@ async function main() {
 
   await openFile('plain.hnb.md');
   await page.waitForTimeout(1000);
-  await page.locator('[data-nb-variables]').click();
+  await page.locator('[data-nb-variable-expand]').click();
   await page.locator('[data-nb-new-name]').fill('distance');
   await page.locator('[data-nb-new-value]').fill('12');
   await page.locator('[data-nb-variable-add]').click();

@@ -74,6 +74,7 @@ async function main() {
     await page.locator('.file-tree-node', { hasText: 'interaction.hnb.md' }).first().click();
     await page.waitForSelector('.nb-code');
     assert('two native code cells', await page.locator('.nb-code').count() === 2);
+    assert('variable dock starts collapsed without toolbar variable or global kernel controls', await page.locator('[data-nb-variable-body]').evaluate(element => element.classList.contains('hidden')) && await page.locator('[data-nb-variables], [data-nb-default-kernel]').count() === 0);
 
     const firstEditor = page.locator('.nb-code-input').first();
     await firstEditor.evaluate(element => { element.dataset.nbKeep = 'preserved'; });
@@ -147,15 +148,19 @@ async function main() {
     await page.locator('[data-nb-add-code]').click();
     const parameterCell = page.locator('.nb-code').last();
     await parameterCell.locator('.cm-content').fill('distance = hc_get("distance", 2)\ndoubled = distance * 2\nhc_set("distance", distance)\nhc_set("doubled", doubled)\nprint(doubled)');
-    await page.locator('[data-nb-variables]').click();
+    await page.locator('[data-nb-variable-expand]').click();
+    await page.locator('[data-nb-variable-popout]').click();
+    assert('variable dock pops out as a floating topmost window', await page.locator('[data-nb-variable-panel]').evaluate(element => element.classList.contains('floating') && getComputedStyle(element).position === 'fixed') && await page.locator('[data-nb-variable-body]').evaluate(element => !element.classList.contains('hidden')));
+    await page.locator('[data-nb-variable-popout]').click();
+    assert('variable dock returns inline without collapsing', await page.locator('[data-nb-variable-panel]').evaluate(element => !element.classList.contains('floating')) && await page.locator('[data-nb-variable-expand]').getAttribute('aria-expanded') === 'true');
     await page.locator('[data-nb-new-name]').fill('distance');
     await page.locator('[data-nb-new-value]').fill('2');
     await page.locator('[data-nb-variable-add]').click();
     assert('variable panel has no numeric sliders', await page.locator('[data-nb-variable-range]').count() === 0);
-    await page.locator('[data-nb-variables]').click();
+    await page.locator('[data-nb-variable-expand]').click();
     await parameterCell.locator('.cm-content').press('Control+Enter');
     await parameterCell.locator('.nb-output').filter({ hasText: '4' }).waitFor();
-    await page.locator('[data-nb-variables]').click();
+    await page.locator('[data-nb-variable-expand]').click();
     const initialInput = page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]');
     const currentText = name => page.locator('[data-nb-variable-row="' + name + '"] [data-nb-variable-current]').textContent();
     assert('initial and current values are separate after execution', await initialInput.inputValue() === '2' && await currentText('distance') === '2' && await currentText('doubled') === '4');
@@ -187,17 +192,17 @@ async function main() {
     await page.locator('.nb-markdown-body .hc-math').click();
     await page.locator('.nb-formula-popover textarea').fill('distance * 2');
     await page.locator('[data-nb-formula-symbol="distance"]').click();
-    assert('formula variable opens its panel row', await page.locator('[data-nb-variables]').getAttribute('aria-expanded') === 'true' && await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').inputValue() === '4');
+    assert('formula variable opens its panel row', await page.locator('[data-nb-variable-expand]').getAttribute('aria-expanded') === 'true' && await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').inputValue() === '4');
     await page.locator('[data-formula-cancel]').click();
     await initialInput.fill('6');
     await initialInput.press('Tab');
     assert('Run all has not initialized before it is clicked', await currentText('distance') === '4');
-    await page.locator('[data-nb-variables]').click();
+    await page.locator('[data-nb-variable-expand]').click();
     await page.locator('[data-nb-runall]').click();
     await page.waitForFunction(() => !document.querySelector('[data-nb-runall]')?.disabled, undefined, { timeout: 60000 });
-    await page.locator('[data-nb-variables]').click();
+    await page.locator('[data-nb-variable-expand]').click();
     assert('Run all initializes before executing cells', await currentText('distance') === '6' && await currentText('doubled') === '12');
-    await page.locator('[data-nb-variables]').click();
+    await page.locator('[data-nb-variable-expand]').click();
 
     await page.locator('[data-nb-add-code]').click();
     const tableCell = page.locator('.nb-code').last();
@@ -291,6 +296,28 @@ async function main() {
     await page.waitForFunction(() => document.querySelectorAll('.nb-markdown').length === 1);
     assert('a second undo restores the original Markdown and code order', await page.locator('.nb-markdown').getAttribute('data-nb-rendered-source') === originalLayoutSource && await page.locator('.nb-code-input').evaluate(element => element.dataset.layoutKeep) === 'preserved');
 
+    await layoutView.evaluate(view => { const paragraph = document.createElement('p'); paragraph.appendChild(document.createElement('br')); view.appendChild(paragraph); view.dispatchEvent(new Event('input', { bubbles: true })); });
+    await layoutView.locator('p').last().hover();
+    await page.locator('.nb-block-insert-plus').click();
+    await page.locator('[data-insert-kernel="python"]').click();
+    await page.waitForFunction(() => document.querySelectorAll('.nb-code').length === 2);
+    const insertedCode = page.locator('.nb-code.nb-cell-active');
+    await insertedCode.locator('.cm-content').fill('print("plus")');
+    await insertedCode.locator('.cm-content').press('Control+Enter');
+    await insertedCode.locator('.nb-output').filter({ hasText: 'plus' }).waitFor();
+    assert('blank-line plus inserts and runs a kernel code block', true);
+    await layoutView.evaluate(view => { const paragraph = document.createElement('p'); paragraph.appendChild(document.createElement('br')); view.appendChild(paragraph); view.dispatchEvent(new Event('input', { bubbles: true })); });
+    await layoutView.locator('p').last().hover();
+    await page.locator('.nb-block-insert-plus').click();
+    await page.locator('[data-insert-block="h2"]').click();
+    await page.keyboard.type('Inserted heading');
+    await layoutView.locator('h2', { hasText: 'Inserted heading' }).waitFor();
+    assert('blank-line plus also inserts rich Markdown blocks', true);
+    const runtimeBeforeSave = await api('/api/runtime');
+    for (const session of runtimeBeforeSave.body.kernels || []) {
+      if (session.scope?.key === 'root_default:layout.hnb.md') await api('/api/kernels/' + session.sessionId, { method: 'DELETE' });
+    }
+
     await page.locator('.file-tree-node', { hasText: 'save.hnb.md' }).first().click();
     await page.locator('.nb-title strong', { hasText: 'save.hnb.md' }).waitFor();
     await page.waitForFunction(() => document.querySelectorAll('.nb-code').length === 1);
@@ -299,7 +326,9 @@ async function main() {
     await saveEditor.press('Control+A');
     await saveEditor.pressSequentially('x = 2\nprint(x)');
     await saveEditor.press('Control+Enter');
-    await page.waitForFunction(() => document.querySelector('.nb-output')?.textContent?.includes('2'));
+    await page.waitForFunction(() => document.querySelector('.nb-output')?.textContent?.includes('2')).catch(async () => {
+      throw new Error('Save notebook execution failed: source=' + await saveEditor.innerText() + ' status=' + await page.locator('[data-nb-cell-status]').allInnerTexts() + ' output=' + await page.locator('.nb-output').allInnerTexts() + ' toasts=' + await page.locator('#toastRoot').innerText());
+    });
     await page.waitForTimeout(900);
     const savedMarkdown = (await api('/api/files/read?root=root_default&path=save.hnb.md')).body.file?.content || '';
     assert('Markdown notebook saves edited source', savedMarkdown.includes('x = 2\nprint(x)'), savedMarkdown);
