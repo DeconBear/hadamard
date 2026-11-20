@@ -2,9 +2,9 @@
   "schema": "hadamard-canvas/1",
   "id": "doc_maxwellbloch",
   "title": "Maxwell–Bloch",
-  "revision": 16,
+  "revision": 24,
   "createdAt": "2026-11-20T08:53:57.285Z",
-  "updatedAt": "2026-11-20T16:46:09.552Z",
+  "updatedAt": "2026-11-20T17:28:09.949Z",
   "pages": [
     {
       "id": "page_maxwellbloch",
@@ -21,12 +21,7 @@
             {
               "id": "nbcell_maxwell_01",
               "kind": "markdown",
-              "source": "# Maxwell–Bloch：光脉冲与二能级介质\n\n这份 Notebook 是一个可直接运行的数值实验：先研究不包含空间传播的 Bloch 方程，再加入一维 Maxwell 传播项，观察光脉冲如何与介质共同演化。Python 负责数值积分和绘图，C++ 与 Octave 负责跨语言一致性检查。\n\n## 1. 物理模型\n\nBloch 向量 $(u,v,w)$ 分别表示同相相干分量、正交相干分量和粒子数反转。光场用慢变 Rabi 频率 $\\Omega$ 表示，$\\Delta=\\omega-\\omega_0$ 是失谐量，$T_1$ 描述粒子数弛豫，$T_2$ 描述相干退相。\n\n$$\n\\begin{aligned}\n\\dot u &= \\Delta v-u/T_2,\\\\\n\\dot v &= -\\Delta u+\\Omega w-v/T_2,\\\\\n\\dot w &= -\\Omega v-(w-w_{eq})/T_1.\n\\end{aligned}\n$$\n\n$w=w_{eq}$ 表示热平衡状态；本例取 $w_{eq}=-1$，即初始处于下能级。共振且忽略弛豫时，$\\Omega$ 的时间积分决定 Bloch 向量的旋转角度；失谐和退相则会改变振荡频率、幅度与最终粒子数。\n\n这里使用无量纲单位，重点是比较参数变化的趋势，而不是拟合某个具体实验装置。建议按以下顺序阅读：\n\n1. 公共变量与派生量：理解参数如何在单元和语言之间流动。\n2. 局域 Bloch 积分：观察脉冲、相干和反转随时间的变化。\n3. 失谐扫描：比较不同失谐量留下的最终反转。\n4. 一维传播：观察光场与介质在空间和时间上的耦合。\n5. 跨语言校验：检查同一公式在 Python、C++ 和 Octave 中是否得到相同答案。"
-            },
-            {
-              "id": "nbcell_maxwell_shared",
-              "kind": "markdown",
-              "source": "## 2. 公共全局变量：一份定义，三种语言\n\n**Variables 面板是本实验唯一的输入来源。** 初始值保存在原生文档中，代码通过 `hc_get` 读取；派生值通过 `hc_set` 发布，后续单元和重新启动的内核都可以继续使用。\n\n| 输入变量 | 默认值 | 含义与使用位置 |\n| --- | --- | --- |\n| `omega0` | 2 | 峰值 Rabi 频率；Python 积分、C++ 和 Octave 周期计算 |\n| `detuning` | 0 | 原子与光场失谐；局域积分和传播 |\n| `T1` | 8 | 粒子数弛豫时间；全部 Python 模型和跨语言报告 |\n| `T2` | 4 | 相干退相时间；全部 Python 模型 |\n| `w_eq` | -1 | 平衡反转；初始条件和图中参考线 |\n| `kappa` | 0.35 | Maxwell–Bloch 耦合强度；传播单元 |\n| `pulse_center` | 12 | 高斯脉冲中心；三个 Python 数值实验 |\n| `pulse_width` | 4 | 高斯脉冲宽度；积分、扫描、传播和脉冲面积 |\n| `time_step` | 0.01 | 公共时间步长；积分精度与传播稳定性 |\n| `sample_label` | Two-level medium A | 示例标签；C++ 和 Octave 输出 |\n\n### 读取、发布与传递\n\n~~~python exec\nrabi_period = 2 * math.pi / hc_get(\"omega0\", 2.0)\nhc_set(\"rabi_period\", rabi_period)\n~~~\n\n`hc_get(name, default)` 只在变量不存在时使用默认值；`hc_set(name, value)` 把 JSON 兼容值写入当前值并保存到原生文档，不会改写初始值。共享的是**数据**，不是 Python 对象、C++ 引用或 Octave 图形句柄。\n\n下一个代码单元计算 `rabi_period` 和 `pulse_area`。后续 C++ 读取这两个派生值，Octave 又读取 C++ 的结果，因此这条链同时演示了**单元间传递**和**语言间传递**。"
+              "source": "# Maxwell–Bloch：光脉冲与二能级介质\n\n这份 Notebook 是一个可直接运行的数值实验：先研究不包含空间传播的 Bloch 方程，再加入一维 Maxwell 传播项，观察光脉冲如何与介质共同演化。Python 负责数值积分和绘图，C++ 与 Octave 负责跨语言一致性检查。\n\n## 1. 物理模型\n\nBloch 向量 $(u,v,w)$ 分别表示同相相干分量、正交相干分量和粒子数反转。光场用慢变 Rabi 频率 $\\Omega$ 表示，$\\Delta=\\omega-\\omega_0$ 是失谐量，$T_1$ 描述粒子数弛豫，$T_2$ 描述相干退相。\n\n$$\n\\begin{aligned}\n\\dot u &= \\Delta v-u/T_2,\\\\\n\\dot v &= -\\Delta u+\\Omega w-v/T_2,\\\\\n\\dot w &= -\\Omega v-(w-w_{eq})/T_1.\n\\end{aligned}\n$$\n\n$w=w_{eq}$ 表示热平衡状态；本例取 $w_{eq}=-1$，即初始处于下能级。共振且忽略弛豫时，$\\Omega$ 的时间积分决定 Bloch 向量的旋转角度；失谐和退相则会改变振荡频率、幅度与最终粒子数。\n\n这里使用无量纲单位，重点是比较参数变化的趋势，而不是拟合某个具体实验装置。建议按以下顺序阅读：\n\n1. 公共变量与派生量：理解参数如何在单元和语言之间流动。\n2. 局域 Bloch 积分：观察脉冲、相干和反转随时间的变化。\n3. 失谐扫描：比较不同失谐量留下的最终反转。\n4. 一维传播：观察光场与介质在空间和时间上的耦合。\n5. 跨语言校验：检查同一公式在 Python、C++ 和 Octave 中是否得到相同答案。\n\n## 2. 公共全局变量：一份定义，三种语言\n\n**Variables 面板是本实验唯一的输入来源。** 初始值保存在原生文档中，代码通过 `hc_get` 读取；派生值通过 `hc_set` 发布，后续单元和重新启动的内核都可以继续使用。\n\n| 输入变量 | 默认值 | 含义与使用位置 |\n| --- | --- | --- |\n| `omega0` | 2 | 峰值 Rabi 频率；Python 积分、C++ 和 Octave 周期计算 |\n| `detuning` | 0 | 原子与光场失谐；局域积分和传播 |\n| `T1` | 8 | 粒子数弛豫时间；全部 Python 模型和跨语言报告 |\n| `T2` | 4 | 相干退相时间；全部 Python 模型 |\n| `w_eq` | -1 | 平衡反转；初始条件和图中参考线 |\n| `kappa` | 0.35 | Maxwell–Bloch 耦合强度；传播单元 |\n| `pulse_center` | 12 | 高斯脉冲中心；三个 Python 数值实验 |\n| `pulse_width` | 4 | 高斯脉冲宽度；积分、扫描、传播和脉冲面积 |\n| `time_step` | 0.01 | 公共时间步长；积分精度与传播稳定性 |\n| `sample_label` | Two-level medium A | 示例标签；C++ 和 Octave 输出 |\n\n### 读取、发布与传递\n\n~~~python exec\nrabi_period = 2 * math.pi / hc_get(\"omega0\", 2.0)\nhc_set(\"rabi_period\", rabi_period)\n~~~\n\n`hc_get(name, default)` 只在变量不存在时使用默认值；`hc_set(name, value)` 把 JSON 兼容值写入当前值并保存到原生文档，不会改写初始值。共享的是**数据**，不是 Python 对象、C++ 引用或 Octave 图形句柄。"
             },
             {
               "id": "nbcell_maxwell_parameters",
@@ -43,7 +38,13 @@
                 }
               ],
               "executionCount": 4,
-              "stale": true
+              "stale": true,
+              "hideCode": false
+            },
+            {
+              "id": "nbcell_931843162354",
+              "kind": "markdown",
+              "source": "下一个代码单元计算 `rabi_period` 和 `pulse_area`。后续 C++ 读取这两个派生值，Octave 又读取 C++ 的结果，因此这条链同时演示了**单元间传递**和**语言间传递**。"
             },
             {
               "id": "nbcell_maxwell_02",
@@ -68,7 +69,7 @@
                 }
               ],
               "executionCount": 5,
-              "stale": false
+              "stale": true
             },
             {
               "id": "nbcell_maxwell_03",
@@ -325,6 +326,62 @@
       "actor": "human",
       "summary": "Update page · Maxwell–Bloch",
       "createdAt": "2026-11-20T16:46:09.552Z",
+      "opCount": 1
+    },
+    {
+      "revision": 17,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T17:26:30.022Z",
+      "opCount": 1
+    },
+    {
+      "revision": 18,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T17:26:30.826Z",
+      "opCount": 1
+    },
+    {
+      "revision": 19,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T17:26:39.503Z",
+      "opCount": 1
+    },
+    {
+      "revision": 20,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T17:27:48.000Z",
+      "opCount": 1
+    },
+    {
+      "revision": 21,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T17:27:59.397Z",
+      "opCount": 1
+    },
+    {
+      "revision": 22,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T17:28:04.286Z",
+      "opCount": 1
+    },
+    {
+      "revision": 23,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T17:28:09.240Z",
+      "opCount": 1
+    },
+    {
+      "revision": 24,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T17:28:09.949Z",
       "opCount": 1
     }
   ]
