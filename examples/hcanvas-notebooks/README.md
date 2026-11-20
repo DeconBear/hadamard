@@ -22,7 +22,7 @@ Open the **Maxwell–Bloch** document from **Canvases**, then open its native
 page from **Pages**. It is stored in `.hcanvas/docs/doc_maxwellbloch.json`, with
 no separate `.hnb.md` file required. Outputs and revisions use the native document store.
 
-Other notebooks can still use `.hnb.md` and standard `.ipynb`. Separate initial
-and current variables with explicit initialization, Run affected, background execution,
-native table/CSV output, kernel completion and optional SymPy cells are available
-in the current editor.
+Other notebooks use `.hnb.md` and native `.hcanvas` documents. Jupyter `.ipynb`
+interoperability is not supported. Separate initial and current variables with
+explicit initialization, Run affected, background execution, native table/CSV
+output, kernel completion and optional SymPy cells are available in the current editor.

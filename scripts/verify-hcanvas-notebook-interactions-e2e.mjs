@@ -25,15 +25,9 @@ async function main() {
     await writeFile(path.join(workspace, 'interaction.hnb.md'), source, 'utf8');
     const layoutSource = ['# Layout', '', 'First **bold** paragraph.', '', 'Second paragraph.', '', 'Third paragraph.', '', fence + 'python exec', 'print("layout")', fence, ''].join('\n');
     await writeFile(path.join(workspace, 'layout.hnb.md'), layoutSource, 'utf8');
-    const native = {
-      nbformat: 4, nbformat_minor: 5,
-      metadata: { kernelspec: { name: 'python3', language: 'python', display_name: 'Python 3' }, language_info: { name: 'python' }, hcanvas: { defaultKernelId: 'python', variables: {} } },
-      cells: [
-        { cell_type: 'markdown', id: 'native-md', source: ['# Native Jupyter\n'], metadata: {} },
-        { cell_type: 'code', id: 'native-code', source: ['x = 1\n', 'print(x)'], metadata: {}, execution_count: 1, outputs: [{ output_type: 'stream', name: 'stdout', text: '1\n' }] },
-      ],
-    };
-    await writeFile(path.join(workspace, 'native.ipynb'), JSON.stringify(native, null, 2), 'utf8');
+    const saveSource = ['---', 'hcanvas: notebook', 'kernel: python', '---', '', '# Save notebook', '', fence + 'python exec', 'x = 1\nprint(x)', fence, ''].join('\n');
+    await writeFile(path.join(workspace, 'save.hnb.md'), saveSource, 'utf8');
+    await writeFile(path.join(workspace, 'legacy.ipynb'), JSON.stringify({ nbformat: 4, cells: [] }), 'utf8');
     server = spawn(process.execPath, ['bin/hcanvas.js', 'serve', '--workspace', workspace, '--port', String(port)], {
       cwd: root, env: { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config') }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
     });
@@ -297,27 +291,29 @@ async function main() {
     await page.waitForFunction(() => document.querySelectorAll('.nb-markdown').length === 1);
     assert('a second undo restores the original Markdown and code order', await page.locator('.nb-markdown').getAttribute('data-nb-rendered-source') === originalLayoutSource && await page.locator('.nb-code-input').evaluate(element => element.dataset.layoutKeep) === 'preserved');
 
-    await page.locator('.file-tree-node', { hasText: 'native.ipynb' }).first().click();
-    await page.locator('.nb-title strong', { hasText: 'native.ipynb' }).waitFor();
+    await page.locator('.file-tree-node', { hasText: 'save.hnb.md' }).first().click();
+    await page.locator('.nb-title strong', { hasText: 'save.hnb.md' }).waitFor();
     await page.waitForFunction(() => document.querySelectorAll('.nb-code').length === 1);
-    assert('native ipynb opens', await page.locator('.nb-code').count() === 1);
-    const nativeEditor = page.locator('.nb-code-input .cm-content').first();
-    await nativeEditor.press('Control+A');
-    await nativeEditor.pressSequentially('x = 2\nprint(x)');
-    await nativeEditor.press('Control+Enter');
+    assert('Markdown notebook opens for native editing', await page.locator('.nb-code').count() === 1);
+    const saveEditor = page.locator('.nb-code-input .cm-content').first();
+    await saveEditor.press('Control+A');
+    await saveEditor.pressSequentially('x = 2\nprint(x)');
+    await saveEditor.press('Control+Enter');
     await page.waitForFunction(() => document.querySelector('.nb-output')?.textContent?.includes('2'));
     await page.waitForTimeout(900);
-    const nativeSaved = await api('/api/files/read?root=root_default&path=native.ipynb');
-    const nativeJson = JSON.parse(nativeSaved.body.file?.content || '{}');
-    assert('native ipynb saves source and execution count', nativeJson.cells[1].execution_count >= 2 && nativeJson.cells[1].source.join('').includes('x = 2'));
-    assert('native ipynb saves outputs', JSON.stringify(nativeJson.cells[1].outputs).includes('2'));
+    const savedMarkdown = (await api('/api/files/read?root=root_default&path=save.hnb.md')).body.file?.content || '';
+    assert('Markdown notebook saves edited source', savedMarkdown.includes('x = 2\nprint(x)'), savedMarkdown);
+    const beforeRestart = Number((await page.locator('[data-nb-execution-count]').first().innerText()).replace(/\D/g, '')) || 0;
     await page.locator('[data-nb-run-scope]').selectOption('restart');
-    await page.waitForFunction(count => document.querySelector('[data-nb-execution-count]')?.textContent === '[' + (count + 1) + ']', nativeJson.cells[1].execution_count);
-    assert('Restart and Run All executes the native notebook', true);
+    await page.waitForFunction(count => document.querySelector('[data-nb-execution-count]')?.textContent === '[' + (count + 1) + ']', beforeRestart);
+    assert('Restart and Run All executes the Markdown notebook', true);
     const htmlDownload = page.waitForEvent('download');
     await page.locator('[data-nb-export]').click();
     assert('standalone HTML export downloads', (await htmlDownload).suggestedFilename().endsWith('.html'));
     assert('ipynb export control is not offered', await page.locator('[data-nb-export-ipynb]').count() === 0);
+    await page.locator('.file-tree-node', { hasText: 'legacy.ipynb' }).first().click();
+    await page.locator('.file-surface-title strong', { hasText: 'legacy.ipynb' }).waitFor();
+    assert('ipynb does not open in the Notebook viewer', await page.locator('.notebook-view, .nb-code').count() === 0);
     assert('no browser errors', errors.length === 0, errors.join('; '));
     console.log('Notebook interaction E2E passed');
   } finally {

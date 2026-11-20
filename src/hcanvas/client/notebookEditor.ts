@@ -831,7 +831,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     const url = URL.createObjectURL(new Blob([serializeVariablesJson(data.initialVariables || {})], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = options.title.replace(/\.(?:hnb\.md|ipynb)$/iu, '').replace(/[\\/:*?"<>|]+/g, '-') + '-variables.json';
+    anchor.download = options.title.replace(/\.hnb\.md$/iu, '').replace(/[\\/:*?"<>|]+/g, '-') + '-variables.json';
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

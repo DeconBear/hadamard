@@ -16,7 +16,7 @@ function download(url: string, filename: string): void {
 }
 
 function filename(title: string, extension: string): string {
-  return title.replace(/\.(?:hnb\.md|ipynb)$/iu, '').replace(/[\\/:*?"<>|]+/g, '-') + extension;
+  return title.replace(/\.hnb\.md$/iu, '').replace(/[\\/:*?"<>|]+/g, '-') + extension;
 }
 
 function kernelFor(data: NotebookEditorData, kernels: KernelDescriptor[], cell: NotebookEditorData['cells'][number]): KernelDescriptor | undefined {
