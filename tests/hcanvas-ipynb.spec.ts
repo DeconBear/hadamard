@@ -42,6 +42,17 @@ describe('Jupyter notebook interoperability', () => {
     expect(JSON.parse(serialized).metadata.kernelspec.name).toBe('python3');
   });
 
+  it('keeps editable initial values separate from computed current values', () => {
+    const parsed = parseIpynb(JSON.stringify(sample));
+    parsed.data.initialVariables = { distance: 12 };
+    parsed.data.variables = { distance: 24, answer: 42 };
+    parsed.data.variablesInitialized = true;
+    const roundTrip = parseIpynb(serializeIpynb(parsed.data, parsed.metadata));
+    expect(roundTrip.data.initialVariables).toEqual({ distance: 12 });
+    expect(roundTrip.data.variables).toEqual({ distance: 24, answer: 42 });
+    expect(roundTrip.data.variablesInitialized).toBe(true);
+  });
+
   it('rejects non-nbformat documents', () => {
     expect(() => parseIpynb('{"nbformat":3,"cells":[]}')).toThrow(/nbformat 4/u);
   });

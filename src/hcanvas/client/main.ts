@@ -84,6 +84,7 @@ import { constrainLinePoint, shapeDragBounds, type HcDragBounds } from '../drawi
 import { applyOpLocally, invertOps as invertDocumentOps } from './documentHistory.js';
 import { SHORTCUTS_MODAL_HTML } from './shortcuts.js';
 import { installNotebookTableActions } from './notebookTableActions.js';
+import { refreshWorkspace } from './workspaceRefresh.js';
 import { esc, genId, toHex } from './utils.js';
 interface BootConfig { token: string; workspace: string; mode?: string; version?: string; language?: 'en' | 'zh'; }
 interface DocSummary { id: string; title: string; revision: number; pages: number; updatedAt: string; pendingProposals: number; }
@@ -902,6 +903,18 @@ function bindStaticActions(): void {
     toast,
     confirm: message => confirmDialog(message),
   });
+  el('refreshWorkspaceBtn').addEventListener('click', () => { void refreshWorkspace({
+    button: el<HTMLButtonElement>('refreshWorkspaceBtn'), editing: () => Boolean(state.sourceModalOpen || state.editing),
+    request: api, flush: () => markdownPages.flush(), loadMasters, enqueue: enqueueMutation,
+    apply: async (context: Record<string, unknown> & { active?: { docId?: string; pageId?: string }; docs?: DocSummary[]; presence?: PresenceEntry[] }) => {
+      state.context = context; state.docs = context.docs || []; state.presence = context.presence || [];
+      const activeId = context.active?.docId || state.docs[0]?.id || null;
+      if (!activeId) { state.doc = null; state.activePageId = null; state.activeBlockId = null; renderAll(); return null; }
+      await openDoc(activeId, context.active?.docId === activeId ? context.active.pageId : state.activePageId || undefined, false);
+      return state.doc?.revision ?? null;
+    },
+    status: setSaveStatus, toast,
+  }); });
   el('presentBtn').addEventListener('click', () => openPresent());
   sliceTool = createSliceTool({
     viewport: el('viewport'),

@@ -49,27 +49,33 @@ function chooseKernel(kernels: KernelDescriptor[], parsed: ParsedNotebook): stri
   return match?.id || kernels.find(kernel => kernel.language === 'python')?.id || kernels[0]?.id || '';
 }
 
-function variablesFromFrontmatter(parsed: ParsedNotebook): NotebookVariables {
+function variableField(parsed: ParsedNotebook, field: string): NotebookVariables {
   try {
-    const value = JSON.parse(parsed.frontmatter.values.variables || '{}') as unknown;
+    const value = JSON.parse(parsed.frontmatter.values[field] || '{}') as unknown;
     return value && typeof value === 'object' && !Array.isArray(value) ? value as NotebookVariables : {};
   } catch { return {}; }
 }
 
 function withFrontmatterValues(parsed: ParsedNotebook, data: NotebookEditorData, kernels: KernelDescriptor[]): void {
   const kernel = kernels.find(item => item.id === data.defaultKernelId);
-  const variables = Object.keys(data.variables || {}).length ? JSON.stringify(data.variables) : '';
-  const lines = parsed.frontmatter.raw.split(/\r?\n/u).filter(line => !/^\s*(?:kernel|variables)\s*:/iu.test(line));
+  const initial = Object.keys(data.initialVariables || {}).length ? JSON.stringify(data.initialVariables) : '';
+  const current = Object.keys(data.variables || {}).length ? JSON.stringify(data.variables) : '';
+  const initialized = data.variablesInitialized === true;
+  const lines = parsed.frontmatter.raw.split(/\r?\n/u).filter(line => !/^\s*(?:kernel|variables|current_variables|variables_initialized)\s*:/iu.test(line));
   if (kernel) lines.push('kernel: ' + kernel.id);
-  if (variables) lines.push('variables: ' + variables);
+  if (initial) lines.push('variables: ' + initial);
+  if (current) lines.push('current_variables: ' + current);
+  if (initial || current || initialized) lines.push('variables_initialized: ' + String(initialized));
   parsed.frontmatter.raw = lines.join('\n').trim();
-  // A .hnb.md file may start without frontmatter. Adding kernel/variables means
-  // serializeNotebook() must emit a frontmatter block, so mark it present.
-  if (kernel || variables) parsed.frontmatter.present = true;
+  // Adding variable state requires a frontmatter block in the serialized file.
+  if (kernel || initial || current || initialized) parsed.frontmatter.present = true;
   if (kernel) parsed.frontmatter.values.kernel = kernel.id;
   else delete parsed.frontmatter.values.kernel;
-  if (variables) parsed.frontmatter.values.variables = variables;
+  if (initial) parsed.frontmatter.values.variables = initial;
   else delete parsed.frontmatter.values.variables;
+  if (current) parsed.frontmatter.values.current_variables = current;
+  else delete parsed.frontmatter.values.current_variables;
+  parsed.frontmatter.values.variables_initialized = String(initialized);
 }
 
 function toEditorData(parsed: ParsedNotebook, kernels: KernelDescriptor[], cache: OutputCache): NotebookEditorData {
@@ -85,7 +91,13 @@ function toEditorData(parsed: ParsedNotebook, kernels: KernelDescriptor[], cache
     };
   });
   if (!cells.length) cells.push({ id: genId('nbcell'), kind: 'markdown', source: '# Untitled notebook\n\nWrite Markdown here. Add a code cell below, then press **Shift+Enter** to run it.' });
-  return { cells, defaultKernelId: chooseKernel(kernels, parsed), variables: variablesFromFrontmatter(parsed) };
+  return {
+    cells,
+    defaultKernelId: chooseKernel(kernels, parsed),
+    initialVariables: variableField(parsed, 'variables'),
+    variables: variableField(parsed, 'current_variables'),
+    variablesInitialized: parsed.frontmatter.values.variables_initialized === 'true',
+  };
 }
 
 function persistOutputCache(cache: OutputCache, data: NotebookEditorData): void {

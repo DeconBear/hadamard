@@ -6,16 +6,15 @@ import { affectedCellIds } from '../notebook/cellDependencies.js';
 import { renderNotebookCodeCell, renderNotebookMarkdownCell } from './notebookCellMarkup.js';
 import { exportNotebookHtml, exportNotebookIpynb } from './notebookExport.js';
 import { renderNotebookTaskPanel } from './notebookTaskPanel.js';
+import { notebookVariableNames, renderNotebookVariablesPanel } from './notebookVariablesPanel.js';
 import { parseVariablesCsv, parseVariablesJson, serializeVariablesJson } from '../notebook/variablesImport.js';
 import { NotebookUndoHistory } from '../notebook/undo.js';
 import type { NotebookRunMode } from './notebookCodeEditor.js';
 import type { NotebookEditorCell, NotebookEditorData } from '../notebook/types.js';
 import {
-  normalizeNotebookVariables,
-  numericSliderRange,
+  initializeNotebookVariables,
+  normalizeNotebookVariableState,
   parseNotebookVariable,
-  variableValueKind,
-  variableValueText,
   variablesFromEvents,
   visibleKernelEvents,
   type NotebookVariables,
@@ -82,8 +81,6 @@ function computationLanguage(kernel: KernelDescriptor | null): ComputationLangua
   return language === 'octave' || language === 'matlab' ? 'octave' : language === 'cpp' || language === 'c++' ? 'cpp' : 'python';
 }
 
-const numericSlider = numericSliderRange;
-
 export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEditorHandle {
   const { host, data } = options;
   const kernels = options.kernels;
@@ -111,7 +108,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   let variablePanelOpen = false;
 
   host.classList.add('notebook-host');
-  data.variables = normalizeNotebookVariables(data.variables);
+  normalizeNotebookVariableState(data);
   data.cells.forEach(cell => {
     if (!cell.id) cell.id = genId('nbcell');
     if (cell.kind === 'code') cell.outputs = Array.isArray(cell.outputs) ? cell.outputs : [];
@@ -194,32 +191,14 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   };
   const updateVariableCount = (): void => {
     const count = host.querySelector<HTMLElement>('[data-nb-variable-count]');
-    if (count) count.textContent = String(Object.keys(data.variables || {}).length);
+    if (count) count.textContent = String(notebookVariableNames(data).length);
   };
   const renderVariables = (): void => {
     updateVariableCount();
-    if (!variablePanelOpen) return;
-    const variables = data.variables || {};
-    const rows = Object.entries(variables).map(([name, value]) => {
-      let row = '<div class="nb-variable-row" data-nb-variable-row="' + esc(name) + '">' +
-        '<input class="nb-variable-name" data-nb-variable-name value="' + esc(name) + '" aria-label="Variable name">' +
-        '<input class="nb-variable-value" data-nb-variable-value value="' + esc(variableValueText(value)) + '" aria-label="Value of ' + esc(name) + '" spellcheck="false">' +
-        '<span class="nb-variable-kind">' + esc(variableValueKind(value)) + '</span>' +
-        '<button type="button" class="nb-icon-btn danger" data-nb-variable-delete="' + esc(name) + '" title="Remove shared variable" aria-label="Remove ' + esc(name) + '">×</button></div>';
-      if (typeof value === 'number') {
-        const slider = numericSlider(value);
-        row += '<input class="nb-variable-range" type="range" data-nb-variable-range="' + esc(name) + '" min="' + slider.min + '" max="' + slider.max + '" step="' + slider.step + '" value="' + value + '" aria-label="Adjust ' + esc(name) + '">';
-      }
-      return row;
-    }).join('');
-    variablePanel.innerHTML = '<div class="nb-variable-intro"><div><strong>Shared variables</strong><small>Explicit JSON values available to Python, Octave and C++. Use names directly and publish changes with <code>hc_set("name", value)</code>.</small></div><span>Kernel restarts preserve these values</span></div>' +
-      '<div class="nb-variable-head"><span>Name</span><span>Value / JSON</span><span>Type</span><span></span></div>' +
-      (rows || '<p class="nb-variable-empty">No shared variables yet. Add one below, or call <code>hc_set("answer", 42)</code> in a code cell.</p>') +
-      '<div class="nb-variable-add"><input data-nb-new-name placeholder="distance" aria-label="New variable name" spellcheck="false"><input data-nb-new-value placeholder="120.5" aria-label="New variable value" spellcheck="false"><button type="button" class="btn tiny" data-nb-variable-add>Add variable</button></div>' +
-      '<div class="nb-variable-io"><button type="button" class="btn tiny" data-nb-variable-import>Import JSON / CSV</button><button type="button" class="btn tiny" data-nb-variable-export>Export JSON</button><input type="file" data-nb-variable-file accept=".json,.csv,application/json,text/csv" hidden></div>';
+    if (variablePanelOpen) variablePanel.innerHTML = renderNotebookVariablesPanel(data);
   };
   const cellElement = (id: string): HTMLElement | null => cellsHost.querySelector<HTMLElement>('[data-nb-cell="' + CSS.escape(id) + '"]');
-  const pushUndo = (): void => { undoHistory.capture(data.cells, data.variables || {}); };
+  const pushUndo = (): void => { undoHistory.capture(data.cells, data.variables || {}, data.initialVariables || {}, data.variablesInitialized === true); };
   const syncSelection = (): void => {
     cellsHost.querySelectorAll<HTMLElement>('[data-nb-cell]').forEach(section => {
       const selected = selectedCellIds.has(section.dataset.nbCell || '');
@@ -268,11 +247,14 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     if (!snapshot) { options.toast('No notebook changes to undo.', 'info'); return; }
     data.cells = snapshot.cells;
     data.variables = snapshot.variables;
+    data.initialVariables = snapshot.initialVariables;
+    data.variablesInitialized = snapshot.variablesInitialized;
     activeCellId = data.cells[0]?.id || '';
     selectedCellIds.clear();
     if (activeCellId) selectedCellIds.add(activeCellId);
     changeCellId = '';
     markDirty();
+    renderVariables();
     renderCells();
     syncSelection();
   };
@@ -291,7 +273,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   };
 
   const markAffected = (changedCells: Iterable<string> = [], changedVariables: Iterable<string> = []): void => {
-    const affected = affectedCellIds(data.cells, changedCells, changedVariables, data.variables || {});
+    const affected = affectedCellIds(data.cells, changedCells, changedVariables, { ...(data.initialVariables || {}), ...(data.variables || {}) });
     for (const cell of data.cells) {
       if (!affected.has(cell.id)) continue;
       cell.stale = true;
@@ -313,6 +295,15 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     markAffected([], Object.keys(next));
     markDirty();
     return true;
+  };
+
+  const initializeVariables = (silent = false): void => {
+    pushUndo();
+    markAffected([], notebookVariableNames(data));
+    initializeNotebookVariables(data);
+    renderVariables();
+    markDirty();
+    if (!silent) options.toast('Current values initialized from initial values. No cells were run.', 'success');
   };
 
   const renderTaskPanel = (): void => {
@@ -419,6 +410,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   const runAll = async (): Promise<void> => {
     if (runAllActive || disposed) return;
     runAllActive = true;
+    initializeVariables(true);
     const generation = executionGeneration;
     host.querySelector<HTMLButtonElement>('[data-nb-runall]')?.setAttribute('disabled', '');
     try {
@@ -821,7 +813,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     markDirty();
   });
   const exportVariables = (): void => {
-    const url = URL.createObjectURL(new Blob([serializeVariablesJson(data.variables || {})], { type: 'application/json' }));
+    const url = URL.createObjectURL(new Blob([serializeVariablesJson(data.initialVariables || {})], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = options.title.replace(/\.(?:hnb\.md|ipynb)$/iu, '').replace(/[\\/:*?"<>|]+/g, '-') + '-variables.json';
@@ -839,11 +831,11 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       const text = await file.text();
       const imported = file.name.toLowerCase().endsWith('.csv') ? parseVariablesCsv(text) : parseVariablesJson(text);
       pushUndo();
-      data.variables = { ...(data.variables || {}), ...imported };
+      data.initialVariables = { ...(data.initialVariables || {}), ...imported };
       markAffected([], Object.keys(imported));
       markDirty();
       renderVariables();
-      options.toast('Imported ' + Object.keys(imported).length + ' variables.', 'success');
+      options.toast('Imported ' + Object.keys(imported).length + ' initial values.', 'success');
     } catch (error) {
       options.toast(error instanceof Error ? error.message : String(error), 'error');
     } finally {
@@ -872,13 +864,15 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   const taskRefreshTimer = setInterval(() => { if (taskPanelOpen) renderTaskPanel(); }, 1000);
   variablePanel.addEventListener('click', event => {
     const button = (event.target as Element | null)?.closest<HTMLButtonElement>('button');
-    if (!button || !data.variables) return;
+    if (!button) return;
+    if (button.hasAttribute('data-nb-variable-initialize')) { initializeVariables(); return; }
+    if (!data.initialVariables) return;
     if (button.hasAttribute('data-nb-variable-import')) variablePanel.querySelector<HTMLInputElement>('[data-nb-variable-file]')?.click();
     else if (button.hasAttribute('data-nb-variable-export')) exportVariables();
     else if (button.dataset.nbVariableDelete) {
       const name = button.dataset.nbVariableDelete;
       pushUndo();
-      delete data.variables[name];
+      delete data.initialVariables[name];
       markAffected([], [name]);
       markDirty();
       renderVariables();
@@ -888,7 +882,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       try {
         const variableName = name.value.trim();
         pushUndo();
-        data.variables[variableName] = parseNotebookVariable(name.value, value.value);
+        data.initialVariables[variableName] = parseNotebookVariable(name.value, value.value);
         markAffected([], [variableName]);
         markDirty();
         renderVariables();
@@ -896,29 +890,20 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
     }
   });
-  variablePanel.addEventListener('input', event => {
-    const range = (event.target as Element | null)?.closest<HTMLInputElement>('[data-nb-variable-range]');
-    if (!range || !data.variables) return;
-    const name = range.dataset.nbVariableRange || '';
-    data.variables[name] = Number(range.value);
-    const valueInput = variablePanel.querySelector<HTMLElement>('[data-nb-variable-row="' + CSS.escape(name) + '"]')?.querySelector<HTMLInputElement>('[data-nb-variable-value]');
-    if (valueInput) valueInput.value = range.value;
-    markAffected([], [name]);
-    markDirty();
-  });
   variablePanel.addEventListener('change', event => {
     const input = event.target as HTMLInputElement;
     const row = input.closest<HTMLElement>('[data-nb-variable-row]');
-    if (!row || !data.variables) return;
+    if (!row || !data.initialVariables) return;
     const oldName = row.dataset.nbVariableRow || '';
     const nameInput = row.querySelector<HTMLInputElement>('[data-nb-variable-name]')!;
-    const valueInput = row.querySelector<HTMLInputElement>('[data-nb-variable-value]')!;
+    const valueInput = row.querySelector<HTMLInputElement>('[data-nb-variable-value]');
+    if (!valueInput) return;
     try {
       const next: NotebookVariableValue = parseNotebookVariable(nameInput.value, valueInput.value);
       const name = nameInput.value.trim();
       pushUndo();
-      if (name !== oldName) delete data.variables[oldName];
-      data.variables[name] = next;
+      if (name !== oldName) delete data.initialVariables[oldName];
+      data.initialVariables[name] = next;
       markAffected([], [oldName, name]);
       markDirty();
       renderVariables();
@@ -929,7 +914,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   });
   const disposeRichEditing = installNotebookRichEditing({
     root: cellsHost,
-    getVariables: () => data.variables || {},
+    getVariables: () => ({ ...(data.initialVariables || {}), ...(data.variables || {}) }),
     getKernelLanguage: () => computationLanguage(defaultKernel(kernels, data.defaultKernelId)),
     insertCalculation: (source, markdownId) => {
       const index = data.cells.findIndex(cell => cell.id === markdownId);

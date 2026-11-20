@@ -4,6 +4,8 @@ import type { NotebookVariables } from './variables.js';
 export interface NotebookUndoSnapshot {
   cells: NotebookEditorCell[];
   variables: NotebookVariables;
+  initialVariables: NotebookVariables;
+  variablesInitialized: boolean;
 }
 
 function clone<T>(value: T): T {
@@ -15,8 +17,8 @@ export class NotebookUndoHistory {
 
   constructor(private readonly limit = 20) {}
 
-  capture(cells: NotebookEditorCell[], variables: NotebookVariables): NotebookUndoSnapshot {
-    const snapshot = clone({ cells, variables });
+  capture(cells: NotebookEditorCell[], variables: NotebookVariables, initialVariables: NotebookVariables = variables, variablesInitialized = true): NotebookUndoSnapshot {
+    const snapshot = clone({ cells, variables, initialVariables, variablesInitialized });
     this.snapshots.push(snapshot);
     if (this.snapshots.length > this.limit) this.snapshots.shift();
     return snapshot;

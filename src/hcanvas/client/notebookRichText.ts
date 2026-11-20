@@ -108,7 +108,7 @@ function openFormulaPopover(target: HTMLElement, view: HTMLElement, options: Ric
       if (input.value.trim() !== original) save();
       else cleanup();
       options.insertCalculation(result.code, view.dataset.nbMarkdownView || '');
-      options.toast('Calculation code inserted. Review it, then run the cell.', 'success');
+      options.toast('Calculation code inserted. Initialize shared variables if needed, then run the cell.', 'success');
     } catch (error) {
       message.textContent = error instanceof Error ? error.message : String(error);
     }

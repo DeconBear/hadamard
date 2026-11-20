@@ -73,6 +73,8 @@ export function normalizeNotebookPageData(raw: unknown, kernels: KernelDescripto
     cells,
     ...(defaultKernelId ? { defaultKernelId } : {}),
     ...(source.variables && typeof source.variables === 'object' ? { variables: source.variables as NotebookPageData['variables'] } : {}),
+    ...(source.initialVariables && typeof source.initialVariables === 'object' ? { initialVariables: source.initialVariables as NotebookPageData['initialVariables'] } : {}),
+    ...(typeof source.variablesInitialized === 'boolean' ? { variablesInitialized: source.variablesInitialized } : {}),
     ...(source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata) ? { metadata: source.metadata as Record<string, unknown> } : {}),
   };
 }
@@ -87,6 +89,8 @@ export function createNotebookPageDefinition(kernels: KernelDescriptor[], name =
   const data: NotebookPageData = {
     version: 1,
     variables: {},
+    initialVariables: {},
+    variablesInitialized: false,
     ...(defaultKernelId ? { defaultKernelId } : {}),
     cells: [
       { id: genId('nbcell'), kind: 'markdown', source: '# ' + name + '\n\n在 Markdown 中点击公式或图片即可编辑。代码按 **Shift+Enter** 运行；通过 **Variables** 在 Python、Octave 和 C++ 之间共享变量。' },

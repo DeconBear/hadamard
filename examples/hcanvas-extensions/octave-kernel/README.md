@@ -33,7 +33,9 @@ for canvas **Code cells** and **Hadamard Notebook** cells.
 - Basic `kernel/complete` suggestions cover language keywords, shared variables
   and identifiers in the current source.
 - Interrupt/restart resets Octave state.
-- Notebook shared variables are injected before each run and restored after a
-  restart. Use `hc_get("name", default)` and `hc_set("name", value)` for
-  explicit JSON-compatible exchange with Python and C++ cells.
+- Notebook current variables are injected before each run and restored after a
+  restart. Apply initial values with **Initialize** or **Run all**; other run
+  commands do not auto-initialize. Use `hc_get("name", default)` and
+  `hc_set("name", value)` for JSON-compatible exchange with Python and C++ cells.
+  Publishing a current value does not modify its initial value.
 - Requires GNU Octave (no GUI needed) and Node.js for the sidecar.

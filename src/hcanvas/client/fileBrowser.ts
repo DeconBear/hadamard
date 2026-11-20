@@ -26,8 +26,9 @@ import { go } from '@codemirror/lang-go';
 import { xml } from '@codemirror/lang-xml';
 import { php } from '@codemirror/lang-php';
 import { yaml } from '@codemirror/lang-yaml';
-import { renderMarkdownHtml } from '../markdown.js';
+import { markdownPageHtml } from '../markdownPage.js';
 import { mountPdfPreview } from './pdfPreview.js';
+import { renderHtmlPageSurface } from './htmlPageReader.js';
 
 interface FileRoot { id: string; name: string; path: string; }
 interface FileEntry { name: string; path: string; type: 'file' | 'directory'; ext?: string; size?: number; }
@@ -163,7 +164,6 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   let activeId = '';
   let canvasLabel = options.canvasLabel();
   let surface: HTMLElement | null = null;
-  let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let searchQuery = '';
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   const expandedRoots = new Set<string>();
@@ -350,6 +350,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   async function closeTab(id: string): Promise<void> {
     const tab = tabs.find(item => item.id === id);
     if (!tab) return;
+    if (activeId === id) flushRichMarkdown(tab);
     if (tab.dirty) {
       const saved = await saveTab(tab);
       if (!saved) return;
@@ -372,9 +373,16 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     } else await activateFile(activeId);
   }
 
+  function flushRichMarkdown(tab: FileTab): void {
+    if (tab.mode !== 'view' || !['.md', '.markdown'].includes(tab.ext)) return;
+    surface?.querySelector('iframe')?.contentDocument?.dispatchEvent(new Event('blur'));
+  }
+
   function flushActiveSave(excludeId?: string): void {
     const current = tabs.find(item => item.id === activeId);
-    if (!current || current.id === excludeId || !current.dirty) return;
+    if (!current || current.id === excludeId) return;
+    flushRichMarkdown(current);
+    if (!current.dirty) return;
     clearAutoSave(current);
     void saveTab(current);
   }
@@ -410,7 +418,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
 
   async function performSave(tab: FileTab): Promise<boolean> {
     clearAutoSave(tab);
-    const content = tab.editor?.state.doc.toString() ?? tab.content;
+    const content = tab.content;
     if (!tab.dirty) {
       if (activeId === tab.id) setFileSaveStatus('Auto-save on', 'saved');
       return true;
@@ -419,7 +427,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     try {
       await options.request('/api/files/write', { method: 'POST', body: JSON.stringify({ root: tab.rootId, path: tab.path, content }) });
       tab.content = content;
-      const latest = tab.editor?.state.doc.toString() ?? content;
+      const latest = tab.content;
       tab.dirty = latest !== content;
       if (tab.dirty) scheduleAutoSave(tab);
       renderTabs();
@@ -454,6 +462,9 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     editorHost.className = 'file-editor-host';
     host.appendChild(editorHost);
     if (tab.editor) {
+      if (tab.editor.state.doc.toString() !== value) {
+        tab.editor.dispatch({ changes: { from: 0, to: tab.editor.state.doc.length, insert: value } });
+      }
       editorHost.appendChild(tab.editor.dom);
       applyEditorZoom(tab);
       return;
@@ -471,27 +482,39 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     if (label) label.textContent = Math.round(tab.fontSize / 13 * 100) + '%';
   }
 
-  function mountMarkdownEditor(host: HTMLElement, tab: FileTab): void {
-    const layout = document.createElement('div');
-    layout.className = 'file-markdown-editor';
-    const editorHost = document.createElement('div');
-    editorHost.className = 'file-editor-host';
-    const preview = document.createElement('div');
-    preview.className = 'file-markdown-view';
-    layout.appendChild(editorHost);
-    layout.appendChild(preview);
-    host.appendChild(layout);
-    if (tab.editor) {
-      editorHost.appendChild(tab.editor.dom);
-    } else {
-      tab.editor = new EditorView({ doc: tab.content, extensions: editorExtensions(tab, true), parent: editorHost });
-    }
-    applyEditorZoom(tab);
-    const paint = (): void => { preview.innerHTML = renderMarkdownHtml(tab.editor?.state.doc.toString() || ''); };
-    paint();
-    tab.editor.dom.addEventListener('keyup', () => {
-      if (previewTimer) clearTimeout(previewTimer);
-      previewTimer = setTimeout(paint, 200);
+  function mountRichMarkdown(host: HTMLElement, tab: FileTab): void {
+    const update = (markdown: string, commit: boolean): void => {
+      const changed = tab.content !== markdown;
+      tab.content = markdown;
+      if (changed) tab.dirty = true;
+      if (!tab.dirty) {
+        if (activeId === tab.id) setFileSaveStatus('Auto-save on', 'saved');
+        return;
+      }
+      if (changed) {
+        renderTabs();
+        if (activeId === tab.id) setFileSaveStatus('Auto-save pending', 'saving');
+      }
+      if (commit) {
+        clearAutoSave(tab);
+        void saveTab(tab);
+      } else if (changed) scheduleAutoSave(tab);
+    };
+    renderHtmlPageSurface(host, {
+      id: tab.id,
+      name: tab.name,
+      mode: 'html',
+      width: 1280,
+      height: 720,
+      background: '#ffffff',
+      html: markdownPageHtml(tab.content),
+    }, {
+      editing: false,
+      richMarkdown: true,
+      contextEventType: 'hcanvas:file-markdown-context',
+      onMarkdownChange: markdown => update(markdown, false),
+      onMarkdownCommit: markdown => update(markdown, true),
+      onMarkdownSource: () => { tab.mode = 'edit'; renderSurface(tab); },
     });
   }
 
@@ -505,10 +528,11 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const isMarkdown = ['.md', '.markdown'].includes(tab.ext);
     const canToggle = editable && (isHtml || isMarkdown);
     const editorActive = editable && tab.mode === 'edit';
-    const toggle = canToggle ? '<button type="button" class="btn tiny" data-file-action="toggle">' + (tab.mode === 'edit' ? 'Preview' : isHtml ? 'Source' : 'Edit') + '</button>' : '';
+    const richEditing = isMarkdown && tab.mode === 'view';
+    const toggle = canToggle ? '<button type="button" class="btn tiny" data-file-action="toggle">' + (tab.mode === 'edit' ? 'Preview' : 'Source') + '</button>' : '';
     const zoom = editorActive ? '<span class="file-zoom-group" title="Ctrl/Cmd + wheel to zoom"><button type="button" class="file-zoom-btn" data-file-action="zoom-out">−</button><span class="file-zoom-value" data-file-zoom>' + Math.round(tab.fontSize / 13 * 100) + '%</span><button type="button" class="file-zoom-btn" data-file-action="zoom-in">+</button></span>' : '';
     const history = editorActive ? '<button type="button" class="btn tiny" data-file-action="undo" title="Undo (Ctrl/Cmd+Z)">Undo</button><button type="button" class="btn tiny" data-file-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button>' : '';
-    const saveStatus = editorActive ? '<span class="file-save-status" data-file-save-status>Auto-save on</span>' : '';
+    const saveStatus = editorActive || richEditing ? '<span class="file-save-status" data-file-save-status>Auto-save on</span>' : '';
     surface.innerHTML = '<div class="file-surface-head"><div class="file-surface-title"><span class="file-type">' + escapeHtml(iconFor(tab.name)) + '</span><div><strong>' + escapeHtml(tab.name) + '</strong><small>' + escapeHtml(tab.language) + ' · ' + escapeHtml(tab.path) + '</small></div></div><div class="file-surface-actions">' + saveStatus + zoom + toggle + history + '<button type="button" class="btn tiny" data-file-action="close">Close</button></div></div><div class="file-surface-body"></div>';
     options.viewport.appendChild(surface);
     for (const eventName of ['pointerdown', 'mousedown', 'click', 'wheel']) {
@@ -516,6 +540,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     }
     const body = surface.querySelector<HTMLElement>('.file-surface-body')!;
     surface.querySelector('[data-file-action="toggle"]')?.addEventListener('click', () => {
+      flushRichMarkdown(tab);
       tab.mode = tab.mode === 'edit' ? 'view' : 'edit';
       renderSurface(tab);
     });
@@ -564,12 +589,8 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       return;
     }
     if (['.md', '.markdown'].includes(tab.ext)) {
-      if (tab.mode === 'view') {
-        const doc = document.createElement('div');
-        doc.className = 'file-markdown-view';
-        doc.innerHTML = renderMarkdownHtml(tab.content || '');
-        body.appendChild(doc);
-      } else mountMarkdownEditor(body, tab);
+      if (tab.mode === 'view') mountRichMarkdown(body, tab);
+      else mountEditor(body, tab, tab.content);
       return;
     }
     mountEditor(body, tab, tab.editor?.state.doc.toString() || tab.content);
@@ -582,7 +603,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       const result = await options.request<{ file: FileContent }>('/api/files/read?root=' + encodeURIComponent(rootId) + '&path=' + encodeURIComponent(relative));
       const file = result.file;
       if (options.resolveCustomViewer?.({ rootId, path: relative, name: file.name, ext: file.ext })) return;
-      const viewOnly = file.preview !== 'text' || ['.html', '.htm'].includes(file.ext);
+      const viewOnly = file.preview !== 'text' || ['.html', '.htm', '.md', '.markdown'].includes(file.ext);
       const tab: FileTab = { id: 'file_' + rootId + '_' + relative, rootId, path: relative, name: file.name, language: file.language, content: file.content, binary: file.binary, ext: file.ext, preview: file.preview, mode: viewOnly ? 'view' : 'edit', dirty: false, fontSize: 13 };
       tabs.push(tab);
       await activateFile(tab.id);
@@ -850,6 +871,14 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       const tab = tabs.find(item => item.id === activeId);
       if (tab?.mode === 'edit') { event.preventDefault(); void saveTab(tab); }
     }
+  });
+  window.addEventListener('message', event => {
+    const data = event.data as { type?: string; pageId?: string } | null;
+    if (data?.type !== 'hcanvas:file-markdown-context' || !data.pageId) return;
+    const tab = tabs.find(item => item.id === data.pageId);
+    if (!tab || activeId !== tab.id || tab.mode !== 'view') return;
+    tab.mode = 'edit';
+    renderSurface(tab);
   });
   window.addEventListener('hcanvas:canvas-opened', event => {
     const detail = (event as CustomEvent<{ docId?: string; pageId?: string; label?: string; reopen?: boolean }>).detail || {};

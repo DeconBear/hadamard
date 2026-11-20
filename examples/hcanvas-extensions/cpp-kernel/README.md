@@ -11,9 +11,10 @@ program output are streamed as text.
 - Code with `int main` is compiled as a complete program.
 - Compiler errors are reported as kernel errors; runtime output is streamed.
 - C++ has no REPL semantics, so ordinary local variables do not persist between
-  cells. Notebook shared variables are injected on every run; use
-  `hc_get("name", fallback)` and `hc_set("name", value)` for numbers, strings,
-  booleans and numeric vectors.
+  cells. Notebook current variables are injected on every run; initial values
+  require **Initialize** or **Run all** before use. Use `hc_get("name", fallback)`
+  and `hc_set("name", value)` for numbers, strings, booleans and numeric vectors.
+  Publishing a current value does not modify its initial value.
 - Interrupt kills the running compiler/program.
 - Compiler errors are mapped back to the original cell line numbers, and basic
   `kernel/complete` suggestions cover keywords, shared variables and source

@@ -20,6 +20,7 @@ export interface HtmlPageSurfaceOptions {
   onMarkdownChange?(markdown: string): void;
   onMarkdownCommit?(markdown: string): void;
   onMarkdownSource?(pageId: string, x: number, y: number): void;
+  contextEventType?: string;
   language?: 'en' | 'zh';
 }
 
@@ -106,9 +107,10 @@ function setupMarkdownRichEditing(iframe: HTMLIFrameElement, page: HcPage, optio
     emit(true);
   });
   doc.addEventListener('contextmenu', event => {
+    emit(true);
     event.preventDefault();
     const rect = iframe.getBoundingClientRect();
-    parent.postMessage({ type: 'hcanvas:markdown-context', pageId: page.id, x: rect.left + event.clientX, y: rect.top + event.clientY }, '*');
+    parent.postMessage({ type: options.contextEventType || 'hcanvas:markdown-context', pageId: page.id, x: rect.left + event.clientX, y: rect.top + event.clientY }, '*');
   });
   doc.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {

@@ -108,6 +108,8 @@ export function parseIpynb(text: string): { data: NotebookEditorData; metadata: 
       cells,
       ...(defaultKernelId ? { defaultKernelId } : {}),
       variables: normalizeNotebookVariables(hcanvas.variables),
+      initialVariables: normalizeNotebookVariables(hcanvas.initialVariables === undefined ? hcanvas.variables : hcanvas.initialVariables),
+      variablesInitialized: hcanvas.variablesInitialized === true || (hcanvas.variablesInitialized === undefined && Object.keys(normalizeNotebookVariables(hcanvas.variables)).length > 0),
       ...(Object.keys(metadata).length ? { metadata } : {}),
     },
     metadata,
@@ -147,6 +149,8 @@ export function serializeIpynb(data: NotebookEditorData, metadata: Record<string
       hcanvas: {
         defaultKernelId,
         ...(Object.keys(data.variables || {}).length ? { variables: data.variables } : {}),
+        initialVariables: data.initialVariables || {},
+        variablesInitialized: data.variablesInitialized === true,
       },
     },
     cells: data.cells.map(cell => {

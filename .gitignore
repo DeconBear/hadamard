@@ -82,6 +82,12 @@ id_rsa*
 
 # Local Hcanvas workspace state (never commit user documents/state)
 .hcanvas/
+# Curated native example document; keep all user state and other documents local.
+!examples/hcanvas-notebooks/.hcanvas/
+examples/hcanvas-notebooks/.hcanvas/*
+!examples/hcanvas-notebooks/.hcanvas/docs/
+examples/hcanvas-notebooks/.hcanvas/docs/*
+!examples/hcanvas-notebooks/.hcanvas/docs/doc_maxwellbloch.json
 /.hadamard/settings.json
 /.hadamard/sessions/
 /.hadamard/projects/

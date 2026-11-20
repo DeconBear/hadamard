@@ -6,7 +6,7 @@
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -95,6 +95,17 @@ async function main() {
   assert('App brand and favicon use the simplified HCanvas logo', await page.locator('.brand-mark img').getAttribute('src') === '/assets/hcanvas-icon.svg' && await page.locator('.brand-mark img').evaluate(image => image.complete && image.naturalWidth === 1024) && await page.locator('link[rel="icon"]').getAttribute('href') === '/assets/hcanvas-icon.svg');
   assert('Top bar removes duplicate page and canvas actions', await page.locator('#addPageBtn, #newDocBtn').count() === 0);
   assert('Present and Export are accessible icon actions', await page.locator('#presentBtn svg, #exportBtn svg').count() === 2 && (await page.locator('#presentBtn').getAttribute('title')) === 'Present this canvas' && (await page.locator('#exportBtn').getAttribute('title')) === 'Export this canvas');
+  assert('Refresh is an accessible icon action', await page.locator('#refreshWorkspaceBtn svg').count() === 1 && (await page.locator('#refreshWorkspaceBtn').getAttribute('aria-label')).includes('CLI changes'));
+  const refreshHeaders = { 'x-hcanvas-token': token, 'content-type': 'application/json' };
+  const originalContext = await (await fetch(base + '/api/state', { headers: refreshHeaders })).json();
+  await page.evaluate(() => { window.__manualRefreshMarker = 'preserved'; });
+  const refreshProbe = await (await fetch(base + '/api/docs', { method: 'POST', headers: refreshHeaders, body: JSON.stringify({ title: 'CLI refresh probe' }) })).json();
+  await page.locator('#refreshWorkspaceBtn').click();
+  await page.waitForFunction(() => document.querySelector('#docTitle')?.value === 'CLI refresh probe');
+  assert('Refresh icon loads CLI-created active document without reloading the app', await page.evaluate(() => window.__manualRefreshMarker === 'preserved'));
+  await fetch(base + '/api/context/activate', { method: 'POST', headers: refreshHeaders, body: JSON.stringify({ docId: originalContext.active.docId, pageId: originalContext.active.pageId }) });
+  await page.locator('#refreshWorkspaceBtn').click();
+  await page.waitForFunction(title => document.querySelector('#docTitle')?.value === title, originalContext.active.title);
   assert('Workspace navigator renders all sections', await page.locator('.workspace-nav-item').count() === 5);
   assert('Pages panel is the focused default', await page.locator('[data-sidebar-section="pages"]').isVisible() && !(await page.locator('[data-sidebar-section="canvases"]').isVisible()));
   await page.locator('[data-sidebar-target="canvases"]').click();
@@ -248,13 +259,41 @@ async function main() {
   await page.waitForTimeout(700);
   assert('Files refresh discovers external changes', await page.locator('#filesPanel .file-tree-node', { hasText: 'external-refresh.md' }).count() > 0);
 
+  await page.locator('#filesPanel .file-tree-node', { hasText: 'external-refresh.md' }).click();
+  await page.locator('.file-surface .html-page-surface iframe').waitFor();
+  const fileFrame = page.frameLocator('.file-surface .html-page-surface iframe');
+  await fileFrame.locator('body[contenteditable="true"]').waitFor();
+  assert('Markdown file opens as one rich editor without source split', await page.locator('.file-markdown-editor, .file-surface-body > .cm-editor').count() === 0);
+  assert('Markdown file preview is directly editable', (await fileFrame.locator('body').innerText()).includes('external refresh'));
+  assert('Markdown help opens on first rich view', (await page.locator('.markdown-help-popover').innerText()).includes('MARKDOWN PAGE'));
+  if (await page.locator('.markdown-help-popover').isVisible().catch(() => false)) await page.locator('[data-help-dismiss]').click();
+  await fileFrame.locator('body').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('\n\nRich file marker');
+  await page.waitForTimeout(1300);
+  assert('Markdown rich file edits auto-save', (await readFile(path.join(workspace, 'external-refresh.md'), 'utf8')).includes('Rich file marker'));
+  await fileFrame.locator('body').click({ button: 'right' });
+  await page.locator('.file-surface-body .cm-content').waitFor();
+  const fileSource = await page.locator('.file-surface-body .cm-content').innerText();
+  assert('Right-click opens current Markdown source without a preview split', fileSource.includes('# external refresh') && fileSource.includes('Rich file marker') && await page.locator('.file-markdown-editor').count() === 0);
+  await page.locator('.file-surface-body .cm-content').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type('\n\nSource file marker');
+  await page.waitForTimeout(900);
+  await page.locator('[data-file-action="toggle"]').click();
+  await fileFrame.locator('body[contenteditable="true"]').waitFor();
+  assert('Preview restores rich editing after source changes', (await fileFrame.locator('body').innerText()).includes('Source file marker'));
+  const savedMarkdownFile = await readFile(path.join(workspace, 'external-refresh.md'), 'utf8');
+  assert('Rich and source edits persist in the same Markdown file', savedMarkdownFile.includes('Rich file marker') && savedMarkdownFile.includes('Source file marker'));
+  await closeFileSurface.first().click();
+
   // Markdown page: direct rich-text editing and reopenable help.
   await page.locator('[data-sidebar-target="pages"]').click();
   await page.locator('#addPageMini').click();
   await page.waitForTimeout(300);
   await page.locator('[data-preset="markdown-a4"]').click();
   await page.waitForTimeout(800);
-  assert('Markdown help opens on first view', (await page.locator('.markdown-help-popover').innerText()).includes('MARKDOWN PAGE'));
+  await page.locator('.markdown-help-trigger').click();
   await page.locator('[data-help-dismiss]').click();
   assert('Markdown help can be dismissed', await page.locator('.markdown-help-popover').isHidden());
   await page.locator('.markdown-help-trigger').click();

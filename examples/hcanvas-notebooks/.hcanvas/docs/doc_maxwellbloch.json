@@ -1,0 +1,254 @@
+{
+  "schema": "hadamard-canvas/1",
+  "id": "doc_maxwellbloch",
+  "title": "Maxwell–Bloch",
+  "revision": 6,
+  "createdAt": "2026-11-20T08:53:57.285Z",
+  "updatedAt": "2026-11-20T10:28:03.790Z",
+  "pages": [
+    {
+      "id": "page_maxwellbloch",
+      "name": "Maxwell–Bloch",
+      "mode": "extension",
+      "width": 1280,
+      "height": 820,
+      "background": "#ffffff",
+      "extension": {
+        "format": "hadamard-notebook",
+        "data": {
+          "version": 1,
+          "cells": [
+            {
+              "id": "nbcell_maxwell_01",
+              "kind": "markdown",
+              "source": "# Maxwell–Bloch：光脉冲与二能级介质\n\n这份 Notebook 是一个可直接运行的数值实验：先研究不包含空间传播的 Bloch 方程，再加入一维 Maxwell 传播项，观察光脉冲如何与介质共同演化。Python 负责数值积分和绘图，C++ 与 Octave 负责跨语言一致性检查。\n\n## 1. 物理模型\n\nBloch 向量 $(u,v,w)$ 分别表示同相相干分量、正交相干分量和粒子数反转。光场用慢变 Rabi 频率 $\\Omega$ 表示，$\\Delta=\\omega-\\omega_0$ 是失谐量，$T_1$ 描述粒子数弛豫，$T_2$ 描述相干退相。\n\n$$\n\\begin{aligned}\n\\dot u &= \\Delta v-u/T_2,\\\\\n\\dot v &= -\\Delta u+\\Omega w-v/T_2,\\\\\n\\dot w &= -\\Omega v-(w-w_{eq})/T_1.\n\\end{aligned}\n$$\n\n$w=w_{eq}$ 表示热平衡状态；本例取 $w_{eq}=-1$，即初始处于下能级。共振且忽略弛豫时，$\\Omega$ 的时间积分决定 Bloch 向量的旋转角度；失谐和退相则会改变振荡频率、幅度与最终粒子数。\n\n这里使用无量纲单位，重点是比较参数变化的趋势，而不是拟合某个具体实验装置。建议按以下顺序阅读：\n\n1. 公共变量与派生量：理解参数如何在单元和语言之间流动。\n2. 局域 Bloch 积分：观察脉冲、相干和反转随时间的变化。\n3. 失谐扫描：比较不同失谐量留下的最终反转。\n4. 一维传播：观察光场与介质在空间和时间上的耦合。\n5. 跨语言校验：检查同一公式在 Python、C++ 和 Octave 中是否得到相同答案。"
+            },
+            {
+              "id": "nbcell_maxwell_shared",
+              "kind": "markdown",
+              "source": "## 2. 公共全局变量：一份定义，三种语言\n\n**Variables 面板是本实验唯一的输入来源。** 初始值保存在原生文档中，代码通过 `hc_get` 读取；派生值通过 `hc_set` 发布，后续单元和重新启动的内核都可以继续使用。\n\n| 输入变量 | 默认值 | 含义与使用位置 |\n| --- | --- | --- |\n| `omega0` | 2 | 峰值 Rabi 频率；Python 积分、C++ 和 Octave 周期计算 |\n| `detuning` | 0 | 原子与光场失谐；局域积分和传播 |\n| `T1` | 8 | 粒子数弛豫时间；全部 Python 模型和跨语言报告 |\n| `T2` | 4 | 相干退相时间；全部 Python 模型 |\n| `w_eq` | -1 | 平衡反转；初始条件和图中参考线 |\n| `kappa` | 0.35 | Maxwell–Bloch 耦合强度；传播单元 |\n| `pulse_center` | 12 | 高斯脉冲中心；三个 Python 数值实验 |\n| `pulse_width` | 4 | 高斯脉冲宽度；积分、扫描、传播和脉冲面积 |\n| `time_step` | 0.01 | 公共时间步长；积分精度与传播稳定性 |\n| `sample_label` | Two-level medium A | 示例标签；C++ 和 Octave 输出 |\n\n### 读取、发布与传递\n\n~~~python exec\nrabi_period = 2 * math.pi / hc_get(\"omega0\", 2.0)\nhc_set(\"rabi_period\", rabi_period)\n~~~\n\n`hc_get(name, default)` 只在变量不存在时使用默认值；`hc_set(name, value)` 把 JSON 兼容值写入当前值并保存到原生文档，不会改写初始值。共享的是**数据**，不是 Python 对象、C++ 引用或 Octave 图形句柄。\n\n下一个代码单元计算 `rabi_period` 和 `pulse_area`。后续 C++ 读取这两个派生值，Octave 又读取 C++ 的结果，因此这条链同时演示了**单元间传递**和**语言间传递**。"
+            },
+            {
+              "id": "nbcell_maxwell_parameters",
+              "kind": "code",
+              "source": "import math\n\nsample_label = str(hc_get(\"sample_label\", \"Two-level medium A\"))\nomega0 = float(hc_get(\"omega0\", 2.0))\npulse_width = float(hc_get(\"pulse_width\", 4.0))\npulse_center = float(hc_get(\"pulse_center\", 12.0))\ntime_step = float(hc_get(\"time_step\", 0.01))\nif omega0 <= 0:\n    raise ValueError(\"omega0 must be positive\")\nif pulse_width <= 0:\n    raise ValueError(\"pulse_width must be positive\")\nif time_step <= 0 or time_step > 0.05:\n    raise ValueError(\"time_step must be in the range (0, 0.05]\")\n\nrabi_period = 2.0 * math.pi / omega0\npulse_area = omega0 * pulse_width * math.sqrt(2.0 * math.pi)\nhc_set(\"rabi_period\", rabi_period)\nhc_set(\"pulse_area\", pulse_area)\n\nprint(\"Sample:\", sample_label)\nprint(\"Rabi period =\", rabi_period)\nprint(\"Gaussian pulse area =\", pulse_area)\nprint(\"Pulse center =\", pulse_center, \"; width =\", pulse_width, \"; dt =\", time_step)\nprint(\"Next: C++ reads rabi_period and pulse_area, then Octave reads the C++ result.\")",
+              "kernelId": "python",
+              "language": "python",
+              "outputs": [
+                {
+                  "id": "out_0_v1msv",
+                  "kind": "stream",
+                  "name": "stdout",
+                  "text": "Sample: Two-level medium A\nRabi period = 3.141592653589793\nGaussian pulse area = 20.053026197048002\nPulse center = 12.0 ; width = 4.0 ; dt = 0.01\nNext: C++ reads rabi_period and pulse_area, then Octave reads the C++ result.\n"
+                }
+              ],
+              "stale": true,
+              "executionCount": 3
+            },
+            {
+              "id": "nbcell_maxwell_02",
+              "kind": "code",
+              "source": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\nomega0 = float(hc_get(\"omega0\", 2.0))\ndetuning = float(hc_get(\"detuning\", 0.0))\nT1 = float(hc_get(\"T1\", 8.0))\nT2 = float(hc_get(\"T2\", 4.0))\nw_eq = float(hc_get(\"w_eq\", -1.0))\npulse_center = float(hc_get(\"pulse_center\", 12.0))\npulse_width = float(hc_get(\"pulse_width\", 4.0))\ndt = float(hc_get(\"time_step\", 0.01))\nrabi_period = float(hc_get(\"rabi_period\", 2 * np.pi / omega0))\n\nduration = max(60.0, pulse_center + 12 * pulse_width)\nt = np.arange(0.0, duration + dt, dt)\ndrive = omega0 * np.exp(-0.5 * ((t - pulse_center) / pulse_width) ** 2)\n\ndef rhs(u, v, w, field):\n    return (\n        detuning * v - u / T2,\n        -detuning * u + field * w - v / T2,\n        -field * v - (w - w_eq) / T1,\n    )\n\nu = np.zeros_like(t)\nv = np.zeros_like(t)\nw = np.full_like(t, w_eq)\nfor i in range(len(t) - 1):\n    field = drive[i]\n    k1u, k1v, k1w = rhs(u[i], v[i], w[i], field)\n    k2u, k2v, k2w = rhs(u[i] + 0.5*dt*k1u, v[i] + 0.5*dt*k1v, w[i] + 0.5*dt*k1w, field)\n    k3u, k3v, k3w = rhs(u[i] + 0.5*dt*k2u, v[i] + 0.5*dt*k2v, w[i] + 0.5*dt*k2w, field)\n    k4u, k4v, k4w = rhs(u[i] + dt*k3u, v[i] + dt*k3v, w[i] + dt*k3w, field)\n    u[i+1] = u[i] + dt * (k1u + 2*k2u + 2*k3u + k4u) / 6.0\n    v[i+1] = v[i] + dt * (k1v + 2*k2v + 2*k3v + k4v) / 6.0\n    w[i+1] = w[i] + dt * (k1w + 2*k2w + 2*k3w + k4w) / 6.0\n\npeak_inversion = float(np.max(w))\nfinal_inversion = float(w[-1])\nhc_set(\"peak_inversion\", peak_inversion)\nhc_set(\"final_inversion\", final_inversion)\n\nfig, axes = plt.subplots(2, 1, figsize=(9, 5.6), sharex=True)\naxes[0].plot(t, drive, color=\"#6d5bd0\", lw=2)\naxes[0].set_ylabel(\"Rabi frequency\")\naxes[0].set_title(\"Gaussian pulse\")\naxes[0].grid(alpha=0.25)\naxes[1].plot(t, w, color=\"#b45309\", lw=2, label=\"inversion w\")\naxes[1].plot(t, u, color=\"#047857\", lw=1.3, label=\"coherence u\")\naxes[1].plot(t, v, color=\"#2563eb\", lw=1.3, label=\"coherence v\")\naxes[1].axhline(w_eq, color=\"#8a8276\", ls=\"--\", lw=1, label=\"w_eq\")\naxes[1].set_xlabel(\"time\")\naxes[1].set_ylabel(\"Bloch components\")\naxes[1].legend(frameon=False, ncol=2)\naxes[1].grid(alpha=0.25)\nfig.suptitle(\"Rabi flopping of a two-level medium\", fontsize=13)\nfig.tight_layout()\n\nprint(\"Rabi period from shared parameters:\", round(rabi_period, 6))\nprint(\"peak inversion:\", round(peak_inversion, 4))\nprint(\"final inversion:\", round(final_inversion, 4))",
+              "kernelId": "python",
+              "language": "python",
+              "outputs": [
+                {
+                  "id": "out_0_a51qv",
+                  "kind": "stream",
+                  "name": "stdout",
+                  "text": "Rabi period from shared parameters: 3.141593\npeak inversion: 0.4608\nfinal inversion: -0.9942\n"
+                },
+                {
+                  "id": "out_1_5jun6",
+                  "kind": "image",
+                  "mime": "image/png",
+                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_6f259bd7791d4b74",
+                  "assetId": "asset_6f259bd7791d4b74",
+                  "size": 75514
+                }
+              ],
+              "stale": true,
+              "executionCount": 3
+            },
+            {
+              "id": "nbcell_maxwell_03",
+              "kind": "code",
+              "source": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\nomega0 = float(hc_get(\"omega0\", 2.0))\nT1 = float(hc_get(\"T1\", 8.0))\nT2 = float(hc_get(\"T2\", 4.0))\nw_eq = float(hc_get(\"w_eq\", -1.0))\npulse_center = float(hc_get(\"pulse_center\", 12.0))\npulse_width = float(hc_get(\"pulse_width\", 4.0))\ndt = float(hc_get(\"time_step\", 0.01))\n\nscan_duration = pulse_center + 3.25 * pulse_width\nt = np.arange(0.0, scan_duration + dt, dt)\ndrive = omega0 * np.exp(-0.5 * ((t - pulse_center) / pulse_width) ** 2)\ndetunings = np.linspace(-4.0, 4.0, 81)\n\nu = np.zeros_like(detunings)\nv = np.zeros_like(detunings)\nw = np.full_like(detunings, w_eq)\nfor field in drive[:-1]:\n    du = detunings * v - u / T2\n    dv = -detunings * u + field * w - v / T2\n    dw = -field * v - (w - w_eq) / T1\n    u += dt * du\n    v += dt * dv\n    w += dt * dw\n\ninversion_curve = w.copy()\nhc_set(\"scan_min_inversion\", float(np.min(inversion_curve)))\nhc_set(\"scan_max_inversion\", float(np.max(inversion_curve)))\n\nfig, ax = plt.subplots(figsize=(8, 4.2))\nax.plot(detunings, inversion_curve, color=\"#7c3aed\", lw=2)\nax.fill_between(detunings, w_eq, inversion_curve, color=\"#ede9fe\", alpha=0.7)\nax.axhline(w_eq, color=\"#8a8276\", ls=\"--\", lw=1)\nax.set_xlabel(\"detuning Delta\")\nax.set_ylabel(\"inversion after pulse\")\nax.set_title(\"Inversion left after the pulse\")\nax.grid(alpha=0.25)\nfig.tight_layout()\n\nprint(\"minimum post-pulse inversion:\", round(float(np.min(inversion_curve)), 4))\nprint(\"maximum post-pulse inversion:\", round(float(np.max(inversion_curve)), 4))",
+              "kernelId": "python",
+              "language": "python",
+              "outputs": [
+                {
+                  "id": "out_0_z2ny9",
+                  "kind": "stream",
+                  "name": "stdout",
+                  "text": "minimum post-pulse inversion: -0.9437\nmaximum post-pulse inversion: -0.5423\n"
+                },
+                {
+                  "id": "out_1_se6qy",
+                  "kind": "image",
+                  "mime": "image/png",
+                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_08ac56e83f024117",
+                  "assetId": "asset_08ac56e83f024117",
+                  "size": 36894
+                }
+              ],
+              "stale": true,
+              "executionCount": 3
+            },
+            {
+              "id": "nbcell_maxwell_04",
+              "kind": "markdown",
+              "source": "## 4. 从局域模型到一维 Maxwell 传播\n\n前面的计算把整个介质看作一个点。下面引入空间坐标 $z$，用单向、慢变包络近似描述光场：\n\n$$\n\\partial_t\\Omega+c\\,\\partial_z\\Omega=-\\kappa v.\n$$\n\n$\\kappa$ 是场与介质的耦合强度，$c$ 在本例的无量纲模型中取 1。每个空间网格点都独立求解 Bloch 方程，再通过上风差分把光场向正 $z$ 方向推进。\n\n- 第一幅图是 $\\Omega(z,t)$ 的时空图，可以观察脉冲前沿、峰值和传播过程中发生的形变。\n- 第二幅图是传播结束后的 $w(z)$，用于观察不同位置留下的反转。\n- 稳定性要求 $c\\,dt/dz<1$。公共变量 `time_step` 同时控制 Python 的三个数值实验；传播单元还会检查它是否满足网格条件。\n\n该模型忽略了衍射、横向效应、反向传播和完整矢量 Maxwell 方程，因此适合理解耦合机制，不应直接当作真实器件的精确求解器。"
+            },
+            {
+              "id": "nbcell_maxwell_05",
+              "kind": "code",
+              "source": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\nomega0 = float(hc_get(\"omega0\", 2.0))\ndetuning = float(hc_get(\"detuning\", 0.0))\nT1 = float(hc_get(\"T1\", 8.0))\nT2 = float(hc_get(\"T2\", 4.0))\nw_eq = float(hc_get(\"w_eq\", -1.0))\nkappa = float(hc_get(\"kappa\", 0.35))\npulse_center = float(hc_get(\"pulse_center\", 12.0))\npulse_width = float(hc_get(\"pulse_width\", 4.0))\ndt = float(hc_get(\"time_step\", 0.01))\n\nL = 10.0\nnz = 201\ndz = L / (nz - 1)\nif dt <= 0 or dt >= dz:\n    raise ValueError(\"time_step must be positive and smaller than the spatial grid spacing\")\nc = 1.0\nduration = pulse_center + 6 * pulse_width\nsteps = int(duration / dt)\nz = np.linspace(0.0, L, nz)\n\nfield = np.zeros(nz)\nu = np.zeros(nz)\nv = np.zeros(nz)\nw = np.full(nz, w_eq)\n\nhistory = []\ntimes = []\n\ndef boundary(t):\n    return omega0 * np.exp(-0.5 * ((t - pulse_center) / pulse_width) ** 2)\n\nsnapshot_every = 20\nfor step in range(steps):\n    now = step * dt\n    local_field = field.copy()\n\n    du = detuning * v - u / T2\n    dv = -detuning * u + local_field * w - v / T2\n    dw = -local_field * v - (w - w_eq) / T1\n    u = u + dt * du\n    v = v + dt * dv\n    w = w + dt * dw\n\n    next_field = field.copy()\n    next_field[0] = boundary(now + dt)\n    next_field[1:] = field[1:] - (c * dt / dz) * (field[1:] - field[:-1]) - kappa * dt * v[1:]\n    field = next_field\n\n    if step % snapshot_every == 0:\n        history.append(field.copy())\n        times.append(now)\n\nhistory = np.array(history)\ntimes = np.array(times)\nhc_set(\"propagation_peak_field\", float(np.max(history)))\nhc_set(\"propagation_final_inversion\", float(w[-1]))\n\nfig, axes = plt.subplots(2, 1, figsize=(9, 6.2), gridspec_kw={\"height_ratios\": [2, 1]})\nimage = axes[0].imshow(\n    history.T,\n    origin=\"lower\",\n    aspect=\"auto\",\n    extent=[times[0], times[-1], 0.0, L],\n    cmap=\"magma\",\n    vmin=0.0,\n    vmax=float(np.max(history)) or 1.0,\n)\naxes[0].set_xlabel(\"time\")\naxes[0].set_ylabel(\"position z\")\naxes[0].set_title(\"propagating Rabi field Omega(z,t)\")\nfig.colorbar(image, ax=axes[0], shrink=0.85, label=\"Omega\")\n\naxes[1].plot(z, w, color=\"#b45309\", lw=2)\naxes[1].axhline(w_eq, color=\"#8a8276\", ls=\"--\", lw=1)\naxes[1].set_xlabel(\"position z\")\naxes[1].set_ylabel(\"final inversion\")\naxes[1].set_title(\"inversion left behind the pulse\")\naxes[1].grid(alpha=0.25)\nfig.tight_layout()\n\nprint(\"Courant number:\", round(dt / dz, 4))\nprint(\"peak field:\", round(float(np.max(history)), 4))\nprint(\"final inversion range:\", round(float(np.min(w)), 4), \"to\", round(float(np.max(w)), 4))",
+              "kernelId": "python",
+              "language": "python",
+              "outputs": [
+                {
+                  "id": "out_0_wqa5p",
+                  "kind": "stream",
+                  "name": "stdout",
+                  "text": "Courant number: 0.2\npeak field: 2.3083\nfinal inversion range: -0.8841 to -0.047\n"
+                },
+                {
+                  "id": "out_1_nw0e0",
+                  "kind": "image",
+                  "mime": "image/png",
+                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_23d48689a7b6443f",
+                  "assetId": "asset_23d48689a7b6443f",
+                  "size": 152075
+                }
+              ],
+              "stale": false,
+              "executionCount": 3
+            },
+            {
+              "id": "nbcell_maxwell_06",
+              "kind": "markdown",
+              "source": "## 5. 跨语言校验与数据流\n\n下面两个单元不只是分别计算同一个公式，还会读取上游语言发布的派生变量：\n\n| 顺序 | 生产者 | 读取的公共值 | 发布的派生值 |\n| --- | --- | --- | --- |\n| 1 | Python | `omega0`、`pulse_width` | `rabi_period`、`pulse_area` |\n| 2 | C++ | `rabi_period`、`pulse_area` | `rabi_period_cpp`、`rabi_period_error_cpp` |\n| 3 | Octave | `rabi_period`、`rabi_period_cpp` | `rabi_period_octave`、`period_max_error` |\n\nC++ 比较自己的周期与 Python 周期；Octave 再比较 Python、C++ 和自己的周期。`period_max_error` 应接近浮点舍入误差，而不是一个人为指定的容差结果。\n\n这种传递是有顺序的：先运行提供派生值的单元，再运行消费它的单元。使用 **Run all** 可以自动保持该顺序；改变公共初始值后，先点击 **Initialize**，再使用 **Run affected** 重算受影响的单元。"
+            },
+            {
+              "id": "nbcell_maxwell_07",
+              "kind": "code",
+              "source": "const double omega0_cpp = hc_get(\"omega0\", 2.0);\nconst double shared_period = hc_get(\"rabi_period\", 0.0);\nconst double shared_area = hc_get(\"pulse_area\", 0.0);\nconst std::string sample_label = hc_get(\"sample_label\", std::string(\"Two-level medium A\"));\nif (shared_period <= 0.0 || shared_area <= 0.0) {\n    throw std::runtime_error(\"Run the shared parameter cell before this C++ cell\");\n}\nconst double t1_cpp = hc_get(\"T1\", 8.0);\nconst double pi_cpp = std::acos(-1.0);\nconst double rabi_period_cpp = 2.0 * pi_cpp / omega0_cpp;\nconst double rabi_period_error_cpp = std::fabs(rabi_period_cpp - shared_period);\nhc_set(\"rabi_period_cpp\", rabi_period_cpp);\nhc_set(\"rabi_period_error_cpp\", rabi_period_error_cpp);\nstd::cout << \"Sample: \" << sample_label << std::endl;\nstd::cout << \"C++ Rabi period = \" << rabi_period_cpp\n          << \", Python period = \" << shared_period\n          << \", absolute error = \" << rabi_period_error_cpp << std::endl;\nstd::cout << \"Shared pulse area = \" << shared_area\n          << \", T1 = \" << t1_cpp << std::endl;",
+              "kernelId": "cpp",
+              "language": "cpp",
+              "outputs": [],
+              "stale": false,
+              "executionCount": 2
+            },
+            {
+              "id": "nbcell_maxwell_08",
+              "kind": "code",
+              "source": "omega0_oct = hc_get(\"omega0\", 2.0);\nshared_period = hc_get(\"rabi_period\", 0.0);\ncpp_period = hc_get(\"rabi_period_cpp\", 0.0);\nsample_label = hc_get(\"sample_label\", \"Two-level medium A\");\nif shared_period <= 0 || cpp_period <= 0\n    error(\"Run the Python parameter cell and C++ validation cell first\")\nend\nT1_oct = hc_get(\"T1\", 8.0);\nrabi_period_oct = 2 * pi / omega0_oct;\nperiod_max_error = max(abs([shared_period, cpp_period, rabi_period_oct] - shared_period));\nhc_set(\"rabi_period_octave\", rabi_period_oct);\nhc_set(\"period_max_error\", period_max_error);\nfprintf(\"Sample: %s\\n\", sample_label);\nfprintf(\"Octave Rabi period = %.12f, C++ period = %.12f\\n\", rabi_period_oct, cpp_period);\nfprintf(\"Maximum cross-language period error = %.3g, T1 = %.4f\\n\", period_max_error, T1_oct);",
+              "kernelId": "octave",
+              "language": "octave",
+              "outputs": [
+                {
+                  "id": "out_0_8psh7",
+                  "kind": "stream",
+                  "name": "stdout",
+                  "text": "Sample: Two-level medium A\nOctave Rabi period = 6.283185307180, C++ period = 6.283185307180\nMaximum cross-language period error = 3.55e-15, T1 = 8.0000\n"
+                }
+              ],
+              "stale": true,
+              "executionCount": 2
+            },
+            {
+              "id": "nbcell_maxwell_09",
+              "kind": "markdown",
+              "source": "## 6. 建议实验与结果解读\n\n### 先检查默认值\n\n- `omega0 = 2` 时，$T_R=2\\pi/\\omega_0=\\pi$，所以 `rabi_period` 应约为 **3.14159265359**。\n- 高斯脉冲面积近似为 $\\omega_0\\,w_p\\sqrt{2\\pi}$，默认约为 **20.0499**。这里的“面积”是 Rabi 频率对时间的积分，不是光强或能量。\n- `rabi_period_error_cpp` 和 `period_max_error` 应接近零；它们比较的是不同语言对同一公共参数的独立计算。\n\n### 逐个修改公共变量\n\n以下实验都先修改初始值，再点击 **Initialize**。如果希望从初始值完整重算，直接点击 **Run all**；它会先自动初始化，再运行全部单元。\n\n以下实验都先修改初始值，再点击 **Initialize**。如果希望从初始值完整重算，直接点击 **Run all**；它会先自动初始化，再运行全部单元。\n\n1. 把 `omega0` 改为 1 或 3，运行 **Run affected**。比较周期、反转振荡速度和失谐扫描曲线的宽度。\n2. 把 `detuning` 改为 0.5，观察最终反转为何偏离共振中心，以及相干涉图如何变化。\n3. 把 `pulse_width` 改为 2 或 6。脉冲面积和三个 Python 数值实验都会使用新宽度，不需要逐单元修改代码。\n4. 把 `pulse_center` 改为 8 或 16，比较脉冲出现时间以及传播时空图的平移。\n5. 把 `kappa` 分别设为 0 和 0.8。前者关闭传播耦合，后者增强介质对光场的影响。\n6. 减小 `time_step`，比较四阶 Runge–Kutta 与一阶空间推进的数值收敛趋势；若传播网格条件被破坏，单元会明确报错。\n\n### 阅读结果时需要注意\n\n`peak_inversion` 是整个时间序列中的最大值，`final_inversion` 是积分结束时的值；失谐扫描记录的是脉冲结束后的反转，而不是瞬时最大值。传播图展示的是慢变包络，不包含载波振荡。\n\n如果只想修改公式而不运行代码，可以点击公式编辑 LaTeX；如果希望把某个公式变成可复算实验，可以从公式弹层生成计算单元，再通过 `hc_get` 和 `hc_set` 接入这里的公共变量链。"
+            }
+          ],
+          "defaultKernelId": "python",
+          "variables": {
+            "omega0": 2,
+            "detuning": 0,
+            "T1": 8,
+            "T2": 4,
+            "w_eq": -1,
+            "kappa": 0.35,
+            "sample_label": "Two-level medium A",
+            "pulse_center": 12,
+            "pulse_width": 4,
+            "time_step": 0.01,
+            "rabi_period": 3.141592653589793,
+            "pulse_area": 20.053026197048002,
+            "peak_inversion": 0.4607613527251543,
+            "final_inversion": -0.9941818071980845,
+            "scan_min_inversion": -0.9437036288497168,
+            "scan_max_inversion": -0.5422786067391835,
+            "propagation_peak_field": 2.308309923222794,
+            "propagation_final_inversion": -0.04698286637638267,
+            "rabi_period_cpp": 6.28318530717959,
+            "rabi_period_error_cpp": 0,
+            "rabi_period_octave": 6.283185307179586,
+            "period_max_error": 3.552713678800501e-15
+          },
+          "initialVariables": {
+            "omega0": 2,
+            "detuning": 0,
+            "T1": 8,
+            "T2": 4,
+            "w_eq": -1,
+            "kappa": 0.35,
+            "sample_label": "Two-level medium A",
+            "pulse_center": 12,
+            "pulse_width": 4,
+            "time_step": 0.01
+          },
+          "variablesInitialized": true
+        }
+      },
+      "blocks": []
+    }
+  ],
+  "proposals": [],
+  "history": [
+    {
+      "revision": 1,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T10:27:46.390Z",
+      "opCount": 1
+    },
+    {
+      "revision": 2,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T10:27:50.136Z",
+      "opCount": 1
+    },
+    {
+      "revision": 3,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T10:27:52.774Z",
+      "opCount": 1
+    },
+    {
+      "revision": 4,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T10:27:56.285Z",
+      "opCount": 1
+    },
+    {
+      "revision": 5,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T10:27:59.062Z",
+      "opCount": 1
+    },
+    {
+      "revision": 6,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-20T10:28:03.790Z",
+      "opCount": 1
+    }
+  ]
+}

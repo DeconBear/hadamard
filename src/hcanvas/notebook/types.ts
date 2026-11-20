@@ -20,5 +20,7 @@ export interface NotebookEditorData {
   cells: NotebookEditorCell[];
   defaultKernelId?: string;
   variables?: NotebookVariables;
+  initialVariables?: NotebookVariables;
+  variablesInitialized?: boolean;
   metadata?: Record<string, unknown>;
 }
