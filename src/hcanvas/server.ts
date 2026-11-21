@@ -23,12 +23,13 @@ import { blockAgentSummary } from './builtinBlocks.js';
 import { createPluginScaffold } from './pluginScaffold.js';
 import { validatePluginManifest } from './pluginManifest.js';
 import { listProjects } from './projectRegistry.js';
-import { HcFileService } from './fileWorkspace.js';
+import { HcFileConflictError, HcFileService } from './fileWorkspace.js';
 import { HcAssetService } from './assets.js';
 import { readHcanvasLanguageSync, writeHcanvasLanguage } from './dataRoot.js';
 import { buildLayoutRead, buildLintReport } from './agentLayout.js';
 import { compactApplyResult } from './agentApply.js';
 import { createExtensionHost } from './extensionHost.js';
+import { HCANVAS_VERSION } from './version.js';
 
 export interface HcServerOptions {
   workspace: string;
@@ -174,7 +175,7 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
   await assets.init();
   const extensionHost = createExtensionHost({
     workspace: options.workspace,
-    version: '0.1.0',
+    version: HCANVAS_VERSION,
     json,
     readBody,
     saveKernelOutput: async input => {
@@ -224,7 +225,7 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
           token,
           workspace: options.workspace,
           mode: 'standalone',
-          version: '0.1.0',
+          version: HCANVAS_VERSION,
           language: readHcanvasLanguageSync(),
         };
         html = html.replace('__HCANVAS_BOOT_JSON__', escapeJsonForHtml(boot));
@@ -279,8 +280,13 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
       }
       if (pathname === '/api/files/write' && req.method === 'POST') {
         const body = await readBody(req);
-        await files.write(String(body.root || ''), String(body.path || ''), String(body.content ?? ''));
-        json(res, 200, { ok: true });
+        const expectedHash = typeof body.expectedHash === 'string' ? body.expectedHash : undefined;
+        const expectedMtime = typeof body.expectedMtime === 'number' && Number.isFinite(body.expectedMtime) ? body.expectedMtime : undefined;
+        const written = await files.write(String(body.root || ''), String(body.path || ''), String(body.content ?? ''), {
+          ...(expectedHash === undefined ? {} : { expectedHash }),
+          ...(expectedMtime === undefined ? {} : { expectedMtime }),
+        });
+        json(res, 200, { ok: true, file: written });
         return;
       }
       if (pathname === '/api/files/create' && req.method === 'POST') {
@@ -378,7 +384,7 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
         return;
       }
       if (pathname === '/api/health') {
-        json(res, 200, { ok: true, workspace: options.workspace, version: '0.1.0' });
+        json(res, 200, { ok: true, workspace: options.workspace, version: HCANVAS_VERSION });
         return;
       }
       if (pathname === '/api/state' && req.method === 'GET') {
@@ -822,6 +828,16 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
     } catch (error) {
       if (error instanceof HcRevisionConflictError) {
         json(res, 409, { error: error.message, code: 'revision_conflict', latestRevision: error.latest.revision, latestDoc: error.latest, hint: 'Re-read the document or page, then retry the same operation with latestRevision as baseRevision.' });
+        return;
+      }
+      if (error instanceof HcFileConflictError) {
+        json(res, 409, {
+          error: error.message,
+          code: 'file_conflict',
+          currentHash: error.current.hash,
+          currentMtime: error.current.mtime,
+          hint: 'Re-read the file and retry, or explicitly overwrite after reviewing the newer content.',
+        });
         return;
       }
       if (error instanceof HcNotFoundError) {

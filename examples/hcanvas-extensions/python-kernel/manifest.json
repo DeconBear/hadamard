@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "Persistent Python 3 kernel for executable code cells and notebooks.",
   "engines": {
-    "hcanvas": ">=0.3.0"
+    "hcanvas": ">=0.1.0"
   },
   "capabilities": {
     "process": {

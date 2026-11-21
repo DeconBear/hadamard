@@ -65,8 +65,16 @@ jobs:
           fi
           echo "Hcanvas version: $ACTUAL"
 
-  build:
+  verify:
     needs: prepare
+    uses: ./.github/workflows/hcanvas-verify.yml
+    with:
+      run_maxwell: true
+
+  build:
+    needs:
+      - prepare
+      - verify
     strategy:
       fail-fast: false
       matrix:
@@ -121,6 +129,7 @@ jobs:
   release:
     needs:
       - prepare
+      - verify
       - build
     runs-on: ubuntu-latest
     steps:
@@ -150,5 +159,9 @@ jobs:
           TAG="${{ needs.prepare.outputs.tag }}"
           find release-assets -type f -print0 | while IFS= read -r -d '' file; do
             echo "Uploading $file"
-            gh release upload "$TAG" "$file" --repo "${{ github.repository }}" --clobber
+            if gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' | grep -Fxq "$(basename "$file")"; then
+              echo "Refusing to overwrite existing release asset: $(basename "$file")"
+              exit 1
+            fi
+            gh release upload "$TAG" "$file" --repo "${{ github.repository }}"
           done

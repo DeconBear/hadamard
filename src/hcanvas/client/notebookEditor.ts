@@ -50,6 +50,8 @@ export interface NotebookEditorOptions {
   getKernelManager(): KernelManager | null;
   persist(data: NotebookEditorData): Promise<void>;
   persistOutputs?(data: NotebookEditorData): void;
+  /** Notified when persist throws, so a viewer can offer conflict recovery. */
+  onSaveConflict?(error: unknown): void;
   toast(message: string, kind?: 'info' | 'success' | 'error'): void;
 }
 
@@ -164,6 +166,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
         status(savedVersion === editVersion ? 'Auto-save' : 'Saving…', savedVersion === editVersion ? 'saved' : 'saving');
       } catch (error) {
         status('Save failed · edit to retry', 'error');
+        options.onSaveConflict?.(error);
         options.toast(error instanceof Error ? error.message : String(error), 'error');
       }
     });
@@ -276,7 +279,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   const updateVariables = (events: KernelOutputEvent[]): boolean => {
     const next = variablesFromEvents(events);
     if (!Object.keys(next).length) return false;
-    // Kernels publish a full snapshot; replace so deleted variables disappear.
     if (JSON.stringify(next) === JSON.stringify(data.variables)) return false;
     const previousNames = Object.keys(data.variables || {});
     data.variables = next;
@@ -677,7 +679,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
         editors.set(cell.id, editor);
       }
       if (editor.state.doc.toString() !== cell.source) {
-        // Keep the live CodeMirror view in sync without treating it as user input.
         syncingEditor = true;
         try {
           editor.dispatch({
@@ -723,7 +724,6 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
       if (cell) {
         cell.outputs = [];
         cell.stale = false;
-        // Do not resurrect a cleared output when the notebook is reopened.
         const task = notebookExecutionCenter.getForCell(options.scope, cell.id);
         if (task && !['queued', 'running', 'disconnected'].includes(task.status)) task.outputs = undefined;
         refreshOutput(cell);

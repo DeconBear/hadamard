@@ -26,7 +26,7 @@ function extensionManifest(id: string, contributes: Record<string, unknown> = {}
     id,
     name: 'Extension ' + id,
     version: '0.1.0',
-    engines: { hcanvas: '>=0.2.0' },
+    engines: { hcanvas: '>=0.1.0' },
     capabilities: {},
     contributes: { commands: [{ id: id + '.run', title: 'Run ' + id }], ...contributes },
     ...overrides,
@@ -47,7 +47,7 @@ function processManifest(): Record<string, unknown> {
     id: 'com.example.kernel',
     name: 'Kernel',
     version: '0.1.0',
-    engines: { hcanvas: '>=0.2.0' },
+    engines: { hcanvas: '>=0.1.0' },
     capabilities: { process: { sidecars: ['runner'] } },
     contributes: {
       sidecars: [{ id: 'runner', label: 'Runner', command: ['node', 'runner.mjs'], cwd: 'extension' }],

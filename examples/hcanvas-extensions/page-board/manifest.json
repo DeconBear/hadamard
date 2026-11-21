@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "Custom Kanban-style page format rendered by an extension viewer.",
   "engines": {
-    "hcanvas": ">=0.2.0"
+    "hcanvas": ">=0.1.0"
   },
   "capabilities": {
     "document": {

@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 
 import { HcRuntimeError } from './protocol.js';
+import { HCANVAS_VERSION } from '../version.js';
 import type {
   HcRuntimeDiagnostic,
   HcSidecarAuditEvent,
@@ -92,7 +93,7 @@ export class SidecarBroker {
     this.workspaceDir = path.resolve(options.workspaceDir);
     this.catalog = options.catalog;
     this.limitsOverride = options.limits ?? {};
-    this.clientInfo = options.clientInfo ?? { name: 'hcanvas', version: options.version ?? '0.2.0' };
+    this.clientInfo = options.clientInfo ?? { name: 'hcanvas', version: options.version ?? HCANVAS_VERSION };
     this.spawnImpl = options.spawnImpl ?? spawn;
     this.killImpl = options.killImpl ?? ((pid, signal) => killProcessTree(pid, signal));
     this.enforceLimitCaps = options.enforceLimitCaps !== false;

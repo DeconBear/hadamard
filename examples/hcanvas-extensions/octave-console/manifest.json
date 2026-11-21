@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "Run GNU Octave snippets and capture text/plot output through a sidecar.",
   "engines": {
-    "hcanvas": ">=0.3.0"
+    "hcanvas": ">=0.1.0"
   },
   "capabilities": {
     "document": {

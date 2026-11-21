@@ -7,41 +7,21 @@ on:
       - 'src/hcanvas/**'
       - 'tests/hcanvas-*'
       - 'scripts/verify-hcanvas-e2e.mjs'
+      - 'scripts/verify-hcanvas-notebook-interactions-e2e.mjs'
+      - 'scripts/verify-hcanvas-extensions-e2e.mjs'
+      - 'scripts/verify-hcanvas-maxwell-e2e.mjs'
       - 'scripts/build-hcanvas-installer.mjs'
+      - 'scripts/build-canvas-package.mjs'
+      - 'examples/hcanvas-extensions/**'
+      - 'examples/hcanvas-notebooks/**'
       - 'hcanvas.version.json'
+      - 'packages/hadamard-canvas/**'
       - '.github/workflows/hcanvas-e2e.yml'
+      - '.github/workflows/hcanvas-verify.yml'
 
 permissions:
   contents: read
 
 jobs:
-  e2e:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Playwright Chromium
-        run: npx playwright install chromium
-
-      - name: Build Hcanvas
-        run: npm run build
-
-      - name: Run Hcanvas browser E2E
-        run: npm run test:hcanvas:e2e
-
-      - name: Upload screenshots on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hcanvas-e2e-failure
-          path: plan/hcanvas-e2e.log
-          if-no-files-found: ignore
+  verify:
+    uses: ./.github/workflows/hcanvas-verify.yml

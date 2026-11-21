@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "Edit a Manim scene and render it through a user-run HTTP renderer service.",
   "engines": {
-    "hcanvas": ">=0.2.0"
+    "hcanvas": ">=0.1.0"
   },
   "capabilities": {
     "document": {

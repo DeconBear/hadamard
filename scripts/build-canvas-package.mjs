@@ -32,6 +32,9 @@ async function main() {
   // Copy static UI
   await cp(path.join(root, 'dist', 'hcanvas'), path.join(staging, 'dist', 'hcanvas'), { recursive: true });
 
+  // Ship the single version source beside the compiled server and package root.
+  await cp(path.join(root, 'hcanvas.version.json'), path.join(staging, 'hcanvas.version.json'));
+
   // Copy app icons
   await mkdir(path.join(staging, 'assets'), { recursive: true });
   for (const icon of ['hcanvas-icon.ico', 'hcanvas-icon.png']) {
@@ -63,7 +66,7 @@ async function main() {
       'hcanvas-desktop': './bin/hcanvas-desktop.js',
       'hadamard-canvas': './bin/hcanvas.js',
     },
-    files: ['bin', 'dist', 'assets', 'README.md'],
+    files: ['bin', 'dist', 'assets', 'README.md', 'hcanvas.version.json'],
     dependencies: {
       docx: '^9.15.1',
       katex: '^0.16.47',

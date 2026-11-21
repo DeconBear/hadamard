@@ -29,11 +29,14 @@ import { yaml } from '@codemirror/lang-yaml';
 import { markdownPageHtml } from '../markdownPage.js';
 import { mountPdfPreview } from './pdfPreview.js';
 import { renderHtmlPageSurface } from './htmlPageReader.js';
+import { showFileConflictBanner } from './fileConflictUi.js';
+import { fileConflictFromError, writeFileWithVersion } from './fileSaveVersion.js';
 
 interface FileRoot { id: string; name: string; path: string; }
 interface FileEntry { name: string; path: string; type: 'file' | 'directory'; ext?: string; size?: number; }
 type FilePreview = 'text' | 'image' | 'pdf' | 'office' | 'binary';
-interface FileContent { path: string; name: string; ext: string; size: number; binary: boolean; content: string; language: string; preview: FilePreview; }
+interface FileContent { path: string; name: string; ext: string; size: number; binary: boolean; content: string; language: string; preview: FilePreview; hash?: string; mtime?: number; }
+interface FileConflict { message: string; hash?: string; mtime?: number; }
 interface CanvasTab { id: string; docId: string; pageId: string; label: string; }
 interface FileTab {
   id: string;
@@ -47,6 +50,9 @@ interface FileTab {
   preview: FilePreview;
   mode: 'view' | 'edit';
   dirty: boolean;
+  hash?: string;
+  mtime?: number;
+  conflict?: FileConflict;
   fontSize: number;
   editor?: EditorView;
 }
@@ -151,9 +157,6 @@ function splitMarkdownFrontmatter(source: string): MarkdownFrontmatterParts {
   const opening = /^(?:\uFEFF)?---[ \t]*\r?\n/.exec(source);
   if (!opening) return { frontmatter: '', body: source };
   const rest = source.slice(opening[0].length);
-  // Find the first closing delimiter line anywhere in the frontmatter block. The
-  // preceding newline, the delimiter line, and its trailing newline are all part of
-  // the preserved prefix so the original bytes/line endings are never rewritten.
   const closing = /(?:^|\r?\n)(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(rest);
   if (!closing) return { frontmatter: '', body: source };
   const end = closing.index + closing[0].length;
@@ -450,24 +453,74 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       if (activeId === tab.id) setFileSaveStatus('Auto-save on', 'saved');
       return true;
     }
+    if (tab.conflict) {
+      if (activeId === tab.id) setFileSaveStatus('Conflict', 'error');
+      return false;
+    }
     const content = tab.content;
     if (activeId === tab.id) setFileSaveStatus('Saving…', 'saving');
     try {
-      await options.request('/api/files/write', { method: 'POST', body: JSON.stringify({ root: tab.rootId, path: tab.path, content }) });
-      // Never replace live content with the saved snapshot: edits typed (or rich-view
-      // input emitted) while the write was in flight must keep the tab dirty and save again.
+      const written = await writeFileWithVersion(options.request, {
+        rootId: tab.rootId,
+        path: tab.path,
+        content,
+        version: { ...(tab.hash === undefined ? {} : { hash: tab.hash }), ...(tab.mtime === undefined ? {} : { mtime: tab.mtime }) },
+      });
+      if (typeof written.hash === 'string') tab.hash = written.hash;
+      if (typeof written.mtime === 'number') tab.mtime = written.mtime;
+      tab.conflict = undefined;
       tab.dirty = tab.content !== content;
       if (tab.dirty) {
         if (tabs.includes(tab)) scheduleAutoSave(tab);
         if (activeId === tab.id) setFileSaveStatus('Auto-save pending', 'saving');
       } else if (activeId === tab.id) setFileSaveStatus('Auto-save on', 'saved');
+      if (activeId === tab.id) surface?.querySelector('[data-file-conflict]')?.remove();
       renderTabs();
       return true;
     } catch (error) {
+      const conflict = fileConflictFromError(error);
+      if (conflict) {
+        tab.conflict = conflict;
+        if (activeId === tab.id) {
+          setFileSaveStatus('Conflict', 'error');
+          showConflictBanner(tab);
+        }
+        options.toast('File changed on disk. Choose Reload, Overwrite, or Save copy before saving again.', 'error');
+        return false;
+      }
       if (activeId === tab.id) setFileSaveStatus('Save failed', 'error');
       options.toast(error instanceof Error ? error.message : String(error), 'error');
       return false;
     }
+  }
+
+  function showConflictBanner(tab: FileTab): void {
+    if (!surface || activeId !== tab.id || !tab.conflict) return;
+    showFileConflictBanner({
+      surface,
+      message: tab.conflict.message,
+      rootId: tab.rootId,
+      path: tab.path,
+      content: tab.content,
+      request: options.request,
+      toast: options.toast,
+      onReload: file => {
+        tab.content = file.content;
+        tab.hash = file.hash;
+        tab.mtime = file.mtime;
+        tab.dirty = false;
+        tab.conflict = undefined;
+        clearAutoSave(tab);
+        renderSurface(tab);
+      },
+      onOverwrite: () => {
+        tab.conflict = undefined;
+        tab.hash = undefined;
+        tab.mtime = undefined;
+        clearAutoSave(tab);
+        void saveTab(tab);
+      },
+    });
   }
 
   function editorExtensions(tab: FileTab, editable: boolean): Extension[] {
@@ -569,6 +622,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const saveStatus = editorActive || richEditing ? '<span class="file-save-status" data-file-save-status>Auto-save on</span>' : '';
     surface.innerHTML = '<div class="file-surface-head"><div class="file-surface-title"><span class="file-type">' + escapeHtml(iconFor(tab.name)) + '</span><div><strong>' + escapeHtml(tab.name) + '</strong><small>' + escapeHtml(tab.language) + ' · ' + escapeHtml(tab.path) + '</small></div></div><div class="file-surface-actions">' + saveStatus + zoom + toggle + history + '<button type="button" class="btn tiny" data-file-action="close">Close</button></div></div><div class="file-surface-body"></div>';
     options.viewport.appendChild(surface);
+    if (tab.conflict) showConflictBanner(tab);
     for (const eventName of ['pointerdown', 'mousedown', 'click', 'wheel']) {
       surface.addEventListener(eventName, event => event.stopPropagation(), { passive: eventName === 'wheel' });
     }
@@ -638,7 +692,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       const file = result.file;
       if (options.resolveCustomViewer?.({ rootId, path: relative, name: file.name, ext: file.ext })) return;
       const viewOnly = file.preview !== 'text' || ['.html', '.htm', '.md', '.markdown'].includes(file.ext);
-      const tab: FileTab = { id: 'file_' + rootId + '_' + relative, rootId, path: relative, name: file.name, language: file.language, content: file.content, binary: file.binary, ext: file.ext, preview: file.preview, mode: viewOnly ? 'view' : 'edit', dirty: false, fontSize: 13 };
+      const tab: FileTab = { id: 'file_' + rootId + '_' + relative, rootId, path: relative, name: file.name, language: file.language, content: file.content, binary: file.binary, ext: file.ext, preview: file.preview, mode: viewOnly ? 'view' : 'edit', dirty: false, ...(file.hash === undefined ? {} : { hash: file.hash }), ...(file.mtime === undefined ? {} : { mtime: file.mtime }), fontSize: 13 };
       tabs.push(tab);
       await activateFile(tab.id);
     } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }

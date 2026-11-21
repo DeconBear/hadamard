@@ -35,7 +35,7 @@ function v2Manifest(id: string, contributes: Record<string, unknown> = {}, overr
     id,
     name: id,
     version: '0.1.0',
-    engines: { hcanvas: '>=0.2.0' },
+    engines: { hcanvas: '>=0.1.0' },
     capabilities: {},
     contributes: { commands: [{ id: id + '.run', title: 'Run ' + id }], ...contributes },
     ...overrides,
@@ -48,7 +48,7 @@ function processManifest(id = 'com.example.kernel'): Record<string, unknown> {
     id,
     name: 'Fake kernel',
     version: '0.1.0',
-    engines: { hcanvas: '>=0.2.0' },
+    engines: { hcanvas: '>=0.1.0' },
     capabilities: { process: { sidecars: ['runner'] } },
     contributes: {
       sidecars: [{
@@ -273,11 +273,15 @@ describe('hcanvas extension discovery', () => {
     expect(findExtension(discovery, 'com.example.kernel')?.enabled).toBe(true);
   });
 
-  it('warns when engines target does not match the host platform line', async () => {
-    await writeWorkspaceExtension('old', v2Manifest('com.example.old', {}, { engines: { hcanvas: '<0.2.0' } }));
+  it('disables an installed extension whose engines target does not match the host', async () => {
+    await writeWorkspaceExtension('old', v2Manifest('com.example.old', {}, { engines: { hcanvas: '<0.1.0' } }));
     const discovery = await discoverExtensions(workspace, options);
     expect(discovery.warnings.some(warning => warning.includes('engines.hcanvas'))).toBe(true);
-    expect(findExtension(discovery, 'com.example.old')).toBeTruthy();
+    const old = findExtension(discovery, 'com.example.old');
+    expect(old).toBeTruthy();
+    expect(old?.compatible).toBe(false);
+    expect(old?.enabled).toBe(false);
+    expect(old?.diagnostics.join(' ')).toContain('incompatible host');
   });
 });
 
@@ -297,6 +301,7 @@ describe('hcanvas extension install and uninstall', () => {
     expect(userInstall.extension?.source).toBe('user');
     expect(await exists(path.join(home, 'hcanvas', 'extensions', 'com.example.userinstalled', 'manifest.json'))).toBe(true);
 
+    await expect(installExtension(workspace, { source: 'json', manifest: v2Manifest('com.example.future', {}, { engines: { hcanvas: '>=99.0.0' } }) }, options)).rejects.toThrow(/requires engines\.hcanvas/);
     await expect(installExtension(workspace, { source: 'json', manifest: processManifest() }, options)).rejects.toThrow(/declarative/);
     await expect(installExtension(workspace, { source: 'nope' } as never, options)).rejects.toThrow(/folder/);
   });

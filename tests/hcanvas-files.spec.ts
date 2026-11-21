@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { HcFileService } from '../src/hcanvas/fileWorkspace.js';
+import { HcFileConflictError, HcFileService } from '../src/hcanvas/fileWorkspace.js';
 
 const temps: string[] = [];
 async function tempDir(): Promise<string> {
@@ -45,6 +45,23 @@ describe('HcFileService', () => {
     await service.write(root.id, 'note.md', '# new');
     expect(await readFile(path.join(project, 'note.md'), 'utf8')).toBe('# new');
     expect((await service.read(root.id, 'note.md')).content).toBe('# new');
+  });
+
+  it('rejects writes based on a stale content hash without overwriting', async () => {
+    const project = await tempDir();
+    const service = new HcFileService(path.join(project, '.hcanvas'));
+    await service.init();
+    const root = service.listRoots()[0]!;
+    await writeFile(path.join(project, 'note.md'), '# old');
+    const opened = await service.read(root.id, 'note.md');
+    expect(opened.hash).toBeTruthy();
+    await writeFile(path.join(project, 'note.md'), '# external change');
+    await expect(service.write(root.id, 'note.md', '# stale save', { expectedHash: opened.hash })).rejects.toBeInstanceOf(HcFileConflictError);
+    expect(await readFile(path.join(project, 'note.md'), 'utf8')).toBe('# external change');
+    const fresh = await service.read(root.id, 'note.md');
+    const written = await service.write(root.id, 'note.md', '# fresh save', { expectedHash: fresh.hash });
+    expect(written.hash).toBeTruthy();
+    expect((await service.read(root.id, 'note.md')).content).toBe('# fresh save');
   });
 
   it('supports multiple roots and rejects path escapes', async () => {

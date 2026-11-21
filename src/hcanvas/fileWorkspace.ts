@@ -61,6 +61,31 @@ export interface HcFileContent {
   content: string;
   language: string;
   preview: HcFilePreview;
+  /** Content hash for text files; used as an optimistic concurrency token. */
+  hash?: string;
+  /** File mtime in milliseconds at read time. */
+  mtime?: number;
+}
+
+export interface HcFileWriteOptions {
+  expectedHash?: string;
+  expectedMtime?: number;
+}
+
+export interface HcFileWriteResult {
+  hash: string;
+  mtime: number;
+}
+
+export class HcFileConflictError extends Error {
+  constructor(message: string, public readonly current: HcFileWriteResult) {
+    super(message);
+    this.name = 'HcFileConflictError';
+  }
+}
+
+function contentHash(content: string | Buffer): string {
+  return createHash('sha256').update(content).digest('hex');
 }
 
 const MAX_EDITABLE = 4 * 1024 * 1024;
@@ -240,15 +265,30 @@ export class HcFileService {
       content: binary ? '' : buffer.toString('utf8'),
       language: preview === 'text' ? languageFor(filePath) : ext.replace(/^\./, '') || 'file',
       preview: resolvedPreview,
+      ...(binary ? {} : { hash: contentHash(buffer), mtime: info.mtimeMs }),
     };
   }
 
-  async write(rootId: string, relative: string, content: string): Promise<void> {
+  async write(rootId: string, relative: string, content: string, options: HcFileWriteOptions = {}): Promise<HcFileWriteResult> {
     if (Buffer.byteLength(content, 'utf8') > MAX_EDITABLE) throw new HcValidationError('File is too large to save (max 4 MB)');
     const root = this.root(rootId);
     const filePath = await this.resolveForWrite(root, relative);
+    if (options.expectedHash !== undefined || options.expectedMtime !== undefined) {
+      const existing = await stat(filePath).catch(() => null);
+      if (!existing) throw new HcFileConflictError('File was deleted or moved after it was opened.', { hash: '', mtime: 0 });
+      const currentBuffer = await readFile(filePath);
+      const current: HcFileWriteResult = { hash: contentHash(currentBuffer), mtime: existing.mtimeMs };
+      if (options.expectedHash !== undefined && options.expectedHash !== current.hash) {
+        throw new HcFileConflictError('File changed on disk after it was opened.', current);
+      }
+      if (options.expectedMtime !== undefined && options.expectedMtime !== current.mtime) {
+        throw new HcFileConflictError('File changed on disk after it was opened.', current);
+      }
+    }
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, content, 'utf8');
+    const info = await stat(filePath);
+    return { hash: contentHash(content), mtime: info.mtimeMs };
   }
 
   async create(rootId: string, relative: string, kind: 'file' | 'directory'): Promise<void> {

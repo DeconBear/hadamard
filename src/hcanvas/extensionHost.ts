@@ -16,6 +16,7 @@ import { handleExtensionNetworkRoute } from './extensions/networkProxy.js';
 import { createRuntimeServices, handleHcRuntimeRoute, type HcKernelOutputPort, type HcRuntimeServices } from './sidecar/routes.js';
 import type { HcKernelCatalogEntry, HcSidecarCatalogEntry } from './sidecar/protocol.js';
 import { buildSandboxEnv } from './sidecar/spawn.js';
+import { HCANVAS_VERSION } from './version.js';
 
 export interface ExtensionHostOptions {
   workspace: string;
@@ -32,7 +33,7 @@ export interface ExtensionHost {
 }
 
 export function createExtensionHost(options: ExtensionHostOptions): ExtensionHost {
-  const version = options.version || '0.1.0';
+  const version = options.version || HCANVAS_VERSION;
   let extensionRegistry: HcExtensionRegistry | null = null;
   let extensionRegistryLoading: Promise<HcExtensionRegistry> | null = null;
   const loadExtensionRegistry = async (): Promise<HcExtensionRegistry> => {

@@ -1,0 +1,97 @@
+name: Hcanvas Verify
+
+# Reusable verification gate for Hcanvas release workflows and PR E2E.
+# Release workflows call this instead of only running typecheck/build.
+on:
+  workflow_call:
+    inputs:
+      run_maxwell:
+        description: Run the three-runtime Maxwell-Bloch E2E on a provisioned Ubuntu runner.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Typecheck, architecture, unit tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run architecture:check
+      - name: Run Hcanvas unit tests
+        run: npx vitest run tests/hcanvas-*.spec.ts --reporter=dot
+      - run: npm run build
+
+  browser:
+    name: Hcanvas, Notebook and extension browser E2E
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Install Python kernel dependencies
+        run: python -m pip install --upgrade pip numpy matplotlib sympy
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+      - name: Build Hcanvas
+        run: npm run build
+      - name: Run Hcanvas browser E2E
+        run: npm run test:hcanvas:e2e
+      - name: Run Notebook interaction E2E
+        run: npm run test:hcanvas:notebook:e2e
+      - name: Run extension E2E
+        run: npm run test:hcanvas:extensions:e2e
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hcanvas-browser-e2e-failure
+          path: |
+            plan/hcanvas-e2e.log
+            test-results/**
+          if-no-files-found: ignore
+
+  maxwell:
+    name: Maxwell-Bloch three-runtime E2E
+    if: ${{ inputs.run_maxwell }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install language runtimes
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends octave g++
+      - run: npm ci
+      - name: Install Python notebook dependencies
+        run: python -m pip install --upgrade pip numpy matplotlib
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Build Hcanvas
+        run: npm run build
+      - name: Run Maxwell E2E
+        run: npm run test:hcanvas:maxwell:e2e

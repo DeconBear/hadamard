@@ -1228,6 +1228,15 @@ body.workspace-view-mode #viewport { background:#f4f2ec; }
 .file-save-status.saving { color:var(--accent); }
 .file-save-status.saved { color:#2f7d4a; }
 .file-save-status.error { color:#b42318; }
+.file-conflict-banner { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 16px; border-bottom:1px solid #e8c9c3; background:#fff4f1; color:#8a3328; }
+.file-conflict-banner > div:first-child { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.file-conflict-banner strong { font-size:11px; }
+.file-conflict-banner span { font-size:9.5px; color:#a05a4f; }
+.file-conflict-actions { display:flex; gap:6px; flex:0 0 auto; }
+.notebook-save-conflict { position:sticky; top:0; z-index:30; display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 8px; padding:8px 12px; border:1px solid #e8c9c3; border-radius:8px; background:#fff4f1; color:#8a3328; }
+.notebook-save-conflict > div:first-child { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.notebook-save-conflict strong { font-size:11px; }
+.notebook-save-conflict span { font-size:9.5px; color:#a05a4f; }
 
 /* Polished resizable sidebar cards. */
 .sidebar-sections { gap:6px; padding:6px 6px 4px; }

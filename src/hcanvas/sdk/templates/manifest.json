@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "Minimal Hcanvas file viewer template.",
   "engines": {
-    "hcanvas": ">=0.2.0"
+    "hcanvas": ">=0.1.0"
   },
   "capabilities": {},
   "contributes": {

@@ -240,6 +240,13 @@ async function main() {
   assert('closing a notebook flushes the latest markdown and variables', savedAfterClose.includes('Closing autosave marker') && savedAfterClose.includes('"total":24'), savedAfterClose.slice(0, 180));
   assert('empty markdown placeholder is not persisted', !savedAfterClose.includes('Write Markdown'), savedAfterClose.slice(0, 220));
 
+  await openFile('sample.hnb.md');
+  await page.locator('[data-nb-variable-expand]').click();
+  await page.waitForFunction(() => document.querySelector('[data-nb-variable-row="total"] [data-nb-variable-current]')?.textContent === '24');
+  assert('reopened .hnb.md restores initial and current variables', await page.locator('[data-nb-variable-row="distance"] [data-nb-variable-value]').inputValue() === '12' && await page.locator('[data-nb-variable-state]').getAttribute('data-state') === 'true');
+  await page.locator('.workspace-tab.view-tab.active .tab-close').click();
+  await page.waitForTimeout(300);
+
   await openFile('evil.hnb.md');
   await page.waitForTimeout(900);
   const xssFlag = await page.evaluate(() => window.__nbXss ?? null);

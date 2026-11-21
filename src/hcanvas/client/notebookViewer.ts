@@ -161,14 +161,73 @@ export function createNotebookViewer(deps: NotebookViewerDeps): BuiltinViewer {
 function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: NotebookFileContext): { dispose(): void } {
   let disposed = false;
   let editor: NotebookEditorHandle | null = null;
+  let fileHash: string | undefined;
+  let fileMtime: number | undefined;
+  let saveBlocked = false;
+  let suppressPersist = false;
+  let ignoreVersion = false;
+  let lastContent = '';
+  let conflictBanner: HTMLElement | null = null;
   host.classList.add('notebook-host');
   host.innerHTML = '<div class="notebook-loading">Loading notebook…</div>';
   const scopeName = file.path.split('/').pop() || file.path;
 
+  const removeConflictBanner = (): void => {
+    conflictBanner?.remove();
+    conflictBanner = null;
+  };
+
+  const showConflict = (error: unknown): void => {
+    const shape = error as { status?: number; payload?: { code?: string; error?: string; currentHash?: string; currentMtime?: number } } | null;
+    if (shape?.status !== 409 || shape.payload?.code !== 'file_conflict' || disposed) return;
+    saveBlocked = true;
+    removeConflictBanner();
+    const banner = document.createElement('div');
+    banner.className = 'notebook-save-conflict';
+    banner.innerHTML = '<div><strong>Notebook changed on disk</strong><span>' + esc(shape.payload.error || 'The file was modified outside this notebook.') + '</span></div><div class="file-conflict-actions"><button type="button" class="btn tiny" data-notebook-conflict-reload>Reload disk version</button><button type="button" class="btn tiny" data-notebook-conflict-overwrite>Overwrite</button><button type="button" class="btn tiny" data-notebook-conflict-copy>Save local copy</button></div>';
+    banner.querySelector('[data-notebook-conflict-reload]')?.addEventListener('click', () => {
+      void (async () => {
+        suppressPersist = true;
+        saveBlocked = false;
+        ignoreVersion = false;
+        removeConflictBanner();
+        editor?.dispose();
+        editor = null;
+        host.innerHTML = '<div class="notebook-loading">Reloading notebook…</div>';
+        try { await boot(); } finally { suppressPersist = false; }
+      })();
+    });
+    banner.querySelector('[data-notebook-conflict-overwrite]')?.addEventListener('click', () => {
+      saveBlocked = false;
+      ignoreVersion = true;
+      removeConflictBanner();
+      void editor?.flush();
+    });
+    banner.querySelector('[data-notebook-conflict-copy]')?.addEventListener('click', () => {
+      void (async () => {
+        const suffix = new Date().toISOString().replace(/[:.]/g, '-');
+        const copyPath = file.path + '.conflict-copy-' + suffix;
+        try {
+          await deps.request('/api/files/write', { method: 'POST', body: JSON.stringify({ root: file.rootId, path: copyPath, content: lastContent }) });
+          deps.toast('Saved a local copy at ' + copyPath, 'success');
+        } catch (copyError) {
+          deps.toast(copyError instanceof Error ? copyError.message : String(copyError), 'error');
+        }
+      })();
+    });
+    conflictBanner = banner;
+    host.prepend(banner);
+  };
+
   const boot = async (): Promise<void> => {
     try {
-      const result = await deps.request<{ file: { content: string } }>('/api/files/read?root=' + encodeURIComponent(file.rootId) + '&path=' + encodeURIComponent(file.path));
+      const result = await deps.request<{ file: { content: string; hash?: string; mtime?: number } }>('/api/files/read?root=' + encodeURIComponent(file.rootId) + '&path=' + encodeURIComponent(file.path));
       if (disposed) return;
+      fileHash = result.file.hash;
+      fileMtime = result.file.mtime;
+      saveBlocked = false;
+      ignoreVersion = false;
+      removeConflictBanner();
       const parsed = parseNotebook(result.file.content);
       const kernels = deps.getKernels();
       const cache = loadCache(file.rootId, file.path);
@@ -184,7 +243,10 @@ function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: No
         request: deps.request,
         getKernelManager: deps.getKernelManager,
         toast: deps.toast,
+        onSaveConflict: showConflict,
         persist: async snapshot => {
+          if (suppressPersist) return;
+          if (saveBlocked) throw new Error('Notebook save is paused because the file changed on disk. Reload or overwrite first.');
           withFrontmatterValues(parsed, snapshot, kernels);
           const cells: NotebookCell[] = snapshot.cells.map(cell => cell.kind === 'markdown'
             ? { kind: 'markdown', source: cell.source }
@@ -192,11 +254,29 @@ function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: No
           parsed.cells = cells;
           parsed.trailingNewline = true;
           const content = serializeNotebook(parsed);
-          await deps.request('/api/files/write', {
-            method: 'POST',
-            keepalive: true,
-            body: JSON.stringify({ root: file.rootId, path: file.path, content }),
-          });
+          lastContent = content;
+          let result: { file?: { hash?: string; mtime?: number } };
+          try {
+            result = await deps.request<{ file?: { hash?: string; mtime?: number } }>('/api/files/write', {
+              method: 'POST',
+              keepalive: true,
+              body: JSON.stringify({
+                root: file.rootId,
+                path: file.path,
+                content,
+                ...(!ignoreVersion && fileHash !== undefined ? { expectedHash: fileHash } : {}),
+                ...(!ignoreVersion && fileMtime !== undefined ? { expectedMtime: fileMtime } : {}),
+              }),
+            });
+          } catch (error) {
+            ignoreVersion = false;
+            throw error;
+          }
+          if (typeof result.file?.hash === 'string') fileHash = result.file.hash;
+          if (typeof result.file?.mtime === 'number') fileMtime = result.file.mtime;
+          ignoreVersion = false;
+          saveBlocked = false;
+          removeConflictBanner();
         },
         persistOutputs: snapshot => {
           persistOutputCache(cache, snapshot);

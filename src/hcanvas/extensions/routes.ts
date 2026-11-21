@@ -48,6 +48,7 @@ const ERROR_STATUS: Record<HcExtensionErrorCode, number> = {
   invalid_params: 400,
   invalid_install_source: 400,
   unsupported: 501,
+  incompatible: 409,
   conflict: 409,
   trusted_required: 403,
   consent_required: 403,

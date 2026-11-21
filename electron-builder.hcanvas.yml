@@ -12,6 +12,7 @@ files:
   - assets/hcanvas-icon.png
   - assets/hcanvas-icon.ico
   - package.json
+  - hcanvas.version.json
   - node_modules/**/*
   - "!**/node_modules/electron/**"
   - "!**/node_modules/electron-builder/**"

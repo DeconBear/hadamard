@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -363,9 +363,18 @@ async function main() {
     await undoCell.locator('.cm-content').press('Control+Enter');
     await undoCell.locator('.nb-output').filter({ hasText: 'after undo' }).waitFor();
     assert('editing/running after undo targets the current cell object', true);
+    await page.locator('[data-nb-add-code]').click();
+    const imageCell = page.locator('.nb-code').last();
+    await imageCell.locator('.cm-content').fill('import matplotlib\nmatplotlib.use("Agg")\nimport matplotlib.pyplot as plt\nplt.plot([1, 2, 3])\nplt.show()');
+    await imageCell.locator('.cm-content').press('Control+Enter');
+    await imageCell.locator('.nb-output img.exec-out-image').waitFor();
     const htmlDownload = page.waitForEvent('download');
     await page.locator('[data-nb-export]').click();
-    assert('standalone HTML export downloads', (await htmlDownload).suggestedFilename().endsWith('.html'));
+    const exportedHtmlFile = await htmlDownload;
+    assert('standalone HTML export downloads', exportedHtmlFile.suggestedFilename().endsWith('.html'));
+    const exportedHtmlPath = await exportedHtmlFile.path();
+    if (!exportedHtmlPath) throw new Error('HTML export did not produce a file');
+    assert('HTML export embeds kernel image assets', (await readFile(exportedHtmlPath, 'utf8')).includes('data:image/png;base64,'));
     assert('ipynb export control is not offered', await page.locator('[data-nb-export-ipynb]').count() === 0);
     await page.locator('.file-tree-node', { hasText: 'legacy.ipynb' }).first().click();
     await page.locator('.file-surface-title strong', { hasText: 'legacy.ipynb' }).waitFor();

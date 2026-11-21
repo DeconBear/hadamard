@@ -18,7 +18,7 @@ function viewerManifest(overrides: Record<string, unknown> = {}): Record<string,
     id: 'com.example.svg',
     name: 'SVG Viewer',
     version: '0.1.0',
-    engines: { hcanvas: '>=0.2.0' },
+    engines: { hcanvas: '>=0.1.0' },
     capabilities: {},
     contributes: {
       formats: [{ id: 'svg', extensions: ['.svg'], viewer: 'svg.viewer' }],
@@ -34,7 +34,7 @@ function processManifest(overrides: Record<string, unknown> = {}): Record<string
     id: 'com.example.kernel',
     name: 'Kernel',
     version: '0.1.0',
-    engines: { hcanvas: '>=0.2.0' },
+    engines: { hcanvas: '>=0.1.0' },
     capabilities: { process: { sidecars: ['runner'] } },
     contributes: {
       sidecars: [{

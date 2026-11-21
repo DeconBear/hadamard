@@ -256,6 +256,7 @@ async function main() {
   assert('Folder deleted', await page.locator('#filesPanel .file-tree-node.directory', { hasText: 'e2e-folder' }).count() === 0);
   const externalFrontmatter = ['---', 'title: External refresh', 'tags:', '  - e2e', '---', ''].join('\n');
   await writeFile(path.join(workspace, 'external-refresh.md'), externalFrontmatter + '\n<!-- keep this comment -->\n\n<details>\n<summary>Raw HTML block</summary>\nRaw HTML detail body.\n</details>\n\n# external refresh\n', 'utf8');
+  await writeFile(path.join(workspace, 'conflict.md'), '# conflict\n', 'utf8');
   await page.locator('#refreshFilesBtn').click();
   await page.waitForTimeout(700);
   assert('Files refresh discovers external changes', await page.locator('#filesPanel .file-tree-node', { hasText: 'external-refresh.md' }).count() > 0);
@@ -293,6 +294,21 @@ async function main() {
   assert('Rich and source edits persist in the same Markdown file', savedMarkdownFile.includes('Rich file marker') && savedMarkdownFile.includes('Source file marker'));
   assert('Frontmatter and raw HTML survive the rich/source round trip', savedMarkdownFile.startsWith(externalFrontmatter) && savedMarkdownFile.includes('<details>') && savedMarkdownFile.includes('<summary>Raw HTML block</summary>') && savedMarkdownFile.includes('Raw HTML detail body.'), JSON.stringify(savedMarkdownFile.slice(0, 120)));
   await closeFileSurface.first().click();
+
+  // Optimistic file concurrency: external edits must not be silently overwritten.
+  await page.locator('#filesPanel .file-tree-node', { hasText: 'conflict.md' }).click();
+  await page.locator('.file-surface .html-page-surface iframe').waitFor();
+  const conflictFrame = page.frameLocator('.file-surface .html-page-surface iframe');
+  await conflictFrame.locator('body[contenteditable="true"]').waitFor();
+  await conflictFrame.locator('body').click();
+  await page.keyboard.type('\n\nLocal conflict edit');
+  await writeFile(path.join(workspace, 'conflict.md'), '# external conflict version\n', 'utf8');
+  await page.locator('.file-conflict-banner').waitFor({ state: 'visible' });
+  assert('file save reports disk conflict instead of overwriting', (await page.locator('.file-conflict-banner').innerText()).includes('changed on disk'));
+  await page.locator('[data-file-conflict-reload]').click();
+  await page.waitForFunction(() => document.querySelector('.file-surface .html-page-surface iframe')?.contentDocument?.body?.innerText.includes('external conflict version'));
+  assert('reload replaces local content with the disk version', !(await conflictFrame.locator('body').innerText()).includes('Local conflict edit'));
+  await page.locator('[data-file-action="close"]').click();
 
   // Markdown page: direct rich-text editing and reopenable help.
   await page.locator('[data-sidebar-target="pages"]').click();

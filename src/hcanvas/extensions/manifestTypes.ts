@@ -12,13 +12,15 @@ export type {
   HcPluginShapeDefinition,
 } from '../pluginManifest.js';
 
+import { HCANVAS_VERSION } from '../version.js';
+
 /** v2 extension manifest schema id. */
 export const HCANVAS_EXTENSION_SCHEMA = 'hcanvas-extension/1';
 /**
- * Platform version used for engines compatibility checks in P0. The shipped app
- * still reports 0.1.0; the extension platform is the 0.2.0 line.
+ * Host release version used for engines compatibility checks. This intentionally
+ * follows hcanvas.version.json; there is no separate extension-platform version.
  */
-export const HCANVAS_EXTENSION_TARGET_VERSION = '0.2.0';
+export const HCANVAS_EXTENSION_TARGET_VERSION = HCANVAS_VERSION;
 
 export type HcExtensionErrorCode =
   | 'invalid_manifest'
@@ -29,6 +31,7 @@ export type HcExtensionErrorCode =
   | 'invalid_params'
   | 'invalid_install_source'
   | 'unsupported'
+  | 'incompatible'
   | 'conflict'
   | 'trusted_required'
   | 'consent_required'

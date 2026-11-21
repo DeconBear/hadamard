@@ -114,6 +114,12 @@ jobs:
         if: steps.npm_version.outputs.exists != 'true'
         run: npm run typecheck
 
+      - name: Run Hcanvas unit and architecture checks
+        if: steps.npm_version.outputs.exists != 'true'
+        run: |
+          npm run architecture:check
+          npx vitest run tests/hcanvas-*.spec.ts --reporter=dot
+
       - name: Build and stage Hcanvas package
         if: steps.npm_version.outputs.exists != 'true'
         run: npm run build:hcanvas:package

@@ -719,9 +719,9 @@ function normalizeManifest(input: unknown, warnings: HcManifestIssue[]): HcExten
     try { parsed = new URL(homepage); } catch { fail('homepage', 'must be an absolute http(s) URL'); }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') fail('homepage', 'must use http or https');
   }
-  if (!isObject(raw.engines)) fail('engines', 'must be an object such as { "hcanvas": ">=0.2.0" }');
+  if (!isObject(raw.engines)) fail('engines', 'must be an object such as { "hcanvas": ">=0.1.0" }');
   const engineRange = text(raw.engines.hcanvas, 'engines.hcanvas', 64);
-  if (!isEngineRangeShape(engineRange)) fail('engines.hcanvas', 'must be a semver range such as ">=0.2.0" or "^0.2.0"');
+  if (!isEngineRangeShape(engineRange)) fail('engines.hcanvas', 'must be a semver range such as ">=0.1.0" or "^0.1.0"');
   const builtin = booleanValue(raw.builtin, 'builtin', false);
   const contributes = normalizeContributes(raw.contributes, builtin);
   crossCheckContributes(contributes);

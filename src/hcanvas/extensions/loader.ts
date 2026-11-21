@@ -55,6 +55,9 @@ export interface HcDiscoveredExtension extends HcExtensionDescriptor {
   enabled: boolean;
   trusted: boolean;
   requiresProcess: boolean;
+  /** False when engines.hcanvas does not accept the host release. */
+  compatible: boolean;
+  incompatibilityReason?: string;
   grantStatus: HcExtensionGrantStatus;
   grant?: { version: string; capabilitiesHash: string; grantedAt: string };
 }
@@ -249,6 +252,15 @@ function applyState(descriptor: HcExtensionDescriptor, settings: HcExtensionSett
   let enabled = isExtensionEnabledBySettings(settings, manifest.id, descriptor.layout);
   let trusted = isExtensionTrustedBySettings(settings, manifest);
   const diagnostics = [...descriptor.diagnostics];
+  const compatible = engineRangeSatisfies(manifest.engines.hcanvas, HCANVAS_EXTENSION_TARGET_VERSION) !== false;
+  const incompatibilityReason = compatible
+    ? undefined
+    : 'incompatible host: extension declares engines.hcanvas ' + manifest.engines.hcanvas + ' but host is ' + HCANVAS_EXTENSION_TARGET_VERSION;
+  if (!compatible) {
+    diagnostics.push(incompatibilityReason!);
+    enabled = false;
+    trusted = false;
+  }
   if (requiresProcess && settings.workspace.trust !== 'trusted') {
     if (enabled) diagnostics.push('blocked: Restricted Mode blocks process/kernel extensions until the workspace is trusted');
     enabled = false;
@@ -261,6 +273,8 @@ function applyState(descriptor: HcExtensionDescriptor, settings: HcExtensionSett
     enabled,
     trusted,
     requiresProcess,
+    compatible,
+    ...(incompatibilityReason ? { incompatibilityReason } : {}),
     grantStatus: extensionGrantStatus(entry, manifest),
     diagnostics,
     ...(entry?.granted ? { grant: entry.granted } : {}),
@@ -371,6 +385,10 @@ export async function installExtension(
     }
     manifest = validateForInstall(raw);
     if (manifest.builtin) throw new HcExtensionError('invalid_manifest', 'builtin extensions cannot be installed', 'builtin');
+  }
+  const compatibility = engineRangeSatisfies(manifest.engines.hcanvas, HCANVAS_EXTENSION_TARGET_VERSION);
+  if (compatibility === false) {
+    throw new HcExtensionError('incompatible', 'Extension "' + manifest.id + '" requires engines.hcanvas ' + manifest.engines.hcanvas + ', but this host is ' + HCANVAS_EXTENSION_TARGET_VERSION);
   }
   const target = path.resolve(targetRoot, manifest.id);
   if (!isInside(targetRoot, target)) throw new HcExtensionError('path_forbidden', 'Unsafe extension id: ' + manifest.id);

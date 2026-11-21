@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "Read-only formatted JSON viewer.",
   "engines": {
-    "hcanvas": ">=0.2.0"
+    "hcanvas": ">=0.1.0"
   },
   "capabilities": {
     "ui": [

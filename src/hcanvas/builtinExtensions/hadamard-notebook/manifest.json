@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "Markdown-first notebook with executable code cells and rich outputs.",
   "engines": {
-    "hcanvas": ">=0.2.0"
+    "hcanvas": ">=0.1.0"
   },
   "builtin": true,
   "capabilities": {
