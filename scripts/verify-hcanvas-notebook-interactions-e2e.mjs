@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
 const root = process.cwd();
@@ -27,6 +28,8 @@ async function main() {
     await writeFile(path.join(workspace, 'layout.hnb.md'), layoutSource, 'utf8');
     const saveSource = ['---', 'hcanvas: notebook', 'kernel: python', '---', '', '# Save notebook', '', fence + 'python exec', 'x = 1\nprint(x)', fence, ''].join('\n');
     await writeFile(path.join(workspace, 'save.hnb.md'), saveSource, 'utf8');
+    const switchSource = ['---', 'hcanvas: notebook', 'kernel: python', '---', '', '# Switch notebook', '', 'Original body.', ''].join('\n');
+    await writeFile(path.join(workspace, 'switch.hnb.md'), switchSource, 'utf8');
     await writeFile(path.join(workspace, 'legacy.ipynb'), JSON.stringify({ nbformat: 4, cells: [] }), 'utf8');
     server = spawn(process.execPath, ['bin/hcanvas.js', 'serve', '--workspace', workspace, '--port', String(port)], {
       cwd: root, env: { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config'), HCANVAS_HOME: path.join(workspace, '.home'), HADAMARD_HOME: path.join(workspace, '.home') }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
@@ -98,8 +101,9 @@ async function main() {
     await page.keyboard.press('Escape');
     await page.keyboard.press('a');
     assert('A inserts above', await page.locator('.nb-code').count() === 5);
-    await page.keyboard.press('Escape');
+    await page.locator('.nb-code').first().focus();
     await page.keyboard.press('b');
+    await page.waitForTimeout(200);
     const countAfterB = await page.locator('.nb-code').count();
     assert('B inserts below', countAfterB === 6, 'count=' + countAfterB + ' activeText=' + await page.locator('.nb-cell-active').innerText());
     await page.keyboard.press('Escape');
@@ -201,6 +205,18 @@ async function main() {
     const variablesDownload = page.waitForEvent('download');
     await page.locator('[data-nb-variable-export]').click();
     assert('variables export downloads JSON', (await variablesDownload).suggestedFilename().endsWith('-variables.json'));
+    await page.locator('.file-tree-node', { hasText: 'switch.hnb.md' }).first().click();
+    await page.locator('.nb-markdown-body').first().waitFor();
+    await page.locator('.nb-markdown-body').first().click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' CROSS-DOC-AUTOSAVE');
+    await page.locator('.file-tree-node', { hasText: 'interaction.hnb.md' }).first().click();
+    await page.waitForSelector('.nb-code');
+    await page.waitForTimeout(1800);
+    const switchSaved = await readFile(path.join(workspace, 'switch.hnb.md'), 'utf8');
+    const interactionSaved = await readFile(path.join(workspace, 'interaction.hnb.md'), 'utf8');
+    assert('switching documents flushes the old notebook file', switchSaved.includes('CROSS-DOC-AUTOSAVE'), switchSaved.slice(0, 200));
+    assert('switching documents does not write into the new notebook file', !interactionSaved.includes('CROSS-DOC-AUTOSAVE'), interactionSaved.slice(0, 200));
     await page.locator('.nb-markdown-body .hc-math').click();
     await page.locator('.nb-formula-popover textarea').fill('distance * 2');
     await page.locator('[data-nb-formula-symbol="distance"]').click();
@@ -374,7 +390,20 @@ async function main() {
     assert('standalone HTML export downloads', exportedHtmlFile.suggestedFilename().endsWith('.html'));
     const exportedHtmlPath = await exportedHtmlFile.path();
     if (!exportedHtmlPath) throw new Error('HTML export did not produce a file');
-    assert('HTML export embeds kernel image assets', (await readFile(exportedHtmlPath, 'utf8')).includes('data:image/png;base64,'));
+    const exportedHtml = await readFile(exportedHtmlPath, 'utf8');
+    assert('HTML export embeds kernel image assets', exportedHtml.includes('data:image/png;base64,'));
+    const offlineContext = await browser.newContext({ offline: true, viewport: { width: 1100, height: 900 } });
+    const offlinePage = await offlineContext.newPage();
+    await offlinePage.goto('data:text/html;charset=utf-8,' + encodeURIComponent(exportedHtml), { waitUntil: 'load' });
+    await offlineContext.setOffline(true);
+    await offlinePage.reload({ waitUntil: 'load' });
+    await offlinePage.waitForTimeout(500);
+    const offlineImage = offlinePage.locator('img').first();
+    await offlineImage.scrollIntoViewIfNeeded();
+    await offlinePage.waitForFunction(() => { const image = document.querySelector('img'); return Boolean(image && image.complete && image.naturalWidth > 0); }, undefined, { timeout: 5000 }).catch(() => undefined);
+    const offlineImageState = await offlineImage.evaluate(image => ({ src: image.getAttribute('src') || '', complete: image.complete, width: image.naturalWidth }));
+    assert('offline HTML export renders the inlined image without Hcanvas', offlineImageState.src.startsWith('data:image/') && offlineImageState.complete && offlineImageState.width > 0, JSON.stringify(offlineImageState));
+    await offlineContext.close();
     assert('ipynb export control is not offered', await page.locator('[data-nb-export-ipynb]').count() === 0);
     await page.locator('.file-tree-node', { hasText: 'legacy.ipynb' }).first().click();
     await page.locator('.file-surface-title strong', { hasText: 'legacy.ipynb' }).waitFor();
