@@ -300,6 +300,9 @@ describe('hcanvas extension install and uninstall', () => {
     const userInstall = await installExtension(workspace, { source: 'json', scope: 'user', manifest: v2Manifest('com.example.userinstalled') }, options);
     expect(userInstall.extension?.source).toBe('user');
     expect(await exists(path.join(home, 'hcanvas', 'extensions', 'com.example.userinstalled', 'manifest.json'))).toBe(true);
+    const afterUserUninstall = await uninstallProjectExtension(workspace, 'com.example.userinstalled', options, 'user');
+    expect(findExtension(afterUserUninstall, 'com.example.userinstalled')).toBeUndefined();
+    expect(await exists(path.join(home, 'hcanvas', 'extensions', 'com.example.userinstalled'))).toBe(false);
 
     await expect(installExtension(workspace, { source: 'json', manifest: v2Manifest('com.example.future', {}, { engines: { hcanvas: '>=99.0.0' } }) }, options)).rejects.toThrow(/requires engines\.hcanvas/);
     await expect(installExtension(workspace, { source: 'json', manifest: processManifest() }, options)).rejects.toThrow(/declarative/);
@@ -331,7 +334,7 @@ describe('hcanvas extension install and uninstall', () => {
     await expect(uninstallProjectExtension(workspace, 'com.example.remove', options)).rejects.toThrow(/Unknown extension/);
 
     await installExtension(workspace, { source: 'json', scope: 'user', manifest: v2Manifest('com.example.userremove') }, options);
-    await expect(uninstallProjectExtension(workspace, 'com.example.userremove', options)).rejects.toThrow(/only workspace/i);
+    await expect(uninstallProjectExtension(workspace, 'com.example.userremove', options)).rejects.toThrow(/requested workspace/i);
   });
 });
 

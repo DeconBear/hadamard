@@ -110,15 +110,19 @@ function renderRows(catalog: ExtensionCatalog): string {
       : '';
     const trustLabel = entry.trusted ? 'trusted' : 'not trusted';
     const sourceLabel = entry.legacy ? entry.source + ' · legacy v1' : entry.source;
+    const incompatible = entry.compatible ? '' : '<span class="extension-incompatible" title="' + esc(entry.incompatibilityReason || 'Incompatible host version') + '">Incompatible</span>';
+    const canUninstall = ['workspace', 'user', 'legacy-project', 'legacy-user'].includes(entry.source);
+    const scope = entry.source === 'user' || entry.source === 'legacy-user' ? 'user' : 'workspace';
     return '<div class="extension-row" data-extension-id="' + esc(entry.id) + '">' +
-      '<label class="extension-toggle"><input type="checkbox" data-extension-toggle="' + esc(entry.id) + '"' + (entry.enabled ? ' checked' : '') + '></label>' +
-      '<span class="extension-copy"><strong>' + esc(entry.name) + ' <small>v' + esc(entry.version) + '</small></strong>' +
+      '<label class="extension-toggle"><input type="checkbox" data-extension-toggle="' + esc(entry.id) + '"' + (entry.enabled ? ' checked' : '') + (entry.compatible ? '' : ' disabled') + '></label>' +
+      '<span class="extension-copy"><strong>' + esc(entry.name) + ' <small>v' + esc(entry.version) + '</small> ' + incompatible + '</strong>' +
       '<small>' + esc(entry.id) + ' · ' + esc(sourceLabel) + ' · ' + esc(trustLabel) + (entry.trusted && requiresProcess(entry) ? ' · process allowed' : '') + '</small>' +
       '<small class="extension-contrib">' + esc(contributionSummary(entry)) + '</small>' +
       '<span class="extension-capabilities">' + capabilityBadges(entry) + '</span>' +
       (requiresProcess(entry) || networkDomains(capabilitiesOf(entry)).length ? '<ul class="extension-cap-list">' + capabilityDetails(entry).slice(0, 3).map(line => '<li>' + esc(line) + '</li>').join('') + '</ul>' : '') +
       diagnostics + '</span>' +
-      '<button type="button" class="btn tiny" data-extension-trust="' + esc(entry.id) + '">' + (entry.trusted ? 'Revoke trust' : 'Trust') + '</button>' +
+      '<button type="button" class="btn tiny" data-extension-trust="' + esc(entry.id) + '"' + (entry.compatible ? '' : ' disabled') + '>' + (entry.trusted ? 'Revoke trust' : 'Trust') + '</button>' +
+      (canUninstall ? '<button type="button" class="btn tiny danger" data-extension-uninstall="' + esc(entry.id) + '" data-extension-scope="' + scope + '">Uninstall</button>' : '') +
       '</div>';
   }).join('');
 }
@@ -147,8 +151,8 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
   const html = '<div class="modal plugin-manager-modal"><div class="modal-head"><div><strong>Extensions</strong><small>' +
     catalog.extensions.length + ' extension' + (catalog.extensions.length === 1 ? '' : 's') + ' · workspace trust: ' + esc(catalog.trust) + ' · v2 manifest + legacy plugins</small></div><button class="icon-btn" data-close>×</button></div>' +
     '<div class="modal-body">' + warning + '<div class="plugin-manager-list">' + (catalog.extensions.length ? renderRows(catalog) : '<p class="empty-state">No extensions installed. Add a folder under .hcanvas/extensions/ and reload, or install an example from the Gallery.</p>') + '</div>' + errors +
-    '<p class="inspector-note">Project extensions: <code>.hcanvas/extensions/</code> · user extensions: <code>~/.hadamard/hcanvas/extensions/</code>. v1 plugins in <code>.hcanvas/plugins/</code> remain supported.</p>' +
-    '</div><div class="modal-foot">' + renderWorkspaceTrustButton(catalog.trust) + '<button class="btn tiny" data-extensions-gallery>Gallery</button><button class="btn tiny" data-extensions-install-folder>Install folder…</button><button class="btn tiny" data-extensions-reload>Reload</button><button class="btn primary tiny" data-close>Done</button></div></div>';
+    '<p class="inspector-note">Project extensions: <code>.hcanvas/extensions/</code> · user extensions: <code>Hcanvas data root/hcanvas/extensions/</code>. v1 plugins in <code>.hcanvas/plugins/</code> remain supported.</p>' +
+    '</div><div class="modal-foot">' + renderWorkspaceTrustButton(catalog.trust) + '<button class="btn tiny" data-extensions-gallery>Gallery</button><button class="btn tiny" data-extensions-install-npm>Install from npm…</button><button class="btn tiny" data-extensions-install-folder>Install folder…</button><button class="btn tiny" data-extensions-reload>Reload</button><button class="btn primary tiny" data-close>Done</button></div></div>';
   ctx.openModal(html);
   const root = document.querySelector('.plugin-manager-modal');
   const refresh = async (): Promise<void> => {
@@ -230,8 +234,28 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
     ctx.closeModal();
     await openExtensionGallery(ctx);
   });
+  root?.querySelector<HTMLButtonElement>('[data-extensions-install-npm]')?.addEventListener('click', () => {
+    openInstallNpmModal(ctx);
+  });
   root?.querySelector<HTMLButtonElement>('[data-extensions-install-folder]')?.addEventListener('click', () => {
     openInstallFolderModal(ctx);
+  });
+  root?.querySelectorAll<HTMLButtonElement>('[data-extension-uninstall]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const id = button.dataset.extensionUninstall;
+      if (!id) return;
+      const scope = button.dataset.extensionScope === 'user' ? 'user' : 'workspace';
+      if (!(await ctx.confirm('Uninstall "' + id + '" from the ' + scope + ' scope? The extension folder will be removed; user documents are not affected.'))) return;
+      button.disabled = true;
+      try {
+        await ctx.request('/api/extensions/uninstall', { method: 'POST', body: JSON.stringify({ id, scope }) });
+        ctx.toast('Uninstalled ' + id, 'success');
+        await refresh();
+      } catch (error) {
+        button.disabled = false;
+        ctx.toast(error instanceof Error ? error.message : String(error), 'error');
+      }
+    });
   });
   root?.querySelector<HTMLButtonElement>('[data-extensions-reload]')?.addEventListener('click', async () => {
     try {
@@ -242,6 +266,42 @@ export async function openExtensionManager(ctx: ExtensionManagerContext): Promis
       ctx.toast(error instanceof Error ? error.message : String(error), 'error');
     }
   });
+}
+
+export function openInstallNpmModal(ctx: ExtensionManagerContext): void {
+  ctx.openModal('<div class="modal small"><div class="modal-head"><div><strong>Install extension from npm</strong><small>Downloads a self-contained npm tarball, verifies its integrity and installs the manifest inside it. Package lifecycle scripts are never run.</small></div><button class="icon-btn" data-close>×</button></div>' +
+    '<div class="modal-body"><label class="field"><span>Package</span><input id="installNpmName" placeholder="@hcanvas/kernel-python" autocomplete="off"></label>' +
+    '<label class="field"><span>Exact version</span><input id="installNpmVersion" placeholder="0.1.0" autocomplete="off"></label>' +
+    '<label class="field"><span>Install scope</span><select id="installNpmScope"><option value="user">User (default)</option><option value="workspace">Project workspace</option></select></label>' +
+    '<label class="field row"><input id="installNpmOverwrite" type="checkbox"><span>Replace an already installed version</span></label>' +
+    '<p class="inspector-note">Third-party packages run only after the normal trust flow; kernel and sidecar packages still need workspace trust and an explicit Trust decision.</p></div>' +
+    '<div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="installNpmOk">Install</button></div></div>');
+  const nameInput = document.getElementById('installNpmName') as HTMLInputElement | null;
+  const versionInput = document.getElementById('installNpmVersion') as HTMLInputElement | null;
+  const scopeInput = document.getElementById('installNpmScope') as HTMLSelectElement | null;
+  const overwriteInput = document.getElementById('installNpmOverwrite') as HTMLInputElement | null;
+  nameInput?.focus();
+  const install = async (): Promise<void> => {
+    const packageName = nameInput?.value.trim() || '';
+    const version = versionInput?.value.trim() || '';
+    if (!packageName || !version) { ctx.toast('Enter an npm package name and an exact version.', 'info'); return; }
+    const button = document.getElementById('installNpmOk') as HTMLButtonElement | null;
+    if (button) button.disabled = true;
+    try {
+      await ctx.request('/api/extensions/install', {
+        method: 'POST',
+        body: JSON.stringify({ source: 'npm', packageName, version, scope: scopeInput?.value === 'workspace' ? 'workspace' : 'user', overwrite: overwriteInput?.checked === true }),
+      });
+      ctx.toast('Installed ' + packageName + '@' + version, 'success');
+      ctx.closeModal();
+      await openExtensionManager(ctx);
+    } catch (error) {
+      if (button) button.disabled = false;
+      ctx.toast(error instanceof Error ? error.message : String(error), 'error');
+    }
+  };
+  document.getElementById('installNpmOk')?.addEventListener('click', () => { void install(); });
+  versionInput?.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); void install(); } });
 }
 
 export function openInstallFolderModal(ctx: ExtensionManagerContext): void {
@@ -290,7 +350,7 @@ export async function openExtensionGallery(ctx: ExtensionManagerContext): Promis
       : '<button type="button" class="btn tiny primary" data-gallery-install="' + index + '">Install</button>') +
     '</div>'
   ).join('');
-  ctx.openModal('<div class="modal plugin-manager-modal"><div class="modal-head"><div><strong>Extension Gallery</strong><small>First-party examples from this checkout · installing copies the folder into the workspace extensions directory</small></div><button class="icon-btn" data-close>×</button></div>' +
+  ctx.openModal('<div class="modal plugin-manager-modal"><div class="modal-head"><div><strong>Extension Gallery</strong><small>Bundled first-party kernels and local source examples · bundled extensions are already installed; examples copy into the workspace extensions directory</small></div><button class="icon-btn" data-close>×</button></div>' +
     '<div class="modal-body"><div class="plugin-manager-list">' + (rows || '<p class="empty-state">No gallery examples are available in this build. Install a folder manually under .hcanvas/extensions/.</p>') + '</div>' +
     '<p class="inspector-note">Process-backed examples ask for workspace trust before their sidecars can start. Installed extensions stay in your workspace and can be removed from disk.</p></div>' +
     '<div class="modal-foot"><button class="btn tiny" data-gallery-back>Back</button><button class="btn primary tiny" data-close>Done</button></div></div>');

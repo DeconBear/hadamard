@@ -1168,6 +1168,7 @@ body.terminal-dock-open #viewport { padding-bottom:36vh; }
 .extension-copy { display:flex; flex-direction:column; gap:3px; min-width:0; flex:1; }
 .extension-copy small { color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
 .extension-diagnostics { margin:4px 0 0 14px; padding:0; color:#b42318; font-size:10px; }
+.extension-incompatible { display:inline-block; margin-left:4px; padding:1px 5px; border-radius:999px; background:#fff1ed; color:#b42318; font:600 8px/1.3 Inter,sans-serif; vertical-align:middle; }
 .extension-toggle { padding-top:2px; }
 body.workspace-view-mode #toolRail, body.workspace-view-mode #selectionToolbar, body.workspace-view-mode #zoomControls, body.workspace-view-mode #stage { display:none !important; }
 body.workspace-view-mode #viewport { background:#f4f2ec; }

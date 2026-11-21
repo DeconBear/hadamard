@@ -27,7 +27,7 @@ async function main() {
       await cp(path.join(root, 'examples/hcanvas-notebooks/.hcanvas/docs/doc_maxwellbloch.json'), path.join(workspace, 'docs/doc_maxwellbloch.json'));
     }
     server = spawn(process.execPath, ['bin/hcanvas.js', 'serve', '--workspace', workspace, '--port', String(port)], {
-      cwd: root, env: { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config') }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+      cwd: root, env: { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config'), HCANVAS_HOME: path.join(workspace, '.home'), HADAMARD_HOME: path.join(workspace, '.home') }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
     });
     let output = '';
     let errorOutput = '';

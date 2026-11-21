@@ -20,6 +20,7 @@ import {
   type HcExtensionInstallRequest,
   type HcExtensionLoaderOptions,
 } from './loader.js';
+import { installNpmExtension, type HcNpmExtensionInstallRequest } from './npmInstaller.js';
 import { HcExtensionRegistry } from './registry.js';
 import {
   extensionWorkspaceStatePath,
@@ -149,6 +150,15 @@ function booleanField(body: Record<string, unknown>, key: string): boolean {
   return value;
 }
 
+function optionalNumberField(body: Record<string, unknown>, key: string): number | undefined {
+  const value = body[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new HcExtensionError('invalid_params', key + ' must be a positive number');
+  }
+  return value;
+}
+
 async function handleValidate(req: IncomingMessage, res: ServerResponse, context: HcExtensionRouteContext): Promise<boolean> {
   const body = await context.readBody(req);
   const result = checkExtensionManifest(body.manifest);
@@ -172,10 +182,44 @@ async function handleValidate(req: IncomingMessage, res: ServerResponse, context
   return true;
 }
 
+async function handleNpmInstall(body: Record<string, unknown>, res: ServerResponse, context: HcExtensionRouteContext): Promise<boolean> {
+  const packageName = stringField(body, 'packageName');
+  const version = stringField(body, 'version');
+  const rawScope = body.scope;
+  if (rawScope !== undefined && rawScope !== 'workspace' && rawScope !== 'user') {
+    throw new HcExtensionError('invalid_params', 'scope must be "workspace" or "user"');
+  }
+  const registry = optionalStringField(body, 'registry');
+  const timeoutMs = optionalNumberField(body, 'timeoutMs');
+  const request: HcNpmExtensionInstallRequest = {
+    source: 'npm',
+    packageName,
+    version,
+    scope: rawScope === 'workspace' ? 'workspace' : 'user',
+    overwrite: body.overwrite === true,
+    ...(registry ? { registry } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  };
+  const result = await installNpmExtension(context.workspace, request, loaderOptions(context));
+  cacheDiscovery(context, result.discovery);
+  context.json(res, 201, {
+    ...catalogPayload(result.discovery),
+    id: result.id,
+    path: result.path,
+    ...(result.extension ? { extension: result.extension } : {}),
+    provenance: result.provenance,
+    ...(result.warnings.length ? { warnings: result.warnings } : {}),
+  });
+  return true;
+}
+
 async function handleInstall(req: IncomingMessage, res: ServerResponse, context: HcExtensionRouteContext): Promise<boolean> {
   const body = await context.readBody(req);
   const source = body.source;
-  if (source !== 'folder' && source !== 'json') throw new HcExtensionError('invalid_install_source', 'source must be "folder" or "json"');
+  if (source !== 'folder' && source !== 'json' && source !== 'npm') {
+    throw new HcExtensionError('invalid_install_source', 'source must be "folder", "json" or "npm"');
+  }
+  if (source === 'npm') return handleNpmInstall(body, res, context);
   const scope = body.scope === 'user' ? 'user' : 'workspace';
   const request: HcExtensionInstallRequest = {
     source,
@@ -198,7 +242,8 @@ async function handleInstall(req: IncomingMessage, res: ServerResponse, context:
 async function handleUninstall(req: IncomingMessage, res: ServerResponse, context: HcExtensionRouteContext): Promise<boolean> {
   const body = await context.readBody(req);
   const id = stringField(body, 'id');
-  const discovery = await uninstallProjectExtension(context.workspace, id, loaderOptions(context));
+  const scope = body.scope === 'user' ? 'user' : 'workspace';
+  const discovery = await uninstallProjectExtension(context.workspace, id, loaderOptions(context), scope);
   cacheDiscovery(context, discovery);
   context.json(res, 200, { ...catalogPayload(discovery), id });
   return true;
@@ -283,8 +328,11 @@ async function handleGallery(req: IncomingMessage, res: ServerResponse, context:
     methodNotAllowed(res, context, ['GET']);
     return true;
   }
-  const roots = [{ kind: 'example', dir: path.resolve(process.cwd(), 'examples', 'hcanvas-extensions') }];
   const discovery = await loadDiscovery(context);
+  const roots = [
+    { kind: 'bundled', dir: discovery.paths.bundled },
+    { kind: 'example', dir: path.resolve(process.cwd(), 'examples', 'hcanvas-extensions') },
+  ];
   const installed = new Map(discovery.extensions.map(extension => [extension.id, extension.source]));
   const entries: Array<Record<string, unknown>> = [];
   for (const root of roots) {

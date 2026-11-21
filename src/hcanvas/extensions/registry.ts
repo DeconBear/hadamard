@@ -56,6 +56,8 @@ export interface HcCatalogEntry {
   path: string;
   enabled: boolean;
   trusted: boolean;
+  compatible: boolean;
+  incompatibilityReason?: string;
   requiresProcess: boolean;
   capabilities: HcExtensionCapabilities;
   capabilitiesHash: string;
@@ -181,6 +183,8 @@ export class HcExtensionRegistry {
       path: extension.path,
       enabled: extension.enabled,
       trusted: extension.trusted,
+      compatible: extension.compatible,
+      ...(extension.incompatibilityReason ? { incompatibilityReason: extension.incompatibilityReason } : {}),
       requiresProcess: extension.requiresProcess,
       capabilities: manifest.capabilities,
       capabilitiesHash: capabilitiesHash(manifest.capabilities),

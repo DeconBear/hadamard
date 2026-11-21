@@ -48,9 +48,27 @@ hcanvas export --format pptx --out deck.pptx
 
 No MCP or browser automation required. Just HTTP + JSON.
 
+## Notebooks
+
+Create a **Notebook page** in the app, or open a `.hnb.md` file from **Files**. Markdown is edited directly in the document, code cells run through enabled kernel extensions, and variables keep separate initial/current values. Bundled Python, C++ and GNU Octave kernel extensions are included; install the matching language runtime on PATH and trust the workspace before running process kernels. Jupyter `.ipynb` files are not imported or exported.
+
+## Extensions
+
+Manage extensions in the app or from the CLI. User-scope extensions live under your Hcanvas data root; project-scope extensions live in `.hcanvas/extensions/`. NPM installation verifies the tarball integrity and never runs package lifecycle scripts.
+
+```bash
+hcanvas extension list
+hcanvas extension install @hcanvas/kernel-python@0.1.0 --user
+hcanvas extension install --folder ./my-extension --project
+hcanvas extension uninstall <extension-id> --user
+hcanvas doctor
+```
+
 ## Key Features
 
 - **Direct editing** - click text to edit, right-click for source
+- **Notebooks** - Markdown-first `.hnb.md` and native Notebook pages with Python/C++/Octave kernels
+- **Extensions** - folder or integrity-verified npm packages, with explicit trust and a doctor command
 - **Auto-save** - changes save automatically with revision history
 - **LaTeX math** - inline and display formulas with live preview
 - **Presentation mode** - present Markdown, HTML, and canvas pages

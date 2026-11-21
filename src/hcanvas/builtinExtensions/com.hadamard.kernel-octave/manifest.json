@@ -1,0 +1,67 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.hadamard.kernel-octave",
+  "name": "GNU Octave Kernel",
+  "version": "0.1.0",
+  "description": "Persistent GNU Octave kernel for canvas code cells and notebooks. Bundled with Hcanvas.",
+  "engines": {
+    "hcanvas": ">=0.1.0"
+  },
+  "capabilities": {
+    "process": {
+      "sidecars": [
+        "octave-kernel"
+      ]
+    }
+  },
+  "contributes": {
+    "sidecars": [
+      {
+        "id": "octave-kernel",
+        "label": "Octave kernel",
+        "command": [
+          "node",
+          "sidecar/octave_kernel.mjs"
+        ],
+        "cwd": "extension",
+        "role": "kernel",
+        "protocol": "jsonrpc-stdio",
+        "requests": [
+          {
+            "method": "kernel/execute",
+            "progress": true
+          },
+          {
+            "method": "kernel/interrupt"
+          },
+          {
+            "method": "kernel/complete"
+          },
+          {
+            "method": "kernel/shutdown"
+          }
+        ],
+        "idleTimeoutMs": 1800000,
+        "outputChannel": "Octave Kernel"
+      }
+    ],
+    "kernels": [
+      {
+        "id": "octave",
+        "label": "GNU Octave",
+        "language": "octave",
+        "sidecar": "octave-kernel",
+        "features": [
+          "execute",
+          "interrupt",
+          "complete",
+          "variables"
+        ],
+        "defaultFor": [
+          "octave"
+        ]
+      }
+    ]
+  },
+  "builtin": true
+}

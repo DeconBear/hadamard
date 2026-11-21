@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, existsSync, openSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -17,6 +17,8 @@ import { resolveDataRootSync } from './dataRoot.js';
 import { compileScene, type ComposeScene } from './composeScene.js';
 import { AGENT_SCHEMAS, SCENE_EXAMPLE } from './agentSchemas.js';
 import { getComposeTemplate, listComposeTemplates } from './composeTemplates.js';
+import { discoverExtensions, findExtension, installExtension, setExtensionEnabled, setExtensionTrusted, uninstallProjectExtension } from './extensions/loader.js';
+import { installNpmExtension } from './extensions/npmInstaller.js';
 
 interface ParsedArgs {
   positionals: string[];
@@ -68,9 +70,19 @@ function usage(): string {
     '  hcanvas sessions create [doc] [--actor <name>]',
     '  hcanvas sessions heartbeat <sessionId> [--doc <id>] [--page <id>] [--block <id>]',
     '  hcanvas sessions delete <sessionId>',
+  '  hcanvas extension list [--user|--project] [--json]',
+  '  hcanvas extension info <id> [--json]',
+  '  hcanvas extension install <@scope/name@version> [--user|--project] [--overwrite] [--registry <url>]',
+  '  hcanvas extension update <@scope/name@version> [--user|--project]',
+  '  hcanvas extension install --folder <dir> [--user|--project] [--overwrite]',
+  '  hcanvas extension install --manifest <manifest.json> [--user|--project]',
+  '  hcanvas extension uninstall <id> [--user|--project]',
+  '  hcanvas extension enable|disable|trust|untrust <id>',
+  '  hcanvas extension reload [--json]',
+  '  hcanvas doctor [--json]',
     '  hcanvas guide',
     '',
-    'Global flags: --project <dir> --workspace <dir> --url <url> --token <token> --session <id> --actor <name> --pretty',
+    'Global flags: --project <dir> --workspace <dir> --home <dir> --url <url> --token <token> --session <id> --actor <name> --pretty',
     '',
     'Environment: HCANVAS_HOME HCANVAS_URL HCANVAS_TOKEN HCANVAS_SESSION HCANVAS_ACTOR HCANVAS_DOC',
     '',
@@ -375,6 +387,132 @@ async function runServe(args: ParsedArgs, open: boolean): Promise<void> {
   await new Promise<void>(() => undefined);
 }
 
+function extensionScope(args: ParsedArgs): 'user' | 'workspace' {
+  return flagBool(args, 'project') || flagString(args, 'project') || flagBool(args, 'workspace') || flagString(args, 'workspace') ? 'workspace' : 'user';
+}
+
+function parseNpmSpec(spec: string): { packageName: string; version: string } {
+  const at = spec.lastIndexOf('@');
+  if (at <= 0 || at === spec.length - 1) throw new Error('NPM install requires an exact package@version, for example @hcanvas/kernel-python@0.1.0');
+  return { packageName: spec.slice(0, at), version: spec.slice(at + 1) };
+}
+
+async function extensionCommand(args: ParsedArgs, pretty: boolean): Promise<void> {
+  const action = args.positionals[1] || 'list';
+  const workspace = workspacePath(args);
+  const home = flagString(args, 'home');
+  const options = { ...(home ? { homeDir: path.resolve(home) } : {}) };
+  const scope = extensionScope(args);
+  const scopeFilter = flagBool(args, 'user') ? 'user' : flagBool(args, 'project') || flagBool(args, 'workspace') ? 'workspace' : 'all';
+  if (action === 'list' || action === 'reload') {
+    const discovery = await discoverExtensions(workspace, options);
+    const extensions = discovery.extensions
+      .filter(entry => scopeFilter === 'all' || (scopeFilter === 'user' ? entry.source === 'user' || entry.source === 'legacy-user' : entry.source === 'workspace' || entry.source === 'legacy-project'))
+      .map(entry => ({
+        id: entry.id, name: entry.name, version: entry.version, source: entry.source,
+        enabled: entry.enabled, trusted: entry.trusted, compatible: entry.compatible,
+        requiresProcess: entry.requiresProcess, diagnostics: entry.diagnostics,
+        ...(entry.incompatibilityReason ? { incompatibilityReason: entry.incompatibilityReason } : {}),
+      }));
+    print({ ok: true, workspace, extensions, warnings: discovery.warnings, errors: discovery.errors }, pretty);
+    return;
+  }
+  if (action === 'info') {
+    const id = args.positionals[2];
+    if (!id) throw new Error('extension info requires an extension id');
+    const discovery = await discoverExtensions(workspace, options);
+    const entry = findExtension(discovery, id);
+    if (!entry) throw new Error('Unknown extension id: ' + id);
+    print({ ok: true, extension: {
+      id: entry.id, name: entry.name, version: entry.version, source: entry.source, enabled: entry.enabled,
+      trusted: entry.trusted, compatible: entry.compatible, requiresProcess: entry.requiresProcess,
+      path: entry.path, root: entry.root, diagnostics: entry.diagnostics, grantStatus: entry.grantStatus,
+      ...(entry.incompatibilityReason ? { incompatibilityReason: entry.incompatibilityReason } : {}),
+    } }, pretty);
+    return;
+  }
+  if (action === 'doctor') {
+    await doctorCommand(args, pretty);
+    return;
+  }
+  if (action === 'install' || action === 'update') {
+    const overwrite = action === 'update' || flagBool(args, 'overwrite');
+    const folder = flagString(args, 'folder');
+    const manifestFile = flagString(args, 'manifest');
+    if (folder) {
+      const result = await installExtension(workspace, { source: 'folder', path: folder, scope, overwrite }, options);
+      print({ ok: true, id: result.id, path: result.path, scope, extension: result.extension }, pretty);
+      return;
+    }
+    if (manifestFile) {
+      const manifest = JSON.parse(await readFile(path.resolve(manifestFile), 'utf8')) as unknown;
+      const result = await installExtension(workspace, { source: 'json', manifest, scope, overwrite }, options);
+      print({ ok: true, id: result.id, path: result.path, scope, extension: result.extension }, pretty);
+      return;
+    }
+    const target = args.positionals[2];
+    if (!target) throw new Error('extension install requires a package@version, --folder <dir>, or --manifest <file>');
+    const { packageName, version } = parseNpmSpec(target);
+    const registry = flagString(args, 'registry');
+    const result = await installNpmExtension(workspace, { source: 'npm', packageName, version, scope, overwrite, ...(registry ? { registry } : {}) }, options);
+    print({ ok: true, id: result.id, path: result.path, scope, provenance: result.provenance, warnings: result.warnings, extension: result.extension }, pretty);
+    return;
+  }
+  if (action === 'uninstall') {
+    const id = args.positionals[2];
+    if (!id) throw new Error('extension uninstall requires an extension id');
+    const discovery = await uninstallProjectExtension(workspace, id, options, scope);
+    print({ ok: true, id, scope, extensions: discovery.extensions.map(entry => entry.id) }, pretty);
+    return;
+  }
+  if (action === 'enable' || action === 'disable') {
+    const id = args.positionals[2];
+    if (!id) throw new Error('extension ' + action + ' requires an extension id');
+    const discovery = await setExtensionEnabled(workspace, id, action === 'enable', options);
+    print({ ok: true, id, enabled: action === 'enable', extensions: discovery.extensions.map(entry => ({ id: entry.id, enabled: entry.enabled })) }, pretty);
+    return;
+  }
+  if (action === 'trust' || action === 'untrust') {
+    const id = args.positionals[2];
+    if (!id) throw new Error('extension ' + action + ' requires an extension id');
+    const discovery = await setExtensionTrusted(workspace, id, action === 'trust', options);
+    print({ ok: true, id, trusted: action === 'trust', extensions: discovery.extensions.map(entry => ({ id: entry.id, trusted: entry.trusted })) }, pretty);
+    return;
+  }
+  throw new Error('Unknown extension command: ' + action);
+}
+
+function runtimeCheck(id: string, label: string, command: string, args: string[], required: boolean, hint: string): Record<string, unknown> {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 5000, windowsHide: true });
+  const output = String(result.stdout || result.stderr || '').trim().split(/\r?\n/)[0] || '';
+  const ok = result.status === 0;
+  return {
+    id, label, ok, required, detail: ok ? output : (result.error?.message || 'not found'),
+    ...(ok ? {} : { hint }),
+  };
+}
+
+async function doctorCommand(args: ParsedArgs, pretty: boolean): Promise<void> {
+  const workspace = workspacePath(args);
+  const checks: Array<Record<string, unknown>> = [];
+  checks.push(runtimeCheck('node', 'Node.js', process.execPath, ['--version'], true, 'Install Node.js 22.13+ or 24.'));
+  checks.push(runtimeCheck('python', 'Python kernel runtime', 'python', ['--version'], false, 'Install Python 3, then enable/trust a Python kernel extension.'));
+  checks.push(runtimeCheck('gpp', 'C++ kernel runtime', 'g++', ['--version'], false, 'Install g++ (MinGW-w64, Xcode command line tools or build-essential) for the C++ kernel.'));
+  checks.push(runtimeCheck('octave', 'GNU Octave kernel runtime', 'octave', ['--version'], false, 'Install GNU Octave for the Octave kernel.'));
+  let discovery: Awaited<ReturnType<typeof discoverExtensions>> | null = null;
+  try {
+    discovery = await discoverExtensions(workspace, {});
+    const incompatible = discovery.extensions.filter(entry => !entry.compatible);
+    const enabled = discovery.extensions.filter(entry => entry.enabled);
+    checks.push({ id: 'workspace', label: 'Workspace', ok: true, required: true, detail: workspace });
+    checks.push({ id: 'extensions', label: 'Extensions', ok: incompatible.length === 0, required: false, detail: discovery.extensions.length + ' discovered · ' + enabled.length + ' enabled', ...(incompatible.length ? { hint: 'Incompatible: ' + incompatible.map(entry => entry.id).join(', ') } : {}) });
+    checks.push({ id: 'workspace-trust', label: 'Workspace trust', ok: discovery.workspaceTrust === 'trusted', required: false, detail: discovery.workspaceTrust, ...(discovery.workspaceTrust !== 'trusted' ? { hint: 'Trust the workspace in the Extensions manager before process kernels can run.' } : {}) });
+  } catch (error) {
+    checks.push({ id: 'workspace', label: 'Workspace', ok: false, required: true, detail: error instanceof Error ? error.message : String(error), hint: 'Pass --workspace <dir> or --project <dir>.' });
+  }
+  print({ ok: checks.every(check => check.ok === true || check.required !== true), workspace, dataRoot: resolveDataRootSync(), checks }, pretty);
+}
+
 async function main(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
   if (flagBool(args, 'help') || flagBool(args, 'h') || args.positionals.length === 0) {
@@ -386,6 +524,8 @@ async function main(argv: string[]): Promise<void> {
   const pretty = flagBool(args, 'pretty');
   if (command === 'serve' || command === 'app') { await runServe(args, command === 'app'); return; }
   if (command === 'desktop') { launchDesktop(args); return; }
+  if (command === 'extension' || command === 'extensions') { await extensionCommand(args, pretty); return; }
+  if (command === 'doctor') { await doctorCommand(args, pretty); return; }
   if (command === 'workspace') {
     const project = path.resolve(args.positionals[2] || projectPath(args) || process.cwd());
     const workspace = projectWorkspaceDir(project);

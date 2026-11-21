@@ -4,7 +4,7 @@ description: 从下载到本地优先、Agent 原生的画布，只需要几分�
 ---
 
 <div class="hc-hero">
-  <div class="hc-kicker">Hadamard Canvas · v0.1.2</div>
+  <div class="hc-kicker">Hadamard Canvas · v0.1.3</div>
   <h1>让页面<br /><span>成为工作空间。</span></h1>
   <p class="hc-sub">Hcanvas 是面向严肃视觉工作的本地优先画布。在这里做页面、幻灯片和图示，再让人类与 Agent 通过同一套 JSON-first 接口编辑同一份文档。</p>
   <div class="hc-actions">
@@ -80,6 +80,27 @@ hcanvas apply --ops-file changes.json --base-revision 5 --actor my-agent
 需要稳定目标？打开页面 Inspector 复制 **Canvas ID** / **Page ID**，或右键侧边栏中的页面使用同样的复制操作。
 
 <div class="hc-note"><strong>用 Agent 安装？</strong>让它阅读 README 的 <a href="https://github.com/DeconBear/hadamard#quick-start-with-ai-agents">Quick start with AI Agents</a> 部分。桌面版和 CLI 是分开安装的：桌面安装包提供 GUI，<code>npm install -g hadamard-canvas</code> 提供 CLI 和桌面启动器。</div>
+
+## 扩展与内核
+
+Hcanvas 扩展是带 `manifest.json` 的 v2 包；内置 Notebook 和三个随应用提供的内核扩展会随安装包一起发布。从工作区的 **Extensions** 打开管理器，可以安装文件夹、按精确版本安装 npm 包、启用/禁用、授予信任或卸载：
+
+~~~bash
+hcanvas extension list
+hcanvas extension install @hcanvas/kernel-python@0.1.0 --user
+hcanvas extension install --folder ./my-extension --project
+hcanvas extension update @hcanvas/kernel-python@0.1.0 --user
+hcanvas extension uninstall <extension-id> --user
+hcanvas doctor
+~~~
+
+官方 `@hcanvas/*` 内核包的 NPM 分发仍是 **Preview**；稳定路径是随应用提供的 bundled 内核。用户级扩展位于你的 Hcanvas 数据根目录；项目级扩展位于 `.hcanvas/extensions/`。带进程能力的扩展（内核、sidecar、终端、工具）在 Restricted Mode 下默认禁用；信任工作区后仍需显式授予扩展信任。`hcanvas doctor` 会报告 Node、Python、g++、GNU Octave 与扩展兼容性。
+
+## Notebook
+
+从 **Pages** 新建 Notebook 页面，或从 **Files** 打开 `.hnb.md` 文件。Markdown 在连续文档中直接编辑，代码单元通过已启用的内核扩展执行。变量区分**初始值**与**当前值**：Initialize / Run all 应用初始值，普通运行发布当前值；共享变量可在 Python、C++、GNU Octave 内核之间流转。
+
+`.hnb.md` 的输出缓存在当前浏览器工作区，Notebook 页面的输出保存在原生文档中。HTML 导出会内联当前可见输出（包括图片资源），可以在 Hcanvas 之外打开。不导入或导出 Jupyter `.ipynb` 文件。
 
 ## 继续探索
 

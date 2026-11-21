@@ -29,7 +29,7 @@ async function main() {
     await writeFile(path.join(workspace, 'save.hnb.md'), saveSource, 'utf8');
     await writeFile(path.join(workspace, 'legacy.ipynb'), JSON.stringify({ nbformat: 4, cells: [] }), 'utf8');
     server = spawn(process.execPath, ['bin/hcanvas.js', 'serve', '--workspace', workspace, '--port', String(port)], {
-      cwd: root, env: { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config') }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+      cwd: root, env: { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config'), HCANVAS_HOME: path.join(workspace, '.home'), HADAMARD_HOME: path.join(workspace, '.home') }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
     });
     let output = '';
     const info = await new Promise((resolve, reject) => {

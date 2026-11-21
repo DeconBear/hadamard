@@ -31,6 +31,8 @@ jobs:
       - name: Run Hcanvas unit tests
         run: npx vitest run tests/hcanvas-*.spec.ts --reporter=dot
       - run: npm run build
+      - name: Verify clean npm package tarball
+        run: npm run test:hcanvas:package
 
   browser:
     name: Hcanvas, Notebook and extension browser E2E

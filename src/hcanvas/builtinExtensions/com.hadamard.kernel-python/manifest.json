@@ -1,0 +1,72 @@
+{
+  "schema": "hcanvas-extension/1",
+  "id": "com.hadamard.kernel-python",
+  "name": "Python Kernel",
+  "version": "0.1.0",
+  "description": "Persistent Python 3 kernel for executable code cells and notebooks. Bundled with Hcanvas.",
+  "engines": {
+    "hcanvas": ">=0.1.0"
+  },
+  "capabilities": {
+    "process": {
+      "sidecars": [
+        "python-kernel"
+      ]
+    }
+  },
+  "contributes": {
+    "sidecars": [
+      {
+        "id": "python-kernel",
+        "label": "Python kernel",
+        "command": [
+          "python",
+          "-u",
+          "sidecar/hcanvas_python_kernel.py"
+        ],
+        "cwd": "extension",
+        "role": "kernel",
+        "protocol": "jsonrpc-stdio",
+        "requests": [
+          {
+            "method": "kernel/execute",
+            "progress": true
+          },
+          {
+            "method": "kernel/interrupt"
+          },
+          {
+            "method": "kernel/complete"
+          },
+          {
+            "method": "kernel/inspect"
+          },
+          {
+            "method": "kernel/shutdown"
+          }
+        ],
+        "idleTimeoutMs": 1800000,
+        "outputChannel": "Python Kernel"
+      }
+    ],
+    "kernels": [
+      {
+        "id": "python",
+        "label": "Python 3",
+        "language": "python",
+        "sidecar": "python-kernel",
+        "features": [
+          "execute",
+          "interrupt",
+          "complete",
+          "inspect",
+          "variables"
+        ],
+        "defaultFor": [
+          "python"
+        ]
+      }
+    ]
+  },
+  "builtin": true
+}

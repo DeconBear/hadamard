@@ -96,6 +96,8 @@ export interface ExtensionCatalogEntry {
   source: string;
   enabled: boolean;
   trusted: boolean;
+  compatible: boolean;
+  incompatibilityReason?: string;
   legacy: boolean;
   capabilities: Record<string, unknown>;
   contributes: ExtensionContributesSummary;
@@ -133,6 +135,8 @@ function normalizeEntry(raw: Record<string, unknown>): ExtensionCatalogEntry {
     source: String(raw.source || 'unknown'),
     enabled: raw.enabled !== false,
     trusted: raw.trusted === true,
+    compatible: raw.compatible !== false,
+    ...(typeof raw.incompatibilityReason === 'string' ? { incompatibilityReason: raw.incompatibilityReason } : {}),
     legacy: raw.legacy === true || raw.layout === 'legacy',
     capabilities: manifest.capabilities && typeof manifest.capabilities === 'object'
       ? manifest.capabilities as Record<string, unknown>

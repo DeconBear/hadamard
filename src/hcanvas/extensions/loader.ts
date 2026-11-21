@@ -19,12 +19,16 @@ import {
   type HcWorkspaceTrust,
 } from './manifest.js';
 import {
+  migrateLegacyExtensionHome,
   readExtensionSettings,
   readLegacyPluginSettings,
+  readUserExtensionSettings,
   readWorkspaceExtensionState,
   resolveExtensionHome,
+  setUserExtensionDisabled,
   setWorkspaceExtensionEnabled,
   setWorkspaceExtensionTrusted,
+  writeUserExtensionSettings,
   extensionGrantStatus,
   isExtensionEnabledBySettings,
   isExtensionTrustedBySettings,
@@ -252,6 +256,10 @@ function applyState(descriptor: HcExtensionDescriptor, settings: HcExtensionSett
   let enabled = isExtensionEnabledBySettings(settings, manifest.id, descriptor.layout);
   let trusted = isExtensionTrustedBySettings(settings, manifest);
   const diagnostics = [...descriptor.diagnostics];
+  if (descriptor.source === 'bundled' && requiresProcess && entry === undefined) {
+    enabled = false;
+    diagnostics.push('bundled process extension: enable and trust it explicitly before use');
+  }
   const compatible = engineRangeSatisfies(manifest.engines.hcanvas, HCANVAS_EXTENSION_TARGET_VERSION) !== false;
   const incompatibilityReason = compatible
     ? undefined
@@ -283,6 +291,7 @@ function applyState(descriptor: HcExtensionDescriptor, settings: HcExtensionSett
 
 /** Discover bundled, workspace, user and legacy v1 extensions for a workspace. */
 export async function discoverExtensions(workspace: string, options: HcExtensionLoaderOptions = {}): Promise<HcExtensionDiscovery> {
+  await migrateLegacyExtensionHome(options.homeDir);
   const errors: string[] = [];
   const warnings: string[] = [];
   const paths = extensionDiscoveryPaths(workspace, options);
@@ -432,18 +441,21 @@ async function addToLegacyDisabled(workspace: string, id: string): Promise<void>
 }
 
 /** Uninstall a workspace-scoped extension (v2 folder or legacy v1 plugin). */
-export async function uninstallProjectExtension(workspace: string, id: string, options: HcExtensionLoaderOptions = {}): Promise<HcExtensionDiscovery> {
+export async function uninstallProjectExtension(workspace: string, id: string, options: HcExtensionLoaderOptions = {}, scope: 'workspace' | 'user' = 'workspace'): Promise<HcExtensionDiscovery> {
   const extensionId = typeof id === 'string' ? id.trim() : '';
   if (!extensionId) throw new HcExtensionError('invalid_params', 'id is required');
   const discovery = await discoverExtensions(workspace, options);
   const extension = findExtension(discovery, extensionId);
   if (!extension) throw new HcExtensionError('not_found', 'Unknown extension id: ' + extensionId);
-  if (extension.source !== 'workspace' && extension.source !== 'legacy-project') {
-    throw new HcExtensionError('invalid_params', 'Only workspace extensions can be uninstalled: ' + extensionId);
+  const allowed = scope === 'user' ? ['user', 'legacy-user'] : ['workspace', 'legacy-project'];
+  if (!allowed.includes(extension.source)) {
+    throw new HcExtensionError('invalid_params', 'Extension "' + extensionId + '" is not installed in the requested ' + scope + ' scope');
   }
-  const root = extension.source === 'workspace' ? workspaceExtensionsDir(workspace) : workspacePluginsDir(workspace);
+  const root = scope === 'user'
+    ? (extension.source === 'user' ? userExtensionsDir(options.homeDir) : userPluginsDir(options.homeDir))
+    : (extension.source === 'workspace' ? workspaceExtensionsDir(workspace) : workspacePluginsDir(workspace));
   const folder = path.resolve(extension.root);
-  if (!isInside(root, folder)) throw new HcExtensionError('path_forbidden', 'Refusing to uninstall extension outside the project root: ' + extensionId);
+  if (!isInside(root, folder)) throw new HcExtensionError('path_forbidden', 'Refusing to uninstall extension outside the extension root: ' + extensionId);
   await rm(folder, { recursive: true, force: true });
   const state = await readWorkspaceExtensionState(workspace).catch(() => undefined);
   if (state && state.extensions[extensionId]) {
@@ -451,7 +463,18 @@ export async function uninstallProjectExtension(workspace: string, id: string, o
     delete extensions[extensionId];
     await writeWorkspaceExtensionState(workspace, { ...state, extensions });
   }
-  if (extension.layout === 'legacy') await removeFromLegacyDisabled(workspace, extensionId);
+  if (scope === 'user') {
+    const userSettings = await readUserExtensionSettings(options.homeDir);
+    if (userSettings.disabled.includes(extensionId)) {
+      await writeUserExtensionSettings({ ...userSettings, disabled: userSettings.disabled.filter(item => item !== extensionId) }, options.homeDir);
+    }
+  }
+  if (extension.layout === 'legacy') {
+    if (scope === 'user') {
+      const userSettings = await readUserExtensionSettings(options.homeDir);
+      if (userSettings.disabled.includes(extensionId)) await writeUserExtensionSettings({ ...userSettings, disabled: userSettings.disabled.filter(item => item !== extensionId) }, options.homeDir);
+    } else await removeFromLegacyDisabled(workspace, extensionId);
+  }
   return discoverExtensions(workspace, options);
 }
 
@@ -462,13 +485,20 @@ export async function setExtensionEnabled(workspace: string, id: string, enabled
   const discovery = await discoverExtensions(workspace, options);
   const extension = findExtension(discovery, extensionId);
   if (!extension) throw new HcExtensionError('not_found', 'Unknown extension id: ' + extensionId);
+  if (enabled && !extension.compatible) {
+    throw new HcExtensionError('incompatible', extension.incompatibilityReason || 'Extension is not compatible with this Hcanvas version', 'engines.hcanvas');
+  }
   if (enabled && extension.requiresProcess && discovery.workspaceTrust !== 'trusted') {
     throw new HcExtensionError('trusted_required', 'Restricted Mode blocks process extensions; trust the workspace before enabling "' + extensionId + '"');
   }
-  await setWorkspaceExtensionEnabled(workspace, extensionId, enabled);
-  if (extension.layout === 'legacy') {
-    if (enabled) await removeFromLegacyDisabled(workspace, extensionId);
-    else await addToLegacyDisabled(workspace, extensionId);
+  if (extension.source === 'user' || extension.source === 'legacy-user') {
+    await setUserExtensionDisabled(extensionId, !enabled, options.homeDir);
+  } else {
+    await setWorkspaceExtensionEnabled(workspace, extensionId, enabled);
+    if (extension.layout === 'legacy') {
+      if (enabled) await removeFromLegacyDisabled(workspace, extensionId);
+      else await addToLegacyDisabled(workspace, extensionId);
+    }
   }
   return discoverExtensions(workspace, options);
 }
@@ -480,6 +510,9 @@ export async function setExtensionTrusted(workspace: string, id: string, trusted
   const discovery = await discoverExtensions(workspace, options);
   const extension = findExtension(discovery, extensionId);
   if (!extension) throw new HcExtensionError('not_found', 'Unknown extension id: ' + extensionId);
+  if (trusted && !extension.compatible) {
+    throw new HcExtensionError('incompatible', extension.incompatibilityReason || 'Extension is not compatible with this Hcanvas version', 'engines.hcanvas');
+  }
   if (trusted && extension.requiresProcess && discovery.workspaceTrust !== 'trusted') {
     throw new HcExtensionError('trusted_required', 'Restricted Mode blocks process extensions; trust the workspace before granting "' + extensionId + '"');
   }

@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import { resolveDataRootSync } from '../dataRoot.js';
 import {
   capabilitiesHash,
   manifestRequiresProcess,
@@ -13,12 +15,38 @@ import {
   type HcWorkspaceTrust,
 } from './manifest.js';
 
-/** Per-user Hadamard data root; same resolution the v1 plugin loader uses. */
+/**
+ * Per-user extension data root. Hcanvas resolves to its configured data root
+ * (HCANVAS_HOME -> saved dataRoot -> ~/.hcanvas); HADAMARD_HOME remains honored
+ * for existing installs when no Hcanvas-specific root is set.
+ */
 export function resolveExtensionHome(homeDir?: string): string {
   if (homeDir && homeDir.trim()) return path.resolve(homeDir);
-  const envHome = process.env.HADAMARD_HOME?.trim();
-  if (envHome) return path.resolve(envHome);
-  return path.join(os.homedir(), '.hadamard');
+  const hcanvasHome = process.env.HCANVAS_HOME?.trim();
+  if (hcanvasHome) return path.resolve(hcanvasHome);
+  const legacyHome = process.env.HADAMARD_HOME?.trim();
+  if (legacyHome) return path.resolve(legacyHome);
+  return resolveDataRootSync();
+}
+
+let legacyExtensionHomeMigration: Promise<void> | null = null;
+
+/** Copy the legacy ~/.hadamard/hcanvas extension data to the Hcanvas data root once. */
+export function migrateLegacyExtensionHome(homeDir?: string): Promise<void> {
+  if (homeDir && homeDir.trim()) return Promise.resolve();
+  if (!legacyExtensionHomeMigration) {
+    legacyExtensionHomeMigration = (async () => {
+      const target = path.join(resolveExtensionHome(), 'hcanvas');
+      const legacyRoot = process.env.HADAMARD_HOME?.trim()
+        ? path.resolve(process.env.HADAMARD_HOME.trim())
+        : path.join(os.homedir(), '.hadamard');
+      const legacy = path.join(legacyRoot, 'hcanvas');
+      if (path.resolve(target) === path.resolve(legacy) || !existsSync(legacy) || existsSync(target)) return;
+      await mkdir(path.dirname(target), { recursive: true });
+      await cp(legacy, target, { recursive: true, errorOnExist: false });
+    })().catch(() => undefined);
+  }
+  return legacyExtensionHomeMigration;
 }
 
 export function extensionWorkspaceStatePath(workspace: string): string {

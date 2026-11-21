@@ -4,7 +4,7 @@ description: Go from download to a local-first, agent-ready canvas in minutes.
 ---
 
 <div class="hc-hero">
-  <div class="hc-kicker">Hadamard Canvas · v0.1.2</div>
+  <div class="hc-kicker">Hadamard Canvas · v0.1.3</div>
   <h1>Make the page<br /><span>the workspace.</span></h1>
   <p class="hc-sub">Hcanvas is a local-first canvas for serious visual work. Build pages, slides and diagrams, then let people and agents edit the same document through one clean, JSON-first interface.</p>
   <div class="hc-actions">
@@ -80,6 +80,27 @@ hcanvas apply --ops-file changes.json --base-revision 5 --actor my-agent
 Need a stable target? Open the page Inspector and copy **Canvas ID** / **Page ID**, or right-click a page in the sidebar for the same copy actions.
 
 <div class="hc-note"><strong>Installing with an agent?</strong> Point it at the <a href="https://github.com/DeconBear/hadamard#quick-start-with-ai-agents">Quick start with AI Agents</a> section in the README. The desktop and CLI are separate installs: the desktop installer provides the GUI, while <code>npm install -g hadamard-canvas</code> provides the CLI and launcher.</div>
+
+## Extensions and kernels
+
+Hcanvas extensions are v2 packages with a `manifest.json`; built-in Notebook and the three bundled kernel extensions ship with the app. Open **Extensions** from the workspace to install a folder, install an exact npm package, enable/disable, trust, or uninstall:
+
+~~~bash
+hcanvas extension list
+hcanvas extension install @hcanvas/kernel-python@0.1.0 --user
+hcanvas extension install --folder ./my-extension --project
+hcanvas extension update @hcanvas/kernel-python@0.1.0 --user
+hcanvas extension uninstall <extension-id> --user
+hcanvas doctor
+~~~
+
+NPM distribution is a **Preview** channel for the official `@hcanvas/*` kernel packages; the bundled kernels shipped with the app are the stable path. User extensions live under your Hcanvas data root; project extensions live in `.hcanvas/extensions/`. Process-backed extensions (kernels, sidecars, terminals, tools) stay disabled in Restricted Mode; they need an explicit Trust decision after you trust the workspace. `hcanvas doctor` reports Node, Python, g++, GNU Octave and extension compatibility.
+
+## Notebooks
+
+Create a Notebook page from **Pages**, or open a `.hnb.md` file from **Files**. Markdown is edited directly in the continuous document; code cells run through enabled kernel extensions. Variables keep separate **initial** and **current** values: Initialize/Run all applies initial values, while normal runs publish current values. Shared variables flow across Python, C++ and GNU Octave kernels.
+
+Notebook outputs are cached in the current browser workspace for `.hnb.md` files, and stored in the native page for Notebook pages. HTML export embeds the visible output (including image assets) so it can be opened outside Hcanvas. Jupyter `.ipynb` files are not imported or exported.
 
 ## Keep exploring
 

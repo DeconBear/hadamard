@@ -33,7 +33,8 @@
     "bin",
     "dist",
     "assets",
-    "README.md"
+    "README.md",
+    "hcanvas.version.json"
   ],
   "dependencies": {
     "docx": "^9.15.1",
