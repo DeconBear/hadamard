@@ -139,6 +139,34 @@ function escapeHtml(value: string): string {
 function escapeAttr(value: string): string {
   return escapeHtml(value).replace(/'/g, '&#39;');
 }
+
+interface MarkdownFrontmatterParts {
+  /** Exact leading YAML frontmatter block, including its line endings. */
+  frontmatter: string;
+  /** The Markdown body rendered by the rich editor. */
+  body: string;
+}
+
+function splitMarkdownFrontmatter(source: string): MarkdownFrontmatterParts {
+  const opening = /^(?:\uFEFF)?---[ \t]*\r?\n/.exec(source);
+  if (!opening) return { frontmatter: '', body: source };
+  const rest = source.slice(opening[0].length);
+  // Find the first closing delimiter line anywhere in the frontmatter block. The
+  // preceding newline, the delimiter line, and its trailing newline are all part of
+  // the preserved prefix so the original bytes/line endings are never rewritten.
+  const closing = /(?:^|\r?\n)(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(rest);
+  if (!closing) return { frontmatter: '', body: source };
+  const end = closing.index + closing[0].length;
+  return {
+    frontmatter: source.slice(0, opening[0].length + end),
+    body: rest.slice(end),
+  };
+}
+
+function joinMarkdownFrontmatter(frontmatter: string, bodyMarkdown: string): string {
+  return frontmatter + (bodyMarkdown.trim() ? bodyMarkdown : '');
+}
+
 function iconFor(name: string): string {
   const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
   if (['.html', '.htm'].includes(ext)) return '<>';
@@ -418,20 +446,22 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
 
   async function performSave(tab: FileTab): Promise<boolean> {
     clearAutoSave(tab);
-    const content = tab.content;
     if (!tab.dirty) {
       if (activeId === tab.id) setFileSaveStatus('Auto-save on', 'saved');
       return true;
     }
+    const content = tab.content;
     if (activeId === tab.id) setFileSaveStatus('Saving…', 'saving');
     try {
       await options.request('/api/files/write', { method: 'POST', body: JSON.stringify({ root: tab.rootId, path: tab.path, content }) });
-      tab.content = content;
-      const latest = tab.content;
-      tab.dirty = latest !== content;
-      if (tab.dirty) scheduleAutoSave(tab);
+      // Never replace live content with the saved snapshot: edits typed (or rich-view
+      // input emitted) while the write was in flight must keep the tab dirty and save again.
+      tab.dirty = tab.content !== content;
+      if (tab.dirty) {
+        if (tabs.includes(tab)) scheduleAutoSave(tab);
+        if (activeId === tab.id) setFileSaveStatus('Auto-save pending', 'saving');
+      } else if (activeId === tab.id) setFileSaveStatus('Auto-save on', 'saved');
       renderTabs();
-      if (activeId === tab.id) setFileSaveStatus('Auto-save on', 'saved');
       return true;
     } catch (error) {
       if (activeId === tab.id) setFileSaveStatus('Save failed', 'error');
@@ -483,7 +513,11 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   }
 
   function mountRichMarkdown(host: HTMLElement, tab: FileTab): void {
-    const update = (markdown: string, commit: boolean): void => {
+    // YAML frontmatter is not part of the rendered Markdown body; the rich view only edits
+    // the body and the exact frontmatter prefix is prepended again on every change.
+    const { frontmatter, body } = splitMarkdownFrontmatter(tab.content);
+    const update = (bodyMarkdown: string, commit: boolean): void => {
+      const markdown = joinMarkdownFrontmatter(frontmatter, bodyMarkdown);
       const changed = tab.content !== markdown;
       tab.content = markdown;
       if (changed) tab.dirty = true;
@@ -507,7 +541,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       width: 1280,
       height: 720,
       background: '#ffffff',
-      html: markdownPageHtml(tab.content),
+      html: markdownPageHtml(body),
     }, {
       editing: false,
       richMarkdown: true,

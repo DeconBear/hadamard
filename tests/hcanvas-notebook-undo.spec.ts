@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NotebookUndoHistory } from '../src/hcanvas/notebook/undo.js';
+import { restoreNotebookCells } from '../src/hcanvas/notebook/notebookEditorState.js';
 import type { NotebookEditorCell } from '../src/hcanvas/client/notebookEditor.js';
 
 describe('notebook structural undo history', () => {
@@ -14,6 +15,16 @@ describe('notebook structural undo history', () => {
     expect(restored?.initialVariables).toEqual({ a: 1 });
     expect(restored?.variablesInitialized).toBe(false);
     expect(restored?.cells[0]).not.toBe(cells[0]);
+  });
+
+  it('restores saved state into existing cell objects so live editors stay attached', () => {
+    const current: NotebookEditorCell[] = [{ id: 'code', kind: 'code', source: 'edited', outputs: [{ id: 'out', kind: 'text', text: 'new' }], hideCode: true }];
+    const saved: NotebookEditorCell[] = [{ id: 'code', kind: 'code', source: 'original', outputs: [] }];
+    const restored = restoreNotebookCells(current, saved);
+    expect(restored[0]).toBe(current[0]);
+    expect(restored[0]?.source).toBe('original');
+    expect(restored[0]?.outputs).toEqual([]);
+    expect(restored[0]?.hideCode).toBeUndefined();
   });
 
   it('bounds history and returns null when empty', () => {

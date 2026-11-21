@@ -48,11 +48,45 @@ function chooseKernel(kernels: KernelDescriptor[], parsed: ParsedNotebook): stri
   return match?.id || kernels.find(kernel => kernel.language === 'python')?.id || kernels[0]?.id || '';
 }
 
-function variableField(parsed: ParsedNotebook, field: string): NotebookVariables {
+function parseVariableField(values: Record<string, string>, field: string): NotebookVariables {
   try {
-    const value = JSON.parse(parsed.frontmatter.values[field] || '{}') as unknown;
+    const value = JSON.parse(values[field] || '{}') as unknown;
     return value && typeof value === 'object' && !Array.isArray(value) ? value as NotebookVariables : {};
   } catch { return {}; }
+}
+
+export interface ResolvedNotebookVariableState {
+  initialVariables: NotebookVariables;
+  variables: NotebookVariables;
+  variablesInitialized: boolean;
+}
+
+/**
+ * Resolve the variable state stored in .hnb.md frontmatter.
+ *
+ * Files written before the variable-state split only stored `variables:` and
+ * used it for the live runtime values. Such a legacy file has neither
+ * `current_variables:` nor `variables_initialized:`, so its initial values are
+ * also used as the current values: otherwise the next run would send an empty
+ * variable map to the kernel (hc_get then falls back to its default and cells
+ * that depend on shared state fail). New files keep the two fields distinct and
+ * an explicit `variables_initialized: false` still means "not initialized yet".
+ */
+export function resolveNotebookVariableState(values: Record<string, string>): ResolvedNotebookVariableState {
+  const initialVariables = parseVariableField(values, 'variables');
+  let variables = parseVariableField(values, 'current_variables');
+  const hasInitializedFlag = Object.prototype.hasOwnProperty.call(values, 'variables_initialized');
+  const hasCurrentField = Object.prototype.hasOwnProperty.call(values, 'current_variables');
+  // Only files written before the initial/current split (no initialized flag and
+  // no current_variables field) treat variables: as both initial and current.
+  // A new file with variables_initialized: false must keep current empty until
+  // the user clicks Initialize/Run all, even though it has initial values.
+  const legacyFallback = !hasInitializedFlag && !hasCurrentField && !Object.keys(variables).length && Object.keys(initialVariables).length > 0;
+  if (legacyFallback) variables = initialVariables;
+  const variablesInitialized = hasInitializedFlag
+    ? values.variables_initialized === 'true'
+    : legacyFallback || Object.keys(variables).length > 0;
+  return { initialVariables, variables, variablesInitialized };
 }
 
 function withFrontmatterValues(parsed: ParsedNotebook, data: NotebookEditorData, kernels: KernelDescriptor[]): void {
@@ -90,12 +124,13 @@ function toEditorData(parsed: ParsedNotebook, kernels: KernelDescriptor[], cache
     };
   });
   if (!cells.length) cells.push({ id: genId('nbcell'), kind: 'markdown', source: '# Untitled notebook\n\nWrite Markdown here. Add a code cell below, then press **Shift+Enter** to run it.' });
+  const variableState = resolveNotebookVariableState(parsed.frontmatter.values);
   return {
     cells,
     defaultKernelId: chooseKernel(kernels, parsed),
-    initialVariables: variableField(parsed, 'variables'),
-    variables: variableField(parsed, 'current_variables'),
-    variablesInitialized: parsed.frontmatter.values.variables_initialized === 'true',
+    initialVariables: variableState.initialVariables,
+    variables: variableState.variables,
+    variablesInitialized: variableState.variablesInitialized,
   };
 }
 

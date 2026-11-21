@@ -39,6 +39,9 @@ const EXECUTION_ID_PREFIX = 'exec_';
 const SESSION_ID_PREFIX = 'ks_';
 const SCOPE_KINDS: readonly HcKernelScopeKind[] = ['document', 'page', 'file', 'custom'];
 const MIME_TRUNCATION_SUFFIX = '…[truncated]';
+/** Completed execution cache bounds: count alone is not enough (each result ≤ 8 MiB). */
+const MAX_COMPLETED_EXECUTIONS = 100;
+const MAX_COMPLETED_EXECUTION_BYTES = 32 * 1024 * 1024;
 
 export interface HcKernelManagerOptions {
   broker: SidecarBroker;
@@ -49,6 +52,10 @@ export interface HcKernelManagerOptions {
   /** Clamp limits to global spec caps (default true; tests may disable). */
   enforceLimitCaps?: boolean;
   now?: () => Date;
+  /** Completed execution cache entry budget (default 100; tests may shrink it). */
+  completedExecutionMaxEntries?: number;
+  /** Completed execution cache total output-byte budget (default 32 MiB; tests may shrink it). */
+  completedExecutionMaxBytes?: number;
 }
 
 export interface HcKernelExecuteOptions {
@@ -215,7 +222,10 @@ export class HcKernelManager {
   private readonly onEventCallback: ((event: HcKernelRuntimeEvent) => void) | undefined;
   private readonly sessions = new Map<string, KernelSessionRecord>();
   private readonly executionIndex = new Map<string, string>();
-  private readonly completedExecutions = new Map<string, { sessionId: string; result: HcKernelExecutionResult }>();
+  private readonly completedExecutions = new Map<string, { sessionId: string; result: HcKernelExecutionResult; bytes: number }>();
+  private completedExecutionBytes = 0;
+  private readonly completedExecutionMaxEntries: number;
+  private readonly completedExecutionMaxBytes: number;
   private readonly unsubscribeBroker: () => void;
 
   constructor(options: HcKernelManagerOptions) {
@@ -225,6 +235,14 @@ export class HcKernelManager {
     this.limits = resolveKernelLimits(options.limits, { enforceCaps: options.enforceLimitCaps !== false });
     this.now = options.now ?? (() => new Date());
     this.onEventCallback = options.onEvent;
+    this.completedExecutionMaxEntries = typeof options.completedExecutionMaxEntries === 'number'
+      && Number.isFinite(options.completedExecutionMaxEntries) && options.completedExecutionMaxEntries > 0
+      ? Math.floor(options.completedExecutionMaxEntries)
+      : MAX_COMPLETED_EXECUTIONS;
+    this.completedExecutionMaxBytes = typeof options.completedExecutionMaxBytes === 'number'
+      && Number.isFinite(options.completedExecutionMaxBytes) && options.completedExecutionMaxBytes > 0
+      ? Math.floor(options.completedExecutionMaxBytes)
+      : MAX_COMPLETED_EXECUTION_BYTES;
     this.unsubscribeBroker = this.broker.subscribe(event => this.handleBrokerEvent(event));
   }
 
@@ -277,7 +295,7 @@ export class HcKernelManager {
 
   execution(executionId: string): HcKernelExecutionLookup {
     const completed = this.completedExecutions.get(executionId);
-    if (completed) return { state: 'completed', ...completed };
+    if (completed) return { state: 'completed', sessionId: completed.sessionId, result: completed.result };
     const sessionId = this.executionIndex.get(executionId);
     const session = sessionId ? this.sessions.get(sessionId) : undefined;
     if (!sessionId || !session) return { state: 'unknown' };
@@ -314,15 +332,15 @@ export class HcKernelManager {
     return this.startExecution(sessionId, code, options).completion;
   }
 
-  async complete(sessionId: string, code: string, cursorPos: number): Promise<Record<string, unknown>> {
+  async complete(sessionId: string, code: string, cursorPos: number, variables?: Record<string, unknown>): Promise<Record<string, unknown>> {
     const session = this.requireSession(sessionId);
-    const outcome = await this.broker.request(session.sessionId, HKP_METHODS.complete, { code, cursorPos }, { timeoutMs: 5000 });
+    const outcome = await this.broker.request(session.sessionId, HKP_METHODS.complete, { code, cursorPos, ...(variables ? { variables } : {}) }, { timeoutMs: 5000 });
     return outcome.result && typeof outcome.result === 'object' ? outcome.result as Record<string, unknown> : {};
   }
 
-  async inspect(sessionId: string, code: string, cursorPos: number): Promise<Record<string, unknown>> {
+  async inspect(sessionId: string, code: string, cursorPos: number, variables?: Record<string, unknown>): Promise<Record<string, unknown>> {
     const session = this.requireSession(sessionId);
-    const outcome = await this.broker.request(session.sessionId, HKP_METHODS.inspect, { code, cursorPos }, { timeoutMs: 5000 });
+    const outcome = await this.broker.request(session.sessionId, HKP_METHODS.inspect, { code, cursorPos, ...(variables ? { variables } : {}) }, { timeoutMs: 5000 });
     return outcome.result && typeof outcome.result === 'object' ? outcome.result as Record<string, unknown> : {};
   }
 
@@ -444,6 +462,8 @@ export class HcKernelManager {
   async disposeAll(): Promise<void> {
     const ids = [...this.sessions.keys()];
     await Promise.all(ids.map(id => this.dispose(id).catch(() => undefined)));
+    this.completedExecutions.clear();
+    this.completedExecutionBytes = 0;
     this.unsubscribeBroker();
   }
 
@@ -817,8 +837,7 @@ export class HcKernelManager {
       outputs: { events: [...execution.events], truncated: execution.truncated, totalBytes: execution.totalBytes },
       ...(error ? { error } : {}),
     };
-    this.completedExecutions.set(execution.executionId, { sessionId: session.sessionId, result });
-    if (this.completedExecutions.size > 100) this.completedExecutions.delete(this.completedExecutions.keys().next().value || '');
+    this.rememberCompletedExecution(execution.executionId, session.sessionId, result);
     this.emit(session, execution.executionId, 'execution_finished', {
       status,
       durationMs,
@@ -838,6 +857,22 @@ export class HcKernelManager {
       /* ignore */
     }
     this.pump(session);
+  }
+
+  /** Cache a settled result under a count and a byte budget; evict oldest first. */
+  private rememberCompletedExecution(executionId: string, sessionId: string, result: HcKernelExecutionResult): void {
+    const totalBytes = result.outputs && typeof result.outputs === 'object' && typeof result.outputs.totalBytes === 'number' && Number.isFinite(result.outputs.totalBytes)
+      ? Math.max(0, Math.floor(result.outputs.totalBytes))
+      : 0;
+    this.completedExecutions.set(executionId, { sessionId, result, bytes: totalBytes });
+    this.completedExecutionBytes += totalBytes;
+    while (this.completedExecutions.size > this.completedExecutionMaxEntries || this.completedExecutionBytes > this.completedExecutionMaxBytes) {
+      const oldestId = this.completedExecutions.keys().next().value;
+      if (!oldestId) break;
+      const oldest = this.completedExecutions.get(oldestId);
+      this.completedExecutions.delete(oldestId);
+      this.completedExecutionBytes = Math.max(0, this.completedExecutionBytes - (oldest?.bytes ?? 0));
+    }
   }
 
   private failQueued(session: KernelSessionRecord, reason: string): void {

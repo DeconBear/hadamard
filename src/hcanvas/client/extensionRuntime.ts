@@ -13,6 +13,8 @@ export interface CustomViewerInput {
 }
 
 export interface MountedView {
+  /** Persist pending viewer state before the host switches documents/pages. */
+  flush?(): Promise<void> | void;
   dispose?(): void;
 }
 
@@ -342,7 +344,10 @@ export function installExtensionRuntime(options: ExtensionRuntimeOptions): Exten
         ...(context.file && typeof context.file === 'object' ? { file: context.file } : {}),
         ...(context.page && typeof context.page === 'object' ? { page: context.page } : {}),
       });
-      return { dispose: () => mounted?.dispose?.() };
+      return {
+        ...(mounted?.flush ? { flush: () => mounted.flush!() } : {}),
+        dispose: () => mounted?.dispose?.(),
+      };
     } catch (error) {
       host.innerHTML = '<div class="extension-viewer-error"><strong>Viewer failed</strong><small>' + escapeHtml(error instanceof Error ? error.message : String(error)) + '</small></div>';
       return {};

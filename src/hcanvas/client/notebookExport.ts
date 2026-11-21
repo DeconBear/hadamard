@@ -1,4 +1,4 @@
-import { renderStoredOutputsHtml } from '../execOutputs.js';
+import { renderStoredOutputsHtml, type HcStoredOutput } from '../execOutputs.js';
 import { renderMarkdownHtml } from '../markdown.js';
 import type { NotebookEditorData } from '../notebook/types.js';
 import type { KernelDescriptor } from './kernelManager.js';
@@ -26,12 +26,48 @@ function kernelFor(data: NotebookEditorData, kernels: KernelDescriptor[], cell: 
     || kernels[0];
 }
 
-export function exportNotebookHtml(title: string, data: NotebookEditorData, kernels: KernelDescriptor[]): void {
-  const body = data.cells.map(cell => {
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Embed workspace assets so the exported file remains readable outside Hcanvas. */
+async function inlineImageUrl(url: string, cache: Map<string, string>): Promise<string> {
+  if (!url || url.startsWith('data:') || typeof fetch !== 'function' || typeof location === 'undefined') return url;
+  const cached = cache.get(url);
+  if (cached) return cached;
+  try {
+    const resolved = new URL(url, location.href);
+    if (resolved.origin !== location.origin || !resolved.pathname.startsWith('/api/assets/raw/')) return url;
+    const response = await fetch(resolved.href, { credentials: 'include' });
+    if (!response.ok) return url;
+    const data = await blobToDataUrl(await response.blob());
+    cache.set(url, data);
+    return data;
+  } catch {
+    return url;
+  }
+}
+
+async function inlineOutputImages(outputs: HcStoredOutput[] | undefined, cache: Map<string, string>): Promise<HcStoredOutput[] | undefined> {
+  if (!outputs?.length) return outputs;
+  return Promise.all(outputs.map(async output => output.kind === 'image'
+    ? { ...output, url: await inlineImageUrl(output.url, cache) }
+    : output));
+}
+
+export async function exportNotebookHtml(title: string, data: NotebookEditorData, kernels: KernelDescriptor[]): Promise<void> {
+  const assetCache = new Map<string, string>();
+  const body = (await Promise.all(data.cells.map(async cell => {
     if (cell.kind === 'markdown') return '<section class="md">' + sanitizeMarkdownHtml(renderMarkdownHtml(cell.source)) + '</section>';
     const kernel = kernelFor(data, kernels, cell);
-    return '<section class="code"><div class="cell-kernel">' + esc(kernel?.label || cell.language || 'code') + '</div><pre>' + esc(cell.source) + '</pre><div class="out">' + (cell.outputs?.length ? renderStoredOutputsHtml(cell.outputs) : '') + '</div></section>';
-  }).join('\n');
+    const outputs = await inlineOutputImages(cell.outputs, assetCache);
+    return '<section class="code"><div class="cell-kernel">' + esc(kernel?.label || cell.language || 'code') + '</div><pre>' + esc(cell.source) + '</pre><div class="out">' + (outputs?.length ? renderStoredOutputsHtml(outputs) : '') + '</div></section>';
+  }))).join('\n');
   const initial = Object.keys(data.initialVariables || {}).length ? '<details><summary>Initial variables</summary><pre>' + esc(JSON.stringify(data.initialVariables, null, 2)) + '</pre></details>' : '';
   const current = Object.keys(data.variables || {}).length ? '<details><summary>Current variables</summary><pre>' + esc(JSON.stringify(data.variables, null, 2)) + '</pre></details>' : '';
   const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(title) + '</title><style>' +

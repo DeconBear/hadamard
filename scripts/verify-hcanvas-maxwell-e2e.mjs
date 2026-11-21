@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -126,6 +126,13 @@ async function main() {
       return Math.abs(value('rabi_period') - Math.PI) < 1e-10 && Math.abs(value('rabi_period_cpp') - Math.PI) < 1e-10 && Math.abs(value('rabi_period_octave') - Math.PI) < 1e-10 && value('pulse_area') > 20 && value('period_max_error') < 1e-10;
     });
     assert('restoring and initializing a global input restores all derived kernels', true);
+    const htmlDownload = page.waitForEvent('download');
+    await page.locator('[data-nb-export]').click();
+    const exported = await htmlDownload;
+    const exportedPath = await exported.path();
+    if (!exportedPath) throw new Error('HTML export did not produce a local file');
+    const exportedHtml = await readFile(exportedPath, 'utf8');
+    assert('standalone HTML export embeds kernel plot assets', exportedHtml.includes('data:image/png;base64,'), exportedHtml.slice(0, 300));
     assert('no browser errors', errors.length === 0, errors.join('; '));
     console.log('Maxwell-Bloch E2E passed');
   } finally {

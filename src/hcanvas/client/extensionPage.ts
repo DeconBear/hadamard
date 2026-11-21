@@ -22,8 +22,18 @@ function pageKey(page: HcPage): string {
   return page.id + '|' + (page.extension ? page.extension.format : '');
 }
 
+export async function flushExtensionPage(): Promise<void> {
+  try { await mounted?.flush?.(); } catch { /* best effort; the dispose path reports errors */ }
+}
+
 export function disposeExtensionPage(): void {
   if (mounted) {
+    // Page switches are synchronous, so start the save before tearing down.
+    // Document switches await flushExtensionPage() before replacing state.doc.
+    try {
+      const pending = mounted.flush?.();
+      if (pending && typeof pending.then === 'function') void pending.catch(() => undefined);
+    } catch { /* best effort */ }
     try { mounted.dispose?.(); } catch { /* best effort */ }
     mounted = null;
   }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { notebookCellKey, notebookCodeCells, parseFrontmatter, parseNotebook, serializeNotebook } from '../src/hcanvas/notebook/format.js';
+import { resolveNotebookVariableState } from '../src/hcanvas/client/notebookViewer.js';
 
 const F = String.fromCharCode(96).repeat(3);
 
@@ -35,6 +36,48 @@ describe('notebook format', () => {
     expect(parsed.frontmatter.values.kernel).toBe('python');
     expect(parsed.frontmatter.values.title).toBe('Demo');
     expect(parsed.warnings).toEqual([]);
+  });
+
+  it('parses current_variables and variables_initialized frontmatter keys', () => {
+    const text = source([
+      '---',
+      'hcanvas: notebook',
+      'variables: {"distance": 120.5}',
+      'current_variables: {"distance": 130}',
+      'variables_initialized: true',
+      'custom: kept raw',
+      '---',
+      '',
+      'body',
+      '',
+    ]);
+    const parsed = parseNotebook(text);
+    expect(parsed.frontmatter.values.variables).toBe('{"distance": 120.5}');
+    expect(parsed.frontmatter.values.current_variables).toBe('{"distance": 130}');
+    expect(parsed.frontmatter.values.variables_initialized).toBe('true');
+    // Unknown keys stay out of values but are preserved in the raw frontmatter.
+    expect(parsed.frontmatter.values.custom).toBeUndefined();
+    expect(parsed.frontmatter.raw).toContain('custom: kept raw');
+  });
+
+  it('round-trips current_variables and variables_initialized through serialization', () => {
+    const text = source([
+      '---',
+      'hcanvas: notebook',
+      'variables: {"distance": 120.5}',
+      'current_variables: {"distance": 130}',
+      'variables_initialized: true',
+      'custom: kept raw',
+      '---',
+      '',
+      'body',
+      '',
+    ]);
+    const reparsed = parseNotebook(serializeNotebook(parseNotebook(text)));
+    expect(reparsed.frontmatter.values.variables).toBe('{"distance": 120.5}');
+    expect(reparsed.frontmatter.values.current_variables).toBe('{"distance": 130}');
+    expect(reparsed.frontmatter.values.variables_initialized).toBe('true');
+    expect(reparsed.frontmatter.raw).toContain('custom: kept raw');
   });
 
   it('parses markdown and executable code cells', () => {
@@ -131,5 +174,64 @@ describe('notebook format', () => {
   it('parses frontmatter only at the start of the file', () => {
     const lines = ['', '---', 'kernel: python', '---'];
     expect(parseFrontmatter(lines).frontmatter.present).toBe(false);
+  });
+});
+
+describe('notebook variable state migration', () => {
+  it('treats legacy variables-only frontmatter as current values', () => {
+    const parsed = parseNotebook(source([
+      '---',
+      'kernel: python',
+      'variables: {"distance": 120.5, "label": "old"}',
+      '---',
+      '',
+      F + 'python exec',
+      'print(distance)',
+      F,
+      '',
+    ]));
+    // Legacy files predate current_variables / variables_initialized, so both
+    // keys are absent from parsed.frontmatter.values.
+    expect(parsed.frontmatter.values.current_variables).toBeUndefined();
+    expect(parsed.frontmatter.values.variables_initialized).toBeUndefined();
+    const state = resolveNotebookVariableState(parsed.frontmatter.values);
+    expect(state.initialVariables).toEqual({ distance: 120.5, label: 'old' });
+    expect(state.variables).toEqual({ distance: 120.5, label: 'old' });
+    expect(state.variablesInitialized).toBe(true);
+  });
+
+  it('keeps separate initial and current values for new files', () => {
+    const parsed = parseNotebook(source([
+      '---',
+      'variables: {"distance": 120.5}',
+      'current_variables: {"distance": 130}',
+      'variables_initialized: true',
+      '---',
+      '',
+    ]));
+    const state = resolveNotebookVariableState(parsed.frontmatter.values);
+    expect(state.initialVariables).toEqual({ distance: 120.5 });
+    expect(state.variables).toEqual({ distance: 130 });
+    expect(state.variablesInitialized).toBe(true);
+  });
+
+  it('keeps an initial-only new file uninitialized when the flag is explicitly false', () => {
+    const parsed = parseNotebook(source([
+      '---',
+      'variables: {"distance": 120.5}',
+      'variables_initialized: false',
+      '---',
+      '',
+    ]));
+    const state = resolveNotebookVariableState(parsed.frontmatter.values);
+    expect(state.initialVariables).toEqual({ distance: 120.5 });
+    expect(state.variables).toEqual({});
+    expect(state.variablesInitialized).toBe(false);
+  });
+
+  it('treats current_variables without the initialized flag as initialized', () => {
+    const state = resolveNotebookVariableState({ current_variables: '{"answer": 42}' });
+    expect(state.variables).toEqual({ answer: 42 });
+    expect(state.variablesInitialized).toBe(true);
   });
 });

@@ -42,6 +42,8 @@ export interface KernelExecutionHandle {
 export interface KernelManagerDeps {
   request: KernelRequest;
   token(): string;
+  /** Delay before retrying a reconnect reconciliation while SSE is unavailable (default 3000 ms). */
+  reconcileDelayMs?: number;
 }
 
 interface PendingExecution {
@@ -72,8 +74,8 @@ export interface KernelInspection {
 export interface KernelManager {
   ensure(kernelId: string, scope: KernelScope): Promise<string>;
   execute(kernelId: string, code: string, options: { scope: KernelScope; cellId?: string; variables?: NotebookVariables }): Promise<KernelExecutionHandle>;
-  complete(kernelId: string, scope: KernelScope, code: string, cursorPos: number): Promise<KernelCompletion>;
-  inspect(kernelId: string, scope: KernelScope, code: string, cursorPos: number): Promise<KernelInspection>;
+  complete(kernelId: string, scope: KernelScope, code: string, cursorPos: number, variables?: NotebookVariables): Promise<KernelCompletion>;
+  inspect(kernelId: string, scope: KernelScope, code: string, cursorPos: number, variables?: NotebookVariables): Promise<KernelInspection>;
   interrupt(handle: KernelExecutionHandle): Promise<void>;
   restart(kernelId: string, scope: KernelScope): Promise<void>;
   stopAll(): Promise<void>;
@@ -93,9 +95,12 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
   const orphanFinishes = new Map<string, Record<string, unknown>>();
   let source: EventSource | null = null;
   let sseOpen = false;
-  let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let reconcileTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let lastSeq = 0;
+  const reconcileDelayMs = typeof deps.reconcileDelayMs === 'number' && Number.isFinite(deps.reconcileDelayMs) && deps.reconcileDelayMs >= 0
+    ? deps.reconcileDelayMs
+    : 3000;
   const openWaiters = new Set<(open: boolean) => void>();
 
   const notifyOpen = (open: boolean): void => {
@@ -106,15 +111,32 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
   const notifyStatus = (entry: PendingExecution, status: string): void => {
     for (const listener of [...entry.statusListeners]) { try { listener(status); } catch { /* isolate */ } }
   };
+  const clearReconcileTimer = (): void => {
+    if (!reconcileTimer) return;
+    clearTimeout(reconcileTimer);
+    reconcileTimer = undefined;
+  };
+  /** Single pending reconnect-reconcile timer; never poll while the SSE stream is healthy. */
+  const scheduleReconcile = (): void => {
+    if (disposed || reconcileTimer || !pending.size) return;
+    reconcileTimer = setTimeout(() => {
+      reconcileTimer = undefined;
+      void reconcilePending();
+    }, reconcileDelayMs);
+  };
 
-  const connect = (): void => {
+  const connect = (resumeFromCursor: boolean): void => {
     if (disposed || typeof EventSource === 'undefined') return;
     try {
       source?.close();
-      source = new EventSource('/api/runtime/events?token=' + encodeURIComponent(deps.token()) + '&after=' + lastSeq);
+      // The initial connection must not pin an "after" cursor: on auto-reconnect
+      // the browser replays from its own Last-Event-ID header instead of a stale
+      // query parameter. Only an explicit manual reconnect resumes from lastSeq.
+      const cursor = resumeFromCursor ? '&after=' + lastSeq : '';
+      source = new EventSource('/api/runtime/events?token=' + encodeURIComponent(deps.token()) + cursor);
     } catch { return; }
     source.addEventListener('hello', () => {
-      if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = undefined; }
+      clearReconcileTimer();
       for (const entry of pending.values()) {
         entry.disconnected = false;
         if (!entry.settled) notifyStatus(entry, 'running');
@@ -126,7 +148,13 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
       let record: Record<string, unknown>;
       try { record = JSON.parse((event as MessageEvent).data) as Record<string, unknown>; } catch { return; }
       const seq = Number(record.seq);
-      if (Number.isFinite(seq)) lastSeq = Math.max(lastSeq, Math.floor(seq));
+      if (Number.isFinite(seq)) {
+        const nextSeq = Math.floor(seq);
+        // Auto-reconnect replay can resend already-seen records; drop them so
+        // buffered stream/display outputs are not appended twice.
+        if (nextSeq <= lastSeq) return;
+        lastSeq = nextSeq;
+      }
       if (record.kind !== 'kernel') return;
       const executionId = typeof record.executionId === 'string' ? record.executionId : '';
       const name = typeof record.event === 'string' ? record.event : '';
@@ -170,12 +198,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
         if (!entry.settled) notifyStatus(entry, 'disconnected');
       }
       notifyOpen(false);
-      if (!pending.size) return;
-      if (disconnectTimer) clearTimeout(disconnectTimer);
-      disconnectTimer = setTimeout(() => {
-        disconnectTimer = undefined;
-        void reconcilePending();
-      }, 3000);
+      scheduleReconcile();
     });
   };
 
@@ -184,7 +207,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
     if (!source || source.readyState === EventSource.CLOSED) {
       source?.close();
       source = null;
-      connect();
+      connect(true);
     }
     return new Promise(resolve => {
       const waiter = (open: boolean): void => {
@@ -226,6 +249,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
     });
     for (const listener of [...entry.statusListeners]) { try { listener(status); } catch { /* isolate */ } }
     for (const [id, item] of pending) if (item === entry) pending.delete(id);
+    if (!pending.size) clearReconcileTimer();
   };
 
   const outputForStored = (item: Record<string, unknown>): KernelOutputEvent | null => {
@@ -243,6 +267,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
   const reconcilePending = async (): Promise<void> => {
     if (disposed || !pending.size) return;
     const entries = [...pending.values()];
+    let retry = false;
     await Promise.all(entries.map(async entry => {
       const executionId = [...pending.entries()].find(([, item]) => item === entry)?.[0];
       if (!executionId || entry.settled) return;
@@ -257,9 +282,31 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
             ...(typeof response.result.durationMs === 'number' ? { durationMs: response.result.durationMs } : {}),
             ...(response.result.error ? { error: response.result.error } : {}),
           });
-        } else if (response.state === 'queued' || response.state === 'running') notifyStatus(entry, response.state);
-      } catch { /* The normal event stream and watchdog remain available. */ }
+        } else if (response.state === 'unknown') {
+          // The server no longer knows this execution (kernel/session lost or the
+          // result cache was evicted). Do not leave the cell waiting for the
+          // 5-minute stream watchdog: tell the user to rerun.
+          settle(entry, {
+            status: 'aborted',
+            error: {
+              ename: 'KernelExecutionLost',
+              evalue: 'The kernel execution was lost: the server or kernel session was restarted before it finished. Rerun the cell after the kernel restarts.',
+              traceback: [],
+            },
+          });
+        } else {
+          if (response.state === 'queued' || response.state === 'running') notifyStatus(entry, response.state);
+          // The SSE stream is down, so no finish event can arrive; keep
+          // reconciling until the execution settles or the stream reopens.
+          if (!sseOpen) retry = true;
+        }
+      } catch {
+        // The normal event stream and watchdog remain available; retry while
+        // disconnected so a finished/lost execution does not wait 5 minutes.
+        if (!sseOpen) retry = true;
+      }
     }));
+    if (retry) scheduleReconcile();
   };
 
   const ensure = async (kernelId: string, scope: KernelScope): Promise<string> => {
@@ -351,10 +398,13 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
     };
   };
 
-  const complete = async (kernelId: string, scope: KernelScope, code: string, cursorPos: number): Promise<KernelCompletion> => {
-    const sessionId = await ensure(kernelId, scope);
+  const complete = async (kernelId: string, scope: KernelScope, code: string, cursorPos: number, variables?: NotebookVariables): Promise<KernelCompletion> => {
+    // Completion is a passive inspection: never spawn a kernel just because the
+    // user typed. Only query a session that already exists.
+    const sessionId = sessions.get(kernelId + '|' + scopeKey(scope));
+    if (!sessionId) return { matches: [], cursorStart: cursorPos, cursorEnd: cursorPos };
     const response = await deps.request<{ result?: { matches?: unknown; cursorStart?: unknown; cursorEnd?: unknown } }>('/api/kernels/' + encodeURIComponent(sessionId) + '/complete', {
-      method: 'POST', body: JSON.stringify({ code, cursorPos }),
+      method: 'POST', body: JSON.stringify({ code, cursorPos, ...(variables ? { variables } : {}) }),
     });
     const result = response.result || {};
     return {
@@ -364,10 +414,12 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
     };
   };
 
-  const inspect = async (kernelId: string, scope: KernelScope, code: string, cursorPos: number): Promise<KernelInspection> => {
-    const sessionId = await ensure(kernelId, scope);
+  const inspect = async (kernelId: string, scope: KernelScope, code: string, cursorPos: number, variables?: NotebookVariables): Promise<KernelInspection> => {
+    // Hover inspection is passive as well: never spawn a kernel for it.
+    const sessionId = sessions.get(kernelId + '|' + scopeKey(scope));
+    if (!sessionId) return {};
     const response = await deps.request<{ result?: { name?: string; signature?: string; documentation?: string } }>('/api/kernels/' + encodeURIComponent(sessionId) + '/inspect', {
-      method: 'POST', body: JSON.stringify({ code, cursorPos }),
+      method: 'POST', body: JSON.stringify({ code, cursorPos, ...(variables ? { variables } : {}) }),
     });
     return response.result || {};
   };
@@ -386,7 +438,7 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
 
   const dispose = (): void => {
     disposed = true;
-    if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = undefined; }
+    clearReconcileTimer();
     try { source?.close(); } catch { /* ignore */ }
     source = null;
     notifyOpen(false);
@@ -395,6 +447,6 @@ export function createKernelManager(deps: KernelManagerDeps): KernelManager {
     orphanFinishes.clear();
   };
 
-  connect();
+  connect(false);
   return { ensure, execute, complete, inspect, interrupt: handle => handle.cancel(), restart, stopAll, dispose, sessionOf: (kernelId, scope) => sessions.get(kernelId + '|' + scopeKey(scope)) || null };
 }

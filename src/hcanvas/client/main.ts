@@ -38,7 +38,7 @@ import { commandRegistry } from './commandRegistry.js';
 import { registerBuiltinViewer } from './builtinViewers.js';
 import { createNotebookViewer } from './notebookViewer.js';
 import { createNotebookPageDefinition, notebookPageMarkup } from './notebookPage.js';
-import { disposeExtensionPage, installExtensionPage, renderExtensionPage } from './extensionPage.js';
+import { disposeExtensionPage, flushExtensionPage, installExtensionPage, renderExtensionPage } from './extensionPage.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
 import { insertAssetIntoPage } from './assetInsert.js';
@@ -366,6 +366,7 @@ async function loadMasters(): Promise<void> {
   } catch { /* masters are optional */ }
 }
 async function openDoc(docId: string, pageId?: string, reopenTab = true): Promise<void> {
+  await flushExtensionPage();
   const result = await api<{ doc: HcDocument }>('/api/docs/' + docId);
   state.doc = result.doc;
   state.activePageId = pageId && result.doc.pages.some(page => page.id === pageId) ? pageId : result.doc.pages[0]?.id || null;
@@ -872,7 +873,9 @@ function bindStaticActions(): void {
     getKernels: () => extensionContributions<KernelDescriptor>('kernels').map(item => item.contribution),
     savePageData: async (pageId, data) => {
       const page = state.doc?.pages.find(item => item.id === pageId);
-      const format = page?.extension?.format || 'hadamard-notebook';
+      // A stale save must not write the old page into the new document.
+      if (!page) return false;
+      const format = page.extension?.format || 'hadamard-notebook';
       const result = await applyOps([{ op: 'update_page', pageId, patch: { extension: { format, data } } } as HcOp], { refreshArtboard: false });
       return Boolean(result);
     },

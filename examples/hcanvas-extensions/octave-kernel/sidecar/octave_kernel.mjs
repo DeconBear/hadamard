@@ -373,7 +373,10 @@ function startExecution(id, params) {
     '  catch',
     '  end',
     'end',
-    '__hc_known_figs__ = __hc_figs__;',
+    // Track only figures still open after closing the captured ones: Octave
+    // reuses the lowest free integer handle, so keeping closed handles here
+    // would filter out a later figure that reuses the same number.
+    "__hc_known_figs__ = get(0, 'children');",
     "fprintf('__HCANVAS_DONE__:%s\\n', __hc_status__);",
     ''
   ].join('\n');

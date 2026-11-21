@@ -254,7 +254,8 @@ async function main() {
   await page.locator('.file-context-menu button', { hasText: 'Delete' }).click();
   await page.waitForTimeout(700);
   assert('Folder deleted', await page.locator('#filesPanel .file-tree-node.directory', { hasText: 'e2e-folder' }).count() === 0);
-  await writeFile(path.join(workspace, 'external-refresh.md'), '# external refresh\n', 'utf8');
+  const externalFrontmatter = ['---', 'title: External refresh', 'tags:', '  - e2e', '---', ''].join('\n');
+  await writeFile(path.join(workspace, 'external-refresh.md'), externalFrontmatter + '\n<!-- keep this comment -->\n\n<details>\n<summary>Raw HTML block</summary>\nRaw HTML detail body.\n</details>\n\n# external refresh\n', 'utf8');
   await page.locator('#refreshFilesBtn').click();
   await page.waitForTimeout(700);
   assert('Files refresh discovers external changes', await page.locator('#filesPanel .file-tree-node', { hasText: 'external-refresh.md' }).count() > 0);
@@ -267,11 +268,16 @@ async function main() {
   assert('Markdown file preview is directly editable', (await fileFrame.locator('body').innerText()).includes('external refresh'));
   assert('Markdown help opens on first rich view', (await page.locator('.markdown-help-popover').innerText()).includes('MARKDOWN PAGE'));
   if (await page.locator('.markdown-help-popover').isVisible().catch(() => false)) await page.locator('[data-help-dismiss]').click();
-  await fileFrame.locator('body').click();
+  await fileFrame.locator('h1', { hasText: 'external refresh' }).click();
   await page.keyboard.press('Control+End');
   await page.keyboard.type('\n\nRich file marker');
   await page.waitForTimeout(1300);
-  assert('Markdown rich file edits auto-save', (await readFile(path.join(workspace, 'external-refresh.md'), 'utf8')).includes('Rich file marker'));
+  const richSavedMarkdown = await readFile(path.join(workspace, 'external-refresh.md'), 'utf8');
+  assert('Markdown rich file edits auto-save', richSavedMarkdown.includes('Rich file marker'));
+  assert('Markdown YAML frontmatter survives rich file editing', richSavedMarkdown.startsWith(externalFrontmatter), JSON.stringify(richSavedMarkdown.slice(0, 120)));
+  assert('Raw HTML blocks survive rich file editing', richSavedMarkdown.includes('<details>') && richSavedMarkdown.includes('<summary>Raw HTML block</summary>') && richSavedMarkdown.includes('Raw HTML detail body.'), JSON.stringify(richSavedMarkdown.slice(-200)));
+  assert('HTML comments survive rich file editing', richSavedMarkdown.includes('<!-- keep this comment -->'), JSON.stringify(richSavedMarkdown.slice(0, 300)));
+  assert('Rich editing never writes the Markdown page wrapper', !richSavedMarkdown.includes('<article') && !richSavedMarkdown.includes('hc-markdown-page'), JSON.stringify(richSavedMarkdown.slice(0, 300)));
   await fileFrame.locator('body').click({ button: 'right' });
   await page.locator('.file-surface-body .cm-content').waitFor();
   const fileSource = await page.locator('.file-surface-body .cm-content').innerText();
@@ -285,6 +291,7 @@ async function main() {
   assert('Preview restores rich editing after source changes', (await fileFrame.locator('body').innerText()).includes('Source file marker'));
   const savedMarkdownFile = await readFile(path.join(workspace, 'external-refresh.md'), 'utf8');
   assert('Rich and source edits persist in the same Markdown file', savedMarkdownFile.includes('Rich file marker') && savedMarkdownFile.includes('Source file marker'));
+  assert('Frontmatter and raw HTML survive the rich/source round trip', savedMarkdownFile.startsWith(externalFrontmatter) && savedMarkdownFile.includes('<details>') && savedMarkdownFile.includes('<summary>Raw HTML block</summary>') && savedMarkdownFile.includes('Raw HTML detail body.'), JSON.stringify(savedMarkdownFile.slice(0, 120)));
   await closeFileSurface.first().click();
 
   // Markdown page: direct rich-text editing and reopenable help.

@@ -86,18 +86,29 @@ function setupMarkdownRichEditing(iframe: HTMLIFrameElement, page: HcPage, optio
     checkbox.contentEditable = 'false';
   });
   attachMarkdownWysiwyg(doc, page.id, options.language);
+  try {
+    // Default new blocks to paragraphs, so converted Markdown never has to deal with
+    // browser-generated <div> wrappers inside the contenteditable body.
+    doc.execCommand('defaultParagraphSeparator', false, 'p');
+  } catch { /* not supported in every engine; block conversion still handles divs */ }
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let lastMarkdown = '';
+  const clearEmptyPlaceholder = (): void => {
+    doc.querySelectorAll('.markdown-empty').forEach(node => node.remove());
+  };
   const emit = (commit: boolean): void => {
     if (!doc.body) return;
+    clearEmptyPlaceholder();
     const markdown = htmlToMarkdown(doc.body);
-    lastMarkdown = markdown;
     if (commit) options.onMarkdownCommit?.(markdown);
     else options.onMarkdownChange?.(markdown);
   };
   doc.addEventListener('pointerdown', () => {
     parent.postMessage({ type: 'hcanvas:dismiss-context-menus' }, '*');
   }, true);
+  // Drop the rendered empty-state placeholder on the first focus/input so it is never
+  // converted into saved Markdown text for an otherwise empty document.
+  doc.addEventListener('focus', clearEmptyPlaceholder, true);
+  doc.addEventListener('input', clearEmptyPlaceholder, true);
   doc.addEventListener('input', () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => emit(false), 450);

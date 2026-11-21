@@ -1,4 +1,5 @@
 import type { EditorView } from 'codemirror';
+import { Transaction } from '@codemirror/state';
 import { renderStoredOutputsHtml } from '../execOutputs.js';
 import { renderMarkdownHtml } from '../markdown.js';
 import type { ComputationLanguage } from '../notebook/latexCompute.js';
@@ -17,6 +18,7 @@ import { parseVariablesCsv, parseVariablesJson, serializeVariablesJson } from '.
 import { NotebookUndoHistory } from '../notebook/undo.js';
 import type { NotebookRunMode } from './notebookCodeEditor.js';
 import type { NotebookEditorCell, NotebookEditorData } from '../notebook/types.js';
+import { cellKernel, computationLanguage, copy, defaultKernel, kernelForLanguage, restoreNotebookCells } from '../notebook/notebookEditorState.js';
 import {
   initializeNotebookVariables,
   normalizeNotebookVariableState,
@@ -60,34 +62,13 @@ export interface NotebookEditorHandle {
 const PLAY = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.2 1.8v8.4L10 6z"/></svg>';
 const STOP = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/></svg>';
 
-function copy<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function kernelForLanguage(kernels: KernelDescriptor[], language: string | undefined): KernelDescriptor | null {
-  const normalized = (language || '').toLowerCase();
-  return kernels.find(kernel => kernel.id.toLowerCase() === normalized || kernel.language.toLowerCase() === normalized || (kernel.defaultFor || []).some(item => item.toLowerCase() === normalized)) || null;
-}
-
-function defaultKernel(kernels: KernelDescriptor[], requested?: string): KernelDescriptor | null {
-  return kernels.find(kernel => kernel.id === requested) || kernelForLanguage(kernels, 'python') || kernelForLanguage(kernels, 'octave') || kernelForLanguage(kernels, 'cpp') || kernels[0] || null;
-}
-
-function cellKernel(data: NotebookEditorData, kernels: KernelDescriptor[], cell: NotebookEditorCell): KernelDescriptor | null {
-  return kernels.find(kernel => kernel.id === cell.kernelId) || kernelForLanguage(kernels, cell.language) || defaultKernel(kernels, data.defaultKernelId);
-}
-
-function computationLanguage(kernel: KernelDescriptor | null): ComputationLanguage {
-  const language = kernel?.language.toLowerCase();
-  return language === 'octave' || language === 'matlab' ? 'octave' : language === 'cpp' || language === 'c++' ? 'cpp' : 'python';
-}
-
 export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEditorHandle {
   const { host, data } = options;
   const kernels = options.kernels;
   const editors = new Map<string, EditorView>();
   const markdownRevisions = new Map<string, number>();
   const undoHistory = new NotebookUndoHistory(20);
+  const consumedTaskIds = new Set<string>();
   const selectedCellIds = new Set<string>();
   let activeCellId = data.cells[0]?.id || '';
   let commandMode = false;
@@ -103,6 +84,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   let executionGeneration = 0;
   let editVersion = 0;
   let savedVersion = 0;
+  let syncingEditor = false;
   let saveChain: Promise<void> = Promise.resolve();
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -249,18 +231,19 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   const undo = (): void => {
     const snapshot = undoHistory.restore();
     if (!snapshot) { options.toast('No notebook changes to undo.', 'info'); return; }
-    data.cells = snapshot.cells;
+    const previousActive = activeCellId;
+    data.cells = restoreNotebookCells(data.cells, snapshot.cells);
     data.variables = snapshot.variables;
     data.initialVariables = snapshot.initialVariables;
     data.variablesInitialized = snapshot.variablesInitialized;
-    activeCellId = data.cells[0]?.id || '';
+    activeCellId = data.cells.some(cell => cell.id === previousActive) ? previousActive : data.cells[0]?.id || '';
     activeCellId = mergeNotebookMarkdownSegments(data, activeCellId, selectedCellIds, markdownRevisions);
     selectedCellIds.clear();
     if (activeCellId) selectedCellIds.add(activeCellId);
     changeCellId = '';
     markDirty();
     renderVariables();
-    renderCells();
+    renderCells(true);
     syncSelection();
   };
   const setCellStatus = (id: string, text: string, tone = 'idle'): void => {
@@ -293,11 +276,12 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   const updateVariables = (events: KernelOutputEvent[]): boolean => {
     const next = variablesFromEvents(events);
     if (!Object.keys(next).length) return false;
-    const merged = { ...(data.variables || {}), ...next };
-    if (JSON.stringify(merged) === JSON.stringify(data.variables)) return false;
-    data.variables = merged;
+    // Kernels publish a full snapshot; replace so deleted variables disappear.
+    if (JSON.stringify(next) === JSON.stringify(data.variables)) return false;
+    const previousNames = Object.keys(data.variables || {});
+    data.variables = next;
     renderVariables();
-    markAffected([], Object.keys(next));
+    markAffected([], [...new Set([...previousNames, ...Object.keys(next)])]);
     markDirty();
     return true;
   };
@@ -316,6 +300,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   };
 
   const attachTask = (cell: NotebookEditorCell, task: NotebookExecutionTask, mode: NotebookRunMode = 'stay'): Promise<void> => {
+    consumedTaskIds.add(task.id);
     const existing = taskWaits.get(cell.id);
     if (subscriptions.has(cell.id) && existing) return existing.promise;
     let resolveWait: () => void = () => undefined;
@@ -549,7 +534,9 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   };
   const exportHtml = (): void => {
     syncMarkdownSources();
-    exportNotebookHtml(options.title, data, kernels);
+    void exportNotebookHtml(options.title, data, kernels).catch(error => {
+      if (!disposed) options.toast(error instanceof Error ? error.message : String(error), 'error');
+    });
   };
 
   const renderCodeCell = (cell: NotebookEditorCell, index: number): string => renderNotebookCodeCell(data, kernels, cell, index);
@@ -595,7 +582,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     }, { signal });
   }
 
-  function renderCells(): void {
+  function renderCells(forceMarkdown = false): void {
     if (disposed) return;
     if (!cellsAbort) cellsAbort = new AbortController();
     const signal = cellsAbort.signal;
@@ -634,7 +621,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
             toggle.setAttribute('aria-expanded', String(!cell.hideCode));
             toggle.setAttribute('aria-label', cell.hideCode ? 'Expand code' : 'Collapse code');
           }
-        } else if (section.dataset.nbRenderedSource !== cell.source) {
+        } else if (forceMarkdown || section.dataset.nbRenderedSource !== cell.source) {
           const view = section.querySelector<HTMLElement>('[data-nb-markdown-view]');
           if (view) {
             view.innerHTML = cell.source.trim() ? sanitizeMarkdownHtml(renderMarkdownHtml(cell.source)) : '<p class="nb-md-placeholder" data-nb-generated-placeholder="true">Write Markdown, $E=mc^2$, or paste an image URL…</p>';
@@ -660,6 +647,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
         editor = mountNotebookCodeEditor({
           parent: container, source: cell.source, language: kernel?.language || cell.language || 'text', readOnly: cell.executable === false,
           onChange: source => {
+            if (syncingEditor) return;
             beginCellChange(cell.id);
             cell.source = source;
             markAffected([cell.id]);
@@ -678,19 +666,32 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
           complete: async (source, position) => {
             const manager = options.getKernelManager();
             if (!manager || !kernel?.features?.includes('complete')) return null;
-            try { return await manager.complete(kernel.id, options.scope, source, position); } catch { return null; }
+            try { return await manager.complete(kernel.id, options.scope, source, position, data.variables || {}); } catch { return null; }
           },
           inspect: async (source, position) => {
             const manager = options.getKernelManager();
             if (!manager || !kernel?.features?.includes('inspect')) return null;
-            try { return await manager.inspect(kernel.id, options.scope, source, position); } catch { return null; }
+            try { return await manager.inspect(kernel.id, options.scope, source, position, data.variables || {}); } catch { return null; }
           },
         });
         editors.set(cell.id, editor);
       }
+      if (editor.state.doc.toString() !== cell.source) {
+        // Keep the live CodeMirror view in sync without treating it as user input.
+        syncingEditor = true;
+        try {
+          editor.dispatch({
+            changes: { from: 0, to: editor.state.doc.length, insert: cell.source },
+            annotations: Transaction.addToHistory.of(false),
+          });
+        } finally {
+          syncingEditor = false;
+        }
+      }
       refreshOutput(cell);
       const existingTask = notebookExecutionCenter.getForCell(options.scope, cell.id);
-      if (existingTask && (existingTask.outputs || ['queued', 'running', 'disconnected'].includes(existingTask.status))) void attachTask(cell, existingTask);
+      const activeTask = Boolean(existingTask && ['queued', 'running', 'disconnected'].includes(existingTask.status));
+      if (existingTask && (activeTask || (existingTask.outputs && !consumedTaskIds.has(existingTask.id)))) void attachTask(cell, existingTask);
     });
     if (!selectedCellIds.size && activeCellId) selectedCellIds.add(activeCellId);
     syncSelection();
@@ -719,7 +720,16 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
     }
     else if (button.dataset.nbClear) {
       const cell = data.cells.find(item => item.id === button.dataset.nbClear);
-      if (cell) { cell.outputs = []; cell.stale = false; refreshOutput(cell); markDirty(); options.persistOutputs?.(data); }
+      if (cell) {
+        cell.outputs = [];
+        cell.stale = false;
+        // Do not resurrect a cleared output when the notebook is reopened.
+        const task = notebookExecutionCenter.getForCell(options.scope, cell.id);
+        if (task && !['queued', 'running', 'disconnected'].includes(task.status)) task.outputs = undefined;
+        refreshOutput(cell);
+        markDirty();
+        options.persistOutputs?.(data);
+      }
     }
   });
   cellsHost.addEventListener('change', event => {

@@ -54,6 +54,18 @@ describe('notebook execution center', () => {
     unsubscribe();
   });
 
+  it('settles a failed execution so notebook waits and cells cannot hang', async () => {
+    const center = new NotebookExecutionCenter();
+    const runtime = handleMock();
+    const failing = manager(runtime.handle);
+    failing.execute = vi.fn(async () => { throw new Error('kernel ensure failed'); });
+    const task = center.start({ cellId: 'cell_failure', notebookTitle: 'Demo', scope, kernel, source: 'print(1)', variables: {}, manager: failing, request: async <T = Record<string, unknown>>(): Promise<T> => ({}) as T });
+    await vi.waitFor(() => expect(task.status).toBe('failed'));
+    expect(task.outputs).toEqual([]);
+    expect(task.error).toContain('kernel ensure failed');
+    expect(center.getForCell(scope, 'cell_failure')?.outputs).toEqual([]);
+  });
+
   it('reuses active cells and supports cancellation', async () => {
     const center = new NotebookExecutionCenter();
     const runtime = handleMock();

@@ -99,5 +99,94 @@ describe('kernel client event ordering', () => {
     source.close();
     await manager.execute('python', 'print(1)', { scope });
     expect(FakeEventSource.instances.at(-1)!.url).toContain('after=41');
+    expect(FakeEventSource.instances[0]!.url).not.toContain('after=');
   });
+
+  it('deduplicates the same sequenced runtime event replayed after a reconnect', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const manager = createKernelManager({
+      token: () => 'test',
+      request: async <T = Record<string, unknown>>(pathname: string): Promise<T> => {
+        if (pathname === '/api/kernels/ensure') return { session: { sessionId: 'ks_dedupe' } } as T;
+        if (pathname.endsWith('/execute')) return { executionId: 'exec_dedupe', sessionId: 'ks_dedupe' } as T;
+        throw new Error('Unexpected request: ' + pathname);
+      },
+    });
+    managers.push(manager);
+    const scope = { kind: 'page' as const, key: 'p_dedupe' };
+    const handle = await manager.execute('python', 'print(1)', { scope });
+    const source = FakeEventSource.instances.at(-1)!;
+    const replayed = { seq: 7, kind: 'kernel', executionId: 'exec_dedupe', event: 'stream', payload: { stream: 'stdout', text: 'once\n' } };
+    source.emit('runtime', replayed);
+    source.emit('runtime', replayed);
+    source.emit('runtime', { seq: 8, kind: 'kernel', executionId: 'exec_dedupe', event: 'execution_finished', payload: { status: 'ok' } });
+    const result = await handle.done;
+    expect(result.outputs).toHaveLength(1);
+    expect(result.outputs[0]).toEqual({ kind: 'stream', stream: 'stdout', text: 'once\n' });
+  });
+
+  it('settles a lost execution promptly instead of waiting for the five-minute watchdog', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    let lookups = 0;
+    const manager = createKernelManager({
+      token: () => 'test',
+      reconcileDelayMs: 20,
+      request: async <T = Record<string, unknown>>(pathname: string): Promise<T> => {
+        if (pathname === '/api/kernels/ensure') return { session: { sessionId: 'ks_lost' } } as T;
+        if (pathname.endsWith('/execute')) return { executionId: 'exec_lost', sessionId: 'ks_lost' } as T;
+        if (pathname.startsWith('/api/kernels/executions/')) {
+          lookups += 1;
+          return { state: lookups < 3 ? 'running' : 'unknown' } as T;
+        }
+        throw new Error('Unexpected request: ' + pathname);
+      },
+    });
+    managers.push(manager);
+    const scope = { kind: 'page' as const, key: 'p_lost' };
+    const handle = await manager.execute('python', 'while True: pass', { scope });
+    const statuses: string[] = [];
+    handle.onStatus(status => statuses.push(status));
+    const source = FakeEventSource.instances.at(-1)!;
+    const started = Date.now();
+    source.emit('error', {});
+    expect(statuses).toContain('disconnected');
+    const result = await handle.done;
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(result.status).toBe('aborted');
+    expect(result.error?.ename).toBe('KernelExecutionLost');
+    expect(result.error?.evalue).toMatch(/lost/i);
+    expect(result.error?.evalue).toMatch(/rerun/i);
+    expect(lookups).toBe(3);
+    expect(statuses).toContain('running');
+  }, 10_000);
+
+  it('does not poll execution lookups while the SSE stream is healthy', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    let lookups = 0;
+    const manager = createKernelManager({
+      token: () => 'test',
+      reconcileDelayMs: 20,
+      request: async <T = Record<string, unknown>>(pathname: string): Promise<T> => {
+        if (pathname === '/api/kernels/ensure') return { session: { sessionId: 'ks_healthy' } } as T;
+        if (pathname.endsWith('/execute')) return { executionId: 'exec_healthy', sessionId: 'ks_healthy' } as T;
+        if (pathname.startsWith('/api/kernels/executions/')) {
+          lookups += 1;
+          return { state: 'running' } as T;
+        }
+        throw new Error('Unexpected request: ' + pathname);
+      },
+    });
+    managers.push(manager);
+    const scope = { kind: 'page' as const, key: 'p_healthy' };
+    const handle = await manager.execute('python', 'while True: pass', { scope });
+    const source = FakeEventSource.instances.at(-1)!;
+    source.emit('hello', {});
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(lookups).toBe(1);
+    source.emit('runtime', { seq: 1, kind: 'kernel', executionId: 'exec_healthy', event: 'execution_finished', payload: { status: 'ok' } });
+    const result = await handle.done;
+    expect(result.status).toBe('ok');
+    await new Promise(resolve => setTimeout(resolve, 80));
+    expect(lookups).toBe(1);
+  }, 10_000);
 });

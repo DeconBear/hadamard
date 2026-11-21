@@ -51,7 +51,16 @@ export interface ParsedNotebook {
 }
 
 const FENCE = String.fromCharCode(96).repeat(3);
-const FRONTMATTER_KEYS = new Set(['hcanvas', 'version', 'title', 'kernel', 'execute', 'variables']);
+const FRONTMATTER_KEYS = new Set([
+  'hcanvas',
+  'version',
+  'title',
+  'kernel',
+  'execute',
+  'variables',
+  'current_variables',
+  'variables_initialized',
+]);
 
 function detectEol(text: string): string {
   const index = text.indexOf('\n');

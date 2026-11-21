@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { SidecarBroker } from '../src/hcanvas/sidecar/broker.js';
+import { handleKernelRoute, type HcRuntimeServices } from '../src/hcanvas/sidecar/routes.js';
 import { HcKernelManager, kernelSessionKey } from '../src/hcanvas/sidecar/kernelSession.js';
 import {
   HcRuntimeError,
@@ -37,7 +39,13 @@ interface KernelHarness {
   workspaceDir: string;
 }
 
-async function createHarness(options: { limits?: Partial<HcKernelLimits> } = {}): Promise<KernelHarness> {
+interface HarnessOptions {
+  limits?: Partial<HcKernelLimits>;
+  completedExecutionMaxEntries?: number;
+  completedExecutionMaxBytes?: number;
+}
+
+async function createHarness(options: HarnessOptions = {}): Promise<KernelHarness> {
   const extensionDir = await mkdtemp(path.join(os.tmpdir(), 'hc-kernel-ext-'));
   const workspaceDir = await mkdtemp(path.join(os.tmpdir(), 'hc-kernel-ws-'));
   roots.push(extensionDir, workspaceDir);
@@ -84,6 +92,8 @@ async function createHarness(options: { limits?: Partial<HcKernelLimits> } = {})
       ...(options.limits ?? {}),
     },
     onEvent: event => events.push(event),
+    ...(typeof options.completedExecutionMaxEntries === 'number' ? { completedExecutionMaxEntries: options.completedExecutionMaxEntries } : {}),
+    ...(typeof options.completedExecutionMaxBytes === 'number' ? { completedExecutionMaxBytes: options.completedExecutionMaxBytes } : {}),
   });
   managers.push(manager);
   return { manager, broker, events, sidecarEvents, kernelEntry, workspaceDir };
@@ -354,5 +364,79 @@ describe('HKP kernel manager', () => {
     const harness = await createHarness();
     const error = errorOf(await harness.manager.ensure('missing-kernel', { kind: 'custom', key: 'x' }).catch(value => value));
     expect(error.code).toBe('kernel_not_found');
+  });
+
+  it('evicts completed executions beyond the output-byte budget', async () => {
+    const harness = await createHarness({ completedExecutionMaxBytes: 1_500 });
+    const session = await harness.manager.ensure('fake', { kind: 'document', key: 'doc_cache_bytes' });
+    const first = await harness.manager.execute(session.sessionId, 'big:600');
+    const second = await harness.manager.execute(session.sessionId, 'big:600');
+    const third = await harness.manager.execute(session.sessionId, 'big:600');
+    const firstLookup = harness.manager.execution(first.executionId);
+    expect(firstLookup.state).toBe('unknown');
+    const secondLookup = harness.manager.execution(second.executionId);
+    expect(secondLookup.state).toBe('completed');
+    expect(secondLookup.result?.outputs.totalBytes).toBe(600);
+    const thirdLookup = harness.manager.execution(third.executionId);
+    expect(thirdLookup.state).toBe('completed');
+    expect(thirdLookup.result?.status).toBe('ok');
+  }, 15_000);
+
+  it('clears the completed execution cache on disposeAll', async () => {
+    const harness = await createHarness();
+    const session = await harness.manager.ensure('fake', { kind: 'document', key: 'doc_cache_dispose' });
+    const result = await harness.manager.execute(session.sessionId, 'print("cached")');
+    expect(harness.manager.execution(result.executionId).state).toBe('completed');
+    await harness.manager.disposeAll();
+    expect(harness.manager.execution(result.executionId).state).toBe('unknown');
+  });
+});
+
+describe('kernel execution lookup route', () => {
+  it('checks the kernel guard before returning a lookup', async () => {
+    const actions: string[] = [];
+    let lookedUp = false;
+    let status = 0;
+    let body = '';
+    interface FakeResponse {
+      writableEnded: boolean;
+      writeHead(code: number, headers?: Record<string, string>): void;
+      end(chunk?: string): void;
+    }
+    const fake: FakeResponse = {
+      writableEnded: false,
+      writeHead(code) {
+        status = code;
+      },
+      end(chunk) {
+        body += chunk ?? '';
+        fake.writableEnded = true;
+      },
+    };
+    const res = fake as unknown as ServerResponse;
+    const services = {
+      guard: (action: string) => {
+        actions.push(action);
+        return { ok: false, code: 'trusted_required', message: 'Workspace is not trusted' };
+      },
+      kernels: {
+        execution: () => {
+          lookedUp = true;
+          return { state: 'unknown' };
+        },
+      },
+    } as unknown as HcRuntimeServices;
+    const handled = await handleKernelRoute(services, {
+      req: {} as IncomingMessage,
+      res,
+      url: new URL('http://127.0.0.1/api/kernels/executions/exec_1'),
+      pathname: '/api/kernels/executions/exec_1',
+      method: 'GET',
+    });
+    expect(handled).toBe(true);
+    expect(actions).toEqual(['kernel']);
+    expect(lookedUp).toBe(false);
+    expect(status).toBe(403);
+    expect(JSON.parse(body).code).toBe('trusted_required');
   });
 });

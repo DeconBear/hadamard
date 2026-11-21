@@ -165,9 +165,17 @@ export class NotebookExecutionCenter {
     } catch (error) {
       task.status = 'failed';
       task.error = error instanceof Error ? error.message : String(error);
+      // A failed task has no kernel result to persist, but it must still be a
+      // settled task: the notebook editor resolves its wait handle from the
+      // `outputs` branch and clears the cell's running state there. Without
+      // this an ensure/execute failure would leave the cell locked forever.
+      task.outputs = [];
       this.emit(task);
     } finally {
       task.handle = undefined;
+      if (['ok', 'error', 'aborted', 'cancelled', 'failed'].includes(task.status)) {
+        if (this.activeByCell.get(task.key) === task.id) this.activeByCell.delete(task.key);
+      }
     }
   }
 }

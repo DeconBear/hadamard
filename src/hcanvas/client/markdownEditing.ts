@@ -11,8 +11,23 @@ function isTransientUi(element: HTMLElement): boolean {
   return element.classList.contains('hc-slash-menu') || element.classList.contains('hc-formula-editor');
 }
 
+function commentMarkdown(node: Node): string {
+  return '<!--' + (node.nodeValue || '') + '-->';
+}
+
+/**
+ * Block-level HTML tags that Markdown has no native syntax for.
+ * Their raw markup is preserved verbatim instead of being flattened.
+ */
+const RAW_BLOCK_TAGS = new Set([
+  'address', 'article', 'aside', 'audio', 'canvas', 'dd', 'details', 'dialog', 'div', 'dl', 'dt',
+  'embed', 'fieldset', 'figcaption', 'footer', 'form', 'header', 'hgroup', 'iframe', 'main',
+  'nav', 'noscript', 'object', 'section', 'summary', 'template', 'video',
+]);
+
 function inline(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return escapeMarkdownText(node.textContent || '');
+  if (node.nodeType === Node.COMMENT_NODE) return commentMarkdown(node);
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
   const element = node as HTMLElement;
   const tag = element.tagName.toLowerCase();
@@ -31,6 +46,7 @@ function inline(node: Node): string {
     const href = element.getAttribute('href') || '';
     return href ? '[' + text + '](' + href + ')' : text;
   }
+  if (tag === 'input') return '';
   if (tag === 'img') {
     const src = element.getAttribute('src') || '';
     const alt = (element.getAttribute('alt') || '').replace(/"/g, '&quot;');
@@ -39,7 +55,9 @@ function inline(node: Node): string {
     if (Number.isFinite(width) && width > 0) return '<img src="' + src.replace(/"/g, '&quot;') + '" alt="' + alt + '" width="' + Math.round(width) + '">';
     return '![' + alt.replace(/\]/g, '\\]') + '](' + src + ')';
   }
-  return Array.from(element.childNodes).map(inline).join('');
+  // Unknown inline HTML (e.g. <sup>, <kbd>, <abbr>) has no Markdown form; keep
+  // the raw element rather than silently dropping its markup on autosave.
+  return element.outerHTML;
 }
 
 function blockText(element: HTMLElement): string {
@@ -84,7 +102,12 @@ function tableMarkdown(element: HTMLElement): string {
   ].join('\n');
 }
 
+function childBlocks(element: HTMLElement): string {
+  return Array.from(element.childNodes).map(blockMarkdown).filter(Boolean).join('\n\n');
+}
+
 function blockMarkdown(node: Node): string {
+  if (node.nodeType === Node.COMMENT_NODE) return commentMarkdown(node);
   if (node.nodeType === Node.TEXT_NODE) {
     const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
     return text ? escapeMarkdownText(text) : '';
@@ -93,6 +116,8 @@ function blockMarkdown(node: Node): string {
   const element = node as HTMLElement;
   const tag = element.tagName.toLowerCase();
   if (tag === 'script' || tag === 'style' || isTransientUi(element)) return '';
+  if (element.classList.contains('hc-markdown-page')) return childBlocks(element);
+  if (element.classList.contains('markdown-empty')) return '';
   const tex = element.getAttribute('data-tex');
   if (tex) return element.classList.contains('hc-math-block') ? '$$' + tex + '$$' : '$' + tex + '$';
   if (/^h[1-6]$/.test(tag)) return '#'.repeat(Number(tag[1])) + ' ' + blockText(element);
@@ -113,7 +138,12 @@ function blockMarkdown(node: Node): string {
   }
   if (tag === 'table') return tableMarkdown(element);
   if (tag === 'br') return '';
-  return Array.from(element.childNodes).map(blockMarkdown).filter(Boolean).join('\n\n');
+  // Chrome's contenteditable emits bare <div> wrappers for Enter; flatten those
+  // (turning them into raw HTML would pollute every saved Markdown file) while
+  // preserving explicitly attributed raw <div> blocks.
+  if (tag === 'div' && !element.attributes.length) return childBlocks(element);
+  if (RAW_BLOCK_TAGS.has(tag)) return element.outerHTML;
+  return childBlocks(element);
 }
 
 /** Convert an editable Markdown page body into normalized Markdown. */

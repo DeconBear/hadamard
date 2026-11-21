@@ -483,6 +483,7 @@ export async function handleKernelRoute(services: HcRuntimeServices, ctx: HcRunt
     }
     const executionMatch = /^\/api\/kernels\/executions\/([^/]+)$/u.exec(ctx.pathname);
     if (executionMatch && ctx.method === 'GET') {
+      await assertAllowed(services, 'kernel');
       json(ctx.res, 200, { ok: true, ...services.kernels.execution(decodeURIComponent(executionMatch[1]!)) });
       return true;
     }
@@ -505,9 +506,12 @@ export async function handleKernelRoute(services: HcRuntimeServices, ctx: HcRunt
       const body = await readBody(ctx.req);
       if (typeof body.code !== 'string') throw new HcRuntimeError('invalid_params', 'code is required');
       const cursorPos = typeof body.cursorPos === 'number' && Number.isFinite(body.cursorPos) ? Math.max(0, Math.floor(body.cursorPos)) : body.code.length;
+      const variables = body.variables && typeof body.variables === 'object' && !Array.isArray(body.variables)
+        ? body.variables as Record<string, unknown>
+        : undefined;
       const result = action === 'complete'
-        ? await services.kernels.complete(sessionId, body.code, cursorPos)
-        : await services.kernels.inspect(sessionId, body.code, cursorPos);
+        ? await services.kernels.complete(sessionId, body.code, cursorPos, variables)
+        : await services.kernels.inspect(sessionId, body.code, cursorPos, variables);
       json(ctx.res, 200, { ok: true, result });
       return true;
     }
