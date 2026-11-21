@@ -1856,3 +1856,7 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .nb-actions .nb-notebook-export { width:30px; height:30px; border:1px solid #e3dce8; border-radius:8px; background:#fff; color:#756683; }
 .nb-actions .nb-notebook-export:hover { border-color:#cbbbd9; background:#f5f1f9; color:#5e4694; }
 .nb-run-group .btn:focus-visible, .nb-session-group .btn:focus-visible, .nb-notebook-export:focus-visible { outline:2px solid rgba(111,83,177,.22); outline-offset:1px; }
+
+.nb-variable-panel.floating .nb-variable-bar { cursor:grab; user-select:none; touch-action:none; }
+.nb-variable-panel.floating.dragging .nb-variable-bar { cursor:grabbing; }
+.nb-variable-panel.floating.dragging { user-select:none; }

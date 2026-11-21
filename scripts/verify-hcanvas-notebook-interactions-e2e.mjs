@@ -153,6 +153,16 @@ async function main() {
     await page.locator('[data-nb-variable-expand]').click();
     await page.locator('[data-nb-variable-popout]').click();
     assert('variable dock pops out as a floating topmost window', await page.locator('[data-nb-variable-panel]').evaluate(element => element.classList.contains('floating') && getComputedStyle(element).position === 'fixed') && await page.locator('[data-nb-variable-body]').evaluate(element => !element.classList.contains('hidden')));
+    const variablePanel = page.locator('[data-nb-variable-panel]');
+    const variableBeforeDrag = await variablePanel.boundingBox();
+    const variableBar = await page.locator('.nb-variable-summary').boundingBox();
+    if (!variableBeforeDrag || !variableBar) throw new Error('Variable panel drag bounds are unavailable');
+    await page.mouse.move(variableBar.x + 45, variableBar.y + variableBar.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(variableBar.x - 75, variableBar.y + variableBar.height / 2 + 70, { steps: 5 });
+    await page.mouse.up();
+    const variableAfterDrag = await variablePanel.boundingBox();
+    assert('floating variable panel moves with mouse drag', Boolean(variableAfterDrag && variableAfterDrag.x < variableBeforeDrag.x - 60 && variableAfterDrag.y > variableBeforeDrag.y + 40), JSON.stringify({ variableBeforeDrag, variableAfterDrag }));
     await page.locator('[data-nb-variable-popout]').click();
     assert('variable dock returns inline without collapsing', await page.locator('[data-nb-variable-panel]').evaluate(element => !element.classList.contains('floating')) && await page.locator('[data-nb-variable-expand]').getAttribute('aria-expanded') === 'true');
     await page.locator('[data-nb-new-name]').fill('distance');
