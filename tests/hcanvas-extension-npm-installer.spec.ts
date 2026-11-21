@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -9,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HcExtensionError } from '../src/hcanvas/extensions/manifest.js';
 import {
   NPM_INSTALL_PROVENANCE_FILE,
+  installLocalTarballExtension,
   installNpmExtension,
   type HcNpmExtensionInstallRequest,
   type HcNpmExtensionInstallResult,
@@ -17,7 +19,7 @@ import { handleExtensionRoute } from '../src/hcanvas/extensions/routes.js';
 import type { HcExtensionLoaderOptions } from '../src/hcanvas/extensions/loader.js';
 
 const EXTENSION_SCHEMA = 'hcanvas-extension/1';
-const ENV_KEYS = ['HCANVAS_NPM_REGISTRY', 'HCANVAS_NPM_TOKEN', 'NPM_TOKEN', 'HCANVAS_NPM_OFFLINE'] as const;
+const ENV_KEYS = ['HCANVAS_NPM_REGISTRY', 'HCANVAS_NPM_TOKEN', 'NPM_TOKEN', 'HCANVAS_NPM_OFFLINE', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY'] as const;
 
 let temp = '';
 let workspace = '';
@@ -254,6 +256,50 @@ class FakeRegistry {
     if (!server) return;
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
+}
+
+
+interface ForwardProxy { url: string; requests: string[]; close(): Promise<void>; }
+
+async function startForwardProxy(): Promise<ForwardProxy> {
+  const requests: string[] = [];
+  const server = createServer((req, res) => {
+    const target = req.url ?? '';
+    if (process.env.HCANVAS_PROXY_DEBUG) console.log('PROXY REQUEST', req.method, target);
+    requests.push(target);
+    let parsed: URL;
+    try { parsed = new URL(target); } catch {
+      res.writeHead(400);
+      res.end('bad proxy target');
+      return;
+    }
+    const upstream = httpRequest(parsed, { method: req.method, headers: { ...req.headers, host: parsed.host } }, response => {
+      res.writeHead(response.statusCode ?? 502, response.headers);
+      response.pipe(res);
+    });
+    upstream.on('error', error => { if (process.env.HCANVAS_PROXY_DEBUG) console.log('PROXY UPSTREAM ERROR', error.message); if (!res.headersSent) res.writeHead(502); res.end('proxy upstream error'); });
+    req.pipe(upstream);
+  });
+  server.on('connect', (req, clientSocket, head) => {
+    if (process.env.HCANVAS_PROXY_DEBUG) console.log('PROXY CONNECT', req.url);
+    requests.push('CONNECT ' + req.url);
+    const [host, portText] = String(req.url).split(':');
+    const upstream = net.connect(Number(portText) || 443, host, () => {
+      clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      if (head.length) upstream.write(head);
+      upstream.pipe(clientSocket);
+      clientSocket.pipe(upstream);
+    });
+    upstream.on('error', () => clientSocket.destroy());
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  return {
+    url: 'http://127.0.0.1:' + port,
+    requests,
+    async close() { await new Promise<void>(resolve => server.close(() => resolve())); },
+  };
 }
 
 function loaderOptions(): HcExtensionLoaderOptions {
@@ -531,6 +577,31 @@ describe('npm extension installer', () => {
     expect(await exists(path.join(extensionRoot(), 'hcanvas.kernel-demo', 'manifest.json'))).toBe(true);
   });
 
+  it('installs a local tarball with tarball provenance and overwrite rollback-safe behavior', async () => {
+    const pkg = fakePackage({ name: 'acme-local-tarball', version: '1.0.0', manifest: defaultManifest('1.0.0', { id: 'com.acme.local-tarball' }) });
+    const tarballPath = path.join(temp, 'acme-local-tarball.tgz');
+    await writeFile(tarballPath, pkg.tarball);
+    const first = await installLocalTarballExtension(workspace, { source: 'tarball', path: tarballPath, scope: 'workspace' }, loaderOptions());
+    expect(first.id).toBe('com.acme.local-tarball');
+    expect(first.provenance.source).toBe('tarball');
+    expect(first.provenance.packageName).toBe('acme-local-tarball');
+    expect(String(first.provenance.integrity)).toMatch(/^sha512-/);
+    expect(first.extension?.provenance).toMatchObject({ source: 'tarball', packageName: 'acme-local-tarball' });
+    expect(await exists(path.join(extensionRoot(), 'com.acme.local-tarball', 'manifest.json'))).toBe(true);
+    const conflict = await captureError(installLocalTarballExtension(workspace, { source: 'tarball', path: tarballPath, scope: 'workspace' }, loaderOptions()));
+    expect(conflict.code).toBe('conflict');
+    const replaced = await installLocalTarballExtension(workspace, { source: 'tarball', path: tarballPath, scope: 'workspace', overwrite: true }, loaderOptions());
+    expect(replaced.id).toBe('com.acme.local-tarball');
+    expect(await hiddenInstallDirs(extensionRoot())).toEqual([]);
+  });
+
+  it('rejects missing, oversized and malformed local tarballs', async () => {
+    await expect(installLocalTarballExtension(workspace, { source: 'tarball', path: path.join(temp, 'missing.tgz') }, loaderOptions())).rejects.toMatchObject({ code: 'not_found' });
+    const badPath = path.join(temp, 'bad.tgz');
+    await writeFile(badPath, 'not a tarball');
+    await expect(installLocalTarballExtension(workspace, { source: 'tarball', path: badPath }, loaderOptions())).rejects.toMatchObject({ code: 'invalid_manifest' });
+  });
+
   it('installs user-scope extensions into the discovery user root', async () => {
     registry.addPackage(fakePackage({
       name: 'acme-user-scope',
@@ -652,6 +723,25 @@ describe('npm extension installer', () => {
     expect(registry.requests.slice(authorizedMarker).every(request => request.authorization === 'Bearer expected-secret')).toBe(true);
   });
 
+  it('uses HTTP_PROXY for registry/tarball requests and reports an unreachable proxy', async () => {
+    registry.addPackage(fakePackage({ name: 'acme-proxy-ext', version: '1.0.0', manifest: defaultManifest('1.0.0', { id: 'com.acme.proxy' }) }));
+    const proxy = await startForwardProxy();
+    try {
+      delete process.env.HTTPS_PROXY;
+      delete process.env.NO_PROXY;
+      process.env.HTTP_PROXY = proxy.url;
+      const result = await installNpm({ packageName: 'acme-proxy-ext', version: '1.0.0', registry: registry.url });
+      expect(result.id).toBe('com.acme.proxy');
+      expect(proxy.requests.length).toBeGreaterThan(0);
+    } finally {
+      await proxy.close();
+    }
+    registry.addPackage(fakePackage({ name: 'acme-proxy-fail', version: '1.0.0', manifest: defaultManifest('1.0.0', { id: 'com.acme.proxy-fail' }) }));
+    process.env.HTTP_PROXY = 'http://127.0.0.1:1';
+    const error = await captureError(installNpm({ packageName: 'acme-proxy-fail', version: '1.0.0', registry: registry.url, timeoutMs: 1500 }));
+    expect(error.message.length).toBeGreaterThan(0);
+  }, 30_000);
+
   it('keeps folder/json installs unchanged and exposes npm installs over the HTTP route', async () => {
     const route = async (pathname: string, body: Record<string, unknown>): Promise<{ status: number; payload: Record<string, unknown> }> => {
       let captured: { status: number; payload: Record<string, unknown> } | undefined;
@@ -725,7 +815,14 @@ describe('npm extension installer', () => {
     expect(jsonResponse.payload.id).toBe('com.example.json');
     expect('provenance' in jsonResponse.payload).toBe(false);
 
-    const invalidSource = await route('/api/extensions/install', { source: 'tarball', path: folderDir });
+    const localPackage = fakePackage({ name: 'acme-route-tarball', version: '1.0.0', manifest: defaultManifest('1.0.0', { id: 'com.acme.route-tarball' }) });
+    const localTarball = path.join(temp, 'route-tarball.tgz');
+    await writeFile(localTarball, localPackage.tarball);
+    const tarballResponse = await route('/api/extensions/install', { source: 'tarball', path: localTarball, scope: 'workspace' });
+    expect(tarballResponse.status).toBe(201);
+    expect((tarballResponse.payload.provenance as Record<string, unknown>).source).toBe('tarball');
+
+    const invalidSource = await route('/api/extensions/install', { source: 'artifact', path: folderDir });
     expect(invalidSource.status).toBe(400);
     expect(invalidSource.payload.code).toBe('invalid_install_source');
   });

@@ -89,6 +89,7 @@ Hcanvas 扩展是带 `manifest.json` 的 v2 包；内置 Notebook 和三个随�
 hcanvas extension list
 hcanvas extension install @hcanvas/kernel-python@0.1.0 --user
 hcanvas extension install --folder ./my-extension --project
+hcanvas extension install --tarball ./my-extension.tgz --project
 hcanvas extension update @hcanvas/kernel-python@0.1.0 --user
 hcanvas extension uninstall <extension-id> --user
 hcanvas doctor

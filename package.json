@@ -263,6 +263,7 @@
     "build:desktop:suite": "node scripts/build-hadamard-suite.mjs",
     "test:hcanvas:e2e": "node scripts/verify-hcanvas-e2e.mjs",
     "test:hcanvas:extensions:e2e": "node scripts/verify-hcanvas-extensions-e2e.mjs",
+    "test:hcanvas:npm-extension:e2e": "node scripts/verify-hcanvas-npm-extension-e2e.mjs",
     "test:hcanvas:notebook:e2e": "node scripts/verify-hcanvas-notebook-interactions-e2e.mjs",
     "test:hcanvas:notebook:execute-edit:e2e": "node scripts/verify-hcanvas-notebook-execution-edit-e2e.mjs",
     "test:hcanvas:maxwell:e2e": "node scripts/verify-hcanvas-maxwell-e2e.mjs",
@@ -322,6 +323,7 @@
     "puppeteer-core": "^25.16.0",
     "qrcode": "^1.5.4",
     "selfsigned": "^5.5.0",
+    "undici": "^7.30.2",
     "ws": "^8.21.3",
     "zod": "^4.1.12"
   },

@@ -60,6 +60,7 @@ Manage extensions in the app or from the CLI. User-scope extensions live under y
 hcanvas extension list
 hcanvas extension install @hcanvas/kernel-python@0.1.0 --user
 hcanvas extension install --folder ./my-extension --project
+hcanvas extension install --tarball ./my-extension.tgz --project
 hcanvas extension uninstall <extension-id> --user
 hcanvas doctor
 ```

@@ -18,7 +18,7 @@ import { compileScene, type ComposeScene } from './composeScene.js';
 import { AGENT_SCHEMAS, SCENE_EXAMPLE } from './agentSchemas.js';
 import { getComposeTemplate, listComposeTemplates } from './composeTemplates.js';
 import { discoverExtensions, findExtension, installExtension, setExtensionEnabled, setExtensionTrusted, uninstallProjectExtension } from './extensions/loader.js';
-import { installNpmExtension } from './extensions/npmInstaller.js';
+import { installLocalTarballExtension, installNpmExtension } from './extensions/npmInstaller.js';
 
 interface ParsedArgs {
   positionals: string[];
@@ -75,6 +75,7 @@ function usage(): string {
   '  hcanvas extension install <@scope/name@version> [--user|--project] [--overwrite] [--registry <url>]',
   '  hcanvas extension update <@scope/name@version> [--user|--project]',
   '  hcanvas extension install --folder <dir> [--user|--project] [--overwrite]',
+  '  hcanvas extension install --tarball <package.tgz> [--user|--project] [--overwrite]',
   '  hcanvas extension install --manifest <manifest.json> [--user|--project]',
   '  hcanvas extension uninstall <id> [--user|--project]',
   '  hcanvas extension enable|disable|trust|untrust <id>',
@@ -441,6 +442,7 @@ async function extensionCommand(args: ParsedArgs, pretty: boolean): Promise<void
   if (action === 'install' || action === 'update') {
     const overwrite = action === 'update' || flagBool(args, 'overwrite');
     const folder = flagString(args, 'folder');
+    const tarball = flagString(args, 'tarball');
     const manifestFile = flagString(args, 'manifest');
     if (folder) {
       const result = await installExtension(workspace, { source: 'folder', path: folder, scope, overwrite }, options);
@@ -451,6 +453,11 @@ async function extensionCommand(args: ParsedArgs, pretty: boolean): Promise<void
       const manifest = JSON.parse(await readFile(path.resolve(manifestFile), 'utf8')) as unknown;
       const result = await installExtension(workspace, { source: 'json', manifest, scope, overwrite }, options);
       print({ ok: true, id: result.id, path: result.path, scope, extension: result.extension }, pretty);
+      return;
+    }
+    if (tarball) {
+      const result = await installLocalTarballExtension(workspace, { source: 'tarball', path: tarball, scope, overwrite }, options);
+      print({ ok: true, id: result.id, path: result.path, scope, provenance: result.provenance, warnings: result.warnings, extension: result.extension }, pretty);
       return;
     }
     const target = args.positionals[2];

@@ -174,7 +174,7 @@ async function readInstallProvenance(folder: string, manifest: HcExtensionManife
   } catch {
     return undefined;
   }
-  if (!isObject(raw) || raw.source !== 'npm' || typeof raw.packageName !== 'string' || typeof raw.version !== 'string' || typeof raw.resolved !== 'string' || typeof raw.integrity !== 'string' || typeof raw.registry !== 'string' || typeof raw.installedAt !== 'string') {
+  if (!isObject(raw) || (raw.source !== 'npm' && raw.source !== 'tarball') || typeof raw.packageName !== 'string' || typeof raw.version !== 'string' || typeof raw.resolved !== 'string' || typeof raw.integrity !== 'string' || typeof raw.registry !== 'string' || typeof raw.installedAt !== 'string') {
     warnings.push('extension "' + manifest.id + '": ignored malformed .hcanvas-install.json');
     return undefined;
   }
@@ -182,7 +182,7 @@ async function readInstallProvenance(folder: string, manifest: HcExtensionManife
     warnings.push('extension "' + manifest.id + '": install provenance version ' + raw.version + ' does not match manifest version ' + manifest.version);
   }
   return {
-    source: 'npm',
+    source: raw.source,
     packageName: raw.packageName,
     version: raw.version,
     resolved: raw.resolved,

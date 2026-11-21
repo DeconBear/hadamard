@@ -19,7 +19,7 @@ my-extension/
   sidecar/              # optional local processes
 ```
 
-The npm package version must equal `manifest.version`, and `manifest.engines.hcanvas` must accept the installed Hcanvas 0.1.x release (for example `>=0.1.0`). Packages are unpacked and installed locally; Hcanvas does not run npm lifecycle scripts or a second `npm install`.
+The npm package version must equal `manifest.version`, and `manifest.engines.hcanvas` must accept the installed Hcanvas 0.1.x release (for example `>=0.1.0`). Packages are unpacked and installed locally; Hcanvas does not run npm lifecycle scripts or a second `npm install`. Registry selection uses `HCANVAS_NPM_REGISTRY`; auth uses `HCANVAS_NPM_TOKEN`/`NPM_TOKEN`; `HTTPS_PROXY`/`HTTP_PROXY` are honored; `HCANVAS_NPM_OFFLINE=1` gives a readable offline error.
 
 ## Manifest and permissions
 

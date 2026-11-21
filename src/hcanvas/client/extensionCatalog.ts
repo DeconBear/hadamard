@@ -98,7 +98,7 @@ export interface ExtensionCatalogEntry {
   trusted: boolean;
   compatible: boolean;
   incompatibilityReason?: string;
-  provenance?: { source: 'npm'; packageName: string; version: string; registry: string };
+  provenance?: { source: 'npm' | 'tarball'; packageName: string; version: string; registry: string };
   legacy: boolean;
   capabilities: Record<string, unknown>;
   contributes: ExtensionContributesSummary;
@@ -138,7 +138,7 @@ function normalizeEntry(raw: Record<string, unknown>): ExtensionCatalogEntry {
     trusted: raw.trusted === true,
     compatible: raw.compatible !== false,
     ...(typeof raw.incompatibilityReason === 'string' ? { incompatibilityReason: raw.incompatibilityReason } : {}),
-    ...(raw.provenance && typeof raw.provenance === 'object' ? { provenance: raw.provenance as { source: 'npm'; packageName: string; version: string; registry: string } } : {}),
+    ...(raw.provenance && typeof raw.provenance === 'object' ? { provenance: raw.provenance as { source: 'npm' | 'tarball'; packageName: string; version: string; registry: string } } : {}),
     legacy: raw.legacy === true || raw.layout === 'legacy',
     capabilities: manifest.capabilities && typeof manifest.capabilities === 'object'
       ? manifest.capabilities as Record<string, unknown>

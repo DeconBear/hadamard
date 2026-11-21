@@ -10,7 +10,9 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
+import { ProxyAgent } from 'undici';
 
 import {
   HCANVAS_EXTENSION_TARGET_VERSION,
@@ -84,13 +86,22 @@ export interface HcNpmExtensionInstallRequest {
 
 /** Verified provenance for an npm-installed extension. */
 export interface HcExtensionInstallProvenance {
-  source: 'npm';
+  source: 'npm' | 'tarball';
   packageName: string;
   version: string;
   resolved: string;
   integrity: string;
   registry: string;
   installedAt: string;
+}
+
+/** Install request for a local .tgz package (development path, no registry). */
+export interface HcLocalTarballInstallRequest {
+  source: 'tarball';
+  path: string;
+  scope?: 'workspace' | 'user';
+  overwrite?: boolean;
+  timeoutMs?: number;
 }
 
 /** Same result shape as folder/json installs, plus npm provenance and warnings. */
@@ -247,6 +258,29 @@ function assertOnline(): void {
   }
 }
 
+let registryProxyAgent: { url: string; agent: ProxyAgent } | undefined;
+
+/** Fetch through HTTPS_PROXY/HTTP_PROXY when configured, without changing the registry URL. */
+function registryFetch(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const proxy = (process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '').trim();
+  if (!proxy) return fetch(url, init);
+  let parsed: URL;
+  try { parsed = new URL(proxy); } catch {
+    throw new HcExtensionError('invalid_params', 'Proxy URL is invalid: ' + JSON.stringify(proxy));
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new HcExtensionError('invalid_params', 'Proxy URL must use http or https');
+  }
+  if (!registryProxyAgent || registryProxyAgent.url !== proxy) {
+    try {
+      registryProxyAgent = { url: proxy, agent: new ProxyAgent(proxy) };
+    } catch (error) {
+      throw networkError(url, error, timeoutMs);
+    }
+  }
+  return fetch(url, { ...init, dispatcher: registryProxyAgent.agent } as RequestInit);
+}
+
 function readAuthToken(): string | undefined {
   const primary = process.env.HCANVAS_NPM_TOKEN?.trim();
   if (primary) return primary;
@@ -311,12 +345,12 @@ async function fetchRegistryBytes(request: RegistryFetchRequest): Promise<Buffer
   if (request.token) headers.authorization = 'Bearer ' + request.token;
   let response: Awaited<ReturnType<typeof fetch>>;
   try {
-    response = await fetch(request.url, {
+    response = await registryFetch(request.url, {
       method: 'GET',
       redirect: 'follow',
       headers,
       signal: AbortSignal.timeout(request.timeoutMs),
-    });
+    }, request.timeoutMs);
   } catch (error) {
     throw networkError(request.url, error, request.timeoutMs);
   }
@@ -767,6 +801,109 @@ function combineInstallFailure(error: unknown, restoreFailure: Error | undefined
  * folder inside the selected extension root. Only verified, self-contained
  * packages are handed to the shared loader; lifecycle scripts are never run.
  */
+
+/**
+ * Install a local .tgz package as an Hcanvas v2 extension.
+ *
+ * Development path only: no registry is contacted and no npm lifecycle scripts
+ * run. The tarball is verified with the same safe parser/contract checks as the
+ * registry installer, then installed through the shared loader.
+ */
+export async function installLocalTarballExtension(
+  workspace: string,
+  request: HcLocalTarballInstallRequest,
+  options: HcExtensionLoaderOptions = {},
+): Promise<HcNpmExtensionInstallResult> {
+  if (!isObject(request) || request.source !== 'tarball') {
+    throw new HcExtensionError('invalid_install_source', 'source must be "tarball"');
+  }
+  const rawPath = typeof request.path === 'string' ? request.path.trim() : '';
+  if (!rawPath) throw new HcExtensionError('invalid_params', 'tarball path is required');
+  const filePath = path.resolve(rawPath);
+  const scope: 'workspace' | 'user' = request.scope === 'user' ? 'user' : 'workspace';
+  const overwrite = request.overwrite === true;
+  let info;
+  try {
+    info = await stat(filePath);
+  } catch (error) {
+    throw new HcExtensionError('not_found', 'Cannot read local tarball ' + filePath + ': ' + toErrorMessage(error), filePath);
+  }
+  if (!info.isFile()) throw new HcExtensionError('invalid_params', 'local tarball path is not a file: ' + filePath, filePath);
+  if (info.size > MAX_TARBALL_BYTES) throw new HcExtensionError('invalid_params', 'local tarball exceeds the ' + MAX_TARBALL_BYTES + '-byte limit', filePath);
+  let tarball: Buffer;
+  try {
+    tarball = await readFile(filePath);
+  } catch (error) {
+    throw new HcExtensionError('not_found', 'Cannot read local tarball ' + filePath + ': ' + toErrorMessage(error), filePath);
+  }
+  const provisionalSpec: NormalizedNpmRequest = {
+    packageName: 'local-package',
+    version: '0.0.0',
+    scope,
+    overwrite,
+    registry: pathToFileURL(path.dirname(filePath)).href,
+    timeoutMs: normalizeTimeout(request.timeoutMs),
+  };
+  const tar = decompressTarball(tarball, provisionalSpec);
+  const discoveryPaths = extensionDiscoveryPaths(workspace, options);
+  const targetRoot = path.resolve(scope === 'user' ? discoveryPaths.userExtensions : discoveryPaths.workspaceExtensions);
+  await mkdir(targetRoot, { recursive: true });
+  const stageDir = path.resolve(targetRoot, '.install-' + randomUUID());
+  if (!isInside(targetRoot, stageDir)) throw new HcExtensionError('path_forbidden', 'Refusing to stage the local package outside the extension root');
+  let backupDir: string | undefined;
+  try {
+    await mkdir(stageDir, { recursive: true });
+    const extracted = await extractPackageTarball(tar, stageDir);
+    const packageJson = await readPackageRootJson(stageDir, 'package.json');
+    if (!isObject(packageJson) || typeof packageJson.name !== 'string' || typeof packageJson.version !== 'string') {
+      throw new HcExtensionError('invalid_manifest', 'package.json must declare a string name and version', 'package.json');
+    }
+    if (!isValidPackageName(packageJson.name)) throw new HcExtensionError('invalid_manifest', 'package.json name is not a valid npm package name', 'package.json');
+    if (!EXACT_VERSION_PATTERN.test(packageJson.version)) throw new HcExtensionError('invalid_manifest', 'package.json version must be an exact semver version', 'package.json');
+    const spec: NormalizedNpmRequest = { ...provisionalSpec, packageName: packageJson.name, version: packageJson.version };
+    const contract = await readPackageContract(stageDir, spec);
+    const target = path.resolve(targetRoot, contract.manifest.id);
+    if (!isInside(targetRoot, target)) throw new HcExtensionError('path_forbidden', 'Unsafe extension id in local package: ' + contract.manifest.id);
+    const targetExists = await exists(target);
+    if (targetExists && !overwrite) {
+      throw new HcExtensionError('conflict', 'Extension already installed: ' + contract.manifest.id + ' (pass overwrite:true to replace it)');
+    }
+    const provenance: HcExtensionInstallProvenance = {
+      source: 'tarball',
+      packageName: spec.packageName,
+      version: spec.version,
+      resolved: pathToFileURL(filePath).href,
+      integrity: 'sha512-' + createHash('sha512').update(tarball).digest('base64'),
+      registry: provisionalSpec.registry,
+      installedAt: new Date().toISOString(),
+    };
+    if (targetExists) {
+      backupDir = path.resolve(targetRoot, '.backup-' + randomUUID());
+      await rename(target, backupDir);
+    }
+    try {
+      await writeInstallProvenance(stageDir, provenance, spec);
+      const result = await installExtension(workspace, { source: 'folder', path: stageDir, scope, overwrite: false }, options);
+      const warnings = [...contract.warnings];
+      if (extracted.fileCount === 0) warnings.push('local tarball contains no files');
+      if (backupDir) {
+        const previousVersion = backupDir;
+        backupDir = undefined;
+        await rm(previousVersion, { recursive: true, force: true }).catch(() => { warnings.push('could not remove the previous version backup: ' + previousVersion); });
+      }
+      return { ...result, provenance, warnings };
+    } catch (error) {
+      const restoreFailure = backupDir ? await restorePreviousVersion(target, backupDir) : undefined;
+      throw combineInstallFailure(error, restoreFailure);
+    }
+  } catch (error) {
+    if (error instanceof HcExtensionError) throw error;
+    throw new HcExtensionError('internal_error', 'Cannot install local tarball ' + filePath + ': ' + toErrorMessage(error));
+  } finally {
+    await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 export async function installNpmExtension(
   workspace: string,
   request: HcNpmExtensionInstallRequest,

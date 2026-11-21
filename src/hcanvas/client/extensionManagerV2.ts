@@ -111,7 +111,7 @@ function renderRows(catalog: ExtensionCatalog): string {
     const trustLabel = entry.trusted ? 'trusted' : 'not trusted';
     const sourceLabel = entry.legacy
       ? entry.source + ' · legacy v1'
-      : entry.provenance ? entry.source + ' · npm ' + entry.provenance.packageName + '@' + entry.provenance.version : entry.source;
+      : entry.provenance ? entry.source + ' · ' + entry.provenance.source + ' ' + entry.provenance.packageName + '@' + entry.provenance.version : entry.source;
     const incompatible = entry.compatible ? '' : '<span class="extension-incompatible" title="' + esc(entry.incompatibilityReason || 'Incompatible host version') + '">Incompatible</span>';
     const canUninstall = ['workspace', 'user', 'legacy-project', 'legacy-user'].includes(entry.source);
     const scope = entry.source === 'user' || entry.source === 'legacy-user' ? 'user' : 'workspace';

@@ -282,7 +282,7 @@ export interface HcExtensionManifest {
 
 /** Install provenance for an extension installed from a package artifact. */
 export interface HcExtensionProvenance {
-  source: 'npm';
+  source: 'npm' | 'tarball';
   packageName: string;
   version: string;
   resolved: string;

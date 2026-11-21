@@ -19,7 +19,7 @@ my-extension/
   sidecar/              # 可选本地进程
 ```
 
-npm 包版本必须与 `manifest.version` 一致；`manifest.engines.hcanvas` 必须接受当前 0.1.x 宿主（例如 `>=0.1.0`）。包会解压后本地安装；Hcanvas 不运行 npm 生命周期脚本，也不会隐式执行二次 `npm install`。
+npm 包版本必须与 `manifest.version` 一致；`manifest.engines.hcanvas` 必须接受当前 0.1.x 宿主（例如 `>=0.1.0`）。包会解压后本地安装；Hcanvas 不运行 npm 生命周期脚本，也不会隐式执行二次 `npm install`。registry 用 `HCANVAS_NPM_REGISTRY`，认证用 `HCANVAS_NPM_TOKEN`/`NPM_TOKEN`；支持 `HTTPS_PROXY`/`HTTP_PROXY`；`HCANVAS_NPM_OFFLINE=1` 返回可读离线错误。
 
 ## Manifest 与权限
 

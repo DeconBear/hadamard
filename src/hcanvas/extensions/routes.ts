@@ -20,7 +20,7 @@ import {
   type HcExtensionInstallRequest,
   type HcExtensionLoaderOptions,
 } from './loader.js';
-import { findInstalledNpmExtension, installNpmExtension, type HcNpmExtensionInstallRequest } from './npmInstaller.js';
+import { findInstalledNpmExtension, installLocalTarballExtension, installNpmExtension, type HcNpmExtensionInstallRequest } from './npmInstaller.js';
 import { HcExtensionRegistry } from './registry.js';
 import {
   extensionWorkspaceStatePath,
@@ -222,10 +222,27 @@ async function handleNpmInstall(body: Record<string, unknown>, res: ServerRespon
 async function handleInstall(req: IncomingMessage, res: ServerResponse, context: HcExtensionRouteContext): Promise<boolean> {
   const body = await context.readBody(req);
   const source = body.source;
-  if (source !== 'folder' && source !== 'json' && source !== 'npm') {
-    throw new HcExtensionError('invalid_install_source', 'source must be "folder", "json" or "npm"');
+  if (source !== 'folder' && source !== 'json' && source !== 'npm' && source !== 'tarball') {
+    throw new HcExtensionError('invalid_install_source', 'source must be "folder", "json", "npm" or "tarball"');
   }
   if (source === 'npm') return handleNpmInstall(body, res, context);
+  if (source === 'tarball') {
+    const tarballPath = stringField(body, 'path');
+    const rawScope = body.scope;
+    if (rawScope !== undefined && rawScope !== 'workspace' && rawScope !== 'user') {
+      throw new HcExtensionError('invalid_params', 'scope must be "workspace" or "user"');
+    }
+    const result = await installLocalTarballExtension(context.workspace, {
+      source: 'tarball', path: tarballPath, scope: rawScope === 'user' ? 'user' : 'workspace', overwrite: body.overwrite === true,
+    }, loaderOptions(context));
+    cacheDiscovery(context, result.discovery);
+    context.json(res, 201, {
+      ...catalogPayload(result.discovery), id: result.id, path: result.path,
+      ...(result.extension ? { extension: result.extension } : {}), provenance: result.provenance,
+      ...(result.warnings.length ? { warnings: result.warnings } : {}),
+    });
+    return true;
+  }
   const scope = body.scope === 'user' ? 'user' : 'workspace';
   const request: HcExtensionInstallRequest = {
     source,
