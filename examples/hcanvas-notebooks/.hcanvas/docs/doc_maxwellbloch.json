@@ -2,9 +2,9 @@
   "schema": "hadamard-canvas/1",
   "id": "doc_maxwellbloch",
   "title": "Maxwell–Bloch",
-  "revision": 28,
+  "revision": 36,
   "createdAt": "2026-11-20T08:53:57.285Z",
-  "updatedAt": "2026-11-20T18:15:29.926Z",
+  "updatedAt": "2026-11-21T05:48:17.248Z",
   "pages": [
     {
       "id": "page_maxwellbloch",
@@ -31,13 +31,13 @@
               "language": "python",
               "outputs": [
                 {
-                  "id": "out_0_rb5to",
+                  "id": "out_0_j5vzx",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "Sample: Two-level medium A\nRabi period = 3.141592653589793\nGaussian pulse area = 20.053026197048002\nPulse center = 12.0 ; width = 4.0 ; dt = 0.01\nNext: C++ reads rabi_period and pulse_area, then Octave reads the C++ result.\n"
                 }
               ],
-              "executionCount": 4,
+              "executionCount": 5,
               "stale": true
             },
             {
@@ -53,21 +53,21 @@
               "language": "python",
               "outputs": [
                 {
-                  "id": "out_0_cwo64",
+                  "id": "out_0_xa74d",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "Rabi period from shared parameters: 3.141593\npeak inversion: 0.4608\nfinal inversion: -0.9942\n"
                 },
                 {
-                  "id": "out_1_l81kn",
+                  "id": "out_1_kit92",
                   "kind": "image",
                   "mime": "image/png",
-                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_924ca2f7871e45d9",
-                  "assetId": "asset_924ca2f7871e45d9",
+                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_a9a8a46066f54e88",
+                  "assetId": "asset_a9a8a46066f54e88",
                   "size": 75514
                 }
               ],
-              "executionCount": 5,
+              "executionCount": 6,
               "stale": true
             },
             {
@@ -78,22 +78,23 @@
               "language": "python",
               "outputs": [
                 {
-                  "id": "out_0_b5ast",
+                  "id": "out_0_yoeh9",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "minimum post-pulse inversion: -0.9437\nmaximum post-pulse inversion: -0.5423\n"
                 },
                 {
-                  "id": "out_1_svwc5",
+                  "id": "out_1_oalvd",
                   "kind": "image",
                   "mime": "image/png",
-                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_515af077198f497e",
-                  "assetId": "asset_515af077198f497e",
+                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_d5f15091067247ba",
+                  "assetId": "asset_d5f15091067247ba",
                   "size": 36894
                 }
               ],
-              "executionCount": 4,
-              "stale": true
+              "executionCount": 5,
+              "stale": true,
+              "hideCode": true
             },
             {
               "id": "nbcell_maxwell_04",
@@ -108,21 +109,21 @@
               "language": "python",
               "outputs": [
                 {
-                  "id": "out_0_ioths",
+                  "id": "out_0_xn78s",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "Courant number: 0.2\npeak field: 2.3083\nfinal inversion range: -0.8841 to -0.047\n"
                 },
                 {
-                  "id": "out_1_wsr0k",
+                  "id": "out_1_d20q2",
                   "kind": "image",
                   "mime": "image/png",
-                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_906d1bf263c54e6b",
-                  "assetId": "asset_906d1bf263c54e6b",
+                  "url": "/api/assets/raw/a7269b128dceff026c808909a3e42f66282d/asset_f6ee253d89ab4df6",
+                  "assetId": "asset_f6ee253d89ab4df6",
                   "size": 152075
                 }
               ],
-              "executionCount": 4,
+              "executionCount": 5,
               "stale": true
             },
             {
@@ -138,13 +139,13 @@
               "language": "cpp",
               "outputs": [
                 {
-                  "id": "out_0_z429l",
+                  "id": "out_0_wrmgz",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "Sample: Two-level medium A\nC++ Rabi period = 3.14159, Python period = 3.14159, absolute error = 0\nShared pulse area = 20.053, T1 = 8\n"
                 }
               ],
-              "executionCount": 3,
+              "executionCount": 4,
               "stale": true
             },
             {
@@ -155,13 +156,13 @@
               "language": "octave",
               "outputs": [
                 {
-                  "id": "out_0_1fsrb",
+                  "id": "out_0_sniwk",
                   "kind": "stream",
                   "name": "stdout",
                   "text": "Sample: Two-level medium A\nOctave Rabi period = 3.141592653590, C++ period = 3.141592653590\nMaximum cross-language period error = 3.11e-15, T1 = 8.0000\n"
                 }
               ],
-              "executionCount": 3,
+              "executionCount": 4,
               "stale": true
             },
             {
@@ -170,13 +171,25 @@
               "source": "## 6. 建议实验与结果解读\n\n### 先检查默认值\n\n- `omega0 = 2` 时，$T_R=2\\pi/\\omega_0=\\pi$，所以 `rabi_period` 应约为 **3.14159265359**。\n- 高斯脉冲面积近似为 $\\omega_0\\,w_p\\sqrt{2\\pi}$，默认约为 **20.0499**。这里的“面积”是 Rabi 频率对时间的积分，不是光强或能量。\n- `rabi_period_error_cpp` 和 `period_max_error` 应接近零；它们比较的是不同语言对同一公共参数的独立计算。\n\n### 逐个修改公共变量\n\n以下实验都先修改初始值，再点击 **Initialize**。如果希望从初始值完整重算，直接点击 **Run all**；它会先自动初始化，再运行全部单元。\n\n以下实验都先修改初始值，再点击 **Initialize**。如果希望从初始值完整重算，直接点击 **Run all**；它会先自动初始化，再运行全部单元。\n\n1. 把 `omega0` 改为 1 或 3，运行 **Run affected**。比较周期、反转振荡速度和失谐扫描曲线的宽度。\n2. 把 `detuning` 改为 0.5，观察最终反转为何偏离共振中心，以及相干涉图如何变化。\n3. 把 `pulse_width` 改为 2 或 6。脉冲面积和三个 Python 数值实验都会使用新宽度，不需要逐单元修改代码。\n4. 把 `pulse_center` 改为 8 或 16，比较脉冲出现时间以及传播时空图的平移。\n5. 把 `kappa` 分别设为 0 和 0.8。前者关闭传播耦合，后者增强介质对光场的影响。\n6. 减小 `time_step`，比较四阶 Runge–Kutta 与一阶空间推进的数值收敛趋势；若传播网格条件被破坏，单元会明确报错。\n\n### 阅读结果时需要注意\n\n`peak_inversion` 是整个时间序列中的最大值，`final_inversion` 是积分结束时的值；失谐扫描记录的是脉冲结束后的反转，而不是瞬时最大值。传播图展示的是慢变包络，不包含载波振荡。\n\n如果只想修改公式而不运行代码，可以点击公式编辑 LaTeX；如果希望把某个公式变成可复算实验，可以从公式弹层生成计算单元，再通过 `hc_get` 和 `hc_set` 接入这里的公共变量链。"
             },
             {
+              "id": "nbcell_64a9b344c5ce",
+              "kind": "code",
+              "source": "",
+              "kernelId": "cpp",
+              "language": "cpp",
+              "executable": true,
+              "outputs": [],
+              "stale": false,
+              "executionCount": 1
+            },
+            {
               "id": "nbcell_c03d687ad410",
               "kind": "code",
               "source": "",
-              "executable": true,
-              "outputs": [],
               "kernelId": "python",
-              "language": "python"
+              "language": "python",
+              "outputs": [],
+              "stale": false,
+              "executionCount": 1
             }
           ],
           "defaultKernelId": "python",
@@ -193,16 +206,16 @@
             "time_step": 0.01,
             "rabi_period": 3.14159265358979,
             "pulse_area": 20.053026197048,
-            "peak_inversion": 0.4607613527251543,
-            "final_inversion": -0.9941818071980845,
+            "peak_inversion": 0.460761352725154,
+            "final_inversion": -0.994181807198084,
             "scan_min_inversion": -0.943703628849717,
             "scan_max_inversion": -0.542278606739183,
             "propagation_peak_field": 2.30830992322279,
             "propagation_final_inversion": -0.0469828663763827,
             "rabi_period_cpp": 3.14159265358979,
             "rabi_period_error_cpp": 0,
-            "rabi_period_octave": 3.141592653589793,
-            "period_max_error": 3.1086244689504387e-15
+            "rabi_period_octave": 3.14159265358979,
+            "period_max_error": 3.10862446895044e-15
           },
           "initialVariables": {
             "omega0": 2,
@@ -418,6 +431,62 @@
       "actor": "human",
       "summary": "Update page · Maxwell–Bloch",
       "createdAt": "2026-11-20T18:15:29.926Z",
+      "opCount": 1
+    },
+    {
+      "revision": 29,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-21T05:34:19.753Z",
+      "opCount": 1
+    },
+    {
+      "revision": 30,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-21T05:34:25.225Z",
+      "opCount": 1
+    },
+    {
+      "revision": 31,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-21T05:46:32.756Z",
+      "opCount": 1
+    },
+    {
+      "revision": 32,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-21T05:47:56.534Z",
+      "opCount": 1
+    },
+    {
+      "revision": 33,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-21T05:48:01.000Z",
+      "opCount": 1
+    },
+    {
+      "revision": 34,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-21T05:48:08.051Z",
+      "opCount": 1
+    },
+    {
+      "revision": 35,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-21T05:48:15.173Z",
+      "opCount": 1
+    },
+    {
+      "revision": 36,
+      "actor": "human",
+      "summary": "Update page · Maxwell–Bloch",
+      "createdAt": "2026-11-21T05:48:17.248Z",
       "opCount": 1
     }
   ]
