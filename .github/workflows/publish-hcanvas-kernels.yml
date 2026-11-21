@@ -1,0 +1,46 @@
+name: Publish Hcanvas Kernel Extensions
+
+# Manual, reviewed publication of the Preview @hcanvas/kernel-* packages.
+# External prerequisites: npm @hcanvas scope ownership and Trusted Publishing
+# (GitHub Actions OIDC) configured for DeconBear/hadamard and this workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type "publish kernels" to confirm the Preview publication
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    if: ${{ inputs.confirm == 'publish kernels' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - name: Validate kernel tarball contents
+        run: npm run test:hcanvas:kernels
+      - name: Publish missing Preview versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pkg in build-artifacts/hcanvas-kernels/*.tgz; do
+            NAME="$(tar -xOzf "$pkg" package/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).name))")"
+            VERSION="$(tar -xOzf "$pkg" package/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).version))")"
+            if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+              echo "$NAME@$VERSION already exists; skipping."
+              continue
+            fi
+            echo "Publishing Preview package $NAME@$VERSION"
+            npm publish "$pkg" --access public --provenance
+          done
