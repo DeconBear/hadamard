@@ -142,6 +142,8 @@ export interface HcRuntimeServices {
   resolveTerminalProfile?: HcTerminalProfileResolver;
   kernelOutputs?: HcKernelOutputPort;
   sidecarCatalog?: HcSidecarCatalogPort;
+  /** Stop kernel sessions and sidecar processes owned by an extension. */
+  stopExtension(extensionId: string, reason?: string): Promise<{ kernels: number; sidecars: number }>;
   close(): Promise<void>;
 }
 
@@ -215,6 +217,11 @@ export function createRuntimeServices(setup: HcRuntimeSetup): HcRuntimeServices 
     ...(setup.resolveTerminalProfile ? { resolveTerminalProfile: setup.resolveTerminalProfile } : {}),
     ...(setup.kernelOutputs ? { kernelOutputs: setup.kernelOutputs } : {}),
     ...(setup.sidecarCatalog ? { sidecarCatalog: setup.sidecarCatalog } : {}),
+    async stopExtension(extensionId: string, reason = 'extension removed'): Promise<{ kernels: number; sidecars: number }> {
+      const kernelCount = await kernels.disposeForExtension(extensionId).catch(() => 0);
+      const sidecars = await broker.stopExtension(extensionId, reason).catch(() => 0);
+      return { kernels: kernelCount, sidecars };
+    },
     async close(): Promise<void> {
       await kernels.disposeAll().catch(() => undefined);
       await broker.stopAll('server shutdown').catch(() => undefined);

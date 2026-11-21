@@ -79,6 +79,7 @@ function usage(): string {
   '  hcanvas extension uninstall <id> [--user|--project]',
   '  hcanvas extension enable|disable|trust|untrust <id>',
   '  hcanvas extension reload [--json]',
+  '  hcanvas plugin list|install|uninstall ...   # alias for extension, same implementation',
   '  hcanvas doctor [--json]',
     '  hcanvas guide',
     '',
@@ -412,6 +413,7 @@ async function extensionCommand(args: ParsedArgs, pretty: boolean): Promise<void
         id: entry.id, name: entry.name, version: entry.version, source: entry.source,
         enabled: entry.enabled, trusted: entry.trusted, compatible: entry.compatible,
         requiresProcess: entry.requiresProcess, diagnostics: entry.diagnostics,
+        ...(entry.provenance ? { provenance: entry.provenance, installSource: entry.provenance.source } : { installSource: entry.source === 'bundled' ? 'bundled' : 'folder' }),
         ...(entry.incompatibilityReason ? { incompatibilityReason: entry.incompatibilityReason } : {}),
       }));
     print({ ok: true, workspace, extensions, warnings: discovery.warnings, errors: discovery.errors }, pretty);
@@ -427,6 +429,7 @@ async function extensionCommand(args: ParsedArgs, pretty: boolean): Promise<void
       id: entry.id, name: entry.name, version: entry.version, source: entry.source, enabled: entry.enabled,
       trusted: entry.trusted, compatible: entry.compatible, requiresProcess: entry.requiresProcess,
       path: entry.path, root: entry.root, diagnostics: entry.diagnostics, grantStatus: entry.grantStatus,
+      ...(entry.provenance ? { provenance: entry.provenance } : {}),
       ...(entry.incompatibilityReason ? { incompatibilityReason: entry.incompatibilityReason } : {}),
     } }, pretty);
     return;
@@ -524,7 +527,7 @@ async function main(argv: string[]): Promise<void> {
   const pretty = flagBool(args, 'pretty');
   if (command === 'serve' || command === 'app') { await runServe(args, command === 'app'); return; }
   if (command === 'desktop') { launchDesktop(args); return; }
-  if (command === 'extension' || command === 'extensions') { await extensionCommand(args, pretty); return; }
+  if (command === 'extension' || command === 'extensions' || command === 'plugin' || command === 'plugins') { await extensionCommand(args, pretty); return; }
   if (command === 'doctor') { await doctorCommand(args, pretty); return; }
   if (command === 'workspace') {
     const project = path.resolve(args.positionals[2] || projectPath(args) || process.cwd());

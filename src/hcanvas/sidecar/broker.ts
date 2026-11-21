@@ -244,6 +244,13 @@ export class SidecarBroker {
     await this.stopProcess(instance, reason);
   }
 
+  /** Stop every process owned by one extension (extension update/uninstall). */
+  async stopExtension(extensionId: string, reason = 'extension removed'): Promise<number> {
+    const unique = [...new Set(this.instances.values())].filter(instance => instance.extensionId === extensionId);
+    await Promise.all(unique.map(instance => this.stopProcess(instance, reason).catch(() => undefined)));
+    return unique.length;
+  }
+
   /** Stop every process owned by the broker (server shutdown). */
   async stopAll(reason = 'shutdown'): Promise<void> {
     const unique = [...new Set(this.instances.values())];

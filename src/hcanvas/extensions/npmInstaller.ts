@@ -29,6 +29,25 @@ import {
 /** Provenance file written into the staged extension folder before it is installed. */
 export const NPM_INSTALL_PROVENANCE_FILE = '.hcanvas-install.json';
 
+/** Find an installed extension id whose npm provenance matches a package name. */
+export async function findInstalledNpmExtension(workspace: string, packageName: string, scope: 'workspace' | 'user', options: HcExtensionLoaderOptions = {}): Promise<string | undefined> {
+  const paths = extensionDiscoveryPaths(workspace, options);
+  const root = scope === 'user' ? paths.userExtensions : paths.workspaceExtensions;
+  let entries;
+  try { entries = await readdir(root, { withFileTypes: true }); } catch { return undefined; }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    try {
+      const provenance = JSON.parse(await readFile(path.join(root, entry.name, NPM_INSTALL_PROVENANCE_FILE), 'utf8')) as unknown;
+      if (isObject(provenance) && provenance.packageName === packageName) {
+        const manifest = JSON.parse(await readFile(path.join(root, entry.name, 'manifest.json'), 'utf8')) as unknown;
+        if (isObject(manifest) && typeof manifest.id === 'string') return manifest.id;
+      }
+    } catch { /* not an installed npm extension */ }
+  }
+  return undefined;
+}
+
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org';
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TIMEOUT_MS = 10 * 60_000;

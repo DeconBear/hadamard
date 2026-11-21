@@ -116,6 +116,21 @@ describe('hcanvas runtime routes', () => {
     expect(missing.status).toBe(404);
   });
 
+  it('stops kernels and sidecars owned by one extension', async () => {
+    const harness = await createHarness();
+    const sidecar = await api<{ ok: boolean }>(harness, '/api/sidecars/fake/start', { method: 'POST' });
+    expect(sidecar.status).toBe(200);
+    const kernel = await api<{ ok: boolean }>(harness, '/api/kernels/ensure', { method: 'POST', body: JSON.stringify({ kernelId: 'fake', scope: { kind: 'custom', key: 'extension-stop' } }) });
+    expect(kernel.status).toBe(200);
+    const stopped = await harness.services.stopExtension('ext.fake');
+    expect(stopped.kernels).toBe(1);
+    expect(stopped.sidecars).toBe(1);
+    expect(harness.services.kernels.list()).toEqual([]);
+    expect(harness.services.broker.list()).toEqual([]);
+    const again = await harness.services.stopExtension('ext.other');
+    expect(again).toEqual({ kernels: 0, sidecars: 0 });
+  });
+
   it('drives a sidecar start/request/stop over HTTP', async () => {
     const harness = await createHarness();
     const started = await api<{ ok: boolean; sidecar: { state: string; pid: number } }>(harness, '/api/sidecars/fake/start', { method: 'POST' });

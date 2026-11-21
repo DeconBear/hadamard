@@ -58,8 +58,16 @@ jobs:
         run: npm run test:hcanvas:e2e
       - name: Run Notebook interaction E2E
         run: npm run test:hcanvas:notebook:e2e
+      - name: Run Notebook execution/edit E2E
+        run: npm run test:hcanvas:notebook:execute-edit:e2e
       - name: Run extension E2E
         run: npm run test:hcanvas:extensions:e2e
+      - name: Build packaged Hcanvas
+        run: npm run build:hcanvas:package
+      - name: Run installed-package Notebook E2E
+        run: npm run test:hcanvas:package:notebook
+      - name: Record Notebook performance baseline
+        run: npm run test:hcanvas:performance
       - name: Upload screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4

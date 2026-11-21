@@ -280,6 +280,17 @@ export interface HcExtensionManifest {
   signature?: string;
 }
 
+/** Install provenance for an extension installed from a package artifact. */
+export interface HcExtensionProvenance {
+  source: 'npm';
+  packageName: string;
+  version: string;
+  resolved: string;
+  integrity: string;
+  registry: string;
+  installedAt: string;
+}
+
 /** A discovered extension before loader-state (enabled/trusted) is applied. */
 export interface HcExtensionDescriptor {
   id: string;
@@ -293,6 +304,7 @@ export interface HcExtensionDescriptor {
   root: string;
   manifest: HcExtensionManifest;
   diagnostics: string[];
+  provenance?: HcExtensionProvenance;
 }
 
 export interface HcExtensionCheckResult {

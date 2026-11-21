@@ -46,6 +46,10 @@ async function main() {
   if (readme) {
     await writeFile(path.join(staging, 'README.md'), readme, 'utf8');
   }
+  const changelog = await readFile(path.join(root, 'packages', 'hadamard-canvas', 'CHANGELOG.md'), 'utf8').catch(() => '');
+  if (changelog) {
+    await writeFile(path.join(staging, 'CHANGELOG.md'), changelog, 'utf8');
+  }
 
   // Generate package.json
   const hcanvasVersion = JSON.parse(await readFile(path.join(root, 'hcanvas.version.json'), 'utf8')).version;
@@ -66,7 +70,7 @@ async function main() {
       'hcanvas-desktop': './bin/hcanvas-desktop.js',
       'hadamard-canvas': './bin/hcanvas.js',
     },
-    files: ['bin', 'dist', 'assets', 'README.md', 'hcanvas.version.json'],
+    files: ['bin', 'dist', 'assets', 'README.md', 'CHANGELOG.md', 'hcanvas.version.json'],
     dependencies: {
       docx: '^9.15.1',
       katex: '^0.16.47',

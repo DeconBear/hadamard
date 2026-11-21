@@ -60,6 +60,7 @@ build-artifacts/
 packages/hadamard-canvas/*
 !packages/hadamard-canvas/package.json
 !packages/hadamard-canvas/npm-README.md
+!packages/hadamard-canvas/CHANGELOG.md
 
 # Local test output and generated test artifacts
 # Test sources under tests/ remain tracked for CI; these are local run products.

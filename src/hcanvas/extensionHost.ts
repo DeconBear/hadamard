@@ -280,7 +280,12 @@ export function createExtensionHost(options: ExtensionHostOptions): ExtensionHos
         },
       })) return true;
     }
-    if (await handleExtensionRoute(req, res, url, { workspace: options.workspace, json: options.json, readBody: options.readBody })) {
+    if (await handleExtensionRoute(req, res, url, {
+      workspace: options.workspace,
+      json: options.json,
+      readBody: options.readBody,
+      stopExtension: async (id: string) => getRuntimeServices().stopExtension(id, 'extension uninstalled'),
+    })) {
       if (pathname.startsWith('/api/extensions')) invalidateRegistry();
       return true;
     }

@@ -4,7 +4,7 @@ description: Go from download to a local-first, agent-ready canvas in minutes.
 ---
 
 <div class="hc-hero">
-  <div class="hc-kicker">Hadamard Canvas · v0.1.3</div>
+  <div class="hc-kicker">Hadamard Canvas · v0.1.4</div>
   <h1>Make the page<br /><span>the workspace.</span></h1>
   <p class="hc-sub">Hcanvas is a local-first canvas for serious visual work. Build pages, slides and diagrams, then let people and agents edit the same document through one clean, JSON-first interface.</p>
   <div class="hc-actions">
@@ -105,5 +105,6 @@ Notebook outputs are cached in the current browser workspace for `.hnb.md` files
 ## Keep exploring
 
 - [Hcanvas reference](./hadamard-canvas.md) — page types, blocks, CLI protocol, plugins and storage
+- [Extension authoring](./hcanvas-extensions.md) — npm package layout, version rules, trust and publishing
 - [Hcanvas on npm](https://www.npmjs.com/package/hadamard-canvas)
 - [Hadamard Harness](./hadamard-harness.md) — the agent runtime for engineering and research

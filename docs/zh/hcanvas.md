@@ -4,7 +4,7 @@ description: 从下载到本地优先、Agent 原生的画布，只需要几分�
 ---
 
 <div class="hc-hero">
-  <div class="hc-kicker">Hadamard Canvas · v0.1.3</div>
+  <div class="hc-kicker">Hadamard Canvas · v0.1.4</div>
   <h1>让页面<br /><span>成为工作空间。</span></h1>
   <p class="hc-sub">Hcanvas 是面向严肃视觉工作的本地优先画布。在这里做页面、幻灯片和图示，再让人类与 Agent 通过同一套 JSON-first 接口编辑同一份文档。</p>
   <div class="hc-actions">
@@ -105,5 +105,6 @@ hcanvas doctor
 ## 继续探索
 
 - [Hcanvas 完整参考](./hadamard-canvas.md)——页面类型、块、CLI 协议、插件与存储
+- [扩展开发](./hcanvas-extensions.md)——npm 包结构、版本规则、信任与发布
 - [npm 上的 Hcanvas](https://www.npmjs.com/package/hadamard-canvas)
 - [Hadamard Harness](./hadamard-harness.md)——面向工程和科研的 agent runtime

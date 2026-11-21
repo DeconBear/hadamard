@@ -11,6 +11,7 @@ import type {
   HcExtensionLayout,
   HcExtensionManifest,
   HcExtensionMenuContribution,
+  HcExtensionProvenance,
   HcExtensionSidecarContribution,
   HcExtensionSource,
   HcExtensionTerminalContribution,
@@ -66,6 +67,7 @@ export interface HcCatalogEntry {
   diagnostics: string[];
   contributions: HcExtensionContributionCounts;
   manifest: HcExtensionManifest;
+  provenance?: HcExtensionProvenance;
 }
 
 export interface HcContributionRef {
@@ -193,6 +195,7 @@ export class HcExtensionRegistry {
       diagnostics: [...extension.diagnostics],
       contributions: countContributions(manifest),
       manifest,
+      ...(extension.provenance ? { provenance: extension.provenance } : {}),
     };
   }
 

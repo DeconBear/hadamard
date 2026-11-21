@@ -458,6 +458,15 @@ export class HcKernelManager {
     this.dropSession(session);
   }
 
+  /** Dispose every kernel session contributed by one extension. */
+  async disposeForExtension(extensionId: string): Promise<number> {
+    const ids = [...this.sessions.entries()]
+      .filter(([, session]) => session.entry.sidecar.extensionId === extensionId)
+      .map(([id]) => id);
+    await Promise.all(ids.map(id => this.dispose(id).catch(() => undefined)));
+    return ids.length;
+  }
+
   /** Dispose every session (server shutdown). */
   async disposeAll(): Promise<void> {
     const ids = [...this.sessions.keys()];

@@ -109,7 +109,9 @@ function renderRows(catalog: ExtensionCatalog): string {
       ? '<ul class="extension-diagnostics">' + entry.diagnostics.slice(0, 6).map(item => '<li>' + esc(item) + '</li>').join('') + '</ul>'
       : '';
     const trustLabel = entry.trusted ? 'trusted' : 'not trusted';
-    const sourceLabel = entry.legacy ? entry.source + ' · legacy v1' : entry.source;
+    const sourceLabel = entry.legacy
+      ? entry.source + ' · legacy v1'
+      : entry.provenance ? entry.source + ' · npm ' + entry.provenance.packageName + '@' + entry.provenance.version : entry.source;
     const incompatible = entry.compatible ? '' : '<span class="extension-incompatible" title="' + esc(entry.incompatibilityReason || 'Incompatible host version') + '">Incompatible</span>';
     const canUninstall = ['workspace', 'user', 'legacy-project', 'legacy-user'].includes(entry.source);
     const scope = entry.source === 'user' || entry.source === 'legacy-user' ? 'user' : 'workspace';

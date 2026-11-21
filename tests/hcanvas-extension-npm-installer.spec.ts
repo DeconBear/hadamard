@@ -361,6 +361,7 @@ describe('npm extension installer', () => {
     expect(result.provenance).toEqual(provenance);
     expect(result.extension?.source).toBe('workspace');
     expect(result.extension?.version).toBe('1.2.3');
+    expect(result.extension?.provenance).toEqual(provenance);
     expect(result.discovery.extensions.some(entry => entry.id === 'com.acme.demo')).toBe(true);
     expect(Array.isArray(result.warnings)).toBe(true);
 

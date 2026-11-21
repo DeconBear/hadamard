@@ -20,7 +20,7 @@ import {
   type HcExtensionInstallRequest,
   type HcExtensionLoaderOptions,
 } from './loader.js';
-import { installNpmExtension, type HcNpmExtensionInstallRequest } from './npmInstaller.js';
+import { findInstalledNpmExtension, installNpmExtension, type HcNpmExtensionInstallRequest } from './npmInstaller.js';
 import { HcExtensionRegistry } from './registry.js';
 import {
   extensionWorkspaceStatePath,
@@ -38,6 +38,8 @@ export interface HcExtensionRouteContext {
   bundledDir?: string;
   /** Override discovery entirely (tests). */
   discover?: (workspace: string) => Promise<HcExtensionDiscovery>;
+  /** Stop kernels/sidecars owned by an extension before its files are removed. */
+  stopExtension?: (id: string) => Promise<{ kernels: number; sidecars: number } | void>;
 }
 
 const ERROR_STATUS: Record<HcExtensionErrorCode, number> = {
@@ -200,6 +202,10 @@ async function handleNpmInstall(body: Record<string, unknown>, res: ServerRespon
     ...(registry ? { registry } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   };
+  if (request.overwrite && context.stopExtension) {
+    const existingId = await findInstalledNpmExtension(context.workspace, packageName, request.scope ?? 'user', loaderOptions(context)).catch(() => undefined);
+    if (existingId) await context.stopExtension(existingId).catch(() => undefined);
+  }
   const result = await installNpmExtension(context.workspace, request, loaderOptions(context));
   cacheDiscovery(context, result.discovery);
   context.json(res, 201, {
@@ -243,9 +249,10 @@ async function handleUninstall(req: IncomingMessage, res: ServerResponse, contex
   const body = await context.readBody(req);
   const id = stringField(body, 'id');
   const scope = body.scope === 'user' ? 'user' : 'workspace';
+  const stopped = await context.stopExtension?.(id).catch(() => undefined);
   const discovery = await uninstallProjectExtension(context.workspace, id, loaderOptions(context), scope);
   cacheDiscovery(context, discovery);
-  context.json(res, 200, { ...catalogPayload(discovery), id });
+  context.json(res, 200, { ...catalogPayload(discovery), id, ...(stopped ? { stopped } : {}) });
   return true;
 }
 

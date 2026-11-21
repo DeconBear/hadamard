@@ -22,6 +22,7 @@
     "types.ts": { "maxLines": 3599, "reason": "Public compatibility type barrel; carries managed-plugin controls, structured project instructions, a per-run context-window override, the tool scheduling/CodeAct contract surface, retry policy, request proposals, compaction shadow pricing, the per-run conversation-extension override, the orthogonal tool-presentation mode, the ReAct driver's swappable-strategy interfaces, the nested-tool-execution result (CodeAct turn-control forwarding contract), built-in extension toggles, and LSP auto-detection." }
   },
   "interfaces": {
+    "hcanvas/extensions/registry.ts#HcCatalogEntry": { "maxMembers": 21, "reason": "Extension catalog DTO extended with install provenance while keeping compatibility fields for the GUI." },
     "hcanvas/types.ts#HcBlock": {
       "maxMembers": 29,
       "reason": "Native canvas block schema extended with user-layer ownership, closed vector fill and linear-gradient paint."

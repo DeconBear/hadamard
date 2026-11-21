@@ -15,6 +15,7 @@ import {
   type HcExtensionDescriptor,
   type HcExtensionGrantStatus,
   type HcExtensionManifest,
+  type HcExtensionProvenance,
   type HcExtensionSource,
   type HcWorkspaceTrust,
 } from './manifest.js';
@@ -165,6 +166,32 @@ interface ScannedManifest {
   descriptor: HcExtensionDescriptor;
 }
 
+/** Read the provenance file written by the npm installer, when present. */
+async function readInstallProvenance(folder: string, manifest: HcExtensionManifest, warnings: string[]): Promise<HcExtensionProvenance | undefined> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(path.join(folder, '.hcanvas-install.json'), 'utf8'));
+  } catch {
+    return undefined;
+  }
+  if (!isObject(raw) || raw.source !== 'npm' || typeof raw.packageName !== 'string' || typeof raw.version !== 'string' || typeof raw.resolved !== 'string' || typeof raw.integrity !== 'string' || typeof raw.registry !== 'string' || typeof raw.installedAt !== 'string') {
+    warnings.push('extension "' + manifest.id + '": ignored malformed .hcanvas-install.json');
+    return undefined;
+  }
+  if (raw.version !== manifest.version) {
+    warnings.push('extension "' + manifest.id + '": install provenance version ' + raw.version + ' does not match manifest version ' + manifest.version);
+  }
+  return {
+    source: 'npm',
+    packageName: raw.packageName,
+    version: raw.version,
+    resolved: raw.resolved,
+    integrity: raw.integrity,
+    registry: raw.registry,
+    installedAt: raw.installedAt,
+  };
+}
+
 async function loadManifestFile(
   manifestPath: string,
   folder: string,
@@ -201,6 +228,7 @@ async function loadManifestFile(
       if (compatible === false) {
         warnings.push('extension "' + manifest.id + '" declares engines.hcanvas ' + manifest.engines.hcanvas + '; host target is ' + HCANVAS_EXTENSION_TARGET_VERSION + ' (loaded in P0 compatibility mode)');
       }
+      const provenance = await readInstallProvenance(folder, manifest, warnings);
       return {
         id: manifest.id,
         name: manifest.name,
@@ -211,6 +239,7 @@ async function loadManifestFile(
         root: folder,
         manifest,
         diagnostics: [],
+        ...(provenance ? { provenance } : {}),
       };
     }
     if (allowLegacy) {

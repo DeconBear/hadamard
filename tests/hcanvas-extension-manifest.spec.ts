@@ -302,6 +302,11 @@ describe('hcanvas extension manifest v2', () => {
     expect(engineRangeSatisfies('<0.2.0', '0.2.0')).toBe(false);
     expect(engineRangeSatisfies('*', '9.9.9')).toBe(true);
     expect(engineRangeSatisfies('not-a-range', '0.2.0')).toBeUndefined();
+    expect(engineRangeSatisfies('>=0.1.0', '0.1.4')).toBe(true);
+    expect(engineRangeSatisfies('^0.1.0', '0.1.9')).toBe(true);
+    expect(engineRangeSatisfies('^0.1.0', '0.2.0')).toBe(false);
+    expect(engineRangeSatisfies('>=0.1.0-beta.1', '0.1.4')).toBe(true);
+    expect(engineRangeSatisfies('>=0.2.0', '0.1.4')).toBe(false);
   });
 });
 

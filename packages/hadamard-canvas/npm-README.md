@@ -91,6 +91,14 @@ Default workspace: `~/.hcanvas/`
 
 Change this from the Projects page or via `--workspace <dir>`.
 
+## Known limitations
+
+- Jupyter `.ipynb` files are not imported or exported; use the Hcanvas Markdown-first `.hnb.md` format or native Notebook pages.
+- Python, C++ and GNU Octave kernels require the matching language runtime on `PATH`; Hcanvas does not bundle system runtimes. Bundled kernel extensions are included in the app.
+- `@hcanvas/*` kernel packages on npm are a Preview channel; the stable path is the bundled kernels.
+- `.hnb.md` output caches live in the current browser workspace, so the Markdown file alone does not carry outputs across devices. Use HTML export to share the current visible outputs.
+- Process-backed extensions require an explicit workspace trust and extension trust decision; Restricted Mode keeps them disabled.
+
 ## Documentation
 
 - [Full Guide (English)](https://github.com/DeconBear/hadamard/blob/main/docs/en/hadamard-canvas.md)

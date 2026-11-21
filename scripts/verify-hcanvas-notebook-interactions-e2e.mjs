@@ -30,6 +30,8 @@ async function main() {
     await writeFile(path.join(workspace, 'save.hnb.md'), saveSource, 'utf8');
     const switchSource = ['---', 'hcanvas: notebook', 'kernel: python', '---', '', '# Switch notebook', '', 'Original body.', ''].join('\n');
     await writeFile(path.join(workspace, 'switch.hnb.md'), switchSource, 'utf8');
+    const retrySource = ['---', 'hcanvas: notebook', 'kernel: python', '---', '', '# Retry notebook', '', 'Original retry body.', ''].join('\n');
+    await writeFile(path.join(workspace, 'retry.hnb.md'), retrySource, 'utf8');
     await writeFile(path.join(workspace, 'legacy.ipynb'), JSON.stringify({ nbformat: 4, cells: [] }), 'utf8');
     server = spawn(process.execPath, ['bin/hcanvas.js', 'serve', '--workspace', workspace, '--port', String(port)], {
       cwd: root, env: { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config'), HCANVAS_HOME: path.join(workspace, '.home'), HADAMARD_HOME: path.join(workspace, '.home') }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
@@ -217,6 +219,55 @@ async function main() {
     const interactionSaved = await readFile(path.join(workspace, 'interaction.hnb.md'), 'utf8');
     assert('switching documents flushes the old notebook file', switchSaved.includes('CROSS-DOC-AUTOSAVE'), switchSaved.slice(0, 200));
     assert('switching documents does not write into the new notebook file', !interactionSaved.includes('CROSS-DOC-AUTOSAVE'), interactionSaved.slice(0, 200));
+    await page.locator('.file-tree-node', { hasText: 'retry.hnb.md' }).first().click();
+    await page.locator('.nb-markdown-body').first().waitFor();
+    let failedWrite = false;
+    await page.route('**/api/files/write', async route => {
+      if (!failedWrite) { failedWrite = true; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'simulated disk failure' }) }); return; }
+      await route.continue();
+    });
+    const retryBody = page.locator('.nb-markdown-body').first();
+    await retryBody.click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' RETRY-BEFORE');
+    await page.waitForTimeout(1500);
+    const afterFailure = await readFile(path.join(workspace, 'retry.hnb.md'), 'utf8');
+    assert('failed notebook save does not claim the edit reached disk', !afterFailure.includes('RETRY-BEFORE'), afterFailure.slice(0, 200));
+    await page.unroute('**/api/files/write');
+    await retryBody.click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' RETRY-AFTER');
+    await page.waitForTimeout(1800);
+    const afterRetry = await readFile(path.join(workspace, 'retry.hnb.md'), 'utf8');
+    assert('notebook save retries successfully after a transient failure', afterRetry.includes('RETRY-BEFORE') && afterRetry.includes('RETRY-AFTER'), afterRetry.slice(0, 300));
+
+    await page.locator('.file-tree-node', { hasText: 'retry.hnb.md' }).first().click();
+    await page.locator('.nb-markdown-body').first().waitFor();
+    const secondContext = await browser.newContext({ storageState: await page.context().storageState() });
+    const secondWindow = await secondContext.newPage();
+    secondWindow.setDefaultTimeout(timeout);
+    await secondWindow.goto(base, { waitUntil: 'domcontentloaded' });
+    await secondWindow.locator('[data-sidebar-target="files"]').click();
+    await secondWindow.locator('#refreshFilesBtn').click();
+    await secondWindow.locator('.file-tree-root-name').first().click();
+    await secondWindow.locator('.file-tree-node', { hasText: 'retry.hnb.md' }).first().click();
+    await secondWindow.locator('.nb-markdown-body').first().waitFor();
+    const firstWindowBody = page.locator('.nb-markdown-body').first();
+    await firstWindowBody.click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' MULTI-WINDOW-A');
+    await page.waitForTimeout(1600);
+    const secondWindowBody = secondWindow.locator('.nb-markdown-body').first();
+    await secondWindowBody.click();
+    await secondWindow.keyboard.press('Control+End');
+    await secondWindow.keyboard.type(' MULTI-WINDOW-B');
+    await secondWindow.waitForTimeout(1800);
+    const secondConflict = await secondWindow.locator('.file-conflict-banner, .notebook-save-conflict').count();
+    assert('a second window gets a conflict instead of silently overwriting', secondConflict > 0);
+    await secondContext.close();
+    await page.locator('.file-tree-node', { hasText: 'interaction.hnb.md' }).first().click();
+    await page.waitForSelector('.nb-code');
+    await page.waitForTimeout(300);
     await page.locator('.nb-markdown-body .hc-math').click();
     await page.locator('.nb-formula-popover textarea').fill('distance * 2');
     await page.locator('[data-nb-formula-symbol="distance"]').click();
@@ -408,6 +459,7 @@ async function main() {
     await page.locator('.file-tree-node', { hasText: 'legacy.ipynb' }).first().click();
     await page.locator('.file-surface-title strong', { hasText: 'legacy.ipynb' }).waitFor();
     assert('ipynb does not open in the Notebook viewer', await page.locator('.notebook-view, .nb-code').count() === 0);
+
     assert('no browser errors', errors.length === 0, errors.join('; '));
     console.log('Notebook interaction E2E passed');
   } finally {
