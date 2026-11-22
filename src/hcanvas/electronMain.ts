@@ -1,4 +1,11 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
+import { createRequire } from 'node:module';
+import type { BrowserWindow as ElectronBrowserWindow } from 'electron';
+
+// Electron's ESM entry does not expose the runtime API as named exports;
+// require it through Node's CJS interop so ESM main also works in packaged apps.
+const requireElectron = createRequire(import.meta.url);
+const electron = requireElectron('electron') as typeof import('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = electron;
 import { cp, mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +34,7 @@ const requestedPort = Number(argValue(process.argv, '--port') || process.env.HCA
 const staticDir = path.resolve(here, '..', '..', 'hcanvas');
 
 interface ProjectWindow {
-  window: BrowserWindow;
+  window: ElectronBrowserWindow;
   server: HcServer;
   workspace: string;
   project: string | null;
@@ -42,9 +49,9 @@ if (!gotLock) {
   app.quit();
 } else {
   const projectWindows = new Map<string, ProjectWindow>();
-  let firstWindow: BrowserWindow | null = null;
+  let firstWindow: ElectronBrowserWindow | null = null;
 
-  const focusedWindow = (): BrowserWindow | null => BrowserWindow.getFocusedWindow() ?? firstWindow ?? [...projectWindows.values()][0]?.window ?? null;
+  const focusedWindow = (): ElectronBrowserWindow | null => BrowserWindow.getFocusedWindow() ?? firstWindow ?? [...projectWindows.values()][0]?.window ?? null;
 
   const openProjectWindow = async (projectPath: string, port = 0): Promise<ProjectWindow> => {
     const project = path.resolve(projectPath);
