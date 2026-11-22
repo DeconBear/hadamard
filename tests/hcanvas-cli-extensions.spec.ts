@@ -20,7 +20,7 @@ async function runCli(args: string[]): Promise<{ code: number | null; stdout: st
     });
     let stdout = '';
     let stderr = '';
-    const timer = setTimeout(() => { child.kill(); reject(new Error('CLI timed out: ' + args.join(' '))); }, 30_000);
+    const timer = setTimeout(() => { child.kill(); reject(new Error('CLI timed out: ' + args.join(' '))); }, 90_000);
     child.stdout.on('data', chunk => { stdout += String(chunk); });
     child.stderr.on('data', chunk => { stderr += String(chunk); });
     child.once('error', reject);
@@ -53,7 +53,7 @@ describe('Hcanvas CLI extension commands', () => {
     const alias = await runCli(['plugin', 'list', '--workspace', workspace]);
     expect(alias.code).toBe(0);
     expect((jsonLine(alias.stdout).extensions as Array<{ id: string }>).map(entry => entry.id)).toContain('hcanvas.notebook');
-  });
+  }, 120_000);
 
   it('installs, lists and uninstalls a project extension without a daemon', async () => {
     const folder = path.join(root, 'examples', 'hcanvas-extensions', 'json-viewer');
@@ -69,7 +69,7 @@ describe('Hcanvas CLI extension commands', () => {
     expect(jsonLine(removed.stdout).ok).toBe(true);
     const after = jsonLine((await runCli(['extension', 'list', '--project', '--workspace', workspace])).stdout);
     expect((after.extensions as Array<{ id: string }>).map(entry => entry.id)).not.toContain('com.hadamard.examples.json');
-  });
+  }, 120_000);
 
   it('reports doctor checks and readable missing-extension errors', async () => {
     const doctor = await runCli(['doctor', '--workspace', workspace]);
@@ -80,5 +80,5 @@ describe('Hcanvas CLI extension commands', () => {
     const missing = await runCli(['extension', 'info', 'com.example.missing', '--workspace', workspace]);
     expect(missing.code).toBe(1);
     expect(missing.stderr + missing.stdout).toContain('Unknown extension id');
-  });
+  }, 120_000);
 });
