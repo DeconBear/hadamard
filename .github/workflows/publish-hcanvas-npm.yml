@@ -125,23 +125,10 @@ jobs:
           npm run architecture:check
           npx vitest run tests/hcanvas-*.spec.ts --reporter=dot
 
-      - name: Install browser and Python notebook dependencies
-        if: steps.npm_version.outputs.exists != 'true'
-        run: |
-          npx playwright install --with-deps chromium
-          python -m pip install --upgrade pip numpy matplotlib sympy
-
-      - name: Build Hcanvas for browser E2E
-        if: steps.npm_version.outputs.exists != 'true'
-        run: npm run build
-
-      - name: Run Hcanvas, Notebook and extension browser E2E
-        if: steps.npm_version.outputs.exists != 'true'
-        run: |
-          npm run test:hcanvas:e2e
-          npm run test:hcanvas:notebook:e2e
-          npm run test:hcanvas:extensions:e2e
-
+      # Full browser/Notebook/extension E2E runs in the reusable verify job of
+      # Publish Hcanvas before installers/release assets are produced. This
+      # workflow publishes the same tagged commit, so it only repeats the
+      # static/unit gate here instead of re-running platform-specific E2E.
       - name: Build and stage Hcanvas package
         if: steps.npm_version.outputs.exists != 'true'
         run: npm run build:hcanvas:package
