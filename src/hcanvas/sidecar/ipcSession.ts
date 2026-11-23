@@ -8,7 +8,7 @@
 // machine stays in one place.
 import { Buffer } from 'node:buffer';
 import type { ChildProcess } from 'node:child_process';
-import { stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -679,7 +679,10 @@ export class SidecarIpcSession {
   }
 
   private async resolveArtifact(artifact: HcSidecarArtifact): Promise<HcSidecarArtifactRef | null> {
-    const roots = [this.options.extensionDir, this.options.workspaceDir];
+    // Windows CI temp roots may be exposed through 8.3 short names (RUNNER~1)
+    // while child-process cwd/realpath returns the long form. Compare realpaths.
+    const canonical = async (target: string): Promise<string> => (await realpath(target).catch(() => null)) ?? path.resolve(target);
+    const roots = [await canonical(this.options.extensionDir), await canonical(this.options.workspaceDir)];
     const candidates: string[] = [];
     if (artifact.path) {
       const raw = artifact.path;
@@ -688,9 +691,10 @@ export class SidecarIpcSession {
     }
     let resolved: { absolute: string; root: string } | null = null;
     for (const candidate of candidates) {
+      const absolute = await canonical(candidate);
       for (const root of roots) {
-        if (isPathInside(root, candidate)) {
-          resolved = { absolute: candidate, root };
+        if (isPathInside(root, absolute)) {
+          resolved = { absolute, root };
           break;
         }
       }

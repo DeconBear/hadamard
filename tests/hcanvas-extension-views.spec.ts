@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, truncate, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, truncate, writeFile } from 'node:fs/promises';
 import { createServer, request, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
@@ -432,7 +432,7 @@ describe('ExtensionViewService', () => {
     const script = await service.readAsset(created.instanceId, created.token, 'app.js');
     expect(script).not.toBeNull();
     expect(script!.mime).toBe('text/javascript; charset=utf-8');
-    expect(script!.filePath).toBe(path.join(fixture.uiRoot, 'app.js'));
+    expect(script!.filePath).toBe(await realpath(path.join(fixture.uiRoot, 'app.js')));
     expect(script!.size).toBe(Buffer.byteLength('window.__viewer = true;'));
     expect(script!.headers['access-control-allow-origin']).toBe('*');
     expect(script!.headers['cross-origin-resource-policy']).toBe('cross-origin');
