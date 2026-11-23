@@ -394,8 +394,9 @@ async function main() {
     assert('blank-line plus also inserts rich Markdown blocks', true);
     const runtimeBeforeSave = await api('/api/runtime');
     for (const session of runtimeBeforeSave.body.kernels || []) {
-      if (session.scope?.key === 'root_default:layout.hnb.md') await api('/api/kernels/' + session.sessionId, { method: 'DELETE' });
+      await api('/api/kernels/' + session.sessionId, { method: 'DELETE' });
     }
+    await page.waitForTimeout(500);
 
     await page.locator('.file-tree-node', { hasText: 'save.hnb.md' }).first().click();
     await page.locator('.nb-title strong', { hasText: 'save.hnb.md' }).waitFor();
