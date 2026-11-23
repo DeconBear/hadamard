@@ -28,9 +28,9 @@ files:
   - "!**/*.map"
   - "!dist/gui-canvas/**"
   - "!node_modules/@excalidraw/**"
-asar: true
-asarUnpack:
-  - "**/node_modules/playwright-core/**"
+# Keep the app unpacked: bundled kernel/sidecar scripts are launched by
+# external interpreters and cannot execute from inside an asar archive.
+asar: false
 npmRebuild: false
 win:
   icon: assets/hcanvas-icon.ico

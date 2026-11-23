@@ -14,7 +14,8 @@ import path from 'node:path';
 
 const root = process.cwd();
 const appDir = path.join(root, 'build-artifacts', 'desktop-app');
-const electronExe = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
+const packagedExe = process.env.HCANVAS_DESKTOP_EXE ? path.resolve(process.env.HCANVAS_DESKTOP_EXE) : undefined;
+const electronExe = packagedExe || path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
 const port = Number(process.env.HCANVAS_DESKTOP_E2E_PORT || 47120);
 const debugPort = Number(process.env.HCANVAS_DESKTOP_DEBUG_PORT || 9223);
 let electronProcess;
@@ -47,12 +48,13 @@ async function assembleApp() {
 async function main() {
   workspace = await mkdtemp(path.join(os.tmpdir(), 'hcanvas-desktop-'));
   try {
-    await assembleApp();
+    if (!packagedExe) await assembleApp();
     const fence = String.fromCharCode(96).repeat(3);
     await writeFile(path.join(workspace, 'desktop.hnb.md'), ['---', 'hcanvas: notebook', 'kernel: python', '---', '', '# Desktop notebook', '', fence + 'python exec', 'print("desktop-e2e")', fence, ''].join('\n'), 'utf8');
     const childEnv = { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config'), HCANVAS_HOME: path.join(workspace, '.home'), HADAMARD_HOME: path.join(workspace, '.home') };
     delete childEnv.ELECTRON_RUN_AS_NODE;
-    electronProcess = spawn(electronExe, [appDir, '--no-sandbox', '--workspace', workspace, '--port', String(port), '--remote-debugging-port=' + debugPort], {
+    const launchArgs = packagedExe ? ['--workspace', workspace, '--port', String(port), '--remote-debugging-port=' + debugPort] : [appDir, '--no-sandbox', '--workspace', workspace, '--port', String(port), '--remote-debugging-port=' + debugPort];
+    electronProcess = spawn(electronExe, launchArgs, {
       cwd: root,
       env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -120,6 +122,14 @@ async function main() {
     if (electronProcess?.pid) {
       await new Promise(resolve => {
         const killer = spawn(process.platform === 'win32' ? 'taskkill' : 'kill', process.platform === 'win32' ? ['/pid', String(electronProcess.pid), '/T', '/F'] : ['-TERM', String(electronProcess.pid)], { stdio: 'ignore', windowsHide: true });
+        killer.once('exit', () => resolve());
+        killer.once('error', () => resolve());
+        setTimeout(resolve, 3000);
+      });
+    }
+    if (packagedExe) {
+      await new Promise(resolve => {
+        const killer = spawn(process.platform === 'win32' ? 'taskkill' : 'kill', process.platform === 'win32' ? ['/IM', path.basename(electronExe), '/T', '/F'] : ['-TERM', String(electronProcess?.pid)], { stdio: 'ignore', windowsHide: true });
         killer.once('exit', () => resolve());
         killer.once('error', () => resolve());
         setTimeout(resolve, 3000);
