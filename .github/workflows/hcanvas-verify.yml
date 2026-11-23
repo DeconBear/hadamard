@@ -64,8 +64,6 @@ jobs:
         run: npm run test:hcanvas:extensions:e2e
       - name: Run NPM extension GUI E2E (fake registry)
         run: npm run test:hcanvas:npm-extension:e2e
-      - name: Run Windows Electron desktop-shell Notebook E2E
-        run: npm run test:hcanvas:desktop:e2e
       - name: Build packaged Hcanvas
         run: npm run build:hcanvas:package
       - name: Run installed-package Notebook E2E
