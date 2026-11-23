@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { HcPtyManager } from '../src/hcanvas/sidecar/pty.js';
@@ -120,7 +121,7 @@ describe('pty manager', () => {
       enforceLimitCaps: false,
       killImpl: async () => true,
     });
-    const escape = errorOf(await manager.create({ command: ['x'], cwd: '..\\..\\outside' }).catch(value => value));
+    const escape = errorOf(await manager.create({ command: ['x'], cwd: path.resolve(process.cwd(), '..', 'outside') }).catch(value => value));
     expect(escape.code).toBe('path_forbidden');
     const badCommand = errorOf(await manager.create({ command: [] }).catch(value => value));
     expect(badCommand.code).toBe('invalid_params');

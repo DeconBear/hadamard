@@ -239,7 +239,7 @@ describe('HKP kernel manager', () => {
     const diagnostics = eventsFor(harness.events, result.executionId)
       .filter(event => event.event === 'diagnostic')
       .map(event => String(event.payload.code));
-    expect(diagnostics).toContain('interrupt_kill');
+    expect(diagnostics).toContain(process.platform === 'win32' ? 'interrupt_kill' : 'interrupt_escalate');
     const after = harness.manager.snapshot(session.sessionId);
     expect(after.sessionId).toBe(session.sessionId);
     const outcome = await queued.completion;

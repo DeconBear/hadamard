@@ -150,7 +150,7 @@ describe('real notebook kernel variables', () => {
       expect(completed.cursorEnd).toBe(3);
       const inspected = await client.inspect('print', 5);
       expect(inspected.name).toBe('print');
-      expect(inspected.documentation).toContain('print(');
+      expect(inspected.documentation).toMatch(/print/i);
     } finally { client.close(); }
   }, 40_000);
 

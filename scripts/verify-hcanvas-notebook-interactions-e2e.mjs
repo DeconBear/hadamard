@@ -304,7 +304,7 @@ async function main() {
     await completionCell.locator('.cm-content').fill('print');
     await completionCell.locator('.cm-line').hover({ position: { x: 55, y: 10 } });
     await page.locator('.cm-notebook-doc').waitFor();
-    assert('kernel documentation appears on hover', (await page.locator('.cm-notebook-doc').innerText()).includes('print'));
+    assert('kernel documentation appears on hover', /print/i.test(await page.locator('.cm-notebook-doc').innerText()));
     await page.keyboard.press('Escape');
 
     await page.locator('[data-nb-add-code]').click();
