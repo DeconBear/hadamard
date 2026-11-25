@@ -339,7 +339,7 @@ hcanvas app --project ~/projects/my-deck
 hcanvas desktop --project ~/projects/my-deck
 ```
 
-顶部 **Projects** 按钮会打开全屏**项目管理页**，数据来自配置的数据目录中的全局注册表（默认 `~/.hcanvas/projects.json`）。页面中的 **Data location** 行会显示该路径；桌面版可点 **Change…** 修改。该设置保存在应用配置目录（Windows 为 `%APPDATA%\Hadamard Canvas\hcanvas-settings.json`），不在安装目录内，所以重装或升级不会重置。修改时若目标目录为空会复制现有数据，旧目录会保留作为安全副本，并提供 **Restart now**。画布页顶栏的 **Open folder** 会打开当前项目根目录；Page Inspector 的 **Open page files** 会打开文档 JSON 所在的 `<workspace>/docs`。项目卡片中，**📁 Open folder** 可在系统文件管理器中打开项目文件夹（Workspace 对话框里也有同样按钮）。桌面版点击项目会打开一个**独立窗口**（可同时打开多个项目）；**New Project…** 通过原生目录选择创建/打开 `<project>/.hcanvas`。浏览器模式点击卡片会在新标签打开已在运行的项目；点击当前项目卡片返回画布。点击左下角 workspace 路径会打开 Workspace 对话框，显示当前路径、生成的 CLI 指南，并可一键复制。初始化不破坏现有文件，会创建：
+顶部 **Projects** 按钮会打开全屏**项目管理页**，数据来自配置的数据目录中的全局注册表（默认 `~/.hcanvas/projects.json`）。当前数据位置在 **Project Hub → 设置 → 通用** 中查看和修改。该设置保存在应用配置目录（Windows 为 `%APPDATA%\Hadamard Canvas\hcanvas-settings.json`），不在安装目录内，所以重装或升级不会重置。修改时若目标目录为空会复制现有数据，旧目录会保留作为安全副本，并提供 **Restart now**。画布页顶栏的 **Open folder** 会打开当前项目根目录；Page Inspector 的 **Open page files** 会打开文档 JSON 所在的 `<workspace>/docs`。项目卡片中，**📁 Open folder** 可在系统文件管理器中打开项目文件夹（Workspace 对话框里也有同样按钮）。桌面版点击项目会打开一个**独立窗口**（可同时打开多个项目）；**New Project…** 通过原生目录选择创建/打开 `<project>/.hcanvas`。浏览器模式点击卡片会在新标签打开已在运行的项目；点击当前项目卡片返回画布。点击左下角 workspace 路径会打开 Workspace 对话框，显示当前路径、生成的 CLI 指南，并可一键复制。初始化不破坏现有文件，会创建：
 
 ```text
 <project>/.hcanvas/
@@ -414,7 +414,7 @@ Canvas 页面的选中工具栏现在提供布局与连线工具。选中两个�
 
 ## 语言
 
-打开 **项目** 页面，在 **语言** 中选择 **English / 中文**。设置保存在应用配置目录的 `hcanvas-settings.json` 中，跨项目、窗口和升级共享。切换后界面、Inspector、弹窗、快捷键、历史、插件管理器和 toast 都会使用对应语言；文档内容（页面文字、HTML、文件名）不会被机器翻译。桌面窗口会按保存的语言启动，项目页面始终提供语言选择器。
+打开 **Project Hub → 设置 → 通用**，在 **界面语言** 中选择 **English / 中文**。设置保存在应用配置目录的 `hcanvas-settings.json` 中，跨项目、窗口和升级共享。切换后界面、Inspector、弹窗、快捷键、历史、插件管理器和 toast 都会使用对应语言；文档内容（页面文字、HTML、文件名）不会被机器翻译。桌面窗口会按保存的语言启动，项目页面始终提供语言选择器。
 
 
 ## 取色器

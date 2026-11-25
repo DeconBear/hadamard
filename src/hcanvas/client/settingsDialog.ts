@@ -190,7 +190,13 @@ export async function openSettingsDialog(deps: SettingsDialogDeps): Promise<void
     const bridge = deps.desktop();
     if (!bridge?.chooseDataRoot) { deps.toast('Data location can be changed in the desktop app.', 'info'); return; }
     const result = await bridge.chooseDataRoot().catch(() => null);
-    if (result) deps.toast(result.restartRequired ? 'Restart Hcanvas to use the new data location.' : 'Data location updated.', 'success');
+    if (!result) return;
+    const copied = result.migrated ? 'Existing data was copied to the new location. ' : result.existingData ? 'Existing Hcanvas data was found there. ' : '';
+    const restart = result.restartRequired ? 'Restart Hadamard Canvas to use the new location for this window.' : '';
+    const html = '<div class="modal small"><div class="modal-head"><div><strong>Data location changed</strong><small>Stored in the app profile, outside the install directory.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>New data location</span><input readonly value="' + esc(result.dataRoot) + '"></div><p class="hint-card">' + esc(copied + restart) + '</p><p class="history-restore-note">The previous location is left untouched as a safety copy.</p></div><div class="modal-foot"><button class="btn" data-close>Later</button><button id="restartForDataRootBtn" class="btn primary">Restart now</button></div></div>';
+    deps.openModal(html);
+    document.getElementById('restartForDataRootBtn')?.addEventListener('click', () => { void bridge.restartApp?.(); });
+    deps.toast('Data location updated.', 'success');
   });
   const updateBridge = deps.desktop();
   const updateElements = {

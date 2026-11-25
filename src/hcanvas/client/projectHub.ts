@@ -33,8 +33,6 @@ export interface ProjectHubController {
   closeProjectHub(): void;
   renderProjectHub(): Promise<void>;
   revealProjectFolder(projectPath?: string, kind?: 'project' | 'workspace' | 'documents'): Promise<void>;
-  changeAppLanguage(language: 'en' | 'zh'): Promise<void>;
-  changeHubDataRoot(): Promise<void>;
   openSettings(): Promise<void>;
   openWorkspaceModal(): Promise<void>;
 }
@@ -66,18 +64,13 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
 
   const renderProjectHub = async (): Promise<void> => {
     const grid = byId<HTMLElement>('hubProjectGrid');
-    const languageSelect = qs<HTMLSelectElement>('#hubLanguageSelect');
-    if (languageSelect) languageSelect.value = getLanguage();
-    const dataRootRow = document.querySelector<HTMLElement>('.hub-data-root');
-    const dataRootCode = qs<HTMLElement>('#hubDataRoot');
+    const language = getLanguage();
+    const zh = language === 'zh';
     const desktop = deps.desktop();
-    if (desktop?.getDataRoot) {
-      try {
-        const info = await desktop.getDataRoot();
-        if (dataRootCode) dataRootCode.textContent = info.dataRoot;
-        if (dataRootRow) { dataRootRow.classList.remove('hidden'); dataRootRow.title = 'Default workspace and project registry. Settings: ' + info.settingsPath; }
-      } catch { dataRootRow?.classList.add('hidden'); }
-    } else dataRootRow?.classList.add('hidden');
+    const footNote = document.getElementById('hubFootNote');
+    if (footNote) footNote.textContent = zh
+      ? '运行中：项目服务正在运行；已关闭：项目已登记但当前没有运行。语言和数据位置在 Settings 中设置。'
+      : 'Running: project server is active. Closed: project is registered but not running. Language and data location are configured in Settings.';
     const current = await deps.request<{ current: { workspace: string; project?: string | null }; projects: Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }> }>('/api/projects').catch(() => null);
     if (!current) { grid.innerHTML = '<p class="empty-state">Could not read the project registry.</p>'; return; }
     let projects = current.projects;
@@ -97,8 +90,10 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
       const active = current.current.project === project.projectPath;
       const running = Boolean(project.runningUrl);
       const action = active ? 'Return to this canvas →' : desktop ? 'Open in new window ↗' : running ? 'Open in new tab ↗' : 'Not running';
+      const badgeLabel = active ? (zh ? '当前' : 'current') : running ? (zh ? '运行中' : 'running') : (zh ? '已关闭' : 'closed');
+      const badgeTitle = active ? (zh ? '当前窗口正在显示此项目' : 'This project is open in the current window') : running ? (zh ? '此项目的本地服务正在运行' : 'The project server is running') : (zh ? '项目已登记，但当前没有运行' : 'Project is registered but not running');
       return '<article class="hub-card' + (active ? ' current' : '') + '" role="button" tabindex="0" data-hub-project="' + esc(project.projectPath) + '">' +
-        '<div class="hub-card-top"><strong>' + esc(project.name) + '</strong><span class="hub-badge ' + (active ? 'current' : running ? 'running' : 'idle') + '">' + (active ? 'current' : running ? 'running' : 'closed') + '</span></div>' +
+        '<div class="hub-card-top"><strong>' + esc(project.name) + '</strong><span class="hub-badge ' + (active ? 'current' : running ? 'running' : 'idle') + '" title="' + esc(badgeTitle) + '">' + esc(badgeLabel) + '</span></div>' +
         '<small class="hub-card-path">' + esc(project.projectPath) + '</small>' +
         '<small class="hub-card-workspace">' + esc(project.workspacePath) + '</small>' +
         '<div class="hub-card-actions"><span class="hub-card-action">' + action + '</span><button type="button" class="hub-folder-btn" data-hub-folder="' + esc(project.projectPath) + '" title="Open project folder">📁 Open folder</button></div></article>';
@@ -126,36 +121,6 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
     if (settingsButton) settingsButton.onclick = () => { void openSettings(); };
     byId('projectHub').classList.remove('hidden');
     await renderProjectHub();
-  };
-
-  const changeAppLanguage = async (language: 'en' | 'zh'): Promise<void> => {
-    try {
-      await deps.request('/api/settings/language', { method: 'POST', body: JSON.stringify({ language }) });
-      setLanguage(language);
-      deps.renderAll();
-      await renderProjectHub();
-      deps.toast(language === 'zh' ? '语言已切换为中文' : 'Language set to English', 'success');
-    } catch (error) {
-      deps.toast(error instanceof Error ? error.message : String(error), 'error');
-    }
-  };
-
-  const changeHubDataRoot = async (): Promise<void> => {
-    const bridge = deps.desktop();
-    if (!bridge?.chooseDataRoot) { deps.toast('Data location can be changed in the desktop app.', 'info'); return; }
-    try {
-      const result = await bridge.chooseDataRoot();
-      if (!result) return;
-      await renderProjectHub();
-      const copied = result.migrated ? 'Existing data was copied to the new location. ' : result.existingData ? 'Existing Hcanvas data was found there. ' : '';
-      const restart = result.restartRequired ? 'Restart Hadamard Canvas to use the new location for this window.' : '';
-      const html = '<div class="modal small"><div class="modal-head"><div><strong>Data location changed</strong><small>Stored in the app profile, outside the install directory.</small></div><button class="icon-btn" data-close>×</button></div><div class="modal-body"><div class="field"><span>New data location</span><input readonly value="' + esc(result.dataRoot) + '"></div><p class="hint-card">' + esc(copied + restart) + '</p><p class="history-restore-note">The previous location is left untouched as a safety copy.</p></div><div class="modal-foot"><button class="btn" data-close>Later</button><button id="restartForDataRootBtn" class="btn primary">Restart now</button></div></div>';
-      deps.openModal(html);
-      qs<HTMLButtonElement>('#restartForDataRootBtn')?.addEventListener('click', () => { void bridge.restartApp?.(); });
-      deps.toast('Data location updated.', 'success');
-    } catch (error) {
-      deps.toast(error instanceof Error ? error.message : String(error), 'error');
-    }
   };
 
   const openSettings = async (): Promise<void> => {
@@ -187,5 +152,5 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
     } catch (error) { deps.toast(error instanceof Error ? error.message : String(error), 'error'); }
   };
 
-  return { openProjectHub, closeProjectHub, renderProjectHub, revealProjectFolder, changeAppLanguage, changeHubDataRoot, openSettings, openWorkspaceModal };
+  return { openProjectHub, closeProjectHub, renderProjectHub, revealProjectFolder, openSettings, openWorkspaceModal };
 }

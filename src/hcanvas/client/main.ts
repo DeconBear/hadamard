@@ -777,8 +777,6 @@ function bindStaticActions(): void {
   el('openProjectFolderBtn').addEventListener('click', () => { void revealProjectFolder(undefined, 'project'); });
   qs<HTMLButtonElement>('#hubCloseBtn')?.addEventListener('click', () => closeProjectHub());
   qs<HTMLButtonElement>('#hubRefreshBtn')?.addEventListener('click', () => { void renderProjectHub(); });
-  qs<HTMLSelectElement>('#hubLanguageSelect')?.addEventListener('change', event => { void changeAppLanguage((event.target as HTMLSelectElement).value === 'zh' ? 'zh' : 'en'); });
-  qs<HTMLButtonElement>('#hubChangeDataRoot')?.addEventListener('click', () => { void changeHubDataRoot(); });
   qs<HTMLButtonElement>('#hubNewProjectBtn')?.addEventListener('click', () => {
     if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject();
     else toast('Browser mode: run hcanvas app --project <folder> to create a project.', 'info');
@@ -3493,7 +3491,5 @@ function closeProjectHub(): void { projectHub.closeProjectHub(); }
 function openProjectHub(): Promise<void> { return projectHub.openProjectHub(); }
 function renderProjectHub(): Promise<void> { return projectHub.renderProjectHub(); }
 function revealProjectFolder(projectPath?: string, kind?: 'project' | 'workspace' | 'documents'): Promise<void> { return projectHub.revealProjectFolder(projectPath, kind); }
-function changeAppLanguage(language: 'en' | 'zh'): Promise<void> { return projectHub.changeAppLanguage(language); }
-function changeHubDataRoot(): Promise<void> { return projectHub.changeHubDataRoot(); }
 function openWorkspaceModal(): Promise<void> { return projectHub.openWorkspaceModal(); }
 void initialize();
