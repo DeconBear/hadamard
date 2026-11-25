@@ -4,7 +4,7 @@ description: 从下载到本地优先、Agent 原生的画布，只需要几分�
 ---
 
 <div class="hc-hero">
-  <div class="hc-kicker">Hadamard Canvas · v0.1.4</div>
+  <div class="hc-kicker">Hadamard Canvas · v0.1.5</div>
   <h1>让页面<br /><span>成为工作空间。</span></h1>
   <p class="hc-sub">Hcanvas 是面向严肃视觉工作的本地优先画布。在这里做页面、幻灯片和图示，再让人类与 Agent 通过同一套 JSON-first 接口编辑同一份文档。</p>
   <div class="hc-actions">

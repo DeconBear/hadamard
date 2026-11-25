@@ -36,7 +36,7 @@ async function assembleApp() {
     await cp(path.join(root, 'assets', icon), path.join(appDir, 'assets', icon)).catch(() => undefined);
   }
   await cp(path.join(root, 'hcanvas.version.json'), path.join(appDir, 'hcanvas.version.json'));
-  await writeFile(path.join(appDir, 'package.json'), JSON.stringify({ name: 'hadamard-canvas-desktop-smoke', version: '0.1.4', type: 'module', main: 'dist/src/hcanvas/electronMain.js' }, null, 2));
+  await writeFile(path.join(appDir, 'package.json'), JSON.stringify({ name: 'hadamard-canvas-desktop-smoke', version: '0.1.5', type: 'module', main: 'dist/src/hcanvas/electronMain.js' }, null, 2));
   await mkdir(path.join(appDir, 'node_modules'), { recursive: true });
   const modules = await readdir(path.join(root, 'node_modules'), { withFileTypes: true });
   for (const entry of modules) {

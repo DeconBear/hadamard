@@ -1,5 +1,26 @@
 # Hcanvas Changelog
 
+## v0.1.5 - 2026-11-25
+
+### Settings and runtimes
+
+- Add a unified Settings dialog in Project Hub for interface language, data location, runtime paths, Notebook defaults, update preferences and cache management.
+- Configure Python, GNU Octave and C++ compiler paths explicitly; auto-detect from `PATH` (plus the Windows Octave uninstall registry), test each path and report versions.
+- Apply configured paths to kernel sessions: Python command override, C++ `CXX`, Octave `OCTAVE_BIN`; `hcanvas doctor` reads the same settings.
+- Show actionable errors for missing runtimes and document when settings apply to new kernel sessions.
+
+### Updates and Notebook
+
+- Discover Hcanvas GitHub releases by stable/preview channel, wire electron-updater check/download/install IPC, and add auto-check/auto-download preferences.
+- Choose the default kernel for new Notebook pages, configure the `.hnb.md` output-cache budget and clear cached outputs.
+- Add an HTML export option to include or omit execution outputs and inlined images.
+- Accept kernel completions with **Tab** in Notebook code cells; apply the same completion acceptance to code/files editors.
+
+### Workspace tabs
+
+- The top refresh reloads the active file from disk, preserves the file view and refreshes the file tree.
+- Closing the last file tab returns to the canvas; closing the last tab shows an empty workspace while keeping pages available from Pages.
+- Preserve sidecar artifact handling on Windows short paths.
 ## v0.1.4 - 2026-11-21
 
 ### Notebook
