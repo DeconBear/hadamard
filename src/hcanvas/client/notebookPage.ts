@@ -26,7 +26,11 @@ export interface NotebookPageData extends NotebookEditorData {
 
 const NOTEBOOK_FORMAT = 'hadamard-notebook';
 
-function pickDefaultKernel(kernels: KernelDescriptor[]): string {
+function pickDefaultKernel(kernels: KernelDescriptor[], preferredKernel?: string): string {
+  if (preferredKernel) {
+    const match = kernels.find(kernel => kernel.language === preferredKernel || kernel.id === preferredKernel);
+    if (match) return match.id;
+  }
   for (const preferred of ['python', 'octave', 'cpp']) {
     const match = kernels.find(kernel => kernel.language === preferred || kernel.id === preferred);
     if (match) return match.id;
@@ -84,8 +88,15 @@ export function notebookPageMarkup(): string {
     '<div class="preset-grid"><button type="button" class="preset-btn" data-notebook-page><strong>Notebook</strong><small>Markdown + Python / Octave / C++ · inline formulas and images</small></button></div>';
 }
 
-export function createNotebookPageDefinition(kernels: KernelDescriptor[], name = 'Notebook'): HcPage {
-  const defaultKernelId = pickDefaultKernel(kernels);
+/** Read the user default kernel preference for new Notebook pages. */
+export async function loadPreferredKernel(request: <T = Record<string, unknown>>(pathname: string, init?: RequestInit) => Promise<T>): Promise<string> {
+  try {
+    const payload = await request<{ settings?: { notebook?: { defaultKernel?: string } } }>('/api/settings');
+    return payload.settings?.notebook?.defaultKernel || '';
+  } catch { return ''; }
+}
+export function createNotebookPageDefinition(kernels: KernelDescriptor[], name = 'Notebook', preferredKernel = ''): HcPage {
+  const defaultKernelId = pickDefaultKernel(kernels, preferredKernel);
   const data: NotebookPageData = {
     version: 1,
     variables: {},

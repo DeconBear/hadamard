@@ -56,6 +56,9 @@ async function main() {
   server = started.child;
   const base = started.info.url.replace(/\/$/, '');
   const headers = { 'x-hcanvas-token': started.info.token, 'content-type': 'application/json' };
+  await fetch(base + '/api/workspace/trust', { method: 'POST', headers, body: JSON.stringify({ trust: 'trusted' }) });
+  await fetch(base + '/api/extensions/trust', { method: 'POST', headers, body: JSON.stringify({ id: 'com.hadamard.kernel-cpp', trusted: true }) });
+  await fetch(base + '/api/extensions/toggle', { method: 'POST', headers, body: JSON.stringify({ id: 'com.hadamard.kernel-cpp', enabled: true }) });
   const candidates = [
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
     path.join(os.homedir(), 'AppData', 'Local', 'ms-playwright', 'chromium-1234', 'chrome-win64', 'chrome.exe'),
@@ -85,6 +88,15 @@ async function main() {
   const saved = await (await fetch(base + '/api/settings', { headers })).json();
   assert('Settings persist configured Python path', saved.settings?.runtimes?.python === process.execPath, JSON.stringify(saved.settings?.runtimes));
   assert('Settings persist language and default kernel', saved.settings?.language === 'zh' && saved.settings?.notebook?.defaultKernel === 'cpp');
+  await page.locator('.settings-modal [data-close]').first().click();
+  await page.locator('#hubCloseBtn').click();
+  await page.locator('#addPageMini').click();
+  await page.locator('[data-notebook-page]').click();
+  await page.waitForFunction(() => Boolean(document.querySelector('.notebook-page-host')), null, { timeout: 15_000 });
+  const state = await (await fetch(base + '/api/state', { headers })).json();
+  const activeDoc = await (await fetch(base + '/api/docs/' + state.active.docId, { headers })).json();
+  const notebookPage = activeDoc.doc.pages.find(item => item.extension?.format === 'hadamard-notebook');
+  assert('New Notebook page uses the configured default kernel', notebookPage?.extension?.data?.defaultKernelId === 'cpp', JSON.stringify(notebookPage?.extension?.data?.defaultKernelId));
   assert('No browser page errors during settings flow', errors.length === 0, errors.join('; '));
   console.log('Settings E2E passed');
 }

@@ -37,7 +37,7 @@ import { extensionContributions, getExtensionCatalog } from './extensionCatalog.
 import { commandRegistry } from './commandRegistry.js';
 import { registerBuiltinViewer } from './builtinViewers.js';
 import { createNotebookViewer } from './notebookViewer.js';
-import { createNotebookPageDefinition, notebookPageMarkup } from './notebookPage.js';
+import { createNotebookPageDefinition, loadPreferredKernel, notebookPageMarkup } from './notebookPage.js';
 import { disposeExtensionPage, flushExtensionPage, installExtensionPage, renderExtensionPage } from './extensionPage.js';
 import { installAssetLibrary, type HcAssetView } from './assetLibrary.js';
 import { installHistoryPanel } from './historyPanel.js';
@@ -3317,7 +3317,7 @@ async function openAddPageModal(): Promise<void> {
       closeModal();
       const kernels = extensionContributions<KernelDescriptor>('kernels').map(item => item.contribution);
       const count = state.doc?.pages.filter(page => page.extension?.format === 'hadamard-notebook').length || 0;
-      await addPluginPage(createNotebookPageDefinition(kernels, 'Notebook ' + (count + 1)));
+      await addPluginPage(createNotebookPageDefinition(kernels, 'Notebook ' + (count + 1), await loadPreferredKernel(api)));
       toast('Notebook page created', 'success');
     });
   });
