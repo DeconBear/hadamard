@@ -1,5 +1,5 @@
 import { notebookCellKey, parseNotebook, serializeNotebook, type NotebookCell, type ParsedNotebook } from '../notebook/format.js';
-import type { HcStoredOutput } from '../execOutputs.js';
+import { selectOutputCacheEntries, type HcStoredOutput } from '../execOutputs.js';
 import type { KernelDescriptor, KernelManager } from './kernelManager.js';
 import { esc, genId } from './utils.js';
 import type { BuiltinViewer, BuiltinViewerContext } from './builtinViewers.js';
@@ -38,17 +38,8 @@ function loadCache(rootId: string, path: string): OutputCache {
 
 function saveCache(rootId: string, path: string, cache: OutputCache, budgetBytes = DEFAULT_OUTPUT_CACHE_BYTES): void {
   try {
-    const entries = Object.entries(cache.cells).slice(-80);
-    const kept: typeof entries = [];
-    let used = 0;
-    for (let index = entries.length - 1; index >= 0; index -= 1) {
-      const entry = entries[index]!;
-      const size = JSON.stringify({ [entry[0]]: entry[1] }).length;
-      if (used + size > budgetBytes) continue;
-      kept.unshift(entry);
-      used += size;
-    }
-    localStorage.setItem(cacheKeyFor(rootId, path), JSON.stringify({ v: CACHE_VERSION, cells: Object.fromEntries(kept) }));
+    const entries = selectOutputCacheEntries(Object.entries(cache.cells).slice(-80), budgetBytes);
+    localStorage.setItem(cacheKeyFor(rootId, path), JSON.stringify({ v: CACHE_VERSION, cells: Object.fromEntries(entries) }));
   } catch { /* Outputs remain in memory if storage is full. */ }
 }
 

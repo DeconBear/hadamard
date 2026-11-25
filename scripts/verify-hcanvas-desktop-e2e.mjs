@@ -53,7 +53,9 @@ async function main() {
     await writeFile(path.join(workspace, 'desktop.hnb.md'), ['---', 'hcanvas: notebook', 'kernel: python', '---', '', '# Desktop notebook', '', fence + 'python exec', 'print("desktop-e2e")', fence, ''].join('\n'), 'utf8');
     const childEnv = { ...process.env, HCANVAS_CONFIG_HOME: path.join(workspace, '.config'), HCANVAS_HOME: path.join(workspace, '.home'), HADAMARD_HOME: path.join(workspace, '.home') };
     delete childEnv.ELECTRON_RUN_AS_NODE;
-    const launchArgs = packagedExe ? ['--workspace', workspace, '--port', String(port), '--remote-debugging-port=' + debugPort] : [appDir, '--no-sandbox', '--workspace', workspace, '--port', String(port), '--remote-debugging-port=' + debugPort];
+    const profileDir = path.join(workspace, '.electron-profile');
+    const commonArgs = ['--workspace', workspace, '--port', String(port), '--remote-debugging-port=' + debugPort, '--user-data-dir=' + profileDir];
+    const launchArgs = packagedExe ? commonArgs : [appDir, '--no-sandbox', ...commonArgs];
     electronProcess = spawn(electronExe, launchArgs, {
       cwd: root,
       env: childEnv,

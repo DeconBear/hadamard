@@ -71,6 +71,20 @@ export function execData(blockData: unknown): HcExecStoredData {
   return blockData as HcExecStoredData;
 }
 
+/** Keep newest cache entries within a byte budget (approximate JSON size). */
+export function selectOutputCacheEntries<T>(entries: Array<[string, T]>, budgetBytes: number): Array<[string, T]> {
+  if (!Number.isFinite(budgetBytes) || budgetBytes <= 0) return [];
+  const kept: Array<[string, T]> = [];
+  let used = 0;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    const size = JSON.stringify({ [entry[0]]: entry[1] }).length;
+    if (used + size > budgetBytes) continue;
+    kept.unshift(entry);
+    used += size;
+  }
+  return kept;
+}
 export function truncateText(text: string, limit = EXEC_OUTPUT_LIMITS.text): string {
   if (text.length <= limit) return text;
   return text.slice(0, limit) + '\n… output truncated (' + text.length + ' chars)';
