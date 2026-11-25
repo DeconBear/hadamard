@@ -103,7 +103,7 @@ async function main() {
     await page.keyboard.press('Escape');
     await page.keyboard.press('a');
     assert('A inserts above', await page.locator('.nb-code').count() === 5);
-    await page.locator('.nb-code').first().focus();
+    await page.locator('.nb-code').first().locator('.nb-cell-head').click();
     await page.keyboard.press('b');
     await page.waitForTimeout(200);
     const countAfterB = await page.locator('.nb-code').count();
