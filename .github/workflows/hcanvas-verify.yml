@@ -66,6 +66,8 @@ jobs:
         run: npm run test:hcanvas:npm-extension:e2e
       - name: Run Settings E2E
         run: npm run test:hcanvas:settings:e2e
+      - name: Run Refresh and tab E2E
+        run: npm run test:hcanvas:tabs:e2e
       - name: Build packaged Hcanvas
         run: npm run build:hcanvas:package
       - name: Run installed-package Notebook E2E

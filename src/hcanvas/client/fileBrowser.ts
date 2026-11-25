@@ -83,6 +83,7 @@ export interface FileBrowserController {
   syncCanvasTab(docId: string, pageId: string, label: string): void;
   openViewTab(tab: WorkspaceViewTab): void;
   closeViewTab(id: string): void;
+  refreshWorkspace(): Promise<void>;
 }
 
 const KEYWORDS: Record<string, string[]> = {
@@ -394,7 +395,11 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     if (!activeId) {
       const nextView = [...viewTabs.values()][0];
       if (nextView) { activateViewTab(nextView); return; }
+      surface?.remove();
+      surface = null;
+      document.body.classList.remove('file-browser-mode');
       renderTabs();
+      options.onShowCanvas();
       return;
     }
     if (activeId.startsWith('canvas:')) {
@@ -404,6 +409,29 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     } else await activateFile(activeId);
   }
 
+  async function refreshWorkspace(): Promise<void> {
+    await loadRoots();
+    const tab = tabs.find(item => item.id === activeId);
+    if (!tab) return;
+    flushRichMarkdown(tab);
+    if (tab.dirty && !(await saveTab(tab))) return;
+    try {
+      const result = await options.request<{ file: FileContent }>('/api/files/read?root=' + encodeURIComponent(tab.rootId) + '&path=' + encodeURIComponent(tab.path) + '&refresh=' + Date.now());
+      const file = result.file;
+      tab.content = file.content;
+      tab.binary = file.binary;
+      tab.language = file.language;
+      tab.preview = file.preview;
+      tab.ext = file.ext;
+      tab.hash = file.hash;
+      tab.mtime = file.mtime;
+      tab.dirty = false;
+      tab.conflict = undefined;
+      tab.editor?.destroy();
+      tab.editor = undefined;
+      if (activeId === tab.id) renderSurface(tab);
+    } catch (error) { options.toast(error instanceof Error ? error.message : String(error), 'error'); }
+  }
   function flushRichMarkdown(tab: FileTab): void {
     if (tab.mode !== 'view' || !['.md', '.markdown'].includes(tab.ext)) return;
     surface?.querySelector('iframe')?.contentDocument?.dispatchEvent(new Event('blur'));
@@ -975,10 +1003,13 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     syncCanvasTab(detail.docId, detail.pageId, detail.label || 'Canvas', detail.reopen === true);
     const tab = canvasTabs.find(item => item.id === id);
     if (tab) {
-      activeId = tab.id;
-      surface?.remove();
-      surface = null;
-      document.body.classList.remove('file-browser-mode');
+      const activeFile = tabs.some(item => item.id === activeId);
+      if (detail.reopen === true || !activeFile) {
+        activeId = tab.id;
+        surface?.remove();
+        surface = null;
+        document.body.classList.remove('file-browser-mode');
+      }
       renderTabs();
     }
   });
@@ -993,6 +1024,9 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     },
     closeViewTab(id: string): void {
       closeViewTab(id);
+    },
+    refreshWorkspace(): Promise<void> {
+      return refreshWorkspace();
     },
   };
 }

@@ -914,7 +914,7 @@ function bindStaticActions(): void {
       state.context = context; state.docs = context.docs || []; state.presence = context.presence || [];
       const activeId = context.active?.docId || state.docs[0]?.id || null;
       if (!activeId) { state.doc = null; state.activePageId = null; state.activeBlockId = null; renderAll(); return null; }
-      await openDoc(activeId, context.active?.docId === activeId ? context.active.pageId : state.activePageId || undefined, false);
+      await openDoc(activeId, context.active?.docId === activeId ? context.active.pageId : state.activePageId || undefined, false); await fileBrowser?.refreshWorkspace();
       return state.doc?.revision ?? null;
     },
     status: setSaveStatus, toast,
