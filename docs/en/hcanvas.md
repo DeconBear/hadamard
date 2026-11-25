@@ -97,6 +97,16 @@ hcanvas doctor
 
 NPM distribution is a **Preview** channel for the official `@hcanvas/*` kernel packages; the bundled kernels shipped with the app are the stable path. User extensions live under your Hcanvas data root; project extensions live in `.hcanvas/extensions/`. Process-backed extensions (kernels, sidecars, terminals, tools) stay disabled in Restricted Mode; they need an explicit Trust decision after you trust the workspace. `hcanvas doctor` reports Node, Python, g++, GNU Octave and extension compatibility.
 
+## Settings
+
+Open **Project Hub → Settings** on the desktop or in the browser UI. The dialog stores preferences in `hcanvas-settings.json` under the Hcanvas config directory.
+
+- **Runtimes**: optional absolute paths for Python, GNU Octave and the C++ compiler (`g++`/`clang++`). Empty means auto-detect from `PATH` (Windows Octave also checks the uninstall registry). Use **Test** to verify a path and **Auto-detect all** to probe the machine. Changes apply to new kernel sessions; running sessions keep their current interpreter.
+- **General**: interface language (English/中文) and the data location. Changing the data location still requires a desktop restart.
+- **Notebook**: default kernel for new Notebook pages and the browser output-cache budget for `.hnb.md` files; clear cached outputs from the same panel.
+- **Updates**: check for updates now, auto-check on startup, auto-download, and the stable/preview channel. Automatic install is available in packaged desktop builds; browser and CLI users update through their installer or npm.
+
+`hcanvas doctor` reads the same runtime settings and reports whether each runtime came from a configured path or auto-detection.
 ## Notebooks
 
 Create a Notebook page from **Pages**, or open a `.hnb.md` file from **Files**. Markdown is edited directly in the continuous document; code cells run through enabled kernel extensions. Variables keep separate **initial** and **current** values: Initialize/Run all applies initial values, while normal runs publish current values. Shared variables flow across Python, C++ and GNU Octave kernels.

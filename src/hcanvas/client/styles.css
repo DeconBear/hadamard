@@ -1893,3 +1893,7 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .settings-status { margin-left: auto; font: 10.5px/1.4 Inter, sans-serif; color: var(--muted); }
 .settings-status.success { color: #17603a; }
 .settings-status.error { color: #b42318; }
+
+.settings-update-card { margin-top: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.42); }
+.settings-update-state { font: 10.5px/1.5 Inter, sans-serif; color: var(--ink-2); }
+.settings-number { width: 90px; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--ink); font: 11px Inter, sans-serif; }

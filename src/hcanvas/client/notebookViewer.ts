@@ -19,6 +19,7 @@ interface NotebookFileContext { rootId: string; path: string; }
 interface OutputCache { v: number; cells: Record<string, { outputs: HcStoredOutput[]; count?: number }>; }
 
 const CACHE_VERSION = 2;
+const DEFAULT_OUTPUT_CACHE_BYTES = 4 * 1024 * 1024;
 
 function cacheKeyFor(rootId: string, path: string): string { return 'hcanvas.notebook.outputs.v2:' + rootId + ':' + path; }
 function legacyCacheKeyFor(rootId: string, path: string): string { return 'hcanvas.notebook.outputs.v1:' + rootId + ':' + path; }
@@ -35,10 +36,19 @@ function loadCache(rootId: string, path: string): OutputCache {
   return { v: CACHE_VERSION, cells: {} };
 }
 
-function saveCache(rootId: string, path: string, cache: OutputCache): void {
+function saveCache(rootId: string, path: string, cache: OutputCache, budgetBytes = DEFAULT_OUTPUT_CACHE_BYTES): void {
   try {
     const entries = Object.entries(cache.cells).slice(-80);
-    localStorage.setItem(cacheKeyFor(rootId, path), JSON.stringify({ v: CACHE_VERSION, cells: Object.fromEntries(entries) }));
+    const kept: typeof entries = [];
+    let used = 0;
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index]!;
+      const size = JSON.stringify({ [entry[0]]: entry[1] }).length;
+      if (used + size > budgetBytes) continue;
+      kept.unshift(entry);
+      used += size;
+    }
+    localStorage.setItem(cacheKeyFor(rootId, path), JSON.stringify({ v: CACHE_VERSION, cells: Object.fromEntries(kept) }));
   } catch { /* Outputs remain in memory if storage is full. */ }
 }
 
@@ -161,6 +171,7 @@ export function createNotebookViewer(deps: NotebookViewerDeps): BuiltinViewer {
 function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: NotebookFileContext): { dispose(): void } {
   let disposed = false;
   let editor: NotebookEditorHandle | null = null;
+  let outputCacheBudget = DEFAULT_OUTPUT_CACHE_BYTES;
   let fileHash: string | undefined;
   let fileMtime: number | undefined;
   let saveBlocked = false;
@@ -223,6 +234,9 @@ function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: No
     try {
       const result = await deps.request<{ file: { content: string; hash?: string; mtime?: number } }>('/api/files/read?root=' + encodeURIComponent(file.rootId) + '&path=' + encodeURIComponent(file.path));
       if (disposed) return;
+      const settings = await deps.request<{ settings?: { notebook?: { outputCacheBytes?: number } } }>('/api/settings').catch(() => null);
+      const configuredBudget = settings?.settings?.notebook?.outputCacheBytes;
+      if (typeof configuredBudget === 'number' && configuredBudget >= 0) outputCacheBudget = configuredBudget;
       fileHash = result.file.hash;
       fileMtime = result.file.mtime;
       saveBlocked = false;
@@ -280,7 +294,7 @@ function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: No
         },
         persistOutputs: snapshot => {
           persistOutputCache(cache, snapshot);
-          saveCache(file.rootId, file.path, cache);
+          saveCache(file.rootId, file.path, cache, outputCacheBudget);
         },
       });
     } catch (error) {

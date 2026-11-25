@@ -97,6 +97,16 @@ hcanvas doctor
 
 官方 `@hcanvas/*` 内核包的 NPM 分发仍是 **Preview**；稳定路径是随应用提供的 bundled 内核。用户级扩展位于你的 Hcanvas 数据根目录；项目级扩展位于 `.hcanvas/extensions/`。带进程能力的扩展（内核、sidecar、终端、工具）在 Restricted Mode 下默认禁用；信任工作区后仍需显式授予扩展信任。`hcanvas doctor` 会报告 Node、Python、g++、GNU Octave 与扩展兼容性。
 
+## 设置
+
+在桌面版或浏览器 UI 中打开 **Project Hub → 设置**。设置保存在 Hcanvas 配置目录下的 `hcanvas-settings.json`。
+
+- **运行时**：可选填 Python、GNU Octave、C++ 编译器（`g++`/`clang++`）的绝对路径。留空表示从 `PATH` 自动检测；Windows 上 Octave 还会检查卸载注册表。可用 **Test** 验证路径，或用 **Auto-detect all** 检测本机。修改只影响新内核会话，运行中的会话保持当前解释器。
+- **通用**：界面语言（English/中文）与数据位置。修改数据位置后仍需重启桌面版。
+- **Notebook**：新建 Notebook 页面的默认内核、`.hnb.md` 浏览器输出缓存预算，并可清理缓存输出。
+- **更新**：立即检查更新、启动时自动检查、自动下载以及 stable/preview 通道。自动安装仅桌面安装包支持；浏览器和 CLI 用户通过安装包或 npm 更新。
+
+`hcanvas doctor` 会读取同一套运行时设置，并显示运行时来自配置路径还是自动检测。
 ## Notebook
 
 从 **Pages** 新建 Notebook 页面，或从 **Files** 打开 `.hnb.md` 文件。Markdown 在连续文档中直接编辑，代码单元通过已启用的内核扩展执行。变量区分**初始值**与**当前值**：Initialize / Run all 应用初始值，普通运行发布当前值；共享变量可在 Python、C++、GNU Octave 内核之间流转。

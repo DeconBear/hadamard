@@ -76,6 +76,7 @@ async function main() {
   assert('Settings dialog opens from Project Hub', await page.locator('.settings-modal').isVisible());
   assert('Settings shows all three runtime paths', await page.locator('[data-runtime="python"], [data-runtime="octave"], [data-runtime="cpp"]').count() === 3);
   assert('Settings exposes update preferences', await page.locator('#settings-auto-check').count() === 1 && await page.locator('#settings-update-channel').count() === 1);
+  assert('Settings exposes Notebook cache budget and cleanup', await page.locator('#settings-output-cache').count() === 1 && await page.locator('#settings-clear-output-cache').count() === 1);
   const pythonInput = page.locator('#settings-runtime-python');
   await pythonInput.fill(process.execPath);
   await page.locator('[data-test-runtime="python"]').click();
@@ -87,7 +88,7 @@ async function main() {
   await page.waitForFunction(() => document.querySelector('#settings-save-status')?.textContent?.includes('Saved'), null, { timeout: 10_000 }).catch(() => undefined);
   const saved = await (await fetch(base + '/api/settings', { headers })).json();
   assert('Settings persist configured Python path', saved.settings?.runtimes?.python === process.execPath, JSON.stringify(saved.settings?.runtimes));
-  assert('Settings persist language and default kernel', saved.settings?.language === 'zh' && saved.settings?.notebook?.defaultKernel === 'cpp');
+  assert('Settings persist language, default kernel and cache budget', saved.settings?.language === 'zh' && saved.settings?.notebook?.defaultKernel === 'cpp' && saved.settings?.notebook?.outputCacheBytes === 4 * 1024 * 1024);
   await page.locator('.settings-modal [data-close]').first().click();
   await page.locator('#hubCloseBtn').click();
   await page.locator('#addPageMini').click();

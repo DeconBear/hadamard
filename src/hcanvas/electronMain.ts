@@ -10,7 +10,10 @@ import { cp, mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { hcanvasSettingsPath, resolveDataRootSync, writeDataRootSetting } from './dataRoot.js';
+import { hcanvasSettingsPath, readHcanvasSettingsSync, resolveDataRootSync, writeDataRootSetting } from './dataRoot.js';
+import { installDesktopUpdates } from './desktopUpdateBridge.js';
+import { HCANVAS_VERSION } from './version.js';
+import type { HcUpdaterLike } from './desktopUpdates.js';
 
 import { startHcanvasServer, type HcServer } from './server.js';
 import { initWorkspace, projectWorkspaceDir } from './workspace.js';
@@ -52,6 +55,8 @@ if (!gotLock) {
   let firstWindow: ElectronBrowserWindow | null = null;
 
   const focusedWindow = (): ElectronBrowserWindow | null => BrowserWindow.getFocusedWindow() ?? firstWindow ?? [...projectWindows.values()][0]?.window ?? null;
+  const getUpdater = (): HcUpdaterLike | null => { try { return (requireElectron('electron-updater') as { autoUpdater: HcUpdaterLike }).autoUpdater; } catch { return null; } };
+  installDesktopUpdates({ app, ipcMain, shell, version: HCANVAS_VERSION, getUpdater, getWindows: () => [...projectWindows.values()].map(entry => entry.window), readSettings: readHcanvasSettingsSync });
 
   const openProjectWindow = async (projectPath: string, port = 0): Promise<ProjectWindow> => {
     const project = path.resolve(projectPath);

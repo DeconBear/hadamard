@@ -1,5 +1,5 @@
 import { getLanguage, setLanguage, translatePhrase } from './i18n.js';
-import { openSettingsDialog } from './settingsDialog.js';
+import { openSettingsDialog, type DesktopUpdateState } from './settingsDialog.js';
 import { esc } from './utils.js';
 
 export interface ProjectHubDesktopBridge {
@@ -9,6 +9,12 @@ export interface ProjectHubDesktopBridge {
   getDataRoot?(): Promise<{ dataRoot: string; settingsPath: string }>;
   chooseDataRoot?(): Promise<{ dataRoot: string; migrated: boolean; existingData: boolean; restartRequired: boolean } | null>;
   chooseRuntimePath?(kind: 'python' | 'octave' | 'cpp'): Promise<string | null>;
+  getUpdateState?(): Promise<DesktopUpdateState>;
+  checkForUpdates?(): Promise<DesktopUpdateState>;
+  downloadUpdate?(): Promise<DesktopUpdateState>;
+  installUpdate?(): Promise<boolean>;
+  openUpdateRelease?(url: string): Promise<boolean>;
+  onUpdateState?(callback: (state: DesktopUpdateState) => void): () => void;
   restartApp?(): Promise<boolean>;
 }
 

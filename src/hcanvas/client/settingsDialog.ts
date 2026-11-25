@@ -36,6 +36,17 @@ interface RuntimeResponse {
   runtimes: RuntimeProbe[];
 }
 
+export interface DesktopUpdateState {
+  status: 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'error';
+  currentVersion: string;
+  channel: 'stable' | 'preview';
+  latest?: { version: string; tag: string; name: string; notes: string; url: string; publishedAt: string; prerelease: boolean };
+  progress?: number;
+  error?: string;
+  canInstall: boolean;
+  checkedAt?: string;
+}
+
 export interface SettingsDialogDeps {
   request<T = Record<string, unknown>>(pathname: string, init?: RequestInit): Promise<T>;
   toast(message: string, kind?: 'info' | 'success' | 'error'): void;
@@ -46,6 +57,12 @@ export interface SettingsDialogDeps {
     chooseDataRoot?(): Promise<{ dataRoot: string; migrated: boolean; existingData: boolean; restartRequired: boolean } | null>;
     restartApp?(): Promise<boolean>;
     chooseRuntimePath?(kind: 'python' | 'octave' | 'cpp'): Promise<string | null>;
+    getUpdateState?(): Promise<DesktopUpdateState>;
+    checkForUpdates?(): Promise<DesktopUpdateState>;
+    downloadUpdate?(): Promise<DesktopUpdateState>;
+    installUpdate?(): Promise<boolean>;
+    openUpdateRelease?(url: string): Promise<boolean>;
+    onUpdateState?(callback: (state: DesktopUpdateState) => void): () => void;
   } | undefined;
   applyLanguage(language: 'en' | 'zh'): void;
 }
@@ -102,11 +119,14 @@ export async function openSettingsDialog(deps: SettingsDialogDeps): Promise<void
       '</section>' +
       '<section class="settings-section"><h3>Notebook</h3>' +
         '<div class="settings-row"><div class="settings-label"><strong>Default kernel</strong><small>Used for new Notebook pages when available.</small></div><select id="settings-default-kernel"><option value="python"' + (defaultKernel === 'python' ? ' selected' : '') + '>Python</option><option value="cpp"' + (defaultKernel === 'cpp' ? ' selected' : '') + '>C++</option><option value="octave"' + (defaultKernel === 'octave' ? ' selected' : '') + '>GNU Octave</option></select></div>' +
+        '<div class="settings-row"><div class="settings-label"><strong>Output cache budget</strong><small>Maximum browser storage for .hnb.md execution outputs, in MB.</small></div><input type="number" min="0" max="64" step="1" id="settings-output-cache" class="settings-number" value="' + Math.round((settings.notebook?.outputCacheBytes ?? 4 * 1024 * 1024) / (1024 * 1024)) + '"></div>' +
+        '<div class="settings-actions"><button type="button" class="btn tiny" id="settings-clear-output-cache">Clear output caches</button><span id="settings-cache-stats" class="settings-status"></span></div>' +
       '</section>' +
       '<section class="settings-section"><h3>Updates</h3>' +
-        '<div class="settings-row"><div class="settings-label"><strong>Check for updates</strong><small>Check GitHub Releases when the desktop app starts.</small></div><input type="checkbox" id="settings-auto-check"' + (settings.updates?.autoCheck ? ' checked' : '') + '></div>' +
+        '<div class="settings-row"><div class="settings-label"><strong>Check for updates</strong><small>Check GitHub Releases when the desktop app starts.</small></div><input type="checkbox" id="settings-auto-check"' + (settings.updates?.autoCheck !== false ? ' checked' : '') + '></div>' +
         '<div class="settings-row"><div class="settings-label"><strong>Download updates automatically</strong><small>Download in the background; installation still asks first.</small></div><input type="checkbox" id="settings-auto-download"' + (settings.updates?.autoDownload ? ' checked' : '') + '></div>' +
         '<div class="settings-row"><div class="settings-label"><strong>Channel</strong><small>Preview receives pre-release builds when available.</small></div><select id="settings-update-channel"><option value="stable"' + (settings.updates?.channel !== 'preview' ? ' selected' : '') + '>Stable</option><option value="preview"' + (settings.updates?.channel === 'preview' ? ' selected' : '') + '>Preview</option></select></div>' +
+        '<div class="settings-update-card"><div id="settings-update-state" class="settings-update-state">Update checks are available in the packaged desktop app.</div><div class="settings-actions"><button type="button" class="btn tiny" id="settings-check-update">Check now</button><button type="button" class="btn tiny hidden" id="settings-download-update">Download</button><button type="button" class="btn tiny hidden" id="settings-install-update">Install and restart</button><button type="button" class="btn tiny hidden" id="settings-open-release">Release notes</button></div></div>' +
       '</section>' +
     '</div>' +
     '<div class="modal-foot"><span id="settings-save-status" class="settings-status"></span><button class="btn" data-close>Close</button><button id="settings-save" class="btn primary">Save settings</button></div>' +
@@ -171,6 +191,85 @@ export async function openSettingsDialog(deps: SettingsDialogDeps): Promise<void
     const result = await bridge.chooseDataRoot().catch(() => null);
     if (result) deps.toast(result.restartRequired ? 'Restart Hcanvas to use the new data location.' : 'Data location updated.', 'success');
   });
+  const updateBridge = deps.desktop();
+  const updateElements = {
+    state: document.getElementById('settings-update-state') as HTMLElement | null,
+    check: document.getElementById('settings-check-update') as HTMLButtonElement | null,
+    download: document.getElementById('settings-download-update') as HTMLButtonElement | null,
+    install: document.getElementById('settings-install-update') as HTMLButtonElement | null,
+    release: document.getElementById('settings-open-release') as HTMLButtonElement | null,
+  };
+  let latestState: DesktopUpdateState | null = null;
+  const renderUpdateState = (next: DesktopUpdateState | null): void => {
+    latestState = next;
+    if (!updateElements.state) return;
+    if (!next) { updateElements.state.textContent = 'Update checks are available in the packaged desktop app.'; return; }
+    const latest = next.latest ? ' Hcanvas ' + next.latest.version : '';
+    const progress = typeof next.progress === 'number' ? ' · ' + Math.round(next.progress) + '%' : '';
+    const text = next.status === 'up-to-date' ? 'Hcanvas ' + next.currentVersion + ' is up to date'
+      : next.status === 'available' ? 'Update available:' + latest
+      : next.status === 'downloading' ? 'Downloading' + latest + progress
+      : next.status === 'downloaded' ? 'Ready to install' + latest
+      : next.status === 'checking' ? 'Checking for updates…'
+      : next.status === 'error' ? 'Update check failed: ' + (next.error || 'unknown error')
+      : 'Current version: Hcanvas ' + next.currentVersion;
+    updateElements.state.textContent = text;
+    updateElements.download?.classList.toggle('hidden', next.status !== 'available' || !next.canInstall);
+    updateElements.install?.classList.toggle('hidden', next.status !== 'downloaded');
+    updateElements.release?.classList.toggle('hidden', !next.latest?.url);
+  };
+  if (updateBridge?.getUpdateState) {
+    void updateBridge.getUpdateState().then(renderUpdateState).catch(() => renderUpdateState(null));
+    updateBridge.onUpdateState?.(renderUpdateState);
+    updateElements.check?.addEventListener('click', async () => {
+      if (!updateBridge.checkForUpdates) return;
+      if (updateElements.check) updateElements.check.disabled = true;
+      try { renderUpdateState(await updateBridge.checkForUpdates()); }
+      catch (error) { status(error instanceof Error ? error.message : String(error), 'error'); }
+      finally { if (updateElements.check) updateElements.check.disabled = false; }
+    });
+    updateElements.download?.addEventListener('click', async () => {
+      if (!updateBridge.downloadUpdate) return;
+      try { renderUpdateState(await updateBridge.downloadUpdate()); } catch (error) { status(error instanceof Error ? error.message : String(error), 'error'); }
+    });
+    updateElements.install?.addEventListener('click', async () => {
+      if (!updateBridge.installUpdate) return;
+      const installed = await updateBridge.installUpdate().catch(() => false);
+      if (!installed) status('Install is not ready yet.', 'info');
+    });
+    updateElements.release?.addEventListener('click', () => {
+      const url = latestState?.latest?.url;
+      if (url) void updateBridge.openUpdateRelease?.(url);
+    });
+  } else {
+    updateElements.check?.classList.add('hidden');
+    renderUpdateState(null);
+  }
+  const renderCacheStats = (): void => {
+    const target = document.getElementById('settings-cache-stats');
+    if (!target) return;
+    try {
+      let bytes = 0; let files = 0;
+      for (const key of Object.keys(localStorage)) {
+        if (!key.startsWith('hcanvas.notebook.outputs.')) continue;
+        files += 1; bytes += (localStorage.getItem(key) || '').length;
+      }
+      target.textContent = files ? files + ' notebook output set' + (files === 1 ? '' : 's') + ' · ' + (bytes / (1024 * 1024)).toFixed(1) + ' MB' : 'No cached Notebook outputs';
+    } catch { target.textContent = 'Output cache stats unavailable'; }
+  };
+  renderCacheStats();
+  document.getElementById('settings-clear-output-cache')?.addEventListener('click', () => {
+    let removed = 0;
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (!key.startsWith('hcanvas.notebook.outputs.')) continue;
+        localStorage.removeItem(key);
+        removed += 1;
+      }
+    } catch { /* storage may be unavailable */ }
+    renderCacheStats();
+    status('Cleared ' + removed + ' cached Notebook output set' + (removed === 1 ? '' : 's'), 'success');
+  });
   document.getElementById('settings-save')?.addEventListener('click', async () => {
     const button = document.getElementById('settings-save') as HTMLButtonElement;
     button.disabled = true;
@@ -179,7 +278,7 @@ export async function openSettingsDialog(deps: SettingsDialogDeps): Promise<void
       const payload: SettingsPayload = {
         language: languageValue,
         runtimes: readRuntimeInputs(),
-        notebook: { defaultKernel: (document.getElementById('settings-default-kernel') as HTMLSelectElement).value },
+        notebook: { defaultKernel: (document.getElementById('settings-default-kernel') as HTMLSelectElement).value, outputCacheBytes: Math.max(0, Math.min(64, Number((document.getElementById('settings-output-cache') as HTMLInputElement).value) || 0)) * 1024 * 1024 },
         updates: {
           autoCheck: (document.getElementById('settings-auto-check') as HTMLInputElement).checked,
           autoDownload: (document.getElementById('settings-auto-download') as HTMLInputElement).checked,
