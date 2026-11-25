@@ -109,7 +109,7 @@ hcanvas doctor
 `hcanvas doctor` 会读取同一套运行时设置，并显示运行时来自配置路径还是自动检测。
 ## Notebook
 
-从 **Pages** 新建 Notebook 页面，或从 **Files** 打开 `.hnb.md` 文件。Markdown 在连续文档中直接编辑，代码单元通过已启用的内核扩展执行。变量区分**初始值**与**当前值**：Initialize / Run all 应用初始值，普通运行发布当前值；共享变量可在 Python、C++、GNU Octave 内核之间流转。
+从 **Pages** 新建 Notebook 页面，或从 **Files** 打开 `.hnb.md` 文件。Markdown 在连续文档中直接编辑，代码单元通过已启用的内核扩展执行。内核补全会随输入出现，也可用 **Ctrl+Space** 触发；按 **Tab** 接受选中的补全项。变量区分**初始值**与**当前值**：Initialize / Run all 应用初始值，普通运行发布当前值；共享变量可在 Python、C++、GNU Octave 内核之间流转。
 
 `.hnb.md` 的输出缓存在当前浏览器工作区，Notebook 页面的输出保存在原生文档中。HTML 导出会内联当前可见输出（包括图片资源），可以在 Hcanvas 之外打开。不导入或导出 Jupyter `.ipynb` 文件。
 

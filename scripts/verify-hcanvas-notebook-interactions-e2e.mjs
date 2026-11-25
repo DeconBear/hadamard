@@ -300,7 +300,8 @@ async function main() {
     await completionCell.locator('.cm-content').press('Control+Space');
     await page.waitForSelector('.cm-tooltip-autocomplete');
     assert('kernel completion appears in editor', (await page.locator('.cm-tooltip-autocomplete').innerText()).includes('print'));
-    await page.keyboard.press('Escape');
+    await page.keyboard.press('Tab');
+    assert('Tab accepts the kernel completion', (await completionCell.locator('.cm-content').innerText()).includes('print'), JSON.stringify(await completionCell.locator('.cm-content').innerText()));
     await completionCell.locator('.cm-content').fill('print');
     await completionCell.locator('.cm-line').hover({ position: { x: 55, y: 10 } });
     await page.locator('.cm-notebook-doc').waitFor();

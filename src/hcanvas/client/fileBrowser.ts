@@ -2,6 +2,7 @@ import { basicSetup, EditorView } from 'codemirror';
 import { EditorState, type Extension } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { completeFromList } from '@codemirror/autocomplete';
+import { tabCompletionKeymap } from './completionKeys.js';
 import { undo, redo } from '@codemirror/commands';
 import { StreamLanguage } from '@codemirror/language';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
@@ -564,7 +565,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   }
 
   function editorExtensions(tab: FileTab, editable: boolean): Extension[] {
-    const extensions: Extension[] = [basicSetup, EditorView.lineWrapping, oneDark, EditorView.editable.of(editable), EditorState.readOnly.of(!editable)];
+    const extensions: Extension[] = [basicSetup, EditorView.lineWrapping, oneDark, EditorView.editable.of(editable), EditorState.readOnly.of(!editable), tabCompletionKeymap()];
     const language = languageExtension(tab.language, tab.path);
     if (language) extensions.push(language);
     const completion = completionExtension(tab.language);

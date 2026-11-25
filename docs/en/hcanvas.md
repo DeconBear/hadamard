@@ -109,7 +109,7 @@ Open **Project Hub → Settings** on the desktop or in the browser UI. The dialo
 `hcanvas doctor` reads the same runtime settings and reports whether each runtime came from a configured path or auto-detection.
 ## Notebooks
 
-Create a Notebook page from **Pages**, or open a `.hnb.md` file from **Files**. Markdown is edited directly in the continuous document; code cells run through enabled kernel extensions. Variables keep separate **initial** and **current** values: Initialize/Run all applies initial values, while normal runs publish current values. Shared variables flow across Python, C++ and GNU Octave kernels.
+Create a Notebook page from **Pages**, or open a `.hnb.md` file from **Files**. Markdown is edited directly in the continuous document; code cells run through enabled kernel extensions. Kernel completion opens while typing or with **Ctrl+Space**; press **Tab** to accept the selected completion. Variables keep separate **initial** and **current** values: Initialize/Run all applies initial values, while normal runs publish current values. Shared variables flow across Python, C++ and GNU Octave kernels.
 
 Notebook outputs are cached in the current browser workspace for `.hnb.md` files, and stored in the native page for Notebook pages. HTML export embeds the visible output (including image assets) so it can be opened outside Hcanvas. Jupyter `.ipynb` files are not imported or exported.
 

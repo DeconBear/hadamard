@@ -8,6 +8,7 @@ import { cpp } from '@codemirror/lang-cpp';
 import { javascript } from '@codemirror/lang-javascript';
 import { StreamLanguage } from '@codemirror/language';
 import { octave } from '@codemirror/legacy-modes/mode/octave';
+import { tabCompletionKeymap } from './completionKeys.js';
 
 export type NotebookRunMode = 'advance' | 'stay' | 'insert';
 
@@ -53,6 +54,7 @@ export function mountNotebookCodeEditor(options: NotebookCodeEditorOptions): Edi
       '.cm-notebook-doc': { padding: '8px 12px', maxWidth: '460px', font: '12px/1.55 Inter, sans-serif', whiteSpace: 'pre-wrap' },
       '.cm-notebook-doc strong': { display: 'block', marginBottom: '4px', color: '#c8b8f5', fontFamily: 'ui-monospace, monospace' },
     }),
+    tabCompletionKeymap(),
     Prec.highest(keymap.of([
       { key: 'Shift-Enter', mac: 'Shift-Enter', run: () => { options.onRun('advance'); return true; } },
       { key: 'Ctrl-Enter', mac: 'Cmd-Enter', run: () => { options.onRun('stay'); return true; } },
@@ -67,6 +69,7 @@ export function mountNotebookCodeEditor(options: NotebookCodeEditorOptions): Edi
   ];
   if (options.complete) {
     extensions.push(autocompletion({
+      interactionDelay: 0,
       override: [async context => {
         const result = await options.complete!(context.state.doc.toString(), context.pos);
         return result ? { from: result.cursorStart, to: result.cursorEnd, options: result.matches.map(label => ({ label })) } : null;

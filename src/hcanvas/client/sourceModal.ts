@@ -3,6 +3,7 @@ import { html as htmlLang } from '@codemirror/lang-html';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { renderMarkdownHtml, renderMathHtml } from '../markdown.js';
 import { createAutoSave } from './autoSave.js';
+import { tabCompletionKeymap } from './completionKeys.js';
 import { esc } from './utils.js';
 
 export interface SourceModalOptions {
@@ -43,7 +44,7 @@ export function openSourceModal(options: SourceModalOptions, host: SourceModalHo
       node.textContent = status === 'pending' ? 'Editing…' : status === 'saving' ? 'Saving…' : status === 'error' ? 'Not saved · edit or retry' : 'Auto-save on';
     },
   });
-  const extensions = [basicSetup, EditorView.lineWrapping, oneDark, EditorView.updateListener.of(update => {
+  const extensions = [basicSetup, EditorView.lineWrapping, oneDark, tabCompletionKeymap(), EditorView.updateListener.of(update => {
     if (!update.docChanged) return;
     updatePreview();
     autoSave.change(update.state.doc.toString());
