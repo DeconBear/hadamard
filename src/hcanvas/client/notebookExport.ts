@@ -60,12 +60,13 @@ async function inlineOutputImages(outputs: HcStoredOutput[] | undefined, cache: 
     : output));
 }
 
-export async function exportNotebookHtml(title: string, data: NotebookEditorData, kernels: KernelDescriptor[]): Promise<void> {
+export async function exportNotebookHtml(title: string, data: NotebookEditorData, kernels: KernelDescriptor[], options: { includeOutputs?: boolean } = {}): Promise<void> {
   const assetCache = new Map<string, string>();
+  const includeOutputs = options.includeOutputs !== false;
   const body = (await Promise.all(data.cells.map(async cell => {
     if (cell.kind === 'markdown') return '<section class="md">' + sanitizeMarkdownHtml(renderMarkdownHtml(cell.source)) + '</section>';
     const kernel = kernelFor(data, kernels, cell);
-    const outputs = await inlineOutputImages(cell.outputs, assetCache);
+    const outputs = includeOutputs ? await inlineOutputImages(cell.outputs, assetCache) : [];
     return '<section class="code"><div class="cell-kernel">' + esc(kernel?.label || cell.language || 'code') + '</div><pre>' + esc(cell.source) + '</pre><div class="out">' + (outputs?.length ? renderStoredOutputsHtml(outputs) : '') + '</div></section>';
   }))).join('\n');
   const initial = Object.keys(data.initialVariables || {}).length ? '<details><summary>Initial variables</summary><pre>' + esc(JSON.stringify(data.initialVariables, null, 2)) + '</pre></details>' : '';

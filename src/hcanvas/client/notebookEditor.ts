@@ -47,7 +47,7 @@ export interface NotebookEditorOptions {
   scope: KernelScope;
   data: NotebookEditorData;
   request<T = Record<string, unknown>>(pathname: string, init?: RequestInit): Promise<T>;
-  getKernelManager(): KernelManager | null;
+  getKernelManager(): KernelManager | null; exportIncludeOutputs?: boolean;
   persist(data: NotebookEditorData): Promise<void>;
   persistOutputs?(data: NotebookEditorData): void;
   /** Notified when persist throws, so a viewer can offer conflict recovery. */
@@ -536,7 +536,7 @@ export function mountNotebookEditor(options: NotebookEditorOptions): NotebookEdi
   };
   const exportHtml = (): void => {
     syncMarkdownSources();
-    void exportNotebookHtml(options.title, data, kernels).catch(error => {
+    void exportNotebookHtml(options.title, data, kernels, { includeOutputs: options.exportIncludeOutputs !== false }).catch(error => {
       if (!disposed) options.toast(error instanceof Error ? error.message : String(error), 'error');
     });
   };

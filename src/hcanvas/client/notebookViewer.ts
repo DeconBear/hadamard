@@ -225,7 +225,7 @@ function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: No
     try {
       const result = await deps.request<{ file: { content: string; hash?: string; mtime?: number } }>('/api/files/read?root=' + encodeURIComponent(file.rootId) + '&path=' + encodeURIComponent(file.path));
       if (disposed) return;
-      const settings = await deps.request<{ settings?: { notebook?: { outputCacheBytes?: number } } }>('/api/settings').catch(() => null);
+      const settings = await deps.request<{ settings?: { notebook?: { outputCacheBytes?: number; htmlExportIncludeOutputs?: boolean } } }>('/api/settings').catch(() => null);
       const configuredBudget = settings?.settings?.notebook?.outputCacheBytes;
       if (typeof configuredBudget === 'number' && configuredBudget >= 0) outputCacheBudget = configuredBudget;
       fileHash = result.file.hash;
@@ -247,6 +247,7 @@ function mountFileNotebook(host: HTMLElement, deps: NotebookViewerDeps, file: No
         data,
         request: deps.request,
         getKernelManager: deps.getKernelManager,
+        exportIncludeOutputs: settings?.settings?.notebook?.htmlExportIncludeOutputs !== false,
         toast: deps.toast,
         onSaveConflict: showConflict,
         persist: async snapshot => {

@@ -120,6 +120,7 @@ export async function openSettingsDialog(deps: SettingsDialogDeps): Promise<void
       '<section class="settings-section"><h3>Notebook</h3>' +
         '<div class="settings-row"><div class="settings-label"><strong>Default kernel</strong><small>Used for new Notebook pages when available.</small></div><select id="settings-default-kernel"><option value="python"' + (defaultKernel === 'python' ? ' selected' : '') + '>Python</option><option value="cpp"' + (defaultKernel === 'cpp' ? ' selected' : '') + '>C++</option><option value="octave"' + (defaultKernel === 'octave' ? ' selected' : '') + '>GNU Octave</option></select></div>' +
         '<div class="settings-row"><div class="settings-label"><strong>Output cache budget</strong><small>Maximum browser storage for .hnb.md execution outputs, in MB.</small></div><input type="number" min="0" max="64" step="1" id="settings-output-cache" class="settings-number" value="' + Math.round((settings.notebook?.outputCacheBytes ?? 4 * 1024 * 1024) / (1024 * 1024)) + '"></div>' +
+        '<div class="settings-row"><div class="settings-label"><strong>Include outputs in HTML export</strong><small>Embed executed outputs and inline image assets in standalone HTML.</small></div><input type="checkbox" id="settings-html-export-outputs"' + (settings.notebook?.htmlExportIncludeOutputs !== false ? ' checked' : '') + '></div>' +
         '<div class="settings-actions"><button type="button" class="btn tiny" id="settings-clear-output-cache">Clear output caches</button><span id="settings-cache-stats" class="settings-status"></span></div>' +
       '</section>' +
       '<section class="settings-section"><h3>Updates</h3>' +
@@ -278,7 +279,7 @@ export async function openSettingsDialog(deps: SettingsDialogDeps): Promise<void
       const payload: SettingsPayload = {
         language: languageValue,
         runtimes: readRuntimeInputs(),
-        notebook: { defaultKernel: (document.getElementById('settings-default-kernel') as HTMLSelectElement).value, outputCacheBytes: Math.max(0, Math.min(64, Number((document.getElementById('settings-output-cache') as HTMLInputElement).value) || 0)) * 1024 * 1024 },
+        notebook: { defaultKernel: (document.getElementById('settings-default-kernel') as HTMLSelectElement).value, outputCacheBytes: Math.max(0, Math.min(64, Number((document.getElementById('settings-output-cache') as HTMLInputElement).value) || 0)) * 1024 * 1024, htmlExportIncludeOutputs: (document.getElementById('settings-html-export-outputs') as HTMLInputElement).checked },
         updates: {
           autoCheck: (document.getElementById('settings-auto-check') as HTMLInputElement).checked,
           autoDownload: (document.getElementById('settings-auto-download') as HTMLInputElement).checked,

@@ -17,6 +17,8 @@ export interface HcanvasRuntimeSettings {
 export interface HcanvasNotebookSettings {
   defaultKernel?: string;
   outputCacheBytes?: number;
+  /** Include execution outputs and images in standalone HTML exports. */
+  htmlExportIncludeOutputs?: boolean;
 }
 
 export interface HcanvasUpdateSettings {
@@ -96,6 +98,7 @@ function normalizeNotebookSettings(input: unknown, current: HcanvasNotebookSetti
     if (typeof value === 'number' && Number.isFinite(value) && value >= 0) next.outputCacheBytes = Math.floor(value);
     else if (value === null) delete next.outputCacheBytes;
   }
+  if (typeof box.htmlExportIncludeOutputs === 'boolean') next.htmlExportIncludeOutputs = box.htmlExportIncludeOutputs;
   return next;
 }
 
