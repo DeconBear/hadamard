@@ -207,6 +207,12 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   const tabRoot = document.createElement('div');
   tabRoot.className = 'workspace-tab-list';
   options.tabs.appendChild(tabRoot);
+  const noTabs = document.createElement('div');
+  noTabs.className = 'workspace-no-tabs hidden';
+  noTabs.innerHTML = '<div class="workspace-no-tabs-card"><strong>No open tabs</strong><p>Choose a page from Pages, or open a file from Files.</p></div>';
+  options.viewport.appendChild(noTabs);
+  const showNoTabs = (): void => { noTabs.classList.remove('hidden'); };
+  const hideNoTabs = (): void => { noTabs.classList.add('hidden'); };
 
   function bindTabClose(tab: HTMLElement, close: HTMLButtonElement, onClose: () => void): void {
     close.addEventListener('click', event => { event.stopPropagation(); onClose(); });
@@ -272,6 +278,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   }
 
   function activateViewTab(tab: WorkspaceViewTab): void {
+    hideNoTabs();
     flushActiveSave();
     teardownActiveView();
     activeId = 'view:' + tab.id;
@@ -310,6 +317,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     const nextView = [...viewTabs.values()][0];
     if (nextView) { activateViewTab(nextView); return; }
     renderTabs();
+    showNoTabs();
     options.onShowCanvas();
   }
 
@@ -338,6 +346,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
   }
 
   function activateCanvasTab(tab: CanvasTab): void {
+    hideNoTabs();
     flushActiveSave();
     teardownActiveView();
     closedCanvasTabs.delete(tab.id);
@@ -365,10 +374,12 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
     surface = null;
     document.body.classList.remove('file-browser-mode');
     renderTabs();
+    showNoTabs();
     options.onShowCanvas();
   }
 
   async function activateFile(id: string): Promise<void> {
+    hideNoTabs();
     const tab = tabs.find(item => item.id === id);
     if (!tab) return;
     flushActiveSave(id);
@@ -399,6 +410,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
       surface = null;
       document.body.classList.remove('file-browser-mode');
       renderTabs();
+      showNoTabs();
       options.onShowCanvas();
       return;
     }
@@ -1010,6 +1022,7 @@ export function installFileBrowser(options: FileBrowserOptions): FileBrowserCont
         surface = null;
         document.body.classList.remove('file-browser-mode');
       }
+      hideNoTabs();
       renderTabs();
     }
   });

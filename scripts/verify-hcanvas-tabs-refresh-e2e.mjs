@@ -82,6 +82,9 @@ async function main() {
   await page.locator('.workspace-tab.file-tab .tab-close').click();
   await page.waitForFunction(() => document.querySelectorAll('.file-surface').length === 0, null, { timeout: 5_000 });
   assert('Closing the last file tab returns to the canvas', await page.evaluate(() => !document.body.classList.contains('file-browser-mode')) && await page.locator('.workspace-tab.canvas-tab').count() === 1);
+  await page.locator('.workspace-tab.canvas-tab .tab-close').click();
+  await page.waitForFunction(() => document.querySelectorAll('.workspace-tab').length === 0 && !document.querySelector('.workspace-no-tabs')?.classList.contains('hidden'), null, { timeout: 5_000 });
+  assert('Closing the last canvas tab shows the empty workspace', await page.locator('.workspace-no-tabs').isVisible());
   assert('No browser page errors', errors.length === 0, errors.join('; '));
   console.log('Refresh/tab E2E passed');
 }

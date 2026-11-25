@@ -1897,3 +1897,9 @@ body.page-list-reordering { cursor:grabbing !important; user-select:none; }
 .settings-update-card { margin-top: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.42); }
 .settings-update-state { font: 10.5px/1.5 Inter, sans-serif; color: var(--ink-2); }
 .settings-number { width: 90px; height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--ink); font: 11px Inter, sans-serif; }
+
+.workspace-no-tabs { position:absolute; inset:0; z-index:30; display:grid; place-items:center; background:#f4f1ea; background-image:radial-gradient(rgba(82,74,60,.08) 1px, transparent 1px); background-size:22px 22px; }
+.workspace-no-tabs.hidden { display:none; }
+.workspace-no-tabs-card { max-width:360px; padding:28px 32px; border:1px solid var(--border); border-radius:16px; background:#fffdf8; box-shadow:0 14px 40px rgba(30,25,20,.08); text-align:center; }
+.workspace-no-tabs-card strong { display:block; font:500 24px/1.2 Georgia, serif; color:var(--ink); }
+.workspace-no-tabs-card p { margin:10px 0 0; font:12px/1.6 Inter, sans-serif; color:var(--muted); }

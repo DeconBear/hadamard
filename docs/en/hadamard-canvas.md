@@ -173,7 +173,7 @@ Only one section is visible at a time. With a section tab focused, **←/→/↑
 
 ### Workspace tabs
 
-Canvases and files open as tabs above the canvas. Every tab has a **×** close control and can also be closed by middle-clicking the tab; closing a canvas tab only closes the tab and never deletes the page. Opening a page again from **Pages** reopens its closed canvas tab, while selecting a file tab switches from the canvas to the file viewer.
+Canvases and files open as tabs above the canvas. Every tab has a **×** close control and can also be closed by middle-clicking the tab; closing a canvas tab only closes the tab and never deletes the page. Closing the last tab shows an empty workspace with the page still available; opening it again from **Pages** reopens its canvas tab, while selecting a file tab switches from the canvas to the file viewer.
 
 ## Direct HTML editing
 
