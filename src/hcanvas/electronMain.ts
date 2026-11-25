@@ -160,6 +160,15 @@ if (!gotLock) {
     return true;
   });
 
+  ipcMain.handle('hcanvas:choose-runtime-path', async (_event, kind: unknown) => {
+    const label = kind === 'python' ? 'Python interpreter' : kind === 'octave' ? 'GNU Octave executable' : kind === 'cpp' ? 'C++ compiler executable' : 'Runtime executable';
+    const parent = focusedWindow();
+    const options = { title: 'Choose ' + label, buttonLabel: 'Use this file', properties: ['openFile'] as Array<'openFile'> };
+    const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+    if (result.canceled || !result.filePaths[0]) return null;
+    return path.resolve(result.filePaths[0]);
+  });
+
   ipcMain.handle('hcanvas:choose-directory', async () => {
     const parent = focusedWindow();
     const result = parent

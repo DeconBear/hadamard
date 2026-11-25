@@ -103,6 +103,7 @@ declare global {
       openProject: (projectPath?: string) => Promise<{ projectPath: string | null; workspace: string } | null>;
       chooseProject: () => Promise<{ projectPath: string | null; workspace: string } | null>;
     chooseDirectory: () => Promise<string | null>;
+      chooseRuntimePath?: (kind: 'python' | 'octave' | 'cpp') => Promise<string | null>;
       listProjects: () => Promise<Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }>>;
       getDataRoot: () => Promise<{ dataRoot: string; settingsPath: string }>;
       chooseDataRoot: () => Promise<{ dataRoot: string; migrated: boolean; existingData: boolean; restartRequired: boolean } | null>;
@@ -3495,5 +3496,4 @@ function revealProjectFolder(projectPath?: string, kind?: 'project' | 'workspace
 function changeAppLanguage(language: 'en' | 'zh'): Promise<void> { return projectHub.changeAppLanguage(language); }
 function changeHubDataRoot(): Promise<void> { return projectHub.changeHubDataRoot(); }
 function openWorkspaceModal(): Promise<void> { return projectHub.openWorkspaceModal(); }
-
 void initialize();

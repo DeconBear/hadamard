@@ -1,4 +1,5 @@
 import { getLanguage, setLanguage, translatePhrase } from './i18n.js';
+import { openSettingsDialog } from './settingsDialog.js';
 import { esc } from './utils.js';
 
 export interface ProjectHubDesktopBridge {
@@ -7,6 +8,7 @@ export interface ProjectHubDesktopBridge {
   listProjects?(): Promise<Array<{ id: string; name: string; projectPath: string; workspacePath: string; runningUrl: string | null; workspaceExists: boolean }>>;
   getDataRoot?(): Promise<{ dataRoot: string; settingsPath: string }>;
   chooseDataRoot?(): Promise<{ dataRoot: string; migrated: boolean; existingData: boolean; restartRequired: boolean } | null>;
+  chooseRuntimePath?(kind: 'python' | 'octave' | 'cpp'): Promise<string | null>;
   restartApp?(): Promise<boolean>;
 }
 
@@ -27,6 +29,7 @@ export interface ProjectHubController {
   revealProjectFolder(projectPath?: string, kind?: 'project' | 'workspace' | 'documents'): Promise<void>;
   changeAppLanguage(language: 'en' | 'zh'): Promise<void>;
   changeHubDataRoot(): Promise<void>;
+  openSettings(): Promise<void>;
   openWorkspaceModal(): Promise<void>;
 }
 
@@ -113,6 +116,8 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
   };
 
   const openProjectHub = async (): Promise<void> => {
+    const settingsButton = document.getElementById('hubSettingsBtn');
+    if (settingsButton) settingsButton.onclick = () => { void openSettings(); };
     byId('projectHub').classList.remove('hidden');
     await renderProjectHub();
   };
@@ -147,6 +152,17 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
     }
   };
 
+  const openSettings = async (): Promise<void> => {
+    await openSettingsDialog({
+      request: deps.request,
+      toast: deps.toast,
+      openModal: deps.openModal,
+      closeModal: deps.closeModal,
+      desktop: deps.desktop,
+      applyLanguage: language => { setLanguage(language); deps.renderAll(); },
+    });
+  };
+
   const openWorkspaceModal = async (): Promise<void> => {
     try {
       const info = await deps.request<{ workspace: string; project?: string | null; guidePath: string; guide: string }>('/api/workspace');
@@ -165,5 +181,5 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
     } catch (error) { deps.toast(error instanceof Error ? error.message : String(error), 'error'); }
   };
 
-  return { openProjectHub, closeProjectHub, renderProjectHub, revealProjectFolder, changeAppLanguage, changeHubDataRoot, openWorkspaceModal };
+  return { openProjectHub, closeProjectHub, renderProjectHub, revealProjectFolder, changeAppLanguage, changeHubDataRoot, openSettings, openWorkspaceModal };
 }

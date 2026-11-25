@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('hcanvasDesktop', {
   chooseDataRoot: () => ipcRenderer.invoke('hcanvas:choose-data-root'),
   restartApp: () => ipcRenderer.invoke('hcanvas:restart-app'),
   chooseDirectory: () => ipcRenderer.invoke('hcanvas:choose-directory'),
+  chooseRuntimePath: (kind) => ipcRenderer.invoke('hcanvas:choose-runtime-path', kind),
   platform: process.platform,
 });

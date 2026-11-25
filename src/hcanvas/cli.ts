@@ -13,7 +13,8 @@ import { excalidrawSceneToNativePage, nativeBlocksToExcalidrawScene } from './sc
 import { parseExcalidrawScene } from '../canvas/excalidrawScene.js';
 import type { HcDocument } from './types.js';
 import { listProjects, registerProject, registryFilePath, touchProject } from './projectRegistry.js';
-import { resolveDataRootSync } from './dataRoot.js';
+import { readHcanvasSettings, resolveDataRootSync } from './dataRoot.js';
+import { detectRuntime } from './runtimes.js';
 import { compileScene, type ComposeScene } from './composeScene.js';
 import { AGENT_SCHEMAS, SCENE_EXAMPLE } from './agentSchemas.js';
 import { getComposeTemplate, listComposeTemplates } from './composeTemplates.js';
@@ -506,9 +507,25 @@ async function doctorCommand(args: ParsedArgs, pretty: boolean): Promise<void> {
   const workspace = workspacePath(args);
   const checks: Array<Record<string, unknown>> = [];
   checks.push(runtimeCheck('node', 'Node.js', process.execPath, ['--version'], true, 'Install Node.js 22.13+ or 24.'));
-  checks.push(runtimeCheck('python', 'Python kernel runtime', 'python', ['--version'], false, 'Install Python 3, then enable/trust a Python kernel extension.'));
-  checks.push(runtimeCheck('gpp', 'C++ kernel runtime', 'g++', ['--version'], false, 'Install g++ (MinGW-w64, Xcode command line tools or build-essential) for the C++ kernel.'));
-  checks.push(runtimeCheck('octave', 'GNU Octave kernel runtime', 'octave', ['--version'], false, 'Install GNU Octave for the Octave kernel.'));
+  const settings = await readHcanvasSettings();
+  const runtimeChecks = [
+    { id: 'python', kind: 'python' as const, label: 'Python kernel runtime', hint: 'Install Python 3, then enable/trust a Python kernel extension.' },
+    { id: 'gpp', kind: 'cpp' as const, label: 'C++ kernel runtime', hint: 'Install g++ (MinGW-w64, Xcode command line tools or build-essential) for the C++ kernel.' },
+    { id: 'octave', kind: 'octave' as const, label: 'GNU Octave kernel runtime', hint: 'Install GNU Octave for the Octave kernel.' },
+  ];
+  for (const check of runtimeChecks) {
+    const probe = detectRuntime(check.kind, settings);
+    checks.push({
+      id: check.id,
+      label: check.label,
+      ok: probe.ok,
+      required: false,
+      detail: probe.ok ? (probe.version || probe.path || probe.command) + ' (' + probe.source + ')' : (probe.error || 'not found'),
+      ...(probe.path ? { path: probe.path } : {}),
+      source: probe.source,
+      ...(probe.ok ? {} : { hint: check.hint }),
+    });
+  }
   let discovery: Awaited<ReturnType<typeof discoverExtensions>> | null = null;
   try {
     discovery = await discoverExtensions(workspace, {});

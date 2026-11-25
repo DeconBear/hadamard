@@ -24,6 +24,8 @@ function notify(method, params) { send({ jsonrpc: '2.0', method, params }); }
 
 function compilerCommand() {
   if (compilerCache !== undefined) return compilerCache;
+  const override = (process.env.CXX || '').trim();
+  if (override) { compilerCache = override; return override; }
   for (const candidate of ['g++', 'clang++']) {
     const probe = spawnSync(candidate, ['--version'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
     if (probe.status === 0 || probe.stdout || probe.stderr) { compilerCache = candidate; return candidate; }

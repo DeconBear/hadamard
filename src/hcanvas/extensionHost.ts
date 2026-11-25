@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
+import { readHcanvasSettingsSync } from './dataRoot.js';
 import { discoverExtensions } from './extensions/loader.js';
 import { HcExtensionRegistry } from './extensions/registry.js';
 import { handleExtensionRoute } from './extensions/routes.js';
@@ -16,6 +17,7 @@ import { handleExtensionNetworkRoute } from './extensions/networkProxy.js';
 import { createRuntimeServices, handleHcRuntimeRoute, type HcKernelOutputPort, type HcRuntimeServices } from './sidecar/routes.js';
 import type { HcKernelCatalogEntry, HcSidecarCatalogEntry } from './sidecar/protocol.js';
 import { buildSandboxEnv } from './sidecar/spawn.js';
+import { applyRuntimeOverrides } from './runtimes.js';
 import { HCANVAS_VERSION } from './version.js';
 
 export interface ExtensionHostOptions {
@@ -88,15 +90,18 @@ export function createExtensionHost(options: ExtensionHostOptions): ExtensionHos
     const catalogEntry = registry.catalogEntries.find(entry => entry.id === ref.extensionId);
     if (!catalogEntry) return null;
     const contribution = ref.contribution;
+    const runtimeSidecar = applyRuntimeOverrides(contribution.command, contribution.env, readHcanvasSettingsSync());
+    const command = runtimeSidecar.command;
+    const env = runtimeSidecar.env ?? {};
     return {
       extensionId: ref.extensionId,
       extensionDir: catalogEntry.root,
       declaration: {
         id: contribution.id,
         ...(contribution.label ? { label: contribution.label } : {}),
-        command: contribution.command,
+        command,
         ...(contribution.cwd ? { cwd: contribution.cwd } : {}),
-        ...(contribution.env ? { env: contribution.env } : {}),
+        ...(Object.keys(env).length ? { env } : {}),
         ...(contribution.role ? { role: contribution.role } : {}),
         ...(contribution.protocol ? { protocol: contribution.protocol } : {}),
         ...(contribution.requests ? { requests: contribution.requests } : {}),

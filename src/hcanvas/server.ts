@@ -25,7 +25,8 @@ import { validatePluginManifest } from './pluginManifest.js';
 import { listProjects } from './projectRegistry.js';
 import { HcFileConflictError, HcFileService } from './fileWorkspace.js';
 import { HcAssetService } from './assets.js';
-import { readHcanvasLanguageSync, writeHcanvasLanguage } from './dataRoot.js';
+import { hcanvasSettingsPath, readHcanvasLanguageSync, readHcanvasSettings, updateHcanvasSettings, writeHcanvasLanguage } from './dataRoot.js';
+import { detectAllRuntimes, detectRuntime, probeRuntime } from './runtimes.js';
 import { buildLayoutRead, buildLintReport } from './agentLayout.js';
 import { compactApplyResult } from './agentApply.js';
 import { createExtensionHost } from './extensionHost.js';
@@ -606,6 +607,38 @@ export async function startHcanvasServer(options: HcServerOptions): Promise<HcSe
           sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
         });
         json(res, 200, { ok: true, active });
+        return;
+      }
+      if (pathname === '/api/settings' && req.method === 'GET') {
+        const settings = await readHcanvasSettings();
+        json(res, 200, { ok: true, settings, configPath: hcanvasSettingsPath() });
+        return;
+      }
+      if (pathname === '/api/settings' && (req.method === 'POST' || req.method === 'PUT')) {
+        const body = await readBody(req);
+        if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HcValidationError('Settings payload must be an object');
+        const settings = await updateHcanvasSettings({
+          ...(body.language === 'zh' || body.language === 'en' ? { language: body.language } : {}),
+          ...(body.runtimes && typeof body.runtimes === 'object' && !Array.isArray(body.runtimes) ? { runtimes: body.runtimes } : {}),
+          ...(body.notebook && typeof body.notebook === 'object' && !Array.isArray(body.notebook) ? { notebook: body.notebook } : {}),
+          ...(body.updates && typeof body.updates === 'object' && !Array.isArray(body.updates) ? { updates: body.updates } : {}),
+        } as Parameters<typeof updateHcanvasSettings>[0]);
+        json(res, 200, { ok: true, settings, configPath: hcanvasSettingsPath() });
+        return;
+      }
+      if (pathname === '/api/runtimes' && req.method === 'GET') {
+        const settings = await readHcanvasSettings();
+        json(res, 200, { ok: true, runtimes: detectAllRuntimes(settings) });
+        return;
+      }
+      if ((pathname === '/api/runtimes/test' || pathname === '/api/runtimes/detect') && req.method === 'POST') {
+        const body = await readBody(req);
+        const kind = body.kind;
+        if (kind !== 'python' && kind !== 'octave' && kind !== 'cpp') throw new HcValidationError('kind must be python, octave or cpp');
+        const settings = await readHcanvasSettings();
+        const pathOverride = typeof body.path === 'string' ? body.path.trim() : '';
+        const probe = pathOverride ? probeRuntime(kind, pathOverride, 'configured') : detectRuntime(kind, settings);
+        json(res, 200, { ok: true, runtime: probe });
         return;
       }
       if (pathname === '/api/settings/language' && req.method === 'POST') {

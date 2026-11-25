@@ -278,7 +278,8 @@
     "build:hcanvas:release": "npm run build:hcanvas:all && npm run build:hcanvas:package",
     "build:hcanvas:win": "node scripts/build-hcanvas-installer.mjs --platform win portable nsis",
     "build:hcanvas:linux": "node scripts/build-hcanvas-installer.mjs --platform linux AppImage deb",
-    "build:hcanvas:mac": "node scripts/build-hcanvas-installer.mjs --platform mac dmg zip"
+    "build:hcanvas:mac": "node scripts/build-hcanvas-installer.mjs --platform mac dmg zip",
+    "test:hcanvas:settings:e2e": "node scripts/verify-hcanvas-settings-e2e.mjs"
   },
   "keywords": [
     "agent",
