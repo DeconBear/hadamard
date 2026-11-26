@@ -1,5 +1,14 @@
 # Hcanvas Changelog
 
+## v0.1.6 - 2026-11-26
+
+### Desktop-only interaction
+
+- Remove the user-visible browser mode: `hcanvas app` is no longer advertised or available, and quick-start/API docs now point to `hcanvas desktop`.
+- Keep the local HTTP service internal for the Electron window, agent integrations and E2E tests.
+- Remove browser-specific project actions and replace them with desktop-required guidance.
+- Move the language selector and data-location control out of the project manager; both now live only in Settings → General.
+- Explain project `running` / `closed` badges and localize the project-manager footer.
 ## v0.1.5 - 2026-11-25
 
 ### Settings and runtimes
