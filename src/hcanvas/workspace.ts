@@ -26,7 +26,6 @@ export function workspaceGuide(workspace: string, project: string | null): strin
     '- daemon.json — local service URL + token (machine-local)\n' +
     '- exports/ — HTML/PDF/PNG/PPTX/DOCX outputs\n\n' +
     '## Start\n\n' +
-    'hcanvas app --project ' + (project || workspace) + '\n' +
     'hcanvas desktop --project ' + (project || workspace) + '\n\n' +
     '## Read\n\n' +
     'hcanvas context --json\n' +

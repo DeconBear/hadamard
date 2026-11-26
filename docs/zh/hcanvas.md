@@ -47,11 +47,10 @@ npm install -g hadamard-canvas
 hcanvas desktop --workspace ~/.hcanvas
 ~~~
 
-要求 Node.js 22.13+ 或 Node.js 24。npm 包同时提供浏览器和 headless 模式：
+要求 Node.js 22.13+ 或 Node.js 24。交互界面统一运行在 Electron 桌面窗口：
 
 ~~~bash
-hcanvas app --workspace ~/.hcanvas      # 本地服务 + 浏览器界面
-hcanvas serve --workspace ~/.hcanvas --port 4319
+hcanvas desktop --workspace ~/.hcanvas  # Electron 桌面窗口
 ~~~
 
 ## 10 分钟上手
@@ -99,19 +98,19 @@ hcanvas doctor
 
 ## 设置
 
-在桌面版或浏览器 UI 中打开 **Project Hub → 设置**。设置保存在 Hcanvas 配置目录下的 `hcanvas-settings.json`。
+在桌面版中打开 **Project Hub → 设置**。设置保存在 Hcanvas 配置目录下的 `hcanvas-settings.json`。
 
 - **运行时**：可选填 Python、GNU Octave、C++ 编译器（`g++`/`clang++`）的绝对路径。留空表示从 `PATH` 自动检测；Windows 上 Octave 还会检查卸载注册表。可用 **Test** 验证路径，或用 **Auto-detect all** 检测本机。修改只影响新内核会话，运行中的会话保持当前解释器。
 - **通用**：界面语言（English/中文）与数据位置。修改数据位置后仍需重启桌面版。
-- **Notebook**：新建 Notebook 页面的默认内核、`.hnb.md` 浏览器输出缓存预算，并可清理缓存输出。
-- **更新**：立即检查更新、启动时自动检查、自动下载以及 stable/preview 通道。自动安装仅桌面安装包支持；浏览器和 CLI 用户通过安装包或 npm 更新。
+- **Notebook**：新建 Notebook 页面的默认内核、`.hnb.md` 本地输出缓存预算，并可清理缓存输出。
+- **更新**：立即检查更新、启动时自动检查、自动下载以及 stable/preview 通道。自动安装仅桌面安装包支持；CLI 用户通过安装包或 npm 更新。
 
 `hcanvas doctor` 会读取同一套运行时设置，并显示运行时来自配置路径还是自动检测。
 ## Notebook
 
 从 **Pages** 新建 Notebook 页面，或从 **Files** 打开 `.hnb.md` 文件。Markdown 在连续文档中直接编辑，代码单元通过已启用的内核扩展执行。内核补全会随输入出现，也可用 **Ctrl+Space** 触发；按 **Tab** 接受选中的补全项。变量区分**初始值**与**当前值**：Initialize / Run all 应用初始值，普通运行发布当前值；共享变量可在 Python、C++、GNU Octave 内核之间流转。
 
-`.hnb.md` 的输出缓存在当前浏览器工作区，Notebook 页面的输出保存在原生文档中。HTML 导出会内联当前可见输出（包括图片资源），可以在 Hcanvas 之外打开。不导入或导出 Jupyter `.ipynb` 文件。
+`.hnb.md` 的输出缓存在本地 Hcanvas 配置中，Notebook 页面的输出保存在原生文档中。HTML 导出会内联当前可见输出（包括图片资源），可以在 Hcanvas 之外打开。不导入或导出 Jupyter `.ipynb` 文件。
 
 ## 继续探索
 

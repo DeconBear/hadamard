@@ -170,7 +170,7 @@ export async function openSettingsDialog(deps: SettingsDialogDeps): Promise<void
   document.querySelectorAll<HTMLButtonElement>('[data-browse-runtime]').forEach(button => {
     button.addEventListener('click', async () => {
       const bridge = deps.desktop();
-      if (!bridge?.chooseRuntimePath) { deps.toast('Use the manual path field in browser mode.', 'info'); return; }
+      if (!bridge?.chooseRuntimePath) { deps.toast('Use the manual path field.', 'info'); return; }
       const selected = await bridge.chooseRuntimePath(button.dataset.browseRuntime as 'python' | 'octave' | 'cpp').catch(() => null);
       if (!selected) return;
       const input = document.getElementById('settings-runtime-' + button.dataset.browseRuntime) as HTMLInputElement | null;

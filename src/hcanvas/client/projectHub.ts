@@ -83,13 +83,13 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
     byId('hubCurrentWorkspace').textContent = translatePhrase('Current workspace:') + ' ' + current.current.workspace;
     if (!projects.length) {
       grid.innerHTML = '<div class="hub-empty"><h2>No projects yet</h2><p>Create a project from a folder. hcanvas will initialize <code>.hcanvas/</code> inside it and keep all data there.</p><button id="hubEmptyNewBtn" class="btn primary">Choose a project folder…</button></div>';
-      qs<HTMLButtonElement>('#hubEmptyNewBtn')?.addEventListener('click', () => { if (deps.desktop()) void deps.desktop()?.chooseProject?.(); else deps.toast('Browser mode: run hcanvas app --project <folder>.', 'info'); });
+      qs<HTMLButtonElement>('#hubEmptyNewBtn')?.addEventListener('click', () => { if (deps.desktop()) void deps.desktop()?.chooseProject?.(); else deps.toast('Hcanvas desktop is required to create projects.', 'info'); });
       return;
     }
     grid.innerHTML = projects.map(project => {
       const active = current.current.project === project.projectPath;
       const running = Boolean(project.runningUrl);
-      const action = active ? 'Return to this canvas →' : desktop ? 'Open in new window ↗' : running ? 'Open in new tab ↗' : 'Not running';
+      const action = active ? 'Return to this canvas →' : desktop ? 'Open in new window ↗' : 'Desktop app required';
       const badgeLabel = active ? (zh ? '当前' : 'current') : running ? (zh ? '运行中' : 'running') : (zh ? '已关闭' : 'closed');
       const badgeTitle = active ? (zh ? '当前窗口正在显示此项目' : 'This project is open in the current window') : running ? (zh ? '此项目的本地服务正在运行' : 'The project server is running') : (zh ? '项目已登记，但当前没有运行' : 'Project is registered but not running');
       return '<article class="hub-card' + (active ? ' current' : '') + '" role="button" tabindex="0" data-hub-project="' + esc(project.projectPath) + '">' +
@@ -103,9 +103,7 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
         const projectPath = card.dataset.hubProject!;
         if (current.current.project === projectPath) { closeProjectHub(); return; }
         if (deps.desktop()) { void deps.desktop()?.openProject?.(projectPath); return; }
-        const record = projects.find(project => project.projectPath === projectPath);
-        if (record?.runningUrl) window.open(record.runningUrl, '_blank', 'noopener');
-        else deps.toast('Project is not running. Start it with: hcanvas app --project ' + projectPath, 'info');
+        deps.toast('Open projects from Hcanvas desktop.', 'info');
       };
       card.addEventListener('click', openProject);
       card.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openProject(); } });
@@ -142,7 +140,7 @@ export function createProjectHub(deps: ProjectHubDeps): ProjectHubController {
         '<div class="field"><span>Workspace</span><input readonly value="' + esc(info.workspace) + '"></div>' +
         (info.project ? '<div class="field"><span>Project</span><input readonly value="' + esc(info.project) + '"></div>' : '') +
         '<div class="field"><span>CLI guide</span><input readonly value="' + esc(info.guidePath) + '"></div>' +
-        '<div class="hint-card">Start another app on a project folder:<br><br><code>hcanvas app --project /path/to/project</code><br><br>The project gets a <code>.hcanvas/</code> directory with docs, state, masters, exports and CLI.md.</div>' +
+        '<div class="hint-card">Open another project from Hcanvas desktop:<br><br><code>hcanvas desktop --project /path/to/project</code><br><br>The project gets a <code>.hcanvas/</code> directory with docs, state, masters, exports and CLI.md.</div>' +
         '<div class="workspace-guide">' + esc(info.guide) + '</div>' +
         '</div><div class="modal-foot"><button id="revealWorkspaceFolderBtn" class="btn">Open project folder</button>' + (canOpen ? '<button id="workspaceOpenProjectBtn" class="btn">Open Project…</button>' : '') + '<button id="copyWorkspaceGuideBtn" class="btn">Copy CLI guide</button><button class="btn" data-close>Close</button></div></div>';
       deps.openModal(html);

@@ -39,7 +39,7 @@ Set up Hadamard Canvas for me. Read the "Quick start with AI Agents" section at 
 
 1. Check `node --version` is >=22.13.0; Node 24 is also supported.
 2. Install the CLI with `npm install -g hadamard-canvas`.
-3. Verify `hcanvas` prints its command list, then launch `hcanvas desktop --workspace <dir>` (or `hcanvas app --workspace <dir>` for browser mode).
+3. Verify `hcanvas` prints its command list, then launch `hcanvas desktop --workspace <dir>`.
 4. Use a writable workspace (default `~/.hcanvas`) and do not delete existing documents.
 5. Report the Node/npm and `hadamard-canvas` versions, workspace path and launch mode.
 
@@ -114,12 +114,7 @@ Or run it through npm without a global install:
 npx hadamard-canvas desktop --workspace C:\Users\<you>\hcanvas
 ~~~
 
-The `hadamard-canvas` package exposes the `hadamard-canvas`, `hcanvas` and `hcanvas-desktop` CLI entries. It also provides the browser workflow:
-
-~~~bash
-hcanvas app --workspace <dir>       # local server + browser UI
-hcanvas serve --workspace <dir> --port 4319
-~~~
+The `hadamard-canvas` package exposes the `hadamard-canvas`, `hcanvas` and `hcanvas-desktop` CLI entries. The supported interactive UI is the Electron desktop window; `hcanvas desktop` starts its local service and window.
 
 ### From source
 

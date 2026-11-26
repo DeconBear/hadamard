@@ -47,11 +47,10 @@ npm install -g hadamard-canvas
 hcanvas desktop --workspace ~/.hcanvas
 ~~~
 
-Node.js 22.13+ or Node.js 24 is required. The npm package also provides browser and headless modes:
+Node.js 22.13+ or Node.js 24 is required. The interactive UI runs in the Electron desktop window:
 
 ~~~bash
-hcanvas app --workspace ~/.hcanvas      # local server + browser UI
-hcanvas serve --workspace ~/.hcanvas --port 4319
+hcanvas desktop --workspace ~/.hcanvas  # Electron desktop window
 ~~~
 
 ## First 10 minutes
@@ -99,19 +98,19 @@ NPM distribution is a **Preview** channel for the official `@hcanvas/*` kernel p
 
 ## Settings
 
-Open **Project Hub → Settings** on the desktop or in the browser UI. The dialog stores preferences in `hcanvas-settings.json` under the Hcanvas config directory.
+Open **Project Hub → Settings** in the desktop app. The dialog stores preferences in `hcanvas-settings.json` under the Hcanvas config directory.
 
 - **Runtimes**: optional absolute paths for Python, GNU Octave and the C++ compiler (`g++`/`clang++`). Empty means auto-detect from `PATH` (Windows Octave also checks the uninstall registry). Use **Test** to verify a path and **Auto-detect all** to probe the machine. Changes apply to new kernel sessions; running sessions keep their current interpreter.
 - **General**: interface language (English/中文) and the data location. Changing the data location still requires a desktop restart.
-- **Notebook**: default kernel for new Notebook pages and the browser output-cache budget for `.hnb.md` files; clear cached outputs from the same panel.
-- **Updates**: check for updates now, auto-check on startup, auto-download, and the stable/preview channel. Automatic install is available in packaged desktop builds; browser and CLI users update through their installer or npm.
+- **Notebook**: default kernel for new Notebook pages and the local output-cache budget for `.hnb.md` files; clear cached outputs from the same panel.
+- **Updates**: check for updates now, auto-check on startup, auto-download, and the stable/preview channel. Automatic install is available in packaged desktop builds; CLI users update through their installer or npm.
 
 `hcanvas doctor` reads the same runtime settings and reports whether each runtime came from a configured path or auto-detection.
 ## Notebooks
 
 Create a Notebook page from **Pages**, or open a `.hnb.md` file from **Files**. Markdown is edited directly in the continuous document; code cells run through enabled kernel extensions. Kernel completion opens while typing or with **Ctrl+Space**; press **Tab** to accept the selected completion. Variables keep separate **initial** and **current** values: Initialize/Run all applies initial values, while normal runs publish current values. Shared variables flow across Python, C++ and GNU Octave kernels.
 
-Notebook outputs are cached in the current browser workspace for `.hnb.md` files, and stored in the native page for Notebook pages. HTML export embeds the visible output (including image assets) so it can be opened outside Hcanvas. Jupyter `.ipynb` files are not imported or exported.
+Notebook outputs are cached in the local Hcanvas profile for `.hnb.md` files, and stored in the native page for Notebook pages. HTML export embeds the visible output (including image assets) so it can be opened outside Hcanvas. Jupyter `.ipynb` files are not imported or exported.
 
 ## Keep exploring
 

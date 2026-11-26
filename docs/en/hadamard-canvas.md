@@ -21,26 +21,23 @@ Desktop downloads are available from [GitHub Releases](https://github.com/DeconB
 ## Run it
 
 ```bash
-# Start the app (local server + browser UI)
-hcanvas app --workspace ~/.hcanvas
+# Start the Electron desktop window
+hcanvas desktop --workspace ~/.hcanvas
 
 # Or without a global install
-npx hadamard-canvas app --workspace ~/.hcanvas
-
-# Start the headless service for agents/UI clients
-hcanvas serve --workspace /path/to/workspace --port 4319
+npx hadamard-canvas desktop --workspace ~/.hcanvas
 ```
 
 In this repository, build and run from source:
 
 ```bash
 npm run build          # compiles the service/CLI and bundles the UI
-node bin/hcanvas.js app --workspace plan/hcanvas-demo
+node bin/hcanvas-desktop.js --workspace plan/hcanvas-demo
 ```
 
 ### Standalone desktop app
 
-Hadamard Canvas can run as its own Electron window, not just a browser tab:
+Hadamard Canvas runs as its own Electron desktop window:
 
 ```bash
 npm install -g hadamard-canvas
@@ -49,7 +46,7 @@ hcanvas desktop --workspace <dir> [--port 4319]
 # from this repository: npm run hcanvas:desktop -- --workspace <dir>
 ```
 
-The desktop entry starts the local hcanvas service, opens a native window and closes the server when the window closes; the browser workflow (`hcanvas app`) remains available.
+The desktop entry starts the local hcanvas service, opens a native window and closes the server when the window closes.
 
 Package a Windows portable build with the Canvas icon:
 
@@ -167,7 +164,7 @@ The same menu also includes **Theme · Neon / Paper / Mono** presets, **Save com
 
 ## Workspace navigator
 
-The left sidebar is a single-panel workspace navigator with five sections: **Canvases**, **Pages**, **Files**, **Assets** and **Plugins**. Click a section icon to switch panels, and press **Ctrl/Cmd+B** to show or hide the navigator. The active section is remembered per browser profile. **Canvases** and **Pages** show a live item count; the **Plugins** section opens the plugin manager and gallery without leaving the current document.
+The left sidebar is a single-panel workspace navigator with five sections: **Canvases**, **Pages**, **Files**, **Assets** and **Plugins**. Click a section icon to switch panels, and press **Ctrl/Cmd+B** to show or hide the navigator. The active section is remembered per Hcanvas profile. **Canvases** and **Pages** show a live item count; the **Plugins** section opens the plugin manager and gallery without leaving the current document.
 
 Only one section is visible at a time. With a section tab focused, **←/→/↑/↓** move between sections and **Home/End** jump to the first/last section; **↑/↓** browse the items of the active panel, **Enter** opens the focused item and **F2** renames a page. **Ctrl/Cmd+F** focuses the panel filter. The filter (labelled **Find a canvas…** or **Find a page…**) matches names as you type, reports the number of matches, and **Esc** clears it; **Canvases** and **Pages** each keep their own filter text.
 
@@ -408,7 +405,7 @@ Proposals are the review path: an agent submits ops with `hcanvas propose`, and 
 
 ### HTTP API
 
-`hcanvas serve` also exposes the same API:
+The desktop window and agent integrations use the local HTTP API:
 
 - `GET /api/state`, `GET /api/context`, `GET /api/docs`
 - `GET /api/docs/:id/read?format=outline|html|json|page`
@@ -436,7 +433,7 @@ Selecting a revision shows a read-only page preview (pick the page from the prev
 
 ## Limits
 
-- The browser UI shows one workspace at a time; the standalone desktop app can open each project in its own native window.
+- Each desktop window shows one workspace; the app can open each project in its own native window.
 - Visual HTML editing focuses on text and style; structural edits use the source editor.
 - No real-time multi-user CRDT yet; multiple agents/hosts coordinate through revisions and proposals.
 - PPTX visual deck keeps HTML pages as images; the separate editable deck maps HTML text to native PowerPoint objects (layout is approximate; complex CSS effects are not reconstructed).
@@ -449,11 +446,10 @@ Select a project folder and let hcanvas initialize it; all product data lives in
 ```bash
 hcanvas workspace init ~/projects/my-deck
 hcanvas projects list
-hcanvas app --project ~/projects/my-deck
 hcanvas desktop --project ~/projects/my-deck
 ```
 
-The **Projects** button opens a full-screen project manager page backed by the global registry in the configured data location (default `~/.hcanvas/projects.json`). The current data location is shown and changed in **Project Hub → Settings → General**. The setting is stored in the app profile (`%APPDATA%\Hadamard Canvas\hcanvas-settings.json` on Windows), outside the install directory, so reinstall/upgrade keeps it. Changing it copies existing data when the destination is empty, leaves the old location as a safety copy, and offers **Restart now**. From the canvas, the top-bar **Open folder** button opens the current project root, and the Page Inspector's **Open page files** button opens `<workspace>/docs` where document JSON lives. In the project manager, each project is a card with its paths and running state; **📁 Open folder** reveals the project folder in the system file manager (the same button is available in the Workspace dialog). In the desktop app, clicking a project opens it in a **separate native window** (multiple projects can stay open); **New Project…** opens a native folder picker and creates/opens `<project>/.hcanvas`. In browser mode cards open a project whose local service is already running in a new tab. Clicking the current project's card returns to its canvas. Clicking the workspace path in the bottom-left opens a Workspace dialog with the resolved paths, the generated CLI guide and a copy button. Initialization is non-destructive and creates:
+The **Projects** button opens a full-screen project manager page backed by the global registry in the configured data location (default `~/.hcanvas/projects.json`). The current data location is shown and changed in **Project Hub → Settings → General**. The setting is stored in the app profile (`%APPDATA%\Hadamard Canvas\hcanvas-settings.json` on Windows), outside the install directory, so reinstall/upgrade keeps it. Changing it copies existing data when the destination is empty, leaves the old location as a safety copy, and offers **Restart now**. From the canvas, the top-bar **Open folder** button opens the current project root, and the Page Inspector's **Open page files** button opens `<workspace>/docs` where document JSON lives. In the project manager, each project is a card with its paths and running state; **📁 Open folder** reveals the project folder in the system file manager (the same button is available in the Workspace dialog). In the desktop app, clicking a project opens it in a **separate native window** (multiple projects can stay open); **New Project…** opens a native folder picker and creates/opens `<project>/.hcanvas`. Clicking the current project's card returns to its canvas. Clicking the workspace path in the bottom-left opens a Workspace dialog with the resolved paths, the generated CLI guide and a copy button. Initialization is non-destructive and creates:
 
 ```text
 <project>/.hcanvas/
@@ -485,7 +481,7 @@ The **Assets** section of the workspace navigator stores workspace-scoped images
 
 ## Workspace panels
 
-The left workspace navigator and the right inspector sidebar can both be resized by dragging their inner edge; double-click the splitter to collapse a panel. The top-bar ▤ / ▥ buttons toggle the left and right sidebars, and **Ctrl/Cmd+B** toggles the left navigator. Widths and collapsed state are remembered per browser profile.
+The left workspace navigator and the right inspector sidebar can both be resized by dragging their inner edge; double-click the splitter to collapse a panel. The top-bar ▤ / ▥ buttons toggle the left and right sidebars, and **Ctrl/Cmd+B** toggles the left navigator. Widths and collapsed state are remembered per Hcanvas profile.
 
 The right sidebar has four tabs:
 

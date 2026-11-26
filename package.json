@@ -185,7 +185,6 @@
     "hcanvas:desktop": "node bin/hcanvas-desktop.js",
     "build:hcanvas:desktop": "node scripts/build-hcanvas-installer.mjs --platform win portable",
     "build:hcanvas:installer": "node scripts/build-hcanvas-installer.mjs --platform win nsis",
-    "hcanvas:app": "node bin/hcanvas.js app",
     "gui:canvas": "node bin/hadamard-canvas.js",
     "gui:harness": "node bin/hadamard-harness.js",
     "build": "node scripts/generate-gui-icon.mjs && npm run clean && tsc -p tsconfig.build.json && npm run build:gui-canvas && npm run build:hcanvas",

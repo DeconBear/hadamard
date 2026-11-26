@@ -20,7 +20,7 @@ npm install -g hadamard-canvas
 
 ## 独立桌面应用
 
-Hadamard Canvas 可以作为独立 Electron 窗口运行，不只是一个浏览器标签页：
+Hadamard Canvas 作为独立 Electron 窗口运行：
 
 ```bash
 hcanvas desktop --workspace <dir> [--port 4319]
@@ -28,7 +28,7 @@ hcanvas desktop --workspace <dir> [--port 4319]
 # 从本仓库运行: npm run hcanvas:desktop -- --workspace <dir>
 ```
 
-桌面入口会启动本地 hcanvas 服务并打开原生窗口：无菜单栏、外链交给系统浏览器、窗口关闭时服务退出。原有浏览器模式（`hcanvas app`）继续保留。
+桌面入口会启动本地 hcanvas 服务并打开原生窗口：无菜单栏、外链交给系统浏览器、窗口关闭时服务退出。
 
 生成带 Canvas 图标的 Windows 便携版：
 
@@ -78,16 +78,15 @@ npm run build:hcanvas:linux
 ## 启动
 
 ```bash
-hcanvas app --workspace ~/.hcanvas
-# 或: npx hadamard-canvas app --workspace ~/.hcanvas
-hcanvas serve --workspace /path/to/workspace --port 4319
+hcanvas desktop --workspace ~/.hcanvas
+# 或: npx hadamard-canvas desktop --workspace ~/.hcanvas
 ```
 
 从本仓库运行：
 
 ```bash
 npm run build
-node bin/hcanvas.js app --workspace plan/hcanvas-demo
+node bin/hcanvas-desktop.js --workspace plan/hcanvas-demo
 ```
 
 工作区结构：
@@ -304,7 +303,7 @@ HTML patch 示例：
 
 提案：agent 用 `hcanvas propose` 提交 ops，人在 Proposals 面板接受/拒绝；接受后成为新 revision，冲突会显式提示而不是覆盖。
 
-HTTP API 与 CLI 同源：`/api/state`、`/api/docs`、`/api/docs/:id/read|apply|proposals`、`/api/export`、`/api/events`（SSE）；请求需 `x-hcanvas-token`，默认仅监听 localhost。
+桌面窗口与 Agent 集成使用同一套本地 HTTP API：`/api/state`、`/api/docs`、`/api/docs/:id/read|apply|proposals`、`/api/export`、`/api/events`（SSE）；请求需 `x-hcanvas-token`，默认仅监听 localhost。
 
 ## 修订历史
 
@@ -323,7 +322,7 @@ HTTP API 与 CLI 同源：`/api/state`、`/api/docs`、`/api/docs/:id/read|apply
 
 ## 限制
 
-- 浏览器 UI 一次显示一个 workspace；独立桌面应用可以为每个项目打开各自的窗口；暂不支持多用户 CRDT；
+- 每个桌面窗口显示一个 workspace；桌面应用可以为每个项目打开各自的窗口；暂不支持多用户 CRDT；
 - 可视化编辑聚焦文字/样式，结构修改走源码；
 - 视觉 PPTX 中 HTML 页仍为整页图片；可编辑 deck 会把 HTML 文本映射为原生 PowerPoint 对象（布局为近似，复杂 CSS 效果不重建）。
 - DOCX 导出刻意走 text-first/ATS 路线，不复刻视觉卡片和装饰图形。
@@ -335,11 +334,10 @@ HTTP API 与 CLI 同源：`/api/state`、`/api/docs`、`/api/docs/:id/read|apply
 ```bash
 hcanvas workspace init ~/projects/my-deck
 hcanvas projects list
-hcanvas app --project ~/projects/my-deck
 hcanvas desktop --project ~/projects/my-deck
 ```
 
-顶部 **Projects** 按钮会打开全屏**项目管理页**，数据来自配置的数据目录中的全局注册表（默认 `~/.hcanvas/projects.json`）。当前数据位置在 **Project Hub → 设置 → 通用** 中查看和修改。该设置保存在应用配置目录（Windows 为 `%APPDATA%\Hadamard Canvas\hcanvas-settings.json`），不在安装目录内，所以重装或升级不会重置。修改时若目标目录为空会复制现有数据，旧目录会保留作为安全副本，并提供 **Restart now**。画布页顶栏的 **Open folder** 会打开当前项目根目录；Page Inspector 的 **Open page files** 会打开文档 JSON 所在的 `<workspace>/docs`。项目卡片中，**📁 Open folder** 可在系统文件管理器中打开项目文件夹（Workspace 对话框里也有同样按钮）。桌面版点击项目会打开一个**独立窗口**（可同时打开多个项目）；**New Project…** 通过原生目录选择创建/打开 `<project>/.hcanvas`。浏览器模式点击卡片会在新标签打开已在运行的项目；点击当前项目卡片返回画布。点击左下角 workspace 路径会打开 Workspace 对话框，显示当前路径、生成的 CLI 指南，并可一键复制。初始化不破坏现有文件，会创建：
+顶部 **Projects** 按钮会打开全屏**项目管理页**，数据来自配置的数据目录中的全局注册表（默认 `~/.hcanvas/projects.json`）。当前数据位置在 **Project Hub → 设置 → 通用** 中查看和修改。该设置保存在应用配置目录（Windows 为 `%APPDATA%\Hadamard Canvas\hcanvas-settings.json`），不在安装目录内，所以重装或升级不会重置。修改时若目标目录为空会复制现有数据，旧目录会保留作为安全副本，并提供 **Restart now**。画布页顶栏的 **Open folder** 会打开当前项目根目录；Page Inspector 的 **Open page files** 会打开文档 JSON 所在的 `<workspace>/docs`。项目卡片中，**📁 Open folder** 可在系统文件管理器中打开项目文件夹（Workspace 对话框里也有同样按钮）。桌面版点击项目会打开一个**独立窗口**（可同时打开多个项目）；**New Project…** 通过原生目录选择创建/打开 `<project>/.hcanvas`。点击当前项目卡片返回画布。点击左下角 workspace 路径会打开 Workspace 对话框，显示当前路径、生成的 CLI 指南，并可一键复制。初始化不破坏现有文件，会创建：
 
 ```text
 <project>/.hcanvas/
@@ -393,7 +391,7 @@ Canvas 页面的选中工具栏现在提供布局与连线工具。选中两个�
 
 ## 工作区导航与面板
 
-左侧边栏是单面板的 workspace 导航，分为 **Canvases**、**Pages**、**Files**、**Assets**、**Plugins** 五个区块。点击区块图标切换面板，按 **Ctrl/Cmd+B** 显示/隐藏整个导航；当前区块会按浏览器配置记住。**Canvases** 和 **Pages** 会显示条目数量，**Plugins** 区块可在不离开当前文档的情况下打开插件管理器与 Gallery。
+左侧边栏是单面板的 workspace 导航，分为 **Canvases**、**Pages**、**Files**、**Assets**、**Plugins** 五个区块。点击区块图标切换面板，按 **Ctrl/Cmd+B** 显示/隐藏整个导航；当前区块会按 Hcanvas 配置记住。**Canvases** 和 **Pages** 会显示条目数量，**Plugins** 区块可在不离开当前文档的情况下打开插件管理器与 Gallery。
 
 同一时间只显示一个区块。焦点在区块 Tab 上时，**←/→/↑/↓** 切换区块，**Home/End** 跳到第一个/最后一个区块；**↑/↓** 在当前面板的条目之间浏览，**Enter** 打开焦点条目，**F2** 重命名页面。**Ctrl/Cmd+F** 聚焦面板过滤器；过滤器（占位符 **Find a canvas…** / **Find a page…**）按名称实时过滤并显示匹配数量，**Esc** 清空；**Canvases** 和 **Pages** 分别记住自己的过滤文本。Files 不会持续监听文件系统：外部新增/删除文件后，点 Files 标题栏的 **↻** 手动刷新，或等窗口重新获得焦点时自动刷新。Assets 中点击图片/视频行可先预览，再点 Insert 或拖拽插入页面。
 

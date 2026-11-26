@@ -39,9 +39,7 @@ function usage(): string {
     'hcanvas — Hadamard Canvas CLI (AI-native, JSON-first)',
     '',
     'Usage:',
-    '  hcanvas app [--project <dir> | --workspace <dir>] [--port <n>] [--no-open]',
     '  hcanvas desktop [--project <dir> | --workspace <dir>] [--port <n>]   # standalone Electron window',
-    '  hcanvas serve [--project <dir> | --workspace <dir>] [--port <n>] [--host 127.0.0.1]',
     '  hcanvas workspace init [projectDir]',
     '  hcanvas workspace info [projectDir]',
     '  hcanvas projects list',
@@ -162,7 +160,7 @@ async function findConnection(args: ParsedArgs): Promise<Connection> {
       if (daemon.url && daemon.token) return { url: daemon.url, token: daemon.token };
     } catch { /* try next */ }
   }
-  throw new Error('No running hcanvas service found. Start one with: hcanvas app --workspace ' + workspacePath(args));
+  throw new Error('No running Hcanvas service found. Start the desktop app with: hcanvas desktop --workspace ' + workspacePath(args));
 }
 
 function headers(conn: Connection): Record<string, string> {
@@ -339,7 +337,7 @@ function launchDesktop(args: ParsedArgs): void {
   try {
     electronPath = require('electron') as string;
   } catch {
-    throw new Error('Electron is not installed. Run hcanvas app for the browser version.');
+    throw new Error('Electron is not installed. Install the Hadamard Canvas desktop app or run hcanvas desktop from a desktop package.');
   }
   const childArgs = [electronMain];
   const project = projectPath(args);
@@ -549,7 +547,8 @@ async function main(argv: string[]): Promise<void> {
   const command = args.positionals[0]!;
   const sub = args.positionals[1];
   const pretty = flagBool(args, 'pretty');
-  if (command === 'serve' || command === 'app') { await runServe(args, command === 'app'); return; }
+  if (command === 'app') throw new Error('Use hcanvas desktop --workspace <dir> (or --project <dir>).');
+  if (command === 'serve') { await runServe(args, false); return; }
   if (command === 'desktop') { launchDesktop(args); return; }
   if (command === 'extension' || command === 'extensions' || command === 'plugin' || command === 'plugins') { await extensionCommand(args, pretty); return; }
   if (command === 'doctor') { await doctorCommand(args, pretty); return; }
@@ -563,7 +562,7 @@ async function main(argv: string[]): Promise<void> {
     if (!sub || sub === 'init') {
       const info = await initWorkspace(workspace, project);
       const record = await registerProject(project);
-      print({ ok: true, ...info, projectRecord: record, hint: 'Start with: hcanvas app --project ' + project }, pretty);
+      print({ ok: true, ...info, projectRecord: record, hint: 'Start with: hcanvas desktop --project ' + project }, pretty);
       return;
     }
     throw new Error('Unknown workspace command: ' + sub);
@@ -917,7 +916,7 @@ main(process.argv.slice(2)).catch(error => {
   const message = error instanceof Error ? error.message : String(error);
   let hint = typeof record.hint === 'string' ? record.hint : undefined;
   if (!hint) {
-    if (message.includes('No running hcanvas service')) hint = 'Start one with: hcanvas app --project <dir>';
+    if (message.includes('No running hcanvas service')) hint = 'Start the desktop app with: hcanvas desktop --project <dir>';
     else if (message.includes('No active document')) hint = 'Run hcanvas docs list or set HCANVAS_DOC / HCANVAS_SESSION.';
     else if (message.includes('--base-revision')) hint = 'Read the document first (hcanvas read <doc>) and pass its revision.';
     else if (message.includes('Ambiguous document')) hint = 'Use the exact document id from hcanvas docs list.';

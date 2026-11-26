@@ -39,7 +39,7 @@ Hcanvas 独立运行，拥有自己的版本（0.1.2）和 release tag（hcanvas
 
 1. 检查 `node --version` 是否为 22.13.0+；Node 24 同样受支持。
 2. 执行 `npm install -g hadamard-canvas` 安装 CLI。
-3. 确认 `hcanvas` 能打印命令列表，然后运行 `hcanvas desktop --workspace <目录>` 启动桌面版（浏览器模式用 `hcanvas app --workspace <目录>`）。
+3. 确认 `hcanvas` 能打印命令列表，然后运行 `hcanvas desktop --workspace <目录>` 启动桌面版。
 4. 使用可写的工作目录（默认 `~/.hcanvas`），不要删除用户已有文档。
 5. 汇报 Node/npm、`hadamard-canvas` 版本、工作目录和启动模式。
 
@@ -114,11 +114,10 @@ hcanvas desktop --workspace C:\Users\<you>\hcanvas
 npx hadamard-canvas desktop --workspace C:\Users\<you>\hcanvas
 ~~~
 
-`hadamard-canvas` 包提供 `hadamard-canvas`、`hcanvas`、`hcanvas-desktop` 三个 CLI 入口，也提供浏览器运行方式：
+`hadamard-canvas` 包提供 `hadamard-canvas`、`hcanvas`、`hcanvas-desktop` 三个 CLI 入口。交互界面统一使用 Electron 桌面窗口：
 
 ~~~bash
-hcanvas app --workspace <目录>       # 本地服务 + 浏览器界面
-hcanvas serve --workspace <目录> --port 4319
+hcanvas desktop --workspace <目录>   # Electron 桌面窗口
 ~~~
 
 ### 从源码运行

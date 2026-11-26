@@ -71,6 +71,7 @@ async function main() {
   await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1200);
   await page.locator('#projectMenuBtn').click();
+  assert('Project Hub no longer duplicates language and data-location settings', await page.locator('#hubLanguageSelect, .hub-data-root').count() === 0);
   await page.locator('#hubSettingsBtn').click();
   await page.locator('.settings-modal').waitFor();
   assert('Settings dialog opens from Project Hub', await page.locator('.settings-modal').isVisible());

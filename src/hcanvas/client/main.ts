@@ -779,7 +779,7 @@ function bindStaticActions(): void {
   qs<HTMLButtonElement>('#hubRefreshBtn')?.addEventListener('click', () => { void renderProjectHub(); });
   qs<HTMLButtonElement>('#hubNewProjectBtn')?.addEventListener('click', () => {
     if (window.hcanvasDesktop) void window.hcanvasDesktop.chooseProject();
-    else toast('Browser mode: run hcanvas app --project <folder> to create a project.', 'info');
+    else toast('Hcanvas desktop is required to create projects.', 'info');
   });
   el('workspacePath').addEventListener('click', () => { void openWorkspaceModal(); });
   el('addPageMini').addEventListener('click', () => openAddPageModal());
